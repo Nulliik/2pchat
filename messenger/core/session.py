@@ -169,8 +169,11 @@ class Session:
                 timestamp=datetime.now(timezone.utc).timestamp(),
                 label=self.peer_label,
             )
+            if status.warning:
+                raise ValueError(f"TOFU Verification Conflict: {status.warning}")
             self.trust_status = status.state
             self.trust_warning = status.warning
+
 
         return self.my_pub, self.my_priv, their_pub
 

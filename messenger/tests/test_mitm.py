@@ -99,3 +99,50 @@ async def test_mitm_rejected_and_cannot_decrypt(monkeypatch, tmp_path):
             ciphertext,
         )
 
+
+def test_attacker_cannot_forge_message():
+    from messenger.core import crypto
+    from nacl.public import PrivateKey
+    from nacl.bindings import crypto_scalarmult
+    from nacl.secret import SecretBox
+    from nacl.utils import random as nacl_random
+    from messenger.core.crypto import hkdf_sha256
+
+    alice_pub, alice_priv = crypto.generate_identity_keypair()
+    bob_pub, bob_priv = crypto.generate_identity_keypair()
+
+    bob_prekey_priv = PrivateKey.generate()
+    bob_prekey_pub = bob_prekey_priv.public_key
+
+    # Eve tries to forge a message to Bob, claiming to be Alice
+    eve_ephemeral_priv = PrivateKey.generate()
+    eve_ephemeral_pub = eve_ephemeral_priv.public_key
+
+    # Eve derives session key Bob would derive under the OLD (unauthenticated) protocol
+    shared1 = crypto_scalarmult(bytes(eve_ephemeral_priv), bytes(bob_pub))
+    shared2 = crypto_scalarmult(bytes(eve_ephemeral_priv), bytes(bob_prekey_pub))
+    ikm_old = shared1 + shared2
+    session_key_old = hkdf_sha256(ikm_old, salt=b"", info=b"MeshtasticStyleSessionKey", length=32)
+
+    box = SecretBox(session_key_old)
+    nonce = nacl_random(SecretBox.NONCE_SIZE)
+    ciphertext_bytes = box.encrypt(b"forged message", nonce)
+
+    forged_packet = b"".join([
+        bytes([1]),  # version
+        int(1).to_bytes(8, "big"),  # counter
+        bytes(eve_ephemeral_pub),
+        ciphertext_bytes,
+    ])
+
+    # Decrypting this forged packet using the Alice public key should FAIL
+    with pytest.raises(Exception):
+        crypto.decrypt_message(
+            bob_priv,
+            alice_pub,
+            crypto.PeerState(),
+            forged_packet,
+            my_prekey_priv=bob_prekey_priv,
+        )
+
+

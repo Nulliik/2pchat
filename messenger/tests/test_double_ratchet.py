@@ -20,8 +20,9 @@ def test_double_ratchet_round_trip():
     bob_one_time = PrivateKey.generate()
     bundle = PreKeyBundle(
         identity_pub=bob.public,
+        identity_verify_pub=bob.signing.verify_key,
         signed_prekey_pub=bob_signed_prekey.public_key,
-        signed_prekey_sig=_sign_prekey(bob.private, bob_signed_prekey.public_key),
+        signed_prekey_sig=_sign_prekey(bob.signing, bob_signed_prekey.public_key),
         one_time_prekey_pub=bob_one_time.public_key,
     )
 
@@ -52,8 +53,9 @@ def test_replay_rejected():
     signed_prekey = PrivateKey.generate()
     bundle = PreKeyBundle(
         identity_pub=bob.public,
+        identity_verify_pub=bob.signing.verify_key,
         signed_prekey_pub=signed_prekey.public_key,
-        signed_prekey_sig=_sign_prekey(bob.private, signed_prekey.public_key),
+        signed_prekey_sig=_sign_prekey(bob.signing, signed_prekey.public_key),
     )
     eph = IdentityKeyPair.generate()
     alice_session = initialize_session_from_prekey(alice, bundle, eph)
@@ -81,8 +83,9 @@ def test_header_obfuscation_hides_dh_key():
     signed_prekey = PrivateKey.generate()
     bundle = PreKeyBundle(
         identity_pub=bob.public,
+        identity_verify_pub=bob.signing.verify_key,
         signed_prekey_pub=signed_prekey.public_key,
-        signed_prekey_sig=_sign_prekey(bob.private, signed_prekey.public_key),
+        signed_prekey_sig=_sign_prekey(bob.signing, signed_prekey.public_key),
     )
     eph = IdentityKeyPair.generate()
     alice_session = initialize_session_from_prekey(alice, bundle, eph)
@@ -106,3 +109,4 @@ def test_header_obfuscation_hides_dh_key():
         initiator_ephemeral_pub=eph.public,
     )
     assert decrypt_message(bob_session, packet) == b"secret"
+

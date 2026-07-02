@@ -221,12 +221,13 @@ def derive_session_key(
     their_prekey_pub: PublicKey,
     channel_key: bytes | None = None,
 ) -> bytes:
-    """Derive a 32-byte session key using dual ECDH and HKDF.
+    """Derive a 32-byte session key using dual/triple ECDH and HKDF.
 
     The derivation always binds to both the peer identity and peer prekey:
 
     - shared1 = DH(my_ephemeral_priv, their_identity_pub)
     - shared2 = DH(my_ephemeral_priv, their_prekey_pub)
+    - shared3 = DH(my_identity_priv, their_prekey_pub)
     """
 
     shared1 = crypto_scalarmult(bytes(my_ephemeral_priv), bytes(their_identity_pub))
@@ -235,10 +236,14 @@ def derive_session_key(
     shared2 = crypto_scalarmult(bytes(my_ephemeral_priv), bytes(their_prekey_pub))
     _assert_nonzero(shared2)
 
-    ikm = shared1 + shared2
+    shared3 = crypto_scalarmult(bytes(my_identity_priv), bytes(their_prekey_pub))
+    _assert_nonzero(shared3)
+
+    ikm = shared1 + shared2 + shared3
     salt = channel_key if channel_key is not None else b""
     info = b"MeshtasticStyleSessionKey"
     return hkdf_sha256(ikm, salt=salt, info=info, length=32)
+
 
 
 class PeerState:
@@ -557,14 +562,17 @@ def _derive_session_key_for_decrypt(
 ) -> bytes:
     shared1 = crypto_scalarmult(bytes(my_identity_priv), bytes(their_ephemeral_pub))
     shared2 = crypto_scalarmult(bytes(my_prekey_priv), bytes(their_ephemeral_pub))
+    shared3 = crypto_scalarmult(bytes(my_prekey_priv), bytes(their_identity_pub))
 
     _assert_nonzero(shared1)
     _assert_nonzero(shared2)
+    _assert_nonzero(shared3)
 
-    ikm = shared1 + shared2
+    ikm = shared1 + shared2 + shared3
     salt = channel_key if channel_key is not None else b""
     info = b"MeshtasticStyleSessionKey"
     return hkdf_sha256(ikm, salt=salt, info=info, length=32)
+
 
 
 def decrypt_message(

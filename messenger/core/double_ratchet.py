@@ -64,15 +64,17 @@ def dh(priv: PrivateKey, pub: PublicKey) -> bytes:
 
 @dataclass
 class IdentityKeyPair:
-    """X25519 identity keypair."""
+    """X25519 identity keypair and companion Ed25519 signing identity."""
 
     public: PublicKey
     private: PrivateKey
+    signing: SigningKey
 
     @staticmethod
     def generate() -> "IdentityKeyPair":
         priv = PrivateKey.generate()
-        return IdentityKeyPair(public=priv.public_key, private=priv)
+        signing = SigningKey.generate()
+        return IdentityKeyPair(public=priv.public_key, private=priv, signing=signing)
 
 
 @dataclass
@@ -80,20 +82,15 @@ class PreKeyBundle:
     """Represents a published pre-key bundle similar to Signal."""
 
     identity_pub: PublicKey
+    identity_verify_pub: VerifyKey
     signed_prekey_pub: PublicKey
     signed_prekey_sig: bytes
     one_time_prekey_pub: Optional[PublicKey] = None
 
-    def verify_signature(self, identity_pub: PublicKey) -> None:
-        """Verify the signature on the signed pre-key.
+    def verify_signature(self) -> None:
+        """Verify the signature on the signed pre-key using the verify key."""
+        self.identity_verify_pub.verify(bytes(self.signed_prekey_pub), self.signed_prekey_sig)
 
-        Note: For demonstration, we derive an Ed25519 verify key from the
-        X25519 bytes in a deterministic way so the public identity value is
-        sufficient for verification.
-        """
-        signing_key = SigningKey(bytes(identity_pub))
-        verify_key = signing_key.verify_key
-        verify_key.verify(bytes(self.signed_prekey_pub), self.signed_prekey_sig)
 
 
 @dataclass
@@ -168,14 +165,8 @@ def safety_number(local_identity_pub: PublicKey, remote_identity_pub: PublicKey)
     return f"{num:060d}"
 
 
-def _sign_prekey(identity_priv: PrivateKey, prekey_pub: PublicKey) -> bytes:
-    """Sign the pre-key using a deterministic Ed25519 key.
-
-    We derive an Ed25519 signing key from the public portion of the identity
-    key. This keeps the example self-contained while allowing recipients to
-    verify the signature using only the published identity public key.
-    """
-    signing_key = SigningKey(bytes(identity_priv.public_key))
+def _sign_prekey(signing_key: SigningKey, prekey_pub: PublicKey) -> bytes:
+    """Sign the pre-key using the companion Ed25519 signing key."""
     return signing_key.sign(bytes(prekey_pub)).signature
 
 
@@ -185,7 +176,8 @@ def initialize_session_from_prekey(
     local_ephemeral: IdentityKeyPair,
 ) -> SessionState:
     """Initialize a session as the initiator using the remote pre-key bundle."""
-    remote_prekey.verify_signature(remote_prekey.identity_pub)
+    remote_prekey.verify_signature()
+
 
     dh1 = dh(local_identity.private, remote_prekey.signed_prekey_pub)
     dh2 = dh(local_ephemeral.private, remote_prekey.identity_pub)
@@ -324,9 +316,10 @@ if __name__ == "__main__":
     # Bob publishes pre-key bundle
     bob_signed_prekey = PrivateKey.generate()
     bob_one_time_prekey = PrivateKey.generate()
-    signature = _sign_prekey(bob_id.private, bob_signed_prekey.public_key)
+    signature = _sign_prekey(bob_id.signing, bob_signed_prekey.public_key)
     bob_bundle = PreKeyBundle(
         identity_pub=bob_id.public,
+        identity_verify_pub=bob_id.signing.verify_key,
         signed_prekey_pub=bob_signed_prekey.public_key,
         signed_prekey_sig=signature,
         one_time_prekey_pub=bob_one_time_prekey.public_key,
@@ -335,6 +328,7 @@ if __name__ == "__main__":
     # Alice initializes using Bob's bundle
     alice_ephemeral = IdentityKeyPair.generate()
     alice_session = initialize_session_from_prekey(alice_id, bob_bundle, alice_ephemeral)
+
 
     # Bob responds to Alice
     bob_session = respond_to_prekey_init(
