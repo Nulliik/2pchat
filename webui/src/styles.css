@@ -1,0 +1,67 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f2f6ff;
+}
+
+.app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #0682cc;
+  color: #fff;
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+}
+
+.chip {
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-weight: bold;
+}
+
+.online { background: #23b26b; }
+.offline { background: #d35d50; }
+
+.settings form {
+  margin-top: 0.8rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.settings input,
+.settings select,
+.composer input {
+  padding: 0.45rem;
+}
+
+.chatlog {
+  background: white;
+  border-radius: 10px;
+  margin-top: 0.8rem;
+  min-height: 280px;
+  padding: 0.8rem;
+}
+
+.composer {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+
+.composer input {
+  flex: 1;
+}
+
+.destination {
+  margin-left: 0.6rem;
+  font-size: 0.85rem;
+  opacity: 0.95;
+}

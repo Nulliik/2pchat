@@ -1,0 +1,59 @@
+name: Kivy Desktop Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r messenger/requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Build app
+        env:
+          KIVY_GL_BACKEND: mock
+          KIVY_WINDOW: mock
+        run: python -m PyInstaller --noconfirm --clean --log-level INFO messenger_kivy.spec
+
+      - name: Ad-hoc sign macOS app bundle
+        if: runner.os == 'macOS'
+        run: codesign --force --deep --sign - dist/2PChat.app
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 2pchat-${{ runner.os }}
+          path: dist/2PChat
+
+      - name: Archive output (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent dist/2PChat.app dist/2PChat-macos.zip
+
+      - name: Upload artifact (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: 2pchat-${{ runner.os }}
+          path: dist/2PChat-macos.zip
