@@ -6,11 +6,16 @@ from pathlib import Path
 import pytest
 
 from messenger.app.gui_controller import ChatController
+from messenger.core.discovery_base import PeerDescriptor, PeerEndpoint
 from messenger.core.crypto import encrypt_file_in_chunks
 from messenger.core.identity import Outbox
 
 
 class FakeSession:
+    peer_fingerprint = "peer-fp"
+    trust_warning = None
+    their_pub = None
+
     def __init__(self):
         self.sent = []
         self.recv_queue: asyncio.Queue = asyncio.Queue()
@@ -18,7 +23,11 @@ class FakeSession:
 
     @classmethod
     async def create(cls, _reader=None, _writer=None, _initiator=None, **_kwargs):
-        return cls()
+        session = cls()
+        session.peer_fingerprint = cls.peer_fingerprint
+        session.trust_warning = cls.trust_warning
+        session.their_pub = cls.their_pub
+        return session
 
     async def send_chat(self, body: str, nickname: str | None = None):
         self.sent.append({"body": body, "nickname": nickname})
@@ -50,6 +59,26 @@ async def _fake_connect(_transport, _host, _port, **_options):
 
 async def _fake_listen(_transport, _host, _port, **_options):
     yield None, None
+
+
+class FakeDiscoveryProvider:
+    def __init__(self, descriptors):
+        self.descriptors = descriptors
+        self.announces = []
+        self.resolves = []
+        self.withdraws = []
+
+    async def announce(self, nickname, shared_code, *, transport, endpoints):
+        self.announces.append((nickname, shared_code, transport, endpoints))
+        return self.descriptors[0]
+
+    async def resolve(self, nickname, shared_code, *, expected_fingerprint=None):
+        self.resolves.append((nickname, shared_code, expected_fingerprint))
+        return list(self.descriptors)
+
+    async def withdraw(self, nickname, shared_code):
+        self.withdraws.append((nickname, shared_code))
+        return None
 
 
 @pytest.mark.asyncio
@@ -243,6 +272,7 @@ async def test_rendezvous_keeps_dial_for_non_loopback_target():
     finally:
         controller.close()
 
+
 def test_controller_stores_identity_and_trust_next_to_script(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
@@ -255,5 +285,404 @@ def test_controller_stores_identity_and_trust_next_to_script(tmp_path, monkeypat
         assert (tmp_path / "identity.key").exists()
         assert controller._trust_store.path == tmp_path / "trust.json"
         assert controller._outbox.path == tmp_path / "outbox.json"
+    finally:
+        controller.close()
+
+
+@pytest.mark.asyncio
+async def test_controller_connects_via_discovery(tmp_path):
+    statuses = []
+    discovery = FakeDiscoveryProvider(
+        [
+            PeerDescriptor(
+                version=1,
+                nickname="alice",
+                identity_fingerprint=None,
+                signing_public_key=None,
+                transport="direct",
+                endpoints=(PeerEndpoint(host="198.51.100.10", port=5555),),
+                expires_at=9999999999,
+                sequence=1,
+                nonce="x",
+                signature=None,
+            )
+        ]
+    )
+    connect_calls = []
+
+    async def _counting_connect(_transport, host, port, **_options):
+        connect_calls.append((host, port))
+        return None, None
+
+    def _discovery_factory(_scheme, **_options):
+        return discovery
+
+    controller = ChatController(
+        on_status=statuses.append,
+        transport_connector=_counting_connect,
+        transport_listener=_fake_listen,
+        discovery_factory=_discovery_factory,
+        session_factory=FakeSession.create,
+    )
+
+    try:
+        controller.discover_and_connect(
+            "alice",
+            "secret",
+            "udp-tracker",
+            discovery_role="connect",
+            transport="direct",
+            port=5555,
+            bind="0.0.0.0",
+            discovery_options={"tracker_url": "udp://tracker.example:80/announce"},
+        )
+        assert await wait_for_predicate(lambda: controller.session is not None)
+        assert not discovery.announces
+        assert discovery.resolves
+        assert connect_calls == [("198.51.100.10", 5555)]
+        assert await wait_for_predicate(
+            lambda: any("via discovery" in status for status in statuses)
+        )
+        assert any(
+            "Discovery peer 1; nickname=alice; transport=direct; endpoints=198.51.100.10:5555"
+            in status
+            for status in statuses
+        )
+    finally:
+        controller.close()
+
+
+@pytest.mark.asyncio
+async def test_controller_discovery_skips_own_announcement():
+    statuses = []
+    discovery = FakeDiscoveryProvider(
+        [
+            PeerDescriptor(
+                version=1,
+                nickname="alice",
+                identity_fingerprint="self-fp",
+                signing_public_key=None,
+                transport="direct",
+                endpoints=(PeerEndpoint(host="127.0.0.1", port=5555),),
+                expires_at=9999999999,
+                sequence=1,
+                nonce="x",
+                signature=None,
+            ),
+            PeerDescriptor(
+                version=1,
+                nickname="alice",
+                identity_fingerprint="peer-fp",
+                signing_public_key=None,
+                transport="direct",
+                endpoints=(PeerEndpoint(host="198.51.100.10", port=5555),),
+                expires_at=9999999999,
+                sequence=2,
+                nonce="y",
+                signature=None,
+            ),
+        ]
+    )
+    connect_calls = []
+
+    async def _counting_connect(_transport, host, port, **_options):
+        connect_calls.append((host, port))
+        return None, None
+
+    def _discovery_factory(_scheme, **_options):
+        return discovery
+
+    controller = ChatController(
+        on_status=statuses.append,
+        transport_connector=_counting_connect,
+        transport_listener=_fake_listen,
+        discovery_factory=_discovery_factory,
+        session_factory=FakeSession.create,
+    )
+    controller.local_fingerprint = lambda encoding="base64": "self-fp"
+
+    try:
+        controller.discover_and_connect(
+            "alice",
+            "secret",
+            "mainline-dht",
+            discovery_role="connect",
+            transport="direct",
+            port=5555,
+            bind="127.0.0.1",
+            discovery_options={},
+        )
+        assert await wait_for_predicate(lambda: controller.session is not None)
+        assert connect_calls == [("198.51.100.10", 5555)]
+        assert await wait_for_predicate(
+            lambda: any("trying connect" in status for status in statuses)
+        )
+        assert any(
+            "Discovery peer 1; nickname=alice; transport=direct; "
+            "endpoints=198.51.100.10:5555; fingerprint=peer-fp"
+            in status
+            for status in statuses
+        )
+    finally:
+        controller.close()
+
+
+@pytest.mark.asyncio
+async def test_controller_reports_discovery_candidate_failures():
+    statuses = []
+    discovery = FakeDiscoveryProvider(
+        [
+            PeerDescriptor(
+                version=1,
+                nickname="alice",
+                identity_fingerprint="peer-1",
+                signing_public_key=None,
+                transport="direct",
+                endpoints=(PeerEndpoint(host="198.51.100.10", port=5555),),
+                expires_at=9999999999,
+                sequence=1,
+                nonce="x",
+                signature=None,
+            ),
+            PeerDescriptor(
+                version=1,
+                nickname="alice",
+                identity_fingerprint="peer-2",
+                signing_public_key=None,
+                transport="direct",
+                endpoints=(PeerEndpoint(host="198.51.100.11", port=5556),),
+                expires_at=9999999999,
+                sequence=2,
+                nonce="y",
+                signature=None,
+            ),
+        ]
+    )
+
+    async def _failing_connect(_transport, host, port, **_options):
+        raise ConnectionError(f"dial to {host}:{port} refused")
+
+    def _discovery_factory(_scheme, **_options):
+        return discovery
+
+    controller = ChatController(
+        on_status=statuses.append,
+        transport_connector=_failing_connect,
+        transport_listener=_fake_listen,
+        discovery_factory=_discovery_factory,
+        session_factory=FakeSession.create,
+    )
+
+    try:
+        future = controller.discover_and_connect(
+            "alice",
+            "secret",
+            "udp-tracker",
+            discovery_role="connect",
+            transport="direct",
+            port=5555,
+            bind="0.0.0.0",
+            discovery_options={"tracker_url": "udp://tracker.example:80/announce"},
+        )
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                "Discovery found peers but connect failed: "
+                "198.51.100.10:5555 -> dial to 198.51.100.10:5555 refused; "
+                "198.51.100.11:5556 -> dial to 198.51.100.11:5556 refused"
+            ),
+        ):
+            future.result(timeout=2)
+        assert any("Discovery peer 1; nickname=alice" in status for status in statuses)
+        assert any("Discovery peer 2; nickname=alice" in status for status in statuses)
+    finally:
+        controller.close()
+
+
+@pytest.mark.asyncio
+async def test_controller_connect_contact_prefers_cached_route_and_updates_contact():
+    statuses = []
+    contact_updates = []
+    discovery = FakeDiscoveryProvider(
+        [
+            PeerDescriptor(
+                version=1,
+                nickname="alice",
+                identity_fingerprint="peer-fp",
+                signing_public_key=None,
+                transport="direct",
+                endpoints=(PeerEndpoint(host="198.51.100.50", port=6666),),
+                expires_at=9999999999,
+                sequence=1,
+                nonce="x",
+                signature=None,
+            )
+        ]
+    )
+    connect_calls = []
+
+    async def _counting_connect(_transport, host, port, **_options):
+        connect_calls.append((host, port))
+        return None, None
+
+    def _discovery_factory(_scheme, **_options):
+        return discovery
+
+    controller = ChatController(
+        on_status=statuses.append,
+        on_contact_update=contact_updates.append,
+        transport_connector=_counting_connect,
+        transport_listener=_fake_listen,
+        discovery_factory=_discovery_factory,
+        session_factory=FakeSession.create,
+    )
+
+    contact = {
+        "label": "Alice",
+        "discovery_nickname": "alice",
+        "discovery_key": "secret",
+        "identity_fingerprint": "peer-fp",
+        "last_known_host": "203.0.113.10",
+        "last_known_port": "5555",
+        "transport": "direct",
+        "port": "4444",
+        "tracker_preset": "Open Stealth UDP",
+        "discovery_scheme": "udp-tracker",
+    }
+
+    try:
+        controller.connect_contact(
+            contact,
+            bind="0.0.0.0",
+            discovery_scheme="udp-tracker",
+            transport="direct",
+            port=4444,
+            discovery_options={"tracker_url": "udp://tracker.example:80/announce"},
+        )
+        assert await wait_for_predicate(lambda: controller.session is not None, timeout=2.0)
+        assert connect_calls == [("203.0.113.10", 5555)]
+        assert discovery.announces
+        assert discovery.resolves == [("alice", "secret", "peer-fp")]
+        assert contact_updates
+        latest = contact_updates[-1]
+        assert latest["identity_fingerprint"] == "peer-fp"
+        assert latest["last_known_host"] == "203.0.113.10"
+        assert latest["last_known_port"] == "5555"
+        assert latest["last_known_transport"] == "direct"
+        assert any("Trying last known route" in status for status in statuses)
+    finally:
+        controller.disconnect()
+        assert discovery.withdraws == [("alice", "secret")]
+        controller.close()
+
+
+@pytest.mark.asyncio
+async def test_controller_connect_contact_falls_back_to_rendezvous():
+    statuses = []
+    discovery = FakeDiscoveryProvider(
+        [
+            PeerDescriptor(
+                version=1,
+                nickname="alice",
+                identity_fingerprint=None,
+                signing_public_key=None,
+                transport="direct",
+                endpoints=(PeerEndpoint(host="198.51.100.77", port=5555),),
+                expires_at=9999999999,
+                sequence=1,
+                nonce="x",
+                signature=None,
+            )
+        ]
+    )
+    connect_attempts = {"count": 0}
+
+    async def _failing_connect(_transport, _host, _port, **_options):
+        connect_attempts["count"] += 1
+        raise ConnectionError("dial failed")
+
+    async def _listen_peer(_transport, _host, _port, **_options):
+        await asyncio.sleep(0.01)
+        yield "peer-reader", "peer-writer"
+
+    def _discovery_factory(_scheme, **_options):
+        return discovery
+
+    controller = ChatController(
+        on_status=statuses.append,
+        transport_connector=_failing_connect,
+        transport_listener=_listen_peer,
+        discovery_factory=_discovery_factory,
+        session_factory=FakeSession.create,
+    )
+
+    contact = {
+        "label": "Alice",
+        "discovery_nickname": "alice",
+        "discovery_key": "secret",
+        "transport": "direct",
+        "port": "4444",
+        "tracker_preset": "Open Stealth UDP",
+        "discovery_scheme": "udp-tracker",
+    }
+
+    try:
+        controller.connect_contact(
+            contact,
+            bind="0.0.0.0",
+            discovery_scheme="udp-tracker",
+            transport="direct",
+            port=4444,
+            discovery_options={"tracker_url": "udp://tracker.example:80/announce"},
+        )
+        assert await wait_for_predicate(lambda: controller.session is not None, timeout=2.0)
+        assert connect_attempts["count"] >= 2
+        assert any("switching to rendezvous behavior" in status for status in statuses)
+        assert any("Rendezvous established" in status for status in statuses)
+    finally:
+        controller.close()
+
+
+@pytest.mark.asyncio
+async def test_controller_rendezvous_skips_self_connection_and_accepts_peer():
+    statuses = []
+
+    async def _dial_self(_transport, _host, _port, **_options):
+        await asyncio.sleep(0.01)
+        return "dial-self-reader", "dial-self-writer"
+
+    async def _listen_peer(_transport, _host, _port, **_options):
+        await asyncio.sleep(0.02)
+        yield "peer-reader", "peer-writer"
+
+    async def _session_factory(reader, _writer, _initiator, **_kwargs):
+        session = FakeSession()
+        if reader == "dial-self-reader":
+            session.peer_fingerprint = "self-fp"
+        else:
+            session.peer_fingerprint = "peer-fp"
+        return session
+
+    controller = ChatController(
+        on_status=statuses.append,
+        transport_connector=_dial_self,
+        transport_listener=_listen_peer,
+        session_factory=_session_factory,
+    )
+    controller.local_fingerprint = lambda encoding="base64": "self-fp"
+
+    try:
+        controller.rendezvous("198.51.100.10", 5555, "direct", "0.0.0.0")
+        assert await wait_for_predicate(
+            lambda: controller.session is not None
+            and getattr(controller.session, "peer_fingerprint", None) == "peer-fp",
+            timeout=2.0,
+        )
+        assert await wait_for_predicate(
+            lambda: any("Ignored self-connection candidate" in status for status in statuses)
+        )
+        assert await wait_for_predicate(
+            lambda: any("Rendezvous established" in status for status in statuses)
+        )
     finally:
         controller.close()

@@ -15,6 +15,9 @@ except Exception:  # noqa: BLE001
     uvloop = None
 
 from messenger.core.crypto import decrypt_file_chunks
+from messenger.core.discovery_base import PeerEndpoint
+from messenger.core.discovery_manager import get_discovery_provider
+from messenger.core.discovery_naming import generate_discovery_key, generate_discovery_name
 from messenger.core.identity import (
     Outbox,
     TrustStore,
@@ -32,6 +35,7 @@ from messenger.core.transport_manager import (
     connect as transport_connect,
     listen as transport_listen,
 )
+from messenger.core.tracker_catalog import get_tracker_by_name, tracker_names
 from messenger.utils.qr import render_qr_ascii, save_qr_png
 from messenger.utils.logger import setup_logger
 from nacl.encoding import Base64Encoder
@@ -132,6 +136,7 @@ def _configure_logging(verbose: bool) -> None:
 
 
 TRANSPORT_CHOICES = ["direct", "ygg", "ygg-embedded"]
+DISCOVERY_CHOICES = ["mainline-dht", "udp-tracker", "http-tracker"]
 
 
 def _decode_fp_bytes(value: str) -> bytes:
@@ -156,7 +161,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Encrypted P2P chat")
     parser.add_argument(
         "--command",
-        choices=["chat", "show-identity", "export-identity", "verify-identity"],
+        choices=[
+            "chat",
+            "show-identity",
+            "export-identity",
+            "verify-identity",
+            "generate-discovery",
+        ],
         default="chat",
         help="Run chat (default) or identity verification helpers",
     )
@@ -167,6 +178,34 @@ def build_parser() -> argparse.ArgumentParser:
         "--rendezvous",
         dest="rendezvous",
         help="Attempt simultaneous dial+listen to this host (direct-style workflows)",
+    )
+    parser.add_argument(
+        "--discover-nickname",
+        help="Resolve a peer using discovery by nickname instead of host/IP",
+    )
+    parser.add_argument(
+        "--discover-key",
+        help="Shared discovery key used together with --discover-nickname",
+    )
+    parser.add_argument(
+        "--discovery-scheme",
+        choices=DISCOVERY_CHOICES,
+        help="Discovery backend to use (defaults to the selected tracker preset)",
+    )
+    parser.add_argument(
+        "--tracker-preset",
+        default=tracker_names()[0],
+        choices=tracker_names(),
+        help="Tracker preset used for tracker-backed discovery providers",
+    )
+    parser.add_argument(
+        "--tracker-url",
+        help="Override tracker announce URL for tracker-backed discovery providers",
+    )
+    parser.add_argument(
+        "--discover-bind",
+        default="0.0.0.0",
+        help="Local address announced for discovery flows (default: 0.0.0.0)",
     )
     parser.add_argument("--port", type=int, required=True, help="Port to connect/listen")
     parser.add_argument("--transport", choices=TRANSPORT_CHOICES, default="direct")
@@ -251,6 +290,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Raw peer fingerprint (hex/Base64) for verify-identity if not using --payload",
     )
     parser.add_argument(
+        "--discovery-seed",
+        help="Optional nickname/label to turn into a suggested discovery name",
+    )
+    parser.add_argument(
         "--user-label",
         help="Optional label/nickname to embed in exported identity payloads",
     )
@@ -270,6 +313,32 @@ def _collect_transport_options(args: argparse.Namespace) -> dict:
         "config_path": args.yggdrasil_config,
         "public_peers": args.yggdrasil_peer,
     }
+
+
+def _infer_tracker_discovery_scheme(url: str) -> str:
+    if url.startswith("udp://"):
+        return "udp-tracker"
+    if url.startswith("http://") or url.startswith("https://"):
+        return "http-tracker"
+    raise ValueError("Could not infer discovery scheme from tracker URL")
+
+
+def _collect_discovery_config(args: argparse.Namespace) -> tuple[str, dict]:
+    if not args.discover_nickname:
+        raise ValueError("Discovery config requested without --discover-nickname")
+    if not args.discover_key:
+        raise ValueError("--discover-key is required with --discover-nickname")
+
+    if args.discovery_scheme == "mainline-dht":
+        return "mainline-dht", {}
+
+    if args.tracker_url:
+        scheme = args.discovery_scheme or _infer_tracker_discovery_scheme(args.tracker_url)
+        return scheme, {"tracker_url": args.tracker_url}
+
+    tracker = get_tracker_by_name(args.tracker_preset)
+    scheme = args.discovery_scheme or tracker.discovery_scheme
+    return scheme, {"tracker_url": tracker.announce_url}
 
 
 def _show_identity(args: argparse.Namespace) -> None:
@@ -341,6 +410,12 @@ def _verify_identity_command(args: argparse.Namespace) -> int:
     return 2
 
 
+def _generate_discovery_command(args: argparse.Namespace) -> None:
+    print(f"Discovery name: {generate_discovery_name(args.discovery_seed)}")
+    print(f"Discovery key:  {generate_discovery_key()}")
+    print("Share both values with your peer and use the same pair on both sides.")
+
+
 async def _handle_input(queue: asyncio.Queue, stop_event: asyncio.Event) -> None:
     """Read user input without relying on proactor read pipes (Windows-safe)."""
 
@@ -385,7 +460,8 @@ async def _flush_outbox(session: Session, outbox: Outbox) -> None:
         target_fp = pending.get("peer_fp")
         if not target_fp:
             logger.warning(
-                "Skipping queued message %s without peer fingerprint; reconnect to the original peer and resend",
+                "Skipping queued message %s without peer fingerprint; "
+                "reconnect to the original peer and resend",
                 pending.get("id"),
             )
             continue
@@ -427,6 +503,64 @@ async def _establish_session(
     transport_options: dict,
     existing_listener=None,
 ):
+    if args.discover_nickname:
+        discovery_scheme, discovery_options = _collect_discovery_config(args)
+        provider = get_discovery_provider(
+            discovery_scheme,
+            peer_port=args.port,
+            transport=args.transport,
+            **discovery_options,
+        )
+        logger.info(
+            "Discovery mode: announcing %s via %s and resolving peers",
+            args.discover_nickname,
+            discovery_scheme,
+        )
+        await provider.announce(
+            args.discover_nickname,
+            args.discover_key,
+            transport=args.transport,
+            endpoints=[PeerEndpoint(host=args.discover_bind, port=args.port)],
+        )
+        descriptors = await provider.resolve(
+            args.discover_nickname,
+            args.discover_key,
+            expected_fingerprint=args.expect_fingerprint,
+        )
+        if not descriptors:
+            raise RuntimeError("Discovery found no active peers for that nickname and key")
+
+        last_error: Optional[Exception] = None
+        for descriptor in descriptors:
+            for endpoint in descriptor.endpoints:
+                try:
+                    reader, writer = await transport_connect(
+                        args.transport, endpoint.host, endpoint.port, **transport_options
+                    )
+                    session = await Session.create(
+                        reader,
+                        writer,
+                        initiator=True,
+                        identity_priv=identity_priv,
+                        trust_store=trust_store,
+                        expected_fingerprint=args.expect_fingerprint,
+                        ack_timeout=args.ack_timeout,
+                        max_retries=args.max_retries,
+                        backoff_factor=args.ack_backoff,
+                        peer_label=args.peer_label,
+                    )
+                    logger.info(
+                        "Discovery connected to %s:%s over %s (peer %s, trust %s)",
+                        endpoint.host,
+                        endpoint.port,
+                        args.transport,
+                        session.peer_fingerprint,
+                        session.trust_status or "unknown",
+                    )
+                    return session, None
+                except Exception as exc:  # noqa: BLE001
+                    last_error = exc
+        raise RuntimeError(f"Discovery found peers but connect failed: {last_error}")
     if args.connect:
         reader, writer = await transport_connect(
             args.transport, args.connect, args.port, **transport_options
@@ -551,10 +685,17 @@ async def run(args) -> None:
             code = _verify_identity_command(args)
             if code:
                 raise SystemExit(code)
+        elif args.command == "generate-discovery":
+            _generate_discovery_command(args)
         return
 
-    if not any([args.listen, args.connect, args.rendezvous]):
-        raise SystemExit("Specify --listen, --connect, or --rendezvous for chat mode")
+    if bool(args.discover_nickname) != bool(args.discover_key):
+        raise SystemExit("Use --discover-nickname and --discover-key together")
+
+    if not any([args.listen, args.connect, args.rendezvous, args.discover_nickname]):
+        raise SystemExit(
+            "Specify --listen, --connect, --rendezvous, or --discover-nickname for chat mode"
+        )
 
     session: Optional[Session] = None
     transport_options = _collect_transport_options(args)
