@@ -661,6 +661,10 @@ class ChatController:
                 expected_fingerprint=expected_fingerprint,
             )
         )
+        # Let the resolve coroutine start before a fast cached-route success
+        # returns from this method; the contact flow is intended to resolve in
+        # parallel with the direct dial attempt.
+        await asyncio.sleep(0)
         attempted_direct = []
         last_error = None
         last_endpoint = self._contact_last_endpoint(normalized_contact)

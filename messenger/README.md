@@ -197,6 +197,15 @@ messenger/
   tests/
 ```
 
+## External client integration
+
+For native clients such as an Android/Kotlin app, use these repository
+artifacts as the current source of truth:
+
+- Protocol spec: [../docs/PROTOCOL.md](../docs/PROTOCOL.md)
+- Android integration guide: [../docs/ANDROID_INTEGRATION.md](../docs/ANDROID_INTEGRATION.md)
+- Golden vectors: `messenger/tests/fixtures/protocol_vectors.json`
+
 ## Adding new transports
 
 Create a class that implements `connect` and `listen` in `messenger/core/transport_base.py`.
