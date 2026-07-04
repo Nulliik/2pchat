@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Inner icon inset to sit centered in the safe zone -->
+    <group
+        android:translateX="3"
+        android:translateY="3"
+        android:scaleX="0.75"
+        android:scaleY="0.75">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zm1.55,13.75c-1.4,-0.4 -1.88,-0.7 -1.88,-1.28 0,-0.67 0.7,-1.07 1.63,-1.07 1,0 1.38,0.45 1.42,1.1h1.75c-0.06,-1.37 -0.92,-2.38 -2.47,-2.75V8h-2v1.73c-1.54,0.34 -2.52,1.37 -2.52,2.67 0,1.76 1.46,2.5 3.52,2.99 1.55,0.37 1.83,0.84 1.83,1.4 0,0.52 -0.52,1.02 -1.63,1.02 -1.16,0 -1.62,-0.51 -1.74,-1.18h-1.75c0.07,1.57 1.12,2.47 2.62,2.75V20h2v-1.73c1.55,-0.3 2.52,-1.25 2.52,-2.67 0,-1.79 -1.05,-2.42 -3.13,-2.85z"/>
+    </group>
+</vector>
