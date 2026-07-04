@@ -1,9 +1,7 @@
 # 2PChat Protocol
 
 This document describes the current on-the-wire behavior of the Python
-reference implementation. It is intended to help external clients, including
-the Android/Kotlin implementation, interoperate without having to reverse
-engineer the Python source.
+reference implementation.
 
 ## Scope
 
@@ -11,20 +9,19 @@ The protocol has four layers:
 
 1. Transport: a bidirectional byte stream such as TCP.
 2. Framing: 4-byte big-endian length prefix + frame payload.
-3. Session handshake: signed JSON handshake exchanged before encrypted chat.
+3. Session bootstrap: signed handshake exchanged before encrypted chat.
 4. Encrypted message payloads: JSON or CBOR payloads wrapped in a versioned
    encrypted packet.
 
-Discovery is intentionally separate from the message/session protocol. Android
-integration can start with direct `connect` / `listen` and add discovery later.
+Discovery is intentionally separate from the message/session protocol.
 
 ## Wire Versions
 
 - Frame header versioning: none; the frame length is always 4-byte big-endian.
-- Handshake payload version: `2`.
-- Encrypted message packet version byte: `1`.
-- Application message schema version: currently unversioned. The `type` field
-  is the primary discriminator.
+- Current handshake version: `3`.
+- Legacy handshake version: `2`.
+- Current encrypted packet version byte: `2` for Double Ratchet packets.
+- Legacy encrypted packet version byte: `1`.
 
 ## Framing
 
@@ -43,17 +40,141 @@ The frame payload is:
 Each peer has two long-lived identities:
 
 1. X25519 identity key
-   Used for session key derivation and the user-visible fingerprint.
+   Used for peer identity and user-visible fingerprint.
 2. Ed25519 signing key
-   Used only to sign the handshake payload.
+   Used to authenticate the signed prekey and handshake transcript.
 
 The default fingerprint format is the Base64-encoded X25519 public key.
 
-## Handshake
+## Current Session Bootstrap: Handshake Version 3
 
-The handshake payload is plain JSON encoded as UTF-8 with compact separators.
+The current protocol uses a live, serverless X3DH-style bootstrap:
 
-Example shape:
+- both peers are online
+- the initiator sends an identity bundle plus a bootstrap ephemeral key
+- the responder replies with its identity bundle
+- both sides derive an initial root key from 3 DH computations
+- message traffic immediately switches to Double Ratchet packets
+
+### Initiator payload
+
+```json
+{
+  "type": "handshake",
+  "version": 3,
+  "role": "init",
+  "identityPub": "<base64 X25519 identity public key>",
+  "verifyPub": "<base64 Ed25519 verify key>",
+  "signedPrekeyPub": "<base64 X25519 signed prekey public key>",
+  "prekeySignature": "<base64 Ed25519 signature over signedPrekeyPub>",
+  "signature": "<base64 Ed25519 signature over the full v3 transcript>",
+  "ephPub": "<base64 X25519 bootstrap ephemeral public key>"
+}
+```
+
+### Responder payload
+
+```json
+{
+  "type": "handshake",
+  "version": 3,
+  "role": "reply",
+  "identityPub": "<base64 X25519 identity public key>",
+  "verifyPub": "<base64 Ed25519 verify key>",
+  "signedPrekeyPub": "<base64 X25519 signed prekey public key>",
+  "prekeySignature": "<base64 Ed25519 signature over signedPrekeyPub>",
+  "signature": "<base64 Ed25519 signature over the full v3 transcript>"
+}
+```
+
+### Signed prekey signature
+
+`prekeySignature` is Ed25519 over:
+
+```text
+SIGNED_PREKEY_CONTEXT || signedPrekeyPub_raw
+```
+
+Where `SIGNED_PREKEY_CONTEXT` is ASCII:
+
+```text
+p2p-chat-signed-prekey-v1
+```
+
+### Transcript signature
+
+`signature` is Ed25519 over:
+
+```text
+X3DH_HANDSHAKE_CONTEXT || role || identityPub_raw || verifyPub_raw || signedPrekeyPub_raw || ephPub_raw
+```
+
+Where:
+
+- `X3DH_HANDSHAKE_CONTEXT` is ASCII `p2p-chat-x3dh-handshake-v1`
+- `role` is ASCII `init` or `reply`
+- `ephPub_raw` is empty for the responder reply
+
+## Current X3DH-Style Key Agreement
+
+The version 3 bootstrap uses 3 DH computations:
+
+1. `DH(initiator_identity_priv, responder_signed_prekey_pub)`
+2. `DH(initiator_ephemeral_priv, responder_identity_pub)`
+3. `DH(initiator_ephemeral_priv, responder_signed_prekey_pub)`
+
+The shared input key material is:
+
+```text
+dh1 || dh2 || dh3
+```
+
+Then HKDF-SHA256 derives 96 bytes with:
+
+- `salt = b""`
+- `info = b"X3DH-INIT"`
+
+Those 96 bytes are split into:
+
+1. initial root key
+2. initiator send chain / responder receive chain
+3. initiator receive chain / responder send chain
+
+## Current Encrypted Packet Format: Version 2
+
+After the v3 bootstrap, application messages are wrapped in a Double Ratchet
+packet:
+
+1. `version` - 1 byte, currently `0x02`
+2. `flags` - 1 byte
+3. `header`
+4. `ciphertext`
+
+### Header
+
+Current header layout:
+
+1. `dh_pub` - 32 bytes X25519 ratchet public key
+2. `message_index` - 4-byte unsigned big-endian index inside the current send chain
+
+If `flags & 0x01 != 0`, the header is encrypted with a header key derived from
+the current root key. In the current Python implementation, header obfuscation
+exists but is disabled by default.
+
+### Ciphertext
+
+The ciphertext is NaCl `SecretBox` output:
+
+- 24-byte nonce
+- MAC
+- encrypted serialized application message
+
+Each message key is derived from the current send or receive chain key, and
+each chain key is advanced after use.
+
+## Legacy Compatibility: Handshake Version 2
+
+Legacy peers still use the older signed handshake:
 
 ```json
 {
@@ -66,78 +187,34 @@ Example shape:
 }
 ```
 
-### Important note on naming
+Important historical quirk:
 
-The current field name `ephPub` is historical. In the Python implementation it
-actually contains the long-lived X25519 identity public key, not a throwaway
-ephemeral key. External clients must follow the current behavior for
-compatibility.
+- `ephPub` in v2 is actually the long-lived X25519 identity public key, not a
+  throwaway ephemeral key.
 
-### Signature input
-
-The signature is Ed25519 over:
+The v2 signature input is:
 
 ```text
 HANDSHAKE_CONTEXT || ephPub_raw || prekeyPub_raw || identityPub_raw
 ```
 
-Where:
-
-- `HANDSHAKE_CONTEXT` is the ASCII bytes `p2p-chat-handshake-v1`
-- the three `*_raw` values are the decoded binary public key bytes
-
-### Handshake order
-
-- Initiator:
-  1. send handshake
-  2. receive peer handshake
-- Responder:
-  1. receive handshake
-  2. send handshake
-
-The session is established only after both handshakes validate.
-
-## Session Key Derivation
-
-Encrypted packets use a per-message ephemeral X25519 keypair and HKDF-SHA256.
-
-For encryption, the sender derives three shared secrets:
-
-1. `DH(sender_identity_priv, receiver_identity_pub)` via sender ephemeral key
-   path in code
-2. `DH(sender_ephemeral_priv, receiver_prekey_pub)`
-3. `DH(sender_identity_priv, receiver_prekey_pub)`
-
-The resulting input key material is:
+Where `HANDSHAKE_CONTEXT` is ASCII:
 
 ```text
-shared1 || shared2 || shared3
+p2p-chat-handshake-v1
 ```
 
-Then HKDF-SHA256 is applied with:
+## Legacy Compatibility: Packet Version 1
 
-- `salt = b""` unless a channel key is explicitly supplied
-- `info = b"MeshtasticStyleSessionKey"`
-- output length `32`
+Legacy encrypted packets use:
 
-The receiver mirrors this derivation using its identity private key and prekey
-private key.
-
-## Encrypted Packet Format
-
-After the handshake, each application payload is wrapped as:
-
-1. `version` - 1 byte, currently `0x01`
-2. `counter` - 8-byte unsigned big-endian monotonic send counter
+1. `version` - 1 byte, `0x01`
+2. `counter` - 8-byte unsigned big-endian
 3. `ephemeral_pub` - 32 bytes X25519 ephemeral public key
-4. `ciphertext` - NaCl `SecretBox` output, which already includes the 24-byte nonce
+4. `ciphertext` - NaCl `SecretBox` output
 
-The plaintext encrypted by `SecretBox` is the serialized application message.
-
-Replay protection:
-
-- each peer tracks the highest received counter
-- packets with `counter <= highest_seen` are rejected as replay
+This is still supported when talking to a legacy initiator or when explicitly
+forcing protocol version 2.
 
 ## Application Message Encoding
 
@@ -163,8 +240,6 @@ The following message types are currently used:
 - `file_chunk`
 
 ### Common fields
-
-These fields may appear depending on the message type:
 
 - `type` - required discriminator string
 - `id` - reliable message identifier
@@ -198,8 +273,6 @@ These fields may appear depending on the message type:
 `ack` messages do not currently carry their own `id`.
 
 ### `status`
-
-Currently used mainly for offline notification:
 
 ```json
 {
@@ -254,8 +327,10 @@ Reference vectors live in:
 These vectors include:
 
 - deterministic identity and fingerprint values
-- an exact signed handshake payload
+- exact legacy and current handshake payloads
 - JSON and CBOR encodings of a chat message
-- a deterministic encrypted packet fixture
+- a deterministic legacy packet fixture
+- a deterministic first Double Ratchet packet fixture
 
-Android/Kotlin code should use those vectors as the first compatibility target.
+External clients should target version 3 first, and only add version 2 as a
+legacy compatibility mode if needed.

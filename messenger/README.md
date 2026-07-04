@@ -120,11 +120,10 @@ self-contained for users who do not already run Yggdrasil as a service.
   (TOFU with a nudge). Social mappings stay local—there is no published directory
   of IDs.
 * A companion Ed25519 signing identity is stored at
-  `~/.2pchat/identity_signing.key`. During the handshake each side signs the
-  tuple `(context || ephemeral X25519 pub || Ed25519 pub)` with that key, and the
-  peer verifies the signature before accepting the session. This binds the
-  ephemeral session secret to a stable identity key and blocks first-contact
-  MITM by requiring signed handshakes that bind ephemeral and long-term identity keys.
+  `~/.2pchat/identity_signing.key`. In the current protocol (`v3`) each side
+  publishes a signed prekey and signs the full X3DH bootstrap transcript before
+  the session switches to Double Ratchet message encryption. Legacy `v2`
+  sessions still use the older signed handshake format for compatibility.
 * Channel passwords use a **memory-hard KDF** (Argon2id by default, scrypt
   fallback if Argon2 is unavailable) with 64MiB+ memory cost. Legacy PBKDF2 is
   no longer accepted for new derivations—rotate old channels to gain GPU/ASIC
@@ -164,12 +163,11 @@ Typical flow when you and a friend want to chat:
 You can reuse `--peer-label` any time you connect to the same friend; if the
 fingerprint ever changes you will be prompted to re-verify instead of silently
 accepting a new identity.
-* Public keys are exchanged in plaintext at connection start. The shared secret
-  derived via Diffie-Hellman seeds a `SecretBox` for symmetric encryption
-  (24-byte nonce, encrypted frames). JSON payloads are encrypted end-to-end;
-  only length prefixes remain visible. The Double Ratchet packets obfuscate
-  their headers (DH key + counter) under a header key derived from the root
-  secret so packets carry no persistent identifiers on the wire.
+* Public keys are exchanged in plaintext at connection start. In the current
+  protocol, a live X3DH-style bootstrap derives the initial root key and then
+  Double Ratchet takes over for message encryption. Legacy peers still use the
+  older per-message ephemeral packet format. JSON payloads are encrypted
+  end-to-end; only length prefixes remain visible.
 * Reliability: each chat frame carries an ID, is acknowledged by the receiver,
   and will be retried with a tunable backoff (`--ack-timeout`, `--ack-backoff`,
   `--max-retries`) before the sender surfaces a timeout. If a message still
@@ -204,6 +202,7 @@ artifacts as the current source of truth:
 
 - Protocol spec: [../docs/PROTOCOL.md](../docs/PROTOCOL.md)
 - Android integration guide: [../docs/ANDROID_INTEGRATION.md](../docs/ANDROID_INTEGRATION.md)
+- P2P Signal adaptation notes: [../docs/P2P_SIGNAL_ADAPTATION.md](../docs/P2P_SIGNAL_ADAPTATION.md)
 - Golden vectors: `messenger/tests/fixtures/protocol_vectors.json`
 
 ## Adding new transports

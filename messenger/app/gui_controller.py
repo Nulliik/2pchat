@@ -80,6 +80,7 @@ class ChatController:
         trust_store: Optional[TrustStore] = None,
         log_level: int = logging.INFO,
         downloads_dir: Optional[Path] = None,
+        protocol_version: int = 3,
     ) -> None:
         self._on_message = on_message
         self._on_status = on_status
@@ -103,6 +104,7 @@ class ChatController:
             str(app_dir / IDENTITY_FILENAME)
         )
         self._trust_store = trust_store or TrustStore(str(app_dir / TRUST_FILENAME))
+        self._protocol_version = protocol_version
 
         self.set_log_level(log_level)
 
@@ -447,6 +449,7 @@ class ChatController:
             identity_priv=self._identity_priv,
             trust_store=self._trust_store,
             expected_fingerprint=expected_fingerprint,
+            protocol_version=self._protocol_version,
         )
         peer_fp = getattr(session, "peer_fingerprint", None)
         local_fp = self.local_fingerprint()

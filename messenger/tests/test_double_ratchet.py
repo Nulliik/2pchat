@@ -1,4 +1,5 @@
 from messenger.core.double_ratchet import (
+    PACKET_VERSION,
     HEADER_FLAG_OBFUSCATED,
     IdentityKeyPair,
     PreKeyBundle,
@@ -94,7 +95,7 @@ def test_header_obfuscation_hides_dh_key():
     packet = encrypt_message(alice_session, b"secret")
 
     # version + flags
-    assert packet[0] == 1
+    assert packet[0] == PACKET_VERSION
     assert packet[1] & HEADER_FLAG_OBFUSCATED
 
     # The DH public key bytes should not appear at the expected plaintext offset
@@ -109,4 +110,3 @@ def test_header_obfuscation_hides_dh_key():
         initiator_ephemeral_pub=eph.public,
     )
     assert decrypt_message(bob_session, packet) == b"secret"
-

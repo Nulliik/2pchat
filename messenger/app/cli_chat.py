@@ -234,6 +234,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, required=True, help="Port to connect/listen")
     parser.add_argument("--transport", choices=TRANSPORT_CHOICES, default="direct")
     parser.add_argument(
+        "--protocol-version",
+        type=int,
+        choices=[2, 3],
+        default=3,
+        help="Session protocol version to initiate (default: 3, X3DH + Double Ratchet)",
+    )
+    parser.add_argument(
         "--identity",
         help="Path to persistent identity key (default: ~/.2pchat/identity.key)",
     )
@@ -581,6 +588,7 @@ async def _establish_session(
     existing_listener=None,
     existing_provider=None,
 ):
+    protocol_version = getattr(args, "protocol_version", 3)
     if args.discover_nickname and args.discover_listen:
         discovery_scheme, discovery_options = _collect_discovery_config(args)
         provider = existing_provider or get_discovery_provider(
@@ -613,6 +621,7 @@ async def _establish_session(
             identity_priv=identity_priv,
             trust_store=trust_store,
             expected_fingerprint=args.expect_fingerprint,
+            protocol_version=protocol_version,
             ack_timeout=args.ack_timeout,
             max_retries=args.max_retries,
             backoff_factor=args.ack_backoff,
@@ -666,6 +675,7 @@ async def _establish_session(
                         identity_priv=identity_priv,
                         trust_store=trust_store,
                         expected_fingerprint=args.expect_fingerprint,
+                        protocol_version=protocol_version,
                         ack_timeout=args.ack_timeout,
                         max_retries=args.max_retries,
                         backoff_factor=args.ack_backoff,
@@ -694,6 +704,7 @@ async def _establish_session(
             identity_priv=identity_priv,
             trust_store=trust_store,
             expected_fingerprint=args.expect_fingerprint,
+            protocol_version=protocol_version,
             ack_timeout=args.ack_timeout,
             max_retries=args.max_retries,
             backoff_factor=args.ack_backoff,
@@ -752,6 +763,7 @@ async def _establish_session(
             identity_priv=identity_priv,
             trust_store=trust_store,
             expected_fingerprint=args.expect_fingerprint,
+            protocol_version=protocol_version,
             ack_timeout=args.ack_timeout,
             max_retries=args.max_retries,
             backoff_factor=args.ack_backoff,
@@ -781,6 +793,7 @@ async def _establish_session(
             identity_priv=identity_priv,
             trust_store=trust_store,
             expected_fingerprint=args.expect_fingerprint,
+            protocol_version=protocol_version,
             ack_timeout=args.ack_timeout,
             max_retries=args.max_retries,
             backoff_factor=args.ack_backoff,

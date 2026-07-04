@@ -20,9 +20,11 @@ from nacl.utils import random as nacl_random
 
 
 HASH_LEN = hashlib.sha256().digest_size
+PACKET_VERSION = 2
 HEADER_FLAG_OBFUSCATED = 0x01
 PLAIN_HEADER_LEN = 32 + 4  # dh public + message index
 OBFUSCATED_HEADER_LEN = SecretBox.NONCE_SIZE + PLAIN_HEADER_LEN + SecretBox.MACBYTES
+SIGNED_PREKEY_CONTEXT = b"p2p-chat-signed-prekey-v1"
 
 
 def hkdf_sha256(input_key_material: bytes, salt: bytes = b"", info: bytes = b"", length: int = 32) -> bytes:
@@ -89,7 +91,10 @@ class PreKeyBundle:
 
     def verify_signature(self) -> None:
         """Verify the signature on the signed pre-key using the verify key."""
-        self.identity_verify_pub.verify(bytes(self.signed_prekey_pub), self.signed_prekey_sig)
+        self.identity_verify_pub.verify(
+            SIGNED_PREKEY_CONTEXT + bytes(self.signed_prekey_pub),
+            self.signed_prekey_sig,
+        )
 
 
 
@@ -109,7 +114,8 @@ class SessionState:
     previous_recv_idx: int = 0
     skipped_message_keys: Dict[Tuple[bytes, int], bytes] = field(default_factory=dict)
     max_skip: int = 2000
-    obfuscate_header: bool = True
+    obfuscate_header: bool = False
+    pending_send_ratchet: bool = False
 
     def ratchet_step(self, new_remote_dh_pub: PublicKey) -> None:
         """Perform the DH ratchet when a new remote public key is seen."""
@@ -128,6 +134,20 @@ class SessionState:
         self.previous_recv_idx = self.recv_idx
         self.recv_idx = 0
         self.send_idx = 0
+        self.pending_send_ratchet = False
+
+    def prime_send_ratchet(self) -> None:
+        """Start a fresh sending chain once the peer's first ratchet key is known."""
+        if not self.pending_send_ratchet:
+            return
+        if self.dh_recv_key_pub is None:
+            raise ValueError("remote ratchet key missing")
+        self.dh_send_key = PrivateKey.generate()
+        dh_out = dh(self.dh_send_key, self.dh_recv_key_pub)
+        rk_ck = hkdf_sha256(self.root_key + dh_out, salt=b"", info=b"DH-RATCHET", length=64)
+        self.root_key, self.send_chain_key = rk_ck[:32], rk_ck[32:64]
+        self.send_idx = 0
+        self.pending_send_ratchet = False
 
     def derive_message_key(self, direction: str) -> bytes:
         """Derive and rotate a message key for send/recv direction."""
@@ -167,7 +187,7 @@ def safety_number(local_identity_pub: PublicKey, remote_identity_pub: PublicKey)
 
 def _sign_prekey(signing_key: SigningKey, prekey_pub: PublicKey) -> bytes:
     """Sign the pre-key using the companion Ed25519 signing key."""
-    return signing_key.sign(bytes(prekey_pub)).signature
+    return signing_key.sign(SIGNED_PREKEY_CONTEXT + bytes(prekey_pub)).signature
 
 
 def initialize_session_from_prekey(
@@ -193,8 +213,8 @@ def initialize_session_from_prekey(
         root_key=root_key,
         send_chain_key=send_chain_key,
         recv_chain_key=recv_chain_key,
-        dh_send_key=PrivateKey.generate(),
-        dh_recv_key_pub=None,
+        dh_send_key=local_ephemeral.private,
+        dh_recv_key_pub=remote_prekey.signed_prekey_pub,
         identity_local=local_identity,
         identity_remote=remote_prekey.identity_pub,
     )
@@ -222,15 +242,17 @@ def respond_to_prekey_init(
         root_key=root_key,
         send_chain_key=send_chain_key,
         recv_chain_key=recv_chain_key,
-        dh_send_key=PrivateKey.generate(),
-        dh_recv_key_pub=None,
+        dh_send_key=signed_prekey,
+        dh_recv_key_pub=initiator_ephemeral_pub,
         identity_local=local_identity,
         identity_remote=initiator_identity_pub,
+        pending_send_ratchet=True,
     )
 
 
 def encrypt_message(session: SessionState, plaintext: bytes) -> bytes:
     """Encrypt a message with the current send ratchet state."""
+    session.prime_send_ratchet()
     msg_index = session.send_idx
     message_key = session.derive_message_key("send")
     nonce = nacl_random(SecretBox.NONCE_SIZE)
@@ -250,7 +272,7 @@ def encrypt_message(session: SessionState, plaintext: bytes) -> bytes:
     else:
         header = header_plain
 
-    packet = b"".join([bytes([1]), bytes([flags]), header, ciphertext])
+    packet = b"".join([bytes([PACKET_VERSION]), bytes([flags]), header, ciphertext])
     return packet
 
 
@@ -267,7 +289,7 @@ def decrypt_message(session: SessionState, packet: bytes) -> bytes:
     if len(packet) < 1 + 1 + PLAIN_HEADER_LEN:
         raise ValueError("packet too short")
     version = packet[0]
-    if version != 1:
+    if version != PACKET_VERSION:
         raise ValueError("unsupported version")
 
     flags = packet[1]
@@ -293,9 +315,7 @@ def decrypt_message(session: SessionState, packet: bytes) -> bytes:
         box = SecretBox(skipped_key)
         return box.decrypt(ciphertext)
 
-    if session.dh_recv_key_pub is None:
-        session.dh_recv_key_pub = remote_dh_pub
-    elif bytes(remote_dh_pub) != bytes(session.dh_recv_key_pub):
+    if session.dh_recv_key_pub is None or bytes(remote_dh_pub) != bytes(session.dh_recv_key_pub):
         session.ratchet_step(remote_dh_pub)
 
     if msg_index < session.recv_idx:
