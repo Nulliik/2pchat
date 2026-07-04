@@ -43,6 +43,13 @@ from nacl.encoding import Base64Encoder
 logger = setup_logger("messenger.cli")
 
 
+def _configure_event_loop_policy() -> None:
+    """Prefer the selector loop on Windows for UDP sock_sendto support."""
+
+    if sys.platform.startswith("win") and hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
 class FileReceiver:
     """Minimal file assembly helper for CLI sessions.
 
@@ -206,6 +213,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--discover-bind",
         default="0.0.0.0",
         help="Local address announced for discovery flows (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--discover-listen",
+        action="store_true",
+        help=(
+            "Server mode for discovery: keep announcing/refreshing presence and "
+            "listen for inbound peer connections"
+        ),
     )
     parser.add_argument("--port", type=int, required=True, help="Port to connect/listen")
     parser.add_argument("--transport", choices=TRANSPORT_CHOICES, default="direct")
@@ -496,16 +511,114 @@ async def _send_loop(
         outbox.mark_sent(pending["id"])
 
 
+async def _discovery_presence_loop(
+    provider,
+    *,
+    nickname: str,
+    shared_code: str,
+    transport: str,
+    bind: str,
+    port: int,
+    stop_event: asyncio.Event,
+) -> None:
+    endpoint = PeerEndpoint(host=bind, port=port)
+    withdraw_needed = False
+    try:
+        while not stop_event.is_set():
+            descriptor = await provider.announce(
+                nickname,
+                shared_code,
+                transport=transport,
+                endpoints=[endpoint],
+            )
+            withdraw_needed = True
+            ttl = max(
+                15,
+                int(
+                    descriptor.expires_at
+                    - datetime.now(timezone.utc).timestamp()
+                ),
+            )
+            refresh_in = max(15, ttl // 2)
+            logger.info(
+                "Discovery presence refreshed for %s; endpoint=%s:%s expires=%s "
+                "(next refresh in about %ss)",
+                nickname,
+                bind,
+                port,
+                datetime.fromtimestamp(
+                    descriptor.expires_at,
+                    timezone.utc,
+                ).strftime("%Y-%m-%d %H:%M:%SZ"),
+                refresh_in,
+            )
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=refresh_in)
+            except asyncio.TimeoutError:
+                continue
+    except asyncio.CancelledError:
+        raise
+    finally:
+        if withdraw_needed:
+            with contextlib.suppress(Exception):
+                await provider.withdraw(nickname, shared_code)
+
+
 async def _establish_session(
     args: argparse.Namespace,
     identity_priv,
     trust_store: TrustStore,
     transport_options: dict,
     existing_listener=None,
+    existing_provider=None,
 ):
+    if args.discover_nickname and args.discover_listen:
+        discovery_scheme, discovery_options = _collect_discovery_config(args)
+        provider = existing_provider or get_discovery_provider(
+            discovery_scheme,
+            peer_port=args.port,
+            transport=args.transport,
+            **discovery_options,
+        )
+        listener_host = args.listen or args.discover_bind
+        listener = existing_listener or transport_listen(
+            args.transport,
+            listener_host,
+            args.port,
+            **transport_options,
+        )
+        if not existing_listener:
+            logger.info(
+                "Discovery listen mode: %s announced via %s, listening on %s:%s over %s",
+                args.discover_nickname,
+                discovery_scheme,
+                listener_host,
+                args.port,
+                args.transport,
+            )
+        reader, writer = await listener.__anext__()
+        session = await Session.create(
+            reader,
+            writer,
+            initiator=False,
+            identity_priv=identity_priv,
+            trust_store=trust_store,
+            expected_fingerprint=args.expect_fingerprint,
+            ack_timeout=args.ack_timeout,
+            max_retries=args.max_retries,
+            backoff_factor=args.ack_backoff,
+            peer_label=args.peer_label,
+        )
+        logger.info(
+            "Discovery listener accepted peer (fingerprint %s, trust %s)",
+            session.peer_fingerprint,
+            session.trust_status or "unknown",
+        )
+        return session, listener, provider
+
     if args.discover_nickname:
         discovery_scheme, discovery_options = _collect_discovery_config(args)
-        provider = get_discovery_provider(
+        provider = existing_provider or get_discovery_provider(
             discovery_scheme,
             peer_port=args.port,
             transport=args.transport,
@@ -557,7 +670,7 @@ async def _establish_session(
                         session.peer_fingerprint,
                         session.trust_status or "unknown",
                     )
-                    return session, None
+                    return session, None, provider
                 except Exception as exc:  # noqa: BLE001
                     last_error = exc
         raise RuntimeError(f"Discovery found peers but connect failed: {last_error}")
@@ -642,7 +755,7 @@ async def _establish_session(
             session.trust_status or "unknown",
             "dialer" if initiator else "listener",
         )
-        return session, listener
+        return session, listener, None
     else:
         listener = existing_listener or transport_listen(
             args.transport, args.listen, args.port, **transport_options
@@ -669,8 +782,8 @@ async def _establish_session(
             session.peer_fingerprint,
             session.trust_status or "unknown",
         )
-        return session, listener
-    return session, None
+        return session, listener, None
+    return session, None, None
 
 
 async def run(args) -> None:
@@ -692,6 +805,9 @@ async def run(args) -> None:
     if bool(args.discover_nickname) != bool(args.discover_key):
         raise SystemExit("Use --discover-nickname and --discover-key together")
 
+    if args.discover_listen and not args.discover_nickname:
+        raise SystemExit("--discover-listen requires --discover-nickname and --discover-key")
+
     if not any([args.listen, args.connect, args.rendezvous, args.discover_nickname]):
         raise SystemExit(
             "Specify --listen, --connect, --rendezvous, or --discover-nickname for chat mode"
@@ -712,6 +828,8 @@ async def run(args) -> None:
     stop_event = asyncio.Event()
 
     listener = None
+    provider = None
+    presence_task: Optional[asyncio.Task] = None
 
     input_task = asyncio.create_task(_handle_input(user_queue, stop_event))
 
@@ -726,11 +844,36 @@ async def run(args) -> None:
 
     backoff = 1.0
     try:
+        if args.discover_nickname and args.discover_listen:
+            discovery_scheme, discovery_options = _collect_discovery_config(args)
+            provider = get_discovery_provider(
+                discovery_scheme,
+                peer_port=args.port,
+                transport=args.transport,
+                **discovery_options,
+            )
+            presence_task = asyncio.create_task(
+                _discovery_presence_loop(
+                    provider,
+                    nickname=args.discover_nickname,
+                    shared_code=args.discover_key,
+                    transport=args.transport,
+                    bind=args.discover_bind,
+                    port=args.port,
+                    stop_event=stop_event,
+                )
+            )
+
         while not stop_event.is_set():
             tasks: list[asyncio.Task] = []
             try:
-                session, listener = await _establish_session(
-                    args, identity_priv, trust_store, transport_options, listener
+                session, listener, provider = await _establish_session(
+                    args,
+                    identity_priv,
+                    trust_store,
+                    transport_options,
+                    listener,
+                    provider,
                 )
                 backoff = 1.0
                 if session.trust_warning:
@@ -771,6 +914,10 @@ async def run(args) -> None:
         input_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await input_task
+        if presence_task:
+            presence_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await presence_task
         if session:
             await session.close()
         if listener:
@@ -779,6 +926,7 @@ async def run(args) -> None:
 
 
 if __name__ == "__main__":
+    _configure_event_loop_policy()
     parser = build_parser()
     args = parser.parse_args()
     runner = uvloop.run if uvloop is not None else asyncio.run

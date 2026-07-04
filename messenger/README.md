@@ -22,6 +22,31 @@ python -m messenger.app.cli_chat --listen 0.0.0.0 --port 4444 --transport direct
 python -m messenger.app.cli_chat --connect 127.0.0.1 --port 4444 --transport direct
 ```
 
+### Discovery server mode for a VPS
+
+If you want a VPS to stay online, publish itself through a tracker, and wait
+for inbound peer connections, run the CLI in discovery listen mode. The first
+launch will automatically create `~/.2pchat/identity.key` if you do not
+already have one:
+
+```bash
+python -m messenger.app.cli_chat \
+  --discover-nickname my-vps-contact \
+  --discover-key change-this-shared-key \
+  --discover-listen \
+  --discover-bind YOUR_PUBLIC_VPS_IP \
+  --listen 0.0.0.0 \
+  --tracker-preset "Torrent.eu.org UDP" \
+  --port 4444 \
+  --transport direct
+```
+
+This mode:
+
+* keeps a background discovery `announce` alive and refreshes it periodically;
+* listens on the provided port for incoming encrypted sessions;
+* withdraws the published tracker record when the process stops cleanly.
+
 ### Connect using Yggdrasil IPv6
 
 ```bash

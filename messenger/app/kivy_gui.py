@@ -828,7 +828,6 @@ class ChatLayout(BoxLayout):
         )
 
     def _apply_contact_settings(self, contact: Dict[str, str]) -> None:
-        self.settings["mode"] = "discover"
         self.settings["transport"] = contact.get("transport", TRANSPORT_CHOICES[0])
         self.settings["port"] = contact.get("port", self.settings.get("port", "4444"))
         self.settings["discovery_scheme"] = contact.get(

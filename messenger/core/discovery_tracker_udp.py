@@ -123,7 +123,7 @@ class UdpTrackerDiscovery(DiscoveryProvider):
         if sock is not None:
             if sockaddr is None:
                 raise ValueError("sockaddr is required when reusing a tracker socket")
-            await loop.sock_sendto(sock, packet, sockaddr)
+            sock.sendto(packet, sockaddr)
             return await asyncio.wait_for(
                 loop.sock_recv(sock, 4096),
                 timeout=self._timeout,
@@ -136,7 +136,7 @@ class UdpTrackerDiscovery(DiscoveryProvider):
                 sock = socket.socket(family, socktype, proto)
                 sock.setblocking(False)
                 try:
-                    await loop.sock_sendto(sock, packet, sockaddr)
+                    sock.sendto(packet, sockaddr)
                     data = await asyncio.wait_for(
                         loop.sock_recv(sock, 4096),
                         timeout=self._timeout,
