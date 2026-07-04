@@ -272,6 +272,14 @@ class Session:
             }
         )
 
+    @staticmethod
+    def _message_ref(message: Dict[str, Any]) -> str:
+        if message.get("id") is not None:
+            return f"id={message.get('id')}"
+        if message.get("ack_id") is not None:
+            return f"ack_id={message.get('ack_id')}"
+        return "id=None"
+
     async def _send_payload(self, message: Dict[str, Any]) -> None:
         if not self.their_pub:
             raise RuntimeError("Session not established")
@@ -284,9 +292,9 @@ class Session:
             their_prekey_pub=self.their_prekey_pub,
         )
         logger.debug(
-            "Send message type=%s id=%s plain=%sB cipher=%sB",
+            "Send message type=%s %s plain=%sB cipher=%sB",
             message.get("type"),
-            message.get("id"),
+            self._message_ref(message),
             len(plaintext),
             len(ciphertext),
         )

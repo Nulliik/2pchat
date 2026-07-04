@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 
 import pytest
 
@@ -87,6 +88,20 @@ def test_cli_parser_accepts_discovery_listen_flag():
     )
 
     assert args.discover_listen is True
+
+
+def test_request_shutdown_sets_event_and_cancels_task():
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        stop_event = asyncio.Event()
+        task = loop.create_future()
+        cli_chat._request_shutdown(stop_event, task)
+        assert stop_event.is_set()
+        assert task.cancelled()
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
 
 
 @pytest.mark.asyncio

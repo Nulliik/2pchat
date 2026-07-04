@@ -50,6 +50,15 @@ def _configure_event_loop_policy() -> None:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
+def _request_shutdown(
+    stop_event: asyncio.Event,
+    main_task: Optional[asyncio.Task[Any]],
+) -> None:
+    stop_event.set()
+    if main_task and not main_task.done():
+        main_task.cancel()
+
+
 class FileReceiver:
     """Minimal file assembly helper for CLI sessions.
 
@@ -832,13 +841,15 @@ async def run(args) -> None:
     presence_task: Optional[asyncio.Task] = None
 
     input_task = asyncio.create_task(_handle_input(user_queue, stop_event))
-
-    def shutdown():
-        stop_event.set()
+    main_task = asyncio.current_task()
+    loop = asyncio.get_running_loop()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
-            asyncio.get_event_loop().add_signal_handler(sig, shutdown)
+            loop.add_signal_handler(
+                sig,
+                lambda sig=sig: _request_shutdown(stop_event, main_task),
+            )
         except NotImplementedError:
             pass
 
@@ -909,6 +920,8 @@ async def run(args) -> None:
 
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 10)
+    except asyncio.CancelledError:
+        logger.info("Shutdown requested; stopping CLI")
     finally:
         stop_event.set()
         input_task.cancel()
