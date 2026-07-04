@@ -1,4 +1,6 @@
 import asyncio
+import contextlib
+import logging
 import socket
 import threading
 import traceback
@@ -19,9 +21,13 @@ from messenger.core.transport_manager import (
     connect as transport_connect,
     listen as transport_listen,
 )
+from messenger.utils.logger import setup_logger
 
 DEFAULT_TRACKER = "Torrent.eu.org UDP"
 DEFAULT_PORT = 50001
+LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
+logger = setup_logger("messenger.android", logging.INFO)
 
 active_sessions_by_name: Dict[str, Session] = {}
 active_sessions_by_fp: Dict[str, Session] = {}
@@ -29,6 +35,7 @@ peer_fingerprint_to_name: Dict[str, str] = {}
 
 message_listener_callback = None
 session_listener_callback = None
+status_listener_callback = None
 
 loop: Optional[asyncio.AbstractEventLoop] = None
 loop_thread: Optional[threading.Thread] = None
@@ -40,6 +47,56 @@ _identity_priv = None
 _signing_key = None
 _trust_store: Optional[TrustStore] = None
 _runtime_lock = threading.Lock()
+_verbose_logging = False
+_android_status_handler = None
+
+
+class _AndroidStatusLogHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        if not status_listener_callback:
+            return
+        try:
+            message = self.format(record)
+            status_listener_callback.onStatus(message)
+        except Exception:
+            pass
+
+
+def configure_logging(verbose: bool = False) -> bool:
+    """Align Android Python logging with the CLI verbose flag behavior."""
+
+    global _verbose_logging
+    _verbose_logging = bool(verbose)
+    level = logging.DEBUG if _verbose_logging else logging.INFO
+
+    global _android_status_handler
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    if not root_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter(LOG_FORMAT))
+        root_logger.addHandler(handler)
+
+    if _android_status_handler is None:
+        _android_status_handler = _AndroidStatusLogHandler()
+        _android_status_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+        root_logger.addHandler(_android_status_handler)
+
+    for name in [
+        "messenger",
+        "messenger.android",
+        "messenger.session",
+        "messenger.crypto",
+        "messenger.cli",
+    ]:
+        setup_logger(name, level)
+
+    logger.info(
+        "Android Python verbose logging %s",
+        "enabled" if _verbose_logging else "disabled",
+    )
+    return _verbose_logging
 
 
 def _run_sync(coro):
@@ -120,8 +177,7 @@ def resolve_peers(
             )
         return results
     except Exception as exc:  # noqa: BLE001
-        print("Error resolving peers in discovery_bridge:", exc)
-        traceback.print_exc()
+        logger.exception("Error resolving peers in discovery_bridge: %s", exc)
         return []
 
 
@@ -157,8 +213,7 @@ def announce_peer(
     try:
         return bool(_run_sync(_announce()))
     except Exception as exc:  # noqa: BLE001
-        print("Error announcing peer in discovery_bridge:", exc)
-        traceback.print_exc()
+        logger.exception("Error announcing peer in discovery_bridge: %s", exc)
         return False
 
 
@@ -170,6 +225,11 @@ def register_message_listener(callback):
 def register_session_listener(callback):
     global session_listener_callback
     session_listener_callback = callback
+
+
+def register_status_listener(callback):
+    global status_listener_callback
+    status_listener_callback = callback
 
 
 def _ensure_runtime(port: int = DEFAULT_PORT) -> None:
@@ -230,14 +290,13 @@ async def _bootstrap_runtime(port: int) -> None:
 def start_p2p_listener(port: int = DEFAULT_PORT):
     try:
         _ensure_runtime(port)
-        print(f"Android Python P2P listener started on 0.0.0.0:{port}")
+        logger.info("Android Python P2P listener started on 0.0.0.0:%s", port)
     except Exception as exc:  # noqa: BLE001
-        print("Failed to start Android Python listener:", exc)
-        traceback.print_exc()
+        logger.exception("Failed to start Android Python listener: %s", exc)
 
 
 async def _listen_loop(port: int) -> None:
-    print(f"Python P2P server listening on 0.0.0.0:{port} over direct transport")
+    logger.info("Python P2P server listening on 0.0.0.0:%s over direct transport", port)
     async for reader, writer in transport_listen("direct", "0.0.0.0", port):
         asyncio.create_task(_handle_incoming(reader, writer))
 
@@ -314,12 +373,11 @@ async def _handle_incoming(reader, writer) -> None:
         peer_fp = session.peer_fingerprint or "unknown"
         peer_name = _peer_display_name(peer_fp)
         _store_session(session, peer_name, peer_fp)
-        print(f"Accepted Android P2P session from {peer_name} ({peer_fp})")
+        logger.info("Accepted Android P2P session from %s (%s)", peer_name, peer_fp)
         _notify_session_established(peer_name, peer_fp)
         await _session_loop(session, peer_name, peer_fp)
     except Exception as exc:  # noqa: BLE001
-        print("Error handling incoming Android connection:", exc)
-        traceback.print_exc()
+        logger.exception("Error handling incoming Android connection: %s", exc)
         if session is not None:
             await session.close()
 
@@ -335,24 +393,35 @@ async def _session_loop(session: Session, peer_name: str, peer_fp: str) -> None:
             if msg_type == "status" and msg.get("state") == "offline":
                 break
     except Exception as exc:  # noqa: BLE001
-        print(f"Android session loop error for {peer_name}: {exc}")
+        logger.info("Android session loop closed for %s: %s", peer_name, exc)
     finally:
         _drop_session(peer_name, peer_fp, session)
+        with contextlib.suppress(Exception):
+            await session.close()
         _notify_session_closed(peer_name)
 
 
 def send_p2p_message(peer_name: str, endpoint: str, body: str) -> bool:
+    return bool(send_p2p_message_detailed(peer_name, endpoint, body).get("ok"))
+
+
+def send_p2p_message_detailed(peer_name: str, endpoint: str, body: str) -> dict:
     try:
         _ensure_runtime(DEFAULT_PORT)
         future = asyncio.run_coroutine_threadsafe(
             _send_message_async(peer_name, endpoint, body),
             loop,
         )
-        return bool(future.result(timeout=20))
+        return {
+            "ok": bool(future.result(timeout=20)),
+            "error": "",
+        }
     except Exception as exc:  # noqa: BLE001
-        print(f"Failed to send Android P2P message to {peer_name}: {exc}")
-        traceback.print_exc()
-        return False
+        logger.exception("Failed to send Android P2P message to %s: %s", peer_name, exc)
+        return {
+            "ok": False,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
 
 
 async def _send_message_async(peer_name: str, endpoint: str, body: str) -> bool:
@@ -369,7 +438,7 @@ async def _send_message_async(peer_name: str, endpoint: str, body: str) -> bool:
         )
         peer_fp = session.peer_fingerprint or "unknown"
         _store_session(session, peer_name, peer_fp)
-        print(f"Established Android P2P session to {peer_name} ({peer_fp})")
+        logger.info("Established Android P2P session to %s (%s)", peer_name, peer_fp)
         _notify_session_established(peer_name, peer_fp)
         asyncio.create_task(_session_loop(session, peer_name, peer_fp))
 

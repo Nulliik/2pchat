@@ -15,6 +15,7 @@ import android.content.Context
 import com.example.twopchat.ui.onboarding.OnboardingScreen
 import com.example.twopchat.ui.main.MainScreen
 import com.example.twopchat.ui.chat.ChatScreen
+import com.example.twopchat.ui.logs.LogsScreen
 
 @Composable
 fun MainNavigation(
@@ -67,6 +68,13 @@ fun MainNavigation(
                   isOnboardingCompleted = false
               },
               modifier = Modifier.fillMaxSize()
+            )
+          }
+          entry<Logs> {
+            LogsScreen(
+              appLanguage = appLanguage,
+              onBack = { backStack.removeLastOrNull() },
+              modifier = Modifier.fillMaxSize(),
             )
           }
           entry<Chat> { chatKey ->

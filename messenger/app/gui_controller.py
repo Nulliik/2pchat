@@ -953,7 +953,8 @@ class ChatController:
         last_error = None
         while pending and reader is None:
             done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-            for task in done:
+            ordered_done = sorted(done, key=lambda task: 0 if task is dial_task else 1)
+            for task in ordered_done:
                 if task.cancelled():
                     continue
                 if task.exception():

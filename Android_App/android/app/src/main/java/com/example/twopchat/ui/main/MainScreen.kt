@@ -88,27 +88,42 @@ fun MainScreen(
                 letterSpacing = (-0.5).sp
             )
 
-            // P2P Active Status Chip
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .background(surfaceColor, shape = RoundedCornerShape(12.dp))
-                    .border(0.5.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                Box(
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(
+                    onClick = { onItemClick(com.example.twopchat.Logs) },
                     modifier = Modifier
-                        .size(6.dp)
-                        .background(primaryColor, shape = CircleShape)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = Localizations.getString("secure_direct", appLanguage),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = primaryColor,
-                    letterSpacing = 0.5.sp
-                )
+                        .background(surfaceColor, shape = RoundedCornerShape(12.dp))
+                        .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                ) {
+                    Text(
+                        text = Localizations.getString("open_logs", appLanguage),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = onSurfaceColor,
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .background(surfaceColor, shape = RoundedCornerShape(12.dp))
+                        .border(0.5.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(primaryColor, shape = CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = Localizations.getString("secure_direct", appLanguage),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryColor,
+                        letterSpacing = 0.5.sp
+                    )
+                }
             }
         }
 
@@ -991,6 +1006,7 @@ fun SettingsTab(
     var passcodeLock by remember { mutableStateOf(sharedPrefs.getBoolean("settings_passcode", false)) }
     var wifiDiscovery by remember { mutableStateOf(sharedPrefs.getBoolean("settings_wifi", true)) }
     var yggdrasilRouting by remember { mutableStateOf(sharedPrefs.getBoolean("settings_yggdrasil", false)) }
+    var pythonVerboseLogging by remember { mutableStateOf(sharedPrefs.getBoolean("settings_python_verbose", false)) }
     var stealthDisguise by remember { mutableStateOf(sharedPrefs.getBoolean("settings_stealth_disguise", false)) }
     var showDisguiseInstructionDialog by remember { mutableStateOf(false) }
     
@@ -1494,6 +1510,38 @@ fun SettingsTab(
                         onCheckedChange = {
                             wifiDiscovery = it
                             sharedPrefs.edit().putBoolean("settings_wifi", it).apply()
+                        },
+                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                    )
+                }
+
+                Divider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(Localizations.getString("python_verbose_logging", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                        Text(Localizations.getString("python_verbose_logging_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Switch(
+                        checked = pythonVerboseLogging,
+                        onCheckedChange = {
+                            pythonVerboseLogging = it
+                            sharedPrefs.edit().putBoolean("settings_python_verbose", it).apply()
+                            PythonBridge.setVerboseLogging(it)
+                            Toast.makeText(
+                                context,
+                                if (appLanguage == "Русский") {
+                                    if (it) "Подробные Python-логи включены" else "Подробные Python-логи выключены"
+                                } else {
+                                    if (it) "Python verbose logging enabled" else "Python verbose logging disabled"
+                                },
+                                Toast.LENGTH_SHORT
+                            ).show()
                         },
                         colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
                     )

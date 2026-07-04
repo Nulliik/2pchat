@@ -65,6 +65,14 @@ object Localizations {
         "wifi_discovery_desc" to "Scan local subnet for peers",
         "yggdrasil_routing" to "Yggdrasil Routing",
         "yggdrasil_routing_desc" to "Route over IPv6 mesh network",
+        "python_verbose_logging" to "Python Verbose Logging",
+        "python_verbose_logging_desc" to "Enable DEBUG logs for discovery, session, and crypto internals",
+        "diagnostics_logs" to "Diagnostics Logs",
+        "diagnostics_logs_desc" to "Live app, Python, and network events",
+        "clear_logs" to "Clear",
+        "logs_empty" to "No logs recorded yet.",
+        "open_logs" to "Logs",
+        "network_status" to "Network status",
 
         // Passcode Translation Strings
         "set_passcode_title" to "Set Passcode",
@@ -210,6 +218,14 @@ object Localizations {
         "wifi_discovery_desc" to "Сканировать локальную сеть на наличие пиров",
         "yggdrasil_routing" to "Маршрутизация Yggdrasil",
         "yggdrasil_routing_desc" to "Шифровать и направлять пакеты через mesh IPv6",
+        "python_verbose_logging" to "Подробные Python-логи",
+        "python_verbose_logging_desc" to "Включить DEBUG-логи discovery, session и crypto",
+        "diagnostics_logs" to "Журнал диагностики",
+        "diagnostics_logs_desc" to "События приложения, Python и сети в реальном времени",
+        "clear_logs" to "Очистить",
+        "logs_empty" to "Логи пока пусты.",
+        "open_logs" to "Логи",
+        "network_status" to "Сетевой статус",
 
         // Passcode Translation Strings
         "set_passcode_title" to "Установка код-пароля",

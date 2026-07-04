@@ -58,11 +58,12 @@ class MainActivity : ComponentActivity() {
         
         // Initialize PythonBridge
         PythonBridge.init(applicationContext)
+
+        val sharedPrefs = getSharedPreferences("2pchat_prefs", MODE_PRIVATE)
+        PythonBridge.setVerboseLogging(sharedPrefs.getBoolean("settings_python_verbose", false))
         
         // Start background P2P Message Server
         P2PMessageRelay.startServer(applicationContext)
-
-        val sharedPrefs = getSharedPreferences("2pchat_prefs", MODE_PRIVATE)
 
         enableEdgeToEdge()
         

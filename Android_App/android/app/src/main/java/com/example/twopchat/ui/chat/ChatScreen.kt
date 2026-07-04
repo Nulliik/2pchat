@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.twopchat.AppDiagnostics
 import com.example.twopchat.theme.StealthBlack
 import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.delay
@@ -56,6 +57,16 @@ data class Message(
     val attachmentUri: String? = null,
     val attachmentName: String? = null
 )
+
+private fun buildSystemMessage(text: String): Message {
+    val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+    return Message(
+        id = "system-" + System.currentTimeMillis().toString(),
+        text = text,
+        isMe = false,
+        timestamp = time,
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -75,6 +86,7 @@ fun ChatScreen(
     val clipboardManager = LocalClipboardManager.current
     val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
+    val peerStatuses by AppDiagnostics.peerStatuses.collectAsState()
     var isVerified by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("verified_peer_${peerName}", false)) }
     var showVerifyDialog by remember { mutableStateOf(false) }
     var mockMismatchToggle by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("mock_mismatch_${peerName}", false)) }
@@ -129,8 +141,14 @@ fun ChatScreen(
                 }
             }
         }
+        com.example.twopchat.P2PMessageRelay.onNetworkStatusChanged = { changedPeer, status ->
+            if (changedPeer == peerName) {
+                AppDiagnostics.setPeerStatus(changedPeer, status)
+            }
+        }
         onDispose {
             com.example.twopchat.P2PMessageRelay.onMessageReceived = null
+            com.example.twopchat.P2PMessageRelay.onNetworkStatusChanged = null
         }
     }
 
@@ -138,7 +156,17 @@ fun ChatScreen(
         // Silent connection handshake ping to register ourselves on the peer's device
         val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
         if (endpoint != null) {
-            com.example.twopchat.P2PMessageRelay.sendMessage(endpoint, username, "")
+            AppDiagnostics.setPeerStatus(peerName, "Connecting to $endpoint")
+            com.example.twopchat.P2PMessageRelay.sendMessage(endpoint, username, "") { success, error ->
+                if (!success) {
+                    coroutineScope.launch {
+                        val detail = error ?: "unknown error"
+                        initialMessages.add(buildSystemMessage("P2P connection failed: $detail"))
+                    }
+                }
+            }
+        } else {
+            AppDiagnostics.setPeerStatus(peerName, "No known endpoint yet")
         }
     }
 
@@ -252,6 +280,7 @@ fun ChatScreen(
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
+    val networkStatus = peerStatuses[peerName] ?: "Idle"
 
     // Scroll to bottom when messages list size changes
     LaunchedEffect(initialMessages.size, isTyping) {
@@ -391,6 +420,29 @@ fun ChatScreen(
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         color = primaryColor
+                    )
+                }
+            }
+
+            if (peerName != "Saved Messages") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(primaryColor.copy(alpha = 0.08f))
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(primaryColor, shape = CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${Localizations.getString("network_status", appLanguage)}: $networkStatus",
+                        color = onSurfaceColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
@@ -746,7 +798,18 @@ fun ChatScreen(
                                 // Send over real TCP socket if endpoint is resolved
                                 val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
                                 if (endpoint != null) {
-                                    com.example.twopchat.P2PMessageRelay.sendMessage(endpoint, username, userText)
+                                    com.example.twopchat.P2PMessageRelay.sendMessage(endpoint, username, userText) { success, error ->
+                                        if (!success) {
+                                            coroutineScope.launch {
+                                                val detail = error ?: "unknown error"
+                                                initialMessages.add(buildSystemMessage("Message delivery failed: $detail"))
+                                                Toast.makeText(context, "P2P send failed: $detail", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    initialMessages.add(buildSystemMessage("No known endpoint for this peer"))
+                                    Toast.makeText(context, "No known endpoint for this peer", Toast.LENGTH_LONG).show()
                                 }
 
                                 // Trigger mock reply with typing delay (only for demo mockup contacts)

@@ -8,3 +8,5 @@ import kotlinx.serialization.Serializable
 @Serializable data object Main : NavKey
 
 @Serializable data class Chat(val peerName: String) : NavKey
+
+@Serializable data object Logs : NavKey

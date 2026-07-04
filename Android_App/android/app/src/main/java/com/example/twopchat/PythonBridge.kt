@@ -6,7 +6,13 @@ import com.chaquo.python.Python
 
 object PythonBridge {
     private const val TAG = "PythonBridge"
+    private const val DEFAULT_VERBOSE_LOGGING = false
     private var initialized = false
+
+    data class PySendResult(
+        val ok: Boolean,
+        val error: String?,
+    )
 
     fun init(context: Context) {
         if (initialized) return
@@ -17,6 +23,8 @@ object PythonBridge {
             val appDir = context.filesDir.absolutePath
             val os = py.getModule("os")
             os.get("environ")?.put("P2PCHAT_CONFIG_DIR", appDir)
+            val bridge = py.getModule("discovery_bridge")
+            bridge.callAttr("configure_logging", DEFAULT_VERBOSE_LOGGING)
             
             // Try loading core modules to verify
             val identity = py.getModule("messenger.core.identity")
@@ -110,6 +118,20 @@ object PythonBridge {
         }
     }
 
+    fun setVerboseLogging(enabled: Boolean): Boolean {
+        if (!initialized) return false
+        return try {
+            val py = Python.getInstance()
+            val bridge = py.getModule("discovery_bridge")
+            val result = bridge.callAttr("configure_logging", enabled).toBoolean()
+            Log.i(TAG, "Python verbose logging " + if (result) "enabled" else "disabled")
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "Error configuring Python verbose logging", e)
+            false
+        }
+    }
+
     interface PyMessageListener {
         fun onMessageReceived(sender: String, text: String)
     }
@@ -117,6 +139,10 @@ object PythonBridge {
     interface PySessionListener {
         fun onSessionEstablished(peerName: String, fingerprint: String)
         fun onSessionClosed(peerName: String)
+    }
+
+    interface PyStatusListener {
+        fun onStatus(text: String)
     }
 
     fun registerMessageListener(listener: PyMessageListener) {
@@ -141,6 +167,17 @@ object PythonBridge {
         }
     }
 
+    fun registerStatusListener(listener: PyStatusListener) {
+        if (!initialized) return
+        try {
+            val py = Python.getInstance()
+            val bridge = py.getModule("discovery_bridge")
+            bridge.callAttr("register_status_listener", listener)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error registering status listener", e)
+        }
+    }
+
     fun startP2pListener(port: Int = 50001) {
         if (!initialized) return
         try {
@@ -153,15 +190,28 @@ object PythonBridge {
     }
 
     fun sendP2pMessage(peerName: String, endpoint: String, text: String): Boolean {
-        if (!initialized) return false
+        return sendP2pMessageDetailed(peerName, endpoint, text).ok
+    }
+
+    fun sendP2pMessageDetailed(peerName: String, endpoint: String, text: String): PySendResult {
+        if (!initialized) return PySendResult(ok = false, error = "Python bridge not initialized")
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
-            val success = bridge.callAttr("send_p2p_message", peerName, endpoint, text)
-            success.toBoolean()
+            val result = bridge.callAttr("send_p2p_message_detailed", peerName, endpoint, text)
+            val map = result.asMap()
+            var ok = false
+            var error: String? = null
+            for ((keyObj, valueObj) in map.entries) {
+                when (keyObj.toString()) {
+                    "ok" -> ok = valueObj.toBoolean()
+                    "error" -> error = valueObj.toString().takeIf { it.isNotBlank() }
+                }
+            }
+            PySendResult(ok = ok, error = error)
         } catch (e: Exception) {
             Log.e(TAG, "Error sending P2P message via Python", e)
-            false
+            PySendResult(ok = false, error = e.message ?: e.javaClass.simpleName)
         }
     }
 }
