@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# 2PChat local runtime data
+2pchat_settings.json
+identity.key
+identity_signing.key
+trust.json
+outbox.json
+.2pchat_gui.pid
+Launch_2PChat_GUI.log
