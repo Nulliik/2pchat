@@ -1,6 +1,9 @@
 package com.example.twopchat.ui.chat
 
 import android.widget.Toast
+import android.content.Intent
+import android.net.VpnService
+import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -11,6 +14,7 @@ import java.io.File
 import java.io.FileOutputStream
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -80,6 +84,20 @@ fun ChatScreen(
     var showConnectionErrorDialog by remember { mutableStateOf(false) }
     var errorReasonYggdrasilDisabled by remember { mutableStateOf(true) }
     var mockMismatchToggle by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("mock_mismatch_${peerName}", false)) }
+
+    val vpnLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+        onResult = { result ->
+            if (result.resultCode == android.app.Activity.RESULT_OK) {
+                val intent = Intent(context, PacketTunnelProvider::class.java).apply {
+                    action = PacketTunnelProvider.ACTION_START
+                }
+                context.startService(intent)
+                sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+                Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    )
     val activeFingerprint = remember(peerName, mockMismatchToggle) {
         if (mockMismatchToggle) {
             "WARNING_MISMATCHED_ATTACK_KEY_999999"
@@ -169,13 +187,9 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(peerName) {
-        // Silent connection handshake ping to register ourselves on the peer's device
-        val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
-        if (endpoint != null) {
-            com.example.twopchat.P2PMessageRelay.sendMessage(endpoint, username, "")
-        }
-    }
+
+    // Session is established lazily on the first real message send — no silent ping needed.
+
 
     var inputText by remember { mutableStateOf("") }
     var isTyping by remember { mutableStateOf(false) }
@@ -256,7 +270,7 @@ fun ChatScreen(
                 }
                 val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
                 if (endpoint != null) {
-                    com.example.twopchat.P2PMessageRelay.sendFile(endpoint, tempFile.absolutePath) { success ->
+                    com.example.twopchat.P2PMessageRelay.sendFile(context, endpoint, tempFile.absolutePath) { success ->
                         if (!success) {
                             coroutineScope.launch {
                                 val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
@@ -296,7 +310,7 @@ fun ChatScreen(
                 }
                 val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
                 if (endpoint != null) {
-                    com.example.twopchat.P2PMessageRelay.sendFile(endpoint, file.absolutePath) { success ->
+                    com.example.twopchat.P2PMessageRelay.sendFile(context, endpoint, file.absolutePath) { success ->
                         if (!success) {
                             coroutineScope.launch {
                                 val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
@@ -341,7 +355,7 @@ fun ChatScreen(
                 }
                 val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
                 if (endpoint != null) {
-                    com.example.twopchat.P2PMessageRelay.sendFile(endpoint, tempFile.absolutePath) { success ->
+                    com.example.twopchat.P2PMessageRelay.sendFile(context, endpoint, tempFile.absolutePath) { success ->
                         if (!success) {
                             coroutineScope.launch {
                                 val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
@@ -540,6 +554,11 @@ fun ChatScreen(
                 contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
             ) {
                 itemsIndexed(initialMessages) { index, msg ->
+                    val visibleState = remember(msg.id) {
+                        MutableTransitionState(false).apply {
+                            targetState = true
+                        }
+                    }
                     val alignment = if (msg.isMe) Alignment.End else Alignment.Start
                     val bubbleShape = if (msg.isMe) {
                         RoundedCornerShape(20.dp, 20.dp, 4.dp, 20.dp)
@@ -566,53 +585,152 @@ fun ChatScreen(
                         if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
                     } else onSurfaceColor
 
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = alignment
+                    AnimatedVisibility(
+                        visibleState = visibleState,
+                        enter = fadeIn(animationSpec = tween(220)) + slideInVertically(
+                            initialOffsetY = { it / 5 },
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            )
+                        ),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Box(
-                            modifier = bubbleModifier
-                                .combinedClickable(
-                                    onClick = { selectedMessageForOptions = msg },
-                                    onLongClick = { selectedMessageForOptions = msg }
-                                )
-                                // Subtle border for incoming bubbles
-                                .then(if (!msg.isMe) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), bubbleShape) else Modifier)
-                                .padding(horizontal = 16.dp, vertical = 11.dp)
-                                .widthIn(max = 280.dp)
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = alignment
                         ) {
-                            when (msg.attachmentType) {
-                                "IMAGE" -> {
-                                    val bitmap = remember(msg.attachmentUri) {
-                                        if (msg.attachmentUri != null) {
-                                            try {
-                                                BitmapFactory.decodeFile(msg.attachmentUri)
-                                            } catch (e: Exception) {
-                                                null
+                            Box(
+                                modifier = bubbleModifier
+                                    .combinedClickable(
+                                        onClick = { selectedMessageForOptions = msg },
+                                        onLongClick = { selectedMessageForOptions = msg }
+                                    )
+                                    // Subtle border for incoming bubbles
+                                    .then(if (!msg.isMe) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), bubbleShape) else Modifier)
+                                    .padding(horizontal = 16.dp, vertical = 11.dp)
+                                    .widthIn(max = 280.dp)
+                            ) {
+                                when (msg.attachmentType) {
+                                    "IMAGE" -> {
+                                        val bitmap = remember(msg.attachmentUri) {
+                                            if (msg.attachmentUri != null) {
+                                                try {
+                                                    BitmapFactory.decodeFile(msg.attachmentUri)
+                                                } catch (e: Exception) {
+                                                    null
+                                                }
+                                            } else null
+                                        }
+                                        if (bitmap != null) {
+                                            Column {
+                                                Image(
+                                                    bitmap = bitmap.asImageBitmap(),
+                                                    contentDescription = "Image attachment",
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .heightIn(max = 200.dp)
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                )
+                                                if (!msg.text.startsWith("Sent an image") && !msg.text.startsWith("Captured a photo")) {
+                                                    Spacer(modifier = Modifier.height(6.dp))
+                                                    Text(
+                                                        text = msg.text,
+                                                        color = textColor,
+                                                        fontSize = 15.sp,
+                                                        lineHeight = 20.sp
+                                                    )
+                                                }
                                             }
-                                        } else null
-                                    }
-                                    if (bitmap != null) {
-                                        Column {
-                                            Image(
-                                                bitmap = bitmap.asImageBitmap(),
-                                                contentDescription = "Image attachment",
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .heightIn(max = 200.dp)
-                                                    .clip(RoundedCornerShape(8.dp))
+                                        } else {
+                                            Text(
+                                                text = msg.text,
+                                                color = textColor,
+                                                fontSize = 15.sp,
+                                                lineHeight = 20.sp
                                             )
-                                            if (!msg.text.startsWith("Sent an image") && !msg.text.startsWith("Captured a photo")) {
-                                                Spacer(modifier = Modifier.height(6.dp))
+                                        }
+                                    }
+                                    "FILE" -> {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .background(if (msg.isMe) Color.White.copy(alpha = 0.2f) else primaryColor.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp))
+                                            ) {
+                                                Icon(
+                                                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_file),
+                                                    contentDescription = "Document",
+                                                    tint = if (msg.isMe) {
+                                                        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+                                                    } else primaryColor,
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
                                                 Text(
-                                                    text = msg.text,
+                                                    text = msg.attachmentName ?: "Document.pdf",
                                                     color = textColor,
-                                                    fontSize = 15.sp,
-                                                    lineHeight = 20.sp
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "Encrypted Document",
+                                                    color = textColor.copy(alpha = 0.7f),
+                                                    fontSize = 11.sp
                                                 )
                                             }
                                         }
-                                    } else {
+                                    }
+                                    "LOCATION" -> {
+                                        Column {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_location),
+                                                    contentDescription = "Location",
+                                                    tint = if (msg.isMe) {
+                                                        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+                                                    } else primaryColor,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = msg.text,
+                                                    color = textColor,
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(100.dp)
+                                                    .background(if (msg.isMe) Color.White.copy(alpha = 0.15f) else onSurfaceColor.copy(alpha = 0.05f), shape = RoundedCornerShape(8.dp))
+                                                    .border(0.5.dp, textColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                            ) {
+                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    Text(
+                                                        text = msg.attachmentName ?: "Coordinates",
+                                                        color = textColor,
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Medium
+                                                    )
+                                                    Text(
+                                                        text = "Secure Peer Location",
+                                                        color = textColor.copy(alpha = 0.6f),
+                                                        fontSize = 10.sp
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else -> {
                                         Text(
                                             text = msg.text,
                                             color = textColor,
@@ -621,121 +739,34 @@ fun ChatScreen(
                                         )
                                     }
                                 }
-                                "FILE" -> {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier
-                                                .size(40.dp)
-                                                .background(if (msg.isMe) Color.White.copy(alpha = 0.2f) else primaryColor.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp))
-                                        ) {
-                                            Icon(
-                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_file),
-                                                contentDescription = "Document",
-                                                tint = if (msg.isMe) {
-                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
-                                                } else primaryColor,
-                                                modifier = Modifier.size(22.dp)
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column {
-                                            Text(
-                                                text = msg.attachmentName ?: "Document.pdf",
-                                                color = textColor,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                maxLines = 1,
-                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = "Encrypted Document",
-                                                color = textColor.copy(alpha = 0.7f),
-                                                fontSize = 11.sp
-                                            )
-                                        }
-                                    }
-                                }
-                                "LOCATION" -> {
-                                    Column {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_location),
-                                                contentDescription = "Location",
-                                                tint = if (msg.isMe) {
-                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
-                                                } else primaryColor,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
-                                                text = msg.text,
-                                                color = textColor,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(100.dp)
-                                                .background(if (msg.isMe) Color.White.copy(alpha = 0.15f) else onSurfaceColor.copy(alpha = 0.05f), shape = RoundedCornerShape(8.dp))
-                                                .border(0.5.dp, textColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                                        ) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text(
-                                                    text = msg.attachmentName ?: "Coordinates",
-                                                    color = textColor,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Medium
-                                                )
-                                                Text(
-                                                    text = "Secure Peer Location",
-                                                    color = textColor.copy(alpha = 0.6f),
-                                                    fontSize = 10.sp
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                                else -> {
+                            }
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 6.dp)
+                            ) {
+                                Text(
+                                    text = msg.timestamp,
+                                    color = onSurfaceVariant.copy(alpha = 0.6f),
+                                    fontSize = 10.sp
+                                )
+                                if (msg.isMe) {
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    val hasIncomingAfter = if (index < initialMessages.size - 1) {
+                                        initialMessages.subList(index + 1, initialMessages.size).any { !it.isMe }
+                                    } else false
+                                    
+                                    val isRead = hasIncomingAfter || isTyping || peerName == "Saved Messages"
+                                    val statusText = if (isRead) "✓✓" else "✓"
+                                    val statusColor = if (isRead) primaryColor else onSurfaceVariant.copy(alpha = 0.4f)
+                                    
                                     Text(
-                                        text = msg.text,
-                                        color = textColor,
-                                        fontSize = 15.sp,
-                                        lineHeight = 20.sp
+                                        text = statusText,
+                                        color = statusColor,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(3.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 6.dp)
-                        ) {
-                            Text(
-                                text = msg.timestamp,
-                                color = onSurfaceVariant.copy(alpha = 0.6f),
-                                fontSize = 10.sp
-                            )
-                            if (msg.isMe) {
-                                Spacer(modifier = Modifier.width(4.dp))
-                                val hasIncomingAfter = if (index < initialMessages.size - 1) {
-                                    initialMessages.subList(index + 1, initialMessages.size).any { !it.isMe }
-                                } else false
-                                
-                                val isRead = hasIncomingAfter || isTyping || peerName == "Saved Messages"
-                                val statusText = if (isRead) "✓✓" else "✓"
-                                val statusColor = if (isRead) primaryColor else onSurfaceVariant.copy(alpha = 0.4f)
-                                
-                                Text(
-                                    text = statusText,
-                                    color = statusColor,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
                             }
                         }
                     }
@@ -884,7 +915,7 @@ fun ChatScreen(
                                 // Send over real TCP socket if endpoint is resolved
                                 val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
                                 if (endpoint != null) {
-                                    com.example.twopchat.P2PMessageRelay.sendMessage(endpoint, username, userText) { success ->
+                                    com.example.twopchat.P2PMessageRelay.sendMessage(context, endpoint, username, userText) { success ->
                                         if (!success) {
                                             coroutineScope.launch {
                                                 val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
@@ -1223,9 +1254,18 @@ fun ChatScreen(
                         if (errorReasonYggdrasilDisabled) {
                             Button(
                                 onClick = {
-                                    sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
                                     showConnectionErrorDialog = false
-                                    Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
+                                    val vpnIntent = VpnService.prepare(context)
+                                    if (vpnIntent != null) {
+                                        vpnLauncher.launch(vpnIntent)
+                                    } else {
+                                        val intent = Intent(context, PacketTunnelProvider::class.java).apply {
+                                            action = PacketTunnelProvider.ACTION_START
+                                        }
+                                        context.startService(intent)
+                                        sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+                                        Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
+                                    }
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
                                 shape = RoundedCornerShape(12.dp),

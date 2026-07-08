@@ -75,7 +75,8 @@ class MainActivity : ComponentActivity() {
 
             var isDarkTheme by remember { mutableStateOf(sharedPrefs.getString("theme_mode", "dark") == "dark") }
             var useCerulean by remember { mutableStateOf(sharedPrefs.getBoolean("use_cerulean", false)) }
-            var appLanguage by remember { mutableStateOf(sharedPrefs.getString("settings_language", "English") ?: "English") }
+            val systemDefaultLanguage = if (java.util.Locale.getDefault().language == "ru") "Русский" else "English"
+            var appLanguage by remember { mutableStateOf(sharedPrefs.getString("settings_language", systemDefaultLanguage) ?: systemDefaultLanguage) }
             
             var isAppLocked by remember { mutableStateOf(sharedPrefs.getBoolean("settings_passcode", false)) }
             val passcodeVal = remember(isAppLocked) { sharedPrefs.getString("passcode_value", "") ?: "" }
@@ -137,18 +138,53 @@ class MainActivity : ComponentActivity() {
                             onSurfaceColor = MaterialTheme.colorScheme.onSurface,
                             correctPasscode = passcodeVal,
                             duressPasscode = duressPinVal,
-                            onUnlock = {
-                                isAppLocked = false
-                                lastInteractionTime = System.currentTimeMillis()
-                            },
+                             onUnlock = {
+                                 isAppLocked = false
+                                 lastInteractionTime = System.currentTimeMillis()
+                             },
                              onDuressTriggered = {
+                                 // 1. Python-side session shutdown
+                                 try {
+                                     if (PythonBridge.isInitialized) {
+                                         val py = com.chaquo.python.Python.getInstance()
+                                         val bridge = py.getModule("discovery_bridge")
+                                         bridge.callAttr("shutdown_all_sessions")
+                                     }
+                                 } catch (e: Exception) {
+                                     android.util.Log.e("MainActivity", "Failed to shutdown sessions on duress", e)
+                                 }
+
+                                 // 2. Clear default shared preferences
                                  sharedPrefs.edit().clear().apply()
+
+                                 // 3. Delete all SharedPreferences XML files
+                                 try {
+                                     val sharedPrefsDir = java.io.File(filesDir.parent, "shared_prefs")
+                                     if (sharedPrefsDir.exists()) {
+                                         sharedPrefsDir.listFiles()?.forEach { it.delete() }
+                                     }
+                                 } catch (e: Exception) {
+                                     android.util.Log.e("MainActivity", "Failed to clear shared_prefs on duress", e)
+                                 }
+
+                                 // 4. Delete SQLite database files
+                                 try {
+                                     val databasesDir = java.io.File(filesDir.parent, "databases")
+                                     if (databasesDir.exists()) {
+                                         databasesDir.listFiles()?.forEach { it.deleteRecursively() }
+                                     }
+                                 } catch (e: Exception) {
+                                     android.util.Log.e("MainActivity", "Failed to clear databases on duress", e)
+                                 }
+
+                                 // 5. Delete all other files and caches
                                  try {
                                      filesDir.listFiles()?.forEach { it.deleteRecursively() }
                                      cacheDir.listFiles()?.forEach { it.deleteRecursively() }
                                  } catch (e: Exception) {
                                      android.util.Log.e("MainActivity", "Failed to clear files on duress", e)
                                  }
+
                                  try {
                                      setAppIconAlias("MainActivityAliasDefault")
                                  } catch (e: Exception) {
@@ -158,6 +194,7 @@ class MainActivity : ComponentActivity() {
                                  useCerulean = false
                                  appLanguage = "English"
                                  isAppLocked = false
+                                 recreate()
                              }
                         )
                     } else {
@@ -256,10 +293,12 @@ fun PasscodeUnlockScreen(
     var failedAttempts by remember { mutableStateOf(0) }
     var lockoutTimeRemaining by remember { mutableStateOf(0) }
 
-    LaunchedEffect(lockoutTimeRemaining) {
+    LaunchedEffect(lockoutTimeRemaining > 0) {
         if (lockoutTimeRemaining > 0) {
-            kotlinx.coroutines.delay(1000)
-            lockoutTimeRemaining -= 1
+            while (lockoutTimeRemaining > 0) {
+                kotlinx.coroutines.delay(1000)
+                lockoutTimeRemaining -= 1
+            }
         }
     }
 

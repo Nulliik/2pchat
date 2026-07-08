@@ -63,9 +63,13 @@ class HandshakeV3:
     ephemeral_pub: Optional[PublicKey] = None
 
 
+MAX_FRAME_SIZE = 16 * 1024 * 1024  # 16 MiB
+
 async def _read_frame(reader: asyncio.StreamReader) -> bytes:
     length_data = await reader.readexactly(FRAME_HEADER)
     length = int.from_bytes(length_data, "big")
+    if length > MAX_FRAME_SIZE:
+        raise ValueError(f"Frame size {length} exceeds maximum limit of {MAX_FRAME_SIZE} bytes")
     return await reader.readexactly(length)
 
 

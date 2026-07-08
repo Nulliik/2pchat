@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -90,11 +92,22 @@ fun OnboardingScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             for (i in 1..4) {
+                val isSelected = i == currentStep
+                val indicatorWidth by animateDpAsState(
+                    targetValue = if (isSelected) 24.dp else 8.dp,
+                    animationSpec = androidx.compose.animation.core.spring(dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy),
+                    label = "width"
+                )
+                val indicatorColor by animateColorAsState(
+                    targetValue = if (isSelected) primaryColor else onSurfaceColor.copy(alpha = 0.15f),
+                    animationSpec = androidx.compose.animation.core.tween(300),
+                    label = "color"
+                )
                 Box(
                     modifier = Modifier
-                        .size(width = if (i == currentStep) 24.dp else 8.dp, height = 8.dp)
+                        .size(width = indicatorWidth, height = 8.dp)
                         .clip(CircleShape)
-                        .background(if (i == currentStep) primaryColor else onSurfaceColor.copy(alpha = 0.15f))
+                        .background(indicatorColor)
                 )
                 if (i < 4) Spacer(modifier = Modifier.width(6.dp))
             }
@@ -113,20 +126,36 @@ fun OnboardingScreen(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                when (currentStep) {
-                    1 -> WelcomeStep(appLanguage, primaryColor, onSurfaceColor)
-                    2 -> RegisterStep(
-                        nickname = nickname,
-                        onNicknameChange = { nickname = it },
-                        profileBitmap = profileBitmap,
-                        onPickPhoto = { imagePickerLauncher.launch("image/*") },
-                        appLanguage = appLanguage,
-                        primaryColor = primaryColor,
-                        surfaceColor = surfaceColor,
-                        onSurfaceColor = onSurfaceColor
-                    )
-                    3 -> VerifyStep(fingerprint, appLanguage, primaryColor, surfaceColor, onSurfaceColor)
-                    4 -> FinalizeStep(nickname, profileBitmap, appLanguage, primaryColor, onSurfaceColor)
+                AnimatedContent(
+                    targetState = currentStep,
+                    transitionSpec = {
+                        if (targetState > initialState) {
+                            (slideInHorizontally { width -> width } + fadeIn()).togetherWith(
+                                slideOutHorizontally { width -> -width } + fadeOut())
+                        } else {
+                            (slideInHorizontally { width -> -width } + fadeIn()).togetherWith(
+                                slideOutHorizontally { width -> width } + fadeOut())
+                        }.using(
+                            SizeTransform(clip = false)
+                        )
+                    },
+                    label = "step_transition"
+                ) { step ->
+                    when (step) {
+                        1 -> WelcomeStep(appLanguage, primaryColor, onSurfaceColor)
+                        2 -> RegisterStep(
+                            nickname = nickname,
+                            onNicknameChange = { nickname = it },
+                            profileBitmap = profileBitmap,
+                            onPickPhoto = { imagePickerLauncher.launch("image/*") },
+                            appLanguage = appLanguage,
+                            primaryColor = primaryColor,
+                            surfaceColor = surfaceColor,
+                            onSurfaceColor = onSurfaceColor
+                        )
+                        3 -> VerifyStep(fingerprint, appLanguage, primaryColor, surfaceColor, onSurfaceColor)
+                        4 -> FinalizeStep(nickname, profileBitmap, appLanguage, primaryColor, onSurfaceColor)
+                    }
                 }
             }
         }
@@ -197,6 +226,26 @@ fun OnboardingScreen(
 
 @Composable
 fun WelcomeStep(appLanguage: String, primaryColor: Color, onSurfaceColor: Color) {
+    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.12f,
+        targetValue = 0.28f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow"
+    )
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -210,7 +259,7 @@ fun WelcomeStep(appLanguage: String, primaryColor: Color, onSurfaceColor: Color)
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            primaryColor.copy(alpha = 0.15f),
+                            primaryColor.copy(alpha = glowAlpha),
                             Color.Transparent
                         )
                     )
@@ -219,7 +268,9 @@ fun WelcomeStep(appLanguage: String, primaryColor: Color, onSurfaceColor: Color)
             Image(
                 painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_logo_default_fg),
                 contentDescription = "2PChat Logo",
-                modifier = Modifier.size(110.dp),
+                modifier = Modifier
+                    .size(110.dp)
+                    .graphicsLayer(scaleX = pulseScale, scaleY = pulseScale),
                 colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(primaryColor)
             )
         }

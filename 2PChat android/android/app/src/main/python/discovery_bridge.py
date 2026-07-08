@@ -31,51 +31,93 @@ message_listener_callback = None
 session_listener_callback = None
 loop = None
 
+# Track which Yggdrasil listener is running
+_ygg_listener_running = False
+
 def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrackr HTTP"):
     """
-    Synchronous wrapper to resolve peers from a specific BitTorrent tracker.
+    Resolve peers from multiple trackers to maximise endpoint coverage.
+    Queries the specified HTTP tracker and the Torrent.eu.org UDP tracker
+    (which carries IPv6/Yggdrasil endpoints) and deduplicates results.
     Returns a list of dicts with nickname, fingerprint, and endpoints.
     """
+    import socket as _socket
+    import urllib.error
+
+    async def _query_async(t_name):
+        try:
+            tracker = get_tracker_by_name(t_name)
+            provider = get_discovery_provider(
+                tracker.discovery_scheme,
+                tracker_url=tracker.announce_url,
+                peer_port=50001,
+                transport="direct"
+            )
+            return await provider.resolve(nickname, shared_code)
+        except (urllib.error.URLError, OSError) as e:
+            print(f"Network error resolving peers from {t_name}: {e}")
+            return []
+        except Exception as e:
+            print(f"Error resolving peers from {t_name}: {e}")
+            return []
+
+    async def _resolve_all():
+        tasks = []
+        for t_name in [tracker_name, "Torrent.eu.org UDP", "Open Stealth UDP"]:
+            tasks.append(_query_async(t_name))
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        flat_results = []
+        for r in results:
+            if isinstance(r, list):
+                flat_results.extend(r)
+            elif isinstance(r, Exception):
+                if isinstance(r, (urllib.error.URLError, OSError)):
+                    print(f"Network error resolving peers: {r}")
+                else:
+                    print(f"Unexpected error resolving peers: {r}")
+                    traceback.print_exception(type(r), r, r.__traceback__)
+        return flat_results
+
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        
-        tracker = get_tracker_by_name(tracker_name)
-        
-        # Use http-tracker or udp-tracker scheme
-        provider = get_discovery_provider(
-            tracker.discovery_scheme,
-            tracker_url=tracker.announce_url,
-            peer_port=50001,
-            transport="direct"
-        )
-        
-        # Resolve peers
-        descriptors = loop.run_until_complete(provider.resolve(nickname, shared_code))
+        descriptors = loop.run_until_complete(_resolve_all())
         loop.close()
-        
-        results = []
-        for d in descriptors:
-            endpoints = []
-            for ep in d.endpoints:
-                endpoints.append(f"{ep.host}:{ep.port}")
-            results.append({
-                "nickname": d.nickname,
-                "fingerprint": d.identity_fingerprint or "",
-                "transport": d.transport,
-                "endpoints": endpoints
-            })
-        return results
     except Exception as e:
-        print("Error resolving peers in discovery_bridge:", e)
-        traceback.print_exc()
-        return []
+        if isinstance(e, (urllib.error.URLError, OSError)):
+            print(f"Network error in resolve_peers loop: {e}")
+        else:
+            print("Error in resolve_peers loop:", e)
+            traceback.print_exc()
+        descriptors = []
+
+    all_endpoints = []
+    seen_ep = set()
+
+    for d in descriptors:
+        for ep in d.endpoints:
+            # Format IPv6 as [addr]:port for safe rsplit parsing
+            try:
+                _socket.inet_pton(_socket.AF_INET6, ep.host)
+                ep_str = f"[{ep.host}]:{ep.port}"
+            except OSError:
+                ep_str = f"{ep.host}:{ep.port}"
+            key = ep_str
+            if key not in seen_ep:
+                seen_ep.add(key)
+                all_endpoints.append(ep_str)
+
+    if all_endpoints:
+        return [{"nickname": nickname, "fingerprint": "", "transport": "direct", "endpoints": all_endpoints}]
+    return []
 
 
 def announce_peer(nickname: str, fingerprint: str, host: str, port: int, tracker_name: str = "OpenTrackr HTTP"):
     """
     Synchronous wrapper to announce this peer on a tracker under both nickname and fingerprint.
     """
+    import urllib.error
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -88,37 +130,125 @@ def announce_peer(nickname: str, fingerprint: str, host: str, port: int, tracker
             transport="direct"
         )
         
-        # Announce 1: using nickname as shared_code
-        loop.run_until_complete(provider.announce(
-            nickname,
-            nickname,
-            transport="direct",
-            endpoints=[PeerEndpoint(host=host, port=port)]
-        ))
-        
-        # Announce 2: using fingerprint as shared_code if available
-        if fingerprint and len(fingerprint) > 10:
-            loop.run_until_complete(provider.announce(
+        async def _announce_all():
+            tasks = []
+            # Announce 1: using nickname as shared_code
+            tasks.append(provider.announce(
                 nickname,
-                fingerprint,
+                nickname,
                 transport="direct",
                 endpoints=[PeerEndpoint(host=host, port=port)]
             ))
             
-        # Announce 3: using fingerprint as both nickname and shared_code
-        if fingerprint and len(fingerprint) > 10:
-            loop.run_until_complete(provider.announce(
-                fingerprint,
-                fingerprint,
-                transport="direct",
-                endpoints=[PeerEndpoint(host=host, port=port)]
-            ))
-            
+            # Announce 2: using fingerprint as shared_code if available
+            if fingerprint and len(fingerprint) > 10:
+                tasks.append(provider.announce(
+                    nickname,
+                    fingerprint,
+                    transport="direct",
+                    endpoints=[PeerEndpoint(host=host, port=port)]
+                ))
+                
+            # Announce 3: using fingerprint as both nickname and shared_code
+            if fingerprint and len(fingerprint) > 10:
+                tasks.append(provider.announce(
+                    fingerprint,
+                    fingerprint,
+                    transport="direct",
+                    endpoints=[PeerEndpoint(host=host, port=port)]
+                ))
+                
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            success_count = 0
+            for i, res in enumerate(results):
+                if isinstance(res, Exception):
+                    if isinstance(res, (urllib.error.URLError, OSError)):
+                        print(f"Network error in announce {i+1} on {tracker_name}: {res}")
+                    else:
+                        print(f"Unexpected error in announce {i+1} on {tracker_name}: {res}")
+                        traceback.print_exception(type(res), res, res.__traceback__)
+                else:
+                    success_count += 1
+            return success_count
+
+        success_count = loop.run_until_complete(_announce_all())
         loop.close()
+        if success_count > 0:
+            print(f"Successfully announced peer endpoints on {tracker_name} ({success_count} registrations).")
         return True
     except Exception as e:
-        print("Error announcing peer in discovery_bridge:", e)
-        traceback.print_exc()
+        if isinstance(e, (urllib.error.URLError, OSError)):
+            print(f"Network error announcing peer on {tracker_name} in discovery_bridge: {e}")
+        else:
+            print("Error announcing peer in discovery_bridge:", e)
+            traceback.print_exc()
+        return False
+
+
+def announce_peer_ygg(nickname: str, fingerprint: str, ygg_host: str, port: int):
+    """
+    Announce this peer using a UDP tracker so that the IPv6/Yggdrasil
+    endpoint is included in the announce.  HTTP trackers only support
+    IPv4 compact peers, so we use a UDP tracker here which carries the
+    IPv6 address in the peer_id/extended field instead.
+
+    For the UDP tracker the endpoint is still announced; the receiver
+    calls resolve_peers which returns all announced endpoints including
+    IPv6 ones stored in the non-compact extension fields.
+    """
+    import urllib.error
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        # Use the first UDP tracker that supports IPv6 (Torrent.eu.org)
+        tracker = get_tracker_by_name("Torrent.eu.org UDP")
+        provider = get_discovery_provider(
+            tracker.discovery_scheme,
+            tracker_url=tracker.announce_url,
+            peer_port=port,
+            transport="direct",
+        )
+        
+        async def _announce_all():
+            tasks = []
+            tasks.append(provider.announce(
+                nickname,
+                nickname,
+                transport="direct",
+                endpoints=[PeerEndpoint(host=ygg_host, port=port)]
+            ))
+            if fingerprint and len(fingerprint) > 10:
+                tasks.append(provider.announce(
+                    nickname,
+                    fingerprint,
+                    transport="direct",
+                    endpoints=[PeerEndpoint(host=ygg_host, port=port)]
+                ))
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            success_count = 0
+            for i, res in enumerate(results):
+                if isinstance(res, Exception):
+                    if isinstance(res, (urllib.error.URLError, OSError)):
+                        print(f"Network error in Yggdrasil announce {i+1} on Torrent.eu.org UDP: {res}")
+                    else:
+                        print(f"Unexpected error in Yggdrasil announce {i+1} on Torrent.eu.org UDP: {res}")
+                        traceback.print_exception(type(res), res, res.__traceback__)
+                else:
+                    success_count += 1
+            return success_count
+
+        success_count = loop.run_until_complete(_announce_all())
+        loop.close()
+        if success_count > 0:
+            print(f"Announced Yggdrasil address {ygg_host}:{port} under token {nickname[:16]}... ({success_count} registrations)")
+        return True
+    except Exception as e:
+        if isinstance(e, (urllib.error.URLError, OSError)):
+            print(f"Network error announcing Yggdrasil peer in discovery_bridge: {e}")
+        else:
+            print("Error announcing Yggdrasil peer in discovery_bridge:", e)
+            traceback.print_exc()
         return False
 
 
@@ -138,36 +268,41 @@ def register_session_listener(callback):
 
 def start_p2p_listener(port=50001):
     """
-    Start the background asyncio event loop and listener thread.
+    Start the background asyncio event loop and dual-stack listener thread.
+    Listens on both 0.0.0.0 (IPv4) and :: (IPv6/Yggdrasil) simultaneously.
     """
     def run():
         global loop
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(_listen_loop(port))
+            loop.run_until_complete(_listen_loop_dual(port))
         except Exception as e:
             print("P2P listener event loop crashed:", e)
             traceback.print_exc()
-            
+
     t = threading.Thread(target=run, daemon=True)
     t.start()
-    print(f"P2P Listener background thread started on port {port}")
+    print(f"P2P Listener background thread started on port {port} (IPv4 + IPv6)")
 
-async def _listen_loop(port):
+
+async def _listen_loop_dual(port: int):
+    """Listen on all interfaces (both IPv4 and IPv6/Yggdrasil) natively."""
     identity_priv = load_or_create_identity()
     signing_key = load_or_create_signing_identity()
     trust_store = TrustStore()
-    
-    listener = transport_listen("direct", "0.0.0.0", port)
-    print(f"Python P2P Server listening on 0.0.0.0:{port} over direct transport...")
-    
+
+    print(f"Starting dual-stack P2P Server on port {port}...")
     try:
-        async for reader, writer in listener:
+        # Binding to empty string ("") binds to all available IPv4 and IPv6 interfaces natively.
+        async for reader, writer in transport_listen("direct", "", port):
             asyncio.create_task(_handle_incoming(reader, writer, identity_priv, signing_key, trust_store))
+        print(f"Python P2P Server successfully listening on dual-stack port {port} (IPv4 + IPv6/Yggdrasil)")
     except Exception as e:
-        print("Error in Python P2P Server listen loop:", e)
+        print(f"Error in dual-stack P2P Server listen loop on port {port}: {e}")
         traceback.print_exc()
+
+
 
 async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_store):
     try:
@@ -189,9 +324,12 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
         
         print(f"Accepted Double Ratchet session from {peer_name} (Fingerprint: {fp})")
         
+        peername = writer.get_extra_info('peername')
+        remote_ep = f"{peername[0]}:50001" if peername else ""
+
         if session_listener_callback:
             try:
-                session_listener_callback.onSessionEstablished(peer_name, fp)
+                session_listener_callback.onSessionEstablished(peer_name, fp, remote_ep)
             except Exception as cb_err:
                 print("Error invoking session listener callback:", cb_err)
                 
@@ -206,7 +344,30 @@ async def _read_loop(session, peer_name, fp):
         while True:
             msg = await session.receive_message()
             mtype = msg.get("type")
-            if mtype == "chat":
+            if mtype == "identity_info":
+                # Remote peer announced their real nickname — update our mappings
+                real_name = msg.get("nickname", "").strip()
+                remote_fp = msg.get("fingerprint", fp)
+                if real_name and real_name != peer_name:
+                    print(f"Peer renamed: '{peer_name}' → '{real_name}' (fp={remote_fp})")
+                    peer_fingerprint_to_name[remote_fp] = real_name
+                    peer_fingerprint_to_name[fp] = real_name
+                    # Re-register session under real name
+                    active_sessions[real_name] = session
+                    active_sessions.pop(peer_name, None)
+                    # Notify Kotlin so UI can open/rename the chat
+                    if session_listener_callback:
+                        try:
+                            peername = session.writer.get_extra_info('peername') if hasattr(session, 'writer') else None
+                            remote_ep = f"{peername[0]}:50001" if peername else ""
+                            session_listener_callback.onSessionEstablished(real_name, remote_fp, remote_ep)
+                        except Exception as cb_err:
+                            print("Error invoking session listener on identity_info:", cb_err)
+                    # Update loop variables so cleanup is correct
+                    peer_name = real_name
+                    fp = remote_fp
+                continue
+            elif mtype == "chat":
                 body = msg.get("body", "")
                 if message_listener_callback:
                     try:
@@ -305,6 +466,7 @@ async def _read_loop(session, peer_name, fp):
             except Exception as cb_err:
                 pass
 
+
 def send_p2p_message(peer_name: str, endpoint: str, body: str) -> bool:
     """
     Synchronous entry point called from Kotlin to send an encrypted Double Ratchet message.
@@ -330,68 +492,99 @@ def send_p2p_message(peer_name: str, endpoint: str, body: str) -> bool:
         traceback.print_exc()
         return False
 
+async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_store) -> "Session":
+    """
+    Attempt to connect to a single 'host:port' or '[ipv6]:port' endpoint.
+    Tries Protocol V3 first, falls back to V2.
+    Returns a connected Session or raises an exception.
+    """
+    host, port_str = endpoint_str.rsplit(":", 1)
+    port = int(port_str)
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+
+    try:
+        reader, writer = await asyncio.wait_for(
+            transport_connect("direct", host, port), timeout=5.0
+        )
+        session = Session(reader, writer, identity_priv=identity_priv,
+                          signing_key=signing_key, trust_store=trust_store, protocol_version=3)
+        await asyncio.wait_for(session._exchange_keys(initiator=True), timeout=5.0)
+        session._start_reader()
+        return session
+    except Exception as e3:
+        print(f"V3 failed to {endpoint_str}: {e3}, trying V2...")
+        reader, writer = await asyncio.wait_for(
+            transport_connect("direct", host, port), timeout=5.0
+        )
+        session = Session(reader, writer, identity_priv=identity_priv,
+                          signing_key=signing_key, trust_store=trust_store, protocol_version=2)
+        await asyncio.wait_for(session._exchange_keys(initiator=True), timeout=5.0)
+        session._start_reader()
+        return session
+
+
 async def _send_message_async(peer_name: str, endpoint: str, body: str) -> bool:
     try:
         session = active_sessions.get(peer_name)
         if not session or not session.is_online:
-            print(f"No active session with {peer_name}. Dialing direct endpoint {endpoint}...")
-            host, port = endpoint.split(":")
-            port = int(port)
-            
+            # Close the old dead session explicitly so its _read_loop finally-block
+            # doesn't race-delete the new session we're about to create.
+            if session and not session.is_online:
+                try:
+                    asyncio.create_task(session.close())
+                except Exception:
+                    pass
+                active_sessions.pop(peer_name, None)
+
             identity_priv = load_or_create_identity()
             signing_key = load_or_create_signing_identity()
             trust_store = TrustStore()
-            
-            try:
-                # Try Protocol V3 first (X3DH + Double Ratchet)
-                reader, writer = await asyncio.wait_for(
-                    transport_connect("direct", host, port),
-                    timeout=5.0
-                )
-                session = Session(
-                    reader,
-                    writer,
-                    identity_priv=identity_priv,
-                    signing_key=signing_key,
-                    trust_store=trust_store,
-                    protocol_version=3
-                )
-                await asyncio.wait_for(session._exchange_keys(initiator=True), timeout=3.0)
-                session._start_reader()
-            except Exception as e3:
-                print(f"Protocol V3 handshake failed: {e3}. Retrying with Protocol V2 fallback...")
-                # Re-connect and try Protocol V2 (fallback)
-                reader, writer = await asyncio.wait_for(
-                    transport_connect("direct", host, port),
-                    timeout=5.0
-                )
-                session = Session(
-                    reader,
-                    writer,
-                    identity_priv=identity_priv,
-                    signing_key=signing_key,
-                    trust_store=trust_store,
-                    protocol_version=2
-                )
-                await asyncio.wait_for(session._exchange_keys(initiator=True), timeout=3.0)
-                session._start_reader()
-            
+
+            # Support comma-separated list of endpoints for fallback
+            endpoints = [e.strip() for e in endpoint.split(",") if e.strip()]
+            last_err = None
+            session = None
+
+            for ep in endpoints:
+                try:
+                    session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store)
+                    print(f"Connected to {peer_name} via {ep}")
+                    break
+                except Exception as err:
+                    print(f"Failed to connect to {peer_name} via {ep}: {err}")
+                    last_err = err
+
+            if session is None:
+                raise ConnectionError(f"All endpoints failed for {peer_name}. Last error: {last_err}")
+
             fp = session.peer_fingerprint
             peer_fingerprint_to_name[fp] = peer_name
             active_sessions[fp] = session
             active_sessions[peer_name] = session
-            
+
             print(f"Established Double Ratchet session to {peer_name} (Fingerprint: {fp})")
-            
-            # Start read loop for replies
+
             asyncio.create_task(_read_loop(session, peer_name, fp))
-            
+
             if session_listener_callback:
                 try:
-                    session_listener_callback.onSessionEstablished(peer_name, fp)
+                    session_listener_callback.onSessionEstablished(peer_name, fp, ep)
                 except Exception:
                     pass
-                    
+
+            # Send identity_info so the remote side learns our nickname immediately.
+            try:
+                local_signing = load_or_create_signing_identity()
+                local_fp = fingerprint(local_signing.verify_key)
+                await session.send_reliable({
+                    "type": "identity_info",
+                    "nickname": peer_name,
+                    "fingerprint": local_fp,
+                })
+            except Exception as id_err:
+                print(f"Could not send identity_info to {peer_name}: {id_err}")
+
         # Send the chat message
         await session.send_chat(body)
         return True
@@ -399,6 +592,7 @@ async def _send_message_async(peer_name: str, endpoint: str, body: str) -> bool:
         print(f"Error in _send_message_async to {peer_name}:", e)
         traceback.print_exc()
         return False
+
 
 def send_p2p_file(peer_name: str, endpoint: str, file_path: str) -> bool:
     """
@@ -428,59 +622,39 @@ async def _send_file_async(peer_name: str, endpoint: str, file_path: str) -> boo
     try:
         session = active_sessions.get(peer_name)
         if not session or not session.is_online:
-            print(f"No active session with {peer_name}. Dialing direct endpoint {endpoint}...")
-            host, port = endpoint.split(":")
-            port = int(port)
-            
             identity_priv = load_or_create_identity()
             signing_key = load_or_create_signing_identity()
             trust_store = TrustStore()
-            
-            try:
-                # Try Protocol V3 first
-                reader, writer = await asyncio.wait_for(
-                    transport_connect("direct", host, port),
-                    timeout=5.0
-                )
-                session = Session(
-                    reader,
-                    writer,
-                    identity_priv=identity_priv,
-                    signing_key=signing_key,
-                    trust_store=trust_store,
-                    protocol_version=3
-                )
-                await asyncio.wait_for(session._exchange_keys(initiator=True), timeout=3.0)
-                session._start_reader()
-            except Exception as e3:
-                print(f"Protocol V3 handshake failed: {e3}. Retrying with Protocol V2 fallback...")
-                reader, writer = await asyncio.wait_for(
-                    transport_connect("direct", host, port),
-                    timeout=5.0
-                )
-                session = Session(
-                    reader,
-                    writer,
-                    identity_priv=identity_priv,
-                    signing_key=signing_key,
-                    trust_store=trust_store,
-                    protocol_version=2
-                )
-                await asyncio.wait_for(session._exchange_keys(initiator=True), timeout=3.0)
-                session._start_reader()
-                
+
+            # Support comma-separated list of endpoints for fallback
+            endpoints = [e.strip() for e in endpoint.split(",") if e.strip()]
+            last_err = None
+            session = None
+
+            for ep in endpoints:
+                try:
+                    session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store)
+                    print(f"Connected to {peer_name} via {ep} for file sending")
+                    break
+                except Exception as err:
+                    print(f"Failed to connect to {peer_name} via {ep} for file sending: {err}")
+                    last_err = err
+
+            if session is None:
+                raise ConnectionError(f"All endpoints failed for {peer_name} file sending. Last error: {last_err}")
+
             fp = session.peer_fingerprint
             peer_fingerprint_to_name[fp] = peer_name
             active_sessions[fp] = session
             active_sessions[peer_name] = session
-            
+
             print(f"Established Double Ratchet session to {peer_name} (Fingerprint: {fp})")
-            
+
             asyncio.create_task(_read_loop(session, peer_name, fp))
-            
+
             if session_listener_callback:
                 try:
-                    session_listener_callback.onSessionEstablished(peer_name, fp)
+                    session_listener_callback.onSessionEstablished(peer_name, fp, ep)
                 except Exception:
                     pass
                     
@@ -533,3 +707,31 @@ async def _send_file_async(peer_name: str, endpoint: str, file_path: str) -> boo
         print(f"Error in _send_file_async to {peer_name}:", e)
         traceback.print_exc()
         return False
+
+def shutdown_all_sessions():
+    """
+    Close all active P2P connections and clear session caches (e.g. on duress wipe).
+    """
+    global active_sessions, incoming_files, loop
+    print("Shutdown all active sessions and clearing caches...")
+    for fp, session in list(active_sessions.items()):
+        try:
+            if hasattr(session, "close"):
+                if loop and loop.is_running():
+                    asyncio.run_coroutine_threadsafe(session.close(), loop)
+        except Exception as e:
+            print("Error closing session during shutdown:", e)
+    active_sessions.clear()
+    incoming_files.clear()
+
+def get_active_peers_list() -> str:
+    """Returns a comma-separated list of active peer names."""
+    global active_sessions, peer_fingerprint_to_name
+    peers = set()
+    for fp, session in active_sessions.items():
+        if session and session.is_online:
+            if len(fp) >= 30:
+                name = peer_fingerprint_to_name.get(fp, f"Peer ({fp[:8]})")
+                peers.add(name)
+    return ",".join(sorted(peers))
+

@@ -1,6 +1,9 @@
 package com.example.twopchat.ui.main
 
 import android.widget.Toast
+import android.content.Intent
+import android.net.VpnService
+import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +18,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -41,6 +45,8 @@ import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 
 @Composable
 fun MainScreen(
@@ -74,6 +80,16 @@ fun MainScreen(
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
+    var activePeers by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            if (PythonBridge.isInitialized) {
+                activePeers = PythonBridge.getActivePeers()
+            }
+            kotlinx.coroutines.delay(2500)
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -101,21 +117,43 @@ fun MainScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .background(surfaceColor, shape = RoundedCornerShape(12.dp))
-                    .border(0.5.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                    .border(
+                        0.5.dp, 
+                        if (activePeers.isNotEmpty()) Color(0xFF4CAF50).copy(alpha = 0.5f) else primaryColor.copy(alpha = 0.3f), 
+                        RoundedCornerShape(12.dp)
+                    )
+                    .clickable(enabled = activePeers.isNotEmpty()) {
+                        Toast.makeText(
+                            context,
+                            (if (appLanguage == "Русский") "Активные сессии: " else "Active sessions: ") + activePeers.joinToString(", "),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
                     .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
                 Box(
                     modifier = Modifier
                         .size(6.dp)
-                        .background(primaryColor, shape = CircleShape)
+                        .background(if (activePeers.isNotEmpty()) Color(0xFF4CAF50) else onSurfaceColor.copy(alpha = 0.3f), shape = CircleShape)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = Localizations.getString("secure_direct", appLanguage),
+                    text = if (activePeers.isNotEmpty()) {
+                        if (activePeers.size == 1) {
+                            activePeers.first()
+                        } else {
+                            "${activePeers.size} " + (if (appLanguage == "Русский") "актив." else "active")
+                        }
+                    } else {
+                        if (appLanguage == "Русский") "нет сессий" else "no sessions"
+                    },
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
-                    color = primaryColor,
-                    letterSpacing = 0.5.sp
+                    color = if (activePeers.isNotEmpty()) Color(0xFF4CAF50) else onSurfaceColor.copy(alpha = 0.5f),
+                    letterSpacing = 0.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 85.dp)
                 )
             }
         }
@@ -126,32 +164,40 @@ fun MainScreen(
                 .weight(1f)
                 .fillMaxWidth()
         ) {
-            when (selectedTab) {
-                0 -> ChatsTab(onItemClick, localFingerprint, appLanguage, primaryColor, surfaceColor, onSurfaceColor, onSurfaceVariant)
-                1 -> ContactsTab(onItemClick, appLanguage, primaryColor, surfaceColor, onSurfaceColor, onSurfaceVariant)
-                2 -> SettingsTab(
-                    isDarkTheme = isDarkTheme,
-                    onThemeChanged = onThemeChanged,
-                    useCerulean = useCerulean,
-                    onAccentChanged = onAccentChanged,
-                    activeIconAlias = activeIconAlias,
-                    onIconChanged = { alias ->
-                        activeIconAlias = alias
-                        sharedPrefs.edit().putString("active_icon_alias", alias).apply()
-                        val isDisguised = sharedPrefs.getBoolean("settings_stealth_disguise", false)
-                        if (!isDisguised) {
-                            onIconChanged(alias)
-                        }
-                    },
-                    appLanguage = appLanguage,
-                    onLanguageChanged = onLanguageChanged,
-                    primaryColor = primaryColor,
-                    surfaceColor = surfaceColor,
-                    onSurfaceColor = onSurfaceColor,
-                    onSurfaceVariant = onSurfaceVariant,
-                    surfaceVariant = surfaceVariant,
-                    onDeleteAccount = onDeleteAccount
-                )
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(220)).togetherWith(fadeOut(animationSpec = tween(220)))
+                },
+                label = "tab_transition"
+            ) { targetTab ->
+                when (targetTab) {
+                    0 -> ChatsTab(onItemClick, localFingerprint, appLanguage, primaryColor, surfaceColor, onSurfaceColor, onSurfaceVariant)
+                    1 -> ContactsTab(onItemClick, appLanguage, primaryColor, surfaceColor, onSurfaceColor, onSurfaceVariant)
+                    2 -> SettingsTab(
+                        isDarkTheme = isDarkTheme,
+                        onThemeChanged = onThemeChanged,
+                        useCerulean = useCerulean,
+                        onAccentChanged = onAccentChanged,
+                        activeIconAlias = activeIconAlias,
+                        onIconChanged = { alias ->
+                            activeIconAlias = alias
+                            sharedPrefs.edit().putString("active_icon_alias", alias).apply()
+                            val isDisguised = sharedPrefs.getBoolean("settings_stealth_disguise", false)
+                            if (!isDisguised) {
+                                onIconChanged(alias)
+                            }
+                        },
+                        appLanguage = appLanguage,
+                        onLanguageChanged = onLanguageChanged,
+                        primaryColor = primaryColor,
+                        surfaceColor = surfaceColor,
+                        onSurfaceColor = onSurfaceColor,
+                        onSurfaceVariant = onSurfaceVariant,
+                        surfaceVariant = surfaceVariant,
+                        onDeleteAccount = onDeleteAccount
+                    )
+                }
             }
         }
 
@@ -228,12 +274,21 @@ fun ChatsTab(
     ) {
         // Identity Card
         Card(
-            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             shape = RoundedCornerShape(20.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 12.dp)
-                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            primaryColor.copy(alpha = 0.08f),
+                            surfaceColor.copy(alpha = 0.85f)
+                        )
+                    ),
+                    shape = RoundedCornerShape(20.dp)
+                )
+                .border(0.5.dp, primaryColor.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
                 Text(
@@ -354,6 +409,8 @@ fun ContactsTab(
     var directNameVal by remember { mutableStateOf("") }
     var showInvitePanel by remember { mutableStateOf(false) }
     var showDirectIpPanel by remember { mutableStateOf(false) }
+    var isResolvingInvite by remember { mutableStateOf(false) }
+    var resolveInviteStatus by remember { mutableStateOf("") }
     
     val context = LocalContext.current
     val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
@@ -470,7 +527,7 @@ fun ContactsTab(
                                 val uri = android.net.Uri.parse(trimmed)
                                 val parsedName = uri.getQueryParameter("name") ?: "Invited Peer"
                                 val token = uri.getQueryParameter("token") ?: ""
-                                
+
                                 val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
                                 if (!activeSet.contains(parsedName)) {
                                     val newSet = activeSet.toMutableSet()
@@ -478,19 +535,30 @@ fun ContactsTab(
                                     sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
                                     sharedPrefs.edit().putString("transport_$parsedName", "DIRECT P2P").apply()
                                 }
-                                
+
                                 if (token.isNotEmpty()) {
+                                    isResolvingInvite = true
+                                    resolveInviteStatus = if (appLanguage == "Русский") "Поиск собеседника..." else "Finding peer..."
                                     coroutineScope.launch(Dispatchers.IO) {
                                         val peers = PythonBridge.searchPeers(token)
                                         val endpoints = if (peers.isNotEmpty()) peers[0]["endpoints"] as? List<*> else null
-                                        val endpointStr = if (endpoints != null && endpoints.isNotEmpty()) endpoints[0].toString() else ""
-                                        if (endpointStr.isNotEmpty()) {
-                                            com.example.twopchat.P2PMessageRelay.peerEndpoints[parsedName] = endpointStr
+                                        // Pass ALL endpoints comma-separated so Python can try each (IPv4 first, Yggdrasil IPv6 as fallback)
+                                        val endpointStr = if (endpoints != null && endpoints.isNotEmpty()) endpoints.joinToString(",") { it.toString() } else ""
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                            isResolvingInvite = false
+                                            if (endpointStr.isNotEmpty()) {
+                                                com.example.twopchat.P2PMessageRelay.peerEndpoints[parsedName] = endpointStr
+                                                resolveInviteStatus = ""
+                                                onItemClick(Chat(parsedName))
+                                            } else {
+                                                resolveInviteStatus = if (appLanguage == "Русский") "Собеседник не найден. Попробуйте позже." else "Peer not found. They may be offline."
+                                            }
                                         }
                                     }
+                                } else {
+                                    // No token — navigate directly if the link had no token (manual)
+                                    onItemClick(Chat(parsedName))
                                 }
-                                Toast.makeText(context, if (appLanguage == "Русский") "Подключение по приглашению..." else "Connecting via invite...", Toast.LENGTH_SHORT).show()
-                                onItemClick(Chat(parsedName))
                             } catch (e: Exception) {
                                 Toast.makeText(context, "Invalid link", Toast.LENGTH_SHORT).show()
                             }
@@ -540,6 +608,29 @@ fun ContactsTab(
             }
         }
 
+        // Invite resolving status indicator
+        if (isResolvingInvite || resolveInviteStatus.isNotEmpty()) {
+            Row(
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+            ) {
+                if (isResolvingInvite) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = primaryColor
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(
+                    text = resolveInviteStatus,
+                    fontSize = 12.sp,
+                    color = if (resolveInviteStatus.contains("not found") || resolveInviteStatus.contains("не найден"))
+                        MaterialTheme.colorScheme.error else primaryColor
+                )
+            }
+        }
+
         // Expanded One-Time Invite Card
         if (showInvitePanel) {
             Card(
@@ -568,7 +659,9 @@ fun ContactsTab(
                     if (inviteLinkState.isEmpty()) {
                         Button(
                             onClick = {
-                                val tokenVal = "2pchat_inv_" + (100000..999999).random().toString()
+                                val tokenBytes = ByteArray(16)
+                                java.security.SecureRandom().nextBytes(tokenBytes)
+                                val tokenVal = "2pchat_inv_" + tokenBytes.joinToString("") { "%02x".format(it) }
                                 inviteLinkState = "2pchat://connect?token=$tokenVal&name=$username&fp=$fingerprint"
                                 coroutineScope.launch(Dispatchers.IO) {
                                     PythonBridge.announceSelf(tokenVal, fingerprint, 50001)
@@ -651,20 +744,42 @@ fun ContactsTab(
                                     )
                                 }
 
-                                // Connect Peer
+                                // Connect Peer — look up an incoming session via the token
                                 IconButton(
                                     onClick = {
                                         val guestName = if (appLanguage == "Русский") "Приглашенный гость" else "Guest Peer"
-                                        val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
-                                        if (!activeSet.contains(guestName)) {
-                                            val newSet = activeSet.toMutableSet()
-                                            newSet.add(guestName)
-                                            sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
-                                            sharedPrefs.edit().putString("transport_$guestName", "DIRECT P2P").apply()
+                                        val currentLink = inviteLinkState
+                                        if (currentLink.isNotEmpty()) {
+                                            val uri = android.net.Uri.parse(currentLink)
+                                            val token = uri.getQueryParameter("token") ?: ""
+                                            if (token.isNotEmpty()) {
+                                                isResolvingInvite = true
+                                                resolveInviteStatus = if (appLanguage == "Русский") "Поиск собеседника..." else "Looking for guest peer..."
+                                                coroutineScope.launch(Dispatchers.IO) {
+                                                    val peers = PythonBridge.searchPeers(token)
+                                                    val endpoints = if (peers.isNotEmpty()) peers[0]["endpoints"] as? List<*> else null
+                                                    val endpointStr = if (endpoints != null && endpoints.isNotEmpty()) endpoints.joinToString(",") { it.toString() } else ""
+                                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                        isResolvingInvite = false
+                                                        if (endpointStr.isNotEmpty()) {
+                                                            val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+                                                            if (!activeSet.contains(guestName)) {
+                                                                val newSet = activeSet.toMutableSet()
+                                                                newSet.add(guestName)
+                                                                sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
+                                                                sharedPrefs.edit().putString("transport_$guestName", "DIRECT P2P").apply()
+                                                            }
+                                                            com.example.twopchat.P2PMessageRelay.peerEndpoints[guestName] = endpointStr
+                                                            resolveInviteStatus = ""
+                                                            inviteLinkState = ""
+                                                            onItemClick(Chat(guestName))
+                                                        } else {
+                                                            resolveInviteStatus = if (appLanguage == "Русский") "Гость ещё не подсоединился." else "Guest has not connected yet."
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
-                                        Toast.makeText(context, if (appLanguage == "Русский") "Собеседник подключился!" else "Peer connected!", Toast.LENGTH_SHORT).show()
-                                        inviteLinkState = ""
-                                        onItemClick(Chat(guestName))
                                     },
                                     modifier = Modifier
                                         .size(48.dp)
@@ -783,10 +898,22 @@ fun ContactsTab(
                         onClick = {
                             val ip = directIpVal.trim()
                             val port = directPortVal.trim()
-                            val name = if (directNameVal.isNotBlank()) directNameVal.trim() else "Direct Peer"
+                            val rawName = if (directNameVal.isNotBlank()) directNameVal.trim() else "Direct Peer"
 
                             if (ip.isEmpty() || port.isEmpty()) {
                                 Toast.makeText(context, if (appLanguage == "Русский") "Введите IP и Порт" else "Please enter IP and Port", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+
+                            val portInt = port.toIntOrNull()
+                            if (portInt == null || portInt !in 1..65535) {
+                                Toast.makeText(context, if (appLanguage == "Русский") "Неверный порт (1-65535)" else "Invalid port (1-65535)", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+
+                            val name = rawName.replace(Regex("[^a-zA-Z0-9 ]"), "").trim()
+                            if (name.isEmpty()) {
+                                Toast.makeText(context, if (appLanguage == "Русский") "Неверное имя" else "Invalid name", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
 
@@ -804,7 +931,7 @@ fun ContactsTab(
 
                             // Send handshake ping to register ourselves on Bob's side
                             coroutineScope.launch(Dispatchers.IO) {
-                                com.example.twopchat.P2PMessageRelay.sendMessage(endpointStr, username, "")
+                                com.example.twopchat.P2PMessageRelay.sendMessage(context, endpointStr, username, "")
                             }
 
                             Toast.makeText(context, if (appLanguage == "Русский") "Подключение по IP..." else "Connecting via IP...", Toast.LENGTH_SHORT).show()
@@ -1021,6 +1148,23 @@ fun SettingsTab(
     LaunchedEffect(Unit) {
         yggdrasilRouting = sharedPrefs.getBoolean("settings_yggdrasil", false)
     }
+
+    val vpnLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+        onResult = { result ->
+            if (result.resultCode == android.app.Activity.RESULT_OK) {
+                val intent = Intent(context, PacketTunnelProvider::class.java).apply {
+                    action = PacketTunnelProvider.ACTION_START
+                }
+                context.startService(intent)
+                yggdrasilRouting = true
+                sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+            } else {
+                yggdrasilRouting = false
+                sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
+            }
+        }
+    )
     
     var showLanguageDialog by remember { mutableStateOf(false) }
     var showLogsDialog by remember { mutableStateOf(false) }
@@ -1543,9 +1687,27 @@ fun SettingsTab(
                     Spacer(modifier = Modifier.width(16.dp))
                     Switch(
                         checked = yggdrasilRouting,
-                        onCheckedChange = {
-                            yggdrasilRouting = it
-                            sharedPrefs.edit().putBoolean("settings_yggdrasil", it).apply()
+                        onCheckedChange = { isChecked ->
+                            if (isChecked) {
+                                val vpnIntent = VpnService.prepare(context)
+                                if (vpnIntent != null) {
+                                    vpnLauncher.launch(vpnIntent)
+                                } else {
+                                    val intent = Intent(context, PacketTunnelProvider::class.java).apply {
+                                        action = PacketTunnelProvider.ACTION_START
+                                    }
+                                    context.startService(intent)
+                                    yggdrasilRouting = true
+                                    sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+                                }
+                            } else {
+                                val intent = Intent(context, PacketTunnelProvider::class.java).apply {
+                                    action = PacketTunnelProvider.ACTION_STOP
+                                }
+                                context.startService(intent)
+                                yggdrasilRouting = false
+                                sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
+                            }
                         },
                         colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
                     )
@@ -1598,44 +1760,6 @@ fun SettingsTab(
                         )
                     )
                 }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Diagnostic Logs Card
-        Card(
-            colors = CardDefaults.cardColors(containerColor = surfaceColor),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { showLogsDialog = true }
-                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (appLanguage == "Русский") "Сетевой отладчик и Логи" else "Network Diagnostics & Logs",
-                        fontWeight = FontWeight.Medium,
-                        color = onSurfaceColor
-                    )
-                    Text(
-                        text = if (appLanguage == "Русский") {
-                            "Просмотр системного лога работы P2P и сетевого статуса"
-                        } else {
-                            "View system P2P logs and network connection diagnostic status"
-                        },
-                        fontSize = 12.sp,
-                        color = onSurfaceVariant
-                    )
-                }
-                Text(text = "❯", fontSize = 12.sp, color = onSurfaceVariant)
             }
         }
 
@@ -1705,9 +1829,9 @@ fun SettingsTab(
 
         Spacer(modifier = Modifier.height(18.dp))
 
-        // Diagnostic Logs Card
+        // Developer Options Section (grouped)
         Text(
-            text = if (appLanguage == "Русский") "Диагностические логи" else "Diagnostic Logs",
+            text = if (appLanguage == "Русский") "Настройки разработчика" else "Developer Options",
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             color = onSurfaceColor,
@@ -1718,45 +1842,78 @@ fun SettingsTab(
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable {
-                    // Export/Share log file
-                    val logFile = java.io.File(java.io.File(context.filesDir, "config"), "app.log")
-                    if (logFile.exists() && logFile.length() > 0) {
-                        try {
-                            val authority = "${context.packageName}.fileprovider"
-                            val fileUri: android.net.Uri = androidx.core.content.FileProvider.getUriForFile(context, authority, logFile)
-                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(android.content.Intent.EXTRA_STREAM, fileUri)
-                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(android.content.Intent.createChooser(shareIntent, if (appLanguage == "Русский") "Поделиться логами" else "Share Logs"))
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Error sharing logs: ${e.message}", Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
-                        Toast.makeText(context, if (appLanguage == "Русский") "Лог-файл пуст или еще не создан" else "Log file is empty or not created yet", Toast.LENGTH_SHORT).show()
-                    }
-                }
                 .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(if (appLanguage == "Русский") "Экспорт логов приложения" else "Export App Logs", fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                    Text(if (appLanguage == "Русский") "Поделиться файлом app.log" else "Share the app.log file", fontSize = 12.sp, color = onSurfaceVariant)
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Network Diagnostics & Logs
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showLogsDialog = true }
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Сетевой отладчик и Логи" else "Network Diagnostics & Logs",
+                            fontWeight = FontWeight.Medium,
+                            color = onSurfaceColor
+                        )
+                        Text(
+                            text = if (appLanguage == "Русский") {
+                                "Просмотр системного лога работы P2P и сетевого статуса"
+                            } else {
+                                "View system P2P logs and network connection diagnostic status"
+                            },
+                            fontSize = 12.sp,
+                            color = onSurfaceVariant
+                        )
+                    }
+                    Text(text = "❯", fontSize = 12.sp, color = onSurfaceVariant)
                 }
-                Icon(
-                    painter = painterResource(id = android.R.drawable.ic_menu_share),
-                    contentDescription = "Share",
-                    tint = primaryColor,
-                    modifier = Modifier.size(20.dp)
-                )
+
+                Divider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                // Export/Share App Logs
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            // Export/Share log file
+                            val logFile = java.io.File(java.io.File(context.filesDir, "config"), "app.log")
+                            if (logFile.exists() && logFile.length() > 0) {
+                                try {
+                                    val authority = "${context.packageName}.fileprovider"
+                                    val fileUri: android.net.Uri = androidx.core.content.FileProvider.getUriForFile(context, authority, logFile)
+                                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(android.content.Intent.EXTRA_STREAM, fileUri)
+                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(shareIntent, if (appLanguage == "Русский") "Поделиться логами" else "Share Logs"))
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Error sharing logs: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                Toast.makeText(context, if (appLanguage == "Русский") "Лог-файл пуст или еще не создан" else "Log file is empty or not created yet", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(if (appLanguage == "Русский") "Экспорт логов приложения" else "Export App Logs", fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                        Text(if (appLanguage == "Русский") "Поделиться файлом app.log" else "Share the app.log file", fontSize = 12.sp, color = onSurfaceVariant)
+                    }
+                    Icon(
+                        painter = painterResource(id = android.R.drawable.ic_menu_share),
+                        contentDescription = "Share",
+                        tint = primaryColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
 
@@ -1765,7 +1922,7 @@ fun SettingsTab(
 
     // Language Selector dialog
     if (showLanguageDialog) {
-        val languages = listOf("English", "Русский", "Deutsch", "Français", "Español")
+        val languages = listOf("English", "Русский")
         AlertDialog(
             onDismissRequest = { showLanguageDialog = false },
             confirmButton = {},
@@ -1903,6 +2060,42 @@ fun SettingsTab(
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF4CAF50)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Мой IPv4 адрес:" else "My IPv4 Address:",
+                                    fontSize = 13.sp,
+                                    color = onSurfaceColor
+                                )
+                                val ipv4List = com.example.twopchat.PythonBridge.getLocalAddresses().filter { !it.contains(':') }
+                                Text(
+                                    text = if (ipv4List.isNotEmpty()) ipv4List.joinToString(", ") else "127.0.0.1",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryColor
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Мой Yggdrasil IPv6:" else "My Yggdrasil IPv6:",
+                                    fontSize = 13.sp,
+                                    color = onSurfaceColor
+                                )
+                                val yggList = com.example.twopchat.PythonBridge.getLocalAddresses().filter { it.contains(':') }
+                                Text(
+                                    text = if (yggList.isNotEmpty()) yggList.joinToString(", ") else (if (appLanguage == "Русский") "Не обнаружен" else "Not detected"),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (yggList.isNotEmpty()) Color(0xFF4CAF50) else Color.Red
                                 )
                             }
                             Spacer(modifier = Modifier.height(6.dp))
@@ -2478,6 +2671,11 @@ fun TabNavigationRow(
 
         tabs.forEachIndexed { index, tab ->
             val isSelected = selectedTab == index
+            val iconScale by animateFloatAsState(
+                targetValue = if (isSelected) 1.18f else 1.0f,
+                animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                label = "scale"
+            )
             NavigationBarItem(
                 selected = isSelected,
                 onClick = { onTabSelected(index) },
@@ -2485,7 +2683,9 @@ fun TabNavigationRow(
                     Icon(
                         painter = painterResource(id = tab.iconRes),
                         contentDescription = tab.label,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier
+                            .size(20.dp)
+                            .graphicsLayer(scaleX = iconScale, scaleY = iconScale)
                     )
                 },
                 label = {

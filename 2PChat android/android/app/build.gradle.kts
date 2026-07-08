@@ -8,6 +8,7 @@ plugins {
 android {
     namespace = "com.example.twopchat"
     compileSdk = 36
+    ndkVersion = "26.1.10909125"
     defaultConfig {
         applicationId = "com.example.twopchat"
         minSdk = 24
@@ -85,7 +86,13 @@ dependencies {
   implementation(libs.androidx.navigation3.ui)
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+
+  // Yggdrasil dependencies
+  implementation(files("libs/yggdrasil.aar"))
+  implementation("androidx.preference:preference-ktx:1.2.1")
+  implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
 }
+
 
 chaquopy {
     defaultConfig {

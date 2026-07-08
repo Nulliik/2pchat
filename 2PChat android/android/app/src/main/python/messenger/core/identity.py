@@ -126,9 +126,9 @@ class TrustStore:
                     last_seen=meta.get("last_seen", 0.0),
                     state=meta.get("state", "known"),
                 )
-        except Exception:
-            # Corrupted store; start fresh but preserve file for debugging
-            self.records = {}
+        except Exception as e:
+            # Corrupted store; raise error to prevent silent trust reset
+            raise ValueError(f"Trust store corrupted: {e}. Refusing to load.") from e
 
     def _persist(self) -> None:
         with _TRUST_LOCK:
