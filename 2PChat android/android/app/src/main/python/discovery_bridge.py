@@ -96,6 +96,53 @@ def _announce_tracker_names(endpoints: list[PeerEndpoint]) -> list[str]:
 def _set_tracker_diagnostic(tracker_name: str, operation: str, status: str) -> None:
     tracker_diagnostics.setdefault(tracker_name, {})[operation] = status
 
+
+def _same_nickname(left: str, right: str) -> bool:
+    """Match display names without making case or repeated spaces significant."""
+    return " ".join(left.strip().casefold().split()) == " ".join(right.strip().casefold().split())
+
+
+async def _verify_live_endpoint(endpoint: str, nickname: str) -> dict | None:
+    """Require an authenticated live peer to confirm the name before showing it.
+
+    Tracker announces are soft state and can outlive a disconnected phone.  A
+    successful TCP connection alone is also insufficient: it might be a stale
+    address now owned by a different service.  The lightweight probe therefore
+    completes the encrypted 2PChat handshake and asks the peer to return its
+    identity information.
+    """
+    identity_priv = load_or_create_identity()
+    signing_key = load_or_create_signing_identity()
+    session = None
+    try:
+        # Deliberately do not update the TOFU store while merely searching.
+        session = await _dial_endpoint(endpoint, identity_priv, signing_key, None)
+        await session.send_reliable({"type": "identity_probe"})
+        while True:
+            message = await asyncio.wait_for(session.receive_message(), timeout=3.0)
+            if message.get("type") != "identity_info":
+                continue
+            announced_name = str(message.get("nickname", ""))
+            announced_fp = str(message.get("fingerprint", ""))
+            # The name is accepted only when it was sent by the authenticated
+            # session identity, not by an arbitrary payload claiming another key.
+            if (
+                announced_fp == session.peer_fingerprint
+                and _same_nickname(announced_name, nickname)
+            ):
+                return {
+                    "nickname": announced_name.strip(),
+                    "fingerprint": session.peer_fingerprint,
+                    "endpoint": endpoint,
+                }
+            return None
+    except Exception as exc:
+        print(f"Live peer verification failed for {endpoint}: {exc}")
+        return None
+    finally:
+        if session is not None:
+            await session.close()
+
 def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrackr HTTP"):
     """
     Resolve peers from multiple trackers to maximise endpoint coverage.
@@ -175,11 +222,43 @@ def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrac
                 all_endpoints.append(ep_str)
 
     all_endpoints.sort(key=_endpoint_sort_key)
-    if all_endpoints:
-        print(f"Resolved {len(all_endpoints)} unique endpoints for '{nickname}': {all_endpoints}")
-    if all_endpoints:
-        query_fp = nickname if nickname == shared_code and len(nickname) >= 40 else ""
-        return [{"nickname": nickname, "fingerprint": query_fp, "transport": "direct", "endpoints": all_endpoints}]
+    if not all_endpoints:
+        return []
+
+    async def _verify_all():
+        # A bounded fan-out prevents one malicious tracker reply from causing
+        # an unbounded number of connection attempts on a mobile device.
+        candidates = all_endpoints[:12]
+        return await asyncio.gather(
+            *[_verify_live_endpoint(endpoint, nickname) for endpoint in candidates],
+            return_exceptions=True,
+        )
+
+    verify_loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(verify_loop)
+        verified = verify_loop.run_until_complete(_verify_all())
+    finally:
+        verify_loop.close()
+
+    verified_by_identity = {}
+    for result in verified:
+        if isinstance(result, dict):
+            key = (result["nickname"], result["fingerprint"])
+            verified_by_identity.setdefault(key, []).append(result["endpoint"])
+
+    if verified_by_identity:
+        print(f"Verified {sum(len(v) for v in verified_by_identity.values())} live endpoints for '{nickname}'")
+        return [
+            {
+                "nickname": name,
+                "fingerprint": peer_fingerprint,
+                "transport": "direct",
+                "endpoints": sorted(endpoints, key=_endpoint_sort_key),
+            }
+            for (name, peer_fingerprint), endpoints in verified_by_identity.items()
+        ]
+    print(f"No live authenticated peer confirmed nickname '{nickname}'")
     return []
 
 
@@ -448,6 +527,18 @@ async def _read_loop(session, peer_name, fp):
                     # Update loop variables so cleanup is correct
                     peer_name = real_name
                     fp = remote_fp
+                continue
+            elif mtype == "identity_probe":
+                # A search result is only shown after this authenticated reply.
+                # Do not invent a name: nodes that have not configured one
+                # cannot be discovered by nickname.
+                if local_identity_nickname:
+                    await session.send_reliable({
+                        "type": "identity_info",
+                        "nickname": local_identity_nickname,
+                        "fingerprint": fingerprint(load_or_create_identity().public_key),
+                        "listen_port": listener_port,
+                    })
                 continue
             elif mtype == "chat":
                 body = msg.get("body", "")

@@ -432,20 +432,9 @@ fun ContactsTab(
         }
     }
     
-    val directoryContacts = listOf(
-        ContactItem("Alina GE", "Active 3m ago", "AG"),
-        ContactItem("Amanda Pri", "Offline", "AP"),
-        ContactItem("Eleanor Vance", "Online", "EV"),
-        ContactItem("Krinal GE", "Offline", "KG"),
-        ContactItem("Liam O'Connor", "Online", "LO"),
-        ContactItem("Mennako GE", "Online", "MG"),
-        ContactItem("Pitto GE", "Active 2h ago", "PG"),
-        ContactItem("Sarah Chen", "Online", "SC")
-    )
-
-    val filteredContacts = directoryContacts.filter {
-        it.name.contains(searchQuery, ignoreCase = true)
-    }
+    // Search results must come from an authenticated live peer.  The former
+    // hard-coded demo directory made fictional users look searchable/online.
+    val filteredContacts = emptyList<ContactItem>()
 
     Column(
         modifier = Modifier
@@ -2259,6 +2248,27 @@ fun SettingsTab(
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (yggAddress.isNotEmpty()) Color(0xFF4CAF50) else Color.Red
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            val yggDiagnostics = com.example.twopchat.PythonBridge.getYggdrasilNetworkDiagnostics()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Проверка сети Yggdrasil:" else "Yggdrasil network check:",
+                                    fontSize = 13.sp,
+                                    color = onSurfaceColor
+                                )
+                                val state = yggDiagnostics["state"] ?: "disabled"
+                                val peers = yggDiagnostics["peers"] ?: "0"
+                                val routes = yggDiagnostics["routes"] ?: "0"
+                                Text(
+                                    text = "$state · peers=$peers · routes=$routes",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (state == "connected") Color(0xFF4CAF50) else Color.Red
                                 )
                             }
                             Spacer(modifier = Modifier.height(6.dp))

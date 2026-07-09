@@ -24,6 +24,9 @@ const val KEY_ENABLE_CHROME_FIX = "enable_chrome_fix"
 const val KEY_DNS_SERVERS = "dns_servers"
 private const val PREF_YGG_RUNTIME_IP = "yggdrasil_runtime_ip"
 private const val PREF_YGG_RUNTIME_STATE = "yggdrasil_runtime_state"
+private const val PREF_YGG_RUNTIME_PEERS = "yggdrasil_runtime_peers"
+private const val PREF_YGG_RUNTIME_ROUTES = "yggdrasil_runtime_routes"
+private const val PREF_YGG_RUNTIME_TREE_NODES = "yggdrasil_runtime_tree_nodes"
 
 open class PacketTunnelProvider: VpnService() {
     companion object {
@@ -38,6 +41,7 @@ open class PacketTunnelProvider: VpnService() {
 
     private var yggdrasil = Yggdrasil()
     private var started = AtomicBoolean()
+    private var publicPeerPoolPruned = AtomicBoolean()
 
     private lateinit var config: ConfigurationProxy
 
@@ -269,7 +273,10 @@ open class PacketTunnelProvider: VpnService() {
         } catch (_: InterruptedException) {
             return
         }
-        var lastStateUpdate = System.currentTimeMillis()
+        // Publish immediately: a 10-second blank period made a successful
+        // fresh connection look failed on phones.
+        var lastStateUpdate = 0L
+        val probeStartedAt = System.currentTimeMillis()
         updates@ while (started.get()) {
             val treeJSON = yggdrasil.treeJSON
             if ((application as GlobalApplication).needUiUpdates()) {
@@ -285,20 +292,39 @@ open class PacketTunnelProvider: VpnService() {
             val curTime = System.currentTimeMillis()
             if (lastStateUpdate + 10000 < curTime) {
                 val intent = Intent(YGG_STATE_INTENT)
+                val routes = yggdrasil.routingEntries.toInt()
+                val peerCount = jsonArrayLength(yggdrasil.peersJSON)
+                var treeNodes = 0
                 var state = STATE_ENABLED
-                if (yggdrasil.routingEntries > 0) {
+                if (routes > 0) {
                     state = STATE_CONNECTED
                 }
                 if (treeJSON != null && treeJSON != "null") {
-                    val treeState = JSONArray(treeJSON)
-                    val count = treeState.length()
-                    if (count > 1)
+                    treeNodes = jsonArrayLength(treeJSON)
+                    if (treeNodes > 1)
                         state = STATE_CONNECTED
                 }
-                updateRuntimeState(yggdrasil.addressString, state)
+                updateRuntimeState(yggdrasil.addressString, state, peerCount, routes, treeNodes)
                 intent.putExtra("state", state)
                 LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
                 lastStateUpdate = curTime
+            }
+
+            // The first start uses the embedded offline public-peer snapshot.
+            // After it has had time to establish links, retain only the best
+            // live links and restart once so the excess dial attempts stop.
+            if (
+                !publicPeerPoolPruned.get() &&
+                curTime - probeStartedAt >= 25_000 &&
+                config.retainBestLivePeers(yggdrasil.peersJSON)
+            ) {
+                publicPeerPoolPruned.set(true)
+                thread(name = "Yggdrasil-pruned-restart") {
+                    stop(stopService = false)
+                    yggdrasil = Yggdrasil()
+                    start()
+                }
+                return
             }
 
             if (Thread.currentThread().isInterrupted) {
@@ -372,12 +398,27 @@ open class PacketTunnelProvider: VpnService() {
         // Double-close вызывал исключение.
     }
 
-    private fun updateRuntimeState(address: String, state: String) {
+    private fun jsonArrayLength(value: String?): Int = try {
+        if (value.isNullOrBlank() || value == "null") 0 else JSONArray(value).length()
+    } catch (_: Exception) {
+        0
+    }
+
+    private fun updateRuntimeState(
+        address: String,
+        state: String,
+        peerCount: Int = 0,
+        routes: Int = 0,
+        treeNodes: Int = 0,
+    ) {
         try {
             val sharedPrefs = applicationContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
             sharedPrefs.edit()
                 .putString(PREF_YGG_RUNTIME_IP, address)
                 .putString(PREF_YGG_RUNTIME_STATE, state)
+                .putInt(PREF_YGG_RUNTIME_PEERS, peerCount)
+                .putInt(PREF_YGG_RUNTIME_ROUTES, routes)
+                .putInt(PREF_YGG_RUNTIME_TREE_NODES, treeNodes)
                 .apply()
         } catch (e: Exception) {
             Log.w(TAG, "Failed to persist Yggdrasil runtime state", e)

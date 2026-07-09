@@ -192,6 +192,21 @@ object PythonBridge {
         ""
     }
 
+    /** Snapshot reported by the embedded node, not inferred from ordinary IPv6. */
+    fun getYggdrasilNetworkDiagnostics(): Map<String, String> = try {
+        val context = appContext ?: return emptyMap()
+        val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        linkedMapOf(
+            "state" to prefs.getString("yggdrasil_runtime_state", "disabled").orEmpty(),
+            "peers" to prefs.getInt("yggdrasil_runtime_peers", 0).toString(),
+            "routes" to prefs.getInt("yggdrasil_runtime_routes", 0).toString(),
+            "tree_nodes" to prefs.getInt("yggdrasil_runtime_tree_nodes", 0).toString(),
+        )
+    } catch (e: Exception) {
+        Log.e(TAG, "Error reading Yggdrasil diagnostics", e)
+        emptyMap()
+    }
+
     fun announceSelf(nickname: String, fingerprint: String, port: Int): Boolean {
         if (!isInitialized) return false
         return try {
