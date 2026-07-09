@@ -33,6 +33,7 @@ open class PacketTunnelProvider: VpnService() {
         const val ACTION_STOP = "com.example.twopchat.yggdrasil.PacketTunnelProvider.STOP"
         const val ACTION_TOGGLE = "com.example.twopchat.yggdrasil.PacketTunnelProvider.TOGGLE"
         const val ACTION_CONNECT = "com.example.twopchat.yggdrasil.PacketTunnelProvider.CONNECT"
+        const val ACTION_REGENERATE_KEYS = "com.example.twopchat.yggdrasil.PacketTunnelProvider.REGENERATE_KEYS"
     }
 
     private var yggdrasil = Yggdrasil()
@@ -88,6 +89,19 @@ open class PacketTunnelProvider: VpnService() {
                 }
                 START_STICKY
             }
+            ACTION_REGENERATE_KEYS -> {
+                Log.i(TAG, "Regenerating Yggdrasil node keys...")
+                val restart = started.get() || enabled
+                if (started.get()) {
+                    stop(stopService = false)
+                }
+                config.resetKeys()
+                updateRuntimeState("", STATE_DISABLED)
+                if (restart) {
+                    start()
+                }
+                START_STICKY
+            }
             ACTION_TOGGLE -> {
                 Log.d(TAG, "Toggling...")
                 if (started.get()) {
@@ -131,7 +145,6 @@ open class PacketTunnelProvider: VpnService() {
             acquire()
         }
 
-        Log.d(TAG, config.getJSON().toString())
         yggdrasil.startJSON(config.getJSONByteArray())
 
         val address = yggdrasil.addressString
@@ -190,7 +203,7 @@ open class PacketTunnelProvider: VpnService() {
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
 
-    private fun stop() {
+    private fun stop(stopService: Boolean = true) {
         if (!started.compareAndSet(true, false)) {
             return
         }
@@ -237,7 +250,9 @@ open class PacketTunnelProvider: VpnService() {
         updateRuntimeState("", STATE_DISABLED)
 
         stopForeground(true)
-        stopSelf()
+        if (stopService) {
+            stopSelf()
+        }
         multicastLock?.release()
     }
 

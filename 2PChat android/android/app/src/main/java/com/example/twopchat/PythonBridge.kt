@@ -175,8 +175,22 @@ object PythonBridge {
         return addrs.firstOrNull { !it.contains(':') } ?: "127.0.0.1"
     }
 
-    /** Returns the Yggdrasil/global IPv6 address if present, else empty string. */
-    fun getYggdrasilAddress(): String = getLocalAddresses().firstOrNull { it.contains(':') } ?: ""
+    /**
+     * Return the address reported by the embedded Yggdrasil node.
+     *
+     * Do not infer this from network interfaces: Android may expose ordinary
+     * IPv6 addresses from Wi-Fi, mobile data, or another VPN there.
+     */
+    fun getYggdrasilAddress(): String = try {
+        val context = appContext ?: return ""
+        context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+            .getString("yggdrasil_runtime_ip", "")
+            ?.trim()
+            .orEmpty()
+    } catch (e: Exception) {
+        Log.e(TAG, "Error getting Yggdrasil runtime IP from prefs", e)
+        ""
+    }
 
     fun announceSelf(nickname: String, fingerprint: String, port: Int): Boolean {
         if (!isInitialized) return false
@@ -184,12 +198,15 @@ object PythonBridge {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
 
-            val addresses = getLocalAddresses()
-            val ipv4Addresses = addresses.filter { !it.contains(':') }
-            val ipv6Addresses = addresses.filter { it.contains(':') }
+            val ipv4Addresses = getLocalAddresses().filter { !it.contains(':') }
+            val yggdrasilAddress = getYggdrasilAddress()
+            val addresses = buildList {
+                addAll(ipv4Addresses)
+                if (yggdrasilAddress.isNotEmpty()) add(yggdrasilAddress)
+            }.distinct()
             Log.i(
                 TAG,
-                "Announcing self on trackers. IPv4=$ipv4Addresses IPv6/Ygg=$ipv6Addresses port=$port"
+                "Announcing self on trackers. IPv4=$ipv4Addresses Yggdrasil=$yggdrasilAddress port=$port"
             )
             val endpointsJson = JSONArray(addresses).toString()
             val success = bridge.callAttr("announce_peer_endpoints", nickname, fingerprint, endpointsJson, port)
@@ -265,12 +282,12 @@ object PythonBridge {
         }
     }
 
-    fun sendP2pMessage(peerName: String, endpoint: String, text: String): Boolean {
+    fun sendP2pMessage(peerName: String, endpoint: String, text: String, expectedFingerprint: String? = null): Boolean {
         if (!isInitialized) return false
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
-            val success = bridge.callAttr("send_p2p_message", peerName, endpoint, text)
+            val success = bridge.callAttr("send_p2p_message", peerName, endpoint, text, expectedFingerprint)
             success.toBoolean()
         } catch (e: Exception) {
             Log.e(TAG, "Error sending P2P message via Python", e)
@@ -278,12 +295,12 @@ object PythonBridge {
         }
     }
 
-    fun sendP2pFile(peerName: String, endpoint: String, filePath: String): Boolean {
+    fun sendP2pFile(peerName: String, endpoint: String, filePath: String, expectedFingerprint: String? = null): Boolean {
         if (!isInitialized) return false
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
-            val success = bridge.callAttr("send_p2p_file", peerName, endpoint, filePath)
+            val success = bridge.callAttr("send_p2p_file", peerName, endpoint, filePath, expectedFingerprint)
             success.toBoolean()
         } catch (e: Exception) {
             Log.e(TAG, "Error sending P2P file via Python", e)

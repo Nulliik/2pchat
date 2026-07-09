@@ -1,6 +1,7 @@
 package com.example.twopchat
 
 import android.util.Log
+import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.thread
 import com.example.twopchat.data.ChatDatabaseHelper
@@ -8,9 +9,26 @@ import com.example.twopchat.ui.chat.Message
 
 object P2PMessageRelay {
     private const val TAG = "P2PMessageRelay"
+    private const val LISTENER_PORT_PREF = "p2p_listener_port"
+    private const val EPHEMERAL_PORT_MIN = 49152
+    private const val EPHEMERAL_PORT_COUNT = 16384
     private val startStopLock = Any()
     private val identityLock = Any()
     private var isRunning = false
+
+    /** A stable per-installation listener port, published with the endpoint. */
+    fun listenerPort(context: android.content.Context): Int {
+        val prefs = context.applicationContext.getSharedPreferences(
+            "2pchat_prefs", android.content.Context.MODE_PRIVATE
+        )
+        val saved = prefs.getInt(LISTENER_PORT_PREF, 0)
+        if (saved in EPHEMERAL_PORT_MIN until EPHEMERAL_PORT_MIN + EPHEMERAL_PORT_COUNT) {
+            return saved
+        }
+        val generated = EPHEMERAL_PORT_MIN + SecureRandom().nextInt(EPHEMERAL_PORT_COUNT)
+        prefs.edit().putInt(LISTENER_PORT_PREF, generated).apply()
+        return generated
+    }
 
     // Maps peer name to their resolved IP:Port endpoint
     val peerEndpoints = ConcurrentHashMap<String, String>()
@@ -170,10 +188,11 @@ object P2PMessageRelay {
             isRunning = true
         }
         val appContext = context.applicationContext
+        val port = listenerPort(appContext)
         try {
-            log(appContext, "Starting Python P2P Relays...")
+            log(appContext, "Starting Python P2P Relays on port $port...")
             // Start the Python P2P listener
-            PythonBridge.startP2pListener(50001)
+            PythonBridge.startP2pListener(port)
             
             // Register incoming message callback from Python
             PythonBridge.registerMessageListener(object : PythonBridge.PyMessageListener {
@@ -230,6 +249,8 @@ object P2PMessageRelay {
             PythonBridge.registerSessionListener(object : PythonBridge.PySessionListener {
                 override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String) {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
+                    appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+                        .edit().putString("peer_fingerprint_$resolvedPeerName", fingerprint).apply()
                     log(appContext, "Secure Double Ratchet session established with $resolvedPeerName ($fingerprint) at $endpoint")
                     if (endpoint.isNotEmpty()) {
                         peerEndpoints[resolvedPeerName] = endpoint
@@ -268,7 +289,7 @@ object P2PMessageRelay {
                             // Announce immediately if network interfaces changed, or periodically every 5 minutes (300,000 ms)
                             if (currentAddresses != lastAddresses || now - lastAnnounceTime > 300000) {
                                 log(appContext, "Announcing self on tracker. Network changed: ${currentAddresses != lastAddresses}, IPs: $currentAddresses")
-                                val success = PythonBridge.announceSelf(username, fingerprint, 50001)
+                                val success = PythonBridge.announceSelf(username, fingerprint, port)
                                 log(appContext, "Announce self status: $success")
                                 lastAddresses = currentAddresses
                                 lastAnnounceTime = now
@@ -330,7 +351,9 @@ object P2PMessageRelay {
                 }
                 
                 log(context, "Sending secure message to $targetPeerName via Python transport (endpoints: $endpoint)")
-                val success = PythonBridge.sendP2pMessage(targetPeerName, endpoint, text)
+                val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+                    .getString("peer_fingerprint_$targetPeerName", null)
+                val success = PythonBridge.sendP2pMessage(targetPeerName, endpoint, text, expectedFingerprint)
                 log(context, "Sending status to $targetPeerName: ${if (success) "SUCCESS" else "FAILED"}")
                 onResult(success)
             } catch (e: Exception) {
@@ -355,7 +378,9 @@ object P2PMessageRelay {
                 }
                 
                 log(context, "Sending secure file $filePath to $targetPeerName via Python transport (endpoints: $endpoint)")
-                val success = PythonBridge.sendP2pFile(targetPeerName, endpoint, filePath)
+                val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+                    .getString("peer_fingerprint_$targetPeerName", null)
+                val success = PythonBridge.sendP2pFile(targetPeerName, endpoint, filePath, expectedFingerprint)
                 log(context, "Sending file status to $targetPeerName: ${if (success) "SUCCESS" else "FAILED"}")
                 onResult(success)
             } catch (e: Exception) {

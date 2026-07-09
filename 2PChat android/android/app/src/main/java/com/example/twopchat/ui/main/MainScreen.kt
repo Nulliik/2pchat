@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
 import com.example.twopchat.PythonBridge
 import com.example.twopchat.Chat
+import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
@@ -405,7 +406,7 @@ fun ContactsTab(
     val coroutineScope = rememberCoroutineScope()
     var inviteLinkState by remember { mutableStateOf("") }
     var directIpVal by remember { mutableStateOf("") }
-    var directPortVal by remember { mutableStateOf("50001") }
+    var directPortVal by remember { mutableStateOf(P2PMessageRelay.listenerPort(context).toString()) }
     var directNameVal by remember { mutableStateOf("") }
     var showInvitePanel by remember { mutableStateOf(false) }
     var showDirectIpPanel by remember { mutableStateOf(false) }
@@ -426,7 +427,7 @@ fun ContactsTab(
     LaunchedEffect(username, fingerprint) {
         if (username.isNotBlank() && username != "User Identity" && fingerprint != "Loading..." && fingerprint != "Not Initialized") {
             coroutineScope.launch(Dispatchers.IO) {
-                PythonBridge.announceSelf(username, fingerprint, 50001)
+                PythonBridge.announceSelf(username, fingerprint, P2PMessageRelay.listenerPort(context))
             }
         }
     }
@@ -668,7 +669,7 @@ fun ContactsTab(
                                 val tokenVal = "2pchat_inv_" + tokenBytes.joinToString("") { "%02x".format(it) }
                                 inviteLinkState = "2pchat://connect?token=$tokenVal&name=$username&fp=$fingerprint"
                                 coroutineScope.launch(Dispatchers.IO) {
-                                    PythonBridge.announceSelf(tokenVal, fingerprint, 50001)
+                                    PythonBridge.announceSelf(tokenVal, fingerprint, P2PMessageRelay.listenerPort(context))
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
@@ -883,7 +884,7 @@ fun ContactsTab(
                         OutlinedTextField(
                             value = directPortVal,
                             onValueChange = { directPortVal = it },
-                            placeholder = { Text("50001", fontSize = 12.sp, color = onSurfaceVariant.copy(alpha = 0.4f)) },
+                            placeholder = { Text(P2PMessageRelay.listenerPort(context).toString(), fontSize = 12.sp, color = onSurfaceVariant.copy(alpha = 0.4f)) },
                             label = { Text(if (appLanguage == "Русский") "Порт" else "Port", fontSize = 10.sp) },
                             singleLine = true,
                             modifier = Modifier.weight(0.8f),
@@ -1181,6 +1182,45 @@ fun SettingsTab(
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
     var showSetDuressDialog by remember { mutableStateOf(false) }
     var showLauncherIconsPicker by remember { mutableStateOf(false) }
+    var showRegenerateYggdrasilKeysDialog by remember { mutableStateOf(false) }
+
+    if (showRegenerateYggdrasilKeysDialog) {
+        AlertDialog(
+            onDismissRequest = { showRegenerateYggdrasilKeysDialog = false },
+            title = {
+                Text(if (appLanguage == "Русский") "Сгенерировать новый ключ Yggdrasil?" else "Generate a new Yggdrasil key?")
+            },
+            text = {
+                Text(
+                    if (appLanguage == "Русский") {
+                        "Текущий Yggdrasil IPv6 изменится. Сохранённые у контактов старые адреса перестанут работать."
+                    } else {
+                        "Your Yggdrasil IPv6 address will change. Contacts with the old address will no longer be able to reach you."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
+                        action = PacketTunnelProvider.ACTION_REGENERATE_KEYS
+                    })
+                    showRegenerateYggdrasilKeysDialog = false
+                    Toast.makeText(
+                        context,
+                        if (appLanguage == "Русский") "Yggdrasil-ключ обновлён" else "Yggdrasil key regenerated",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }) {
+                    Text(if (appLanguage == "Русский") "Сгенерировать" else "Generate")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRegenerateYggdrasilKeysDialog = false }) {
+                    Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
+                }
+            },
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -1716,6 +1756,15 @@ fun SettingsTab(
                         colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
                     )
                 }
+
+                TextButton(
+                    onClick = { showRegenerateYggdrasilKeysDialog = true },
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text(
+                        if (appLanguage == "Русский") "Сгенерировать новый ключ Yggdrasil" else "Generate new Yggdrasil key"
+                    )
+                }
             }
         }
 
@@ -2062,18 +2111,19 @@ fun SettingsTab(
                                     color = onSurfaceColor
                                 )
                                 Text(
-                                    text = "50001 (listening)",
+                                    text = "${P2PMessageRelay.listenerPort(context)} (listening)",
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFF4CAF50)
                                 )
                             }
                             Spacer(modifier = Modifier.height(6.dp))
+                            val listenerPort = P2PMessageRelay.listenerPort(context)
                             val announcedEndpoints = com.example.twopchat.PythonBridge.getLocalAddresses().map { host ->
                                 when {
-                                    host.contains(':') -> "[$host]:50001"
-                                    host == "10.0.2.16" -> "$host:50001 (emulator local)"
-                                    else -> "$host:50001"
+                                    host.contains(':') -> "[$host]:$listenerPort"
+                                    host == "10.0.2.16" -> "$host:$listenerPort (emulator local)"
+                                    else -> "$host:$listenerPort"
                                 }
                             }
                             Row(
@@ -2203,12 +2253,12 @@ fun SettingsTab(
                                     fontSize = 13.sp,
                                     color = onSurfaceColor
                                 )
-                                val yggList = com.example.twopchat.PythonBridge.getLocalAddresses().filter { it.contains(':') }
+                                val yggAddress = com.example.twopchat.PythonBridge.getYggdrasilAddress()
                                 Text(
-                                    text = if (yggList.isNotEmpty()) yggList.joinToString(", ") else (if (appLanguage == "Русский") "Не обнаружен" else "Not detected"),
+                                    text = if (yggAddress.isNotEmpty()) yggAddress else (if (appLanguage == "Русский") "Не обнаружен" else "Not detected"),
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (yggList.isNotEmpty()) Color(0xFF4CAF50) else Color.Red
+                                    color = if (yggAddress.isNotEmpty()) Color(0xFF4CAF50) else Color.Red
                                 )
                             }
                             Spacer(modifier = Modifier.height(6.dp))

@@ -36,6 +36,7 @@ loop = None
 
 # Track which Yggdrasil listener is running
 _ygg_listener_running = False
+listener_port = 50001
 CLEARNET_TRACKERS = (
     "OpenTrackr HTTP",
     "Torrent.eu.org UDP",
@@ -177,8 +178,19 @@ def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrac
     if all_endpoints:
         print(f"Resolved {len(all_endpoints)} unique endpoints for '{nickname}': {all_endpoints}")
     if all_endpoints:
-        return [{"nickname": nickname, "fingerprint": "", "transport": "direct", "endpoints": all_endpoints}]
+        query_fp = nickname if nickname == shared_code and len(nickname) >= 40 else ""
+        return [{"nickname": nickname, "fingerprint": query_fp, "transport": "direct", "endpoints": all_endpoints}]
     return []
+
+
+def resolve_peer_endpoints(peer_fingerprint: str) -> list[str]:
+    """Resolve fresh endpoints for a previously verified identity."""
+    if not isinstance(peer_fingerprint, str) or len(peer_fingerprint.strip()) < 40:
+        return []
+    results = resolve_peers(peer_fingerprint.strip(), peer_fingerprint.strip())
+    return list(dict.fromkeys(
+        str(endpoint) for result in results for endpoint in result.get("endpoints", [])
+    ))
 
 
 def announce_peer_endpoints(nickname: str, fingerprint: str, endpoints_json: str, port: int) -> bool:
@@ -315,7 +327,8 @@ def start_p2p_listener(port=50001):
     Start the background asyncio event loop and dual-stack listener thread.
     Listens on both 0.0.0.0 (IPv4) and :: (IPv6/Yggdrasil) simultaneously.
     """
-    global loop
+    global loop, listener_port
+    listener_port = port
     if loop and loop.is_running():
         print(f"P2P listener already running on port {port}, skipping duplicate start")
         return
@@ -369,6 +382,10 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
             trust_store=trust_store,
         )
         await asyncio.wait_for(session._exchange_keys(initiator=False), timeout=5.0)
+        if session.peer_fingerprint == fingerprint(identity_priv.public_key):
+            await session.close()
+            print("Rejected self-connection on the local listener")
+            return
         session._start_reader()
         
         fp = session.peer_fingerprint
@@ -380,7 +397,7 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
         print(f"Accepted Double Ratchet session from {peer_name} (Fingerprint: {fp})")
         
         peername = writer.get_extra_info('peername')
-        remote_ep = f"{peername[0]}:50001" if peername else ""
+        remote_ep = ""
 
         if session_listener_callback:
             try:
@@ -414,7 +431,11 @@ async def _read_loop(session, peer_name, fp):
                     if session_listener_callback:
                         try:
                             peername = session.writer.get_extra_info('peername') if hasattr(session, 'writer') else None
-                            remote_ep = f"{peername[0]}:50001" if peername else ""
+                            advertised_port = msg.get("listen_port")
+                            if isinstance(advertised_port, int) and 1 <= advertised_port <= 65535 and peername:
+                                remote_ep = _format_endpoint(peername[0], advertised_port)
+                            else:
+                                remote_ep = ""
                             session_listener_callback.onSessionEstablished(real_name, remote_fp, remote_ep)
                         except Exception as cb_err:
                             print("Error invoking session listener on identity_info:", cb_err)
@@ -522,14 +543,14 @@ async def _read_loop(session, peer_name, fp):
                 pass
 
 
-def send_p2p_message(peer_name: str, endpoint: str, body: str) -> bool:
+def send_p2p_message(peer_name: str, endpoint: str, body: str, expected_fingerprint=None) -> bool:
     """
     Synchronous entry point called from Kotlin to send an encrypted Double Ratchet message.
     """
     global loop
     if not loop:
         print("Asyncio loop not running, starting listener loop first")
-        start_p2p_listener(50001)
+        start_p2p_listener(listener_port)
         # Give a small buffer to start
         import time
         time.sleep(1)
@@ -537,7 +558,7 @@ def send_p2p_message(peer_name: str, endpoint: str, body: str) -> bool:
             return False
             
     future = asyncio.run_coroutine_threadsafe(
-        _send_message_async(peer_name, endpoint, body),
+        _send_message_async(peer_name, endpoint, body, expected_fingerprint),
         loop
     )
     try:
@@ -547,7 +568,7 @@ def send_p2p_message(peer_name: str, endpoint: str, body: str) -> bool:
         traceback.print_exc()
         return False
 
-async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_store) -> "Session":
+async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_store, expected_fingerprint=None) -> "Session":
     """
     Attempt to connect to a single 'host:port' or '[ipv6]:port' endpoint.
     Tries Protocol V3 first, falls back to V2.
@@ -578,7 +599,10 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
         )
         session = Session(reader, writer, identity_priv=identity_priv,
                           signing_key=signing_key, trust_store=trust_store, protocol_version=3)
-        await asyncio.wait_for(session._exchange_keys(initiator=True), timeout=5.0)
+        await asyncio.wait_for(session._exchange_keys(initiator=True, expected_fingerprint=expected_fingerprint), timeout=5.0)
+        if session.peer_fingerprint == fingerprint(identity_priv.public_key):
+            await session.close()
+            raise ValueError("refusing self connection")
         session._start_reader()
         return session
     except Exception as e3:
@@ -592,7 +616,10 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
         try:
             session = Session(reader, writer, identity_priv=identity_priv,
                               signing_key=signing_key, trust_store=trust_store, protocol_version=2)
-            await asyncio.wait_for(session._exchange_keys(initiator=True), timeout=5.0)
+            await asyncio.wait_for(session._exchange_keys(initiator=True, expected_fingerprint=expected_fingerprint), timeout=5.0)
+            if session.peer_fingerprint == fingerprint(identity_priv.public_key):
+                await session.close()
+                raise ValueError("refusing self connection")
             session._start_reader()
             return session
         except Exception:
@@ -600,7 +627,7 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
             raise
 
 
-async def _send_message_async(peer_name: str, endpoint: str, body: str) -> bool:
+async def _send_message_async(peer_name: str, endpoint: str, body: str, expected_fingerprint=None) -> bool:
     try:
         session = active_sessions.get(peer_name)
         if not session or not session.is_online:
@@ -624,13 +651,23 @@ async def _send_message_async(peer_name: str, endpoint: str, body: str) -> bool:
 
             for ep in endpoints:
                 try:
-                    session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store)
+                    session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
                     print(f"Connected to {peer_name} via {ep}")
                     break
                 except Exception as err:
                     print(f"Failed to connect to {peer_name} via {ep}: {err}")
                     last_err = err
 
+            if session is None and expected_fingerprint:
+                for ep in resolve_peer_endpoints(expected_fingerprint):
+                    if ep in endpoints:
+                        continue
+                    try:
+                        session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+                        print(f"Reconnected to {peer_name} via fresh discovery endpoint {ep}")
+                        break
+                    except Exception as err:
+                        last_err = err
             if session is None:
                 raise ConnectionError(f"All endpoints failed for {peer_name}. Last error: {last_err}")
 
@@ -659,6 +696,7 @@ async def _send_message_async(peer_name: str, endpoint: str, body: str) -> bool:
                         "type": "identity_info",
                         "nickname": local_name,
                         "fingerprint": local_fp,
+                        "listen_port": listener_port,
                     })
             except Exception as id_err:
                 print(f"Could not send identity_info to {peer_name}: {id_err}")
@@ -672,21 +710,21 @@ async def _send_message_async(peer_name: str, endpoint: str, body: str) -> bool:
         return False
 
 
-def send_p2p_file(peer_name: str, endpoint: str, file_path: str) -> bool:
+def send_p2p_file(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None) -> bool:
     """
     Synchronous entry point called from Kotlin to send an encrypted file/photo via Double Ratchet.
     """
     global loop
     if not loop:
         print("Asyncio loop not running, starting listener loop first")
-        start_p2p_listener(50001)
+        start_p2p_listener(listener_port)
         import time
         time.sleep(1)
         if not loop:
             return False
             
     future = asyncio.run_coroutine_threadsafe(
-        _send_file_async(peer_name, endpoint, file_path),
+        _send_file_async(peer_name, endpoint, file_path, expected_fingerprint),
         loop
     )
     try:
@@ -696,7 +734,7 @@ def send_p2p_file(peer_name: str, endpoint: str, file_path: str) -> bool:
         traceback.print_exc()
         return False
 
-async def _send_file_async(peer_name: str, endpoint: str, file_path: str) -> bool:
+async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None) -> bool:
     try:
         session = active_sessions.get(peer_name)
         if not session or not session.is_online:
@@ -711,13 +749,22 @@ async def _send_file_async(peer_name: str, endpoint: str, file_path: str) -> boo
 
             for ep in endpoints:
                 try:
-                    session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store)
+                    session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
                     print(f"Connected to {peer_name} via {ep} for file sending")
                     break
                 except Exception as err:
                     print(f"Failed to connect to {peer_name} via {ep} for file sending: {err}")
                     last_err = err
 
+            if session is None and expected_fingerprint:
+                for ep in resolve_peer_endpoints(expected_fingerprint):
+                    if ep in endpoints:
+                        continue
+                    try:
+                        session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+                        break
+                    except Exception as err:
+                        last_err = err
             if session is None:
                 raise ConnectionError(f"All endpoints failed for {peer_name} file sending. Last error: {last_err}")
 
@@ -745,6 +792,7 @@ async def _send_file_async(peer_name: str, endpoint: str, file_path: str) -> boo
                         "type": "identity_info",
                         "nickname": local_name,
                         "fingerprint": local_fp,
+                        "listen_port": listener_port,
                     })
             except Exception as id_err:
                 print(f"Could not send identity_info to {peer_name} during file transfer: {id_err}")
