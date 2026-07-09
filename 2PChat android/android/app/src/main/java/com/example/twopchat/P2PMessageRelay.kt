@@ -1,7 +1,6 @@
 package com.example.twopchat
 
 import android.util.Log
-import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.thread
 import com.example.twopchat.data.ChatDatabaseHelper
@@ -9,25 +8,14 @@ import com.example.twopchat.ui.chat.Message
 
 object P2PMessageRelay {
     private const val TAG = "P2PMessageRelay"
-    private const val LISTENER_PORT_PREF = "p2p_listener_port"
-    private const val EPHEMERAL_PORT_MIN = 49152
-    private const val EPHEMERAL_PORT_COUNT = 16384
+    private const val LISTENER_PORT = 50001
     private val startStopLock = Any()
     private val identityLock = Any()
     private var isRunning = false
 
-    /** A stable per-installation listener port, published with the endpoint. */
+    /** All installations listen on the documented P2P port; identity is the fingerprint, not the port. */
     fun listenerPort(context: android.content.Context): Int {
-        val prefs = context.applicationContext.getSharedPreferences(
-            "2pchat_prefs", android.content.Context.MODE_PRIVATE
-        )
-        val saved = prefs.getInt(LISTENER_PORT_PREF, 0)
-        if (saved in EPHEMERAL_PORT_MIN until EPHEMERAL_PORT_MIN + EPHEMERAL_PORT_COUNT) {
-            return saved
-        }
-        val generated = EPHEMERAL_PORT_MIN + SecureRandom().nextInt(EPHEMERAL_PORT_COUNT)
-        prefs.edit().putInt(LISTENER_PORT_PREF, generated).apply()
-        return generated
+        return LISTENER_PORT
     }
 
     // Maps peer name to their resolved IP:Port endpoint
