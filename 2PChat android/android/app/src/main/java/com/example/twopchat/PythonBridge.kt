@@ -3,15 +3,19 @@ package com.example.twopchat
 import android.content.Context
 import android.util.Log
 import com.chaquo.python.Python
+import org.json.JSONArray
+import org.json.JSONObject
 
 object PythonBridge {
     private const val TAG = "PythonBridge"
+    private var appContext: Context? = null
     var isInitialized = false
         private set
 
     fun init(context: Context) {
         if (isInitialized) return
         try {
+            appContext = context.applicationContext
             val py = Python.getInstance()
             
             // Set config dir to appDir/config (matching Kotlin's expected path for logs and settings)
@@ -145,6 +149,18 @@ object PythonBridge {
         } catch (e: Exception) {
             Log.e(TAG, "Error getting local IP addresses", e)
         }
+        try {
+            val context = appContext
+            if (context != null) {
+                val sharedPrefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                val yggIp = sharedPrefs.getString("yggdrasil_runtime_ip", "")?.trim().orEmpty()
+                if (yggIp.isNotEmpty()) {
+                    result.add(yggIp)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting Yggdrasil runtime IP from prefs", e)
+        }
         return result.distinct()
     }
 
@@ -169,20 +185,41 @@ object PythonBridge {
             val bridge = py.getModule("discovery_bridge")
 
             val addresses = getLocalAddresses()
-            Log.i(TAG, "Announcing self on tracker for endpoints: $addresses")
-            for (addr in addresses) {
-                if (addr.contains(':')) {
-                    Log.i(TAG, "Announcing IPv6/Yggdrasil endpoint: $addr")
-                    bridge.callAttr("announce_peer_ygg", nickname, fingerprint, addr, port)
-                } else {
-                    Log.i(TAG, "Announcing IPv4 endpoint: $addr")
-                    bridge.callAttr("announce_peer", nickname, fingerprint, addr, port)
-                }
-            }
-            true
+            val ipv4Addresses = addresses.filter { !it.contains(':') }
+            val ipv6Addresses = addresses.filter { it.contains(':') }
+            Log.i(
+                TAG,
+                "Announcing self on trackers. IPv4=$ipv4Addresses IPv6/Ygg=$ipv6Addresses port=$port"
+            )
+            val endpointsJson = JSONArray(addresses).toString()
+            val success = bridge.callAttr("announce_peer_endpoints", nickname, fingerprint, endpointsJson, port)
+            success.toBoolean()
         } catch (e: Exception) {
             Log.e(TAG, "Error announcing self", e)
             false
+        }
+    }
+
+    fun getTrackerDiagnostics(): Map<String, String> {
+        if (!isInitialized) return emptyMap()
+        return try {
+            val py = Python.getInstance()
+            val bridge = py.getModule("discovery_bridge")
+            val rawJson = bridge.callAttr("get_tracker_diagnostics_json").toString()
+            val json = JSONObject(rawJson)
+            val result = linkedMapOf<String, String>()
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val trackerName = keys.next()
+                val trackerJson = json.optJSONObject(trackerName) ?: continue
+                val announce = trackerJson.optString("announce", "n/a")
+                val resolve = trackerJson.optString("resolve", "n/a")
+                result[trackerName] = "announce=$announce, resolve=$resolve"
+            }
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting tracker diagnostics", e)
+            emptyMap()
         }
     }
 

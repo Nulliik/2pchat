@@ -8,13 +8,140 @@ import com.example.twopchat.ui.chat.Message
 
 object P2PMessageRelay {
     private const val TAG = "P2PMessageRelay"
+    private val startStopLock = Any()
+    private val identityLock = Any()
     private var isRunning = false
 
     // Maps peer name to their resolved IP:Port endpoint
     val peerEndpoints = ConcurrentHashMap<String, String>()
+    private val fingerprintToPeerName = ConcurrentHashMap<String, String>()
 
     // Callback triggered when a new message is received
     var onMessageReceived: ((sender: String, text: String) -> Unit)? = null
+
+    private data class IncomingAttachment(
+        val displayMessage: String,
+        val attachmentType: String,
+        val attachmentUri: String,
+        val attachmentName: String
+    )
+
+    private fun parseIncomingAttachment(text: String): IncomingAttachment? {
+        val trimmed = text.trim()
+        if (!trimmed.startsWith("{")) {
+            return null
+        }
+        return try {
+            val json = org.json.JSONObject(trimmed)
+            if (json.optString("type") != "file") {
+                return null
+            }
+            val fileName = json.optString("file_name", "file")
+            val filePath = json.optString("file_path", "")
+            val mime = json.optString("mime", "")
+            val isImage = mime.startsWith("image/")
+            IncomingAttachment(
+                displayMessage = if (isImage) "Sent an image" else "Sent a file: $fileName",
+                attachmentType = if (isImage) "IMAGE" else "FILE",
+                attachmentUri = filePath,
+                attachmentName = fileName
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun isPlaceholderPeerName(name: String): Boolean {
+        return name.startsWith("Peer (") && name.endsWith(")")
+    }
+
+    private fun moveChatState(
+        context: android.content.Context,
+        fromName: String,
+        toName: String
+    ) {
+        if (fromName == toName) return
+        val sharedPrefs = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+        val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen"))
+            ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+        val updatedChats = activeSet.toMutableSet()
+        var changed = false
+        if (updatedChats.remove(fromName)) {
+            changed = true
+        }
+        if (updatedChats.add(toName)) {
+            changed = true
+        }
+
+        val editor = sharedPrefs.edit()
+        if (changed) {
+            editor.putStringSet("active_chats", updatedChats)
+        }
+
+        val keysToMove = listOf("last_msg_", "transport_", "verified_peer_", "fingerprint_mismatch_")
+        for (prefix in keysToMove) {
+            if (!sharedPrefs.contains("$prefix$fromName")) {
+                continue
+            }
+            when (prefix) {
+                "verified_peer_", "fingerprint_mismatch_" -> {
+                    val value = sharedPrefs.getBoolean("$prefix$fromName", false)
+                    if (!sharedPrefs.contains("$prefix$toName")) {
+                        editor.putBoolean("$prefix$toName", value)
+                    }
+                }
+                else -> {
+                    val value = sharedPrefs.getString("$prefix$fromName", null)
+                    if (value != null && !sharedPrefs.contains("$prefix$toName")) {
+                        editor.putString("$prefix$toName", value)
+                    }
+                }
+            }
+            editor.remove("$prefix$fromName")
+        }
+        editor.apply()
+
+        try {
+            ChatDatabaseHelper(context).renamePeer(fromName, toName)
+        } catch (e: Exception) {
+            log(context, "Failed to migrate chat history from $fromName to $toName", "ERROR", e)
+        }
+    }
+
+    private fun canonicalPeerName(
+        context: android.content.Context,
+        peerName: String,
+        fingerprint: String
+    ): String {
+        if (fingerprint.isBlank()) {
+            return peerName
+        }
+        synchronized(identityLock) {
+            val knownName = fingerprintToPeerName[fingerprint]
+            return when {
+                knownName.isNullOrBlank() -> {
+                    fingerprintToPeerName[fingerprint] = peerName
+                    peerName
+                }
+                knownName == peerName -> peerName
+                isPlaceholderPeerName(knownName) && !isPlaceholderPeerName(peerName) -> {
+                    fingerprintToPeerName[fingerprint] = peerName
+                    moveChatState(context, knownName, peerName)
+                    peerEndpoints.remove(knownName)
+                    peerName
+                }
+                !isPlaceholderPeerName(knownName) && isPlaceholderPeerName(peerName) -> {
+                    moveChatState(context, peerName, knownName)
+                    peerEndpoints.remove(peerName)
+                    knownName
+                }
+                else -> {
+                    fingerprintToPeerName[fingerprint] = peerName
+                    peerName
+                }
+            }
+        }
+    }
 
     private fun log(context: android.content.Context, message: String, level: String = "INFO", error: Throwable? = null) {
         val fullMsg = if (error != null) "$message: ${Log.getStackTraceString(error)}" else message
@@ -38,8 +165,10 @@ object P2PMessageRelay {
      * Start the background Python P2P server.
      */
     fun startServer(context: android.content.Context) {
-        if (isRunning) return
-        isRunning = true
+        synchronized(startStopLock) {
+            if (isRunning) return
+            isRunning = true
+        }
         val appContext = context.applicationContext
         try {
             log(appContext, "Starting Python P2P Relays...")
@@ -63,39 +192,19 @@ object P2PMessageRelay {
                         val persistEnabled = sharedPrefs.getBoolean("persist_chat_history", true)
                         val db = ChatDatabaseHelper(appContext)
                         var displayMessage = text
-                        if (text.startsWith("{\"type\":\"file\"")) {
-                            try {
-                                val json = org.json.JSONObject(text)
-                                val fileName = json.optString("file_name", "file")
-                                val filePath = json.optString("file_path", "")
-                                val mime = json.optString("mime", "")
-                                val isImage = mime.startsWith("image/")
-                                displayMessage = if (isImage) {
-                                    "Sent an image"
-                                } else {
-                                    "Sent a file: $fileName"
-                                }
-                                if (persistEnabled) {
-                                    db.saveMessage(sender, Message(
-                                        id = System.currentTimeMillis().toString(),
-                                        text = displayMessage,
-                                        isMe = false,
-                                        timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
-                                        attachmentType = if (isImage) "IMAGE" else "FILE",
-                                        attachmentUri = filePath,
-                                        attachmentName = fileName
-                                    ))
-                                }
-                            } catch (e: Exception) {
-                                displayMessage = "Sent a file"
-                                if (persistEnabled) {
-                                    db.saveMessage(sender, Message(
-                                        id = System.currentTimeMillis().toString(),
-                                        text = text,
-                                        isMe = false,
-                                        timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
-                                    ))
-                                }
+                        val incomingAttachment = parseIncomingAttachment(text)
+                        if (incomingAttachment != null) {
+                            displayMessage = incomingAttachment.displayMessage
+                            if (persistEnabled) {
+                                db.saveMessage(sender, Message(
+                                    id = System.currentTimeMillis().toString(),
+                                    text = incomingAttachment.displayMessage,
+                                    isMe = false,
+                                    timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
+                                    attachmentType = incomingAttachment.attachmentType,
+                                    attachmentUri = incomingAttachment.attachmentUri,
+                                    attachmentName = incomingAttachment.attachmentName
+                                ))
                             }
                         } else {
                             if (persistEnabled) {
@@ -120,18 +229,19 @@ object P2PMessageRelay {
             // Register session status callbacks from Python
             PythonBridge.registerSessionListener(object : PythonBridge.PySessionListener {
                 override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String) {
-                    log(appContext, "Secure Double Ratchet session established with $peerName ($fingerprint) at $endpoint")
+                    val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
+                    log(appContext, "Secure Double Ratchet session established with $resolvedPeerName ($fingerprint) at $endpoint")
                     if (endpoint.isNotEmpty()) {
-                        peerEndpoints[peerName] = endpoint
+                        peerEndpoints[resolvedPeerName] = endpoint
                         
                         // Save to active chats so the UI updates and shows the peer chat screen
                         val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
                         val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
-                        if (!activeSet.contains(peerName)) {
+                        if (!activeSet.contains(resolvedPeerName)) {
                             val newSet = activeSet.toMutableSet()
-                            newSet.add(peerName)
+                            newSet.add(resolvedPeerName)
                             sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
-                            sharedPrefs.edit().putString("transport_$peerName", "DIRECT P2P").apply()
+                            sharedPrefs.edit().putString("transport_$resolvedPeerName", "DIRECT P2P").apply()
                         }
                     }
                 }
@@ -183,7 +293,13 @@ object P2PMessageRelay {
      * Stop the P2P server.
      */
     fun stopServer() {
-        isRunning = false
+        synchronized(startStopLock) {
+            if (!isRunning) return
+            isRunning = false
+        }
+        synchronized(identityLock) {
+            fingerprintToPeerName.clear()
+        }
         // Trigger Python shutdown/cleanup
         thread(start = true) {
             try {

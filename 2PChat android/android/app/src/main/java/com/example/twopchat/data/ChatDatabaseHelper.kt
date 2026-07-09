@@ -108,6 +108,20 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
         db.delete(TABLE_MESSAGES, "$KEY_PEER_NAME = ?", arrayOf(peerName))
     }
 
+    fun renamePeer(oldPeerName: String, newPeerName: String) {
+        if (oldPeerName == newPeerName) return
+        val db = this.writableDatabase
+        val values = ContentValues().apply {
+            put(KEY_PEER_NAME, newPeerName)
+        }
+        db.update(
+            TABLE_MESSAGES,
+            values,
+            "$KEY_PEER_NAME = ?",
+            arrayOf(oldPeerName)
+        )
+    }
+
     fun clearAllMessages() {
         val db = this.writableDatabase
         db.delete(TABLE_MESSAGES, null, null)

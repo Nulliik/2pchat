@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme._2PChat" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">#090A0C</item>
-        <item name="android:windowNoTitle">true</item>
-        <item name="android:windowActionBar">false</item>
-    </style>
-</resources>

@@ -1,5 +1,6 @@
 import contextlib
 import os
+import socket
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler
@@ -33,6 +34,7 @@ def _bencode(value) -> bytes:
 
 class FakeHttpTrackerHandler(BaseHTTPRequestHandler):
     swarms = {}
+    swarms6 = {}
 
     def do_GET(self):  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
@@ -46,17 +48,30 @@ class FakeHttpTrackerHandler(BaseHTTPRequestHandler):
         event = pairs.get("event", ["started"])[0]
         port = int(pairs["port"][0])
         peer = ("127.0.0.1", port)
+        peer6 = None
+        if "ipv6" in pairs:
+            ipv6_raw = pairs["ipv6"][0].encode("latin-1")
+            peer6 = (socket.inet_ntop(socket.AF_INET6, ipv6_raw), port)
         swarm = self.swarms.setdefault(info_hash, [])
+        swarm6 = self.swarms6.setdefault(info_hash, [])
         if event == "stopped":
             swarm[:] = [entry for entry in swarm if entry != peer]
+            if peer6 is not None:
+                swarm6[:] = [entry for entry in swarm6 if entry != peer6]
         elif peer not in swarm:
             swarm.append(peer)
+        if peer6 is not None and peer6 not in swarm6:
+            swarm6.append(peer6)
 
         peers = b"".join(
             bytes(map(int, host.split("."))) + peer_port.to_bytes(2, "big")
             for host, peer_port in swarm
         )
-        body = _bencode({"interval": 120, "peers": peers})
+        peers6 = b"".join(
+            socket.inet_pton(socket.AF_INET6, host) + peer_port.to_bytes(2, "big")
+            for host, peer_port in swarm6
+        )
+        body = _bencode({"interval": 120, "peers": peers, "peers6": peers6})
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(body)))
@@ -100,6 +115,36 @@ async def test_http_tracker_discovery_roundtrip_with_fake_tracker():
         resolved_after = await alice.resolve("alice", "key-1")
         ports_after = {descriptor.endpoints[0].port for descriptor in resolved_after}
         assert 42002 not in ports_after
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+@pytest.mark.asyncio
+async def test_http_tracker_supports_ipv4_and_ipv6_endpoints():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), FakeHttpTrackerHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        tracker_url = f"http://{host}:{port}/announce"
+        discovery = HttpTrackerDiscovery(tracker_url=tracker_url, peer_port=42001)
+
+        await discovery.announce(
+            "Alice",
+            "dual-stack",
+            transport="direct",
+            endpoints=[
+                PeerEndpoint(host="198.51.100.10", port=42001),
+                PeerEndpoint(host="200:abcd::10", port=42001),
+            ],
+        )
+
+        resolved = await discovery.resolve("Alice", "dual-stack")
+        hosts = {descriptor.endpoints[0].host for descriptor in resolved}
+        assert "127.0.0.1" in hosts
+        assert "200:abcd::10" in hosts
     finally:
         server.shutdown()
         server.server_close()

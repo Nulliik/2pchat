@@ -4,7 +4,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <application
         android:name=".yggdrasil.GlobalApplication"
@@ -107,7 +109,11 @@
             android:name=".yggdrasil.PacketTunnelProvider"
             android:label="2PChat Yggdrasil VPN"
             android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="specialUse"
             android:exported="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-initiated Yggdrasil mesh VPN tunnel for app routing and peer connectivity" />
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>

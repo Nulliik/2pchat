@@ -74,14 +74,14 @@ class ConfigurationProxy(applicationContext: Context) {
                 json.put("MulticastInterfaces", ar)
             }
 
-            // Standard public peers for bootstrapping
+            // Public peers refreshed against https://publicpeers.neilalexander.dev/
+            // on July 9, 2026. Keep this list short and geographically sensible.
             val peers = json.optJSONArray("Peers")
             if (peers == null || peers.length() == 0) {
                 val ar = JSONArray()
-                ar.put("tcp://5.253.119.86:10010")
-                ar.put("tcp://ygg.tuxli.ch:10010")
-                ar.put("tcp://ygg.tomasz.top:10010")
-                ar.put("tcp://shared.ygg.us.to:10010")
+                ar.put("tls://yggdrasil.su:62586")
+                ar.put("tls://95.217.35.92:1337")
+                ar.put("tls://ygg.jholden.org:1555")
                 json.put("Peers", ar)
             }
         }

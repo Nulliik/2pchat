@@ -571,7 +571,11 @@ fun ContactsTab(
                                 val name = peer["nickname"] as? String ?: "Unknown"
                                 val fp = peer["fingerprint"] as? String ?: ""
                                 val endpoints = peer["endpoints"] as? List<*> ?: emptyList<Any>()
-                                val endpointStr = if (endpoints.isNotEmpty()) endpoints[0].toString() else "Unknown"
+                                val endpointStr = if (endpoints.isNotEmpty()) {
+                                    endpoints.joinToString(",") { it.toString() }
+                                } else {
+                                    "Unknown"
+                                }
                                 val displayName = if (name.startsWith("2TFcRb7m") || name.length > 20) {
                                     "Peer (" + name.take(8) + "...)"
                                 } else {
@@ -1968,6 +1972,7 @@ fun SettingsTab(
         androidx.compose.ui.window.Dialog(
             onDismissRequest = { showLogsDialog = false }
         ) {
+            val dialogScrollState = rememberScrollState()
             Card(
                 colors = CardDefaults.cardColors(containerColor = surfaceColor),
                 shape = RoundedCornerShape(24.dp),
@@ -1979,6 +1984,7 @@ fun SettingsTab(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .verticalScroll(dialogScrollState)
                         .padding(20.dp)
                 ) {
                     // Header Row: Title & Action Buttons
@@ -2063,12 +2069,119 @@ fun SettingsTab(
                                 )
                             }
                             Spacer(modifier = Modifier.height(6.dp))
+                            val announcedEndpoints = com.example.twopchat.PythonBridge.getLocalAddresses().map { host ->
+                                when {
+                                    host.contains(':') -> "[$host]:50001"
+                                    host == "10.0.2.16" -> "$host:50001 (emulator local)"
+                                    else -> "$host:50001"
+                                }
+                            }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = if (appLanguage == "Русский") "Мой IPv4 адрес:" else "My IPv4 Address:",
+                                    text = if (appLanguage == "Русский") "Анонсируемые endpoint-ы:" else "Announced endpoints:",
+                                    fontSize = 13.sp,
+                                    color = onSurfaceColor
+                                )
+                                Text(
+                                    text = "${announcedEndpoints.size}",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryColor
+                                )
+                            }
+                            if (announcedEndpoints.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(onSurfaceColor.copy(alpha = 0.02f), shape = RoundedCornerShape(8.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    announcedEndpoints.forEach { endpoint ->
+                                        Text(
+                                            text = "• $endpoint",
+                                            fontSize = 11.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            val publicTrackerIpv4 = com.example.twopchat.P2PMessageRelay.peerEndpoints
+                                .values
+                                .flatMap { endpointCsv -> endpointCsv.split(",") }
+                                .map { it.trim() }
+                                .filter { endpoint -> endpoint.isNotEmpty() && !endpoint.startsWith("[") }
+                                .mapNotNull { endpoint ->
+                                    val host = endpoint.substringBeforeLast(":", "")
+                                    if (host.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+")) && host != "10.0.2.16") host else null
+                                }
+                                .distinct()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Публичный IPv4 по данным трекеров:" else "Public IPv4 seen by trackers:",
+                                    fontSize = 13.sp,
+                                    color = onSurfaceColor
+                                )
+                                Text(
+                                    text = if (publicTrackerIpv4.isNotEmpty()) publicTrackerIpv4.joinToString(", ") else "n/a",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (publicTrackerIpv4.isNotEmpty()) Color(0xFF4CAF50) else onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            val yggTrackerDiagnostics = com.example.twopchat.PythonBridge
+                                .getTrackerDiagnostics()
+                                .filterKeys { it.contains("Yggdrasil", ignoreCase = true) }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Ygg tracker status:" else "Ygg tracker status:",
+                                    fontSize = 13.sp,
+                                    color = onSurfaceColor
+                                )
+                                Text(
+                                    text = "${yggTrackerDiagnostics.size}",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryColor
+                                )
+                            }
+                            if (yggTrackerDiagnostics.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(onSurfaceColor.copy(alpha = 0.02f), shape = RoundedCornerShape(8.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    yggTrackerDiagnostics.forEach { (trackerName, status) ->
+                                        Text(
+                                            text = "• $trackerName -> $status",
+                                            fontSize = 11.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Локальный IPv4 адрес:" else "Local IPv4 Address:",
                                     fontSize = 13.sp,
                                     color = onSurfaceColor
                                 )
@@ -2149,7 +2262,6 @@ fun SettingsTab(
                     // Terminal Console Box
                     Box(
                         modifier = Modifier
-                            .weight(1f)
                             .fillMaxWidth()
                             .height(280.dp)
                             .background(Color(0xFF070809), shape = RoundedCornerShape(12.dp))

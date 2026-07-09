@@ -2,14 +2,15 @@ package com.example.twopchat.yggdrasil
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.system.OsConstants
 import android.util.Log
+import androidx.core.app.ServiceCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import androidx.preference.PreferenceManager
 import com.example.twopchat.yggdrasil.YggStateReceiver.Companion.YGG_STATE_INTENT
 import mobile.Yggdrasil
 import org.json.JSONArray
@@ -21,6 +22,8 @@ import kotlin.concurrent.thread
 private const val TAG = "PacketTunnelProvider"
 const val KEY_ENABLE_CHROME_FIX = "enable_chrome_fix"
 const val KEY_DNS_SERVERS = "dns_servers"
+private const val PREF_YGG_RUNTIME_IP = "yggdrasil_runtime_ip"
+private const val PREF_YGG_RUNTIME_STATE = "yggdrasil_runtime_state"
 
 open class PacketTunnelProvider: VpnService() {
     companion object {
@@ -61,12 +64,20 @@ open class PacketTunnelProvider: VpnService() {
             Log.d(TAG, "Intent is null")
             return START_NOT_STICKY
         }
-        val preferences = PreferenceManager.getDefaultSharedPreferences(this.baseContext)
+        val preferences = yggdrasilPrefs(this)
         val enabled = preferences.getBoolean(PREF_KEY_ENABLED, false)
         return when (intent.action ?: ACTION_STOP) {
             ACTION_STOP -> {
                 Log.d(TAG, "Stopping...")
                 stop(); START_NOT_STICKY
+            }
+            ACTION_START -> {
+                Log.d(TAG, "Starting explicitly...")
+                if (!enabled) {
+                    preferences.edit().putBoolean(PREF_KEY_ENABLED, true).apply()
+                }
+                start()
+                START_STICKY
             }
             ACTION_CONNECT -> {
                 Log.d(TAG, "Connecting...")
@@ -102,7 +113,16 @@ open class PacketTunnelProvider: VpnService() {
         }
 
         val notification = createServiceNotification(this, State.Enabled)
-        startForeground(SERVICE_NOTIFICATION_ID, notification)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            ServiceCompat.startForeground(
+                this,
+                SERVICE_NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+            )
+        } else {
+            startForeground(SERVICE_NOTIFICATION_ID, notification)
+        }
 
         // Acquire multicast lock
         val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
@@ -115,6 +135,7 @@ open class PacketTunnelProvider: VpnService() {
         yggdrasil.startJSON(config.getJSONByteArray())
 
         val address = yggdrasil.addressString
+        updateRuntimeState(address, STATE_ENABLED)
         val builder = Builder()
             .addAddress(address, 7)
             .addRoute("200::", 7)
@@ -129,7 +150,7 @@ open class PacketTunnelProvider: VpnService() {
             builder.setMetered(false)
         }
 
-        val preferences = PreferenceManager.getDefaultSharedPreferences(this.baseContext)
+        val preferences = yggdrasilPrefs(this)
         val serverString = preferences.getString(KEY_DNS_SERVERS, "")
         if (serverString!!.isNotEmpty()) {
             val servers = serverString.split(",")
@@ -213,6 +234,7 @@ open class PacketTunnelProvider: VpnService() {
         intent = Intent(YGG_STATE_INTENT)
         intent.putExtra("state", STATE_DISABLED)
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        updateRuntimeState("", STATE_DISABLED)
 
         stopForeground(true)
         stopSelf()
@@ -258,6 +280,7 @@ open class PacketTunnelProvider: VpnService() {
                     if (count > 1)
                         state = STATE_CONNECTED
                 }
+                updateRuntimeState(yggdrasil.addressString, state)
                 intent.putExtra("state", state)
                 LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
                 lastStateUpdate = curTime
@@ -332,5 +355,17 @@ open class PacketTunnelProvider: VpnService() {
         }
         // БАГ 3 ИСПРАВЛЕН: Не закрываем readerStream здесь — это делает stop().
         // Double-close вызывал исключение.
+    }
+
+    private fun updateRuntimeState(address: String, state: String) {
+        try {
+            val sharedPrefs = applicationContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+            sharedPrefs.edit()
+                .putString(PREF_YGG_RUNTIME_IP, address)
+                .putString(PREF_YGG_RUNTIME_STATE, state)
+                .apply()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to persist Yggdrasil runtime state", e)
+        }
     }
 }

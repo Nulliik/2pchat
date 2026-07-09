@@ -25,6 +25,9 @@ def print(*args, **kwargs):
 active_sessions = {}
 peer_fingerprint_to_name = {}
 incoming_files = {}
+tracker_diagnostics = {}
+local_identity_nickname = ""
+local_identity_fingerprint = ""
 
 # Kotlin notification callbacks
 message_listener_callback = None
@@ -33,6 +36,64 @@ loop = None
 
 # Track which Yggdrasil listener is running
 _ygg_listener_running = False
+CLEARNET_TRACKERS = (
+    "OpenTrackr HTTP",
+    "Torrent.eu.org UDP",
+    "Open Stealth UDP",
+)
+YGG_TRACKERS = (
+    "Yggdrasil-only HTTP",
+    "Yggdrasil-only UDP",
+)
+
+
+def _format_endpoint(host: str, port: int) -> str:
+    if ":" in host:
+        return f"[{host}]:{port}"
+    return f"{host}:{port}"
+
+
+def _endpoint_sort_key(endpoint_str: str) -> tuple[int, str]:
+    # Prefer IPv4 first for the default direct path, then try IPv6/Yggdrasil.
+    return (0 if not endpoint_str.startswith("[") else 1, endpoint_str)
+
+
+def _parse_endpoint_hosts(addresses, port: int):
+    endpoints = []
+    seen = set()
+    for host in addresses:
+        clean_host = str(host).strip()
+        if not clean_host:
+            continue
+        key = (clean_host, port)
+        if key in seen:
+            continue
+        seen.add(key)
+        endpoints.append(PeerEndpoint(host=clean_host, port=port))
+    return endpoints
+
+
+def _has_ipv6_endpoint(endpoints: list[PeerEndpoint]) -> bool:
+    return any(":" in endpoint.host for endpoint in endpoints)
+
+
+def _resolve_tracker_names(primary_tracker: str | None = None) -> list[str]:
+    names = []
+    for tracker_name in (primary_tracker, *CLEARNET_TRACKERS, *YGG_TRACKERS):
+        if tracker_name and tracker_name not in names:
+            names.append(tracker_name)
+    return names
+
+
+def _announce_tracker_names(endpoints: list[PeerEndpoint]) -> list[str]:
+    names = list(CLEARNET_TRACKERS)
+    if _has_ipv6_endpoint(endpoints):
+        names.extend(YGG_TRACKERS)
+    return names
+
+
+def _set_tracker_diagnostic(tracker_name: str, operation: str, status: str) -> None:
+    tracker_diagnostics.setdefault(tracker_name, {})[operation] = status
 
 def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrackr HTTP"):
     """
@@ -53,17 +114,22 @@ def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrac
                 peer_port=50001,
                 transport="direct"
             )
-            return await provider.resolve(nickname, shared_code)
+            result = await provider.resolve(nickname, shared_code)
+            endpoint_count = sum(len(getattr(item, "endpoints", ())) for item in result)
+            _set_tracker_diagnostic(t_name, "resolve", f"OK ({endpoint_count} endpoints)")
+            return result
         except (urllib.error.URLError, OSError) as e:
+            _set_tracker_diagnostic(t_name, "resolve", f"FAIL ({e})")
             print(f"Network error resolving peers from {t_name}: {e}")
             return []
         except Exception as e:
+            _set_tracker_diagnostic(t_name, "resolve", f"FAIL ({e})")
             print(f"Error resolving peers from {t_name}: {e}")
             return []
 
     async def _resolve_all():
         tasks = []
-        for t_name in [tracker_name, "Torrent.eu.org UDP", "Open Stealth UDP"]:
+        for t_name in _resolve_tracker_names(tracker_name):
             tasks.append(_query_async(t_name))
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
@@ -101,89 +167,106 @@ def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrac
 
     for d in descriptors:
         for ep in d.endpoints:
-            # Format IPv6 as [addr]:port for safe rsplit parsing
-            try:
-                _socket.inet_pton(_socket.AF_INET6, ep.host)
-                ep_str = f"[{ep.host}]:{ep.port}"
-            except OSError:
-                ep_str = f"{ep.host}:{ep.port}"
+            ep_str = _format_endpoint(ep.host, ep.port)
             key = ep_str
             if key not in seen_ep:
                 seen_ep.add(key)
                 all_endpoints.append(ep_str)
 
+    all_endpoints.sort(key=_endpoint_sort_key)
+    if all_endpoints:
+        print(f"Resolved {len(all_endpoints)} unique endpoints for '{nickname}': {all_endpoints}")
     if all_endpoints:
         return [{"nickname": nickname, "fingerprint": "", "transport": "direct", "endpoints": all_endpoints}]
     return []
 
 
-def announce_peer(nickname: str, fingerprint: str, host: str, port: int, tracker_name: str = "OpenTrackr HTTP"):
+def announce_peer_endpoints(nickname: str, fingerprint: str, endpoints_json: str, port: int) -> bool:
     """
-    Synchronous wrapper to announce this peer on a tracker under both nickname and fingerprint.
+    Announce all current IPv4 and Yggdrasil/global IPv6 endpoints across the tracker set.
     """
     import urllib.error
+    global local_identity_nickname, local_identity_fingerprint
+
+    try:
+        addresses = json.loads(endpoints_json)
+    except Exception as exc:
+        print(f"Invalid endpoints_json passed to announce_peer_endpoints: {exc}")
+        return False
+
+    endpoints = _parse_endpoint_hosts(addresses, port)
+    if not endpoints:
+        print("No usable endpoints supplied for tracker announce.")
+        return False
+
+    local_identity_nickname = (nickname or "").strip()
+    local_identity_fingerprint = (fingerprint or "").strip()
+
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
-        
-        tracker = get_tracker_by_name(tracker_name)
-        provider = get_discovery_provider(
-            tracker.discovery_scheme,
-            tracker_url=tracker.announce_url,
-            peer_port=port,
-            transport="direct"
-        )
-        
-        async def _announce_all():
-            tasks = []
-            # Announce 1: using nickname as shared_code
-            tasks.append(provider.announce(
-                nickname,
-                nickname,
+
+        async def _announce_tracker(tracker_name: str):
+            tracker = get_tracker_by_name(tracker_name)
+            provider = get_discovery_provider(
+                tracker.discovery_scheme,
+                tracker_url=tracker.announce_url,
+                peer_port=port,
                 transport="direct",
-                endpoints=[PeerEndpoint(host=host, port=port)]
-            ))
-            
-            # Announce 2: using fingerprint as shared_code if available
+            )
+            variants = [
+                (nickname, nickname),
+            ]
             if fingerprint and len(fingerprint) > 10:
-                tasks.append(provider.announce(
-                    nickname,
-                    fingerprint,
-                    transport="direct",
-                    endpoints=[PeerEndpoint(host=host, port=port)]
-                ))
-                
-            # Announce 3: using fingerprint as both nickname and shared_code
-            if fingerprint and len(fingerprint) > 10:
-                tasks.append(provider.announce(
-                    fingerprint,
-                    fingerprint,
-                    transport="direct",
-                    endpoints=[PeerEndpoint(host=host, port=port)]
-                ))
-                
+                variants.append((nickname, fingerprint))
+                variants.append((fingerprint, fingerprint))
+
+            tasks = [
+                provider.announce(nick, shared_code, transport="direct", endpoints=endpoints)
+                for nick, shared_code in variants
+            ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             success_count = 0
-            for i, res in enumerate(results):
+            for idx, res in enumerate(results, start=1):
                 if isinstance(res, Exception):
                     if isinstance(res, (urllib.error.URLError, OSError)):
-                        print(f"Network error in announce {i+1} on {tracker_name}: {res}")
+                        _set_tracker_diagnostic(tracker_name, "announce", f"FAIL ({res})")
+                        print(f"Network error in announce {idx} on {tracker_name}: {res}")
                     else:
-                        print(f"Unexpected error in announce {i+1} on {tracker_name}: {res}")
+                        _set_tracker_diagnostic(tracker_name, "announce", f"FAIL ({res})")
+                        print(f"Unexpected error in announce {idx} on {tracker_name}: {res}")
                         traceback.print_exception(type(res), res, res.__traceback__)
                 else:
                     success_count += 1
+            if success_count > 0:
+                _set_tracker_diagnostic(tracker_name, "announce", f"OK ({success_count})")
             return success_count
 
+        async def _announce_all():
+            tracker_names = _announce_tracker_names(endpoints)
+            results = await asyncio.gather(
+                *[_announce_tracker(tracker_name) for tracker_name in tracker_names],
+                return_exceptions=True,
+            )
+            total_success = 0
+            for tracker_name, result in zip(tracker_names, results):
+                if isinstance(result, Exception):
+                    print(f"Tracker announce task crashed for {tracker_name}: {result}")
+                    continue
+                total_success += result
+                print(f"Tracker {tracker_name} accepted {result} announce registrations.")
+            return total_success
+
+        endpoint_strings = [_format_endpoint(ep.host, ep.port) for ep in endpoints]
+        print(f"Announcing endpoints for '{nickname}': {endpoint_strings}")
         success_count = loop.run_until_complete(_announce_all())
-        if success_count > 0:
-            print(f"Successfully announced peer endpoints on {tracker_name} ({success_count} registrations).")
-        return True
+        print(f"Total successful announce registrations: {success_count}")
+        return success_count > 0
     except Exception as e:
         if isinstance(e, (urllib.error.URLError, OSError)):
-            print(f"Network error announcing peer on {tracker_name} in discovery_bridge: {e}")
+            print(f"Network error announcing endpoints in discovery_bridge: {e}")
         else:
-            print("Error announcing peer in discovery_bridge:", e)
+            print("Error announcing endpoints in discovery_bridge:", e)
             traceback.print_exc()
         return False
     finally:
@@ -191,6 +274,14 @@ def announce_peer(nickname: str, fingerprint: str, host: str, port: int, tracker
             loop.close()
         except Exception:
             pass
+
+
+def announce_peer(nickname: str, fingerprint: str, host: str, port: int, tracker_name: str = "OpenTrackr HTTP"):
+    """
+    Synchronous wrapper to announce this peer on a tracker under both nickname and fingerprint.
+    """
+    del tracker_name
+    return announce_peer_endpoints(nickname, fingerprint, json.dumps([host]), port)
 
 
 def announce_peer_ygg(nickname: str, fingerprint: str, ygg_host: str, port: int):
@@ -198,65 +289,11 @@ def announce_peer_ygg(nickname: str, fingerprint: str, ygg_host: str, port: int)
     Announce this peer using the HTTP tracker so that the IPv6/Yggdrasil
     endpoint is included in the announce via the ipv6 parameter.
     """
-    import urllib.error
-    loop = asyncio.new_event_loop()
-    try:
-        asyncio.set_event_loop(loop)
-        # Use an HTTP tracker that supports ipv6 parameter
-        tracker = get_tracker_by_name("OpenTrackr HTTP")
-        provider = get_discovery_provider(
-            tracker.discovery_scheme,
-            tracker_url=tracker.announce_url,
-            peer_port=port,
-            transport="direct",
-        )
-        
-        async def _announce_all():
-            tasks = []
-            endpoints = [PeerEndpoint(host=ygg_host, port=port)]
-            tasks.append(provider.announce(
-                nickname,
-                nickname,
-                transport="direct",
-                endpoints=endpoints
-            ))
-            if fingerprint and len(fingerprint) > 10:
-                tasks.append(provider.announce(
-                    nickname,
-                    fingerprint,
-                    transport="direct",
-                    endpoints=endpoints
-                ))
-            
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            success_count = 0
-            for i, res in enumerate(results):
-                if isinstance(res, Exception):
-                    if isinstance(res, (urllib.error.URLError, OSError)):
-                        print(f"Network error in Yggdrasil announce {i+1} on OpenTrackr HTTP: {res}")
-                    else:
-                        print(f"Unexpected error in Yggdrasil announce {i+1} on OpenTrackr HTTP: {res}")
-                        traceback.print_exception(type(res), res, res.__traceback__)
-                else:
-                    success_count += 1
-            return success_count
+    return announce_peer_endpoints(nickname, fingerprint, json.dumps([ygg_host]), port)
 
-        success_count = loop.run_until_complete(_announce_all())
-        if success_count > 0:
-            print(f"Announced Yggdrasil address {ygg_host}:{port} under token {nickname[:16]}... ({success_count} registrations)")
-        return True
-    except Exception as e:
-        if isinstance(e, (urllib.error.URLError, OSError)):
-            print(f"Network error announcing Yggdrasil peer in discovery_bridge: {e}")
-        else:
-            print("Error announcing Yggdrasil peer in discovery_bridge:", e)
-            traceback.print_exc()
-        return False
-    finally:
-        try:
-            loop.close()
-        except Exception:
-            pass
+
+def get_tracker_diagnostics_json() -> str:
+    return json.dumps(tracker_diagnostics, sort_keys=True)
 
 
 # =====================================================================
@@ -278,6 +315,11 @@ def start_p2p_listener(port=50001):
     Start the background asyncio event loop and dual-stack listener thread.
     Listens on both 0.0.0.0 (IPv4) and :: (IPv6/Yggdrasil) simultaneously.
     """
+    global loop
+    if loop and loop.is_running():
+        print(f"P2P listener already running on port {port}, skipping duplicate start")
+        return
+
     try:
         from messenger.core.upnp import setup_upnp_in_background
         setup_upnp_in_background(port)
@@ -516,6 +558,20 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
     if host.startswith("[") and host.endswith("]"):
         host = host[1:-1]
 
+    async def _close_writer_safely(writer):
+        if writer is None:
+            return
+        try:
+            writer.close()
+        except Exception:
+            return
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+
+    reader = None
+    writer = None
     try:
         reader, writer = await asyncio.wait_for(
             transport_connect("direct", host, port), timeout=5.0
@@ -526,15 +582,22 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
         session._start_reader()
         return session
     except Exception as e3:
+        await _close_writer_safely(writer)
         print(f"V3 failed to {endpoint_str}: {e3}, trying V2...")
+        reader = None
+        writer = None
         reader, writer = await asyncio.wait_for(
             transport_connect("direct", host, port), timeout=5.0
         )
-        session = Session(reader, writer, identity_priv=identity_priv,
-                          signing_key=signing_key, trust_store=trust_store, protocol_version=2)
-        await asyncio.wait_for(session._exchange_keys(initiator=True), timeout=5.0)
-        session._start_reader()
-        return session
+        try:
+            session = Session(reader, writer, identity_priv=identity_priv,
+                              signing_key=signing_key, trust_store=trust_store, protocol_version=2)
+            await asyncio.wait_for(session._exchange_keys(initiator=True), timeout=5.0)
+            session._start_reader()
+            return session
+        except Exception:
+            await _close_writer_safely(writer)
+            raise
 
 
 async def _send_message_async(peer_name: str, endpoint: str, body: str) -> bool:
@@ -588,13 +651,15 @@ async def _send_message_async(peer_name: str, endpoint: str, body: str) -> bool:
 
             # Send identity_info so the remote side learns our nickname immediately.
             try:
-                local_signing = load_or_create_signing_identity()
-                local_fp = fingerprint(local_signing.verify_key)
-                await session.send_reliable({
-                    "type": "identity_info",
-                    "nickname": peer_name,
-                    "fingerprint": local_fp,
-                })
+                local_identity = load_or_create_identity()
+                local_fp = local_identity_fingerprint or fingerprint(local_identity.public_key)
+                local_name = local_identity_nickname
+                if local_name:
+                    await session.send_reliable({
+                        "type": "identity_info",
+                        "nickname": local_name,
+                        "fingerprint": local_fp,
+                    })
             except Exception as id_err:
                 print(f"Could not send identity_info to {peer_name}: {id_err}")
 
@@ -670,7 +735,20 @@ async def _send_file_async(peer_name: str, endpoint: str, file_path: str) -> boo
                     session_listener_callback.onSessionEstablished(peer_name, fp, ep)
                 except Exception:
                     pass
-                    
+
+            try:
+                local_identity = load_or_create_identity()
+                local_fp = local_identity_fingerprint or fingerprint(local_identity.public_key)
+                local_name = local_identity_nickname
+                if local_name:
+                    await session.send_reliable({
+                        "type": "identity_info",
+                        "nickname": local_name,
+                        "fingerprint": local_fp,
+                    })
+            except Exception as id_err:
+                print(f"Could not send identity_info to {peer_name} during file transfer: {id_err}")
+                     
         # Encrypt and send the file
         from messenger.core.crypto import encrypt_file_in_chunks
         import base64

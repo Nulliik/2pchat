@@ -90,7 +90,29 @@ class HttpTrackerDiscovery(DiscoveryProvider):
                 pieces.append(f"{key}={urllib.parse.quote(str(value), safe='')}")
         return "&".join(pieces)
 
-    def _announce_request(self, info_hash: bytes, *, event: str, ipv6_addr: str | None = None) -> bytes:
+    @staticmethod
+    def _split_endpoints(endpoints: List[PeerEndpoint]) -> tuple[PeerEndpoint | None, PeerEndpoint | None]:
+        ipv4_endpoint = None
+        ipv6_endpoint = None
+        for endpoint in endpoints:
+            try:
+                addr = ipaddress.ip_address(endpoint.host)
+            except ValueError:
+                continue
+            if isinstance(addr, ipaddress.IPv4Address) and ipv4_endpoint is None:
+                ipv4_endpoint = endpoint
+            elif isinstance(addr, ipaddress.IPv6Address) and ipv6_endpoint is None:
+                ipv6_endpoint = endpoint
+        return ipv4_endpoint, ipv6_endpoint
+
+    def _announce_request(
+        self,
+        info_hash: bytes,
+        *,
+        event: str,
+        ipv4_endpoint: PeerEndpoint | None = None,
+        ipv6_endpoint: PeerEndpoint | None = None,
+    ) -> bytes:
         params = {
             "info_hash": info_hash,
             "peer_id": self._peer_id,
@@ -103,8 +125,10 @@ class HttpTrackerDiscovery(DiscoveryProvider):
             "event": event,
             "key": self._key,
         }
-        if ipv6_addr:
-            params["ipv6"] = ipv6_addr
+        if ipv4_endpoint is not None:
+            params["ip"] = ipv4_endpoint.host
+        if ipv6_endpoint is not None:
+            params["ipv6"] = ipaddress.IPv6Address(ipv6_endpoint.host).packed
         url = self._tracker_url + "?" + self._compact_query(params)
         request = urllib.request.Request(
             url,
@@ -146,6 +170,10 @@ class HttpTrackerDiscovery(DiscoveryProvider):
             chunk = payload[offset : offset + 18]
             ip = socket.inet_ntop(socket.AF_INET6, chunk[:16])
             port = int.from_bytes(chunk[16:], "big")
+            try:
+                ipaddress.IPv6Address(ip)
+            except ValueError as exc:
+                raise RuntimeError("Tracker returned invalid IPv6 peer IP") from exc
             peers.append(PeerEndpoint(host=ip, port=port))
         return peers
 
@@ -160,11 +188,10 @@ class HttpTrackerDiscovery(DiscoveryProvider):
                 reason = reason.decode("utf-8", errors="replace")
             raise RuntimeError(str(reason))
         interval = int(decoded.get("interval", 0))
-        
-        peers: list[PeerEndpoint] = []
-        
         peers_field = decoded.get("peers", b"")
+        peers6_field = decoded.get("peers6", b"")
         if isinstance(peers_field, list):
+            peers: list[PeerEndpoint] = []
             for entry in peers_field:
                 if not isinstance(entry, dict):
                     continue
@@ -174,13 +201,14 @@ class HttpTrackerDiscovery(DiscoveryProvider):
                 port = int(entry.get("port", 0))
                 if host and port:
                     peers.append(PeerEndpoint(host=str(host), port=port))
-        elif isinstance(peers_field, bytes) and len(peers_field) > 0:
-            peers.extend(cls._parse_compact_peers(peers_field))
-
-        peers6_field = decoded.get("peers6", b"")
-        if isinstance(peers6_field, bytes) and len(peers6_field) > 0:
+            if isinstance(peers6_field, bytes):
+                peers.extend(cls._parse_compact_peers6(peers6_field))
+            return interval, peers
+        if not isinstance(peers_field, bytes):
+            raise RuntimeError("Tracker returned an unsupported peer list format")
+        peers = cls._parse_compact_peers(peers_field) if peers_field else []
+        if isinstance(peers6_field, bytes) and peers6_field:
             peers.extend(cls._parse_compact_peers6(peers6_field))
-
         return interval, peers
 
     async def announce(
@@ -193,18 +221,18 @@ class HttpTrackerDiscovery(DiscoveryProvider):
     ) -> PeerDescriptor:
         if not endpoints:
             raise ValueError("Tracker discovery requires at least one endpoint")
-        endpoint = endpoints[0]
-        if endpoint.port != self._peer_port:
+        if any(endpoint.port != self._peer_port for endpoint in endpoints):
             raise ValueError("Endpoint port must match tracker discovery peer_port")
-        
-        ipv6_addr = None
-        for ep in endpoints:
-            if ":" in ep.host:
-                ipv6_addr = ep.host
-                break
-
+        ipv4_endpoint, ipv6_endpoint = self._split_endpoints(endpoints)
+        endpoint = ipv4_endpoint or ipv6_endpoint or endpoints[0]
         info_hash = self.derive_info_hash(nickname, shared_code)
-        payload = await asyncio.to_thread(self._announce_request, info_hash, event="started", ipv6_addr=ipv6_addr)
+        payload = await asyncio.to_thread(
+            self._announce_request,
+            info_hash,
+            event="started",
+            ipv4_endpoint=ipv4_endpoint,
+            ipv6_endpoint=ipv6_endpoint,
+        )
         interval, peers = self._parse_response(payload)
         now = int(self._time_fn())
         ttl = max(interval, self._interval_floor)

@@ -69,6 +69,20 @@ BASE_TRACKERS: tuple[TrackerSpec, ...] = (
         protocol="https",
         notes="validated 2026-07-03",
     ),
+    TrackerSpec(
+        name="Yggdrasil-only HTTP",
+        announce_url="http://[200:1e2f:e608:eb3a:2bf:1e62:87ba:e2f7]/announce",
+        discovery_scheme="http-tracker",
+        protocol="http",
+        notes="public Yggdrasil-only tracker from services list, verified 2026-07-09",
+    ),
+    TrackerSpec(
+        name="Yggdrasil-only UDP",
+        announce_url="udp://[202:68d0:f0d5:b88d:1d1a:555e:2f6b:3148]:6969/announce",
+        discovery_scheme="udp-tracker",
+        protocol="udp",
+        notes="public Yggdrasil-only tracker from services list, verified 2026-07-09",
+    ),
 )
 
 

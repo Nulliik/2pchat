@@ -5,6 +5,13 @@ plugins {
   alias(libs.plugins.chaquopy)
 }
 
+val chaquopyRuntimePython = providers.gradleProperty("chaquopyRuntimePython")
+    .orElse(providers.environmentVariable("CHAQUOPY_PYTHON_VERSION"))
+    .getOrElse("3.11")
+val chaquopyBuildPython = providers.gradleProperty("chaquopyBuildPython")
+    .orElse(providers.environmentVariable("CHAQUOPY_BUILD_PYTHON"))
+    .orNull
+
 android {
     namespace = "com.example.twopchat"
     compileSdk = 36
@@ -96,7 +103,10 @@ dependencies {
 
 chaquopy {
     defaultConfig {
-        version = "3.13"
+        version = chaquopyRuntimePython
+        if (!chaquopyBuildPython.isNullOrBlank()) {
+            buildPython(chaquopyBuildPython)
+        }
         pip {
             install("pynacl")
             install("cbor2")

@@ -7,7 +7,6 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.util.Log
-import androidx.preference.PreferenceManager
 
 class BootUpReceiver : BroadcastReceiver() {
 
@@ -19,7 +18,7 @@ class BootUpReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) {
             Log.w(TAG, "Wrong action: ${intent.action}")
         }
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val preferences = yggdrasilPrefs(context)
         if (!preferences.getBoolean(PREF_KEY_ENABLED, false)) {
             Log.i(TAG, "Yggdrasil disabled, not starting service")
             return

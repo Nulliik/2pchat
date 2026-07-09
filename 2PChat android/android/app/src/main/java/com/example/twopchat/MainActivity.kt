@@ -271,7 +271,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        P2PMessageRelay.stopServer()
+        if (isFinishing) {
+            P2PMessageRelay.stopServer()
+        }
     }
 }
 

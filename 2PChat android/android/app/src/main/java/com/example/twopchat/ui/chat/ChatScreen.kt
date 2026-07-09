@@ -69,6 +69,34 @@ fun ChatScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    fun parseIncomingAttachmentMessage(text: String): Message? {
+        val trimmed = text.trim()
+        if (!trimmed.startsWith("{")) {
+            return null
+        }
+        return try {
+            val json = org.json.JSONObject(trimmed)
+            if (json.optString("type") != "file") {
+                return null
+            }
+            val fileName = json.optString("file_name", "file")
+            val filePath = json.optString("file_path", "")
+            val mime = json.optString("mime", "")
+            val isImage = mime.startsWith("image/")
+            Message(
+                id = System.currentTimeMillis().toString(),
+                text = if (isImage) "Sent an image" else fileName,
+                isMe = false,
+                timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
+                attachmentType = if (isImage) "IMAGE" else "FILE",
+                attachmentUri = filePath,
+                attachmentName = fileName
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     BackHandler {
         onBack()
     }
@@ -156,27 +184,9 @@ fun ChatScreen(
         com.example.twopchat.P2PMessageRelay.onMessageReceived = { sender, text ->
             if (sender == peerName) {
                 val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
-                if (text.startsWith("{\"type\":\"file\"")) {
-                    try {
-                        val json = org.json.JSONObject(text)
-                        val fileName = json.optString("file_name", "file")
-                        val filePath = json.optString("file_path", "")
-                        val mime = json.optString("mime", "")
-                        val isImage = mime.startsWith("image/")
-                        initialMessages.add(
-                            Message(
-                                id = System.currentTimeMillis().toString(),
-                                text = if (isImage) "Sent an image" else fileName,
-                                isMe = false,
-                                timestamp = time,
-                                attachmentType = if (isImage) "IMAGE" else "FILE",
-                                attachmentUri = filePath,
-                                attachmentName = fileName
-                            )
-                        )
-                    } catch (e: Exception) {
-                        initialMessages.add(Message(System.currentTimeMillis().toString(), text, false, time))
-                    }
+                val attachmentMessage = parseIncomingAttachmentMessage(text)
+                if (attachmentMessage != null) {
+                    initialMessages.add(attachmentMessage)
                 } else {
                     initialMessages.add(Message(System.currentTimeMillis().toString(), text, false, time))
                 }
