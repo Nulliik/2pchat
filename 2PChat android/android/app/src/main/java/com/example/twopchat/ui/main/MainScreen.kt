@@ -400,6 +400,7 @@ fun ContactsTab(
     onSurfaceColor: Color,
     onSurfaceVariant: Color
 ) {
+    val context = LocalContext.current
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<ContactItem>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
@@ -413,7 +414,6 @@ fun ContactsTab(
     var isResolvingInvite by remember { mutableStateOf(false) }
     var resolveInviteStatus by remember { mutableStateOf("") }
     
-    val context = LocalContext.current
     val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
     var fingerprint by remember { mutableStateOf("Loading...") }
