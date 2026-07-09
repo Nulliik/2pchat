@@ -419,7 +419,13 @@ async def _read_loop(session, peer_name, fp):
             if mtype == "identity_info":
                 # Remote peer announced their real nickname — update our mappings
                 real_name = msg.get("nickname", "").strip()
-                remote_fp = msg.get("fingerprint", fp)
+                claimed_fp = msg.get("fingerprint", fp)
+                # The authenticated session fingerprint is authoritative. A
+                # peer-controlled identity_info payload must not be able to
+                # overwrite another contact's identity mapping.
+                remote_fp = fp if claimed_fp != fp else claimed_fp
+                if claimed_fp != fp:
+                    print(f"Ignored mismatched identity_info fingerprint from {fp}")
                 if real_name and real_name != peer_name:
                     print(f"Peer renamed: '{peer_name}' → '{real_name}' (fp={remote_fp})")
                     peer_fingerprint_to_name[remote_fp] = real_name
@@ -475,7 +481,12 @@ async def _read_loop(session, peer_name, fp):
                     expected = int(meta.get("num_chunks", 0))
                     if len(state["chunks"]) >= expected:
                         try:
-                            file_name = meta.get("file_name") or f"file-{file_id_str}"
+                            requested_name = meta.get("file_name") or f"file-{file_id_str}"
+                            # Keep received files inside downloads even when a
+                            # remote peer supplies a path-like filename.
+                            file_name = Path(str(requested_name)).name
+                            if file_name in {"", ".", ".."}:
+                                file_name = f"file-{file_id_str}"
                             file_key = base64.b64decode(meta["file_key"])
                             file_nonce_prefix = base64.b64decode(meta["file_nonce_prefix"])
                             file_hash = base64.b64decode(meta["file_hash"])

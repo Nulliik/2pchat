@@ -122,9 +122,10 @@ class HttpTrackerDiscovery(DiscoveryProvider):
             "left": 0,
             "compact": 1,
             "numwant": self._num_want,
-            "event": event,
             "key": self._key,
         }
+        if event != "none":
+            params["event"] = event
         if ipv4_endpoint is not None:
             params["ip"] = ipv4_endpoint.host
         if ipv6_endpoint is not None:
@@ -258,7 +259,9 @@ class HttpTrackerDiscovery(DiscoveryProvider):
     ) -> List[PeerDescriptor]:
         del expected_fingerprint
         info_hash = self.derive_info_hash(nickname, shared_code)
-        payload = await asyncio.to_thread(self._announce_request, info_hash, event="started")
+        # Resolving must not join the swarm: a `started` announce here would
+        # make the lookup device appear as a peer for every searched nickname.
+        payload = await asyncio.to_thread(self._announce_request, info_hash, event="none")
         interval, peers = self._parse_response(payload)
         now = int(self._time_fn())
         ttl = max(interval, self._interval_floor)
