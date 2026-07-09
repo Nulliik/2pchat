@@ -90,7 +90,7 @@ class HttpTrackerDiscovery(DiscoveryProvider):
                 pieces.append(f"{key}={urllib.parse.quote(str(value), safe='')}")
         return "&".join(pieces)
 
-    def _announce_request(self, info_hash: bytes, *, event: str) -> bytes:
+    def _announce_request(self, info_hash: bytes, *, event: str, ipv6_addr: str | None = None) -> bytes:
         params = {
             "info_hash": info_hash,
             "peer_id": self._peer_id,
@@ -103,6 +103,8 @@ class HttpTrackerDiscovery(DiscoveryProvider):
             "event": event,
             "key": self._key,
         }
+        if ipv6_addr:
+            params["ipv6"] = ipv6_addr
         url = self._tracker_url + "?" + self._compact_query(params)
         request = urllib.request.Request(
             url,
@@ -135,6 +137,18 @@ class HttpTrackerDiscovery(DiscoveryProvider):
             peers.append(PeerEndpoint(host=ip, port=port))
         return peers
 
+    @staticmethod
+    def _parse_compact_peers6(payload: bytes) -> list[PeerEndpoint]:
+        if len(payload) % 18 != 0:
+            raise RuntimeError("Tracker returned malformed compact IPv6 peer list")
+        peers: list[PeerEndpoint] = []
+        for offset in range(0, len(payload), 18):
+            chunk = payload[offset : offset + 18]
+            ip = socket.inet_ntop(socket.AF_INET6, chunk[:16])
+            port = int.from_bytes(chunk[16:], "big")
+            peers.append(PeerEndpoint(host=ip, port=port))
+        return peers
+
     @classmethod
     def _parse_response(cls, payload: bytes) -> tuple[int, list[PeerEndpoint]]:
         decoded = bdecode(payload)
@@ -146,9 +160,11 @@ class HttpTrackerDiscovery(DiscoveryProvider):
                 reason = reason.decode("utf-8", errors="replace")
             raise RuntimeError(str(reason))
         interval = int(decoded.get("interval", 0))
+        
+        peers: list[PeerEndpoint] = []
+        
         peers_field = decoded.get("peers", b"")
         if isinstance(peers_field, list):
-            peers = []
             for entry in peers_field:
                 if not isinstance(entry, dict):
                     continue
@@ -158,10 +174,14 @@ class HttpTrackerDiscovery(DiscoveryProvider):
                 port = int(entry.get("port", 0))
                 if host and port:
                     peers.append(PeerEndpoint(host=str(host), port=port))
-            return interval, peers
-        if not isinstance(peers_field, bytes):
-            raise RuntimeError("Tracker returned an unsupported peer list format")
-        return interval, cls._parse_compact_peers(peers_field)
+        elif isinstance(peers_field, bytes) and len(peers_field) > 0:
+            peers.extend(cls._parse_compact_peers(peers_field))
+
+        peers6_field = decoded.get("peers6", b"")
+        if isinstance(peers6_field, bytes) and len(peers6_field) > 0:
+            peers.extend(cls._parse_compact_peers6(peers6_field))
+
+        return interval, peers
 
     async def announce(
         self,
@@ -176,8 +196,15 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         endpoint = endpoints[0]
         if endpoint.port != self._peer_port:
             raise ValueError("Endpoint port must match tracker discovery peer_port")
+        
+        ipv6_addr = None
+        for ep in endpoints:
+            if ":" in ep.host:
+                ipv6_addr = ep.host
+                break
+
         info_hash = self.derive_info_hash(nickname, shared_code)
-        payload = await asyncio.to_thread(self._announce_request, info_hash, event="started")
+        payload = await asyncio.to_thread(self._announce_request, info_hash, event="started", ipv6_addr=ipv6_addr)
         interval, peers = self._parse_response(payload)
         now = int(self._time_fn())
         ttl = max(interval, self._interval_floor)

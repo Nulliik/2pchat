@@ -79,11 +79,10 @@ def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrac
                     traceback.print_exception(type(r), r, r.__traceback__)
         return flat_results
 
+    loop = asyncio.new_event_loop()
     try:
-        loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         descriptors = loop.run_until_complete(_resolve_all())
-        loop.close()
     except Exception as e:
         if isinstance(e, (urllib.error.URLError, OSError)):
             print(f"Network error in resolve_peers loop: {e}")
@@ -91,6 +90,11 @@ def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrac
             print("Error in resolve_peers loop:", e)
             traceback.print_exc()
         descriptors = []
+    finally:
+        try:
+            loop.close()
+        except Exception:
+            pass
 
     all_endpoints = []
     seen_ep = set()
@@ -118,8 +122,8 @@ def announce_peer(nickname: str, fingerprint: str, host: str, port: int, tracker
     Synchronous wrapper to announce this peer on a tracker under both nickname and fingerprint.
     """
     import urllib.error
+    loop = asyncio.new_event_loop()
     try:
-        loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
         tracker = get_tracker_by_name(tracker_name)
@@ -172,7 +176,6 @@ def announce_peer(nickname: str, fingerprint: str, host: str, port: int, tracker
             return success_count
 
         success_count = loop.run_until_complete(_announce_all())
-        loop.close()
         if success_count > 0:
             print(f"Successfully announced peer endpoints on {tracker_name} ({success_count} registrations).")
         return True
@@ -183,25 +186,24 @@ def announce_peer(nickname: str, fingerprint: str, host: str, port: int, tracker
             print("Error announcing peer in discovery_bridge:", e)
             traceback.print_exc()
         return False
+    finally:
+        try:
+            loop.close()
+        except Exception:
+            pass
 
 
 def announce_peer_ygg(nickname: str, fingerprint: str, ygg_host: str, port: int):
     """
-    Announce this peer using a UDP tracker so that the IPv6/Yggdrasil
-    endpoint is included in the announce.  HTTP trackers only support
-    IPv4 compact peers, so we use a UDP tracker here which carries the
-    IPv6 address in the peer_id/extended field instead.
-
-    For the UDP tracker the endpoint is still announced; the receiver
-    calls resolve_peers which returns all announced endpoints including
-    IPv6 ones stored in the non-compact extension fields.
+    Announce this peer using the HTTP tracker so that the IPv6/Yggdrasil
+    endpoint is included in the announce via the ipv6 parameter.
     """
     import urllib.error
+    loop = asyncio.new_event_loop()
     try:
-        loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        # Use the first UDP tracker that supports IPv6 (Torrent.eu.org)
-        tracker = get_tracker_by_name("Torrent.eu.org UDP")
+        # Use an HTTP tracker that supports ipv6 parameter
+        tracker = get_tracker_by_name("OpenTrackr HTTP")
         provider = get_discovery_provider(
             tracker.discovery_scheme,
             tracker_url=tracker.announce_url,
@@ -211,18 +213,19 @@ def announce_peer_ygg(nickname: str, fingerprint: str, ygg_host: str, port: int)
         
         async def _announce_all():
             tasks = []
+            endpoints = [PeerEndpoint(host=ygg_host, port=port)]
             tasks.append(provider.announce(
                 nickname,
                 nickname,
                 transport="direct",
-                endpoints=[PeerEndpoint(host=ygg_host, port=port)]
+                endpoints=endpoints
             ))
             if fingerprint and len(fingerprint) > 10:
                 tasks.append(provider.announce(
                     nickname,
                     fingerprint,
                     transport="direct",
-                    endpoints=[PeerEndpoint(host=ygg_host, port=port)]
+                    endpoints=endpoints
                 ))
             
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -230,16 +233,15 @@ def announce_peer_ygg(nickname: str, fingerprint: str, ygg_host: str, port: int)
             for i, res in enumerate(results):
                 if isinstance(res, Exception):
                     if isinstance(res, (urllib.error.URLError, OSError)):
-                        print(f"Network error in Yggdrasil announce {i+1} on Torrent.eu.org UDP: {res}")
+                        print(f"Network error in Yggdrasil announce {i+1} on OpenTrackr HTTP: {res}")
                     else:
-                        print(f"Unexpected error in Yggdrasil announce {i+1} on Torrent.eu.org UDP: {res}")
+                        print(f"Unexpected error in Yggdrasil announce {i+1} on OpenTrackr HTTP: {res}")
                         traceback.print_exception(type(res), res, res.__traceback__)
                 else:
                     success_count += 1
             return success_count
 
         success_count = loop.run_until_complete(_announce_all())
-        loop.close()
         if success_count > 0:
             print(f"Announced Yggdrasil address {ygg_host}:{port} under token {nickname[:16]}... ({success_count} registrations)")
         return True
@@ -250,6 +252,11 @@ def announce_peer_ygg(nickname: str, fingerprint: str, ygg_host: str, port: int)
             print("Error announcing Yggdrasil peer in discovery_bridge:", e)
             traceback.print_exc()
         return False
+    finally:
+        try:
+            loop.close()
+        except Exception:
+            pass
 
 
 # =====================================================================
@@ -271,6 +278,12 @@ def start_p2p_listener(port=50001):
     Start the background asyncio event loop and dual-stack listener thread.
     Listens on both 0.0.0.0 (IPv4) and :: (IPv6/Yggdrasil) simultaneously.
     """
+    try:
+        from messenger.core.upnp import setup_upnp_in_background
+        setup_upnp_in_background(port)
+    except Exception as upnp_err:
+        print("[UPNP] Failed to trigger background setup:", upnp_err)
+
     def run():
         global loop
         try:
@@ -714,6 +727,12 @@ def shutdown_all_sessions():
     """
     global active_sessions, incoming_files, loop
     print("Shutdown all active sessions and clearing caches...")
+    try:
+        from messenger.core.upnp import stop_upnp
+        stop_upnp()
+    except Exception as upnp_err:
+        print("[UPNP] Failed to trigger stop_upnp:", upnp_err)
+
     for fp, session in list(active_sessions.items()):
         try:
             if hasattr(session, "close"):

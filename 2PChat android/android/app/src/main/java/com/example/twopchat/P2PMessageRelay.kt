@@ -142,6 +142,38 @@ object P2PMessageRelay {
             })
             
             log(appContext, "Python P2P Relays started successfully")
+            
+            // Start a periodic announcement and network interface monitoring loop
+            thread(start = true, name = "TrackerAnnounceLoop", isDaemon = true) {
+                var lastAddresses = emptyList<String>()
+                var lastAnnounceTime = 0L
+                while (isRunning) {
+                    try {
+                        val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+                        val username = sharedPrefs.getString("username_profile", "") ?: ""
+                        val fingerprint = PythonBridge.getLocalFingerprint()
+                        if (username.isNotBlank() && fingerprint != "Loading..." && fingerprint != "Not Initialized" && fingerprint != "Error") {
+                            val currentAddresses = PythonBridge.getLocalAddresses()
+                            val now = System.currentTimeMillis()
+                            // Announce immediately if network interfaces changed, or periodically every 5 minutes (300,000 ms)
+                            if (currentAddresses != lastAddresses || now - lastAnnounceTime > 300000) {
+                                log(appContext, "Announcing self on tracker. Network changed: ${currentAddresses != lastAddresses}, IPs: $currentAddresses")
+                                val success = PythonBridge.announceSelf(username, fingerprint, 50001)
+                                log(appContext, "Announce self status: $success")
+                                lastAddresses = currentAddresses
+                                lastAnnounceTime = now
+                            }
+                        }
+                    } catch (e: Exception) {
+                        log(appContext, "Error in periodic announce", "ERROR", e)
+                    }
+                    try {
+                        Thread.sleep(10000) // Check network change status every 10 seconds
+                    } catch (e: InterruptedException) {
+                        break
+                    }
+                }
+            }
         } catch (e: Exception) {
             log(appContext, "Error starting Python P2P Relays", "ERROR", e)
         }
@@ -152,6 +184,18 @@ object P2PMessageRelay {
      */
     fun stopServer() {
         isRunning = false
+        // Trigger Python shutdown/cleanup
+        thread(start = true) {
+            try {
+                if (PythonBridge.isInitialized) {
+                    val py = com.chaquo.python.Python.getInstance()
+                    val bridge = py.getModule("discovery_bridge")
+                    bridge.callAttr("shutdown_all_sessions")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error shutting down Python sessions", e)
+            }
+        }
     }
 
     /**

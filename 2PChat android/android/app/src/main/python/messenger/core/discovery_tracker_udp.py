@@ -203,7 +203,8 @@ class UdpTrackerDiscovery(DiscoveryProvider):
                         raise RuntimeError(response[8:].decode("utf-8", errors="replace"))
                     if action != TRACKER_ACTION_ANNOUNCE or rx != tx:
                         raise RuntimeError("Tracker announce transaction mismatch")
-                    peers = self._parse_compact_peers(response[20:])
+                    is_ipv6 = (family == socket.AF_INET6)
+                    peers = self._parse_compact_peers(response[20:], is_ipv6=is_ipv6)
                     return interval, peers
                 except Exception as exc:  # noqa: BLE001
                     last_error = exc
@@ -214,18 +215,23 @@ class UdpTrackerDiscovery(DiscoveryProvider):
         raise RuntimeError("Unable to contact tracker")
 
     @staticmethod
-    def _parse_compact_peers(payload: bytes) -> list[PeerEndpoint]:
-        if len(payload) % 6 != 0:
+    def _parse_compact_peers(payload: bytes, is_ipv6: bool = False) -> list[PeerEndpoint]:
+        chunk_len = 18 if is_ipv6 else 6
+        if len(payload) % chunk_len != 0:
             raise RuntimeError("Tracker returned malformed compact peer list")
         peers: list[PeerEndpoint] = []
-        for offset in range(0, len(payload), 6):
-            chunk = payload[offset : offset + 6]
-            ip = socket.inet_ntoa(chunk[:4])
-            port = struct.unpack(">H", chunk[4:])[0]
-            try:
-                ipaddress.IPv4Address(ip)
-            except ValueError as exc:
-                raise RuntimeError("Tracker returned invalid peer IP") from exc
+        for offset in range(0, len(payload), chunk_len):
+            chunk = payload[offset : offset + chunk_len]
+            if is_ipv6:
+                ip = socket.inet_ntop(socket.AF_INET6, chunk[:16])
+                port = struct.unpack(">H", chunk[16:])[0]
+            else:
+                ip = socket.inet_ntoa(chunk[:4])
+                port = struct.unpack(">H", chunk[4:])[0]
+                try:
+                    ipaddress.IPv4Address(ip)
+                except ValueError as exc:
+                    raise RuntimeError("Tracker returned invalid peer IP") from exc
             peers.append(PeerEndpoint(host=ip, port=port))
         return peers
 
