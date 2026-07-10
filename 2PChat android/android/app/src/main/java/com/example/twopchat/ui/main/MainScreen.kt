@@ -2935,34 +2935,54 @@ fun PeerRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                // Avatar representation
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(46.dp)
-                        .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
-                ) {
-                    val avatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[peer.name]
-                    if (avatarBitmap != null) {
-                        Image(
-                            bitmap = avatarBitmap.asImageBitmap(),
-                            contentDescription = "Avatar",
-                            modifier = Modifier.fillMaxSize().clip(CircleShape)
-                        )
-                    } else if (peer.initials == "🔖") {
-                        Icon(
-                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_saved_messages),
-                            contentDescription = "Saved Messages",
-                            tint = primaryColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    } else {
-                        Text(
-                            text = peer.initials,
-                            color = primaryColor,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                // Avatar representation with Online Status Dot
+                Box(modifier = Modifier.size(46.dp)) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
+                    ) {
+                        val avatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[peer.name]
+                        if (avatarBitmap != null) {
+                            Image(
+                                bitmap = avatarBitmap.asImageBitmap(),
+                                contentDescription = "Avatar",
+                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                            )
+                        } else if (peer.initials == "🔖") {
+                            Icon(
+                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_saved_messages),
+                                contentDescription = "Saved Messages",
+                                tint = primaryColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        } else {
+                            Text(
+                                text = peer.initials,
+                                color = primaryColor,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                    if (peer.name != "Saved Messages") {
+                        val isOnline = com.example.twopchat.P2PMessageRelay.peerEndpoints[peer.name] != null
+                        if (isOnline) {
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .align(Alignment.BottomEnd)
+                                    .background(surfaceColor, shape = CircleShape)
+                                    .padding(2.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(primaryColor, shape = CircleShape)
+                                )
+                            }
+                        }
                     }
                 }
                 

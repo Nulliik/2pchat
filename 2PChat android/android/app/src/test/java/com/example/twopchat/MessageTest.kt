@@ -34,4 +34,19 @@ class MessageTest {
         assertEquals("Hello", msg.replyToText)
         assertEquals("Alice", msg.replyToName)
     }
+
+    @Test
+    fun message_storesStatusCorrectly() {
+        val msg = Message(
+            id = "3",
+            text = "Status check",
+            isMe = true,
+            timestamp = "12:02",
+            status = "PENDING"
+        )
+        assertEquals("PENDING", msg.status)
+        
+        val copied = msg.copy(status = "READ")
+        assertEquals("READ", copied.status)
+    }
 }

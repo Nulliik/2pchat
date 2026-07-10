@@ -10,7 +10,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 4
         private const val TABLE_MESSAGES = "messages"
         
         private const val KEY_ID = "id"
@@ -24,11 +24,12 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
         private const val KEY_REPLY_TO_ID = "reply_to_id"
         private const val KEY_REPLY_TO_TEXT = "reply_to_text"
         private const val KEY_REPLY_TO_NAME = "reply_to_name"
+        private const val KEY_STATUS = "status"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
         val createTable = ("CREATE TABLE " + TABLE_MESSAGES + "("
-                + KEY_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + KEY_ID + " TEXT PRIMARY KEY,"
                 + KEY_PEER_NAME + " TEXT,"
                 + KEY_MESSAGE_TEXT + " TEXT,"
                 + KEY_IS_ME + " INTEGER,"
@@ -38,7 +39,8 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
                 + KEY_ATTACHMENT_NAME + " TEXT,"
                 + KEY_REPLY_TO_ID + " TEXT,"
                 + KEY_REPLY_TO_TEXT + " TEXT,"
-                + KEY_REPLY_TO_NAME + " TEXT" + ")")
+                + KEY_REPLY_TO_NAME + " TEXT,"
+                + KEY_STATUS + " TEXT" + ")")
         db.execSQL(createTable)
     }
 
@@ -52,11 +54,53 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
                 e.printStackTrace()
             }
         }
+        if (oldVersion < 3) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_STATUS TEXT")
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        if (oldVersion < 4) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_MESSAGES RENAME TO messages_old")
+                val createTable = ("CREATE TABLE " + TABLE_MESSAGES + "("
+                        + KEY_ID + " TEXT PRIMARY KEY,"
+                        + KEY_PEER_NAME + " TEXT,"
+                        + KEY_MESSAGE_TEXT + " TEXT,"
+                        + KEY_IS_ME + " INTEGER,"
+                        + KEY_TIMESTAMP + " TEXT,"
+                        + KEY_ATTACHMENT_TYPE + " TEXT,"
+                        + KEY_ATTACHMENT_URI + " TEXT,"
+                        + KEY_ATTACHMENT_NAME + " TEXT,"
+                        + KEY_REPLY_TO_ID + " TEXT,"
+                        + KEY_REPLY_TO_TEXT + " TEXT,"
+                        + KEY_REPLY_TO_NAME + " TEXT,"
+                        + KEY_STATUS + " TEXT" + ")")
+                db.execSQL(createTable)
+                db.execSQL("INSERT INTO $TABLE_MESSAGES ($KEY_ID, $KEY_PEER_NAME, $KEY_MESSAGE_TEXT, $KEY_IS_ME, $KEY_TIMESTAMP, " +
+                        "$KEY_ATTACHMENT_TYPE, $KEY_ATTACHMENT_URI, $KEY_ATTACHMENT_NAME, $KEY_REPLY_TO_ID, $KEY_REPLY_TO_TEXT, $KEY_REPLY_TO_NAME, $KEY_STATUS) " +
+                        "SELECT CAST($KEY_ID AS TEXT), $KEY_PEER_NAME, $KEY_MESSAGE_TEXT, $KEY_IS_ME, $KEY_TIMESTAMP, " +
+                        "$KEY_ATTACHMENT_TYPE, $KEY_ATTACHMENT_URI, $KEY_ATTACHMENT_NAME, $KEY_REPLY_TO_ID, $KEY_REPLY_TO_TEXT, $KEY_REPLY_TO_NAME, $KEY_STATUS " +
+                        "FROM messages_old")
+                db.execSQL("DROP TABLE messages_old")
+            } catch (e: Exception) {
+                e.printStackTrace()
+                try {
+                    db.execSQL("DROP TABLE IF EXISTS messages_old")
+                    db.execSQL("DROP TABLE IF EXISTS $TABLE_MESSAGES")
+                    onCreate(db)
+                } catch (ex: Exception) {
+                    ex.printStackTrace()
+                }
+            }
+        }
     }
 
     fun saveMessage(peerName: String, msg: Message) {
         val db = this.writableDatabase
         val values = ContentValues().apply {
+            put(KEY_ID, msg.id)
             put(KEY_PEER_NAME, peerName)
             put(KEY_MESSAGE_TEXT, msg.text)
             put(KEY_IS_ME, if (msg.isMe) 1 else 0)
@@ -67,6 +111,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
             put(KEY_REPLY_TO_ID, msg.replyToId)
             put(KEY_REPLY_TO_TEXT, msg.replyToText)
             put(KEY_REPLY_TO_NAME, msg.replyToName)
+            put(KEY_STATUS, msg.status)
         }
         db.insert(TABLE_MESSAGES, null, values)
     }
@@ -95,6 +140,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
                 val indexReplyToId = it.getColumnIndex(KEY_REPLY_TO_ID)
                 val indexReplyToText = it.getColumnIndex(KEY_REPLY_TO_TEXT)
                 val indexReplyToName = it.getColumnIndex(KEY_REPLY_TO_NAME)
+                val indexStatus = it.getColumnIndex(KEY_STATUS)
                 val indexId = it.getColumnIndex(KEY_ID)
                 
                 do {
@@ -107,7 +153,8 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
                     val replyToId = if (indexReplyToId != -1) it.getString(indexReplyToId) else null
                     val replyToText = if (indexReplyToText != -1) it.getString(indexReplyToText) else null
                     val replyToName = if (indexReplyToName != -1) it.getString(indexReplyToName) else null
-                    val id = if (indexId != -1) it.getLong(indexId).toString() else System.currentTimeMillis().toString()
+                    val status = if (indexStatus != -1) it.getString(indexStatus) else null
+                    val id = if (indexId != -1) it.getString(indexId) else System.currentTimeMillis().toString()
                     
                     messages.add(
                         Message(
@@ -120,7 +167,8 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
                             attachmentName = attachName,
                             replyToId = replyToId,
                             replyToText = replyToText,
-                            replyToName = replyToName
+                            replyToName = replyToName,
+                            status = status
                         )
                     )
                 } while (it.moveToNext())
@@ -141,6 +189,79 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    fun updateMessageStatus(id: String, status: String) {
+        try {
+            val db = this.writableDatabase
+            val values = ContentValues().apply {
+                put(KEY_STATUS, status)
+            }
+            db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun getPendingMessagesForPeer(peerName: String): List<Message> {
+        val messages = mutableListOf<Message>()
+        val db = this.readableDatabase
+        val cursor = db.query(
+            TABLE_MESSAGES,
+            null,
+            "$KEY_PEER_NAME = ? AND $KEY_STATUS = ?",
+            arrayOf(peerName, "PENDING"),
+            null,
+            null,
+            "$KEY_ID ASC"
+        )
+        
+        cursor.use {
+            if (it.moveToFirst()) {
+                val indexText = it.getColumnIndex(KEY_MESSAGE_TEXT)
+                val indexIsMe = it.getColumnIndex(KEY_IS_ME)
+                val indexTimestamp = it.getColumnIndex(KEY_TIMESTAMP)
+                val indexAttachType = it.getColumnIndex(KEY_ATTACHMENT_TYPE)
+                val indexAttachUri = it.getColumnIndex(KEY_ATTACHMENT_URI)
+                val indexAttachName = it.getColumnIndex(KEY_ATTACHMENT_NAME)
+                val indexReplyToId = it.getColumnIndex(KEY_REPLY_TO_ID)
+                val indexReplyToText = it.getColumnIndex(KEY_REPLY_TO_TEXT)
+                val indexReplyToName = it.getColumnIndex(KEY_REPLY_TO_NAME)
+                val indexStatus = it.getColumnIndex(KEY_STATUS)
+                val indexId = it.getColumnIndex(KEY_ID)
+                
+                do {
+                    val text = if (indexText != -1) it.getString(indexText) else ""
+                    val isMe = if (indexIsMe != -1) it.getInt(indexIsMe) == 1 else false
+                    val timestamp = if (indexTimestamp != -1) it.getString(indexTimestamp) else ""
+                    val attachType = if (indexAttachType != -1) it.getString(indexAttachType) else null
+                    val attachUri = if (indexAttachUri != -1) it.getString(indexAttachUri) else null
+                    val attachName = if (indexAttachName != -1) it.getString(indexAttachName) else null
+                    val replyToId = if (indexReplyToId != -1) it.getString(indexReplyToId) else null
+                    val replyToText = if (indexReplyToText != -1) it.getString(indexReplyToText) else null
+                    val replyToName = if (indexReplyToName != -1) it.getString(indexReplyToName) else null
+                    val status = if (indexStatus != -1) it.getString(indexStatus) else null
+                    val id = if (indexId != -1) it.getString(indexId) else System.currentTimeMillis().toString()
+                    
+                    messages.add(
+                        Message(
+                            id = id,
+                            text = text,
+                            isMe = isMe,
+                            timestamp = timestamp,
+                            attachmentType = attachType,
+                            attachmentUri = attachUri,
+                            attachmentName = attachName,
+                            replyToId = replyToId,
+                            replyToText = replyToText,
+                            replyToName = replyToName,
+                            status = status
+                        )
+                    )
+                } while (it.moveToNext())
+            }
+        }
+        return messages
     }
 
     fun renamePeer(oldPeerName: String, newPeerName: String) {
