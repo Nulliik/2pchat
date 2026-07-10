@@ -735,7 +735,7 @@ fun ChatScreen(
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
-                        val isOnline = endpoint != null
+                        val isOnline = com.example.twopchat.P2PMessageRelay.peerSessionStates[peerName] == true
                         if (peerName != "Saved Messages") {
                             Box(
                                 modifier = Modifier
@@ -749,8 +749,7 @@ fun ChatScreen(
                                 Localizations.getString("local_storage", appLanguage)
                             } else if (isOnline) {
                                 val transportName = com.example.twopchat.P2PMessageRelay.peerConnectionTransports[peerName]
-                                    ?: sharedPrefs.getString("transport_$peerName", null)
-                                    ?: "Direct P2P"
+                                    ?: if (appLanguage == "Русский") "маршрут определяется" else "detecting route"
                                 if (appLanguage == "Русский") "В сети • $transportName" else "Online • $transportName"
                             } else {
                                 if (appLanguage == "Русский") "Не в сети" else "Offline"

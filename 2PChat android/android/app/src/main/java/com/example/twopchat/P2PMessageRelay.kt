@@ -18,9 +18,23 @@ object P2PMessageRelay {
         return LISTENER_PORT
     }
 
+    fun refreshAnnouncement(context: android.content.Context) {
+        val appContext = context.applicationContext
+        thread(start = true, name = "ManualTrackerAnnounce") {
+            val prefs = appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+            val username = prefs.getString("username_profile", "").orEmpty()
+            val fingerprint = PythonBridge.getLocalFingerprint()
+            if (username.isNotBlank() && fingerprint.length >= 40) {
+                val success = PythonBridge.announceSelf(username, fingerprint, listenerPort(appContext), force = true)
+                log(appContext, "Forced announce after transport setting change: $success")
+            }
+        }
+    }
+
     // Maps peer name to their resolved IP:Port endpoint
     val peerEndpoints = androidx.compose.runtime.mutableStateMapOf<String, String>()
     val peerConnectionTransports = androidx.compose.runtime.mutableStateMapOf<String, String>()
+    val peerSessionStates = androidx.compose.runtime.mutableStateMapOf<String, Boolean>()
     private val fingerprintToPeerName = ConcurrentHashMap<String, String>()
     private val processingOfflineQueues = ConcurrentHashMap.newKeySet<String>()
 
@@ -95,7 +109,7 @@ object P2PMessageRelay {
             editor.putStringSet("active_chats", updatedChats)
         }
 
-        val keysToMove = listOf("last_msg_", "transport_", "verified_peer_", "fingerprint_mismatch_")
+        val keysToMove = listOf("last_msg_", "transport_", "last_endpoint_", "verified_peer_", "fingerprint_mismatch_")
         for (prefix in keysToMove) {
             if (!sharedPrefs.contains("$prefix$fromName")) {
                 continue
@@ -195,6 +209,9 @@ object P2PMessageRelay {
         val port = listenerPort(appContext)
         try {
             log(appContext, "Starting Python P2P Relays on port $port...")
+            val ipv4Enabled = appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+                .getBoolean("settings_ipv4", true)
+            PythonBridge.setIpv4Enabled(ipv4Enabled)
             // Start the Python P2P listener
             PythonBridge.startP2pListener(port)
             
@@ -340,21 +357,31 @@ object P2PMessageRelay {
 
             // Register session status callbacks from Python
             PythonBridge.registerSessionListener(object : PythonBridge.PySessionListener {
-                override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String) {
+                override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String) {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
                     appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
-                        .edit().putString("peer_fingerprint_$resolvedPeerName", fingerprint).apply()
-                    log(appContext, "Secure Double Ratchet session established with $resolvedPeerName ($fingerprint) at $endpoint")
-                    if (endpoint.isNotEmpty()) {
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            peerEndpoints[resolvedPeerName] = endpoint
-                            peerConnectionTransports[resolvedPeerName] = transportForEndpoint(endpoint)
+                        .edit().apply {
+                            putString("peer_fingerprint_$resolvedPeerName", fingerprint)
+                            if (endpoint.isNotEmpty()) {
+                                putString("last_endpoint_$resolvedPeerName", endpoint)
+                            }
+                            apply()
                         }
+                    log(appContext, "Secure Double Ratchet session established with $resolvedPeerName ($fingerprint) at $endpoint")
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        peerSessionStates[resolvedPeerName] = true
+                        peerConnectionTransports[resolvedPeerName] = transport
+                        if (endpoint.isNotEmpty()) {
+                            peerEndpoints[resolvedPeerName] = endpoint
+                        }
+                    }
+
+                    if (endpoint.isNotEmpty()) {
                         
                         // Save to active chats so the UI updates and shows the peer chat screen
                         val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
                         sharedPrefs.edit()
-                            .putString("transport_$resolvedPeerName", transportForEndpoint(endpoint))
+                            .putString("transport_$resolvedPeerName", transport)
                             .apply()
                         val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
                         if (!activeSet.contains(resolvedPeerName)) {
@@ -374,8 +401,8 @@ object P2PMessageRelay {
                     val resolvedPeerName = if (fingerprint != null) canonicalPeerName(appContext, peerName, fingerprint) else peerName
                     log(appContext, "Secure Double Ratchet session closed with $resolvedPeerName")
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        peerEndpoints.remove(resolvedPeerName)
                         peerConnectionTransports.remove(resolvedPeerName)
+                        peerSessionStates.remove(resolvedPeerName)
                     }
                 }
             })
@@ -494,15 +521,6 @@ object P2PMessageRelay {
         }
     }
 
-    private fun transportForEndpoint(endpoint: String): String {
-        val activeEndpoint = endpoint.substringBefore(',').trim()
-        return if (activeEndpoint.startsWith("[") || activeEndpoint.substringBeforeLast(':').contains(':')) {
-            "Yggdrasil"
-        } else {
-            "Direct P2P"
-        }
-    }
-
     /**
      * Send an encrypted Double Ratchet message to a resolved peer's endpoint.
      */
@@ -561,9 +579,10 @@ object P2PMessageRelay {
     fun reconnectSession(context: android.content.Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
         thread(start = true) {
             try {
-                val endpoint = peerEndpoints[peerName] ?: ""
-                val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
-                    .getString("peer_fingerprint_$peerName", null)
+                val prefs = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+                val endpoint = peerEndpoints[peerName]
+                    ?: prefs.getString("last_endpoint_$peerName", "").orEmpty()
+                val expectedFingerprint = prefs.getString("peer_fingerprint_$peerName", null)
                 log(context, "Requesting reconnection for $peerName at endpoint '$endpoint'")
                 val success = PythonBridge.reconnectPeerSession(peerName, endpoint, expectedFingerprint)
                 onResult(success)

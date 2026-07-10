@@ -169,6 +169,16 @@ object PythonBridge {
         return result.distinct()
     }
 
+    fun setIpv4Enabled(enabled: Boolean) {
+        if (!isInitialized) return
+        try {
+            Python.getInstance().getModule("discovery_bridge")
+                .callAttr("set_ipv4_enabled", enabled)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying IPv4 transport setting", e)
+        }
+    }
+
     /**
      * Returns the first non-loopback IPv4 address, or Yggdrasil IPv6 address if requested.
      */
@@ -212,13 +222,13 @@ object PythonBridge {
         emptyMap()
     }
 
-    fun announceSelf(nickname: String, fingerprint: String, port: Int): Boolean {
+    fun announceSelf(nickname: String, fingerprint: String, port: Int, force: Boolean = false): Boolean {
         if (!isInitialized) return false
         val announceKey = "$nickname\u0000$fingerprint\u0000$port"
         synchronized(announceLock) {
             val now = android.os.SystemClock.elapsedRealtime()
             val lastAt = lastAnnounceAt[announceKey]
-            if (announceKey in announcesInFlight || (lastAt != null && now - lastAt < MIN_ANNOUNCE_INTERVAL_MS)) {
+            if (announceKey in announcesInFlight || (!force && lastAt != null && now - lastAt < MIN_ANNOUNCE_INTERVAL_MS)) {
                 Log.i(TAG, "Skipping duplicate tracker announce for '$nickname'")
                 return lastAnnounceResult[announceKey] ?: false
             }
@@ -229,7 +239,13 @@ object PythonBridge {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
 
-            val ipv4Addresses = getLocalAddresses().filter { !it.contains(':') }
+            val ipv4Enabled = appContext?.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                ?.getBoolean("settings_ipv4", true) ?: true
+            val ipv4Addresses = if (ipv4Enabled) {
+                getLocalAddresses().filter { !it.contains(':') }
+            } else {
+                emptyList()
+            }
             val yggdrasilAddress = getYggdrasilAddress()
             val addresses = buildList {
                 addAll(ipv4Addresses)
@@ -284,7 +300,7 @@ object PythonBridge {
     }
 
     interface PySessionListener {
-        fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String)
+        fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String)
         fun onSessionClosed(peerName: String)
     }
 

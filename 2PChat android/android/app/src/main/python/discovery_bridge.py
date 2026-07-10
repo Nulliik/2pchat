@@ -37,6 +37,7 @@ loop = None
 # Track which Yggdrasil listener is running
 _ygg_listener_running = False
 listener_port = 50001
+ipv4_enabled = True
 CLEARNET_TRACKERS = (
     "OpenTrackr HTTP",
     "Torrent.eu.org UDP",
@@ -52,6 +53,37 @@ def _format_endpoint(host: str, port: int) -> str:
     if ":" in host:
         return f"[{host}]:{port}"
     return f"{host}:{port}"
+
+
+def _transport_for_endpoint(endpoint: str) -> str:
+    host = endpoint.rsplit(":", 1)[0].strip("[]") if endpoint else ""
+    return "Yggdrasil" if ":" in host else "Direct P2P"
+
+
+def _is_ipv4_endpoint(endpoint: str) -> bool:
+    host = endpoint.rsplit(":", 1)[0].strip("[]") if endpoint else ""
+    return bool(host) and ":" not in host
+
+
+def set_ipv4_enabled(enabled: bool):
+    """Apply the user's IPv4 policy to new and currently active sessions."""
+    global ipv4_enabled
+    ipv4_enabled = bool(enabled)
+    print(f"IPv4 transport {'enabled' if ipv4_enabled else 'disabled'}")
+    if ipv4_enabled or not loop or not loop.is_running():
+        return
+
+    async def _close_ipv4_sessions():
+        seen = set()
+        for session in list(active_sessions.values()):
+            if id(session) in seen:
+                continue
+            seen.add(id(session))
+            peername = session.writer.get_extra_info("peername") if hasattr(session, "writer") else None
+            if peername and ":" not in str(peername[0]):
+                await session.close()
+
+    asyncio.run_coroutine_threadsafe(_close_ipv4_sessions(), loop)
 
 
 def _endpoint_sort_key(endpoint_str: str) -> tuple[int, str]:
@@ -222,6 +254,8 @@ def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrac
                 all_endpoints.append(ep_str)
 
     all_endpoints.sort(key=_endpoint_sort_key)
+    if not ipv4_enabled:
+        all_endpoints = [endpoint for endpoint in all_endpoints if not _is_ipv4_endpoint(endpoint)]
     if not all_endpoints:
         return []
 
@@ -270,6 +304,44 @@ def resolve_peer_endpoints(peer_fingerprint: str) -> list[str]:
     return list(dict.fromkeys(
         str(endpoint) for result in results for endpoint in result.get("endpoints", [])
     ))
+
+
+async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
+    """Resolve routes on the existing asyncio loop; identity is verified when dialing."""
+    if not isinstance(peer_fingerprint, str) or len(peer_fingerprint.strip()) < 40:
+        return []
+    expected = peer_fingerprint.strip()
+
+    async def _query(tracker_name: str):
+        try:
+            tracker = get_tracker_by_name(tracker_name)
+            provider = get_discovery_provider(
+                tracker.discovery_scheme,
+                tracker_url=tracker.announce_url,
+                peer_port=listener_port,
+                transport="direct",
+            )
+            return await provider.resolve(expected, expected)
+        except Exception as exc:
+            print(f"[RECONNECT] Endpoint resolve failed on {tracker_name}: {exc}")
+            return []
+
+    batches = await asyncio.gather(
+        *[_query(name) for name in _resolve_tracker_names("OpenTrackr HTTP")],
+        return_exceptions=True,
+    )
+    endpoints = []
+    for batch in batches:
+        if not isinstance(batch, list):
+            continue
+        for descriptor in batch:
+            descriptor_fp = str(getattr(descriptor, "identity_fingerprint", "") or "")
+            if descriptor_fp and descriptor_fp != expected:
+                continue
+            for endpoint in getattr(descriptor, "endpoints", ()):
+                endpoints.append(_format_endpoint(endpoint.host, endpoint.port))
+    result = sorted(dict.fromkeys(endpoints), key=_endpoint_sort_key)
+    return result if ipv4_enabled else [ep for ep in result if not _is_ipv4_endpoint(ep)]
 
 
 def announce_peer_endpoints(nickname: str, fingerprint: str, endpoints_json: str, port: int) -> bool:
@@ -453,6 +525,12 @@ async def _listen_loop_dual(port: int):
 
 async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_store):
     try:
+        peername = writer.get_extra_info("peername")
+        if not ipv4_enabled and peername and ":" not in str(peername[0]):
+            writer.close()
+            await writer.wait_closed()
+            print(f"Rejected incoming IPv4 connection from {peername[0]}: IPv4 is disabled")
+            return
         session = Session(
             reader,
             writer,
@@ -477,10 +555,13 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
         
         peername = writer.get_extra_info('peername')
         remote_ep = ""
+        remote_transport = "Direct P2P"
+        if peername:
+            remote_transport = "Yggdrasil" if ":" in str(peername[0]) else "Direct P2P"
 
         if session_listener_callback:
             try:
-                session_listener_callback.onSessionEstablished(peer_name, fp, remote_ep)
+                session_listener_callback.onSessionEstablished(peer_name, fp, remote_ep, remote_transport)
             except Exception as cb_err:
                 print("Error invoking session listener callback:", cb_err)
                 
@@ -521,7 +602,12 @@ async def _read_loop(session, peer_name, fp):
                                 remote_ep = _format_endpoint(peername[0], advertised_port)
                             else:
                                 remote_ep = ""
-                            session_listener_callback.onSessionEstablished(real_name, remote_fp, remote_ep)
+                            remote_transport = (
+                                "Yggdrasil" if peername and ":" in str(peername[0]) else "Direct P2P"
+                            )
+                            session_listener_callback.onSessionEstablished(
+                                real_name, remote_fp, remote_ep, remote_transport
+                            )
                         except Exception as cb_err:
                             print("Error invoking session listener on identity_info:", cb_err)
                     # Update loop variables so cleanup is correct
@@ -633,12 +719,18 @@ async def _read_loop(session, peer_name, fp):
     except Exception as e:
         print(f"Session with {peer_name} read loop error:", e)
     finally:
-        # Cleanup session references
-        if fp in active_sessions:
+        # A stale read loop must never delete a newer replacement session.
+        if active_sessions.get(fp) is session:
             del active_sessions[fp]
-        if peer_name in active_sessions:
+        if active_sessions.get(peer_name) is session:
             del active_sessions[peer_name]
-        if session_listener_callback:
+        has_replacement = any(
+            candidate is not session
+            and candidate.is_online
+            and candidate.peer_fingerprint == fp
+            for candidate in active_sessions.values()
+        )
+        if session_listener_callback and not has_replacement:
             try:
                 session_listener_callback.onSessionClosed(peer_name)
             except Exception as cb_err:
@@ -676,6 +768,8 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
     Tries Protocol V3 first, falls back to V2.
     Returns a connected Session or raises an exception.
     """
+    if not ipv4_enabled and _is_ipv4_endpoint(endpoint_str):
+        raise ConnectionError("IPv4 transport is disabled in settings")
     host, port_str = endpoint_str.rsplit(":", 1)
     port = int(port_str)
     if host.startswith("[") and host.endswith("]"):
@@ -761,7 +855,7 @@ async def _send_message_async(peer_name: str, endpoint: str, body: str, expected
                     last_err = err
 
             if session is None and expected_fingerprint:
-                for ep in resolve_peer_endpoints(expected_fingerprint):
+                for ep in await _resolve_peer_endpoints_async(expected_fingerprint):
                     if ep in endpoints:
                         continue
                     try:
@@ -784,7 +878,9 @@ async def _send_message_async(peer_name: str, endpoint: str, body: str, expected
 
             if session_listener_callback:
                 try:
-                    session_listener_callback.onSessionEstablished(peer_name, fp, ep)
+                    session_listener_callback.onSessionEstablished(
+                        peer_name, fp, ep, _transport_for_endpoint(ep)
+                    )
                 except Exception:
                     pass
 
@@ -859,7 +955,7 @@ async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expect
                     last_err = err
 
             if session is None and expected_fingerprint:
-                for ep in resolve_peer_endpoints(expected_fingerprint):
+                for ep in await _resolve_peer_endpoints_async(expected_fingerprint):
                     if ep in endpoints:
                         continue
                     try:
@@ -881,7 +977,9 @@ async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expect
 
             if session_listener_callback:
                 try:
-                    session_listener_callback.onSessionEstablished(peer_name, fp, ep)
+                    session_listener_callback.onSessionEstablished(
+                        peer_name, fp, ep, _transport_for_endpoint(ep)
+                    )
                 except Exception:
                     pass
 
@@ -1012,20 +1110,23 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
             endpoints = [e.strip() for e in endpoint.split(",") if e.strip()]
             
             connected_session = None
+            connected_endpoint = ""
             for ep in endpoints:
                 try:
                     connected_session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+                    connected_endpoint = ep
                     print(f"[RECONNECT] Successfully connected to {peer_name} via {ep}")
                     break
                 except Exception as err:
                     print(f"[RECONNECT] Failed to connect to {peer_name} via {ep}: {err}")
             
             if connected_session is None and expected_fingerprint:
-                for ep in resolve_peer_endpoints(expected_fingerprint):
+                for ep in await _resolve_peer_endpoints_async(expected_fingerprint):
                     if ep in endpoints:
                         continue
                     try:
                         connected_session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+                        connected_endpoint = ep
                         print(f"[RECONNECT] Reconnected to {peer_name} via fresh discovery endpoint {ep}")
                         break
                     except Exception:
@@ -1040,7 +1141,9 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
                 # Trigger Kotlin session listener
                 if session_listener_callback:
                     try:
-                        session_listener_callback.onSessionEstablished(peer_name, fp, endpoint)
+                        session_listener_callback.onSessionEstablished(
+                            peer_name, fp, connected_endpoint, _transport_for_endpoint(connected_endpoint)
+                        )
                     except Exception as callback_err:
                         print("Error triggering Kotlin session listener on reconnect:", callback_err)
                 return True

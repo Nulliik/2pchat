@@ -1128,6 +1128,7 @@ fun SettingsTab(
     var passcodeLock by remember { mutableStateOf(sharedPrefs.getBoolean("settings_passcode", false)) }
     var wifiDiscovery by remember { mutableStateOf(sharedPrefs.getBoolean("settings_wifi", true)) }
     var yggdrasilRouting by remember { mutableStateOf(sharedPrefs.getBoolean("settings_yggdrasil", false)) }
+    var ipv4Routing by remember { mutableStateOf(sharedPrefs.getBoolean("settings_ipv4", true)) }
     var persistChatHistory by remember { mutableStateOf(sharedPrefs.getBoolean("persist_chat_history", true)) }
     var stealthDisguise by remember { mutableStateOf(sharedPrefs.getBoolean("settings_stealth_disguise", false)) }
     var showDisguiseInstructionDialog by remember { mutableStateOf(false) }
@@ -1695,6 +1696,46 @@ fun SettingsTab(
                             sharedPrefs.edit().putBoolean("settings_wifi", it).apply()
                         },
                         colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                    )
+                }
+
+                Divider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                // IPv4 transport
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            if (appLanguage == "Русский") "Подключение по IPv4" else "IPv4 connections",
+                            fontWeight = FontWeight.Medium,
+                            color = onSurfaceColor
+                        )
+                        Text(
+                            if (appLanguage == "Русский") {
+                                "Анонсировать и использовать прямые IPv4-подключения"
+                            } else {
+                                "Announce and use direct IPv4 connections"
+                            },
+                            fontSize = 12.sp,
+                            color = onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Switch(
+                        checked = ipv4Routing,
+                        onCheckedChange = { enabled ->
+                            ipv4Routing = enabled
+                            sharedPrefs.edit().putBoolean("settings_ipv4", enabled).apply()
+                            com.example.twopchat.PythonBridge.setIpv4Enabled(enabled)
+                            com.example.twopchat.P2PMessageRelay.refreshAnnouncement(context)
+                        },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = primaryColor,
+                            checkedTrackColor = primaryColor.copy(alpha = 0.3f)
+                        )
                     )
                 }
 
