@@ -79,6 +79,8 @@ data class Message(
     val status: String? = null
 )
 
+private fun newMessageId(): String = java.util.UUID.randomUUID().toString()
+
 @Composable
 fun SwipeToReplyContainer(
     onReply: () -> Unit,
@@ -175,7 +177,7 @@ fun ChatScreen(
             val mime = json.optString("mime", "")
             val isImage = mime.startsWith("image/")
             Message(
-                id = System.currentTimeMillis().toString(),
+                id = newMessageId(),
                 text = if (isImage) "Sent an image" else fileName,
                 isMe = false,
                 timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
@@ -264,8 +266,8 @@ fun ChatScreen(
             else -> emptyList()
         }
 
+        val list = db.getMessagesForPeer(peerName)
         if (persistEnabled) {
-            val list = db.getMessagesForPeer(peerName)
             if (list.isEmpty()) {
                 mockList.forEach { db.saveMessage(peerName, it) }
                 mutableStateListOf<Message>().apply { addAll(mockList) }
@@ -273,7 +275,10 @@ fun ChatScreen(
                 mutableStateListOf<Message>().apply { addAll(list) }
             }
         } else {
-            mutableStateListOf<Message>().apply { addAll(mockList) }
+            mutableStateListOf<Message>().apply {
+                addAll(mockList)
+                addAll(list.filter { it.status == "PENDING" })
+            }
         }
     }
 
@@ -286,6 +291,7 @@ fun ChatScreen(
         val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
         if (endpoint != null && peerName != "Saved Messages") {
             com.example.twopchat.P2PMessageRelay.shareAvatar(context, peerName, endpoint)
+            com.example.twopchat.P2PMessageRelay.processOfflineQueue(context, peerName, endpoint)
             
             // Mark all existing incoming messages as READ in database and send read receipts
             initialMessages.forEach { msg ->
@@ -338,7 +344,7 @@ fun ChatScreen(
                                 val replyToText = json.optString("reply_to_text")
                                 val replyToName = json.optString("reply_to_name")
                                 Message(
-                                    id = System.currentTimeMillis().toString(),
+                                    id = newMessageId(),
                                     text = replyText,
                                     isMe = false,
                                     timestamp = time,
@@ -348,13 +354,13 @@ fun ChatScreen(
                                     status = "READ"
                                 )
                             } else {
-                                Message(System.currentTimeMillis().toString(), text, false, time, status = "READ")
+                                Message(newMessageId(), text, false, time, status = "READ")
                             }
                         } catch (e: Exception) {
-                            Message(System.currentTimeMillis().toString(), text, false, time, status = "READ")
+                            Message(newMessageId(), text, false, time, status = "READ")
                         }
                     } else {
-                        Message(System.currentTimeMillis().toString(), text, false, time, status = "READ")
+                        Message(newMessageId(), text, false, time, status = "READ")
                     }
                 }
                 
@@ -468,7 +474,7 @@ fun ChatScreen(
                 val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
                 val initialStatus = if (endpoint != null) "SENT" else "PENDING"
                 val outMsg = Message(
-                    id = System.currentTimeMillis().toString(),
+                    id = newMessageId(),
                     text = "Sent an image",
                     isMe = true,
                     timestamp = time,
@@ -478,7 +484,7 @@ fun ChatScreen(
                     status = initialStatus
                 )
                 initialMessages.add(outMsg)
-                if (persistEnabled) {
+                if (persistEnabled || initialStatus == "PENDING") {
                     db.saveMessage(peerName, outMsg)
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
@@ -523,7 +529,7 @@ fun ChatScreen(
                 val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
                 val initialStatus = if (endpoint != null) "SENT" else "PENDING"
                 val outMsg = Message(
-                    id = System.currentTimeMillis().toString(),
+                    id = newMessageId(),
                     text = "Captured a photo",
                     isMe = true,
                     timestamp = time,
@@ -533,7 +539,7 @@ fun ChatScreen(
                     status = initialStatus
                 )
                 initialMessages.add(outMsg)
-                if (persistEnabled) {
+                if (persistEnabled || initialStatus == "PENDING") {
                     db.saveMessage(peerName, outMsg)
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
@@ -579,7 +585,7 @@ fun ChatScreen(
                 val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
                 val initialStatus = if (endpoint != null) "SENT" else "PENDING"
                 val outMsg = Message(
-                    id = System.currentTimeMillis().toString(),
+                    id = newMessageId(),
                     text = fileName,
                     isMe = true,
                     timestamp = time,
@@ -589,7 +595,7 @@ fun ChatScreen(
                     status = initialStatus
                 )
                 initialMessages.add(outMsg)
-                if (persistEnabled) {
+                if (persistEnabled || initialStatus == "PENDING") {
                     db.saveMessage(peerName, outMsg)
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
@@ -742,8 +748,9 @@ fun ChatScreen(
                             text = if (peerName == "Saved Messages") {
                                 Localizations.getString("local_storage", appLanguage)
                             } else if (isOnline) {
-                                val isYgg = endpoint?.contains("[") == true || (endpoint?.contains(":") == true && endpoint.split(":").size > 2)
-                                val transportName = if (isYgg) "Yggdrasil" else "Direct P2P"
+                                val transportName = com.example.twopchat.P2PMessageRelay.peerConnectionTransports[peerName]
+                                    ?: sharedPrefs.getString("transport_$peerName", null)
+                                    ?: "Direct P2P"
                                 if (appLanguage == "Русский") "В сети • $transportName" else "Online • $transportName"
                             } else {
                                 if (appLanguage == "Русский") "Не в сети" else "Offline"
@@ -893,7 +900,10 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
             ) {
-                itemsIndexed(initialMessages) { index, msg ->
+                itemsIndexed(
+                    items = initialMessages,
+                    key = { _, msg -> msg.id }
+                ) { index, msg ->
                     val visibleState = remember(msg.id) {
                         MutableTransitionState(false).apply {
                             targetState = true
@@ -1459,7 +1469,7 @@ fun ChatScreen(
 
                                     // Add user message
                                     val outMsg = Message(
-                                        id = System.currentTimeMillis().toString(),
+                                        id = newMessageId(),
                                         text = userText,
                                         isMe = true,
                                         timestamp = time,
@@ -1469,7 +1479,7 @@ fun ChatScreen(
                                         status = initialStatus
                                     )
                                     initialMessages.add(outMsg)
-                                    if (persistEnabled) {
+                                    if (persistEnabled || initialStatus == "PENDING") {
                                         db.saveMessage(peerName, outMsg)
                                     }
 
@@ -1787,7 +1797,7 @@ fun ChatScreen(
                                             val forwardEndpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[chatName]
                                             val fwdInitialStatus = if (forwardEndpoint != null || chatName == "Saved Messages") "SENT" else "PENDING"
                                             val fwdMsg = Message(
-                                                id = System.currentTimeMillis().toString(),
+                                                id = newMessageId(),
                                                 text = textToForward,
                                                 isMe = true,
                                                 timestamp = forwardTime,
@@ -1798,7 +1808,7 @@ fun ChatScreen(
                                             )
                                             
                                             // Save to DB for the forwarded peer
-                                            if (persistEnabled) {
+                                            if (persistEnabled || fwdInitialStatus == "PENDING") {
                                                 db.saveMessage(chatName, fwdMsg)
                                             }
                                             // Update last message in active chats list
@@ -1877,7 +1887,7 @@ fun ChatScreen(
                                         val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                                         initialMessages.add(
                                             Message(
-                                                id = System.currentTimeMillis().toString(),
+                                                id = newMessageId(),
                                                 text = loc.first,
                                                 isMe = true,
                                                 timestamp = time,
@@ -1893,7 +1903,7 @@ fun ChatScreen(
                                                 localMockTyping = false
                                                 val replyText = "Received location coordinates for ${loc.first}."
                                                 val replyTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                                                initialMessages.add(Message(System.currentTimeMillis().toString(), replyText, false, replyTime))
+                                                initialMessages.add(Message(newMessageId(), replyText, false, replyTime))
                                             }
                                         }
                                     }

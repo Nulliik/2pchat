@@ -1122,6 +1122,7 @@ fun SettingsTab(
                 profilePhotoUri = localPath
                 sharedPrefs.edit().putString("profile_photo_uri", localPath).apply()
                 profileBitmap = com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, localPath)
+                com.example.twopchat.P2PMessageRelay.shareAvatarWithConnectedPeers(context)
                 Toast.makeText(context, "Profile photo updated", Toast.LENGTH_SHORT).show()
             }
         }

@@ -126,7 +126,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
             arrayOf(peerName),
             null,
             null,
-            "$KEY_ID ASC"
+            "rowid ASC"
         )
         
         cursor.use {
@@ -213,7 +213,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
             arrayOf(peerName, "PENDING"),
             null,
             null,
-            "$KEY_ID ASC"
+            "rowid ASC"
         )
         
         cursor.use {

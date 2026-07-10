@@ -20,7 +20,9 @@ object P2PMessageRelay {
 
     // Maps peer name to their resolved IP:Port endpoint
     val peerEndpoints = androidx.compose.runtime.mutableStateMapOf<String, String>()
+    val peerConnectionTransports = androidx.compose.runtime.mutableStateMapOf<String, String>()
     private val fingerprintToPeerName = ConcurrentHashMap<String, String>()
+    private val processingOfflineQueues = ConcurrentHashMap.newKeySet<String>()
 
     // Maps peer name to their profile avatar bitmap in RAM
     val peerAvatars = androidx.compose.runtime.mutableStateMapOf<String, android.graphics.Bitmap>()
@@ -346,16 +348,19 @@ object P2PMessageRelay {
                     if (endpoint.isNotEmpty()) {
                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                             peerEndpoints[resolvedPeerName] = endpoint
+                            peerConnectionTransports[resolvedPeerName] = transportForEndpoint(endpoint)
                         }
                         
                         // Save to active chats so the UI updates and shows the peer chat screen
                         val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+                        sharedPrefs.edit()
+                            .putString("transport_$resolvedPeerName", transportForEndpoint(endpoint))
+                            .apply()
                         val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
                         if (!activeSet.contains(resolvedPeerName)) {
                             val newSet = activeSet.toMutableSet()
                             newSet.add(resolvedPeerName)
                             sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
-                            sharedPrefs.edit().putString("transport_$resolvedPeerName", "DIRECT P2P").apply()
                         }
 
                         shareAvatar(appContext, resolvedPeerName, endpoint)
@@ -370,6 +375,7 @@ object P2PMessageRelay {
                     log(appContext, "Secure Double Ratchet session closed with $resolvedPeerName")
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
                         peerEndpoints.remove(resolvedPeerName)
+                        peerConnectionTransports.remove(resolvedPeerName)
                     }
                 }
             })
@@ -468,6 +474,21 @@ object P2PMessageRelay {
             } catch (e: Exception) {
                 log(context, "Failed to share avatar with $peerName", "ERROR", e)
             }
+        }
+    }
+
+    fun shareAvatarWithConnectedPeers(context: android.content.Context) {
+        peerEndpoints.toMap().forEach { (peerName, endpoint) ->
+            shareAvatar(context.applicationContext, peerName, endpoint)
+        }
+    }
+
+    private fun transportForEndpoint(endpoint: String): String {
+        val activeEndpoint = endpoint.substringBefore(',').trim()
+        return if (activeEndpoint.startsWith("[") || activeEndpoint.substringBeforeLast(':').contains(':')) {
+            "Yggdrasil"
+        } else {
+            "Direct P2P"
         }
     }
 
@@ -577,6 +598,7 @@ object P2PMessageRelay {
     }
 
     fun processOfflineQueue(context: android.content.Context, peerName: String, endpoint: String) {
+        if (endpoint.isBlank() || !processingOfflineQueues.add(peerName)) return
         thread(start = true, name = "OfflineQueueThread") {
             try {
                 val db = ChatDatabaseHelper(context)
@@ -599,7 +621,17 @@ object P2PMessageRelay {
                             msg.text
                         }
                         
-                        val success = PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
+                        val success = if (msg.attachmentType != null && !msg.attachmentUri.isNullOrBlank()) {
+                            val attachment = java.io.File(msg.attachmentUri)
+                            attachment.exists() && PythonBridge.sendP2pFile(
+                                peerName,
+                                endpoint,
+                                attachment.absolutePath,
+                                expectedFingerprint
+                            )
+                        } else {
+                            PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
+                        }
                         if (success) {
                             db.updateMessageStatus(msg.id, "SENT")
                             android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -613,6 +645,8 @@ object P2PMessageRelay {
                 }
             } catch (e: Exception) {
                 log(context, "Error in processOfflineQueue: ${e.message}", "ERROR", e)
+            } finally {
+                processingOfflineQueues.remove(peerName)
             }
         }
     }
