@@ -50,6 +50,12 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
+import kotlin.math.abs
 
 data class Message(
     val id: String,
@@ -58,8 +64,84 @@ data class Message(
     val timestamp: String,
     val attachmentType: String? = null, // "IMAGE", "FILE", "LOCATION"
     val attachmentUri: String? = null,
-    val attachmentName: String? = null
+    val attachmentName: String? = null,
+    val replyToId: String? = null,
+    val replyToText: String? = null,
+    val replyToName: String? = null
 )
+
+@Composable
+fun SwipeToReplyContainer(
+    onReply: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    val offsetX = remember { androidx.compose.animation.core.Animatable(0f) }
+    val threshold = 120f
+    val limit = 200f
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragStart = {},
+                    onDragEnd = {
+                        if (abs(offsetX.value) > threshold) {
+                            onReply()
+                        }
+                        coroutineScope.launch {
+                            offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioNoBouncy))
+                        }
+                    },
+                    onDragCancel = {
+                        coroutineScope.launch {
+                            offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioNoBouncy))
+                        }
+                    },
+                    onHorizontalDrag = { change, dragAmount ->
+                        change.consume()
+                        val newOffset = (offsetX.value + dragAmount).coerceIn(-limit, limit)
+                        coroutineScope.launch {
+                            offsetX.snapTo(newOffset)
+                        }
+                    }
+                )
+            }
+    ) {
+        if (offsetX.value != 0f) {
+            val isRight = offsetX.value > 0
+            val alignment = if (isRight) Alignment.CenterStart else Alignment.CenterEnd
+            val iconAlpha = (abs(offsetX.value) / threshold).coerceIn(0f, 1f)
+            val iconScale = (abs(offsetX.value) / threshold).coerceIn(0.5f, 1f)
+            
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                contentAlignment = alignment
+            ) {
+                Icon(
+                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_reply),
+                    contentDescription = "Reply",
+                    tint = MaterialTheme.colorScheme.primary.copy(alpha = iconAlpha),
+                    modifier = Modifier
+                        .size(24.dp)
+                        .graphicsLayer(scaleX = iconScale, scaleY = iconScale)
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                .fillMaxWidth()
+        ) {
+            content()
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -180,6 +262,13 @@ fun ChatScreen(
         }
     }
 
+    LaunchedEffect(peerName) {
+        val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
+        if (endpoint != null && peerName != "Saved Messages") {
+            com.example.twopchat.P2PMessageRelay.shareAvatar(context, peerName, endpoint)
+        }
+    }
+
     DisposableEffect(peerName) {
         com.example.twopchat.P2PMessageRelay.onMessageReceived = { sender, text ->
             if (sender == peerName) {
@@ -188,7 +277,33 @@ fun ChatScreen(
                 if (attachmentMessage != null) {
                     initialMessages.add(attachmentMessage)
                 } else {
-                    initialMessages.add(Message(System.currentTimeMillis().toString(), text, false, time))
+                    val trimmed = text.trim()
+                    if (trimmed.startsWith("{")) {
+                        try {
+                            val json = org.json.JSONObject(trimmed)
+                            if (json.optString("type") == "reply") {
+                                val replyText = json.optString("text")
+                                val replyToId = json.optString("reply_to_id")
+                                val replyToText = json.optString("reply_to_text")
+                                val replyToName = json.optString("reply_to_name")
+                                initialMessages.add(Message(
+                                    id = System.currentTimeMillis().toString(),
+                                    text = replyText,
+                                    isMe = false,
+                                    timestamp = time,
+                                    replyToId = replyToId,
+                                    replyToText = replyToText,
+                                    replyToName = replyToName
+                                ))
+                            } else {
+                                initialMessages.add(Message(System.currentTimeMillis().toString(), text, false, time))
+                            }
+                        } catch (e: Exception) {
+                            initialMessages.add(Message(System.currentTimeMillis().toString(), text, false, time))
+                        }
+                    } else {
+                        initialMessages.add(Message(System.currentTimeMillis().toString(), text, false, time))
+                    }
                 }
             }
         }
@@ -197,14 +312,22 @@ fun ChatScreen(
         }
     }
 
-
     // Session is established lazily on the first real message send — no silent ping needed.
-
 
     var inputText by remember { mutableStateOf("") }
     var isTyping by remember { mutableStateOf(false) }
     var showAttachments by remember { mutableStateOf(false) }
     var selectedMessageForOptions by remember { mutableStateOf<Message?>(null) }
+    var replyingToMessage by remember { mutableStateOf<Message?>(null) }
+    
+    var pinnedMsgId by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_id_${peerName}", null)) }
+    var pinnedMsgText by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_text_${peerName}", null)) }
+    var pinnedMsgSender by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_sender_${peerName}", null)) }
+
+    var isSelectMode by remember { mutableStateOf(false) }
+    val selectedMessages = remember { mutableStateListOf<Message>() }
+    var showForwardDialog by remember { mutableStateOf(false) }
+    var messageToForward by remember { mutableStateOf<Message?>(null) }
 
     // Auto replies repository
     val autoReplies = remember(peerName) {
@@ -448,7 +571,14 @@ fun ChatScreen(
                         .size(44.dp)
                         .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
                 ) {
-                    if (initials == "🔖") {
+                    val avatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[peerName]
+                    if (avatarBitmap != null) {
+                        Image(
+                            bitmap = avatarBitmap.asImageBitmap(),
+                            contentDescription = "Avatar",
+                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                        )
+                    } else if (initials == "🔖") {
                         Icon(
                             painter = painterResource(id = com.example.twopchat.R.drawable.ic_saved_messages),
                             contentDescription = "Saved Messages",
@@ -534,6 +664,29 @@ fun ChatScreen(
                         onDismissRequest = { showMenu = false },
                         modifier = Modifier.background(surfaceColor)
                     ) {
+                        if (peerName != "Saved Messages") {
+                            DropdownMenuItem(
+                                text = { 
+                                    Text(
+                                        text = if (appLanguage == "Русский") "Переподключить соединение" else "Reconnect Connection", 
+                                        color = onSurfaceColor,
+                                        fontSize = 14.sp
+                                    ) 
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    com.example.twopchat.P2PMessageRelay.reconnectSession(context, peerName) { success ->
+                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                            if (success) {
+                                                Toast.makeText(context, if (appLanguage == "Русский") "Переподключение запущено..." else "Reconnection initiated...", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось переподключить" else "Failed to reconnect", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { 
                                 Text(
@@ -549,6 +702,65 @@ fun ChatScreen(
                                 sharedPrefs.edit().remove("last_msg_$peerName").apply()
                             }
                         )
+                    }
+                }
+            }
+
+            // Pinned Message Bar
+            if (pinnedMsgId != null && pinnedMsgText != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(surfaceColor.copy(alpha = 0.95f))
+                        .border(width = 0.5.dp, color = onSurfaceColor.copy(alpha = 0.05f))
+                        .clickable {
+                            val idx = initialMessages.indexOfFirst { it.id == pinnedMsgId }
+                            if (idx != -1) {
+                                coroutineScope.launch {
+                                    listState.animateScrollToItem(idx)
+                                }
+                            }
+                        }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_pin),
+                        contentDescription = "Pinned",
+                        tint = primaryColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Закреплённое сообщение" else "Pinned Message",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryColor
+                        )
+                        Text(
+                            text = pinnedMsgText ?: "",
+                            fontSize = 12.sp,
+                            color = onSurfaceColor,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            sharedPrefs.edit().apply {
+                                remove("pinned_msg_id_${peerName}")
+                                remove("pinned_msg_text_${peerName}")
+                                remove("pinned_msg_sender_${peerName}")
+                                apply()
+                            }
+                            pinnedMsgId = null
+                            pinnedMsgText = null
+                            pinnedMsgSender = null
+                        },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Text("×", fontSize = 18.sp, color = onSurfaceVariant, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -606,44 +818,246 @@ fun ChatScreen(
                         ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = alignment
+                        SwipeToReplyContainer(
+                            onReply = {
+                                replyingToMessage = msg
+                            }
                         ) {
-                            Box(
-                                modifier = bubbleModifier
-                                    .combinedClickable(
-                                        onClick = { selectedMessageForOptions = msg },
-                                        onLongClick = { selectedMessageForOptions = msg }
-                                    )
-                                    // Subtle border for incoming bubbles
-                                    .then(if (!msg.isMe) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), bubbleShape) else Modifier)
-                                    .padding(horizontal = 16.dp, vertical = 11.dp)
-                                    .widthIn(max = 280.dp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                when (msg.attachmentType) {
-                                    "IMAGE" -> {
-                                        val bitmap = remember(msg.attachmentUri) {
-                                            if (msg.attachmentUri != null) {
-                                                try {
-                                                    BitmapFactory.decodeFile(msg.attachmentUri)
-                                                } catch (e: Exception) {
-                                                    null
+                                if (isSelectMode) {
+                                    val isSelected = selectedMessages.contains(msg)
+                                    Checkbox(
+                                        checked = isSelected,
+                                        onCheckedChange = { checked ->
+                                            if (checked) {
+                                                selectedMessages.add(msg)
+                                            } else {
+                                                selectedMessages.remove(msg)
+                                            }
+                                        },
+                                        colors = CheckboxDefaults.colors(checkedColor = primaryColor),
+                                        modifier = Modifier.padding(end = 8.dp)
+                                    )
+                                }
+
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable(enabled = isSelectMode) {
+                                            if (isSelectMode) {
+                                                if (selectedMessages.contains(msg)) {
+                                                    selectedMessages.remove(msg)
+                                                } else {
+                                                    selectedMessages.add(msg)
                                                 }
-                                            } else null
-                                        }
-                                        if (bitmap != null) {
-                                            Column {
-                                                Image(
-                                                    bitmap = bitmap.asImageBitmap(),
-                                                    contentDescription = "Image attachment",
+                                            }
+                                        },
+                                    horizontalAlignment = alignment
+                                ) {
+                                    Box(
+                                        modifier = bubbleModifier
+                                            .combinedClickable(
+                                                onClick = {
+                                                    if (isSelectMode) {
+                                                        if (selectedMessages.contains(msg)) {
+                                                            selectedMessages.remove(msg)
+                                                        } else {
+                                                            selectedMessages.add(msg)
+                                                        }
+                                                    } else {
+                                                        selectedMessageForOptions = msg
+                                                    }
+                                                },
+                                                onLongClick = {
+                                                    if (!isSelectMode) {
+                                                        selectedMessageForOptions = msg
+                                                    }
+                                                }
+                                            )
+                                            // Subtle border for incoming bubbles
+                                            .then(if (!msg.isMe) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), bubbleShape) else Modifier)
+                                            .padding(horizontal = 16.dp, vertical = 11.dp)
+                                            .widthIn(max = 280.dp)
+                                    ) {
+                                        Column {
+                                            // Render reply quote if this message is a reply
+                                            if (msg.replyToId != null) {
+                                                val replyBg = if (msg.isMe) Color.White.copy(alpha = 0.15f) else onSurfaceColor.copy(alpha = 0.05f)
+                                                val replyBarColor = if (msg.isMe) {
+                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+                                                } else primaryColor
+                                                val replyTextColor = if (msg.isMe) {
+                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.8f)
+                                                } else onSurfaceVariant
+                                                val replyTitleColor = if (msg.isMe) {
+                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+                                                } else primaryColor
+                                                
+                                                Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
-                                                        .heightIn(max = 200.dp)
                                                         .clip(RoundedCornerShape(8.dp))
-                                                )
-                                                if (!msg.text.startsWith("Sent an image") && !msg.text.startsWith("Captured a photo")) {
-                                                    Spacer(modifier = Modifier.height(6.dp))
+                                                        .background(replyBg)
+                                                        .clickable {
+                                                            val targetIndex = initialMessages.indexOfFirst { it.id == msg.replyToId }
+                                                            if (targetIndex != -1) {
+                                                                coroutineScope.launch {
+                                                                    listState.animateScrollToItem(targetIndex)
+                                                                }
+                                                            }
+                                                        }
+                                                        .padding(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .width(3.dp)
+                                                            .height(36.dp)
+                                                            .background(replyBarColor, RoundedCornerShape(2.dp))
+                                                    )
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = msg.replyToName ?: "Unknown",
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = replyTitleColor
+                                                        )
+                                                        Text(
+                                                            text = msg.replyToText ?: "",
+                                                            fontSize = 11.sp,
+                                                            color = replyTextColor,
+                                                            maxLines = 1,
+                                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                            }
+
+                                            when (msg.attachmentType) {
+                                                "IMAGE" -> {
+                                                    val bitmap = remember(msg.attachmentUri) {
+                                                        if (msg.attachmentUri != null) {
+                                                            try {
+                                                                BitmapFactory.decodeFile(msg.attachmentUri)
+                                                            } catch (e: Exception) {
+                                                                null
+                                                            }
+                                                        } else null
+                                                    }
+                                                    if (bitmap != null) {
+                                                        Column {
+                                                            Image(
+                                                                bitmap = bitmap.asImageBitmap(),
+                                                                contentDescription = "Image attachment",
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .heightIn(max = 200.dp)
+                                                                    .clip(RoundedCornerShape(8.dp))
+                                                            )
+                                                            if (!msg.text.startsWith("Sent an image") && !msg.text.startsWith("Captured a photo")) {
+                                                                Spacer(modifier = Modifier.height(6.dp))
+                                                                Text(
+                                                                    text = msg.text,
+                                                                    color = textColor,
+                                                                    fontSize = 15.sp,
+                                                                    lineHeight = 20.sp
+                                                                )
+                                                            }
+                                                        }
+                                                    } else {
+                                                        Text(
+                                                            text = msg.text,
+                                                            color = textColor,
+                                                            fontSize = 15.sp,
+                                                            lineHeight = 20.sp
+                                                        )
+                                                    }
+                                                }
+                                                "FILE" -> {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Box(
+                                                            contentAlignment = Alignment.Center,
+                                                            modifier = Modifier
+                                                                .size(40.dp)
+                                                                .background(if (msg.isMe) Color.White.copy(alpha = 0.2f) else primaryColor.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp))
+                                                        ) {
+                                                            Icon(
+                                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_file),
+                                                                contentDescription = "Document",
+                                                                tint = if (msg.isMe) {
+                                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+                                                                } else primaryColor,
+                                                                modifier = Modifier.size(22.dp)
+                                                            )
+                                                        }
+                                                        Spacer(modifier = Modifier.width(10.dp))
+                                                        Column {
+                                                            Text(
+                                                                text = msg.attachmentName ?: "Document.pdf",
+                                                                color = textColor,
+                                                                fontSize = 14.sp,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                                maxLines = 1,
+                                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                            )
+                                                            Text(
+                                                                text = "Encrypted Document",
+                                                                color = textColor.copy(alpha = 0.7f),
+                                                                fontSize = 11.sp
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                "LOCATION" -> {
+                                                    Column {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            Icon(
+                                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_location),
+                                                                contentDescription = "Location",
+                                                                tint = if (msg.isMe) {
+                                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+                                                                } else primaryColor,
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            Text(
+                                                                text = msg.text,
+                                                                color = textColor,
+                                                                fontSize = 14.sp,
+                                                                fontWeight = FontWeight.SemiBold
+                                                            )
+                                                        }
+                                                        Spacer(modifier = Modifier.height(8.dp))
+                                                        Box(
+                                                            contentAlignment = Alignment.Center,
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .height(100.dp)
+                                                                .background(if (msg.isMe) Color.White.copy(alpha = 0.15f) else onSurfaceColor.copy(alpha = 0.05f), shape = RoundedCornerShape(8.dp))
+                                                                .border(0.5.dp, textColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                                        ) {
+                                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                                Text(
+                                                                    text = msg.attachmentName ?: "Coordinates",
+                                                                    color = textColor,
+                                                                    fontSize = 12.sp,
+                                                                    fontWeight = FontWeight.Medium
+                                                                )
+                                                                Text(
+                                                                    text = "Secure Peer Location",
+                                                                    color = textColor.copy(alpha = 0.6f),
+                                                                    fontSize = 10.sp
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                else -> {
                                                     Text(
                                                         text = msg.text,
                                                         color = textColor,
@@ -652,130 +1066,36 @@ fun ChatScreen(
                                                     )
                                                 }
                                             }
-                                        } else {
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = msg.timestamp,
+                                            color = onSurfaceVariant.copy(alpha = 0.6f),
+                                            fontSize = 10.sp
+                                        )
+                                        if (msg.isMe) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            val hasIncomingAfter = if (index < initialMessages.size - 1) {
+                                                initialMessages.subList(index + 1, initialMessages.size).any { !it.isMe }
+                                            } else false
+                                            
+                                            val isRead = hasIncomingAfter || isTyping || peerName == "Saved Messages"
+                                            val statusText = if (isRead) "✓✓" else "✓"
+                                            val statusColor = if (isRead) primaryColor else onSurfaceVariant.copy(alpha = 0.4f)
+                                            
                                             Text(
-                                                text = msg.text,
-                                                color = textColor,
-                                                fontSize = 15.sp,
-                                                lineHeight = 20.sp
+                                                text = statusText,
+                                                color = statusColor,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
                                             )
                                         }
                                     }
-                                    "FILE" -> {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Box(
-                                                contentAlignment = Alignment.Center,
-                                                modifier = Modifier
-                                                    .size(40.dp)
-                                                    .background(if (msg.isMe) Color.White.copy(alpha = 0.2f) else primaryColor.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp))
-                                            ) {
-                                                Icon(
-                                                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_file),
-                                                    contentDescription = "Document",
-                                                    tint = if (msg.isMe) {
-                                                        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
-                                                    } else primaryColor,
-                                                    modifier = Modifier.size(22.dp)
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Column {
-                                                Text(
-                                                    text = msg.attachmentName ?: "Document.pdf",
-                                                    color = textColor,
-                                                    fontSize = 14.sp,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    maxLines = 1,
-                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                                )
-                                                Text(
-                                                    text = "Encrypted Document",
-                                                    color = textColor.copy(alpha = 0.7f),
-                                                    fontSize = 11.sp
-                                                )
-                                            }
-                                        }
-                                    }
-                                    "LOCATION" -> {
-                                        Column {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(
-                                                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_location),
-                                                    contentDescription = "Location",
-                                                    tint = if (msg.isMe) {
-                                                        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
-                                                    } else primaryColor,
-                                                    modifier = Modifier.size(20.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text(
-                                                    text = msg.text,
-                                                    color = textColor,
-                                                    fontSize = 14.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Box(
-                                                contentAlignment = Alignment.Center,
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(100.dp)
-                                                    .background(if (msg.isMe) Color.White.copy(alpha = 0.15f) else onSurfaceColor.copy(alpha = 0.05f), shape = RoundedCornerShape(8.dp))
-                                                    .border(0.5.dp, textColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                                            ) {
-                                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                    Text(
-                                                        text = msg.attachmentName ?: "Coordinates",
-                                                        color = textColor,
-                                                        fontSize = 12.sp,
-                                                        fontWeight = FontWeight.Medium
-                                                    )
-                                                    Text(
-                                                        text = "Secure Peer Location",
-                                                        color = textColor.copy(alpha = 0.6f),
-                                                        fontSize = 10.sp
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                    else -> {
-                                        Text(
-                                            text = msg.text,
-                                            color = textColor,
-                                            fontSize = 15.sp,
-                                            lineHeight = 20.sp
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(3.dp))
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 6.dp)
-                            ) {
-                                Text(
-                                    text = msg.timestamp,
-                                    color = onSurfaceVariant.copy(alpha = 0.6f),
-                                    fontSize = 10.sp
-                                )
-                                if (msg.isMe) {
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    val hasIncomingAfter = if (index < initialMessages.size - 1) {
-                                        initialMessages.subList(index + 1, initialMessages.size).any { !it.isMe }
-                                    } else false
-                                    
-                                    val isRead = hasIncomingAfter || isTyping || peerName == "Saved Messages"
-                                    val statusText = if (isRead) "✓✓" else "✓"
-                                    val statusColor = if (isRead) primaryColor else onSurfaceVariant.copy(alpha = 0.4f)
-                                    
-                                    Text(
-                                        text = statusText,
-                                        color = statusColor,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
                                 }
                             }
                         }
@@ -843,133 +1163,253 @@ fun ChatScreen(
                     )
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                // Reply Preview Bar
+                AnimatedVisibility(
+                    visible = replyingToMessage != null,
+                    enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
                 ) {
-                    // Attachment toggle button
-                    IconButton(
-                        onClick = { showAttachments = !showAttachments },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(onSurfaceColor.copy(alpha = 0.03f), shape = CircleShape)
-                    ) {
-                        if (showAttachments) {
-                            Text(
-                                text = "×",
-                                fontSize = 22.sp,
-                                color = primaryColor,
-                                fontWeight = FontWeight.Bold
+                    replyingToMessage?.let { replyMsg ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                                .background(onSurfaceColor.copy(alpha = 0.03f), RoundedCornerShape(8.dp))
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(3.dp)
+                                    .height(36.dp)
+                                    .background(primaryColor, RoundedCornerShape(2.dp))
                             )
-                        } else {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (replyMsg.isMe) (if (appLanguage == "Русский") "Вы" else "You") else peerName,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryColor
+                                )
+                                Text(
+                                    text = replyMsg.text,
+                                    fontSize = 11.sp,
+                                    color = onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(
+                                onClick = { replyingToMessage = null },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Text("×", fontSize = 18.sp, color = onSurfaceVariant, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                if (isSelectMode) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = {
+                                    isSelectMode = false
+                                    selectedMessages.clear()
+                                }
+                            ) {
+                                Text("×", fontSize = 24.sp, color = onSurfaceColor, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = if (appLanguage == "Русский") "Выбрано: ${selectedMessages.size}" else "Selected: ${selectedMessages.size}",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = onSurfaceColor
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                selectedMessages.forEach { msg ->
+                                    db.deleteMessage(msg.id)
+                                    initialMessages.remove(msg)
+                                }
+                                selectedMessages.clear()
+                                isSelectMode = false
+                            },
+                            enabled = selectedMessages.isNotEmpty()
+                        ) {
                             Icon(
-                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_paperclip),
-                                contentDescription = "Attach",
-                                tint = primaryColor,
-                                modifier = Modifier.size(20.dp)
+                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_delete),
+                                contentDescription = "Delete Selected",
+                                tint = if (selectedMessages.isNotEmpty()) Color.Red else onSurfaceVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Attachment toggle button
+                        IconButton(
+                            onClick = { showAttachments = !showAttachments },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(onSurfaceColor.copy(alpha = 0.03f), shape = CircleShape)
+                        ) {
+                            if (showAttachments) {
+                                Text(
+                                    text = "×",
+                                    fontSize = 22.sp,
+                                    color = primaryColor,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            } else {
+                                Icon(
+                                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_paperclip),
+                                    contentDescription = "Attach",
+                                    tint = primaryColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
 
-                    Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
 
-                    val isDark = backgroundColor == StealthBlack
-                    val inputBg = if (isDark) Color(0xFF0F1012) else Color(0xFFE4E7EC)
+                        val isDark = backgroundColor == StealthBlack
+                        val inputBg = if (isDark) Color(0xFF0F1012) else Color(0xFFE4E7EC)
 
-                    TextField(
-                        value = inputText,
-                        onValueChange = { inputText = it },
-                        placeholder = { Text(Localizations.getString("write_placeholder", appLanguage), color = onSurfaceVariant.copy(alpha = 0.6f)) },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = inputBg,
-                            unfocusedContainerColor = inputBg,
-                            focusedTextColor = onSurfaceColor,
-                            unfocusedTextColor = onSurfaceColor,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        shape = RoundedCornerShape(22.dp),
-                        singleLine = false,
-                        maxLines = 3,
-                        modifier = Modifier
-                            .weight(1f)
-                            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(22.dp))
-                    )
+                        TextField(
+                            value = inputText,
+                            onValueChange = { inputText = it },
+                            placeholder = { Text(Localizations.getString("write_placeholder", appLanguage), color = onSurfaceVariant.copy(alpha = 0.6f)) },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = inputBg,
+                                unfocusedContainerColor = inputBg,
+                                focusedTextColor = onSurfaceColor,
+                                unfocusedTextColor = onSurfaceColor,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            shape = RoundedCornerShape(22.dp),
+                            singleLine = false,
+                            maxLines = 3,
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(22.dp))
+                        )
 
-                    Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
 
-                    IconButton(
-                        onClick = {
-                            if (inputText.isNotBlank()) {
-                                val userText = inputText.trim()
-                                inputText = ""
-                                showAttachments = false
-                                val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                                
-                                // Add user message
-                                val outMsg = Message(System.currentTimeMillis().toString(), userText, true, time)
-                                initialMessages.add(outMsg)
-                                if (persistEnabled) {
-                                    db.saveMessage(peerName, outMsg)
-                                }
+                        IconButton(
+                            onClick = {
+                                if (inputText.isNotBlank()) {
+                                    val userText = inputText.trim()
+                                    inputText = ""
+                                    showAttachments = false
+                                    val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                                    
+                                    val replyTo = replyingToMessage
+                                    replyingToMessage = null
 
-                                // Persist in shared preferences last message list
-                                val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
-                                if (!activeSet.contains(peerName)) {
-                                    val newSet = activeSet.toMutableSet()
-                                    newSet.add(peerName)
-                                    sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
-                                }
-                                sharedPrefs.edit().putString("last_msg_$peerName", "You: $userText").apply()
+                                    // Add user message
+                                    val outMsg = Message(
+                                        id = System.currentTimeMillis().toString(),
+                                        text = userText,
+                                        isMe = true,
+                                        timestamp = time,
+                                        replyToId = replyTo?.id,
+                                        replyToText = replyTo?.text,
+                                        replyToName = replyTo?.let { if (it.isMe) (if (appLanguage == "Русский") "Вы" else "You") else peerName }
+                                    )
+                                    initialMessages.add(outMsg)
+                                    if (persistEnabled) {
+                                        db.saveMessage(peerName, outMsg)
+                                    }
 
-                                // Send over real TCP socket if endpoint is resolved
-                                val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
-                                if (endpoint != null) {
-                                    com.example.twopchat.P2PMessageRelay.sendMessage(context, endpoint, username, userText) { success ->
-                                        if (!success) {
-                                            coroutineScope.launch {
-                                                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
-                                                errorReasonYggdrasilDisabled = !isYggEnabled
-                                                showConnectionErrorDialog = true
+                                    // Persist in shared preferences last message list
+                                    val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+                                    if (!activeSet.contains(peerName)) {
+                                        val newSet = activeSet.toMutableSet()
+                                        newSet.add(peerName)
+                                        sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
+                                    }
+                                    sharedPrefs.edit().putString("last_msg_$peerName", "You: $userText").apply()
+
+                                    // Send message payload
+                                    val payload = if (replyTo != null) {
+                                        org.json.JSONObject().apply {
+                                            put("type", "reply")
+                                            put("text", userText)
+                                            put("reply_to_id", replyTo.id)
+                                            put("reply_to_text", replyTo.text)
+                                            put("reply_to_name", replyTo.let { if (it.isMe) username else peerName })
+                                        }.toString()
+                                    } else {
+                                        userText
+                                    }
+
+                                    // Send over real TCP socket if endpoint is resolved
+                                    val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
+                                    if (endpoint != null) {
+                                        com.example.twopchat.P2PMessageRelay.sendMessage(context, endpoint, username, payload) { success ->
+                                            if (!success) {
+                                                coroutineScope.launch {
+                                                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
+                                                    errorReasonYggdrasilDisabled = !isYggEnabled
+                                                    showConnectionErrorDialog = true
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Trigger mock reply with typing delay (only for demo mockup contacts)
+                                    if (peerName == "Eleanor Vance" || peerName == "Liam O'Connor" || peerName == "Sarah Chen") {
+                                        coroutineScope.launch {
+                                            delay(1000)
+                                            isTyping = true
+                                            delay(1500)
+                                            isTyping = false
+                                            val replyText = autoReplies[replyIndex % autoReplies.size]
+                                            replyIndex++
+                                            val replyTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                                            val replyMsg = Message(
+                                                System.currentTimeMillis().toString(),
+                                                replyText,
+                                                false,
+                                                replyTime
+                                            )
+                                            initialMessages.add(replyMsg)
+                                            if (persistEnabled) {
+                                                db.saveMessage(peerName, replyMsg)
                                             }
                                         }
                                     }
                                 }
-
-                                // Trigger mock reply with typing delay (only for demo mockup contacts)
-                                if (peerName == "Eleanor Vance" || peerName == "Liam O'Connor" || peerName == "Sarah Chen") {
-                                    coroutineScope.launch {
-                                        delay(1000)
-                                        isTyping = true
-                                        delay(1500)
-                                        isTyping = false
-                                        val replyText = autoReplies[replyIndex % autoReplies.size]
-                                        replyIndex++
-                                        val replyTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                                        val replyMsg = Message(
-                                            System.currentTimeMillis().toString(),
-                                            replyText,
-                                            false,
-                                            replyTime
-                                        )
-                                        initialMessages.add(replyMsg)
-                                        if (persistEnabled) {
-                                            db.saveMessage(peerName, replyMsg)
-                                        }
-                                    }
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(primaryColor, shape = CircleShape)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_send_airplane),
-                            contentDescription = "Send",
-                            tint = if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
+                            },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(primaryColor, shape = CircleShape)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_send_airplane),
+                                contentDescription = "Send",
+                                tint = if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -981,54 +1421,255 @@ fun ChatScreen(
             AlertDialog(
                 onDismissRequest = { selectedMessageForOptions = null },
                 confirmButton = {},
-                dismissButton = {
-                    TextButton(onClick = { selectedMessageForOptions = null }) {
-                        Text(Localizations.getString("close", appLanguage), color = primaryColor)
-                    }
-                },
-                title = { Text(Localizations.getString("msg_options", appLanguage), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = onSurfaceColor) },
+                dismissButton = {},
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Действия с сообщением" else "Message Actions",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryColor,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                        
+                        // Reply
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    replyingToMessage = msg
+                                    selectedMessageForOptions = null
+                                }
+                                .padding(vertical = 12.dp, horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_reply),
+                                contentDescription = "Reply",
+                                tint = onSurfaceColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = if (appLanguage == "Русский") "Ответить" else "Reply",
+                                fontSize = 15.sp,
+                                color = onSurfaceColor
+                            )
+                        }
+
+                        // Pin
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    sharedPrefs.edit().apply {
+                                        putString("pinned_msg_id_${peerName}", msg.id)
+                                        putString("pinned_msg_text_${peerName}", msg.text)
+                                        putString("pinned_msg_sender_${peerName}", if (msg.isMe) "You" else peerName)
+                                        apply()
+                                    }
+                                    pinnedMsgId = msg.id
+                                    pinnedMsgText = msg.text
+                                    pinnedMsgSender = if (msg.isMe) "You" else peerName
+                                    selectedMessageForOptions = null
+                                }
+                                .padding(vertical = 12.dp, horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_pin),
+                                contentDescription = "Pin",
+                                tint = onSurfaceColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = if (appLanguage == "Русский") "Закрепить" else "Pin",
+                                fontSize = 15.sp,
+                                color = onSurfaceColor
+                            )
+                        }
+
+                        // Copy
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
                                 .clickable {
                                     clipboardManager.setText(AnnotatedString(msg.text))
-                                    Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, if (appLanguage == "Русский") "Текст скопирован" else "Text copied to clipboard", Toast.LENGTH_SHORT).show()
                                     selectedMessageForOptions = null
                                 }
-                                .padding(vertical = 12.dp, horizontal = 8.dp),
+                                .padding(vertical = 12.dp, horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                           Text(Localizations.getString("copy_text", appLanguage), fontSize = 15.sp, color = onSurfaceColor)
+                            Icon(
+                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_copy),
+                                contentDescription = "Copy",
+                                tint = onSurfaceColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = if (appLanguage == "Русский") "Копировать текст" else "Copy Text",
+                                fontSize = 15.sp,
+                                color = onSurfaceColor
+                            )
                         }
-                        
+
+                        // Forward
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
                                 .clickable {
-                                    Toast.makeText(context, "Reply triggered", Toast.LENGTH_SHORT).show()
+                                    messageToForward = msg
+                                    showForwardDialog = true
                                     selectedMessageForOptions = null
                                 }
-                                .padding(vertical = 12.dp, horizontal = 8.dp),
+                                .padding(vertical = 12.dp, horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(Localizations.getString("reply_msg", appLanguage), fontSize = 15.sp, color = onSurfaceColor)
+                            Icon(
+                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_forward),
+                                contentDescription = "Forward",
+                                tint = onSurfaceColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = if (appLanguage == "Русский") "Переслать" else "Forward",
+                                fontSize = 15.sp,
+                                color = onSurfaceColor
+                            )
                         }
-                        
+
+                        // Delete
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
                                 .clickable {
+                                    db.deleteMessage(msg.id)
                                     initialMessages.remove(msg)
-                                    Toast.makeText(context, "Message deleted from session", Toast.LENGTH_SHORT).show()
                                     selectedMessageForOptions = null
                                 }
-                                .padding(vertical = 12.dp, horizontal = 8.dp),
+                                .padding(vertical = 12.dp, horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(Localizations.getString("delete_msg", appLanguage), fontSize = 15.sp, color = Color.Red)
+                            Icon(
+                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_delete),
+                                contentDescription = "Delete",
+                                tint = Color.Red,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = if (appLanguage == "Русский") "Удалить" else "Delete",
+                                fontSize = 15.sp,
+                                color = Color.Red
+                            )
                         }
+
+                        // Select
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    isSelectMode = true
+                                    selectedMessages.clear()
+                                    selectedMessages.add(msg)
+                                    selectedMessageForOptions = null
+                                }
+                                .padding(vertical = 12.dp, horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_select),
+                                contentDescription = "Select",
+                                tint = onSurfaceColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = if (appLanguage == "Русский") "Выделить" else "Select",
+                                fontSize = 15.sp,
+                                color = onSurfaceColor
+                            )
+                        }
+                    }
+                },
+                containerColor = surfaceColor,
+                shape = RoundedCornerShape(24.dp)
+            )
+        }
+
+        // Forward Dialog
+        if (showForwardDialog && messageToForward != null) {
+            val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+            val chatList = activeSet.filter { it != peerName }.toList()
+            
+            AlertDialog(
+                onDismissRequest = { 
+                    showForwardDialog = false
+                    messageToForward = null
+                },
+                title = { Text(if (appLanguage == "Русский") "Переслать сообщение" else "Forward Message", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = onSurfaceColor) },
+                text = {
+                    if (chatList.isEmpty()) {
+                        Text(if (appLanguage == "Русский") "Нет других активных чатов" else "No other active chats", color = onSurfaceVariant)
+                    } else {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(chatList) { chatName ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val textToForward = messageToForward?.text ?: ""
+                                            val forwardTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                                            val fwdMsg = Message(System.currentTimeMillis().toString(), textToForward, true, forwardTime)
+                                            
+                                            // Save to DB for the forwarded peer
+                                            if (persistEnabled) {
+                                                db.saveMessage(chatName, fwdMsg)
+                                            }
+                                            // Update last message in active chats list
+                                            sharedPrefs.edit().putString("last_msg_$chatName", "You: $textToForward").apply()
+                                            
+                                            // Send if there is an endpoint
+                                            val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[chatName]
+                                            if (endpoint != null) {
+                                                com.example.twopchat.P2PMessageRelay.sendMessage(context, endpoint, username, textToForward)
+                                            }
+                                            
+                                            Toast.makeText(context, if (appLanguage == "Русский") "Переслано в $chatName" else "Forwarded to $chatName", Toast.LENGTH_SHORT).show()
+                                            showForwardDialog = false
+                                            messageToForward = null
+                                        }
+                                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(text = chatName, fontSize = 15.sp, color = onSurfaceColor)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(onClick = { 
+                        showForwardDialog = false
+                        messageToForward = null
+                    }) {
+                        Text(Localizations.getString("close", appLanguage), color = primaryColor)
                     }
                 },
                 containerColor = surfaceColor,

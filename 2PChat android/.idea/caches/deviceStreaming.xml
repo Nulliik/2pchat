@@ -172,6 +172,18 @@
           <option name="screenY" value="1600" />
         </PersistentDeviceSelectionData>
         <PersistentDeviceSelectionData>
+          <option name="api" value="33" />
+          <option name="brand" value="samsung" />
+          <option name="codename" value="a03sutfn" />
+          <option name="id" value="a03sutfn" />
+          <option name="labId" value="google" />
+          <option name="manufacturer" value="Samsung" />
+          <option name="name" value="Galaxy A03s" />
+          <option name="screenDensity" value="280" />
+          <option name="screenX" value="720" />
+          <option name="screenY" value="1600" />
+        </PersistentDeviceSelectionData>
+        <PersistentDeviceSelectionData>
           <option name="api" value="35" />
           <option name="brand" value="samsung" />
           <option name="codename" value="a05s" />
@@ -530,6 +542,18 @@
           <option name="screenDensity" value="600" />
           <option name="screenX" value="1440" />
           <option name="screenY" value="3088" />
+        </PersistentDeviceSelectionData>
+        <PersistentDeviceSelectionData>
+          <option name="api" value="36" />
+          <option name="brand" value="samsung" />
+          <option name="codename" value="b4qsqw" />
+          <option name="id" value="b4qsqw" />
+          <option name="labId" value="google" />
+          <option name="manufacturer" value="Samsung" />
+          <option name="name" value="Galaxy Z Flip4" />
+          <option name="screenDensity" value="480" />
+          <option name="screenX" value="1080" />
+          <option name="screenY" value="2640" />
         </PersistentDeviceSelectionData>
         <PersistentDeviceSelectionData>
           <option name="api" value="36" />
@@ -1682,6 +1706,18 @@
           <option name="screenY" value="2340" />
         </PersistentDeviceSelectionData>
         <PersistentDeviceSelectionData>
+          <option name="api" value="36" />
+          <option name="brand" value="samsung" />
+          <option name="codename" value="r0qksx" />
+          <option name="id" value="r0qksx" />
+          <option name="labId" value="google" />
+          <option name="manufacturer" value="Samsung" />
+          <option name="name" value="Galaxy S22" />
+          <option name="screenDensity" value="480" />
+          <option name="screenX" value="1080" />
+          <option name="screenY" value="2340" />
+        </PersistentDeviceSelectionData>
+        <PersistentDeviceSelectionData>
           <option name="api" value="30" />
           <option name="brand" value="google" />
           <option name="codename" value="r11" />
@@ -1808,23 +1844,6 @@
               <option value="EULA_NOT_ACCEPTED" />
             </list>
           </option>
-          <option name="api" value="33" />
-          <option name="brand" value="samsung" />
-          <option name="codename" value="samsung_lab_a13" />
-          <option name="id" value="samsung_lab_a13" />
-          <option name="labId" value="samsung" />
-          <option name="manufacturer" value="Samsung" />
-          <option name="name" value="Galaxy A13" />
-          <option name="screenDensity" value="450" />
-          <option name="screenX" value="1080" />
-          <option name="screenY" value="2408" />
-        </PersistentDeviceSelectionData>
-        <PersistentDeviceSelectionData>
-          <option name="accessStatus">
-            <list>
-              <option value="EULA_NOT_ACCEPTED" />
-            </list>
-          </option>
           <option name="api" value="34" />
           <option name="brand" value="samsung" />
           <option name="codename" value="samsung_lab_b6q" />
@@ -1861,24 +1880,6 @@
           </option>
           <option name="api" value="34" />
           <option name="brand" value="samsung" />
-          <option name="codename" value="samsung_lab_gts9" />
-          <option name="formFactor" value="Tablet" />
-          <option name="id" value="samsung_lab_gts9" />
-          <option name="labId" value="samsung" />
-          <option name="manufacturer" value="Samsung" />
-          <option name="name" value="Galaxy Tab S9 5G" />
-          <option name="screenDensity" value="340" />
-          <option name="screenX" value="1600" />
-          <option name="screenY" value="2560" />
-        </PersistentDeviceSelectionData>
-        <PersistentDeviceSelectionData>
-          <option name="accessStatus">
-            <list>
-              <option value="EULA_NOT_ACCEPTED" />
-            </list>
-          </option>
-          <option name="api" value="34" />
-          <option name="brand" value="samsung" />
           <option name="codename" value="samsung_lab_gts9p" />
           <option name="formFactor" value="Tablet" />
           <option name="id" value="samsung_lab_gts9p" />
@@ -1888,41 +1889,6 @@
           <option name="screenDensity" value="340" />
           <option name="screenX" value="1752" />
           <option name="screenY" value="2800" />
-        </PersistentDeviceSelectionData>
-        <PersistentDeviceSelectionData>
-          <option name="accessStatus">
-            <list>
-              <option value="EULA_NOT_ACCEPTED" />
-            </list>
-          </option>
-          <option name="api" value="34" />
-          <option name="brand" value="samsung" />
-          <option name="codename" value="samsung_lab_gts9u" />
-          <option name="formFactor" value="Tablet" />
-          <option name="id" value="samsung_lab_gts9u" />
-          <option name="labId" value="samsung" />
-          <option name="manufacturer" value="Samsung" />
-          <option name="name" value="Galaxy Tab S9 Ultra 5G" />
-          <option name="screenDensity" value="300" />
-          <option name="screenX" value="1848" />
-          <option name="screenY" value="2960" />
-        </PersistentDeviceSelectionData>
-        <PersistentDeviceSelectionData>
-          <option name="accessStatus">
-            <list>
-              <option value="EULA_NOT_ACCEPTED" />
-            </list>
-          </option>
-          <option name="api" value="34" />
-          <option name="brand" value="samsung" />
-          <option name="codename" value="samsung_lab_q6q" />
-          <option name="id" value="samsung_lab_q6q" />
-          <option name="labId" value="samsung" />
-          <option name="manufacturer" value="Samsung" />
-          <option name="name" value="Galaxy Z Fold6" />
-          <option name="screenDensity" value="420" />
-          <option name="screenX" value="1856" />
-          <option name="screenY" value="2160" />
         </PersistentDeviceSelectionData>
         <PersistentDeviceSelectionData>
           <option name="api" value="34" />

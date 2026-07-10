@@ -2942,7 +2942,14 @@ fun PeerRow(
                         .size(46.dp)
                         .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
                 ) {
-                    if (peer.initials == "🔖") {
+                    val avatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[peer.name]
+                    if (avatarBitmap != null) {
+                        Image(
+                            bitmap = avatarBitmap.asImageBitmap(),
+                            contentDescription = "Avatar",
+                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                        )
+                    } else if (peer.initials == "🔖") {
                         Icon(
                             painter = painterResource(id = com.example.twopchat.R.drawable.ic_saved_messages),
                             contentDescription = "Saved Messages",

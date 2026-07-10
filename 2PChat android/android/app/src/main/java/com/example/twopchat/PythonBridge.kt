@@ -335,4 +335,17 @@ object PythonBridge {
             emptyList()
         }
     }
+
+    fun reconnectPeerSession(peerName: String, endpoint: String, expectedFingerprint: String? = null): Boolean {
+        if (!isInitialized) return false
+        return try {
+            val py = Python.getInstance()
+            val bridge = py.getModule("discovery_bridge")
+            val success = bridge.callAttr("reconnect_peer_session", peerName, endpoint, expectedFingerprint)
+            success.toBoolean()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reconnecting peer session via Python", e)
+            false
+        }
+    }
 }

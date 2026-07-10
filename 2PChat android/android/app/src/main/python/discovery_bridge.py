@@ -982,3 +982,73 @@ def get_active_peers_list() -> str:
                 peers.add(name)
     return ",".join(sorted(peers))
 
+def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=None) -> bool:
+    """
+    Closes any existing session for the peer, and starts a new connection attempt in the background/asyncio loop.
+    """
+    global loop, active_sessions
+    if not loop:
+        print("Cannot reconnect: loop is not running")
+        return False
+    
+    # Close old session
+    session = active_sessions.get(peer_name)
+    if session:
+        try:
+            if hasattr(session, "close"):
+                asyncio.run_coroutine_threadsafe(session.close(), loop)
+        except Exception:
+            pass
+        active_sessions.pop(peer_name, None)
+        if session.peer_fingerprint:
+            active_sessions.pop(session.peer_fingerprint, None)
+
+    # Establish new session by dialing in the background
+    async def _reconnect_async():
+        try:
+            identity_priv = load_or_create_identity()
+            signing_key = load_or_create_signing_identity()
+            trust_store = TrustStore()
+            endpoints = [e.strip() for e in endpoint.split(",") if e.strip()]
+            
+            connected_session = None
+            for ep in endpoints:
+                try:
+                    connected_session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+                    print(f"[RECONNECT] Successfully connected to {peer_name} via {ep}")
+                    break
+                except Exception as err:
+                    print(f"[RECONNECT] Failed to connect to {peer_name} via {ep}: {err}")
+            
+            if connected_session is None and expected_fingerprint:
+                for ep in resolve_peer_endpoints(expected_fingerprint):
+                    if ep in endpoints:
+                        continue
+                    try:
+                        connected_session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+                        print(f"[RECONNECT] Reconnected to {peer_name} via fresh discovery endpoint {ep}")
+                        break
+                    except Exception:
+                        pass
+
+            if connected_session:
+                fp = connected_session.peer_fingerprint
+                peer_fingerprint_to_name[fp] = peer_name
+                active_sessions[fp] = connected_session
+                active_sessions[peer_name] = connected_session
+                
+                # Trigger Kotlin session listener
+                if session_listener_callback:
+                    try:
+                        session_listener_callback.onSessionEstablished(peer_name, fp, endpoint)
+                    except Exception as callback_err:
+                        print("Error triggering Kotlin session listener on reconnect:", callback_err)
+                return True
+            return False
+        except Exception as e:
+            print(f"[RECONNECT] Error during reconnect sequence: {e}")
+            return False
+
+    asyncio.run_coroutine_threadsafe(_reconnect_async(), loop)
+    return True
+

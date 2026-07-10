@@ -22,6 +22,9 @@ object P2PMessageRelay {
     val peerEndpoints = ConcurrentHashMap<String, String>()
     private val fingerprintToPeerName = ConcurrentHashMap<String, String>()
 
+    // Maps peer name to their profile avatar bitmap in RAM
+    val peerAvatars = androidx.compose.runtime.mutableStateMapOf<String, android.graphics.Bitmap>()
+
     // Callback triggered when a new message is received
     var onMessageReceived: ((sender: String, text: String) -> Unit)? = null
 
@@ -189,6 +192,62 @@ object P2PMessageRelay {
                     
                     try {
                         val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+                        val trimmed = text.trim()
+                        if (trimmed.startsWith("{")) {
+                            val json = org.json.JSONObject(trimmed)
+                            val type = json.optString("type")
+                            if (type == "profile_avatar_share") {
+                                val b64 = json.optString("avatar_base64")
+                                if (b64.isNotEmpty()) {
+                                    try {
+                                        val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                                        val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                        if (bitmap != null) {
+                                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                peerAvatars[sender] = bitmap
+                                            }
+                                            log(appContext, "Successfully received and cached avatar in RAM for $sender")
+                                        }
+                                    } catch (e: Exception) {
+                                        log(appContext, "Error decoding avatar: ${e.message}", "ERROR", e)
+                                    }
+                                }
+                                return
+                            } else if (type == "reply") {
+                                val replyText = json.optString("text")
+                                val replyToId = json.optString("reply_to_id")
+                                val replyToText = json.optString("reply_to_text")
+                                val replyToName = json.optString("reply_to_name")
+                                
+                                val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+                                if (!activeSet.contains(sender)) {
+                                    val newSet = activeSet.toMutableSet()
+                                    newSet.add(sender)
+                                    sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
+                                }
+                                
+                                val persistEnabled = sharedPrefs.getBoolean("persist_chat_history", true)
+                                val db = ChatDatabaseHelper(appContext)
+                                val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+                                
+                                val rxMsg = Message(
+                                    id = System.currentTimeMillis().toString(),
+                                    text = replyText,
+                                    isMe = false,
+                                    timestamp = time,
+                                    replyToId = replyToId,
+                                    replyToText = replyToText,
+                                    replyToName = replyToName
+                                )
+                                if (persistEnabled) {
+                                    db.saveMessage(sender, rxMsg)
+                                }
+                                sharedPrefs.edit().putString("last_msg_$sender", replyText).apply()
+                                onMessageReceived?.invoke(sender, text)
+                                return
+                            }
+                        }
+
                         val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
                         if (!activeSet.contains(sender)) {
                             val newSet = activeSet.toMutableSet()
@@ -252,6 +311,8 @@ object P2PMessageRelay {
                             sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
                             sharedPrefs.edit().putString("transport_$resolvedPeerName", "DIRECT P2P").apply()
                         }
+
+                        shareAvatar(appContext, resolvedPeerName, endpoint)
                     }
                 }
 
@@ -309,6 +370,7 @@ object P2PMessageRelay {
         synchronized(identityLock) {
             fingerprintToPeerName.clear()
         }
+        peerAvatars.clear()
         // Trigger Python shutdown/cleanup
         thread(start = true) {
             try {
@@ -319,6 +381,39 @@ object P2PMessageRelay {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error shutting down Python sessions", e)
+            }
+        }
+    }
+
+    fun shareAvatar(context: android.content.Context, peerName: String, endpoint: String) {
+        thread(start = true, name = "AvatarShareThread") {
+            try {
+                val file = java.io.File(context.filesDir, "profile_avatar.jpg")
+                if (file.exists()) {
+                    val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                    if (bitmap != null) {
+                        val outputStream = java.io.ByteArrayOutputStream()
+                        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 60, outputStream)
+                        val bytes = outputStream.toByteArray()
+                        val b64 = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                        
+                        val json = org.json.JSONObject().apply {
+                            put("type", "profile_avatar_share")
+                            put("avatar_base64", b64)
+                        }
+                        val payload = json.toString()
+                        val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+                            .getString("peer_fingerprint_$peerName", null)
+                        
+                        log(context, "Sending profile avatar to $peerName (length: ${payload.length})")
+                        val success = PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
+                        log(context, "Avatar send status to $peerName: $success")
+                    }
+                } else {
+                    log(context, "profile_avatar.jpg does not exist, skipping avatar share.")
+                }
+            } catch (e: Exception) {
+                log(context, "Failed to share avatar with $peerName", "ERROR", e)
             }
         }
     }
@@ -373,6 +468,22 @@ object P2PMessageRelay {
                 onResult(success)
             } catch (e: Exception) {
                 log(context, "Failed to send secure file to $endpoint", "ERROR", e)
+                onResult(false)
+            }
+        }
+    }
+
+    fun reconnectSession(context: android.content.Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
+        thread(start = true) {
+            try {
+                val endpoint = peerEndpoints[peerName] ?: ""
+                val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+                    .getString("peer_fingerprint_$peerName", null)
+                log(context, "Requesting reconnection for $peerName at endpoint '$endpoint'")
+                val success = PythonBridge.reconnectPeerSession(peerName, endpoint, expectedFingerprint)
+                onResult(success)
+            } catch (e: Exception) {
+                log(context, "Failed to initiate reconnection for $peerName", "ERROR", e)
                 onResult(false)
             }
         }
