@@ -385,6 +385,8 @@ object P2PMessageRelay {
             // Start a periodic announcement and network interface monitoring loop
             thread(start = true, name = "TrackerAnnounceLoop", isDaemon = true) {
                 var lastAddresses = emptyList<String>()
+                var candidateAddresses = emptyList<String>()
+                var stableCandidateSamples = 0
                 var lastAnnounceTime = 0L
                 while (isRunning) {
                     try {
@@ -392,11 +394,20 @@ object P2PMessageRelay {
                         val username = sharedPrefs.getString("username_profile", "") ?: ""
                         val fingerprint = PythonBridge.getLocalFingerprint()
                         if (username.isNotBlank() && fingerprint != "Loading..." && fingerprint != "Not Initialized" && fingerprint != "Error") {
-                            val currentAddresses = PythonBridge.getLocalAddresses()
+                            val currentAddresses = PythonBridge.getLocalAddresses().sorted()
                             val now = System.currentTimeMillis()
-                            // Announce immediately if network interfaces changed, or periodically every 5 minutes (300,000 ms)
-                            if (currentAddresses != lastAddresses || now - lastAnnounceTime > 300000) {
-                                log(appContext, "Announcing self on tracker. Network changed: ${currentAddresses != lastAddresses}, IPs: $currentAddresses")
+                            if (currentAddresses == candidateAddresses) {
+                                stableCandidateSamples++
+                            } else {
+                                candidateAddresses = currentAddresses
+                                stableCandidateSamples = 1
+                            }
+
+                            val firstAnnounce = lastAnnounceTime == 0L
+                            val networkChangedAndStable = currentAddresses != lastAddresses && stableCandidateSamples >= 3
+                            val periodicRefreshDue = now - lastAnnounceTime >= 300_000L
+                            if (firstAnnounce || networkChangedAndStable || periodicRefreshDue) {
+                                log(appContext, "Announcing self on tracker. Network changed and stable: $networkChangedAndStable, IPs: $currentAddresses")
                                 val success = PythonBridge.announceSelf(username, fingerprint, port)
                                 log(appContext, "Announce self status: $success")
                                 lastAddresses = currentAddresses

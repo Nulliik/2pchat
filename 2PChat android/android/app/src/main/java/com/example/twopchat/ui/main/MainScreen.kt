@@ -424,14 +424,6 @@ fun ContactsTab(
         fingerprint = PythonBridge.getLocalFingerprint()
     }
 
-    LaunchedEffect(username, fingerprint) {
-        if (username.isNotBlank() && username != "User Identity" && fingerprint != "Loading..." && fingerprint != "Not Initialized") {
-            coroutineScope.launch(Dispatchers.IO) {
-                PythonBridge.announceSelf(username, fingerprint, P2PMessageRelay.listenerPort(context))
-            }
-        }
-    }
-    
     // Search results must come from an authenticated live peer.  The former
     // hard-coded demo directory made fictional users look searchable/online.
     val filteredContacts = emptyList<ContactItem>()

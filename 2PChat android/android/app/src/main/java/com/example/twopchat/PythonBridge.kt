@@ -7,6 +7,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 object PythonBridge {
+    private const val MIN_ANNOUNCE_INTERVAL_MS = 60_000L
+    private val announceLock = Any()
+    private val lastAnnounceAt = mutableMapOf<String, Long>()
+    private val lastAnnounceResult = mutableMapOf<String, Boolean>()
+    private val announcesInFlight = mutableSetOf<String>()
     private const val TAG = "PythonBridge"
     private var appContext: Context? = null
     var isInitialized = false
@@ -209,6 +214,17 @@ object PythonBridge {
 
     fun announceSelf(nickname: String, fingerprint: String, port: Int): Boolean {
         if (!isInitialized) return false
+        val announceKey = "$nickname\u0000$fingerprint\u0000$port"
+        synchronized(announceLock) {
+            val now = android.os.SystemClock.elapsedRealtime()
+            val lastAt = lastAnnounceAt[announceKey]
+            if (announceKey in announcesInFlight || (lastAt != null && now - lastAt < MIN_ANNOUNCE_INTERVAL_MS)) {
+                Log.i(TAG, "Skipping duplicate tracker announce for '$nickname'")
+                return lastAnnounceResult[announceKey] ?: false
+            }
+            announcesInFlight.add(announceKey)
+            lastAnnounceAt[announceKey] = now
+        }
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
@@ -225,10 +241,18 @@ object PythonBridge {
             )
             val endpointsJson = JSONArray(addresses).toString()
             val success = bridge.callAttr("announce_peer_endpoints", nickname, fingerprint, endpointsJson, port)
-            success.toBoolean()
+            success.toBoolean().also { result ->
+                synchronized(announceLock) {
+                    lastAnnounceResult[announceKey] = result
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error announcing self", e)
             false
+        } finally {
+            synchronized(announceLock) {
+                announcesInFlight.remove(announceKey)
+            }
         }
     }
 
