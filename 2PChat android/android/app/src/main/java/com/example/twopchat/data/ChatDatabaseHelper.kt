@@ -5,12 +5,13 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.content.ContentValues
 import com.example.twopchat.ui.chat.Message
+import com.example.twopchat.SecureStorage
 
 class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        private const val DATABASE_VERSION = 4
+        private const val DATABASE_VERSION = 5
         private const val TABLE_MESSAGES = "messages"
         
         private const val KEY_ID = "id"
@@ -85,13 +86,31 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
                         "FROM messages_old")
                 db.execSQL("DROP TABLE messages_old")
             } catch (e: Exception) {
-                e.printStackTrace()
-                try {
-                    db.execSQL("DROP TABLE IF EXISTS messages_old")
-                    db.execSQL("DROP TABLE IF EXISTS $TABLE_MESSAGES")
-                    onCreate(db)
-                } catch (ex: Exception) {
-                    ex.printStackTrace()
+                // Never destroy user history on migration failure. Abort the upgrade so
+                // SQLite can roll the transaction back and report the actionable error.
+                throw android.database.sqlite.SQLiteException("Message database migration failed", e)
+            }
+        }
+        if (oldVersion < 5) {
+            // Encrypt legacy sensitive columns in-place. The transaction managed by
+            // SQLiteOpenHelper guarantees an all-or-nothing migration.
+            val sensitive = arrayOf(
+                KEY_MESSAGE_TEXT, KEY_ATTACHMENT_URI, KEY_ATTACHMENT_NAME,
+                KEY_REPLY_TO_TEXT, KEY_REPLY_TO_NAME
+            )
+            db.query(TABLE_MESSAGES, arrayOf(KEY_ID, *sensitive), null, null, null, null, null).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val values = ContentValues()
+                    sensitive.forEach { column ->
+                        val index = cursor.getColumnIndexOrThrow(column)
+                        if (!cursor.isNull(index)) {
+                            val current = cursor.getString(index)
+                            if (!SecureStorage.isEncrypted(current)) values.put(column, enc(current))
+                        }
+                    }
+                    if (values.size() > 0) {
+                        db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(cursor.getString(0)))
+                    }
                 }
             }
         }
@@ -102,15 +121,15 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
         val values = ContentValues().apply {
             put(KEY_ID, msg.id)
             put(KEY_PEER_NAME, peerName)
-            put(KEY_MESSAGE_TEXT, msg.text)
+            put(KEY_MESSAGE_TEXT, enc(msg.text))
             put(KEY_IS_ME, if (msg.isMe) 1 else 0)
             put(KEY_TIMESTAMP, msg.timestamp)
             put(KEY_ATTACHMENT_TYPE, msg.attachmentType)
-            put(KEY_ATTACHMENT_URI, msg.attachmentUri)
-            put(KEY_ATTACHMENT_NAME, msg.attachmentName)
+            put(KEY_ATTACHMENT_URI, encNullable(msg.attachmentUri))
+            put(KEY_ATTACHMENT_NAME, encNullable(msg.attachmentName))
             put(KEY_REPLY_TO_ID, msg.replyToId)
-            put(KEY_REPLY_TO_TEXT, msg.replyToText)
-            put(KEY_REPLY_TO_NAME, msg.replyToName)
+            put(KEY_REPLY_TO_TEXT, encNullable(msg.replyToText))
+            put(KEY_REPLY_TO_NAME, encNullable(msg.replyToName))
             put(KEY_STATUS, msg.status)
         }
         db.insert(TABLE_MESSAGES, null, values)
@@ -144,15 +163,15 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
                 val indexId = it.getColumnIndex(KEY_ID)
                 
                 do {
-                    val text = if (indexText != -1) it.getString(indexText) else ""
+                    val text = if (indexText != -1) dec(it.getString(indexText)) else ""
                     val isMe = if (indexIsMe != -1) it.getInt(indexIsMe) == 1 else false
                     val timestamp = if (indexTimestamp != -1) it.getString(indexTimestamp) else ""
                     val attachType = if (indexAttachType != -1) it.getString(indexAttachType) else null
-                    val attachUri = if (indexAttachUri != -1) it.getString(indexAttachUri) else null
-                    val attachName = if (indexAttachName != -1) it.getString(indexAttachName) else null
+                    val attachUri = if (indexAttachUri != -1) decNullable(it.getString(indexAttachUri)) else null
+                    val attachName = if (indexAttachName != -1) decNullable(it.getString(indexAttachName)) else null
                     val replyToId = if (indexReplyToId != -1) it.getString(indexReplyToId) else null
-                    val replyToText = if (indexReplyToText != -1) it.getString(indexReplyToText) else null
-                    val replyToName = if (indexReplyToName != -1) it.getString(indexReplyToName) else null
+                    val replyToText = if (indexReplyToText != -1) decNullable(it.getString(indexReplyToText)) else null
+                    val replyToName = if (indexReplyToName != -1) decNullable(it.getString(indexReplyToName)) else null
                     val status = if (indexStatus != -1) it.getString(indexStatus) else null
                     val id = if (indexId != -1) it.getString(indexId) else System.currentTimeMillis().toString()
                     
@@ -231,15 +250,15 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
                 val indexId = it.getColumnIndex(KEY_ID)
                 
                 do {
-                    val text = if (indexText != -1) it.getString(indexText) else ""
+                    val text = if (indexText != -1) dec(it.getString(indexText)) else ""
                     val isMe = if (indexIsMe != -1) it.getInt(indexIsMe) == 1 else false
                     val timestamp = if (indexTimestamp != -1) it.getString(indexTimestamp) else ""
                     val attachType = if (indexAttachType != -1) it.getString(indexAttachType) else null
-                    val attachUri = if (indexAttachUri != -1) it.getString(indexAttachUri) else null
-                    val attachName = if (indexAttachName != -1) it.getString(indexAttachName) else null
+                    val attachUri = if (indexAttachUri != -1) decNullable(it.getString(indexAttachUri)) else null
+                    val attachName = if (indexAttachName != -1) decNullable(it.getString(indexAttachName)) else null
                     val replyToId = if (indexReplyToId != -1) it.getString(indexReplyToId) else null
-                    val replyToText = if (indexReplyToText != -1) it.getString(indexReplyToText) else null
-                    val replyToName = if (indexReplyToName != -1) it.getString(indexReplyToName) else null
+                    val replyToText = if (indexReplyToText != -1) decNullable(it.getString(indexReplyToText)) else null
+                    val replyToName = if (indexReplyToName != -1) decNullable(it.getString(indexReplyToName)) else null
                     val status = if (indexStatus != -1) it.getString(indexStatus) else null
                     val id = if (indexId != -1) it.getString(indexId) else System.currentTimeMillis().toString()
                     
@@ -282,4 +301,9 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
         val db = this.writableDatabase
         db.delete(TABLE_MESSAGES, null, null)
     }
+
+    private fun enc(value: String) = SecureStorage.encrypt(value)
+    private fun encNullable(value: String?) = value?.let(SecureStorage::encrypt)
+    private fun dec(value: String?) = SecureStorage.decrypt(value).orEmpty()
+    private fun decNullable(value: String?) = SecureStorage.decrypt(value)
 }

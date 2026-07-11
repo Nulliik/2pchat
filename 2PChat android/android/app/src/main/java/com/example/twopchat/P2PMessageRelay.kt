@@ -218,7 +218,7 @@ object P2PMessageRelay {
             // Register incoming message callback from Python
             PythonBridge.registerMessageListener(object : PythonBridge.PyMessageListener {
                 override fun onMessageReceived(sender: String, text: String) {
-                    log(appContext, "Incoming secure P2P message from $sender: $text")
+                    log(appContext, "Incoming secure P2P message (${text.toByteArray().size} bytes)")
                     
                     try {
                         val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
@@ -228,10 +228,21 @@ object P2PMessageRelay {
                             val type = json.optString("type")
                             if (type == "profile_avatar_share") {
                                 val b64 = json.optString("avatar_base64")
-                                if (b64.isNotEmpty()) {
+                                // Avatars are control-plane thumbnails, not file transfers. Bound their
+                                // encoded size and decoded dimensions before allocating a full bitmap.
+                                if (b64.isNotEmpty() && b64.length <= 2_000_000) {
                                     try {
                                         val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-                                        val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                                        if (bounds.outWidth !in 1..4096 || bounds.outHeight !in 1..4096 ||
+                                            bounds.outWidth.toLong() * bounds.outHeight.toLong() > 16_000_000L) return
+                                        var sample = 1
+                                        while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) sample *= 2
+                                        val bitmap = android.graphics.BitmapFactory.decodeByteArray(
+                                            bytes, 0, bytes.size,
+                                            android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                                        )
                                         if (bitmap != null) {
                                             android.os.Handler(android.os.Looper.getMainLooper()).post {
                                                 peerAvatars[sender] = bitmap
@@ -303,8 +314,8 @@ object P2PMessageRelay {
                                 if (persistEnabled) {
                                     db.saveMessage(sender, rxMsg)
                                 }
-                                sharedPrefs.edit().putString("last_msg_$sender", replyText).apply()
-                                onMessageReceived?.invoke(sender, text)
+                                sharedPrefs.edit().putString("last_msg_$sender", com.example.twopchat.SecureStorage.encrypt(replyText)).apply()
+                                android.os.Handler(android.os.Looper.getMainLooper()).post { onMessageReceived?.invoke(sender, text) }
                                 return
                             }
                         }
@@ -345,13 +356,13 @@ object P2PMessageRelay {
                                 ))
                             }
                         }
-                        sharedPrefs.edit().putString("last_msg_$sender", displayMessage).apply()
+                        sharedPrefs.edit().putString("last_msg_$sender", com.example.twopchat.SecureStorage.encrypt(displayMessage)).apply()
                     } catch (ex: Exception) {
                         log(appContext, "Failed to persist incoming message to SharedPreferences/SQLite", "ERROR", ex)
                     }
 
                     // Dispatch to active chat UI listener if any
-                    onMessageReceived?.invoke(sender, text)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post { onMessageReceived?.invoke(sender, text) }
                 }
             })
 
@@ -536,15 +547,15 @@ object P2PMessageRelay {
                     }
                 }
                 
-                log(context, "Sending secure message to $targetPeerName via Python transport (endpoints: $endpoint)")
+                log(context, "Sending secure message via Python transport")
                 val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
                     .getString("peer_fingerprint_$targetPeerName", null)
                 val success = PythonBridge.sendP2pMessage(targetPeerName, endpoint, text, expectedFingerprint)
-                log(context, "Sending status to $targetPeerName: ${if (success) "SUCCESS" else "FAILED"}")
-                onResult(success)
+                log(context, "Secure message send: ${if (success) "SUCCESS" else "FAILED"}")
+                android.os.Handler(android.os.Looper.getMainLooper()).post { onResult(success) }
             } catch (e: Exception) {
-                log(context, "Failed to send secure message to $endpoint", "ERROR", e)
-                onResult(false)
+                log(context, "Failed to send secure message", "ERROR")
+                android.os.Handler(android.os.Looper.getMainLooper()).post { onResult(false) }
             }
         }
     }
@@ -563,15 +574,15 @@ object P2PMessageRelay {
                     }
                 }
                 
-                log(context, "Sending secure file $filePath to $targetPeerName via Python transport (endpoints: $endpoint)")
+                log(context, "Sending secure file via Python transport")
                 val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
                     .getString("peer_fingerprint_$targetPeerName", null)
                 val success = PythonBridge.sendP2pFile(targetPeerName, endpoint, filePath, expectedFingerprint)
                 log(context, "Sending file status to $targetPeerName: ${if (success) "SUCCESS" else "FAILED"}")
-                onResult(success)
+                android.os.Handler(android.os.Looper.getMainLooper()).post { onResult(success) }
             } catch (e: Exception) {
-                log(context, "Failed to send secure file to $endpoint", "ERROR", e)
-                onResult(false)
+                log(context, "Failed to send secure file", "ERROR")
+                android.os.Handler(android.os.Looper.getMainLooper()).post { onResult(false) }
             }
         }
     }

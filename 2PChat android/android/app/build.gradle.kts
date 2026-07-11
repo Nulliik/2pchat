@@ -12,6 +12,29 @@ val chaquopyBuildPython = providers.gradleProperty("chaquopyBuildPython")
     .orElse(providers.environmentVariable("CHAQUOPY_BUILD_PYTHON"))
     .orNull
 
+// messenger/ at the repository root is the only source of truth. The Android
+// package is generated under build/ and can never drift as a committed copy.
+val generatedPythonRoot = layout.buildDirectory.dir("generated/python/main")
+val syncCanonicalPythonCore by tasks.registering(Sync::class) {
+    from(rootProject.layout.projectDirectory.dir("../../messenger")) {
+        exclude("tests/**", "**/__pycache__/**", "**/*.pyc")
+    }
+    into(generatedPythonRoot.map { it.dir("messenger") })
+}
+
+val forbidDuplicatedPythonCore by tasks.registering {
+    val duplicate = layout.projectDirectory.dir("src/main/python/messenger")
+    inputs.dir(layout.projectDirectory.dir("src/main/python"))
+    doLast {
+        val committedSources = duplicate.asFile.takeIf { it.exists() }
+            ?.walkTopDown()
+            ?.any { it.isFile && it.extension == "py" } == true
+        check(!committedSources) {
+            "Do not commit an Android copy of messenger; edit the canonical repository messenger/ directory"
+        }
+    }
+}
+
 android {
     namespace = "com.example.twopchat"
     compileSdk = 36
@@ -48,6 +71,17 @@ android {
       resources {
         excludes += "/META-INF/{AL2.0,LGPL2.1}"
       }
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn(syncCanonicalPythonCore, forbidDuplicatedPythonCore)
+}
+
+tasks.configureEach {
+    if (name.contains("Python", ignoreCase = true) &&
+        name !in setOf("syncCanonicalPythonCore", "forbidDuplicatedPythonCore")) {
+        dependsOn(syncCanonicalPythonCore, forbidDuplicatedPythonCore)
     }
 }
 
@@ -102,6 +136,11 @@ dependencies {
 
 
 chaquopy {
+    sourceSets {
+        getByName("main") {
+            srcDir(generatedPythonRoot)
+        }
+    }
     defaultConfig {
         version = chaquopyRuntimePython
         if (!chaquopyBuildPython.isNullOrBlank()) {

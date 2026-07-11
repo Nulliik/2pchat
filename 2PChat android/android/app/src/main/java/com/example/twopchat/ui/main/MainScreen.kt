@@ -282,7 +282,7 @@ fun ChatsTab(
 
     val mockPeers = remember(activeChatsSet) {
         activeChatsSet.map { name ->
-            val lastMsg = sharedPrefs.getString("last_msg_$name", null) ?: when(name) {
+            val lastMsg = com.example.twopchat.SecureStorage.decrypt(sharedPrefs.getString("last_msg_$name", null)) ?: when(name) {
                 "Eleanor Vance" -> "You: The designs look fantastic!"
                 "Liam O'Connor" -> "Thanks for the feedback."
                 "Sarah Chen" -> "Last message, your work is great!"

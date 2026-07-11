@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import base64
 from dataclasses import dataclass
 from pathlib import Path
 import threading
@@ -22,6 +23,7 @@ QUEUE_FILENAME = "outbox.json"
 
 _TRUST_LOCK = threading.Lock()
 _KEYSTORE_PREFIX = "android-keystore-v1:"
+_DPAPI_PREFIX = "windows-dpapi-v1:"
 
 
 def _android_keystore():
@@ -36,9 +38,16 @@ def _android_keystore():
 
 def _protect_identity(encoded: str) -> str:
     keystore = _android_keystore()
-    if keystore is None:
-        return encoded
-    return _KEYSTORE_PREFIX + str(keystore.encrypt(encoded))
+    if keystore is not None:
+        return _KEYSTORE_PREFIX + str(keystore.encrypt(encoded))
+    if os.name == "nt":
+        try:
+            import win32crypt
+            protected = win32crypt.CryptProtectData(encoded.encode("utf-8"), None, None, None, None, 0)
+            return _DPAPI_PREFIX + base64.b64encode(protected).decode("ascii")
+        except ImportError:
+            pass
+    return encoded
 
 
 def _read_identity(target: Path) -> tuple[str, bool]:
@@ -48,7 +57,38 @@ def _read_identity(target: Path) -> tuple[str, bool]:
         if keystore is None:
             raise RuntimeError("Android Keystore is required to decrypt this identity")
         return str(keystore.decrypt(stored[len(_KEYSTORE_PREFIX):])), False
-    return stored, _android_keystore() is not None
+    if stored.startswith(_DPAPI_PREFIX):
+        if os.name != "nt":
+            raise RuntimeError("Windows DPAPI is required to decrypt this identity")
+        import win32crypt
+        protected = base64.b64decode(stored[len(_DPAPI_PREFIX):], validate=True)
+        return win32crypt.CryptUnprotectData(protected, None, None, None, 0)[1].decode("utf-8"), False
+    return stored, _android_keystore() is not None or os.name == "nt"
+
+
+def _protect_local_text(plaintext: str) -> str:
+    """Use the platform credential boundary where one is available."""
+    return _protect_identity(plaintext)
+
+
+def _unprotect_local_text(stored: str) -> tuple[str, bool]:
+    # Same envelope as identity files, but the payload is arbitrary UTF-8.
+    return _read_protected_text(stored)
+
+
+def _read_protected_text(stored: str) -> tuple[str, bool]:
+    if stored.startswith(_KEYSTORE_PREFIX):
+        keystore = _android_keystore()
+        if keystore is None:
+            raise RuntimeError("Android Keystore is required to decrypt local data")
+        return str(keystore.decrypt(stored[len(_KEYSTORE_PREFIX):])), False
+    if stored.startswith(_DPAPI_PREFIX):
+        if os.name != "nt":
+            raise RuntimeError("Windows DPAPI is required to decrypt local data")
+        import win32crypt
+        blob = base64.b64decode(stored[len(_DPAPI_PREFIX):], validate=True)
+        return win32crypt.CryptUnprotectData(blob, None, None, None, 0)[1].decode("utf-8"), False
+    return stored, _android_keystore() is not None or os.name == "nt"
 
 
 def _write_identity(target: Path, encoded: str) -> None:
@@ -296,14 +336,30 @@ class Outbox:
         if not self.path.exists():
             return
         try:
-            data = json.loads(self.path.read_text())
+            raw, needs_migration = _unprotect_local_text(self.path.read_text(encoding="utf-8"))
+            data = json.loads(raw)
             if isinstance(data, list):
                 self._messages = [m for m in data if isinstance(m, dict)]
+                if needs_migration:
+                    self._persist()
         except Exception:
             self._messages = []
 
     def _persist(self) -> None:
-        self.path.write_text(json.dumps(self._messages, indent=2))
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_name(f".{self.path.name}.{uuid4().hex}.tmp")
+        try:
+            temporary.write_text(
+                _protect_local_text(json.dumps(self._messages, separators=(",", ":"))),
+                encoding="utf-8",
+            )
+            try:
+                temporary.chmod(0o600)
+            except OSError:
+                pass
+            os.replace(temporary, self.path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def add_chat(
         self,

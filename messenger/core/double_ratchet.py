@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import copy
 import struct
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, Iterator, Optional, Tuple
@@ -20,11 +21,13 @@ from nacl.utils import random as nacl_random
 
 
 HASH_LEN = hashlib.sha256().digest_size
-PACKET_VERSION = 2
+PACKET_VERSION = 3
 HEADER_FLAG_OBFUSCATED = 0x01
 PLAIN_HEADER_LEN = 32 + 4  # dh public + message index
 OBFUSCATED_HEADER_LEN = SecretBox.NONCE_SIZE + PLAIN_HEADER_LEN + SecretBox.MACBYTES
 SIGNED_PREKEY_CONTEXT = b"p2p-chat-signed-prekey-v1"
+PACKET_AUTH_CONTEXT = b"p2p-chat-packet-auth-v3"
+PACKET_TAG_LEN = 32
 
 
 def hkdf_sha256(input_key_material: bytes, salt: bytes = b"", info: bytes = b"", length: int = 32) -> bytes:
@@ -170,7 +173,8 @@ class SessionState:
         self.skipped_message_keys[(bytes(dh_pub), index)] = key
 
     def try_retrieve_skipped_key(self, dh_pub: PublicKey, index: int) -> Optional[bytes]:
-        return self.skipped_message_keys.pop((bytes(dh_pub), index), None)
+        # Authentication must succeed before the one-shot key is consumed.
+        return self.skipped_message_keys.get((bytes(dh_pub), index))
 
 
 def _derive_three_keys(material: bytes) -> Tuple[bytes, bytes, bytes]:
@@ -178,9 +182,23 @@ def _derive_three_keys(material: bytes) -> Tuple[bytes, bytes, bytes]:
     return derived[:32], derived[32:64], derived[64:96]
 
 
-def safety_number(local_identity_pub: PublicKey, remote_identity_pub: PublicKey) -> str:
-    """Return a 60-digit decimal safety number derived from both identities."""
-    digest = hashlib.sha256(bytes(local_identity_pub) + bytes(remote_identity_pub)).digest()
+def safety_number(
+    local_identity_pub: PublicKey,
+    remote_identity_pub: PublicKey,
+    local_verify_pub: Optional[VerifyKey] = None,
+    remote_verify_pub: Optional[VerifyKey] = None,
+) -> str:
+    """Return an order-independent, domain-separated safety number.
+
+    Callers should supply the Ed25519 identities too.  The optional arguments
+    retain source compatibility for stores created before signing identities
+    were introduced.
+    """
+    identities = sorted((bytes(local_identity_pub), bytes(remote_identity_pub)))
+    material = b"p2p-chat-safety-number-v2\x00" + b"".join(identities)
+    if local_verify_pub is not None and remote_verify_pub is not None:
+        material += b"\x01" + b"".join(sorted((bytes(local_verify_pub), bytes(remote_verify_pub))))
+    digest = hashlib.sha256(material).digest()
     num = int.from_bytes(digest[:30], "big") % (10 ** 60)
     return f"{num:060d}"
 
@@ -272,7 +290,9 @@ def encrypt_message(session: SessionState, plaintext: bytes) -> bytes:
     else:
         header = header_plain
 
-    packet = b"".join([bytes([PACKET_VERSION]), bytes([flags]), header, ciphertext])
+    prefix = b"".join([bytes([PACKET_VERSION]), bytes([flags]), header, ciphertext])
+    auth_key = hmac_sha256(message_key, PACKET_AUTH_CONTEXT)
+    packet = prefix + hmac_sha256(auth_key, prefix)
     return packet
 
 
@@ -286,7 +306,18 @@ def _maybe_skip_message_keys(session: SessionState, until: int, dh_pub: PublicKe
 
 def decrypt_message(session: SessionState, packet: bytes) -> bytes:
     """Decrypt a packet and advance the receive ratchet as needed."""
-    if len(packet) < 1 + 1 + PLAIN_HEADER_LEN:
+    # Work on a private snapshot. Malformed or forged packets must not advance
+    # chains, install a hostile ratchet key, or consume skipped keys.
+    candidate = copy.copy(session)
+    candidate.skipped_message_keys = session.skipped_message_keys.copy()
+    plaintext = _decrypt_message_candidate(candidate, packet)
+    for name in SessionState.__dataclass_fields__:
+        setattr(session, name, getattr(candidate, name))
+    return plaintext
+
+
+def _decrypt_message_candidate(session: SessionState, packet: bytes) -> bytes:
+    if len(packet) < 1 + 1 + PLAIN_HEADER_LEN + PACKET_TAG_LEN:
         raise ValueError("packet too short")
     version = packet[0]
     if version != PACKET_VERSION:
@@ -308,12 +339,18 @@ def decrypt_message(session: SessionState, packet: bytes) -> bytes:
 
     remote_dh_pub = PublicKey(header_plain[:32])
     msg_index = struct.unpack(">I", header_plain[32:36])[0]
-    ciphertext = packet[header_end:]
+    ciphertext = packet[header_end:-PACKET_TAG_LEN]
+    supplied_tag = packet[-PACKET_TAG_LEN:]
 
     skipped_key = session.try_retrieve_skipped_key(remote_dh_pub, msg_index)
     if skipped_key is not None:
+        auth_key = hmac_sha256(skipped_key, PACKET_AUTH_CONTEXT)
+        if not hmac.compare_digest(supplied_tag, hmac_sha256(auth_key, packet[:-PACKET_TAG_LEN])):
+            raise ValueError("packet authentication failed")
         box = SecretBox(skipped_key)
-        return box.decrypt(ciphertext)
+        plaintext = box.decrypt(ciphertext)
+        session.skipped_message_keys.pop((bytes(remote_dh_pub), msg_index), None)
+        return plaintext
 
     if session.dh_recv_key_pub is None or bytes(remote_dh_pub) != bytes(session.dh_recv_key_pub):
         session.ratchet_step(remote_dh_pub)
@@ -323,6 +360,9 @@ def decrypt_message(session: SessionState, packet: bytes) -> bytes:
 
     _maybe_skip_message_keys(session, msg_index, remote_dh_pub)
     message_key = session.derive_message_key("recv")
+    auth_key = hmac_sha256(message_key, PACKET_AUTH_CONTEXT)
+    if not hmac.compare_digest(supplied_tag, hmac_sha256(auth_key, packet[:-PACKET_TAG_LEN])):
+        raise ValueError("packet authentication failed")
     box = SecretBox(message_key)
     return box.decrypt(ciphertext)
 

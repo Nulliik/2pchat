@@ -400,7 +400,7 @@ fun ChatScreen(
     var replyingToMessage by remember { mutableStateOf<Message?>(null) }
     
     var pinnedMsgId by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_id_${peerName}", null)) }
-    var pinnedMsgText by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_text_${peerName}", null)) }
+    var pinnedMsgText by remember(peerName) { mutableStateOf(com.example.twopchat.SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
     var pinnedMsgSender by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_sender_${peerName}", null)) }
 
     var isSelectMode by remember { mutableStateOf(false) }
@@ -1489,7 +1489,7 @@ fun ChatScreen(
                                         newSet.add(peerName)
                                         sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
                                     }
-                                    sharedPrefs.edit().putString("last_msg_$peerName", "You: $userText").apply()
+                                    sharedPrefs.edit().putString("last_msg_$peerName", com.example.twopchat.SecureStorage.encrypt("You: $userText")).apply()
 
                                     // Send message payload
                                     val payload = if (replyTo != null) {
@@ -1618,7 +1618,7 @@ fun ChatScreen(
                                 .clickable {
                                     sharedPrefs.edit().apply {
                                         putString("pinned_msg_id_${peerName}", msg.id)
-                                        putString("pinned_msg_text_${peerName}", msg.text)
+                                        putString("pinned_msg_text_${peerName}", com.example.twopchat.SecureStorage.encrypt(msg.text))
                                         putString("pinned_msg_sender_${peerName}", if (msg.isMe) "You" else peerName)
                                         apply()
                                     }
@@ -1811,7 +1811,7 @@ fun ChatScreen(
                                                 db.saveMessage(chatName, fwdMsg)
                                             }
                                             // Update last message in active chats list
-                                            sharedPrefs.edit().putString("last_msg_$chatName", "You: $textToForward").apply()
+                                            sharedPrefs.edit().putString("last_msg_$chatName", com.example.twopchat.SecureStorage.encrypt("You: $textToForward")).apply()
                                             
                                             // Send if there is an endpoint
                                             if (forwardEndpoint != null && chatName != "Saved Messages") {

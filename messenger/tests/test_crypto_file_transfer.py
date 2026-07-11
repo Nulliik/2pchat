@@ -9,6 +9,7 @@ from messenger.core.crypto import (
     generate_identity_keypair,
     receive_encrypted_file,
     send_encrypted_file,
+    encrypt_file_in_chunks,
 )
 
 
@@ -83,3 +84,21 @@ def test_chunk_tamper_detection(tmp_path: Path, keypairs):
             metadata["file_nonce_prefix"],
             metadata["file_hash"],
         )
+
+
+def test_file_encryption_does_not_use_read_bytes(tmp_path: Path, monkeypatch):
+    path = tmp_path / "streamed.bin"
+    path.write_bytes(b"x" * (2 * 65536 + 7))
+
+    def fail_read_bytes(_self):
+        raise AssertionError("whole-file buffering is forbidden")
+
+    monkeypatch.setattr(Path, "read_bytes", fail_read_bytes)
+    chunks, key, nonce, size, count, digest = encrypt_file_in_chunks(str(path))
+
+    assert size == 2 * 65536 + 7
+    assert count == 3
+    assert len(list(chunks)) == count
+    assert len(key) == 32
+    assert len(nonce) == 16
+    assert len(digest) == 32

@@ -11,6 +11,8 @@ from messenger.core.double_ratchet import (
     safety_number,
 )
 from nacl.public import PrivateKey
+import copy
+import pytest
 
 
 def test_double_ratchet_round_trip():
@@ -110,3 +112,63 @@ def test_header_obfuscation_hides_dh_key():
         initiator_ephemeral_pub=eph.public,
     )
     assert decrypt_message(bob_session, packet) == b"secret"
+
+
+def test_forged_header_does_not_mutate_ratchet_state():
+    alice = IdentityKeyPair.generate()
+    bob = IdentityKeyPair.generate()
+    signed_prekey = PrivateKey.generate()
+    bundle = PreKeyBundle(
+        identity_pub=bob.public,
+        identity_verify_pub=bob.signing.verify_key,
+        signed_prekey_pub=signed_prekey.public_key,
+        signed_prekey_sig=_sign_prekey(bob.signing, signed_prekey.public_key),
+    )
+    eph = IdentityKeyPair.generate()
+    alice_session = initialize_session_from_prekey(alice, bundle, eph)
+    bob_session = respond_to_prekey_init(
+        bob, signed_prekey, None, alice.public, eph.public
+    )
+    packet = encrypt_message(alice_session, b"authentic")
+    before = copy.copy(bob_session)
+    forged = bytearray(packet)
+    forged[2:34] = bytes(PrivateKey.generate().public_key)
+    with pytest.raises(ValueError):
+        decrypt_message(bob_session, bytes(forged))
+    assert bob_session.root_key == before.root_key
+    assert bob_session.recv_chain_key == before.recv_chain_key
+    assert bob_session.recv_idx == before.recv_idx
+    assert decrypt_message(bob_session, packet) == b"authentic"
+
+
+def test_bad_out_of_order_packet_does_not_consume_skipped_key():
+    alice = IdentityKeyPair.generate()
+    bob = IdentityKeyPair.generate()
+    signed_prekey = PrivateKey.generate()
+    bundle = PreKeyBundle(
+        identity_pub=bob.public,
+        identity_verify_pub=bob.signing.verify_key,
+        signed_prekey_pub=signed_prekey.public_key,
+        signed_prekey_sig=_sign_prekey(bob.signing, signed_prekey.public_key),
+    )
+    eph = IdentityKeyPair.generate()
+    a = initialize_session_from_prekey(alice, bundle, eph)
+    b = respond_to_prekey_init(bob, signed_prekey, None, alice.public, eph.public)
+    first, second = encrypt_message(a, b"first"), encrypt_message(a, b"second")
+    assert decrypt_message(b, second) == b"second"
+    forged = bytearray(first)
+    forged[-1] ^= 1
+    with pytest.raises(ValueError):
+        decrypt_message(b, bytes(forged))
+    assert decrypt_message(b, first) == b"first"
+
+
+def test_safety_number_is_order_independent_and_binds_signing_keys():
+    alice, bob = IdentityKeyPair.generate(), IdentityKeyPair.generate()
+    ab = safety_number(alice.public, bob.public, alice.signing.verify_key, bob.signing.verify_key)
+    ba = safety_number(bob.public, alice.public, bob.signing.verify_key, alice.signing.verify_key)
+    assert ab == ba
+    replacement = IdentityKeyPair.generate()
+    assert ab != safety_number(
+        alice.public, bob.public, alice.signing.verify_key, replacement.signing.verify_key
+    )

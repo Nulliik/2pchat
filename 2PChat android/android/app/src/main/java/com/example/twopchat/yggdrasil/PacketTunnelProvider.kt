@@ -216,18 +216,8 @@ open class PacketTunnelProvider: VpnService() {
 
         // БАГ 2 ИСПРАВЛЕН: Сначала прерываем потоки, потом закрываем стримы.
         // Если закрыть стримы раньше — потоки reader/writer получат NPE или IOException.
-        readerThread?.let {
-            it.interrupt()
-            readerThread = null
-        }
-        writerThread?.let {
-            it.interrupt()
-            writerThread = null
-        }
-        updateThread?.let {
-            it.interrupt()
-            updateThread = null
-        }
+        val threads = listOfNotNull(readerThread, writerThread, updateThread)
+        threads.forEach(Thread::interrupt)
 
         // Закрываем стримы после того, как потоки прерваны
         readerStream?.let {
@@ -242,6 +232,14 @@ open class PacketTunnelProvider: VpnService() {
             it.close()
             parcel = null
         }
+        // Do not let a restart overlap old native/FD users. Closing the streams above
+        // unblocks reads; bounded joins avoid hanging service shutdown indefinitely.
+        threads.filter { it !== Thread.currentThread() }.forEach { thread ->
+            try { thread.join(2_000) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
+        }
+        readerThread = null
+        writerThread = null
+        updateThread = null
 
         var intent = Intent(STATE_INTENT)
         intent.putExtra("type", "state")
@@ -388,6 +386,7 @@ open class PacketTunnelProvider: VpnService() {
             }
             try {
                 val n = readerStream.read(b)
+                if (n <= 0) break@reads
                 yggdrasil.sendBuffer(b, n.toLong())
             } catch (e: Exception) {
                 Log.i(TAG, "Error in sendBuffer: $e")

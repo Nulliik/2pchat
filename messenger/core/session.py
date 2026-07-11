@@ -33,6 +33,9 @@ from .identity import (
 FRAME_HEADER = 4
 PROTOCOL_V3 = 3
 MAX_FRAME_SIZE = 16 * 1024 * 1024
+MAX_HANDSHAKE_SIZE = 16 * 1024
+DEFAULT_HANDSHAKE_TIMEOUT = 10.0
+DEFAULT_MESSAGE_QUEUE_SIZE = 256
 
 logger = setup_logger("messenger.session", logging.INFO)
 X3DH_HANDSHAKE_CONTEXT = b"p2p-chat-x3dh-handshake-v1"
@@ -50,11 +53,11 @@ class HandshakeV3:
     ephemeral_pub: Optional[PublicKey] = None
 
 
-async def _read_frame(reader: asyncio.StreamReader) -> bytes:
+async def _read_frame(reader: asyncio.StreamReader, *, max_size: int = MAX_FRAME_SIZE) -> bytes:
     length_data = await reader.readexactly(FRAME_HEADER)
     length = int.from_bytes(length_data, "big")
-    if length > MAX_FRAME_SIZE:
-        raise ValueError(f"Frame size {length} exceeds maximum limit of {MAX_FRAME_SIZE} bytes")
+    if length > max_size:
+        raise ValueError(f"Frame size {length} exceeds maximum limit of {max_size} bytes")
     return await reader.readexactly(length)
 
 
@@ -78,6 +81,7 @@ class Session:
         max_retries: int = 3,
         backoff_factor: float = 1.5,
         peer_label: Optional[str] = None,
+        message_queue_size: int = DEFAULT_MESSAGE_QUEUE_SIZE,
     ):
         self.reader = reader
         self.writer = writer
@@ -101,7 +105,9 @@ class Session:
         self._dr_state = None
 
         self._pending_acks: Dict[str, asyncio.Future] = {}
-        self._message_queue: asyncio.Queue = asyncio.Queue()
+        if message_queue_size <= 0:
+            raise ValueError("message_queue_size must be positive")
+        self._message_queue: asyncio.Queue = asyncio.Queue(maxsize=message_queue_size)
         self._reader_task: Optional[asyncio.Task] = None
         self._peer_fp: Optional[str] = None
         self.peer_fingerprint: Optional[str] = None
@@ -234,13 +240,17 @@ class Session:
     ) -> Tuple[PublicKey, PrivateKey, PublicKey]:
         if initiator:
             await _write_frame(self.writer, self._x3dh_payload("init"))
-            remote = Session._parse_x3dh_handshake(await _read_frame(self.reader))
+            remote = Session._parse_x3dh_handshake(
+                await _read_frame(self.reader, max_size=MAX_HANDSHAKE_SIZE)
+            )
             if remote.role != "reply":
                 raise ValueError("initiator expected reply handshake")
             local_eph_pub = self.bootstrap_eph_pub
         else:
             if initial_remote is None:
-                initial_remote = Session._parse_x3dh_handshake(await _read_frame(self.reader))
+                initial_remote = Session._parse_x3dh_handshake(
+                    await _read_frame(self.reader, max_size=MAX_HANDSHAKE_SIZE)
+                )
             if initial_remote.role != "init" or initial_remote.ephemeral_pub is None:
                 raise ValueError("responder expected init handshake")
             await _write_frame(self.writer, self._x3dh_payload("reply"))
@@ -298,7 +308,7 @@ class Session:
         if initiator:
             return await self._exchange_v3(True, expected_fingerprint)
 
-        initial_payload = await _read_frame(self.reader)
+        initial_payload = await _read_frame(self.reader, max_size=MAX_HANDSHAKE_SIZE)
         parsed = Session._parse_x3dh_handshake(initial_payload)
         return await self._exchange_v3(False, expected_fingerprint, parsed)
 
@@ -317,6 +327,8 @@ class Session:
         max_retries: int = 3,
         backoff_factor: float = 1.5,
         peer_label: Optional[str] = None,
+        handshake_timeout: float = DEFAULT_HANDSHAKE_TIMEOUT,
+        message_queue_size: int = DEFAULT_MESSAGE_QUEUE_SIZE,
     ) -> "Session":
         session = cls(
             reader,
@@ -328,8 +340,14 @@ class Session:
             backoff_factor=backoff_factor,
             peer_label=peer_label,
             signing_key=signing_key,
+            message_queue_size=message_queue_size,
         )
-        await session._exchange_keys(initiator, expected_fingerprint)
+        if handshake_timeout <= 0:
+            raise ValueError("handshake_timeout must be positive")
+        await asyncio.wait_for(
+            session._exchange_keys(initiator, expected_fingerprint),
+            timeout=handshake_timeout,
+        )
         session._start_reader()
         return session
 

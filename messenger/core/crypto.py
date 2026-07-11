@@ -278,32 +278,32 @@ def encrypt_file_in_chunks(
 
     Returns an iterator of ``(chunk_index, encrypted_chunk)`` pairs along with
     ``(file_key, file_nonce_prefix, file_size, num_chunks, file_hash)``.
-    The file is read fully into memory for simplicity and to make metadata
-    immediately available to callers.
+    The file is scanned once for metadata and then encrypted lazily. Memory use
+    is therefore bounded by ``chunk_size`` regardless of the file size.
     """
 
-    data = Path(file_path).read_bytes()
-    file_size = len(data)
-    file_hash = sha256(data).digest()
+    path = Path(file_path)
+    file_size = path.stat().st_size
+    digest = sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    file_hash = digest.digest()
 
     file_key = nacl_random(SecretBox.KEY_SIZE)
     file_nonce_prefix = nacl_random(16)
     box = SecretBox(file_key)
 
-    chunks: list[Tuple[int, bytes]] = []
-    num_chunks = 0
-    offset = 0
-    while offset < file_size:
-        chunk = data[offset : offset + chunk_size]
-        nonce = file_nonce_prefix + num_chunks.to_bytes(8, "big")
-        encrypted_chunk = box.encrypt(chunk, nonce)
-        chunks.append((num_chunks, encrypted_chunk))
-        num_chunks += 1
-        offset += chunk_size
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+    num_chunks = (file_size + chunk_size - 1) // chunk_size
 
     def iterator() -> Iterator[Tuple[int, bytes]]:
-        for item in chunks:
-            yield item
+        with path.open("rb") as source:
+            for chunk_index in range(num_chunks):
+                chunk = source.read(chunk_size)
+                nonce = file_nonce_prefix + chunk_index.to_bytes(8, "big")
+                yield chunk_index, bytes(box.encrypt(chunk, nonce))
 
     logger.debug(
         "Encrypt file %s size=%s chunk_size=%s chunks=%s",

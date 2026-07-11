@@ -140,15 +140,16 @@ Those 96 bytes are split into:
 2. initiator send chain / responder receive chain
 3. initiator receive chain / responder send chain
 
-## Current Encrypted Packet Format: Version 2
+## Current Encrypted Packet Format: Version 3
 
 After the v3 bootstrap, application messages are wrapped in a Double Ratchet
 packet:
 
-1. `version` - 1 byte, currently `0x02`
+1. `version` - 1 byte, currently `0x03`
 2. `flags` - 1 byte
 3. `header`
 4. `ciphertext`
+5. `packet_tag` - 32-byte HMAC-SHA256
 
 ### Header
 
@@ -171,6 +172,12 @@ The ciphertext is NaCl `SecretBox` output:
 
 Each message key is derived from the current send or receive chain key, and
 each chain key is advanced after use.
+
+`packet_tag` authenticates the complete version, flags, header, and ciphertext.
+Its key is domain-separated from the SecretBox key with
+`HMAC-SHA256(message_key, "p2p-chat-packet-auth-v3")`. A receiver performs all
+ratchet operations on a temporary state and commits that state only after both
+the packet HMAC and SecretBox authentication succeed.
 
 ## Legacy Compatibility: Handshake Version 2
 

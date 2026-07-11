@@ -69,8 +69,8 @@ object SecurityUtils {
                 val spec = PBEKeySpec(enteredPin.toCharArray(), salt, iterations, KEY_LENGTH)
                 val skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
                 val hash = skf.generateSecret(spec).encoded
-                val computedHex = hash.joinToString("") { "%02x".format(it) }
-                computedHex == hashHex
+                val expected = hexToBytes(hashHex)
+                MessageDigest.isEqual(hash, expected)
             } else {
                 false
             }
@@ -102,7 +102,10 @@ object SecurityUtils {
         } catch (e: Exception) {
             ""
         }
-        if (legacyHashedInput.isNotEmpty() && legacyHashedInput == storedValue) {
+        if (legacyHashedInput.isNotEmpty() && MessageDigest.isEqual(
+                legacyHashedInput.toByteArray(Charsets.US_ASCII),
+                storedValue.toByteArray(Charsets.US_ASCII)
+            )) {
             // Upgrade to PBKDF2
             try {
                 sharedPrefs.edit().putString(prefKey, hashPasscode(enteredPin)).apply()
@@ -113,7 +116,10 @@ object SecurityUtils {
         }
 
         // 3. Fallback to legacy plaintext match
-        if (enteredPin == storedValue) {
+        if (MessageDigest.isEqual(
+                enteredPin.toByteArray(Charsets.UTF_8),
+                storedValue.toByteArray(Charsets.UTF_8)
+            )) {
             // Upgrade to PBKDF2
             try {
                 sharedPrefs.edit().putString(prefKey, hashPasscode(enteredPin)).apply()

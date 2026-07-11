@@ -292,15 +292,21 @@ fun PasscodeUnlockScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     var inputPin by remember { mutableStateOf("") }
     var showError by remember { mutableStateOf(false) }
-    var failedAttempts by remember { mutableStateOf(0) }
-    var lockoutTimeRemaining by remember { mutableStateOf(0) }
+    val lockPrefs = remember { context.getSharedPreferences("2pchat_lock_state", android.content.Context.MODE_PRIVATE) }
+    var failedAttempts by remember { mutableStateOf(lockPrefs.getInt("failed_attempts", 0)) }
+    var lockoutUntil by remember { mutableStateOf(lockPrefs.getLong("lockout_until", 0L)) }
+    var lockoutTimeRemaining by remember {
+        mutableStateOf(((lockoutUntil - System.currentTimeMillis()).coerceAtLeast(0L) / 1000L).toInt())
+    }
 
     LaunchedEffect(lockoutTimeRemaining > 0) {
-        if (lockoutTimeRemaining > 0) {
-            while (lockoutTimeRemaining > 0) {
+        if (lockoutUntil > System.currentTimeMillis()) {
+            while (lockoutUntil > System.currentTimeMillis()) {
                 kotlinx.coroutines.delay(1000)
-                lockoutTimeRemaining -= 1
+                lockoutTimeRemaining = ((lockoutUntil - System.currentTimeMillis()).coerceAtLeast(0L) / 1000L).toInt()
             }
+            lockoutTimeRemaining = 0
+            lockPrefs.edit().remove("lockout_until").apply()
         }
     }
 
@@ -408,14 +414,22 @@ fun PasscodeUnlockScreen(
                                                     val sharedPrefs = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
                                                     
                                                     if (SecurityUtils.verifyAndMigratePasscode(inputPin, correctPasscode, sharedPrefs, "passcode_value")) {
+                                                        failedAttempts = 0
+                                                        lockPrefs.edit().clear().apply()
                                                         onUnlock()
                                                     } else if (duressPasscode.isNotEmpty() && SecurityUtils.verifyAndMigratePasscode(inputPin, duressPasscode, sharedPrefs, "passcode_duress_value")) {
                                                         onDuressTriggered()
                                                     } else {
                                                         failedAttempts += 1
+                                                        lockPrefs.edit().putInt("failed_attempts", failedAttempts).apply()
                                                         if (failedAttempts >= 5) {
+                                                            lockoutUntil = System.currentTimeMillis() + 30_000L
                                                             lockoutTimeRemaining = 30
                                                             failedAttempts = 0
+                                                            lockPrefs.edit()
+                                                                .putInt("failed_attempts", 0)
+                                                                .putLong("lockout_until", lockoutUntil)
+                                                                .commit()
                                                         }
                                                         showError = true
                                                         inputPin = ""

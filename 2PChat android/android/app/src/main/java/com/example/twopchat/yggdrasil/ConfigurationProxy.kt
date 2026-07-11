@@ -7,6 +7,7 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.zip.GZIPInputStream
+import com.example.twopchat.SecureStorage
 
 // БАГ 1 ИСПРАВЛЕН: Был object (singleton с race condition).
 // Теперь это обычный класс — каждый экземпляр владеет своим файлом/json и не конкурирует с другими.
@@ -38,21 +39,16 @@ class ConfigurationProxy(applicationContext: Context) {
 
     init {
         file = File(applicationContext.filesDir, "yggdrasil.conf")
-        if (!file.exists()) {
-            val conf = Mobile.generateConfigJSON()
-            if (file.createNewFile()) {
-                file.writeBytes(conf)
-            }
-        }
-        json = JSONObject(file.readText(Charsets.UTF_8))
+        if (!file.exists()) persist(String(Mobile.generateConfigJSON(), Charsets.UTF_8))
+        json = JSONObject(readConfig())
         // БАГ 7 ИСПРАВЛЕН: fix() теперь вызывается только один раз при создании, а не при каждом getJSON()
         fix()
     }
 
     fun resetJSON() {
         val conf = Mobile.generateConfigJSON()
-        file.writeBytes(conf)
-        json = JSONObject(file.readText(Charsets.UTF_8))
+        persist(String(conf, Charsets.UTF_8))
+        json = JSONObject(readConfig())
         fix()
     }
 
@@ -71,10 +67,24 @@ class ConfigurationProxy(applicationContext: Context) {
 
     @Synchronized
     fun updateJSON(fn: (JSONObject) -> Unit) {
-        json = JSONObject(file.readText(Charsets.UTF_8))
+        json = JSONObject(readConfig())
         fn(json)
         val str = json.toString()
-        file.writeText(str, Charsets.UTF_8)
+        persist(str)
+    }
+
+    private fun readConfig(): String {
+        val stored = file.readText(Charsets.UTF_8)
+        return SecureStorage.decrypt(stored) ?: error("Empty Yggdrasil configuration")
+    }
+
+    private fun persist(plainText: String) {
+        val temp = File(file.parentFile, "${file.name}.tmp")
+        temp.writeText(SecureStorage.encrypt(plainText), Charsets.UTF_8)
+        if (!temp.renameTo(file)) {
+            file.writeText(temp.readText(Charsets.UTF_8), Charsets.UTF_8)
+            temp.delete()
+        }
     }
 
     private fun fix() {

@@ -6,6 +6,9 @@ import traceback
 import uuid
 import re
 import time
+import tempfile
+import hashlib
+from pathlib import Path
 from datetime import datetime, timezone
 
 from messenger.core.discovery_manager import get_discovery_provider
@@ -29,10 +32,7 @@ peer_fingerprint_to_name = {}
 incoming_files = {}
 MAX_INCOMING_FILES = 16
 INCOMING_FILE_TTL_SECONDS = 120
-MAX_FILE_SIZE = 500 * 1024 * 1024
-MAX_FILE_CHUNKS = 8192
 MAX_ENCRYPTED_CHUNK_SIZE = 1024 * 1024
-MAX_BUFFERED_FILE_BYTES = MAX_FILE_SIZE + (MAX_FILE_CHUNKS * 32)
 MAX_CONCURRENT_HANDSHAKES = 10
 tracker_diagnostics = {}
 local_identity_nickname = ""
@@ -58,6 +58,18 @@ YGG_TRACKERS = (
 )
 
 
+def _session_for_peer(peer_name: str, expected_fingerprint: str | None = None):
+    """Resolve a live session through authenticated identity, not a name key."""
+    if expected_fingerprint:
+        return active_sessions.get(expected_fingerprint)
+    matches = {
+        fp: active_sessions.get(fp)
+        for fp, name in peer_fingerprint_to_name.items()
+        if name == peer_name and active_sessions.get(fp) is not None
+    }
+    return next(iter(matches.values())) if len(matches) == 1 else None
+
+
 def _format_endpoint(host: str, port: int) -> str:
     if ":" in host:
         return f"[{host}]:{port}"
@@ -78,7 +90,25 @@ def _prune_incoming_files(now: float | None = None):
     cutoff = (now if now is not None else time.monotonic()) - INCOMING_FILE_TTL_SECONDS
     for file_id, state in list(incoming_files.items()):
         if state.get("updated_at", 0) < cutoff:
-            incoming_files.pop(file_id, None)
+            _discard_incoming_file(file_id)
+
+
+def _discard_incoming_file(key):
+    state = incoming_files.pop(key, None)
+    if not state:
+        return
+    handle = state.get("handle")
+    if handle:
+        try:
+            handle.close()
+        except OSError:
+            pass
+    path = state.get("temp_path")
+    if path:
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def set_ipv4_enabled(enabled: bool):
@@ -551,6 +581,7 @@ async def _listen_loop_dual(port: int):
 
 
 async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_store):
+    session = None
     try:
         peername = writer.get_extra_info("peername")
         if not ipv4_enabled and peername and ":" not in str(peername[0]):
@@ -576,7 +607,6 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
         peer_name = peer_fingerprint_to_name.get(fp, f"Peer ({fp[:8]})")
         
         active_sessions[fp] = session
-        active_sessions[peer_name] = session
         
         print(f"Accepted Double Ratchet session from {peer_name} (Fingerprint: {fp})")
         
@@ -596,6 +626,14 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
     except Exception as e:
         print("Error handling incoming connection:", e)
         traceback.print_exc()
+        if session is not None:
+            await session.close()
+        else:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except (ConnectionError, OSError):
+                pass
 
 async def _read_loop(session, peer_name, fp):
     global message_listener_callback
@@ -618,8 +656,6 @@ async def _read_loop(session, peer_name, fp):
                     peer_fingerprint_to_name[remote_fp] = real_name
                     peer_fingerprint_to_name[fp] = real_name
                     # Re-register session under real name
-                    active_sessions[real_name] = session
-                    active_sessions.pop(peer_name, None)
                     # Notify Kotlin so UI can open/rename the chat
                     if session_listener_callback:
                         try:
@@ -664,8 +700,7 @@ async def _read_loop(session, peer_name, fp):
                 import base64
                 import os
                 import mimetypes
-                from pathlib import Path
-                from messenger.core.crypto import decrypt_file_chunks
+                from nacl.secret import SecretBox
 
                 file_id_str = str(msg.get("file_id", ""))
                 try:
@@ -680,30 +715,49 @@ async def _read_loop(session, peer_name, fp):
                 now = time.monotonic()
                 _prune_incoming_files(now)
 
-                state = incoming_files.get(file_id)
-                if not state:
-                    if len(incoming_files) >= MAX_INCOMING_FILES:
-                        print("Rejected file transfer: too many concurrent incoming files")
-                        continue
-                    state = {"meta": None, "chunks": {}, "buffered_bytes": 0, "updated_at": now}
-                    incoming_files[file_id] = state
-                state["updated_at"] = now
+                # File IDs are peer-local. One peer cannot collide with or
+                # complete another authenticated peer's transfer.
+                transfer_key = (fp, file_id)
+                state = incoming_files.get(transfer_key)
 
                 if mtype == "file_meta":
                     file_size = int(msg.get("file_size", -1))
                     num_chunks = int(msg.get("num_chunks", 0))
-                    if file_size < 0 or file_size > MAX_FILE_SIZE:
-                        incoming_files.pop(file_id, None)
+                    if file_size < 0:
                         print(f"Rejected file transfer: invalid size {file_size}")
                         continue
-                    if num_chunks <= 0 or num_chunks > MAX_FILE_CHUNKS:
-                        incoming_files.pop(file_id, None)
+                    if num_chunks < 0 or (file_size > 0 and num_chunks == 0):
                         print(f"Rejected file transfer: invalid chunk count {num_chunks}")
                         continue
-                    state["meta"] = msg
+                    if state:
+                        _discard_incoming_file(transfer_key)
+                    if len(incoming_files) >= MAX_INCOMING_FILES:
+                        print("Rejected file transfer: too many concurrent incoming files")
+                        continue
+                    try:
+                        file_key = base64.b64decode(str(msg["file_key"]), validate=True)
+                        nonce_prefix = base64.b64decode(str(msg["file_nonce_prefix"]), validate=True)
+                        expected_hash = base64.b64decode(str(msg["file_hash"]), validate=True)
+                        if len(file_key) != SecretBox.KEY_SIZE or len(nonce_prefix) != 16 or len(expected_hash) != 32:
+                            raise ValueError("invalid file crypto metadata")
+                        temp = tempfile.NamedTemporaryFile(prefix="2pchat-recv-", suffix=".part", delete=False)
+                        state = {
+                            "meta": msg, "handle": temp, "temp_path": temp.name,
+                            "box": SecretBox(file_key), "nonce_prefix": nonce_prefix,
+                            "digest": hashlib.sha256(), "expected_hash": expected_hash,
+                            "next_index": 0, "written": 0, "updated_at": now,
+                        }
+                        incoming_files[transfer_key] = state
+                    except Exception as meta_err:
+                        print(f"Rejected invalid file metadata: {meta_err}")
+                        continue
                 else:
+                    if not state:
+                        print("Rejected file chunk received before metadata")
+                        continue
                     chunk_index = int(msg.get("chunk_index", -1))
-                    if chunk_index < 0 or chunk_index >= MAX_FILE_CHUNKS:
+                    expected_chunks = int(state["meta"]["num_chunks"])
+                    if chunk_index != state["next_index"] or chunk_index >= expected_chunks:
                         print(f"Rejected invalid file chunk index {chunk_index}")
                         continue
                     try:
@@ -714,19 +768,21 @@ async def _read_loop(session, peer_name, fp):
                     if len(payload) > MAX_ENCRYPTED_CHUNK_SIZE:
                         print(f"Rejected oversized encrypted file chunk ({len(payload)} bytes)")
                         continue
-                    previous = state["chunks"].get(chunk_index)
-                    buffered_bytes = state.get("buffered_bytes", 0) - len(previous or b"") + len(payload)
-                    if buffered_bytes > MAX_BUFFERED_FILE_BYTES:
-                        incoming_files.pop(file_id, None)
-                        print("Rejected file transfer: buffered data limit exceeded")
+                    try:
+                        nonce = state["nonce_prefix"] + chunk_index.to_bytes(8, "big")
+                        plaintext = state["box"].decrypt(payload, nonce)
+                    except Exception as decrypt_err:
+                        _discard_incoming_file(transfer_key)
+                        print(f"Rejected unauthenticated file chunk: {decrypt_err}")
                         continue
-                    state["chunks"][chunk_index] = payload
-                    state["buffered_bytes"] = buffered_bytes
-                
-                meta = state.get("meta")
-                if meta:
-                    expected = int(meta.get("num_chunks", 0))
-                    if len(state["chunks"]) == expected and set(state["chunks"]) == set(range(expected)):
+                    state["handle"].write(plaintext)
+                    state["digest"].update(plaintext)
+                    state["written"] += len(plaintext)
+                    state["next_index"] += 1
+                    state["updated_at"] = now
+
+                meta = state.get("meta") if state else None
+                if meta and state["next_index"] == int(meta.get("num_chunks", 0)):
                         file_name = f"file-{file_id_str}"
                         try:
                             requested_name = meta.get("file_name") or f"file-{file_id_str}"
@@ -736,19 +792,13 @@ async def _read_loop(session, peer_name, fp):
                             file_name = file_name.strip(" .")[:120]
                             if not file_name:
                                 file_name = f"file-{file_id_str}"
-                            file_key = base64.b64decode(meta["file_key"])
-                            file_nonce_prefix = base64.b64decode(meta["file_nonce_prefix"])
-                            file_hash = base64.b64decode(meta["file_hash"])
-                            ordered = sorted(state["chunks"].items())
-                            
-                            plaintext = decrypt_file_chunks(
-                                ordered,
-                                file_key=file_key,
-                                file_nonce_prefix=file_nonce_prefix,
-                                expected_sha256=file_hash,
-                            )
-                            if len(plaintext) != int(meta["file_size"]):
+                            state["handle"].flush()
+                            state["handle"].close()
+                            state["handle"] = None
+                            if state["written"] != int(meta["file_size"]):
                                 raise ValueError("decrypted file size does not match metadata")
+                            if state["digest"].digest() != state["expected_hash"]:
+                                raise ValueError("decrypted file hash mismatch")
                             
                             config_dir = os.environ.get("P2PCHAT_CONFIG_DIR")
                             downloads_dir = Path(config_dir) / "downloads"
@@ -766,11 +816,10 @@ async def _read_loop(session, peer_name, fp):
                                     suffix += 1
                                 target = suffix_target
                                 
-                            target.write_bytes(plaintext)
+                            os.replace(state["temp_path"], target)
+                            state["temp_path"] = None
                             print(f"File fully received and decrypted: {target}")
-                            
-                            if file_id in incoming_files:
-                                del incoming_files[file_id]
+                            incoming_files.pop(transfer_key, None)
                             
                             mime, _ = mimetypes.guess_type(file_name)
                             if not mime:
@@ -781,7 +830,7 @@ async def _read_loop(session, peer_name, fp):
                                 "file_name": file_name,
                                 "file_path": str(target),
                                 "mime": mime,
-                                "size": len(plaintext)
+                                "size": state["written"]
                             }
                             
                             if message_listener_callback:
@@ -792,15 +841,13 @@ async def _read_loop(session, peer_name, fp):
                         except Exception as decrypt_err:
                             print(f"Failed to decrypt incoming file {file_name}: {decrypt_err}")
                             traceback.print_exc()
-                            incoming_files.pop(file_id, None)
+                            _discard_incoming_file(transfer_key)
     except Exception as e:
         print(f"Session with {peer_name} read loop error:", e)
     finally:
         # A stale read loop must never delete a newer replacement session.
         if active_sessions.get(fp) is session:
             del active_sessions[fp]
-        if active_sessions.get(peer_name) is session:
-            del active_sessions[peer_name]
         has_replacement = any(
             candidate is not session
             and candidate.is_online
@@ -885,7 +932,7 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
 
 async def _send_message_async(peer_name: str, endpoint: str, body: str, expected_fingerprint=None) -> bool:
     try:
-        session = active_sessions.get(peer_name)
+        session = _session_for_peer(peer_name, expected_fingerprint)
         if not session or not session.is_online:
             # Close the old dead session explicitly so its _read_loop finally-block
             # doesn't race-delete the new session we're about to create.
@@ -894,7 +941,8 @@ async def _send_message_async(peer_name: str, endpoint: str, body: str, expected
                     asyncio.create_task(session.close())
                 except Exception:
                     pass
-                active_sessions.pop(peer_name, None)
+                if session.peer_fingerprint:
+                    active_sessions.pop(session.peer_fingerprint, None)
 
             identity_priv = load_or_create_identity()
             signing_key = load_or_create_signing_identity()
@@ -930,7 +978,6 @@ async def _send_message_async(peer_name: str, endpoint: str, body: str, expected
             fp = session.peer_fingerprint
             peer_fingerprint_to_name[fp] = peer_name
             active_sessions[fp] = session
-            active_sessions[peer_name] = session
 
             print(f"Established Double Ratchet session to {peer_name} (Fingerprint: {fp})")
 
@@ -994,7 +1041,7 @@ def send_p2p_file(peer_name: str, endpoint: str, file_path: str, expected_finger
 
 async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None) -> bool:
     try:
-        session = active_sessions.get(peer_name)
+        session = _session_for_peer(peer_name, expected_fingerprint)
         if not session or not session.is_online:
             identity_priv = load_or_create_identity()
             signing_key = load_or_create_signing_identity()
@@ -1029,7 +1076,6 @@ async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expect
             fp = session.peer_fingerprint
             peer_fingerprint_to_name[fp] = peer_name
             active_sessions[fp] = session
-            active_sessions[peer_name] = session
 
             print(f"Established Double Ratchet session to {peer_name} (Fingerprint: {fp})")
 
@@ -1127,7 +1173,8 @@ def shutdown_all_sessions():
         except Exception as e:
             print("Error closing session during shutdown:", e)
     active_sessions.clear()
-    incoming_files.clear()
+    for transfer_key in list(incoming_files):
+        _discard_incoming_file(transfer_key)
 
 def get_active_peers_list() -> str:
     """Returns a comma-separated list of active peer names."""
@@ -1150,14 +1197,13 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
         return False
     
     # Close old session
-    session = active_sessions.get(peer_name)
+    session = _session_for_peer(peer_name, expected_fingerprint)
     if session:
         try:
             if hasattr(session, "close"):
                 asyncio.run_coroutine_threadsafe(session.close(), loop)
         except Exception:
             pass
-        active_sessions.pop(peer_name, None)
         if session.peer_fingerprint:
             active_sessions.pop(session.peer_fingerprint, None)
 
@@ -1196,7 +1242,6 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
                 fp = connected_session.peer_fingerprint
                 peer_fingerprint_to_name[fp] = peer_name
                 active_sessions[fp] = connected_session
-                active_sessions[peer_name] = connected_session
                 
                 # Trigger Kotlin session listener
                 if session_listener_callback:

@@ -17,6 +17,7 @@ class BootUpReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) {
             Log.w(TAG, "Wrong action: ${intent.action}")
+            return
         }
         val preferences = yggdrasilPrefs(context)
         if (!preferences.getBoolean(PREF_KEY_ENABLED, false)) {
