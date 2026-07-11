@@ -158,6 +158,7 @@ open class PacketTunnelProvider: VpnService() {
             .addRoute("200::", 7)
             .addRoute("2000::", 128)
             .allowFamily(OsConstants.AF_INET)
+            .allowFamily(OsConstants.AF_INET6)
             .allowBypass()
             .setBlocking(true)
             .setMtu(yggdrasil.mtu.toInt())
