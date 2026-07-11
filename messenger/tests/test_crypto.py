@@ -4,6 +4,20 @@ from nacl.public import PrivateKey
 from messenger.core import crypto
 
 
+def test_hkdf_sha256_rfc5869_multiblock_vector():
+    output = crypto.hkdf_sha256(
+        bytes.fromhex("0b" * 22),
+        salt=bytes.fromhex("000102030405060708090a0b0c"),
+        info=bytes.fromhex("f0f1f2f3f4f5f6f7f8f9"),
+        length=42,
+    )
+    assert output.hex() == (
+        "3cb25f25faacd57a90434f64d0362f2a"
+        "2d2d0a90cf1a5a4c5db02d56ecc4c5bf"
+        "34007208d5b887185865"
+    )
+
+
 def test_meshtastic_style_encrypt_decrypt():
     alice_pub, alice_priv = crypto.generate_identity_keypair()
     bob_pub, bob_priv = crypto.generate_identity_keypair()

@@ -14,12 +14,7 @@ from nacl.signing import SigningKey, VerifyKey
 from messenger.utils.logger import setup_logger
 
 from . import protocol
-from .crypto import (
-    PeerState,
-    decrypt_message as decrypt_message_v2,
-    encrypt_message as encrypt_message_v2,
-    generate_identity_keypair,
-)
+from .crypto import generate_identity_keypair
 from .double_ratchet import (
     IdentityKeyPair as DRIdentityKeyPair,
     PreKeyBundle,
@@ -36,20 +31,12 @@ from .identity import (
 )
 
 FRAME_HEADER = 4
-PROTOCOL_V2 = 2
 PROTOCOL_V3 = 3
+MAX_FRAME_SIZE = 16 * 1024 * 1024
 
 logger = setup_logger("messenger.session", logging.INFO)
-HANDSHAKE_CONTEXT = b"p2p-chat-handshake-v1"
 X3DH_HANDSHAKE_CONTEXT = b"p2p-chat-x3dh-handshake-v1"
 SIGNED_PREKEY_CONTEXT = b"p2p-chat-signed-prekey-v1"
-
-
-@dataclass
-class HandshakeV2:
-    identity_pub: PublicKey
-    verify_key: VerifyKey
-    prekey_pub: PublicKey
 
 
 @dataclass
@@ -66,6 +53,8 @@ class HandshakeV3:
 async def _read_frame(reader: asyncio.StreamReader) -> bytes:
     length_data = await reader.readexactly(FRAME_HEADER)
     length = int.from_bytes(length_data, "big")
+    if length > MAX_FRAME_SIZE:
+        raise ValueError(f"Frame size {length} exceeds maximum limit of {MAX_FRAME_SIZE} bytes")
     return await reader.readexactly(length)
 
 
@@ -89,11 +78,9 @@ class Session:
         max_retries: int = 3,
         backoff_factor: float = 1.5,
         peer_label: Optional[str] = None,
-        protocol_version: int = PROTOCOL_V3,
     ):
         self.reader = reader
         self.writer = writer
-        self.protocol_version = protocol_version
         self.my_priv: PrivateKey = identity_priv or generate_identity_keypair()[1]
         self.my_pub: PublicKey = self.my_priv.public_key
         self.prekey_priv: PrivateKey = PrivateKey.generate()
@@ -111,7 +98,6 @@ class Session:
         self.backoff_factor = max(1.0, backoff_factor)
         self.peer_label = peer_label
 
-        self._crypto_state = PeerState()
         self._dr_state = None
 
         self._pending_acks: Dict[str, asyncio.Future] = {}
@@ -126,28 +112,8 @@ class Session:
         self._status_sent = False
 
     @staticmethod
-    def _serialize_pubkey(pub: PublicKey) -> bytes:
-        return bytes(pub)
-
-    @staticmethod
     def _sign_prekey(signing_key: SigningKey, prekey_pub: PublicKey) -> bytes:
         return signing_key.sign(SIGNED_PREKEY_CONTEXT + bytes(prekey_pub)).signature
-
-    def _handshake_payload(self) -> bytes:
-        eph_pub = self._serialize_pubkey(self.my_pub)
-        prekey_pub = self._serialize_pubkey(self.prekey_pub)
-        id_pub = bytes(self.my_verify)
-        to_sign = HANDSHAKE_CONTEXT + eph_pub + prekey_pub + id_pub
-        signature = self.my_signing.sign(to_sign).signature
-        payload = {
-            "type": "handshake",
-            "version": PROTOCOL_V2,
-            "ephPub": base64.b64encode(eph_pub).decode(),
-            "prekeyPub": base64.b64encode(prekey_pub).decode(),
-            "identityPub": base64.b64encode(id_pub).decode(),
-            "signature": base64.b64encode(signature).decode(),
-        }
-        return json.dumps(payload, separators=(",", ":")).encode()
 
     def _x3dh_payload(self, role: str) -> bytes:
         identity_pub = bytes(self.my_pub)
@@ -179,21 +145,7 @@ class Session:
         return json.dumps(payload, separators=(",", ":")).encode()
 
     @staticmethod
-    def _parse_handshake(data: bytes) -> Tuple[PublicKey, VerifyKey, PublicKey]:
-        parsed = Session._parse_any_handshake(data)
-        if not isinstance(parsed, HandshakeV2):
-            raise ValueError("expected version 2 handshake")
-        return parsed.identity_pub, parsed.verify_key, parsed.prekey_pub
-
-    @staticmethod
     def _parse_x3dh_handshake(data: bytes) -> HandshakeV3:
-        parsed = Session._parse_any_handshake(data)
-        if not isinstance(parsed, HandshakeV3):
-            raise ValueError("expected version 3 handshake")
-        return parsed
-
-    @staticmethod
-    def _parse_any_handshake(data: bytes) -> HandshakeV2 | HandshakeV3:
         try:
             obj = json.loads(data.decode())
         except json.JSONDecodeError as exc:
@@ -203,22 +155,6 @@ class Session:
             raise ValueError("unexpected handshake payload")
 
         version = obj.get("version")
-        if version == PROTOCOL_V2:
-            try:
-                eph_pub_b = base64.b64decode(obj["ephPub"])
-                prekey_pub_b = base64.b64decode(obj["prekeyPub"])
-                id_pub_b = base64.b64decode(obj["identityPub"])
-                sig = base64.b64decode(obj["signature"])
-                verify_key = VerifyKey(id_pub_b)
-                verify_key.verify(HANDSHAKE_CONTEXT + eph_pub_b + prekey_pub_b + id_pub_b, sig)
-            except (KeyError, ValueError, BadSignatureError) as exc:
-                raise ValueError("Invalid signed handshake payload") from exc
-            return HandshakeV2(
-                identity_pub=PublicKey(eph_pub_b),
-                verify_key=verify_key,
-                prekey_pub=PublicKey(prekey_pub_b),
-            )
-
         if version == PROTOCOL_V3:
             try:
                 role = obj["role"]
@@ -290,37 +226,6 @@ class Session:
         self.trust_status = status.state
         self.trust_warning = status.warning
 
-    async def _exchange_v2(
-        self,
-        initiator: bool,
-        expected_fingerprint: Optional[str],
-        initial_remote: Optional[HandshakeV2] = None,
-    ) -> Tuple[PublicKey, PrivateKey, PublicKey]:
-        if initiator:
-            await _write_frame(self.writer, self._handshake_payload())
-            remote = Session._parse_handshake(await _read_frame(self.reader))
-        else:
-            if initial_remote is None:
-                initial_remote = Session._parse_handshake(await _read_frame(self.reader))
-            await _write_frame(self.writer, self._handshake_payload())
-            remote = (
-                initial_remote.identity_pub,
-                initial_remote.verify_key,
-                initial_remote.prekey_pub,
-            )
-
-        their_pub, their_verify, their_prekey = remote
-        self.their_pub = their_pub
-        self.their_verify = their_verify
-        self.their_prekey_pub = their_prekey
-        self._note_peer(their_pub, expected_fingerprint)
-        logger.debug(
-            "Key exchange complete (initiator=%s, peer_fp=%s, protocol=v2)",
-            initiator,
-            self._peer_fp,
-        )
-        return self.my_pub, self.my_priv, their_pub
-
     async def _exchange_v3(
         self,
         initiator: bool,
@@ -391,16 +296,10 @@ class Session:
         expected_fingerprint: Optional[str] = None,
     ) -> Tuple[PublicKey, PrivateKey, PublicKey]:
         if initiator:
-            if self.protocol_version == PROTOCOL_V2:
-                return await self._exchange_v2(True, expected_fingerprint)
-            if self.protocol_version == PROTOCOL_V3:
-                return await self._exchange_v3(True, expected_fingerprint)
-            raise ValueError("unsupported session protocol version")
+            return await self._exchange_v3(True, expected_fingerprint)
 
         initial_payload = await _read_frame(self.reader)
-        parsed = Session._parse_any_handshake(initial_payload)
-        if isinstance(parsed, HandshakeV2):
-            return await self._exchange_v2(False, expected_fingerprint, parsed)
+        parsed = Session._parse_x3dh_handshake(initial_payload)
         return await self._exchange_v3(False, expected_fingerprint, parsed)
 
     @classmethod
@@ -418,7 +317,6 @@ class Session:
         max_retries: int = 3,
         backoff_factor: float = 1.5,
         peer_label: Optional[str] = None,
-        protocol_version: int = PROTOCOL_V3,
     ) -> "Session":
         session = cls(
             reader,
@@ -430,7 +328,6 @@ class Session:
             backoff_factor=backoff_factor,
             peer_label=peer_label,
             signing_key=signing_key,
-            protocol_version=protocol_version,
         )
         await session._exchange_keys(initiator, expected_fingerprint)
         session._start_reader()
@@ -448,16 +345,7 @@ class Session:
                     logger.debug(
                         "Recv frame: %s bytes from peer %s", len(ciphertext), self._peer_fp
                     )
-                    if self.protocol_version == PROTOCOL_V3:
-                        plaintext = decrypt_message_v3(self._dr_state, ciphertext)
-                    else:
-                        plaintext = decrypt_message_v2(
-                            self.my_priv,
-                            self.their_pub,  # type: ignore[arg-type]
-                            self._crypto_state,
-                            ciphertext,
-                            my_prekey_priv=self.prekey_priv,
-                        )
+                    plaintext = decrypt_message_v3(self._dr_state, ciphertext)
                     message = protocol.decode_message(plaintext)
 
                     if message.get("type") == "ack":
@@ -515,16 +403,7 @@ class Session:
         if not self.their_pub:
             raise RuntimeError("Session not established")
         plaintext = protocol.encode_message(message)
-        if self.protocol_version == PROTOCOL_V3:
-            ciphertext = encrypt_message_v3(self._dr_state, plaintext)
-        else:
-            ciphertext = encrypt_message_v2(
-                self.my_priv,
-                self.their_pub,
-                self._crypto_state,
-                plaintext,
-                their_prekey_pub=self.their_prekey_pub,
-            )
+        ciphertext = encrypt_message_v3(self._dr_state, plaintext)
         logger.debug(
             "Send message type=%s %s plain=%sB cipher=%sB",
             message.get("type"),

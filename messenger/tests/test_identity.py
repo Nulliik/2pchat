@@ -2,7 +2,35 @@ import pytest
 
 from messenger.app import cli_chat
 from messenger.core import identity
+from nacl.encoding import Base64Encoder
+from nacl.public import PrivateKey
 from nacl.signing import VerifyKey
+
+
+class _FakeKeystore:
+    @staticmethod
+    def encrypt(value):
+        return value[::-1]
+
+    @staticmethod
+    def decrypt(value):
+        return value[::-1]
+
+
+def test_identity_is_encrypted_and_plaintext_is_migrated(monkeypatch, tmp_path):
+    monkeypatch.setattr(identity, "_android_keystore", lambda: _FakeKeystore)
+    path = tmp_path / "identity.key"
+    original = PrivateKey.generate()
+    plaintext = original.encode(Base64Encoder).decode("ascii")
+    path.write_text(plaintext)
+
+    loaded = identity.load_or_create_identity(str(path))
+
+    assert bytes(loaded) == bytes(original)
+    stored = path.read_text()
+    assert stored.startswith("android-keystore-v1:")
+    assert plaintext not in stored
+    assert bytes(identity.load_or_create_identity(str(path))) == bytes(original)
 
 
 def test_load_or_create_identity(tmp_path, monkeypatch):

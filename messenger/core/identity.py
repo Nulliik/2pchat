@@ -21,6 +21,48 @@ QUEUE_FILENAME = "outbox.json"
 
 
 _TRUST_LOCK = threading.Lock()
+_KEYSTORE_PREFIX = "android-keystore-v1:"
+
+
+def _android_keystore():
+    """Return the Android bridge when running under Chaquopy."""
+    try:
+        from java import jclass
+
+        return jclass("com.example.twopchat.security.IdentityKeyStore")
+    except (ImportError, ModuleNotFoundError):
+        return None
+
+
+def _protect_identity(encoded: str) -> str:
+    keystore = _android_keystore()
+    if keystore is None:
+        return encoded
+    return _KEYSTORE_PREFIX + str(keystore.encrypt(encoded))
+
+
+def _read_identity(target: Path) -> tuple[str, bool]:
+    stored = target.read_text(encoding="ascii").strip()
+    if stored.startswith(_KEYSTORE_PREFIX):
+        keystore = _android_keystore()
+        if keystore is None:
+            raise RuntimeError("Android Keystore is required to decrypt this identity")
+        return str(keystore.decrypt(stored[len(_KEYSTORE_PREFIX):])), False
+    return stored, _android_keystore() is not None
+
+
+def _write_identity(target: Path, encoded: str) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{uuid4().hex}.tmp")
+    try:
+        temporary.write_text(_protect_identity(encoded), encoding="ascii")
+        try:
+            temporary.chmod(0o600)
+        except OSError:
+            pass
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _config_dir() -> Path:
@@ -49,11 +91,13 @@ def queue_path() -> Path:
 def load_or_create_identity(path: Optional[str] = None) -> PrivateKey:
     target = Path(path) if path else identity_path()
     if target.exists():
-        data = target.read_text().strip()
+        data, needs_migration = _read_identity(target)
+        if needs_migration:
+            _write_identity(target, data)
         return PrivateKey(Base64Encoder.decode(data))
 
     priv = PrivateKey.generate()
-    target.write_text(priv.encode(Base64Encoder).decode("ascii"))
+    _write_identity(target, priv.encode(Base64Encoder).decode("ascii"))
     return priv
 
 
@@ -62,11 +106,13 @@ def load_or_create_signing_identity(path: Optional[str] = None) -> SigningKey:
 
     target = Path(path) if path else signing_identity_path()
     if target.exists():
-        data = target.read_text().strip()
+        data, needs_migration = _read_identity(target)
+        if needs_migration:
+            _write_identity(target, data)
         return SigningKey(Base64Encoder.decode(data))
 
     sk = SigningKey.generate()
-    target.write_text(sk.encode(Base64Encoder).decode("ascii"))
+    _write_identity(target, sk.encode(Base64Encoder).decode("ascii"))
     return sk
 
 

@@ -199,13 +199,17 @@ def rotate_channel_password(
 def hkdf_sha256(input_key_material: bytes, salt: bytes = b"", info: bytes = b"", length: int = 32) -> bytes:
     """HKDF implementation (RFC 5869) using SHA-256."""
 
-    if length > HKDF_HASH_LEN:
-        raise ValueError("length too large")
+    if length < 0 or length > 255 * HKDF_HASH_LEN:
+        raise ValueError("invalid HKDF output length")
 
     hkdf_salt = salt or b"\x00" * HKDF_HASH_LEN
     prk = hmac.new(hkdf_salt, input_key_material, sha256).digest()
-    okm = hmac.new(prk, b"\x01" + info, sha256).digest()
-    return okm[:length]
+    output = bytearray()
+    previous = b""
+    for counter in range(1, (length + HKDF_HASH_LEN - 1) // HKDF_HASH_LEN + 1):
+        previous = hmac.new(prk, previous + info + bytes([counter]), sha256).digest()
+        output.extend(previous)
+    return bytes(output[:length])
 
 
 def _assert_nonzero(shared: bytes) -> None:

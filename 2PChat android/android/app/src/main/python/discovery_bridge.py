@@ -4,6 +4,8 @@ import threading
 import json
 import traceback
 import uuid
+import re
+import time
 from datetime import datetime, timezone
 
 from messenger.core.discovery_manager import get_discovery_provider
@@ -25,6 +27,13 @@ def print(*args, **kwargs):
 active_sessions = {}
 peer_fingerprint_to_name = {}
 incoming_files = {}
+MAX_INCOMING_FILES = 16
+INCOMING_FILE_TTL_SECONDS = 120
+MAX_FILE_SIZE = 500 * 1024 * 1024
+MAX_FILE_CHUNKS = 8192
+MAX_ENCRYPTED_CHUNK_SIZE = 1024 * 1024
+MAX_BUFFERED_FILE_BYTES = MAX_FILE_SIZE + (MAX_FILE_CHUNKS * 32)
+MAX_CONCURRENT_HANDSHAKES = 10
 tracker_diagnostics = {}
 local_identity_nickname = ""
 local_identity_fingerprint = ""
@@ -63,6 +72,13 @@ def _transport_for_endpoint(endpoint: str) -> str:
 def _is_ipv4_endpoint(endpoint: str) -> bool:
     host = endpoint.rsplit(":", 1)[0].strip("[]") if endpoint else ""
     return bool(host) and ":" not in host
+
+
+def _prune_incoming_files(now: float | None = None):
+    cutoff = (now if now is not None else time.monotonic()) - INCOMING_FILE_TTL_SECONDS
+    for file_id, state in list(incoming_files.items()):
+        if state.get("updated_at", 0) < cutoff:
+            incoming_files.pop(file_id, None)
 
 
 def set_ipv4_enabled(enabled: bool):
@@ -513,10 +529,20 @@ async def _listen_loop_dual(port: int):
     trust_store = TrustStore()
 
     print(f"Starting dual-stack P2P Server on port {port}...")
+    handshake_tasks = set()
     try:
         # Binding to empty string ("") binds to all available IPv4 and IPv6 interfaces natively.
         async for reader, writer in transport_listen("direct", "", port):
-            asyncio.create_task(_handle_incoming(reader, writer, identity_priv, signing_key, trust_store))
+            if len(handshake_tasks) >= MAX_CONCURRENT_HANDSHAKES:
+                writer.close()
+                await writer.wait_closed()
+                print("Rejected incoming connection: handshake limit reached")
+                continue
+            task = asyncio.create_task(
+                _handle_incoming(reader, writer, identity_priv, signing_key, trust_store)
+            )
+            handshake_tasks.add(task)
+            task.add_done_callback(handshake_tasks.discard)
         print(f"Python P2P Server successfully listening on dual-stack port {port} (IPv4 + IPv6/Yggdrasil)")
     except Exception as e:
         print(f"Error in dual-stack P2P Server listen loop on port {port}: {e}")
@@ -641,29 +667,74 @@ async def _read_loop(session, peer_name, fp):
                 from pathlib import Path
                 from messenger.core.crypto import decrypt_file_chunks
 
-                file_id_str = msg["file_id"]
-                file_id = base64.b64decode(file_id_str.encode())
-                
+                file_id_str = str(msg.get("file_id", ""))
+                try:
+                    file_id = base64.b64decode(file_id_str.encode(), validate=True)
+                except Exception:
+                    print("Rejected file transfer with invalid file_id")
+                    continue
+                if not 8 <= len(file_id) <= 64:
+                    print("Rejected file transfer with invalid file_id length")
+                    continue
+
+                now = time.monotonic()
+                _prune_incoming_files(now)
+
                 state = incoming_files.get(file_id)
                 if not state:
-                    state = {"meta": None, "chunks": {}}
+                    if len(incoming_files) >= MAX_INCOMING_FILES:
+                        print("Rejected file transfer: too many concurrent incoming files")
+                        continue
+                    state = {"meta": None, "chunks": {}, "buffered_bytes": 0, "updated_at": now}
                     incoming_files[file_id] = state
-                
+                state["updated_at"] = now
+
                 if mtype == "file_meta":
+                    file_size = int(msg.get("file_size", -1))
+                    num_chunks = int(msg.get("num_chunks", 0))
+                    if file_size < 0 or file_size > MAX_FILE_SIZE:
+                        incoming_files.pop(file_id, None)
+                        print(f"Rejected file transfer: invalid size {file_size}")
+                        continue
+                    if num_chunks <= 0 or num_chunks > MAX_FILE_CHUNKS:
+                        incoming_files.pop(file_id, None)
+                        print(f"Rejected file transfer: invalid chunk count {num_chunks}")
+                        continue
                     state["meta"] = msg
                 else:
-                    state["chunks"][int(msg.get("chunk_index", 0))] = base64.b64decode(msg["payload"])
+                    chunk_index = int(msg.get("chunk_index", -1))
+                    if chunk_index < 0 or chunk_index >= MAX_FILE_CHUNKS:
+                        print(f"Rejected invalid file chunk index {chunk_index}")
+                        continue
+                    try:
+                        payload = base64.b64decode(str(msg.get("payload", "")).encode(), validate=True)
+                    except Exception:
+                        print("Rejected file chunk with invalid payload encoding")
+                        continue
+                    if len(payload) > MAX_ENCRYPTED_CHUNK_SIZE:
+                        print(f"Rejected oversized encrypted file chunk ({len(payload)} bytes)")
+                        continue
+                    previous = state["chunks"].get(chunk_index)
+                    buffered_bytes = state.get("buffered_bytes", 0) - len(previous or b"") + len(payload)
+                    if buffered_bytes > MAX_BUFFERED_FILE_BYTES:
+                        incoming_files.pop(file_id, None)
+                        print("Rejected file transfer: buffered data limit exceeded")
+                        continue
+                    state["chunks"][chunk_index] = payload
+                    state["buffered_bytes"] = buffered_bytes
                 
                 meta = state.get("meta")
                 if meta:
                     expected = int(meta.get("num_chunks", 0))
-                    if len(state["chunks"]) >= expected:
+                    if len(state["chunks"]) == expected and set(state["chunks"]) == set(range(expected)):
+                        file_name = f"file-{file_id_str}"
                         try:
                             requested_name = meta.get("file_name") or f"file-{file_id_str}"
                             # Keep received files inside downloads even when a
                             # remote peer supplies a path-like filename.
-                            file_name = Path(str(requested_name)).name
-                            if file_name in {"", ".", ".."}:
+                            file_name = re.sub(r"[^\w.\- ]", "_", Path(str(requested_name)).name)
+                            file_name = file_name.strip(" .")[:120]
+                            if not file_name:
                                 file_name = f"file-{file_id_str}"
                             file_key = base64.b64decode(meta["file_key"])
                             file_nonce_prefix = base64.b64decode(meta["file_nonce_prefix"])
@@ -676,11 +747,15 @@ async def _read_loop(session, peer_name, fp):
                                 file_nonce_prefix=file_nonce_prefix,
                                 expected_sha256=file_hash,
                             )
+                            if len(plaintext) != int(meta["file_size"]):
+                                raise ValueError("decrypted file size does not match metadata")
                             
                             config_dir = os.environ.get("P2PCHAT_CONFIG_DIR")
                             downloads_dir = Path(config_dir) / "downloads"
                             downloads_dir.mkdir(parents=True, exist_ok=True)
                             target = downloads_dir / file_name
+                            if target.resolve().parent != downloads_dir.resolve():
+                                raise ValueError("unsafe download target")
                             
                             if target.exists():
                                 suffix = 1
@@ -717,6 +792,7 @@ async def _read_loop(session, peer_name, fp):
                         except Exception as decrypt_err:
                             print(f"Failed to decrypt incoming file {file_name}: {decrypt_err}")
                             traceback.print_exc()
+                            incoming_files.pop(file_id, None)
     except Exception as e:
         print(f"Session with {peer_name} read loop error:", e)
     finally:
@@ -766,7 +842,7 @@ def send_p2p_message(peer_name: str, endpoint: str, body: str, expected_fingerpr
 async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_store, expected_fingerprint=None) -> "Session":
     """
     Attempt to connect to a single 'host:port' or '[ipv6]:port' endpoint.
-    Tries Protocol V3 first, falls back to V2.
+    Only protocol V3 is accepted.
     Returns a connected Session or raises an exception.
     """
     if not ipv4_enabled and _is_ipv4_endpoint(endpoint_str):
@@ -795,33 +871,16 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
             transport_connect("direct", host, port), timeout=5.0
         )
         session = Session(reader, writer, identity_priv=identity_priv,
-                          signing_key=signing_key, trust_store=trust_store, protocol_version=3)
+                          signing_key=signing_key, trust_store=trust_store)
         await asyncio.wait_for(session._exchange_keys(initiator=True, expected_fingerprint=expected_fingerprint), timeout=5.0)
         if session.peer_fingerprint == fingerprint(identity_priv.public_key):
             await session.close()
             raise ValueError("refusing self connection")
         session._start_reader()
         return session
-    except Exception as e3:
+    except Exception:
         await _close_writer_safely(writer)
-        print(f"V3 failed to {endpoint_str}: {e3}, trying V2...")
-        reader = None
-        writer = None
-        reader, writer = await asyncio.wait_for(
-            transport_connect("direct", host, port), timeout=5.0
-        )
-        try:
-            session = Session(reader, writer, identity_priv=identity_priv,
-                              signing_key=signing_key, trust_store=trust_store, protocol_version=2)
-            await asyncio.wait_for(session._exchange_keys(initiator=True, expected_fingerprint=expected_fingerprint), timeout=5.0)
-            if session.peer_fingerprint == fingerprint(identity_priv.public_key):
-                await session.close()
-                raise ValueError("refusing self connection")
-            session._start_reader()
-            return session
-        except Exception:
-            await _close_writer_safely(writer)
-            raise
+        raise
 
 
 async def _send_message_async(peer_name: str, endpoint: str, body: str, expected_fingerprint=None) -> bool:
