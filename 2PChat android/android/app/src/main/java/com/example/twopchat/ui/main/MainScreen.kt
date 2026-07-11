@@ -265,13 +265,13 @@ fun ChatsTab(
     
     val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
     var activeChatsSet by remember {
-        mutableStateOf(sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen"))
+        mutableStateOf(sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet())
     }
     
     androidx.compose.runtime.DisposableEffect(sharedPrefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == "active_chats" || key?.startsWith("last_msg_") == true || key?.startsWith("transport_") == true) {
-                activeChatsSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+                activeChatsSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
             }
         }
         sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
@@ -1039,7 +1039,7 @@ fun ContactsTab(
                                                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                                         isResolvingInvite = false
                                                         if (endpointStr.isNotEmpty()) {
-                                                            val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+                                                            val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                                                             if (!activeSet.contains(guestName)) {
                                                                 val newSet = activeSet.toMutableSet()
                                                                 newSet.add(guestName)
@@ -1198,7 +1198,7 @@ fun ContactsTab(
                             com.example.twopchat.P2PMessageRelay.peerEndpoints[name] = endpointStr
 
                             // Add to active chats set
-                            val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+                            val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                             if (!activeSet.contains(name)) {
                                 val newSet = activeSet.toMutableSet()
                                 newSet.add(name)
@@ -1308,7 +1308,7 @@ fun ContactsTab(
                                 .fillMaxWidth()
                                 .clickable(enabled = contact.verified) {
                                     val peerKey = if (contact.ownershipVerified) contact.name else "${contact.name} · ${contact.fingerprint.take(8)}"
-                                    val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+                                    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                                     if (!activeSet.contains(peerKey)) {
                                         val newSet = activeSet.toMutableSet()
                                         newSet.add(peerKey)

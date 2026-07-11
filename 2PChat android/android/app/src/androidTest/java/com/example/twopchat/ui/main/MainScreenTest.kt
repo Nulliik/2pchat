@@ -14,6 +14,10 @@ class MainScreenTest {
 
   @Before
   fun setup() {
+    val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+    val sharedPrefs = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+    sharedPrefs.edit().putStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")).commit()
+
     composeTestRule.setContent {
       MainScreen(
         onItemClick = {},

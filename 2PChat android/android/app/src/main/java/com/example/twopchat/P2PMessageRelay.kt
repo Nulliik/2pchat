@@ -44,11 +44,61 @@ object P2PMessageRelay {
     // Maps peer name to typing state
     val peerTypingStates = androidx.compose.runtime.mutableStateMapOf<String, Boolean>()
 
-    // Callback triggered when message status changes (e.g. delivered, read)
-    var onMessageStatusChanged: ((peerName: String, msgId: String, status: String) -> Unit)? = null
+    interface MessageListener {
+        fun onMessageReceived(sender: String, text: String)
+        fun onMessageStatusChanged(sender: String, msgId: String, status: String)
+    }
 
-    // Callback triggered when a new message is received
-    var onMessageReceived: ((sender: String, text: String) -> Unit)? = null
+    private val messageListeners = java.util.concurrent.CopyOnWriteArrayList<MessageListener>()
+    var activeChatPeerName: String? = null
+
+    fun registerMessageListener(listener: MessageListener) {
+        messageListeners.add(listener)
+    }
+
+    fun unregisterMessageListener(listener: MessageListener) {
+        messageListeners.remove(listener)
+    }
+
+    private const val MESSAGES_CHANNEL_ID = "p2p_chat_messages"
+
+    private fun showNotification(context: android.content.Context, sender: String, text: String) {
+        try {
+            val notificationManager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val channel = android.app.NotificationChannel(
+                    MESSAGES_CHANNEL_ID,
+                    "P2P Messages",
+                    android.app.NotificationManager.IMPORTANCE_DEFAULT
+                )
+                notificationManager.createNotificationChannel(channel)
+            }
+
+            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+            } ?: android.content.Intent()
+
+            var pendingFlags = android.app.PendingIntent.FLAG_UPDATE_CURRENT
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                pendingFlags = pendingFlags or android.app.PendingIntent.FLAG_IMMUTABLE
+            }
+            val pendingIntent = android.app.PendingIntent.getActivity(context, sender.hashCode(), intent, pendingFlags)
+
+            val displayMessage = parseIncomingAttachment(text)?.displayMessage ?: text
+
+            val builder = androidx.core.app.NotificationCompat.Builder(context, MESSAGES_CHANNEL_ID)
+                .setContentTitle(sender)
+                .setContentText(displayMessage)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
+
+            notificationManager.notify(sender.hashCode(), builder.build())
+        } catch (e: Exception) {
+            log(context, "Failed to show message notification: ${e.message}", "ERROR", e)
+        }
+    }
 
     private data class IncomingAttachment(
         val displayMessage: String,
@@ -93,8 +143,7 @@ object P2PMessageRelay {
     ) {
         if (fromName == toName) return
         val sharedPrefs = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
-        val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen"))
-            ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+        val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
         val updatedChats = activeSet.toMutableSet()
         var changed = false
         if (updatedChats.remove(fromName)) {
@@ -280,7 +329,7 @@ object P2PMessageRelay {
                                     val db = ChatDatabaseHelper(appContext)
                                     db.updateMessageStatus(msgId, "READ")
                                     android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                        onMessageStatusChanged?.invoke(sender, msgId, "READ")
+                                        messageListeners.forEach { it.onMessageStatusChanged(sender, msgId, "READ") }
                                     }
                                 }
                                 return
@@ -290,7 +339,7 @@ object P2PMessageRelay {
                                 val replyToText = json.optString("reply_to_text")
                                 val replyToName = json.optString("reply_to_name")
                                 
-                                val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+                                val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                                 if (!activeSet.contains(sender)) {
                                     val newSet = activeSet.toMutableSet()
                                     newSet.add(sender)
@@ -315,12 +364,17 @@ object P2PMessageRelay {
                                     db.saveMessage(sender, rxMsg)
                                 }
                                 sharedPrefs.edit().putString("last_msg_$sender", com.example.twopchat.SecureStorage.encrypt(replyText)).apply()
-                                android.os.Handler(android.os.Looper.getMainLooper()).post { onMessageReceived?.invoke(sender, text) }
+                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    messageListeners.forEach { it.onMessageReceived(sender, text) }
+                                    if (activeChatPeerName != sender) {
+                                        showNotification(appContext, sender, text)
+                                    }
+                                }
                                 return
                             }
                         }
 
-                        val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+                        val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                         if (!activeSet.contains(sender)) {
                             val newSet = activeSet.toMutableSet()
                             newSet.add(sender)
@@ -362,7 +416,12 @@ object P2PMessageRelay {
                     }
 
                     // Dispatch to active chat UI listener if any
-                    android.os.Handler(android.os.Looper.getMainLooper()).post { onMessageReceived?.invoke(sender, text) }
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        messageListeners.forEach { it.onMessageReceived(sender, text) }
+                        if (activeChatPeerName != sender) {
+                            showNotification(appContext, sender, text)
+                        }
+                    }
                 }
             })
 
@@ -394,7 +453,7 @@ object P2PMessageRelay {
                         sharedPrefs.edit()
                             .putString("transport_$resolvedPeerName", transport)
                             .apply()
-                        val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+                        val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                         if (!activeSet.contains(resolvedPeerName)) {
                             val newSet = activeSet.toMutableSet()
                             newSet.add(resolvedPeerName)
@@ -676,7 +735,7 @@ object P2PMessageRelay {
                         if (success) {
                             db.updateMessageStatus(msg.id, "SENT")
                             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                onMessageStatusChanged?.invoke(peerName, msg.id, "SENT")
+                                messageListeners.forEach { it.onMessageStatusChanged(peerName, msg.id, "SENT") }
                             }
                         } else {
                             log(context, "Failed to send pending message ${msg.id}, stopping queue processing.")

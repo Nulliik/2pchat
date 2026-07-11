@@ -326,66 +326,72 @@ fun ChatScreen(
         }
     }
 
-    DisposableEffect(peerName) {
-        com.example.twopchat.P2PMessageRelay.onMessageReceived = { sender, text ->
-            if (sender == peerName) {
-                val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
-                val attachmentMessage = parseIncomingAttachmentMessage(text)
-                val rxMsg = if (attachmentMessage != null) {
-                    attachmentMessage.copy(status = "READ")
-                } else {
-                    val trimmed = text.trim()
-                    if (trimmed.startsWith("{")) {
-                        try {
-                            val json = org.json.JSONObject(trimmed)
-                            if (json.optString("type") == "reply") {
-                                val replyText = json.optString("text")
-                                val replyToId = json.optString("reply_to_id")
-                                val replyToText = json.optString("reply_to_text")
-                                val replyToName = json.optString("reply_to_name")
-                                Message(
-                                    id = newMessageId(),
-                                    text = replyText,
-                                    isMe = false,
-                                    timestamp = time,
-                                    replyToId = replyToId,
-                                    replyToText = replyToText,
-                                    replyToName = replyToName,
-                                    status = "READ"
-                                )
-                            } else {
+    val messageListener = remember(peerName) {
+        object : com.example.twopchat.P2PMessageRelay.MessageListener {
+            override fun onMessageReceived(sender: String, text: String) {
+                if (sender == peerName) {
+                    val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+                    val attachmentMessage = parseIncomingAttachmentMessage(text)
+                    val rxMsg = if (attachmentMessage != null) {
+                        attachmentMessage.copy(status = "READ")
+                    } else {
+                        val trimmed = text.trim()
+                        if (trimmed.startsWith("{")) {
+                            try {
+                                val json = org.json.JSONObject(trimmed)
+                                if (json.optString("type") == "reply") {
+                                    val replyText = json.optString("text")
+                                    val replyToId = json.optString("reply_to_id")
+                                    val replyToText = json.optString("reply_to_text")
+                                    val replyToName = json.optString("reply_to_name")
+                                    Message(
+                                        id = newMessageId(),
+                                        text = replyText,
+                                        isMe = false,
+                                        timestamp = time,
+                                        replyToId = replyToId,
+                                        replyToText = replyToText,
+                                        replyToName = replyToName,
+                                        status = "READ"
+                                    )
+                                } else {
+                                    Message(newMessageId(), text, false, time, status = "READ")
+                                }
+                            } catch (e: Exception) {
                                 Message(newMessageId(), text, false, time, status = "READ")
                             }
-                        } catch (e: Exception) {
+                        } else {
                             Message(newMessageId(), text, false, time, status = "READ")
                         }
-                    } else {
-                        Message(newMessageId(), text, false, time, status = "READ")
+                    }
+                    
+                    val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
+                    if (endpoint != null && peerName != "Saved Messages") {
+                        com.example.twopchat.P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, rxMsg.id)
+                        db.updateMessageStatus(rxMsg.id, "READ")
+                    }
+                    initialMessages.add(rxMsg)
+                }
+            }
+
+            override fun onMessageStatusChanged(sender: String, msgId: String, status: String) {
+                if (sender == peerName) {
+                    val idx = initialMessages.indexOfFirst { it.id == msgId }
+                    if (idx != -1) {
+                        val current = initialMessages[idx]
+                        initialMessages[idx] = current.copy(status = status)
                     }
                 }
-                
-                val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
-                if (endpoint != null && peerName != "Saved Messages") {
-                    com.example.twopchat.P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, rxMsg.id)
-                    db.updateMessageStatus(rxMsg.id, "READ")
-                }
-                initialMessages.add(rxMsg)
             }
         }
-        
-        com.example.twopchat.P2PMessageRelay.onMessageStatusChanged = { sender, msgId, status ->
-            if (sender == peerName) {
-                val idx = initialMessages.indexOfFirst { it.id == msgId }
-                if (idx != -1) {
-                    val current = initialMessages[idx]
-                    initialMessages[idx] = current.copy(status = status)
-                }
-            }
-        }
-        
+    }
+
+    DisposableEffect(peerName) {
+        com.example.twopchat.P2PMessageRelay.activeChatPeerName = peerName
+        com.example.twopchat.P2PMessageRelay.registerMessageListener(messageListener)
         onDispose {
-            com.example.twopchat.P2PMessageRelay.onMessageReceived = null
-            com.example.twopchat.P2PMessageRelay.onMessageStatusChanged = null
+            com.example.twopchat.P2PMessageRelay.activeChatPeerName = null
+            com.example.twopchat.P2PMessageRelay.unregisterMessageListener(messageListener)
             val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
             if (endpoint != null && peerName != "Saved Messages" && myTypingState) {
                 com.example.twopchat.P2PMessageRelay.sendTypingState(context, peerName, endpoint, false)
@@ -1483,7 +1489,7 @@ fun ChatScreen(
                                     }
 
                                     // Persist in shared preferences last message list
-                                    val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+                                    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                                     if (!activeSet.contains(peerName)) {
                                         val newSet = activeSet.toMutableSet()
                                         newSet.add(peerName)
@@ -1772,7 +1778,7 @@ fun ChatScreen(
 
         // Forward Dialog
         if (showForwardDialog && messageToForward != null) {
-            val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
+            val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
             val chatList = activeSet.filter { it != peerName }.toList()
             
             AlertDialog(
