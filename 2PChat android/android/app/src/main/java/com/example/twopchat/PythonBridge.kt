@@ -21,6 +21,17 @@ object PythonBridge {
         if (isInitialized) return
         try {
             appContext = context.applicationContext
+            
+            // Clear runtime state to ensure we start clean and don't announce stale IPs from previous crashes.
+            val sharedPrefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+            sharedPrefs.edit()
+                .putString("yggdrasil_runtime_ip", "")
+                .putString("yggdrasil_runtime_state", "Disabled")
+                .putInt("yggdrasil_runtime_peers", 0)
+                .putInt("yggdrasil_runtime_routes", 0)
+                .putInt("yggdrasil_runtime_tree_nodes", 0)
+                .apply()
+
             val py = Python.getInstance()
             
             // Set config dir to appDir/config (matching Kotlin's expected path for logs and settings)
