@@ -5,6 +5,28 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 _upnp_mapping = None  # Tuple of (control_url, service_type, external_port)
+_upnp_status_lock = threading.Lock()
+_upnp_status = {
+    "mapped": False,
+    "state": "idle",
+    "external_ip": "n/a",
+    "local_ip": "n/a",
+    "port": "n/a",
+    "service_type": "n/a",
+    "control_url": "n/a",
+    "error": "",
+}
+
+
+def _update_upnp_status(**values):
+    with _upnp_status_lock:
+        _upnp_status.update(values)
+
+
+def get_upnp_status():
+    """Return a stable diagnostics snapshot without exposing mutable internals."""
+    with _upnp_status_lock:
+        return dict(_upnp_status)
 
 
 def discover_gateway_control_url():
@@ -174,9 +196,11 @@ def setup_upnp_in_background(port):
     def run():
         global _upnp_mapping
         try:
+            _update_upnp_status(mapped=False, state="discovering", port=str(port), error="")
             print("[UPNP] Discovering UPnP gateway...")
             control_url, service_type = discover_gateway_control_url()
             if control_url:
+                _update_upnp_status(control_url=control_url, service_type=service_type or "n/a")
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 try:
                     sock.connect(("239.255.255.250", 1900))
@@ -186,19 +210,25 @@ def setup_upnp_in_background(port):
                 finally:
                     sock.close()
                 if local_ip and not local_ip.startswith("127."):
+                    _update_upnp_status(local_ip=local_ip, state="mapping")
                     print(f"[UPNP] Mapping external port {port} to internal client {local_ip}:{port}")
                     success = add_port_mapping(control_url, service_type, port, port, local_ip)
                     if success:
                         print(f"[UPNP] Successfully mapped port {port} via UPnP.")
                         _upnp_mapping = (control_url, service_type, port)
+                        _update_upnp_status(mapped=True, state="mapped", error="")
                     else:
                         print("[UPNP] Failed to add port mapping.")
+                        _update_upnp_status(mapped=False, state="failed", error="router rejected AddPortMapping")
                 else:
                     print("[UPNP] Could not determine a valid local IP address.")
+                    _update_upnp_status(mapped=False, state="failed", error="no usable local IPv4 address")
             else:
                 print("[UPNP] UPnP gateway connection device not found.")
+                _update_upnp_status(mapped=False, state="unavailable", error="UPnP gateway not found")
         except Exception as e:
             print(f"[UPNP] Background setup failed: {e}")
+            _update_upnp_status(mapped=False, state="failed", error=str(e))
 
     t = threading.Thread(target=run, name="UPnPSetupThread", daemon=True)
     t.start()
@@ -209,6 +239,7 @@ def stop_upnp():
     if _upnp_mapping:
         control_url, service_type, port = _upnp_mapping
         _upnp_mapping = None
+        _update_upnp_status(mapped=False, state="stopping")
 
         def run():
             try:
@@ -216,11 +247,13 @@ def stop_upnp():
                 success = delete_port_mapping(control_url, service_type, port)
                 if success:
                     print(f"[UPNP] Port mapping for {port} successfully deleted.")
+                    _update_upnp_status(state="idle", error="")
                 else:
                     print("[UPNP] Failed to delete port mapping.")
+                    _update_upnp_status(state="failed", error="router rejected DeletePortMapping")
             except Exception as e:
                 print(f"[UPNP] Clean-up thread failed: {e}")
+                _update_upnp_status(state="failed", error=str(e))
 
         t = threading.Thread(target=run, name="UPnPCleanupThread", daemon=True)
         t.start()
-

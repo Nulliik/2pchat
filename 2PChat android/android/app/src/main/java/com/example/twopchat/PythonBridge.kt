@@ -87,12 +87,19 @@ object PythonBridge {
         }
     }
 
-    fun searchPeers(query: String): List<Map<String, Any>> {
+    fun searchPeers(
+        query: String,
+        expectedLiveName: String = query,
+        expectedFingerprint: String? = null,
+    ): List<Map<String, Any>> {
         if (!isInitialized) return emptyList()
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
-            val pyResults = bridge.callAttr("resolve_peers", query, query)
+            val pyResults = bridge.callAttr(
+                "resolve_peers", query, query, "OpenTrackr HTTP",
+                expectedLiveName, expectedFingerprint
+            )
             val results = mutableListOf<Map<String, Any>>()
             val list = pyResults.asList()
             for (item in list) {
@@ -286,7 +293,9 @@ object PythonBridge {
                 val trackerJson = json.optJSONObject(trackerName) ?: continue
                 val announce = trackerJson.optString("announce", "n/a")
                 val resolve = trackerJson.optString("resolve", "n/a")
-                result[trackerName] = "announce=$announce, resolve=$resolve"
+                val announceRtt = trackerJson.optString("announce_rtt_ms", "n/a")
+                val resolveRtt = trackerJson.optString("resolve_rtt_ms", "n/a")
+                result[trackerName] = "announce=$announce, resolve=$resolve, announce_rtt=${announceRtt}ms, resolve_rtt=${resolveRtt}ms"
             }
             result
         } catch (e: Exception) {

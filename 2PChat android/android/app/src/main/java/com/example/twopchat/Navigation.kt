@@ -36,6 +36,10 @@ fun MainNavigation(
       onComplete = {
         sharedPrefs.edit().putBoolean("onboarding_completed", true).apply()
         isOnboardingCompleted = true
+        // The relay is started before onboarding, when no username exists yet.
+        // Announce immediately now that the profile is complete instead of
+        // leaving tracker diagnostics empty until the periodic loop wakes up.
+        P2PMessageRelay.refreshAnnouncement(context)
       },
       modifier = Modifier.fillMaxSize()
     )

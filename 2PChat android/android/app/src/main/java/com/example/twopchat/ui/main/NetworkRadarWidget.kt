@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -105,7 +106,7 @@ fun NetworkRadarWidget(
             }
             RadarNode.PEERS -> {
                 val angleRad = Math.toRadians(RadarNode.PEERS.angleDegrees.toDouble())
-                val r = maxRadius * 0.90f
+                val r = maxRadius * 0.82f
                 Offset(center.x + (r * cos(angleRad)).toFloat(), center.y + (r * sin(angleRad)).toFloat())
             }
         }
@@ -123,7 +124,7 @@ fun NetworkRadarWidget(
                 .pointerInput(Unit) {
                     detectTapGestures { tapOffset ->
                         val center = Offset(size.width / 2f, size.height / 2f)
-                        val maxRadius = size.width / 2f
+                        val maxRadius = minOf(size.width, size.height) / 2f - with(density) { 22.dp.toPx() }
                         
                         var closestNode: RadarNode? = null
                         var minDistance = Float.MAX_VALUE
@@ -149,7 +150,12 @@ fun NetworkRadarWidget(
                 }
         ) {
             val center = Offset(size.width / 2f, size.height / 2f)
-            val maxRadius = size.width / 2f
+            // Reserve room for node halos, labels and the outer stroke. The old
+            // width-only radius made the scan arc an oval in a weighted layout
+            // and clipped it against the Canvas bounds.
+            val maxRadius = minOf(size.width, size.height) / 2f - 22.dp.toPx()
+            val radarTopLeft = Offset(center.x - maxRadius, center.y - maxRadius)
+            val radarSize = Size(maxRadius * 2f, maxRadius * 2f)
 
             // 1. Draw Concentric Grid Rings (Concentric circles with different styles)
             val dashedEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
@@ -236,7 +242,9 @@ fun NetworkRadarWidget(
                     color = primaryColor.copy(alpha = 0.22f * progress),
                     startAngle = sweepAngle - trailDegrees + segment * (trailDegrees / trailSegments),
                     sweepAngle = trailDegrees / trailSegments + 0.35f,
-                    useCenter = true
+                    useCenter = true,
+                    topLeft = radarTopLeft,
+                    size = radarSize
                 )
             }
             val leadAngleRad = Math.toRadians(sweepAngle.toDouble())

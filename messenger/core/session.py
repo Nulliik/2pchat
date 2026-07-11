@@ -212,8 +212,6 @@ class Session:
     ) -> None:
         self._peer_fp = fingerprint(their_pub)
         self.peer_fingerprint = self._peer_fp
-        if not self.trust_store:
-            return
         if expected_fingerprint and expected_fingerprint not in (
             self._peer_fp,
             fingerprint(their_pub),
@@ -221,6 +219,11 @@ class Session:
             raise ValueError(
                 f"Peer fingerprint mismatch. Expected {expected_fingerprint} but saw {self._peer_fp}."
             )
+        # Explicit pinning is independent of TOFU persistence. Discovery probes
+        # deliberately run without a TrustStore, but must still reject a key
+        # which differs from the fingerprint carried by an invite link.
+        if not self.trust_store:
+            return
         self.trust_store.expected_or_raise(self._peer_fp, expected_fingerprint)
         status: PeerStatus = self.trust_store.note_peer(
             self._peer_fp,

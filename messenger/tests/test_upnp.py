@@ -1,4 +1,12 @@
-from messenger.core.upnp import parse_desc_xml
+from messenger.core.upnp import parse_desc_xml, get_upnp_status
+
+
+def test_upnp_status_snapshot_is_available_and_isolated():
+    first = get_upnp_status()
+    assert first["mapped"] is False
+    assert "state" in first
+    first["mapped"] = True
+    assert get_upnp_status()["mapped"] is False
 
 
 def test_parse_desc_xml_resolves_absolute_wanip_url(monkeypatch):

@@ -11,6 +11,7 @@ from messenger.core.session import (
     X3DH_HANDSHAKE_CONTEXT,
     Session,
 )
+from messenger.core.identity import fingerprint
 
 
 def _make_x3dh_handshake(
@@ -77,3 +78,13 @@ def test_x3dh_handshake_tamper_rejected():
     tampered = json.dumps(obj).encode()
     with pytest.raises(ValueError, match="Invalid signed handshake payload"):
         Session._parse_x3dh_handshake(tampered)
+def test_expected_fingerprint_is_enforced_without_trust_store():
+    session = Session.__new__(Session)
+    session.trust_store = None
+    peer = PrivateKey.generate().public_key
+
+    with pytest.raises(ValueError, match="Peer fingerprint mismatch"):
+        session._note_peer(peer, fingerprint(PrivateKey.generate().public_key))
+
+    session._note_peer(peer, fingerprint(peer))
+    assert session.peer_fingerprint == fingerprint(peer)

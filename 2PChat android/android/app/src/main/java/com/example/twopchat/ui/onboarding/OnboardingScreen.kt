@@ -66,7 +66,9 @@ fun OnboardingScreen(
         while (!PythonBridge.isInitialized) {
             kotlinx.coroutines.delay(100)
         }
-        fingerprint = PythonBridge.getLocalFingerprint()
+        fingerprint = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            PythonBridge.getLocalFingerprint()
+        }
     }
     
     val primaryColor = MaterialTheme.colorScheme.primary

@@ -72,7 +72,7 @@ fun MainScreen(
         while (!PythonBridge.isInitialized) {
             kotlinx.coroutines.delay(100)
         }
-        localFingerprint = PythonBridge.getLocalFingerprint()
+        localFingerprint = withContext(Dispatchers.IO) { PythonBridge.getLocalFingerprint() }
     }
     val context = LocalContext.current
     val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
@@ -333,7 +333,9 @@ fun ChatsTab(
                 heroActivePeers = P2PMessageRelay.peerSessionStates.count { it.value == true }
                 heroUpnpOk = PythonBridge.isUpnpMapped()
                 val trackers = PythonBridge.getTrackerDiagnostics()
-                heroTrackersOk = trackers.isNotEmpty() && trackers.values.any { it.contains("announce=ok") }
+                heroTrackersOk = trackers.isNotEmpty() && trackers.values.any {
+                    it.contains("announce=ok", ignoreCase = true)
+                }
                 val yggAddr = PythonBridge.getYggdrasilAddress()
                 heroYggOk = yggAddr.isNotBlank() && yggAddr != "N/A" && yggAddr != "unavailable"
             }
@@ -585,9 +587,12 @@ fun ContactsTab(
     onSurfaceVariant: Color
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<ContactItem>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
+    var searchProgress by remember { mutableStateOf("") }
+    var searchSummary by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
     var inviteLinkState by remember { mutableStateOf("") }
     var directIpVal by remember { mutableStateOf("") }
@@ -605,7 +610,7 @@ fun ContactsTab(
         while (!PythonBridge.isInitialized) {
             kotlinx.coroutines.delay(100)
         }
-        fingerprint = PythonBridge.getLocalFingerprint()
+        fingerprint = withContext(Dispatchers.IO) { PythonBridge.getLocalFingerprint() }
     }
 
     // Search results must come from an authenticated live peer.  The former
@@ -629,7 +634,33 @@ fun ContactsTab(
             TextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text(Localizations.getString("search_placeholder", appLanguage), color = onSurfaceVariant.copy(alpha = 0.5f)) },
+                placeholder = {
+                    Text(
+                        if (appLanguage == "Русский") "Ник или 2pchat:// ссылка" else "Nickname or 2pchat:// link",
+                        color = onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                },
+                trailingIcon = {
+                    IconButton(onClick = {
+                        val pasted = clipboardManager.getText()?.text?.trim().orEmpty()
+                        if (pasted.startsWith("2pchat://connect")) {
+                            searchQuery = pasted
+                        } else {
+                            Toast.makeText(
+                                context,
+                                if (appLanguage == "Русский") "В буфере нет ссылки 2PChat" else "Clipboard doesn't contain a 2PChat link",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }) {
+                        Icon(
+                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_copy_key),
+                            contentDescription = if (appLanguage == "Русский") "Вставить ссылку приглашения" else "Paste invite link",
+                            tint = primaryColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                },
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = surfaceColor,
                     unfocusedContainerColor = surfaceColor,
@@ -693,26 +724,44 @@ fun ContactsTab(
                                 val uri = android.net.Uri.parse(trimmed)
                                 val parsedName = uri.getQueryParameter("name") ?: "Invited Peer"
                                 val token = uri.getQueryParameter("token") ?: ""
+                                val expectedFp = uri.getQueryParameter("fp")?.trim().orEmpty()
+                                val validFingerprint = try {
+                                    val decoded = android.util.Base64.decode(expectedFp, android.util.Base64.NO_WRAP)
+                                    decoded.size == 32 && android.util.Base64.encodeToString(decoded, android.util.Base64.NO_WRAP) == expectedFp
+                                } catch (_: IllegalArgumentException) {
+                                    false
+                                }
 
-                                val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
-                                if (!activeSet.contains(parsedName)) {
-                                    val newSet = activeSet.toMutableSet()
-                                    newSet.add(parsedName)
-                                    sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
-                                    sharedPrefs.edit().putString("transport_$parsedName", "DIRECT P2P").apply()
+                                if (token.isEmpty() || !validFingerprint) {
+                                    resolveInviteStatus = if (appLanguage == "Русский") {
+                                        "Некорректная ссылка: отсутствует token или 32-байтный fingerprint"
+                                    } else {
+                                        "Invalid invite: missing token or 32-byte fingerprint"
+                                    }
+                                    return@IconButton
                                 }
 
                                 if (token.isNotEmpty()) {
                                     isResolvingInvite = true
                                     resolveInviteStatus = if (appLanguage == "Русский") "Поиск собеседника..." else "Finding peer..."
                                     coroutineScope.launch(Dispatchers.IO) {
-                                        val peers = PythonBridge.searchPeers(token)
+                                        val peers = PythonBridge.searchPeers(token, parsedName, expectedFp)
+                                        val verified = peers.firstOrNull()?.get("verified")?.toString()?.equals("true", ignoreCase = true) == true
+                                        val ownershipVerified = peers.firstOrNull()?.get("ownership_verified")?.toString()?.equals("true", ignoreCase = true) == true
                                         val endpoints = if (peers.isNotEmpty()) peers[0]["endpoints"] as? List<*> else null
                                         // Pass ALL endpoints comma-separated so Python can try each (IPv4 first, Yggdrasil IPv6 as fallback)
                                         val endpointStr = if (endpoints != null && endpoints.isNotEmpty()) endpoints.joinToString(",") { it.toString() } else ""
                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                             isResolvingInvite = false
-                                            if (endpointStr.isNotEmpty()) {
+                                            if (endpointStr.isNotEmpty() && verified && ownershipVerified) {
+                                                val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+                                                if (!activeSet.contains(parsedName)) {
+                                                    sharedPrefs.edit()
+                                                        .putStringSet("active_chats", activeSet + parsedName)
+                                                        .putString("transport_$parsedName", "DIRECT P2P")
+                                                        .putString("peer_fingerprint_$parsedName", expectedFp)
+                                                        .apply()
+                                                }
                                                 com.example.twopchat.P2PMessageRelay.peerEndpoints[parsedName] = endpointStr
                                                 resolveInviteStatus = ""
                                                 onItemClick(Chat(parsedName))
@@ -731,8 +780,34 @@ fun ContactsTab(
                             return@IconButton
                         }
                         isSearching = true
+                        searchResults = emptyList()
+                        searchSummary = ""
+                        searchProgress = if (appLanguage == "Русский") {
+                            "1/3 · Запрашиваем HTTP и UDP-трекеры…"
+                        } else {
+                            "1/3 · Querying HTTP and UDP trackers…"
+                        }
                         coroutineScope.launch(Dispatchers.IO) {
+                            val progressJob = launch {
+                                kotlinx.coroutines.delay(1200)
+                                withContext(Dispatchers.Main) {
+                                    searchProgress = if (appLanguage == "Русский") {
+                                        "2/3 · Собираем IPv4 и Yggdrasil endpoint-ы…"
+                                    } else {
+                                        "2/3 · Collecting IPv4 and Yggdrasil endpoints…"
+                                    }
+                                }
+                                kotlinx.coroutines.delay(1800)
+                                withContext(Dispatchers.Main) {
+                                    searchProgress = if (appLanguage == "Русский") {
+                                        "3/3 · Проверяем живой узел и криптографическую идентичность…"
+                                    } else {
+                                        "3/3 · Verifying live node and cryptographic identity…"
+                                    }
+                                }
+                            }
                             val peers = PythonBridge.searchPeers(searchQuery)
+                            progressJob.cancel()
                             val items = peers.map { peer ->
                                 val name = peer["nickname"] as? String ?: "Unknown"
                                 val fp = peer["fingerprint"] as? String ?: ""
@@ -742,27 +817,46 @@ fun ContactsTab(
                                 } else {
                                     "Unknown"
                                 }
+                                val verified = peer["verified"]?.toString()?.equals("true", ignoreCase = true) == true
+                                val ownershipVerified = peer["ownership_verified"]?.toString()?.equals("true", ignoreCase = true) == true
+                                val reason = peer["verification_reason"]?.toString().orEmpty()
                                 val displayName = if (name.startsWith("2TFcRb7m") || name.length > 20) {
                                     "Peer (" + name.take(8) + "...)"
                                 } else {
                                     name
                                 }
-                                if (endpointStr != "Unknown") {
-                                    com.example.twopchat.P2PMessageRelay.peerEndpoints[displayName] = endpointStr
-                                }
                                 ContactItem(
                                     name = displayName,
-                                    status = "Online ($endpointStr)",
-                                    initials = if (displayName.length >= 2) displayName.substring(0, 2).uppercase() else displayName.uppercase()
+                                    status = if (verified && ownershipVerified) {
+                                        if (appLanguage == "Русский") "Подтверждён ссылкой приглашения" else "Verified by invite link"
+                                    } else if (verified) {
+                                        if (appLanguage == "Русский") "Узел и ключ активны · владелец ника не подтверждён" else "Live node and key · nickname ownership unverified"
+                                    } else if (appLanguage == "Русский") "Найден на трекере · live-проверка не пройдена" else "Found on tracker · live verification failed",
+                                    initials = if (displayName.length >= 2) displayName.substring(0, 2).uppercase() else displayName.uppercase(),
+                                    verified = verified,
+                                    endpoints = endpointStr,
+                                    verificationDetails = reason,
+                                    fingerprint = fp,
+                                    ownershipVerified = ownershipVerified,
                                 )
                             }
                             withContext(Dispatchers.Main) {
                                 searchResults = items
                                 isSearching = false
+                                searchProgress = ""
+                                val verifiedCount = items.count { it.verified }
+                                val unverifiedCount = items.size - verifiedCount
+                                searchSummary = if (appLanguage == "Русский") {
+                                    "Поиск завершён: подтверждено $verifiedCount, найдено без live-подтверждения $unverifiedCount"
+                                } else {
+                                    "Search complete: $verifiedCount verified, $unverifiedCount found without live verification"
+                                }
                             }
                         }
                     } else {
                         searchResults = emptyList()
+                        searchProgress = ""
+                        searchSummary = ""
                     }
                 },
                 modifier = Modifier
@@ -776,6 +870,19 @@ fun ContactsTab(
                     modifier = Modifier.size(22.dp)
                 )
             }
+        }
+
+        if (searchQuery.trim().startsWith("2pchat://connect")) {
+            Text(
+                text = if (appLanguage == "Русский") {
+                    "Ссылка приглашения распознана. Нажмите поиск для защищённого подключения."
+                } else {
+                    "Invite link recognized. Tap search to connect securely."
+                },
+                color = primaryColor,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+            )
         }
 
         // Invite resolving status indicator
@@ -1146,15 +1253,27 @@ fun ContactsTab(
         }
 
         if (isSearching) {
-            Box(
+            Card(
+                colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(150.dp),
-                contentAlignment = Alignment.Center
+                    .padding(vertical = 8.dp)
             ) {
-                CircularProgressIndicator(color = primaryColor)
+                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp, color = primaryColor)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(if (appLanguage == "Русский") "Ищем пользователя" else "Searching for user", fontWeight = FontWeight.Bold, color = onSurfaceColor)
+                        Text(searchProgress, fontSize = 12.sp, color = onSurfaceVariant)
+                        Text(if (appLanguage == "Русский") "Результат появится даже для offline endpoint-а, но будет отмечен как непроверенный." else "Offline endpoints remain visible, but are marked unverified.", fontSize = 10.sp, color = onSurfaceVariant.copy(alpha = 0.75f))
+                    }
+                }
             }
         } else {
+            if (searchSummary.isNotEmpty()) {
+                Text(searchSummary, fontSize = 12.sp, color = onSurfaceVariant, modifier = Modifier.padding(vertical = 6.dp))
+            }
             val contactsToDisplay = if (searchQuery.isNotBlank()) {
                 searchResults
             } else {
@@ -1169,7 +1288,7 @@ fun ContactsTab(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (appLanguage == "ru") "Пользователи не найдены на DHT/трекерах" else "No peers found on DHT/trackers",
+                        text = if (appLanguage == "Русский") "Пользователь не найден или не подтвердил имя при live-проверке" else "User not found or did not confirm their name during live verification",
                         color = onSurfaceVariant,
                         fontSize = 14.sp,
                         textAlign = TextAlign.Center
@@ -1187,16 +1306,23 @@ fun ContactsTab(
                             shape = RoundedCornerShape(14.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable {
+                                .clickable(enabled = contact.verified) {
+                                    val peerKey = if (contact.ownershipVerified) contact.name else "${contact.name} · ${contact.fingerprint.take(8)}"
                                     val activeSet = sharedPrefs.getStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")) ?: setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen")
-                                    if (!activeSet.contains(contact.name)) {
+                                    if (!activeSet.contains(peerKey)) {
                                         val newSet = activeSet.toMutableSet()
-                                        newSet.add(contact.name)
+                                        newSet.add(peerKey)
                                         sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
                                         val isYgg = contact.status.contains("Yggdrasil", ignoreCase = true)
-                                        sharedPrefs.edit().putString("transport_${contact.name}", if (isYgg) "YGGDRASIL" else "DIRECT P2P").apply()
+                                        sharedPrefs.edit()
+                                            .putString("transport_$peerKey", if (isYgg) "YGGDRASIL" else "DIRECT P2P")
+                                            .putString("peer_fingerprint_$peerKey", contact.fingerprint)
+                                            .apply()
                                     }
-                                    onItemClick(Chat(contact.name))
+                                    if (contact.endpoints.isNotBlank() && contact.endpoints != "Unknown") {
+                                        P2PMessageRelay.peerEndpoints[peerKey] = contact.endpoints
+                                    }
+                                    onItemClick(Chat(peerKey))
                                 }
                                 .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(14.dp))
                         ) {
@@ -1244,12 +1370,36 @@ fun ContactsTab(
                                     Text(
                                         text = localizedStatus,
                                         fontSize = 12.sp,
-                                        color = if (contact.status.startsWith("Online")) primaryColor else onSurfaceVariant
+                                        color = if (contact.verified) primaryColor else Color(0xFFFFB300)
                                     )
+                                    if (contact.fingerprint.isNotBlank()) {
+                                        Text(
+                                            text = "FP: ${contact.fingerprint.take(12)}…${contact.fingerprint.takeLast(6)}",
+                                            fontSize = 10.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = if (contact.ownershipVerified) Color(0xFF4CAF50) else Color(0xFFFFB300)
+                                        )
+                                    }
+                                    if (contact.verified && !contact.ownershipVerified) {
+                                        Text(
+                                            text = if (appLanguage == "Русский") "Это ключ живого узла, но не доказательство владения ником" else "Live node key; not proof of nickname ownership",
+                                            fontSize = 10.sp,
+                                            color = Color(0xFFFFB300)
+                                        )
+                                    }
+                                    if (!contact.verified) {
+                                        Text(contact.endpoints, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = onSurfaceVariant)
+                                        Text(if (appLanguage == "Русский") "Подключение заблокировано до успешной проверки личности" else "Connection is blocked until identity verification succeeds", fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                                 
                                 Text(
-                                    text = Localizations.getString("connect_action", appLanguage),
+                                    text = when {
+                                        contact.ownershipVerified -> if (appLanguage == "Русский") "ДОВЕРЕН" else "TRUSTED"
+                                        contact.verified -> if (appLanguage == "Русский") "ВЫБРАТЬ КЛЮЧ" else "SELECT KEY"
+                                        appLanguage == "Русский" -> "НЕ ПРОВЕРЕН"
+                                        else -> "UNVERIFIED"
+                                    },
                                     fontSize = 11.sp,
                                     color = primaryColor,
                                     fontWeight = FontWeight.Bold
@@ -2744,7 +2894,12 @@ data class PeerItem(
 data class ContactItem(
     val name: String,
     val status: String,
-    val initials: String
+    val initials: String,
+    val verified: Boolean = true,
+    val endpoints: String = "",
+    val verificationDetails: String = "",
+    val fingerprint: String = "",
+    val ownershipVerified: Boolean = false,
 )
 
 data class AppIconOption(
@@ -2927,15 +3082,15 @@ private fun readLogFile(context: android.content.Context): String {
 private fun getTrackerPing(announceUrl: String): Long {
     val startTime = System.currentTimeMillis()
     try {
-        val cleanUrl = announceUrl.substringAfter("://").substringBefore("/")
-        val host = cleanUrl.substringBefore(":")
-        val cleanHost = if (host.startsWith("[") && host.endsWith("]")) {
-            host.substring(1, host.length - 1)
-        } else {
-            host
+        val host = java.net.URI(announceUrl).host ?: return -1L
+        // Numeric IPv4/IPv6 literals don't require DNS. Reporting the local
+        // parse time as "DNS 0ms" made it look like a network measurement.
+        if (host.contains(':') || host.matches(Regex("\\d{1,3}(?:\\.\\d{1,3}){3}"))) {
+            java.net.InetAddress.getByName(host)
+            return -3L
         }
-        java.net.InetAddress.getByName(cleanHost)
-        return System.currentTimeMillis() - startTime
+        java.net.InetAddress.getByName(host)
+        return (System.currentTimeMillis() - startTime).coerceAtLeast(0L)
     } catch (e: Exception) {
         return -1L
     }
@@ -3071,12 +3226,14 @@ fun NetworkDiagnosticsDialog(
         }
 
         val trackerPings = remember { mutableStateMapOf<String, Long>() }
+        val yggdrasilAvailable = yggDiagnostics["state"] in setOf("enabled", "connected") &&
+            PythonBridge.getYggdrasilAddress().isNotBlank()
         LaunchedEffect(selectedRadarNode, trackerDiagnostics) {
             if (selectedRadarNode == RadarNode.TRACKERS) {
                 trackerDiagnostics.keys.forEach { name ->
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         val url = trackerUrls[name] ?: ""
-                        val ping = getTrackerPing(url)
+                        val ping = if (name.startsWith("Yggdrasil-only") && !yggdrasilAvailable) -2L else getTrackerPing(url)
                         trackerPings[name] = ping
                     }
                 }
@@ -3624,12 +3781,30 @@ fun NetworkDiagnosticsDialog(
                                             RadarNode.TRACKERS -> {
                                                 trackerDiagnostics.forEach { (name, status) ->
                                                     val ping = trackerPings[name]
-                                                    val pingText = if (ping == null) {
+                                                    val announceRtt = Regex("announce_rtt=(\\d+)ms").find(status)?.groupValues?.get(1)?.toLongOrNull()
+                                                    val announceOk = status.contains("announce=OK", ignoreCase = true)
+                                                    val pingText = if (announceRtt != null && announceOk) {
+                                                        "RTT ${announceRtt}ms"
+                                                    } else if (announceRtt != null) {
+                                                        if (appLanguage == "Русский") "ошибка через ${announceRtt}ms" else "failed after ${announceRtt}ms"
+                                                    } else if (ping == null) {
                                                         if (appLanguage == "Русский") "опрос..." else "probing..."
+                                                    } else if (ping == -2L) {
+                                                        if (appLanguage == "Русский") "Yggdrasil выкл." else "Yggdrasil off"
+                                                    } else if (ping == -3L) {
+                                                        "IPv6 literal"
                                                     } else if (ping < 0) {
-                                                        "timeout"
+                                                        if (appLanguage == "Русский") "DNS недоступен" else "DNS unavailable"
+                                                    } else if (ping == 0L) {
+                                                        "DNS <1ms"
                                                     } else {
-                                                        "${ping}ms"
+                                                        "DNS ${ping}ms"
+                                                    }
+                                                    val skipped = status.contains("SKIPPED", ignoreCase = true)
+                                                    val statusColor = when {
+                                                        skipped || ping == -2L -> onSurfaceVariant
+                                                        announceOk -> Color(0xFF4CAF50)
+                                                        else -> Color.Red
                                                     }
                                                     Card(
                                                         colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.3f)),
@@ -3641,7 +3816,7 @@ fun NetworkDiagnosticsDialog(
                                                                 horizontalArrangement = Arrangement.SpaceBetween
                                                             ) {
                                                                 Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = onSurfaceColor)
-                                                                Text(pingText, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (ping != null && ping >= 0) Color(0xFF4CAF50) else Color.Red)
+                                                                Text(pingText, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = statusColor)
                                                             }
                                                             Spacer(modifier = Modifier.height(4.dp))
                                                             Text(
@@ -3678,15 +3853,46 @@ fun NetworkDiagnosticsDialog(
                                                             val arr = JSONArray(yggPeersJsonStr)
                                                             for (i in 0 until arr.length()) {
                                                                 val obj = arr.getJSONObject(i)
-                                                                val addr = obj.optString("address", obj.optString("endpoint", "unknown"))
-                                                                val uptime = obj.optDouble("uptime", 0.0).toLong()
-                                                                val uptimeText = if (uptime > 0) "${uptime / 60}m ${uptime % 60}s" else "connected"
-                                                                val tx = obj.optLong("bytes_sent", obj.optLong("tx", 0))
-                                                                val rx = obj.optLong("bytes_recv", obj.optLong("rx", 0))
+                                                                // The embedded Go API uses capitalized admin
+                                                                // field names (URI, Up, RXBytes...). The previous
+                                                                // lowercase-only parser therefore displayed every
+                                                                // real public peer as "unknown".
+                                                                fun firstString(vararg keys: String): String = keys
+                                                                    .asSequence()
+                                                                    .map { obj.optString(it, "").trim() }
+                                                                    .firstOrNull { it.isNotEmpty() && it != "null" }
+                                                                    .orEmpty()
+                                                                fun firstLong(vararg keys: String): Long = keys
+                                                                    .asSequence()
+                                                                    .filter { obj.has(it) }
+                                                                    .map { obj.optLong(it, 0L) }
+                                                                    .firstOrNull() ?: 0L
+
+                                                                val uri = firstString("URI", "uri", "endpoint", "address")
+                                                                val remote = firstString("Remote", "remote", "Address")
+                                                                val key = firstString("Key", "key")
+                                                                val up = if (obj.has("Up")) obj.optBoolean("Up") else obj.optBoolean("up", true)
+                                                                val inbound = if (obj.has("Inbound")) obj.optBoolean("Inbound") else obj.optBoolean("inbound", false)
+                                                                val uptime = firstLong("Uptime", "uptime")
+                                                                val uptimeSeconds = if (uptime > 86_400_000_000L) uptime / 1_000_000_000L else uptime
+                                                                val uptimeText = if (uptimeSeconds > 0) {
+                                                                    "${uptimeSeconds / 3600}h ${(uptimeSeconds % 3600) / 60}m ${uptimeSeconds % 60}s"
+                                                                } else if (up) "connected" else "offline"
+                                                                val tx = firstLong("TXBytes", "bytes_sent", "tx")
+                                                                val rx = firstLong("RXBytes", "bytes_recv", "rx")
+                                                                val latency = firstLong("Latency", "latency")
+                                                                val cost = firstLong("Cost", "cost")
+                                                                val lastError = firstString("LastError", "last_error", "error")
                                                                 list.add(mapOf(
-                                                                    "address" to addr,
+                                                                    "address" to (uri.ifEmpty { remote.ifEmpty { key.take(16).ifEmpty { "peer #${i + 1}" } } }),
+                                                                    "remote" to remote,
+                                                                    "key" to key,
+                                                                    "state" to (if (up) "ONLINE" else "OFFLINE"),
+                                                                    "direction" to (if (inbound) "INBOUND" else "OUTBOUND"),
                                                                     "uptime" to uptimeText,
-                                                                    "traffic" to "TX: ${tx / 1024} KB / RX: ${rx / 1024} KB"
+                                                                    "traffic" to "TX: ${tx / 1024} KB / RX: ${rx / 1024} KB",
+                                                                    "route" to "Cost: $cost · Latency: ${latency / 1_000_000} ms",
+                                                                    "error" to lastError
                                                                 ))
                                                             }
                                                         } catch (e: Exception) {
@@ -3702,12 +3908,28 @@ fun NetworkDiagnosticsDialog(
                                                         ) {
                                                             Column(modifier = Modifier.padding(10.dp)) {
                                                                 Text(peerMap["address"] ?: "", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = onSurfaceColor)
+                                                                if (!peerMap["remote"].isNullOrEmpty()) {
+                                                                    Text("Remote: ${peerMap["remote"]}", fontSize = 11.sp, color = onSurfaceVariant)
+                                                                }
+                                                                if (!peerMap["key"].isNullOrEmpty()) {
+                                                                    Text("Key: ${peerMap["key"]}", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = onSurfaceVariant)
+                                                                }
                                                                 Row(
                                                                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                                                                     horizontalArrangement = Arrangement.SpaceBetween
                                                                 ) {
+                                                                    Text("${peerMap["state"]} · ${peerMap["direction"]}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (peerMap["state"] == "ONLINE") Color(0xFF4CAF50) else Color.Red)
                                                                     Text("Uptime: ${peerMap["uptime"]}", fontSize = 11.sp, color = onSurfaceVariant)
+                                                                }
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+                                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                                ) {
                                                                     Text(peerMap["traffic"] ?: "", fontSize = 11.sp, color = onSurfaceVariant)
+                                                                    Text(peerMap["route"] ?: "", fontSize = 11.sp, color = onSurfaceVariant)
+                                                                }
+                                                                if (!peerMap["error"].isNullOrEmpty()) {
+                                                                    Text("Error: ${peerMap["error"]}", fontSize = 10.sp, color = Color.Red, modifier = Modifier.padding(top = 3.dp))
                                                                 }
                                                             }
                                                         }

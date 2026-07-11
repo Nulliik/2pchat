@@ -8,6 +8,7 @@ import re
 import time
 import tempfile
 import hashlib
+import base64
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -37,6 +38,7 @@ MAX_CONCURRENT_HANDSHAKES = 10
 tracker_diagnostics = {}
 local_identity_nickname = ""
 local_identity_fingerprint = ""
+local_yggdrasil_available = False
 
 # Kotlin notification callbacks
 message_listener_callback = None
@@ -158,7 +160,10 @@ def _has_ipv6_endpoint(endpoints: list[PeerEndpoint]) -> bool:
 
 def _resolve_tracker_names(primary_tracker: str | None = None) -> list[str]:
     names = []
-    for tracker_name in (primary_tracker, *CLEARNET_TRACKERS, *YGG_TRACKERS):
+    requested = (primary_tracker, *CLEARNET_TRACKERS)
+    if local_yggdrasil_available:
+        requested = (*requested, *YGG_TRACKERS)
+    for tracker_name in requested:
         if tracker_name and tracker_name not in names:
             names.append(tracker_name)
     return names
@@ -180,7 +185,27 @@ def _same_nickname(left: str, right: str) -> bool:
     return " ".join(left.strip().casefold().split()) == " ".join(right.strip().casefold().split())
 
 
-async def _verify_live_endpoint(endpoint: str, nickname: str) -> dict | None:
+def _canonical_expected_fingerprint(value: str | None) -> str | None:
+    if value is None or not str(value).strip():
+        return None
+    candidate = str(value).strip()
+    try:
+        decoded = base64.b64decode(candidate, validate=True)
+    except Exception as exc:
+        raise ValueError("invite fingerprint is not valid Base64") from exc
+    if len(decoded) != 32:
+        raise ValueError("invite fingerprint must encode exactly 32 bytes")
+    canonical = base64.b64encode(decoded).decode("ascii")
+    if candidate != canonical:
+        raise ValueError("invite fingerprint is not in canonical Base64 form")
+    return canonical
+
+
+async def _verify_live_endpoint(
+    endpoint: str,
+    nickname: str,
+    expected_fingerprint: str | None = None,
+) -> dict:
     """Require an authenticated live peer to confirm the name before showing it.
 
     Tracker announces are soft state and can outlive a disconnected phone.  A
@@ -194,7 +219,9 @@ async def _verify_live_endpoint(endpoint: str, nickname: str) -> dict | None:
     session = None
     try:
         # Deliberately do not update the TOFU store while merely searching.
-        session = await _dial_endpoint(endpoint, identity_priv, signing_key, None)
+        session = await _dial_endpoint(
+            endpoint, identity_priv, signing_key, None, expected_fingerprint
+        )
         await session.send_reliable({"type": "identity_probe"})
         while True:
             message = await asyncio.wait_for(session.receive_message(), timeout=3.0)
@@ -212,26 +239,47 @@ async def _verify_live_endpoint(endpoint: str, nickname: str) -> dict | None:
                     "nickname": announced_name.strip(),
                     "fingerprint": session.peer_fingerprint,
                     "endpoint": endpoint,
+                    "verified": True,
+                    "ownership_verified": expected_fingerprint is not None,
+                    "verification_reason": "authenticated live response",
                 }
-            return None
+            return {
+                "endpoint": endpoint,
+                "verified": False,
+                "verification_reason": "live identity did not match the requested name",
+            }
     except Exception as exc:
         print(f"Live peer verification failed for {endpoint}: {exc}")
-        return None
+        reason = str(exc).strip() or type(exc).__name__
+        return {
+            "endpoint": endpoint,
+            "verified": False,
+            "verification_reason": reason,
+            "is_self": "refusing self connection" in reason.lower(),
+        }
     finally:
         if session is not None:
             await session.close()
 
-def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrackr HTTP"):
+def resolve_peers(
+    nickname: str,
+    shared_code: str,
+    tracker_name: str = "OpenTrackr HTTP",
+    expected_live_name: str | None = None,
+    expected_live_fingerprint: str | None = None,
+):
     """
     Resolve peers from multiple trackers to maximise endpoint coverage.
     Queries the specified HTTP tracker and the Torrent.eu.org UDP tracker
     (which carries IPv6/Yggdrasil endpoints) and deduplicates results.
     Returns a list of dicts with nickname, fingerprint, and endpoints.
     """
-    import socket as _socket
     import urllib.error
 
+    expected_live_fingerprint = _canonical_expected_fingerprint(expected_live_fingerprint)
+
     async def _query_async(t_name):
+        started = time.monotonic()
         try:
             tracker = get_tracker_by_name(t_name)
             provider = get_discovery_provider(
@@ -243,13 +291,16 @@ def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrac
             result = await provider.resolve(nickname, shared_code)
             endpoint_count = sum(len(getattr(item, "endpoints", ())) for item in result)
             _set_tracker_diagnostic(t_name, "resolve", f"OK ({endpoint_count} endpoints)")
+            _set_tracker_diagnostic(t_name, "resolve_rtt_ms", str(round((time.monotonic() - started) * 1000)))
             return result
         except (urllib.error.URLError, OSError) as e:
             _set_tracker_diagnostic(t_name, "resolve", f"FAIL ({e})")
+            _set_tracker_diagnostic(t_name, "resolve_rtt_ms", str(round((time.monotonic() - started) * 1000)))
             print(f"Network error resolving peers from {t_name}: {e}")
             return []
         except Exception as e:
             _set_tracker_diagnostic(t_name, "resolve", f"FAIL ({e})")
+            _set_tracker_diagnostic(t_name, "resolve_rtt_ms", str(round((time.monotonic() - started) * 1000)))
             print(f"Error resolving peers from {t_name}: {e}")
             return []
 
@@ -311,7 +362,14 @@ def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrac
         # an unbounded number of connection attempts on a mobile device.
         candidates = all_endpoints[:12]
         return await asyncio.gather(
-            *[_verify_live_endpoint(endpoint, nickname) for endpoint in candidates],
+            *[
+                _verify_live_endpoint(
+                    endpoint,
+                    expected_live_name or nickname,
+                    expected_live_fingerprint,
+                )
+                for endpoint in candidates
+            ],
             return_exceptions=True,
         )
 
@@ -324,7 +382,7 @@ def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrac
 
     verified_by_identity = {}
     for result in verified:
-        if isinstance(result, dict):
+        if isinstance(result, dict) and result.get("verified"):
             key = (result["nickname"], result["fingerprint"])
             verified_by_identity.setdefault(key, []).append(result["endpoint"])
 
@@ -336,10 +394,50 @@ def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrac
                 "fingerprint": peer_fingerprint,
                 "transport": "direct",
                 "endpoints": sorted(endpoints, key=_endpoint_sort_key),
+                "verified": True,
+                "ownership_verified": expected_live_fingerprint is not None and peer_fingerprint == expected_live_fingerprint,
+                "verification_status": "verified",
+                "verification_reason": "authenticated live response",
             }
             for (name, peer_fingerprint), endpoints in verified_by_identity.items()
         ]
-    print(f"No live authenticated peer confirmed nickname '{nickname}'")
+    # Keep tracker hits visible without presenting them as authenticated. A
+    # stale registration is useful evidence that the name existed recently,
+    # but it must never be treated as a verified identity. Self-connections are
+    # excluded explicitly.
+    failed = [item for item in verified if isinstance(item, dict) and not item.get("is_self")]
+    evidenced_descriptors = [
+        descriptor for descriptor in descriptors
+        if str(getattr(descriptor, "identity_fingerprint", "") or "").strip()
+        and _same_nickname(str(getattr(descriptor, "nickname", "") or ""), nickname)
+    ]
+    if failed and evidenced_descriptors:
+        candidate_fingerprint = str(evidenced_descriptors[0].identity_fingerprint).strip()
+        evidenced_endpoints = {
+            _format_endpoint(endpoint.host, endpoint.port)
+            for descriptor in evidenced_descriptors
+            for endpoint in descriptor.endpoints
+        }
+        failed = [item for item in failed if item.get("endpoint") in evidenced_endpoints]
+        reasons = {item.get("endpoint", ""): item.get("verification_reason", "verification failed") for item in failed}
+    if failed and evidenced_descriptors:
+        print(f"Tracker found '{nickname}', but no endpoint passed live verification")
+        return [{
+            "nickname": nickname.strip(),
+            "fingerprint": candidate_fingerprint,
+            "transport": "direct",
+            "endpoints": [item["endpoint"] for item in failed],
+            "verified": False,
+            "verification_status": "unverified",
+            "verification_reason": "; ".join(f"{ep}: {reason}" for ep, reason in reasons.items()),
+        }]
+    if failed:
+        print(
+            f"Trackers returned {len(failed)} untrusted endpoints for '{nickname}', "
+            "but supplied no identity metadata; refusing to label them with the searched name"
+        )
+    else:
+        print(f"No external live endpoint confirmed nickname '{nickname}'")
     return []
 
 
@@ -396,7 +494,7 @@ def announce_peer_endpoints(nickname: str, fingerprint: str, endpoints_json: str
     Announce all current IPv4 and Yggdrasil/global IPv6 endpoints across the tracker set.
     """
     import urllib.error
-    global local_identity_nickname, local_identity_fingerprint
+    global local_identity_nickname, local_identity_fingerprint, local_yggdrasil_available
 
     try:
         addresses = json.loads(endpoints_json)
@@ -411,12 +509,20 @@ def announce_peer_endpoints(nickname: str, fingerprint: str, endpoints_json: str
 
     local_identity_nickname = (nickname or "").strip()
     local_identity_fingerprint = (fingerprint or "").strip()
+    local_yggdrasil_available = _has_ipv6_endpoint(endpoints)
+    if not local_yggdrasil_available:
+        for tracker_name in YGG_TRACKERS:
+            tracker_diagnostics[tracker_name] = {
+                "announce": "SKIPPED (Yggdrasil unavailable)",
+                "resolve": "SKIPPED (Yggdrasil unavailable)",
+            }
 
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
 
         async def _announce_tracker(tracker_name: str):
+            started = time.monotonic()
             tracker = get_tracker_by_name(tracker_name)
             provider = get_discovery_provider(
                 tracker.discovery_scheme,
@@ -436,6 +542,9 @@ def announce_peer_endpoints(nickname: str, fingerprint: str, endpoints_json: str
                 for nick, shared_code in variants
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
+            _set_tracker_diagnostic(
+                tracker_name, "announce_rtt_ms", str(round((time.monotonic() - started) * 1000))
+            )
             success_count = 0
             for idx, res in enumerate(results, start=1):
                 if isinstance(res, Exception):
@@ -1270,8 +1379,8 @@ def is_upnp_mapped() -> bool:
 def get_upnp_details_json() -> str:
     import json
     try:
-        from messenger.core.upnp import _upnp_status
-        return json.dumps(_upnp_status)
+        from messenger.core.upnp import get_upnp_status
+        return json.dumps(get_upnp_status())
     except Exception as e:
         print("[UPNP_BRIDGE] Error getting details json:", e)
         return json.dumps({"mapped": False, "error": str(e)})
