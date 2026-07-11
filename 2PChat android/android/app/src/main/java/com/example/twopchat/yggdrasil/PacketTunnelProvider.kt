@@ -304,7 +304,7 @@ open class PacketTunnelProvider: VpnService() {
                     if (treeNodes > 1)
                         state = STATE_CONNECTED
                 }
-                updateRuntimeState(yggdrasil.addressString, state, peerCount, routes, treeNodes)
+                updateRuntimeState(yggdrasil.addressString, state, peerCount, routes, treeNodes, yggdrasil.peersJSON)
                 intent.putExtra("state", state)
                 LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
                 lastStateUpdate = curTime
@@ -410,16 +410,22 @@ open class PacketTunnelProvider: VpnService() {
         peerCount: Int = 0,
         routes: Int = 0,
         treeNodes: Int = 0,
+        peersJson: String = ""
     ) {
         try {
             val sharedPrefs = applicationContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-            sharedPrefs.edit()
+            val editor = sharedPrefs.edit()
                 .putString(PREF_YGG_RUNTIME_IP, address)
                 .putString(PREF_YGG_RUNTIME_STATE, state)
                 .putInt(PREF_YGG_RUNTIME_PEERS, peerCount)
                 .putInt(PREF_YGG_RUNTIME_ROUTES, routes)
                 .putInt(PREF_YGG_RUNTIME_TREE_NODES, treeNodes)
-                .apply()
+            if (peersJson.isNotEmpty()) {
+                editor.putString("yggdrasil_runtime_peers_json", peersJson)
+            } else if (state == STATE_DISABLED) {
+                editor.putString("yggdrasil_runtime_peers_json", "")
+            }
+            editor.apply()
         } catch (e: Exception) {
             Log.w(TAG, "Failed to persist Yggdrasil runtime state", e)
         }

@@ -254,6 +254,7 @@ def resolve_peers(nickname: str, shared_code: str, tracker_name: str = "OpenTrac
                 all_endpoints.append(ep_str)
 
     all_endpoints.sort(key=_endpoint_sort_key)
+    print(f"Resolved {len(all_endpoints)} endpoints from trackers for nickname '{nickname}': {all_endpoints}")
     if not ipv4_enabled:
         all_endpoints = [endpoint for endpoint in all_endpoints if not _is_ipv4_endpoint(endpoint)]
     if not all_endpoints:
@@ -1154,4 +1155,33 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
 
     asyncio.run_coroutine_threadsafe(_reconnect_async(), loop)
     return True
+
+def is_upnp_mapped() -> bool:
+    try:
+        from messenger.core.upnp import _upnp_mapping
+        return _upnp_mapping is not None
+    except Exception:
+        return False
+
+def get_upnp_details_json() -> str:
+    import json
+    try:
+        from messenger.core.upnp import _upnp_status
+        return json.dumps(_upnp_status)
+    except Exception as e:
+        print("[UPNP_BRIDGE] Error getting details json:", e)
+        return json.dumps({"mapped": False, "error": str(e)})
+
+def trigger_upnp_reopen() -> bool:
+    global listener_port
+    try:
+        from messenger.core.upnp import stop_upnp, setup_upnp_in_background
+        print(f"[UPNP_BRIDGE] Re-opening UPnP port mapping for port {listener_port}")
+        stop_upnp()
+        setup_upnp_in_background(listener_port)
+        return True
+    except Exception as e:
+        print("[UPNP_BRIDGE] Re-open failed:", e)
+        return False
+
 

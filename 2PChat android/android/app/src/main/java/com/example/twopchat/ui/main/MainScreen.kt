@@ -4,6 +4,7 @@ import android.widget.Toast
 import android.content.Intent
 import android.net.VpnService
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
+import org.json.JSONArray
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -64,6 +65,9 @@ fun MainScreen(
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     var localFingerprint by remember { mutableStateOf("Loading...") }
+    var showLogsDialog by remember { mutableStateOf(false) }
+    var showRadarView by remember { mutableStateOf(true) }
+    var selectedRadarNode by remember { mutableStateOf<RadarNode?>(null) }
     LaunchedEffect(Unit) {
         while (!PythonBridge.isInitialized) {
             kotlinx.coroutines.delay(100)
@@ -173,7 +177,20 @@ fun MainScreen(
                 label = "tab_transition"
             ) { targetTab ->
                 when (targetTab) {
-                    0 -> ChatsTab(onItemClick, localFingerprint, appLanguage, primaryColor, surfaceColor, onSurfaceColor, onSurfaceVariant)
+                    0 -> ChatsTab(
+                        onItemClick = onItemClick,
+                        localFingerprint = localFingerprint,
+                        appLanguage = appLanguage,
+                        primaryColor = primaryColor,
+                        surfaceColor = surfaceColor,
+                        onSurfaceColor = onSurfaceColor,
+                        onSurfaceVariant = onSurfaceVariant,
+                        onStatusPillClick = { node ->
+                            selectedRadarNode = node
+                            showRadarView = true
+                            showLogsDialog = true
+                        }
+                    )
                     1 -> ContactsTab(onItemClick, appLanguage, primaryColor, surfaceColor, onSurfaceColor, onSurfaceVariant)
                     2 -> SettingsTab(
                         isDarkTheme = isDarkTheme,
@@ -196,7 +213,8 @@ fun MainScreen(
                         onSurfaceColor = onSurfaceColor,
                         onSurfaceVariant = onSurfaceVariant,
                         surfaceVariant = surfaceVariant,
-                        onDeleteAccount = onDeleteAccount
+                        onDeleteAccount = onDeleteAccount,
+                        onShowLogs = { showLogsDialog = true }
                     )
                 }
             }
@@ -212,6 +230,22 @@ fun MainScreen(
             onSurfaceColor = onSurfaceColor
         )
     }
+
+    NetworkDiagnosticsDialog(
+        showLogsDialog = showLogsDialog,
+        onDismissRequest = { showLogsDialog = false },
+        showRadarView = showRadarView,
+        onShowRadarViewChange = { showRadarView = it },
+        selectedRadarNode = selectedRadarNode,
+        onSelectedRadarNodeChange = { selectedRadarNode = it },
+        appLanguage = appLanguage,
+        primaryColor = primaryColor,
+        surfaceColor = surfaceColor,
+        onSurfaceColor = onSurfaceColor,
+        onSurfaceVariant = onSurfaceVariant,
+        surfaceVariant = surfaceVariant,
+        sharedPrefs = sharedPrefs
+    )
 }
 
 // ================= Chats Tab Screen =================
@@ -223,7 +257,8 @@ fun ChatsTab(
     primaryColor: Color,
     surfaceColor: Color,
     onSurfaceColor: Color,
-    onSurfaceVariant: Color
+    onSurfaceVariant: Color,
+    onStatusPillClick: (RadarNode) -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
@@ -267,125 +302,274 @@ fun ChatsTab(
         }
     }
 
+    // Hero Card live state
+    val currentUsername = remember { sharedPrefs.getString("username_profile", "Anonymous") ?: "Anonymous" }
+    var heroActivePeers by remember { mutableStateOf(0) }
+    var heroUpnpOk by remember { mutableStateOf<Boolean?>(null) }
+    var heroTrackersOk by remember { mutableStateOf<Boolean?>(null) }
+    var heroYggOk by remember { mutableStateOf<Boolean?>(null) }
+    var heroInviteLink by remember { mutableStateOf("") }
+    var heroInviteGenerating by remember { mutableStateOf(false) }
+    val heroScope = rememberCoroutineScope()
+
+    // Pulsing animations
+    val infiniteTransition = rememberInfiniteTransition(label = "heroRing")
+    val ringAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.2f, targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "ringAlpha"
+    )
+
+    val warningTransition = rememberInfiniteTransition(label = "warningPulse")
+    val warningAlpha by warningTransition.animateFloat(
+        initialValue = 0.3f, targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Reverse),
+        label = "warningAlpha"
+    )
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            if (PythonBridge.isInitialized) {
+                heroActivePeers = P2PMessageRelay.peerSessionStates.count { it.value == true }
+                heroUpnpOk = PythonBridge.isUpnpMapped()
+                val trackers = PythonBridge.getTrackerDiagnostics()
+                heroTrackersOk = trackers.isNotEmpty() && trackers.values.any { it.contains("announce=ok") }
+                val yggAddr = PythonBridge.getYggdrasilAddress()
+                heroYggOk = yggAddr.isNotBlank() && yggAddr != "N/A" && yggAddr != "unavailable"
+            }
+            kotlinx.coroutines.delay(4000)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 20.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Identity Card
+        // ─── Hero Identity Card ────────────────────────────────────
         Card(
             colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(24.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 12.dp)
                 .background(
                     brush = Brush.linearGradient(
                         colors = listOf(
-                            primaryColor.copy(alpha = 0.08f),
-                            surfaceColor.copy(alpha = 0.85f)
+                            primaryColor.copy(alpha = 0.10f),
+                            surfaceColor.copy(alpha = 0.90f),
+                            primaryColor.copy(alpha = 0.04f)
                         )
                     ),
-                    shape = RoundedCornerShape(20.dp)
+                    shape = RoundedCornerShape(24.dp)
                 )
-                .border(0.5.dp, primaryColor.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+                .border(0.5.dp, primaryColor.copy(alpha = 0.20f), RoundedCornerShape(24.dp))
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
-                Text(
-                    text = Localizations.getString("my_fingerprint", appLanguage),
-                    fontSize = 10.sp,
-                    color = onSurfaceVariant,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = localFingerprint,
-                        fontSize = 14.sp,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        color = onSurfaceColor,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    IconButton(
-                        onClick = {
-                            clipboardManager.setText(AnnotatedString(localFingerprint))
-                            Toast.makeText(context, "Fingerprint copied to clipboard", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_copy_key),
-                            contentDescription = "Copy Fingerprint",
-                            tint = primaryColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(14.dp))
+
+                // Top row: avatar + name + share button
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(text = "🛡️", fontSize = 12.sp)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = Localizations.getString("ram_info", appLanguage),
-                        fontSize = 11.sp,
-                        color = onSurfaceVariant
+                    // Pulsing avatar
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(56.dp)
+                            .clip(CircleShape)
+                    ) {
+                        Box(modifier = Modifier.size(56.dp).background(primaryColor.copy(alpha = ringAlpha * 0.25f), CircleShape))
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(
+                                    brush = Brush.radialGradient(
+                                        colors = listOf(primaryColor.copy(alpha = 0.85f), primaryColor.copy(alpha = 0.40f))
+                                    ),
+                                    shape = CircleShape
+                                )
+                                .border(1.5.dp, primaryColor.copy(alpha = 0.55f), CircleShape)
+                        ) {
+                            Text(
+                                text = currentUsername.take(2).uppercase(),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = if (appLanguage == "Русский") "МОЙ ПРОФИЛЬ" else "MY PROFILE",
+                                fontSize = 9.sp, color = onSurfaceVariant,
+                                fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp
+                            )
+                        }
+                        Text(
+                            text = currentUsername, fontSize = 20.sp, fontWeight = FontWeight.Bold,
+                            color = onSurfaceColor, maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // Share invite button
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(primaryColor.copy(alpha = 0.15f), shape = RoundedCornerShape(14.dp))
+                            .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(14.dp))
+                            .clickable(enabled = !heroInviteGenerating) {
+                                if (heroInviteLink.isNotEmpty()) {
+                                    val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        putExtra(android.content.Intent.EXTRA_TEXT, heroInviteLink)
+                                        type = "text/plain"
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(sendIntent, null))
+                                } else {
+                                    heroInviteGenerating = true
+                                    heroScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                        if (!PythonBridge.isInitialized) { heroInviteGenerating = false; return@launch }
+                                        val fp = PythonBridge.getLocalFingerprint()
+                                        val tokenBytes = ByteArray(16)
+                                        java.security.SecureRandom().nextBytes(tokenBytes)
+                                        val token = "2pchat_inv_" + tokenBytes.joinToString("") { "%02x".format(it) }
+                                        val link = "2pchat://connect?token=$token&name=$currentUsername&fp=$fp"
+                                        PythonBridge.announceSelf(token, fp, P2PMessageRelay.listenerPort(context))
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                            heroInviteLink = link
+                                            heroInviteGenerating = false
+                                            val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                putExtra(android.content.Intent.EXTRA_TEXT, link)
+                                                type = "text/plain"
+                                            }
+                                            context.startActivity(android.content.Intent.createChooser(sendIntent, null))
+                                        }
+                                    }
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (heroInviteGenerating) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = primaryColor
+                            )
+                        } else {
+                            Icon(
+                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_quick_link),
+                                contentDescription = "Share invite",
+                                tint = primaryColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Status pills
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    @Composable
+                    fun StatusPill(
+                        label: String,
+                        value: String,
+                        ok: Boolean?,
+                        node: RadarNode
+                    ) {
+                        val pillColor = when (ok) {
+                            true  -> Color(0xFF00C853)
+                            false -> Color(0xFFFF5252)
+                            null  -> onSurfaceVariant.copy(alpha = 0.45f)
+                        }
+                        
+                        // Slowly blink the dot if there is a warning/error (ok == false)
+                        val dotAlpha = if (ok == false) warningAlpha else 1.0f
+
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { onStatusPillClick(node) }
+                                .background(pillColor.copy(alpha = 0.08f))
+                                .border(0.5.dp, pillColor.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                                .padding(vertical = 8.dp, horizontal = 2.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .graphicsLayer { alpha = dotAlpha }
+                                    .background(pillColor, CircleShape)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(text = value, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = pillColor, maxLines = 1)
+                            Text(text = label, fontSize = 9.sp, color = onSurfaceVariant, letterSpacing = 0.3.sp, maxLines = 1)
+                        }
+                    }
+
+                    StatusPill(
+                        label = "UPnP",
+                        value = when (heroUpnpOk) { true -> "✓ OK"; false -> "✗ Нет"; else -> "…" },
+                        ok = heroUpnpOk,
+                        node = RadarNode.ROUTER
+                    )
+                    StatusPill(
+                        label = if (appLanguage == "Русский") "Трекеры" else "Trackers",
+                        value = when (heroTrackersOk) { true -> "✓ OK"; false -> "✗ Нет"; else -> "…" },
+                        ok = heroTrackersOk,
+                        node = RadarNode.TRACKERS
+                    )
+                    StatusPill(
+                        label = "Yggdrasil",
+                        value = when (heroYggOk) { true -> "✓ OK"; false -> "✗ Нет"; else -> "…" },
+                        ok = heroYggOk,
+                        node = RadarNode.YGGDRASIL
+                    )
+                    StatusPill(
+                        label = if (appLanguage == "Русский") "Пиры" else "Peers",
+                        value = if (heroActivePeers > 0) "$heroActivePeers 🟢" else "0",
+                        ok = if (heroActivePeers > 0) true else null,
+                        node = RadarNode.PEERS
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         // Chats Header
         Text(
             text = Localizations.getString("active_handshakes", appLanguage),
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = onSurfaceColor,
+            fontSize = 18.sp, fontWeight = FontWeight.Bold, color = onSurfaceColor,
             modifier = Modifier.padding(bottom = 12.dp)
         )
 
         // Peers List
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Saved Messages / Notes Chat
             val savedMessagesName = Localizations.getString("saved_messages_title", appLanguage)
             val savedMessagesDesc = Localizations.getString("saved_messages_desc", appLanguage)
             PeerRow(
                 peer = PeerItem(
-                    name = savedMessagesName,
-                    lastMsg = savedMessagesDesc,
-                    transport = "LOCAL RAM",
-                    isDirect = true,
-                    initials = "🔖"
+                    name = savedMessagesName, lastMsg = savedMessagesDesc,
+                    transport = "LOCAL RAM", isDirect = true, initials = "🔖"
                 ),
-                appLanguage = appLanguage,
-                primaryColor = primaryColor,
-                surfaceColor = surfaceColor,
-                onSurfaceColor = onSurfaceColor,
-                onSurfaceVariant = onSurfaceVariant,
+                appLanguage = appLanguage, primaryColor = primaryColor, surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor, onSurfaceVariant = onSurfaceVariant,
                 onClick = { onItemClick(Chat("Saved Messages")) }
             )
-
             mockPeers.forEach { peer ->
                 PeerRow(peer, appLanguage, primaryColor, surfaceColor, onSurfaceColor, onSurfaceVariant, onClick = { onItemClick(Chat(peer.name)) })
             }
         }
-        
+
         Spacer(modifier = Modifier.height(24.dp))
     }
 }
@@ -1095,7 +1279,8 @@ fun SettingsTab(
     onSurfaceColor: Color,
     onSurfaceVariant: Color,
     surfaceVariant: Color,
-    onDeleteAccount: () -> Unit
+    onDeleteAccount: () -> Unit,
+    onShowLogs: () -> Unit
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -1155,7 +1340,6 @@ fun SettingsTab(
     )
     
     var showLanguageDialog by remember { mutableStateOf(false) }
-    var showLogsDialog by remember { mutableStateOf(false) }
     
     // Passcode dialog flow states
     var showSetPasscodeDialog by remember { mutableStateOf(false) }
@@ -1925,7 +2109,7 @@ fun SettingsTab(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { showLogsDialog = true }
+                        .clickable { onShowLogs() }
                         .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -2034,370 +2218,6 @@ fun SettingsTab(
             containerColor = surfaceColor,
             shape = RoundedCornerShape(20.dp)
         )
-    }
-
-    if (showLogsDialog) {
-        var logsText by remember { mutableStateOf("") }
-        LaunchedEffect(Unit) {
-            logsText = readLogFile(context)
-        }
-        androidx.compose.ui.window.Dialog(
-            onDismissRequest = { showLogsDialog = false }
-        ) {
-            val dialogScrollState = rememberScrollState()
-            Card(
-                colors = CardDefaults.cardColors(containerColor = surfaceColor),
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 24.dp)
-                    .border(0.5.dp, primaryColor.copy(alpha = 0.15f), RoundedCornerShape(24.dp))
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(dialogScrollState)
-                        .padding(20.dp)
-                ) {
-                    // Header Row: Title & Action Buttons
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (appLanguage == "Русский") "Сетевой отладчик" else "Network Debugger",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = onSurfaceColor
-                        )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Refresh
-                            IconButton(
-                                onClick = { logsText = readLogFile(context) },
-                                modifier = Modifier.size(36.dp).background(onSurfaceColor.copy(alpha = 0.04f), shape = CircleShape)
-                            ) {
-                                Text("↻", fontSize = 16.sp, color = primaryColor, fontWeight = FontWeight.Bold)
-                            }
-                            // Clear
-                            IconButton(
-                                onClick = {
-                                    clearLogFile(context)
-                                    logsText = readLogFile(context)
-                                },
-                                modifier = Modifier.size(36.dp).background(onSurfaceColor.copy(alpha = 0.04f), shape = CircleShape)
-                            ) {
-                                Text("🗑", fontSize = 16.sp, color = Color.Red)
-                            }
-                            // Share
-                            IconButton(
-                                onClick = { shareLogFile(context) },
-                                modifier = Modifier.size(36.dp).background(onSurfaceColor.copy(alpha = 0.04f), shape = CircleShape)
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = android.R.drawable.ic_menu_share),
-                                    contentDescription = "Share",
-                                    tint = primaryColor,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Connection Info Cards
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = surfaceVariant.copy(alpha = 0.5f)),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Text(
-                                text = if (appLanguage == "Русский") "СТАТУС ПОДКЛЮЧЕНИЙ" else "CONNECTION DIAGNOSTICS",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = primaryColor,
-                                letterSpacing = 0.5.sp,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            )
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Порт сервера:" else "P2P Server Port:",
-                                    fontSize = 13.sp,
-                                    color = onSurfaceColor
-                                )
-                                Text(
-                                    text = "${P2PMessageRelay.listenerPort(context)} (listening)",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF4CAF50)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            val listenerPort = P2PMessageRelay.listenerPort(context)
-                            val announcedEndpoints = com.example.twopchat.PythonBridge.getLocalAddresses().map { host ->
-                                when {
-                                    host.contains(':') -> "[$host]:$listenerPort"
-                                    host == "10.0.2.16" -> "$host:$listenerPort (emulator local)"
-                                    else -> "$host:$listenerPort"
-                                }
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Анонсируемые endpoint-ы:" else "Announced endpoints:",
-                                    fontSize = 13.sp,
-                                    color = onSurfaceColor
-                                )
-                                Text(
-                                    text = "${announcedEndpoints.size}",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryColor
-                                )
-                            }
-                            if (announcedEndpoints.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(onSurfaceColor.copy(alpha = 0.02f), shape = RoundedCornerShape(8.dp))
-                                        .padding(8.dp)
-                                ) {
-                                    announcedEndpoints.forEach { endpoint ->
-                                        Text(
-                                            text = "• $endpoint",
-                                            fontSize = 11.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            val publicTrackerIpv4 = com.example.twopchat.P2PMessageRelay.peerEndpoints
-                                .values
-                                .flatMap { endpointCsv -> endpointCsv.split(",") }
-                                .map { it.trim() }
-                                .filter { endpoint -> endpoint.isNotEmpty() && !endpoint.startsWith("[") }
-                                .mapNotNull { endpoint ->
-                                    val host = endpoint.substringBeforeLast(":", "")
-                                    if (host.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+")) && host != "10.0.2.16") host else null
-                                }
-                                .distinct()
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Публичный IPv4 по данным трекеров:" else "Public IPv4 seen by trackers:",
-                                    fontSize = 13.sp,
-                                    color = onSurfaceColor
-                                )
-                                Text(
-                                    text = if (publicTrackerIpv4.isNotEmpty()) publicTrackerIpv4.joinToString(", ") else "n/a",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (publicTrackerIpv4.isNotEmpty()) Color(0xFF4CAF50) else onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            val yggTrackerDiagnostics = com.example.twopchat.PythonBridge
-                                .getTrackerDiagnostics()
-                                .filterKeys { it.contains("Yggdrasil", ignoreCase = true) }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Ygg tracker status:" else "Ygg tracker status:",
-                                    fontSize = 13.sp,
-                                    color = onSurfaceColor
-                                )
-                                Text(
-                                    text = "${yggTrackerDiagnostics.size}",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryColor
-                                )
-                            }
-                            if (yggTrackerDiagnostics.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(onSurfaceColor.copy(alpha = 0.02f), shape = RoundedCornerShape(8.dp))
-                                        .padding(8.dp)
-                                ) {
-                                    yggTrackerDiagnostics.forEach { (trackerName, status) ->
-                                        Text(
-                                            text = "• $trackerName -> $status",
-                                            fontSize = 11.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Локальный IPv4 адрес:" else "Local IPv4 Address:",
-                                    fontSize = 13.sp,
-                                    color = onSurfaceColor
-                                )
-                                val ipv4List = com.example.twopchat.PythonBridge.getLocalAddresses().filter { !it.contains(':') }
-                                Text(
-                                    text = if (ipv4List.isNotEmpty()) ipv4List.joinToString(", ") else "127.0.0.1",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryColor
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Мой Yggdrasil IPv6:" else "My Yggdrasil IPv6:",
-                                    fontSize = 13.sp,
-                                    color = onSurfaceColor
-                                )
-                                val yggAddress = com.example.twopchat.PythonBridge.getYggdrasilAddress()
-                                Text(
-                                    text = if (yggAddress.isNotEmpty()) yggAddress else (if (appLanguage == "Русский") "Не обнаружен" else "Not detected"),
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (yggAddress.isNotEmpty()) Color(0xFF4CAF50) else Color.Red
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            val yggDiagnostics = com.example.twopchat.PythonBridge.getYggdrasilNetworkDiagnostics()
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Проверка сети Yggdrasil:" else "Yggdrasil network check:",
-                                    fontSize = 13.sp,
-                                    color = onSurfaceColor
-                                )
-                                val state = yggDiagnostics["state"] ?: "disabled"
-                                val peers = yggDiagnostics["peers"] ?: "0"
-                                val routes = yggDiagnostics["routes"] ?: "0"
-                                Text(
-                                    text = "$state · peers=$peers · routes=$routes",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (state == "connected") Color(0xFF4CAF50) else Color.Red
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Активных пиров:" else "Resolved Peer IPs:",
-                                    fontSize = 13.sp,
-                                    color = onSurfaceColor
-                                )
-                                Text(
-                                    text = "${com.example.twopchat.P2PMessageRelay.peerEndpoints.size}",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryColor
-                                )
-                            }
-                            if (com.example.twopchat.P2PMessageRelay.peerEndpoints.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(onSurfaceColor.copy(alpha = 0.02f), shape = RoundedCornerShape(8.dp))
-                                        .padding(8.dp)
-                                ) {
-                                    com.example.twopchat.P2PMessageRelay.peerEndpoints.forEach { (peer, ip) ->
-                                        Text(
-                                            text = "• $peer -> $ip",
-                                            fontSize = 11.sp,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Text(
-                        text = if (appLanguage == "Русский") "СИСТЕМНЫЙ ЛОГ (app.log)" else "SYSTEM LOG (app.log)",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    )
-
-                    // Terminal Console Box
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(280.dp)
-                            .background(Color(0xFF070809), shape = RoundedCornerShape(12.dp))
-                            .border(0.5.dp, Color(0xFF39FF14).copy(alpha = 0.2f), shape = RoundedCornerShape(12.dp))
-                            .padding(10.dp)
-                    ) {
-                        val scrollState = rememberScrollState()
-                        LaunchedEffect(logsText) {
-                            scrollState.scrollTo(scrollState.maxValue)
-                        }
-                        
-                        SelectionContainer {
-                            Text(
-                                text = logsText,
-                                color = Color(0xFF39FF14),
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(scrollState)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Close Button
-                    Button(
-                        onClick = { showLogsDialog = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = Localizations.getString("close", appLanguage),
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-        }
     }
 
     if (showDisguiseInstructionDialog) {
@@ -3104,6 +2924,31 @@ private fun readLogFile(context: android.content.Context): String {
     }
 }
 
+private fun getTrackerPing(announceUrl: String): Long {
+    val startTime = System.currentTimeMillis()
+    try {
+        val cleanUrl = announceUrl.substringAfter("://").substringBefore("/")
+        val host = cleanUrl.substringBefore(":")
+        val cleanHost = if (host.startsWith("[") && host.endsWith("]")) {
+            host.substring(1, host.length - 1)
+        } else {
+            host
+        }
+        java.net.InetAddress.getByName(cleanHost)
+        return System.currentTimeMillis() - startTime
+    } catch (e: Exception) {
+        return -1L
+    }
+}
+
+@Composable
+private fun DetailRow(label: String, value: String, valueColor: Color) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text = value, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = valueColor, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
 private fun clearLogFile(context: android.content.Context) {
     try {
         val logFile = java.io.File(java.io.File(context.filesDir, "config"), "app.log")
@@ -3133,5 +2978,788 @@ private fun shareLogFile(context: android.content.Context) {
         }
     } catch (e: Exception) {
         android.widget.Toast.makeText(context, "Failed to share logs", android.widget.Toast.LENGTH_SHORT).show()
+    }
+}
+
+@Composable
+fun NetworkDiagnosticsDialog(
+    showLogsDialog: Boolean,
+    onDismissRequest: () -> Unit,
+    showRadarView: Boolean,
+    onShowRadarViewChange: (Boolean) -> Unit,
+    selectedRadarNode: RadarNode?,
+    onSelectedRadarNodeChange: (RadarNode?) -> Unit,
+    appLanguage: String,
+    primaryColor: Color,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
+    onSurfaceVariant: Color,
+    surfaceVariant: Color,
+    sharedPrefs: android.content.SharedPreferences
+) {
+    if (showLogsDialog) {
+        val context = LocalContext.current
+        var logsText by remember { mutableStateOf("") }
+        
+        var upnpDetails by remember { mutableStateOf(emptyMap<String, String>()) }
+        var trackerDiagnostics by remember { mutableStateOf(emptyMap<String, String>()) }
+        var yggDiagnostics by remember { mutableStateOf(emptyMap<String, String>()) }
+        
+        val refreshDiagnostics = {
+            logsText = readLogFile(context)
+            upnpDetails = PythonBridge.getUpnpDetails()
+            trackerDiagnostics = PythonBridge.getTrackerDiagnostics()
+            yggDiagnostics = PythonBridge.getYggdrasilNetworkDiagnostics()
+        }
+        
+        LaunchedEffect(Unit) {
+            refreshDiagnostics()
+        }
+
+        val upnpStatus = remember(upnpDetails) {
+            val mapped = upnpDetails["mapped"] == "true"
+            val err = upnpDetails["error"] ?: ""
+            when {
+                mapped -> NetworkNodeState.OK
+                err.contains("progress", ignoreCase = true) -> NetworkNodeState.WARNING
+                err.contains("Discovery", ignoreCase = true) || err.contains("SOAP", ignoreCase = true) -> NetworkNodeState.ERROR
+                else -> NetworkNodeState.DISABLED
+            }
+        }
+
+        val trackerStatus = remember(trackerDiagnostics) {
+            if (trackerDiagnostics.isEmpty()) {
+                NetworkNodeState.DISABLED
+            } else {
+                val okCount = trackerDiagnostics.values.count { it.contains("announce=ok", ignoreCase = true) }
+                if (okCount == trackerDiagnostics.size) {
+                    NetworkNodeState.OK
+                } else if (okCount > 0) {
+                    NetworkNodeState.WARNING
+                } else {
+                    NetworkNodeState.ERROR
+                }
+            }
+        }
+
+        val yggStatus = remember(yggDiagnostics) {
+            val state = yggDiagnostics["state"] ?: "disabled"
+            val peers = yggDiagnostics["peers"]?.toIntOrNull() ?: 0
+            when {
+                state == "connected" || (state == "enabled" && peers > 0) -> NetworkNodeState.OK
+                state == "enabled" && peers == 0 -> NetworkNodeState.WARNING
+                state == "disabled" -> NetworkNodeState.DISABLED
+                else -> NetworkNodeState.ERROR
+            }
+        }
+
+        val peersCount = P2PMessageRelay.peerEndpoints.size
+
+        val trackerUrls = remember {
+            mapOf(
+                "Torrent.eu.org UDP" to "udp://tracker.torrent.eu.org:451/announce",
+                "Open Stealth UDP" to "udp://open.stealth.si:80/announce",
+                "Exodus UDP" to "udp://exodus.desync.com:6969/announce",
+                "OpenTrackr HTTP" to "http://tracker.opentrackr.org:1337/announce",
+                "Dler HTTP" to "http://tracker2.dler.org:80/announce",
+                "Qu.Ax HTTP" to "http://tracker.qu.ax:6969/announce",
+                "Yemekyedim HTTPS" to "https://tracker.yemekyedim.com:443/announce",
+                "Nyacat HTTPS" to "https://tr.nyacat.pw:443/announce",
+                "Yggdrasil-only HTTP" to "http://[200:1e2f:e608:eb3a:2bf:1e62:87ba:e2f7]/announce",
+                "Yggdrasil-only UDP" to "udp://[202:68d0:f0d5:b88d:1d1a:555e:2f6b:3148]:6969/announce"
+            )
+        }
+
+        val trackerPings = remember { mutableStateMapOf<String, Long>() }
+        LaunchedEffect(selectedRadarNode, trackerDiagnostics) {
+            if (selectedRadarNode == RadarNode.TRACKERS) {
+                trackerDiagnostics.keys.forEach { name ->
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val url = trackerUrls[name] ?: ""
+                        val ping = getTrackerPing(url)
+                        trackerPings[name] = ping
+                    }
+                }
+            }
+        }
+
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { onDismissRequest() }
+        ) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.85f)
+                    .padding(vertical = 12.dp)
+                    .border(0.5.dp, primaryColor.copy(alpha = 0.15f), RoundedCornerShape(24.dp))
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(20.dp)
+                    ) {
+                        // Header Row: Title & Action Buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (appLanguage == "Русский") "Сетевой отладчик" else "Network Debugger",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = onSurfaceColor
+                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Refresh
+                                IconButton(
+                                    onClick = { refreshDiagnostics() },
+                                    modifier = Modifier.size(36.dp).background(onSurfaceColor.copy(alpha = 0.04f), shape = CircleShape)
+                                ) {
+                                    Text("↻", fontSize = 16.sp, color = primaryColor, fontWeight = FontWeight.Bold)
+                                }
+                                // Clear (only logs)
+                                IconButton(
+                                    onClick = {
+                                        clearLogFile(context)
+                                        logsText = readLogFile(context)
+                                    },
+                                    modifier = Modifier.size(36.dp).background(onSurfaceColor.copy(alpha = 0.04f), shape = CircleShape)
+                                ) {
+                                    Text("🗑", fontSize = 16.sp, color = Color.Red)
+                                }
+                                // Share (only logs)
+                                IconButton(
+                                    onClick = { shareLogFile(context) },
+                                    modifier = Modifier.size(36.dp).background(onSurfaceColor.copy(alpha = 0.04f), shape = CircleShape)
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = android.R.drawable.ic_menu_share),
+                                        contentDescription = "Share",
+                                        tint = primaryColor,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Toggle Buttons (Radar vs Logs)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(onSurfaceColor.copy(alpha = 0.04f), shape = RoundedCornerShape(12.dp))
+                                .padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Button(
+                                onClick = { onShowRadarViewChange(true) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (showRadarView) primaryColor else Color.Transparent,
+                                    contentColor = if (showRadarView) Color.White else onSurfaceColor
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Радар связей" else "Radar View",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Button(
+                                onClick = { onShowRadarViewChange(false) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (!showRadarView) primaryColor else Color.Transparent,
+                                    contentColor = if (!showRadarView) Color.White else onSurfaceColor
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Консоль логов" else "Logs Console",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        if (showRadarView) {
+                            // RADAR VIEW MODE
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                NetworkRadarWidget(
+                                    upnpStatus = upnpStatus,
+                                    trackerStatus = trackerStatus,
+                                    yggStatus = yggStatus,
+                                    peersCount = peersCount,
+                                    onNodeClicked = { node ->
+                                        onSelectedRadarNodeChange(node)
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                                
+                                Text(
+                                    text = if (appLanguage == "Русский") "Нажмите на узел радара для подробностей" else "Tap a radar node for connection details",
+                                    fontSize = 11.sp,
+                                    color = onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        } else {
+                            // RAW LOGS CONSOLE MODE
+                            val dialogScrollState = rememberScrollState()
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .verticalScroll(dialogScrollState)
+                            ) {
+                                // Connection Info Cards
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = surfaceVariant.copy(alpha = 0.5f)),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
+                                        Text(
+                                            text = if (appLanguage == "Русский") "СТАТУС ПОДКЛЮЧЕНИЙ" else "CONNECTION DIAGNOSTICS",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = primaryColor,
+                                            letterSpacing = 0.5.sp,
+                                            modifier = Modifier.padding(bottom = 8.dp)
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = if (appLanguage == "Русский") "Порт сервера:" else "P2P Server Port:",
+                                                fontSize = 13.sp,
+                                                color = onSurfaceColor
+                                            )
+                                            Text(
+                                                text = "${P2PMessageRelay.listenerPort(context)} (listening)",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF4CAF50)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        val listenerPort = P2PMessageRelay.listenerPort(context)
+                                        val announcedEndpoints = PythonBridge.getLocalAddresses().map { host ->
+                                            when {
+                                                host.contains(':') -> "[$host]:$listenerPort"
+                                                host == "10.0.2.16" -> "$host:$listenerPort (emulator local)"
+                                                else -> "$host:$listenerPort"
+                                            }
+                                        }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = if (appLanguage == "Русский") "Анонсируемые endpoint-ы:" else "Announced endpoints:",
+                                                fontSize = 13.sp,
+                                                color = onSurfaceColor
+                                            )
+                                            Text(
+                                                text = "${announcedEndpoints.size}",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = primaryColor
+                                            )
+                                        }
+                                        if (announcedEndpoints.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .background(onSurfaceColor.copy(alpha = 0.02f), shape = RoundedCornerShape(8.dp))
+                                                    .padding(8.dp)
+                                            ) {
+                                                announcedEndpoints.forEach { endpoint ->
+                                                    Text(
+                                                        text = "• $endpoint",
+                                                        fontSize = 11.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        color = onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        val publicTrackerIpv4 = com.example.twopchat.P2PMessageRelay.peerEndpoints
+                                            .values
+                                            .flatMap { endpointCsv -> endpointCsv.split(",") }
+                                            .map { it.trim() }
+                                            .filter { endpoint -> endpoint.isNotEmpty() && !endpoint.startsWith("[") }
+                                            .mapNotNull { endpoint ->
+                                                val host = endpoint.substringBeforeLast(":", "")
+                                                if (host.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+")) && host != "10.0.2.16") host else null
+                                            }
+                                            .distinct()
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = if (appLanguage == "Русский") "Публичный IPv4 по данным трекеров:" else "Public IPv4 seen by trackers:",
+                                                fontSize = 13.sp,
+                                                color = onSurfaceColor
+                                            )
+                                            Text(
+                                                text = if (publicTrackerIpv4.isNotEmpty()) publicTrackerIpv4.joinToString(", ") else "n/a",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (publicTrackerIpv4.isNotEmpty()) Color(0xFF4CAF50) else onSurfaceVariant
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        val yggTrackerDiagnosticsMap = trackerDiagnostics
+                                            .filterKeys { it.contains("Yggdrasil", ignoreCase = true) }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = "Ygg tracker status:",
+                                                fontSize = 13.sp,
+                                                color = onSurfaceColor
+                                            )
+                                            Text(
+                                                text = "${yggTrackerDiagnosticsMap.size}",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = primaryColor
+                                            )
+                                        }
+                                        if (yggTrackerDiagnosticsMap.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .background(onSurfaceColor.copy(alpha = 0.02f), shape = RoundedCornerShape(8.dp))
+                                                    .padding(8.dp)
+                                            ) {
+                                                yggTrackerDiagnosticsMap.forEach { (trackerName, status) ->
+                                                    Text(
+                                                        text = "• $trackerName -> $status",
+                                                        fontSize = 11.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        color = onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = if (appLanguage == "Русский") "Локальный IPv4 адрес:" else "Local IPv4 Address:",
+                                                fontSize = 13.sp,
+                                                color = onSurfaceColor
+                                            )
+                                            val ipv4List = PythonBridge.getLocalAddresses().filter { !it.contains(':') }
+                                            Text(
+                                                text = if (ipv4List.isNotEmpty()) ipv4List.joinToString(", ") else "127.0.0.1",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = primaryColor
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = if (appLanguage == "Русский") "Мой Yggdrasil IPv6:" else "My Yggdrasil IPv6:",
+                                                fontSize = 13.sp,
+                                                color = onSurfaceColor
+                                            )
+                                            val yggAddress = PythonBridge.getYggdrasilAddress()
+                                            Text(
+                                                text = if (yggAddress.isNotEmpty()) yggAddress else (if (appLanguage == "Русский") "Не обнаружен" else "Not detected"),
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (yggAddress.isNotEmpty()) Color(0xFF4CAF50) else Color.Red
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = if (appLanguage == "Русский") "Проверка сети Yggdrasil:" else "Yggdrasil network check:",
+                                                fontSize = 13.sp,
+                                                color = onSurfaceColor
+                                            )
+                                            val state = yggDiagnostics["state"] ?: "disabled"
+                                            val peers = yggDiagnostics["peers"] ?: "0"
+                                            val routes = yggDiagnostics["routes"] ?: "0"
+                                            Text(
+                                                text = "$state · peers=$peers · routes=$routes",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (state == "connected") Color(0xFF4CAF50) else Color.Red
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = if (appLanguage == "Русский") "Активных пиров:" else "Resolved Peer IPs:",
+                                                fontSize = 13.sp,
+                                                color = onSurfaceColor
+                                            )
+                                            Text(
+                                                text = "${com.example.twopchat.P2PMessageRelay.peerEndpoints.size}",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = primaryColor
+                                            )
+                                        }
+                                        if (com.example.twopchat.P2PMessageRelay.peerEndpoints.isNotEmpty()) {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .background(onSurfaceColor.copy(alpha = 0.02f), shape = RoundedCornerShape(8.dp))
+                                                    .padding(8.dp)
+                                            ) {
+                                                com.example.twopchat.P2PMessageRelay.peerEndpoints.forEach { (peer, ip) ->
+                                                    Text(
+                                                        text = "• $peer -> $ip",
+                                                        fontSize = 11.sp,
+                                                        fontFamily = FontFamily.Monospace,
+                                                        color = onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
+                                Text(
+                                    text = if (appLanguage == "Русский") "СИСТЕМНЫЙ ЛОГ (app.log)" else "SYSTEM LOG (app.log)",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 6.dp)
+                                )
+
+                                // Terminal Console Box
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(280.dp)
+                                        .background(Color(0xFF070809), shape = RoundedCornerShape(12.dp))
+                                        .border(0.5.dp, Color(0xFF39FF14).copy(alpha = 0.2f), shape = RoundedCornerShape(12.dp))
+                                        .padding(10.dp)
+                                ) {
+                                    val consoleScrollState = rememberScrollState()
+                                    LaunchedEffect(logsText) {
+                                        consoleScrollState.scrollTo(consoleScrollState.maxValue)
+                                    }
+                                    
+                                    SelectionContainer {
+                                        Text(
+                                            text = logsText,
+                                            color = Color(0xFF39FF14),
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 10.sp,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .verticalScroll(consoleScrollState)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Close Button
+                        Button(
+                            onClick = { onDismissRequest() },
+                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = Localizations.getString("close", appLanguage),
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Sliding detail BottomSheet-like drawer
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showRadarView && selectedRadarNode != null,
+                        enter = slideInVertically(initialOffsetY = { it }),
+                        exit = slideOutVertically(targetOffsetY = { it }),
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                    ) {
+                        selectedRadarNode?.let { node ->
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = surfaceVariant),
+                                shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .fillMaxHeight(0.65f)
+                                    .border(0.5.dp, primaryColor.copy(alpha = 0.2f), RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(16.dp)
+                                ) {
+                                    // Drawer Header
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = if (appLanguage == "Русский") node.labelRu else node.labelEn,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 16.sp,
+                                            color = onSurfaceColor
+                                        )
+                                        IconButton(
+                                            onClick = { onSelectedRadarNodeChange(null) },
+                                            modifier = Modifier.size(30.dp).background(onSurfaceColor.copy(alpha = 0.05f), shape = CircleShape)
+                                        ) {
+                                            Text("✕", fontSize = 12.sp, color = onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    
+                                    // Drawer Content (Scrollable list of details)
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .verticalScroll(rememberScrollState()),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        when (node) {
+                                            RadarNode.SELF -> {
+                                                val localIps = PythonBridge.getLocalAddresses()
+                                                DetailRow(if (appLanguage == "Русский") "Мой Fingerprint:" else "My Fingerprint:", PythonBridge.getLocalFingerprint(), primaryColor)
+                                                DetailRow(if (appLanguage == "Русский") "Порт P2P Сервера:" else "P2P Server Port:", "${P2PMessageRelay.listenerPort(context)} (listening)", Color(0xFF4CAF50))
+                                                DetailRow(if (appLanguage == "Русский") "Локальные IP адреса:" else "Local IP Addresses:", localIps.joinToString("\n"), primaryColor)
+                                            }
+                                            RadarNode.ROUTER -> {
+                                                val mapped = upnpDetails["mapped"] == "true"
+                                                val extIp = upnpDetails["external_ip"] ?: "n/a"
+                                                val intIp = upnpDetails["local_ip"] ?: "n/a"
+                                                val port = upnpDetails["port"] ?: "n/a"
+                                                val service = upnpDetails["service_type"] ?: "n/a"
+                                                val controlUrl = upnpDetails["control_url"] ?: "n/a"
+                                                val errorMsg = upnpDetails["error"] ?: "n/a"
+                                                
+                                                DetailRow(if (appLanguage == "Русский") "Статус проброса:" else "UPnP Mapped Status:", if (mapped) "CONNECTED / OK" else "FAILED / OFFLINE", if (mapped) Color(0xFF4CAF50) else Color.Red)
+                                                DetailRow(if (appLanguage == "Русский") "Внешний IP адрес:" else "Router External IP:", extIp, primaryColor)
+                                                DetailRow(if (appLanguage == "Русский") "Внутренний IP адрес:" else "Client Internal IP:", intIp, primaryColor)
+                                                DetailRow(if (appLanguage == "Русский") "Проброшенный порт:" else "Mapped Port:", port, primaryColor)
+                                                DetailRow(if (appLanguage == "Русский") "Тип шлюза / Service:" else "Gateway Service:", service, primaryColor)
+                                                DetailRow(if (appLanguage == "Русский") "Адрес управления (SOAP):" else "Control SOAP URL:", controlUrl, onSurfaceVariant)
+                                                if (!mapped) {
+                                                    DetailRow(if (appLanguage == "Русский") "Код ошибки:" else "Error message:", errorMsg, Color.Red)
+                                                }
+                                                
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                
+                                                var upnpReopening by remember { mutableStateOf(false) }
+                                                val coroutineScope = rememberCoroutineScope()
+                                                
+                                                Button(
+                                                    onClick = {
+                                                        upnpReopening = true
+                                                        coroutineScope.launch {
+                                                            val success = PythonBridge.triggerUpnpReopen()
+                                                            kotlinx.coroutines.delay(2000)
+                                                            refreshDiagnostics()
+                                                            upnpReopening = false
+                                                            Toast.makeText(context, if (success) "UPnP reopen triggered!" else "Failed to trigger UPnP reopen", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    },
+                                                    enabled = !upnpReopening,
+                                                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    if (upnpReopening) {
+                                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                                                    } else {
+                                                        Text(if (appLanguage == "Русский") "Переоткрыть порт" else "Re-open Port", color = Color.White)
+                                                    }
+                                                }
+                                            }
+                                            RadarNode.TRACKERS -> {
+                                                trackerDiagnostics.forEach { (name, status) ->
+                                                    val ping = trackerPings[name]
+                                                    val pingText = if (ping == null) {
+                                                        if (appLanguage == "Русский") "опрос..." else "probing..."
+                                                    } else if (ping < 0) {
+                                                        "timeout"
+                                                    } else {
+                                                        "${ping}ms"
+                                                    }
+                                                    Card(
+                                                        colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.3f)),
+                                                        modifier = Modifier.fillMaxWidth().border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                                    ) {
+                                                        Column(modifier = Modifier.padding(10.dp)) {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween
+                                                            ) {
+                                                                Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = onSurfaceColor)
+                                                                Text(pingText, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (ping != null && ping >= 0) Color(0xFF4CAF50) else Color.Red)
+                                                            }
+                                                            Spacer(modifier = Modifier.height(4.dp))
+                                                            Text(
+                                                                text = status,
+                                                                fontSize = 11.sp,
+                                                                fontFamily = FontFamily.Monospace,
+                                                                color = onSurfaceVariant
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            RadarNode.YGGDRASIL -> {
+                                                val state = yggDiagnostics["state"] ?: "disabled"
+                                                val peers = yggDiagnostics["peers"] ?: "0"
+                                                val routes = yggDiagnostics["routes"] ?: "0"
+                                                val treeNodes = yggDiagnostics["tree_nodes"] ?: "0"
+                                                val address = PythonBridge.getYggdrasilAddress()
+                                                
+                                                DetailRow(if (appLanguage == "Русский") "Статус Go-демона:" else "Daemon Status:", state.uppercase(), if (state == "connected") Color(0xFF4CAF50) else Color.Red)
+                                                DetailRow(if (appLanguage == "Русский") "Адрес IPv6 Yggdrasil:" else "Yggdrasil IPv6:", if (address.isNotEmpty()) address else "n/a", primaryColor)
+                                                DetailRow(if (appLanguage == "Русский") "Количество пиров (mesh):" else "Mesh Peers Count:", peers, primaryColor)
+                                                DetailRow(if (appLanguage == "Русский") "Количество маршрутов:" else "Routing table size:", routes, primaryColor)
+                                                DetailRow(if (appLanguage == "Русский") "Узлов в дереве (DHT):" else "DHT tree nodes count:", treeNodes, primaryColor)
+                                                
+                                                val yggPeersJsonStr = sharedPrefs.getString("yggdrasil_runtime_peers_json", "") ?: ""
+                                                if (yggPeersJsonStr.isNotEmpty() && yggPeersJsonStr != "null") {
+                                                    Spacer(modifier = Modifier.height(8.dp))
+                                                    Text(if (appLanguage == "Русский") "ПУБЛИЧНЫЕ ПИРЫ:" else "PUBLIC MESH PEERS:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = primaryColor)
+                                                    
+                                                    val peersList = remember(yggPeersJsonStr) {
+                                                        val list = mutableListOf<Map<String, String>>()
+                                                        try {
+                                                            val arr = JSONArray(yggPeersJsonStr)
+                                                            for (i in 0 until arr.length()) {
+                                                                val obj = arr.getJSONObject(i)
+                                                                val addr = obj.optString("address", obj.optString("endpoint", "unknown"))
+                                                                val uptime = obj.optDouble("uptime", 0.0).toLong()
+                                                                val uptimeText = if (uptime > 0) "${uptime / 60}m ${uptime % 60}s" else "connected"
+                                                                val tx = obj.optLong("bytes_sent", obj.optLong("tx", 0))
+                                                                val rx = obj.optLong("bytes_recv", obj.optLong("rx", 0))
+                                                                list.add(mapOf(
+                                                                    "address" to addr,
+                                                                    "uptime" to uptimeText,
+                                                                    "traffic" to "TX: ${tx / 1024} KB / RX: ${rx / 1024} KB"
+                                                                ))
+                                                            }
+                                                        } catch (e: Exception) {
+                                                            e.printStackTrace()
+                                                        }
+                                                        list
+                                                    }
+                                                    
+                                                    peersList.forEach { peerMap ->
+                                                        Card(
+                                                            colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.3f)),
+                                                            modifier = Modifier.fillMaxWidth().border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                                        ) {
+                                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                                Text(peerMap["address"] ?: "", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = onSurfaceColor)
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                                ) {
+                                                                    Text("Uptime: ${peerMap["uptime"]}", fontSize = 11.sp, color = onSurfaceVariant)
+                                                                    Text(peerMap["traffic"] ?: "", fontSize = 11.sp, color = onSurfaceVariant)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            RadarNode.PEERS -> {
+                                                val activePeers = PythonBridge.getActivePeers()
+                                                if (activePeers.isEmpty()) {
+                                                    Text(
+                                                        text = if (appLanguage == "Русский") "Нет активных сессий Double Ratchet" else "No active Double Ratchet sessions established",
+                                                        color = onSurfaceVariant,
+                                                        fontSize = 13.sp
+                                                    )
+                                                } else {
+                                                    activePeers.forEach { name ->
+                                                        val endpoint = P2PMessageRelay.peerEndpoints[name] ?: "resolving..."
+                                                        val transport = P2PMessageRelay.peerConnectionTransports[name] ?: "direct"
+                                                        val isEstablished = P2PMessageRelay.peerSessionStates[name] ?: true
+                                                        Card(
+                                                            colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.3f)),
+                                                            modifier = Modifier.fillMaxWidth().border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                                        ) {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Column {
+                                                                    Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = onSurfaceColor)
+                                                                    Text("EP: $endpoint", fontSize = 11.sp, color = onSurfaceVariant)
+                                                                    Text("Transport: $transport", fontSize = 11.sp, color = primaryColor)
+                                                                }
+                                                                Text(
+                                                                    text = if (isEstablished) "ONLINE" else "WAITING",
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    fontSize = 11.sp,
+                                                                    color = if (isEstablished) Color(0xFF4CAF50) else Color(0xFFFFC107)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

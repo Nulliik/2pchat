@@ -6,6 +6,16 @@ import xml.etree.ElementTree as ET
 import threading
 
 _upnp_mapping = None  # Tuple of (control_url, service_type, external_port)
+_upnp_status = {
+    "mapped": False,
+    "local_ip": "n/a",
+    "external_ip": "n/a",
+    "port": 0,
+    "service_type": "n/a",
+    "control_url": "n/a",
+    "error": "Not started"
+}
+
 
 def discover_gateway_control_url():
     ssdp_request = (
@@ -120,6 +130,32 @@ def parse_desc_xml(location_url):
         print(f"[UPNP] Error parsing description XML at {location_url}: {e}")
     return None, None
 
+def get_external_ip(control_url, service_type):
+    soap_body = f"""<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:GetExternalIPAddress xmlns:u="{service_type}">
+    </u:GetExternalIPAddress>
+  </s:Body>
+</s:Envelope>"""
+
+    headers = {
+        'Content-Type': 'text/xml; charset="utf-8"',
+        'SOAPACTION': f'"{service_type}#GetExternalIPAddress"',
+    }
+    
+    req = urllib.request.Request(control_url, data=soap_body.encode('utf-8'), headers=headers, method='POST')
+    try:
+        with urllib.request.urlopen(req, timeout=3.0) as response:
+            xml_data = response.read().decode('utf-8')
+            root = ET.fromstring(xml_data)
+            ext_ip_elem = find_element_by_tag_name(root, 'NewExternalIPAddress')
+            if ext_ip_elem is not None:
+                return ext_ip_elem.text
+    except Exception as e:
+        print(f"[UPNP] SOAP GetExternalIPAddress error: {e}")
+    return None
+
 def add_port_mapping(control_url, service_type, external_port, internal_port, internal_client, protocol="TCP", duration=3600, description="2PChat"):
     soap_body = f"""<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
@@ -181,12 +217,26 @@ def setup_upnp_in_background(port):
     """
     Spins up a daemon thread to discover UPnP gateway and add port mapping.
     """
+    global _upnp_status, _upnp_mapping
+    _upnp_status = {
+        "mapped": False,
+        "local_ip": "n/a",
+        "external_ip": "n/a",
+        "port": port,
+        "service_type": "n/a",
+        "control_url": "n/a",
+        "error": "SSDP discovery in progress"
+    }
+
     def run():
-        global _upnp_mapping
+        global _upnp_status, _upnp_mapping
         try:
             print("[UPNP] Discovering UPnP gateway...")
             control_url, service_type = discover_gateway_control_url()
             if control_url:
+                _upnp_status["control_url"] = control_url
+                _upnp_status["service_type"] = service_type
+                
                 # Detect the local IP that connects to the router
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 try:
@@ -198,19 +248,30 @@ def setup_upnp_in_background(port):
                     sock.close()
                 
                 if local_ip and not local_ip.startswith('127.'):
+                    _upnp_status["local_ip"] = local_ip
                     print(f"[UPNP] Mapping external port {port} to internal client {local_ip}:{port}")
+                    _upnp_status["error"] = "Adding port mapping SOAP request..."
                     success = add_port_mapping(control_url, service_type, port, port, local_ip)
                     if success:
                         print(f"[UPNP] Successfully mapped port {port} via UPnP.")
+                        ext_ip = get_external_ip(control_url, service_type) or "n/a"
+                        _upnp_status["external_ip"] = ext_ip
+                        _upnp_status["mapped"] = True
+                        _upnp_status["error"] = "OK"
                         _upnp_mapping = (control_url, service_type, port)
                     else:
                         print("[UPNP] Failed to add port mapping.")
+                        _upnp_status["error"] = "SOAP AddPortMapping request rejected by router"
+                        _upnp_mapping = None
                 else:
                     print("[UPNP] Could not determine a valid local IP address.")
+                    _upnp_status["error"] = "Could not find a valid local IP (loopback or no routing interface)"
             else:
                 print("[UPNP] UPnP gateway connection device not found.")
+                _upnp_status["error"] = "SSDP Discovery timed out (gateway not found)"
         except Exception as e:
             print(f"[UPNP] Background setup failed: {e}")
+            _upnp_status["error"] = f"Background error: {str(e)}"
 
     t = threading.Thread(target=run, name="UPnPSetupThread", daemon=True)
     t.start()
@@ -219,7 +280,16 @@ def stop_upnp():
     """
     Removes the UPnP port mapping if one was successfully established.
     """
-    global _upnp_mapping
+    global _upnp_status, _upnp_mapping
+    _upnp_status = {
+        "mapped": False,
+        "local_ip": "n/a",
+        "external_ip": "n/a",
+        "port": 0,
+        "service_type": "n/a",
+        "control_url": "n/a",
+        "error": "Stopped"
+    }
     if _upnp_mapping:
         control_url, service_type, port = _upnp_mapping
         _upnp_mapping = None

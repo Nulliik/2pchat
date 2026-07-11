@@ -388,4 +388,49 @@ object PythonBridge {
             false
         }
     }
+
+    fun isUpnpMapped(): Boolean {
+        if (!isInitialized) return false
+        return try {
+            val py = Python.getInstance()
+            val bridge = py.getModule("discovery_bridge")
+            bridge.callAttr("is_upnp_mapped").toBoolean()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking UPnP mapping status", e)
+            false
+        }
+    }
+
+    fun getUpnpDetails(): Map<String, String> {
+        if (!isInitialized) return emptyMap()
+        return try {
+            val py = Python.getInstance()
+            val bridge = py.getModule("discovery_bridge")
+            val jsonStr = bridge.callAttr("get_upnp_details_json").toString()
+            val json = JSONObject(jsonStr)
+            val result = mutableMapOf<String, String>()
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                result[key] = json.getString(key)
+            }
+            result
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting UPnP details", e)
+            emptyMap()
+        }
+    }
+
+    fun triggerUpnpReopen(): Boolean {
+        if (!isInitialized) return false
+        return try {
+            val py = Python.getInstance()
+            val bridge = py.getModule("discovery_bridge")
+            bridge.callAttr("trigger_upnp_reopen").toBoolean()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error triggering UPnP reopen", e)
+            false
+        }
+    }
 }
+
