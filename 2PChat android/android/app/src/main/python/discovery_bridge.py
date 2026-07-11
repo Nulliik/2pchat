@@ -135,8 +135,8 @@ def set_ipv4_enabled(enabled: bool):
 
 
 def _endpoint_sort_key(endpoint_str: str) -> tuple[int, str]:
-    # Prefer IPv4 first for the default direct path, then try IPv6/Yggdrasil.
-    return (0 if not endpoint_str.startswith("[") else 1, endpoint_str)
+    # Prefer Yggdrasil IPv6 first (starts with "[") for reliability over NAT/firewalls, then fallback to IPv4.
+    return (0 if endpoint_str.startswith("[") else 1, endpoint_str)
 
 
 def _parse_endpoint_hosts(addresses, port: int):

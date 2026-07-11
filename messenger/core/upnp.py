@@ -120,7 +120,7 @@ def parse_desc_xml(location_url):
                 if service_type_elem is not None and control_url_elem is not None:
                     st = service_type_elem.text
                     cu = control_url_elem.text
-                    if st and ("WANIPConnection:1" in st or "WANPPPConnection:1" in st):
+                    if st and ("WANIPConnection" in st or "WANPPPConnection" in st):
                         parsed_loc = urllib.parse.urlparse(location_url)
                         base_url = f"{parsed_loc.scheme}://{parsed_loc.netloc}"
                         if cu.startswith("http://") or cu.startswith("https://"):

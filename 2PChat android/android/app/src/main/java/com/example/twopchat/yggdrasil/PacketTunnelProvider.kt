@@ -169,14 +169,15 @@ open class PacketTunnelProvider: VpnService() {
 
         val preferences = yggdrasilPrefs(this)
         val serverString = preferences.getString(KEY_DNS_SERVERS, "")
-        if (serverString!!.isNotEmpty()) {
-            val servers = serverString.split(",")
-            if (servers.isNotEmpty()) {
-                servers.forEach {
-                    Log.i(TAG, "Using DNS server $it")
-                    builder.addDnsServer(it)
-                }
-            }
+        val dnsServers = if (serverString.isNullOrBlank()) {
+            // Fallback to standard public DNS servers so DNS queries don't fail when VPN is running
+            listOf("1.1.1.1", "8.8.8.8", "2001:4860:4860::8888", "2606:4700:4700::1111")
+        } else {
+            serverString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        }
+        dnsServers.forEach {
+            Log.i(TAG, "Using DNS server $it")
+            builder.addDnsServer(it)
         }
         if (preferences.getBoolean(KEY_ENABLE_CHROME_FIX, false)) {
             builder.addRoute("2001:4860:4860::8888", 128)
