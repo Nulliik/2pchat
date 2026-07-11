@@ -230,3 +230,13 @@ Launch_2PChat_GUI.log
 Android_App/.DS_Store
 Android_App/.idea/
 Android_App/android/local.properties
+
+# Android build outputs and machine-local configuration
+2PChat android/android/.gradle/
+2PChat android/android/**/build/
+2PChat android/android/local.properties
+2PChat android/android/**/.cxx/
+2PChat android/android/**/.externalNativeBuild/
+2PChat android/android/captures/
+*.apk
+*.aab

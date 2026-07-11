@@ -12,7 +12,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -226,32 +225,31 @@ fun NetworkRadarWidget(
             val peersState = if (peersCount > 0) NetworkNodeState.OK else NetworkNodeState.WARNING
             drawLinkLine(RadarNode.PEERS, peersState)
 
-            // 5. Draw Scanning Sweep Gradient & Leading Neon Edge
-            rotate(degrees = sweepAngle, pivot = center) {
-                // Fading scan sweep sector
+            // 5. Draw a trailing scan sector and its leading edge in one coordinate
+            // system. Rotating a sweep-gradient brush and an arc together caused the
+            // gradient and the line to drift visually on some GPU renderers.
+            val trailDegrees = 70f
+            val trailSegments = 28
+            for (segment in 0 until trailSegments) {
+                val progress = (segment + 1f) / trailSegments
                 drawArc(
-                    brush = androidx.compose.ui.graphics.Brush.sweepGradient(
-                        colors = listOf(primaryColor.copy(alpha = 0.24f), Color.Transparent),
-                        center = center
-                    ),
-                    startAngle = 0f,
-                    sweepAngle = 100f,
+                    color = primaryColor.copy(alpha = 0.22f * progress),
+                    startAngle = sweepAngle - trailDegrees + segment * (trailDegrees / trailSegments),
+                    sweepAngle = trailDegrees / trailSegments + 0.35f,
                     useCenter = true
                 )
-                
-                // Bright neon leading edge line
-                val leadAngleRad = Math.toRadians(100.0)
-                val leadEdgeEnd = Offset(
-                    center.x + (maxRadius * cos(leadAngleRad)).toFloat(),
-                    center.y + (maxRadius * sin(leadAngleRad)).toFloat()
-                )
-                drawLine(
-                    color = primaryColor.copy(alpha = 0.7f),
-                    start = center,
-                    end = leadEdgeEnd,
-                    strokeWidth = 2.dp.toPx()
-                )
             }
+            val leadAngleRad = Math.toRadians(sweepAngle.toDouble())
+            val leadEdgeEnd = Offset(
+                center.x + (maxRadius * cos(leadAngleRad)).toFloat(),
+                center.y + (maxRadius * sin(leadAngleRad)).toFloat()
+            )
+            drawLine(
+                color = primaryColor.copy(alpha = 0.8f),
+                start = center,
+                end = leadEdgeEnd,
+                strokeWidth = 2.dp.toPx()
+            )
 
             // 6. Draw Radar Nodes & Ping Wave Ripple Effect
             fun drawNode(node: RadarNode, state: NetworkNodeState, codeLabel: String) {
