@@ -4,6 +4,12 @@ import android.widget.Toast
 import android.content.Intent
 import android.net.VpnService
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
+import androidx.core.content.edit
+import com.example.twopchat.data.ChatDatabaseHelper
+import com.example.twopchat.data.Localizations
+import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.SecureStorage
+import com.example.twopchat.R
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -52,7 +58,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.theme.StealthBlack
-import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -76,7 +81,8 @@ data class Message(
     val replyToId: String? = null,
     val replyToText: String? = null,
     val replyToName: String? = null,
-    val status: String? = null
+    val status: String? = null,
+    val reactions: Map<String, List<String>> = emptyMap()
 )
 
 private fun newMessageId(): String = java.util.UUID.randomUUID().toString()
@@ -134,7 +140,7 @@ fun SwipeToReplyContainer(
                 contentAlignment = alignment
             ) {
                 Icon(
-                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_reply),
+                    painter = painterResource(id = R.drawable.ic_reply),
                     contentDescription = "Reply",
                     tint = MaterialTheme.colorScheme.primary.copy(alpha = iconAlpha),
                     modifier = Modifier
@@ -224,7 +230,7 @@ fun ChatScreen(
                     action = PacketTunnelProvider.ACTION_START
                 }
                 context.startService(intent)
-                sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+                sharedPrefs.edit { putBoolean("settings_yggdrasil", true) }
                 Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
             }
         }
@@ -245,7 +251,7 @@ fun ChatScreen(
 
 
     // Determine initial messages based on peer
-    val db = remember(context) { com.example.twopchat.data.ChatDatabaseHelper(context) }
+    val db = remember(context) { ChatDatabaseHelper(context) }
     val persistEnabled = remember(context) { sharedPrefs.getBoolean("persist_chat_history", true) }
     val initialMessages = remember(peerName) {
         val mockList = when (peerName) {
@@ -289,13 +295,13 @@ fun ChatScreen(
     var inputText by remember { mutableStateOf("") }
     var myTypingState by remember { mutableStateOf(false) }
     var localMockTyping by remember { mutableStateOf(false) }
-    val isTyping = localMockTyping || (com.example.twopchat.P2PMessageRelay.peerTypingStates[peerName] ?: false)
+    val isTyping = localMockTyping || (P2PMessageRelay.peerTypingStates[peerName] ?: false)
 
     LaunchedEffect(peerName) {
-        val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
+        val endpoint = P2PMessageRelay.peerEndpoints[peerName]
         if (endpoint != null && peerName != "Saved Messages") {
-            com.example.twopchat.P2PMessageRelay.shareAvatar(context, peerName, endpoint)
-            com.example.twopchat.P2PMessageRelay.processOfflineQueue(context, peerName, endpoint)
+            P2PMessageRelay.shareAvatar(context, peerName, endpoint)
+            P2PMessageRelay.processOfflineQueue(context, peerName, endpoint)
             
             // Mark all existing incoming messages as READ in database and send read receipts
             initialMessages.forEach { msg ->
@@ -305,7 +311,7 @@ fun ChatScreen(
                     if (idx != -1) {
                         initialMessages[idx] = msg.copy(status = "READ")
                     }
-                    com.example.twopchat.P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, msg.id)
+                    P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, msg.id)
                 }
             }
         }
@@ -313,11 +319,11 @@ fun ChatScreen(
 
     LaunchedEffect(inputText) {
         if (peerName == "Saved Messages") return@LaunchedEffect
-        val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName] ?: return@LaunchedEffect
+        val endpoint = P2PMessageRelay.peerEndpoints[peerName] ?: return@LaunchedEffect
         val isCurrentlyTyping = inputText.isNotEmpty()
         if (isCurrentlyTyping != myTypingState) {
             myTypingState = isCurrentlyTyping
-            com.example.twopchat.P2PMessageRelay.sendTypingState(context, peerName, endpoint, isCurrentlyTyping)
+            P2PMessageRelay.sendTypingState(context, peerName, endpoint, isCurrentlyTyping)
         }
         
         // Auto reset typing state after 3 seconds of inactivity
@@ -325,13 +331,13 @@ fun ChatScreen(
             kotlinx.coroutines.delay(3000)
             if (inputText.isNotEmpty() && myTypingState) {
                 myTypingState = false
-                com.example.twopchat.P2PMessageRelay.sendTypingState(context, peerName, endpoint, false)
+                P2PMessageRelay.sendTypingState(context, peerName, endpoint, false)
             }
         }
     }
 
     val messageListener = remember(peerName) {
-        object : com.example.twopchat.P2PMessageRelay.MessageListener {
+        object : P2PMessageRelay.MessageListener {
             override fun onMessageReceived(sender: String, text: String) {
                 if (sender == peerName) {
                     val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
@@ -369,9 +375,9 @@ fun ChatScreen(
                         }
                     }
                     
-                    val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
+                    val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                     if (endpoint != null && peerName != "Saved Messages") {
-                        com.example.twopchat.P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, rxMsg.id)
+                        P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, rxMsg.id)
                         db.updateMessageStatus(rxMsg.id, "READ")
                     }
                     initialMessages.add(rxMsg)
@@ -387,19 +393,35 @@ fun ChatScreen(
                     }
                 }
             }
+
+            override fun onMessageReactionChanged(sender: String, msgId: String, emoji: String, reactSender: String) {
+                if (sender == peerName) {
+                    val idx = initialMessages.indexOfFirst { it.id == msgId }
+                    if (idx != -1) {
+                        val current = initialMessages[idx]
+                        val updatedMap = current.reactions.toMutableMap()
+                        val sendersList = (updatedMap[emoji] ?: emptyList()).toMutableList()
+                        if (!sendersList.contains(reactSender)) {
+                            sendersList.add(reactSender)
+                            updatedMap[emoji] = sendersList
+                            initialMessages[idx] = current.copy(reactions = updatedMap)
+                        }
+                    }
+                }
+            }
         }
     }
 
     DisposableEffect(peerName) {
-        com.example.twopchat.P2PMessageRelay.activeChatPeerName = peerName
+        P2PMessageRelay.activeChatPeerName = peerName
         sharedPrefs.edit().putInt("unread_count_$peerName", 0).apply()
-        com.example.twopchat.P2PMessageRelay.registerMessageListener(messageListener)
+        P2PMessageRelay.registerMessageListener(messageListener)
         onDispose {
-            com.example.twopchat.P2PMessageRelay.activeChatPeerName = null
-            com.example.twopchat.P2PMessageRelay.unregisterMessageListener(messageListener)
-            val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
+            P2PMessageRelay.activeChatPeerName = null
+            P2PMessageRelay.unregisterMessageListener(messageListener)
+            val endpoint = P2PMessageRelay.peerEndpoints[peerName]
             if (endpoint != null && peerName != "Saved Messages" && myTypingState) {
-                com.example.twopchat.P2PMessageRelay.sendTypingState(context, peerName, endpoint, false)
+                P2PMessageRelay.sendTypingState(context, peerName, endpoint, false)
             }
         }
     }
@@ -411,7 +433,7 @@ fun ChatScreen(
     var replyingToMessage by remember { mutableStateOf<Message?>(null) }
     
     var pinnedMsgId by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_id_${peerName}", null)) }
-    var pinnedMsgText by remember(peerName) { mutableStateOf(com.example.twopchat.SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
+    var pinnedMsgText by remember(peerName) { mutableStateOf(SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
     var pinnedMsgSender by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_sender_${peerName}", null)) }
 
     var isSelectMode by remember { mutableStateOf(false) }
@@ -485,7 +507,7 @@ fun ChatScreen(
             val tempFile = saveUriToTempFile(context, it, fileName)
             if (tempFile != null) {
                 val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
+                val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                 val initialStatus = if (endpoint != null) "SENT" else "PENDING"
                 val outMsg = Message(
                     id = newMessageId(),
@@ -502,7 +524,7 @@ fun ChatScreen(
                     db.saveMessage(peerName, outMsg)
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
-                    com.example.twopchat.P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath) { success ->
+                    P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath) { success ->
                         if (!success) {
                             db.updateMessageStatus(outMsg.id, "PENDING")
                             coroutineScope.launch {
@@ -540,7 +562,7 @@ fun ChatScreen(
                 out.flush()
                 out.close()
                 val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
+                val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                 val initialStatus = if (endpoint != null) "SENT" else "PENDING"
                 val outMsg = Message(
                     id = newMessageId(),
@@ -557,7 +579,7 @@ fun ChatScreen(
                     db.saveMessage(peerName, outMsg)
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
-                    com.example.twopchat.P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath) { success ->
+                    P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath) { success ->
                         if (!success) {
                             db.updateMessageStatus(outMsg.id, "PENDING")
                             coroutineScope.launch {
@@ -596,7 +618,7 @@ fun ChatScreen(
             val tempFile = saveUriToTempFile(context, it, fileName)
             if (tempFile != null) {
                 val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
+                val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                 val initialStatus = if (endpoint != null) "SENT" else "PENDING"
                 val outMsg = Message(
                     id = newMessageId(),
@@ -613,7 +635,7 @@ fun ChatScreen(
                     db.saveMessage(peerName, outMsg)
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
-                    com.example.twopchat.P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath) { success ->
+                    P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath) { success ->
                         if (!success) {
                             db.updateMessageStatus(outMsg.id, "PENDING")
                             coroutineScope.launch {
@@ -677,7 +699,7 @@ fun ChatScreen(
                     modifier = Modifier.background(onSurfaceColor.copy(alpha = 0.03f), shape = CircleShape)
                 ) {
                     Icon(
-                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_back_arrow),
+                        painter = painterResource(id = R.drawable.ic_back_arrow),
                         contentDescription = "Back",
                         tint = onSurfaceColor,
                         modifier = Modifier.size(20.dp)
@@ -705,7 +727,7 @@ fun ChatScreen(
                         .size(44.dp)
                         .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
                 ) {
-                    val avatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[peerName]
+                    val avatarBitmap = P2PMessageRelay.peerAvatars[peerName]
                     if (avatarBitmap != null) {
                         Image(
                             bitmap = avatarBitmap.asImageBitmap(),
@@ -714,7 +736,7 @@ fun ChatScreen(
                         )
                     } else if (initials == "🔖") {
                         Icon(
-                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_saved_messages),
+                            painter = painterResource(id = R.drawable.ic_saved_messages),
                             contentDescription = "Saved Messages",
                             tint = primaryColor,
                             modifier = Modifier.size(22.dp)
@@ -748,8 +770,8 @@ fun ChatScreen(
                         )
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
-                        val isOnline = com.example.twopchat.P2PMessageRelay.peerSessionStates[peerName] == true
+                        val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+                        val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
                         if (peerName != "Saved Messages") {
                             Box(
                                 modifier = Modifier
@@ -762,7 +784,7 @@ fun ChatScreen(
                             text = if (peerName == "Saved Messages") {
                                 Localizations.getString("local_storage", appLanguage)
                             } else if (isOnline) {
-                                val transportName = com.example.twopchat.P2PMessageRelay.peerConnectionTransports[peerName]
+                                val transportName = P2PMessageRelay.peerConnectionTransports[peerName]
                                     ?: if (appLanguage == "Русский") "маршрут определяется" else "detecting route"
                                 if (appLanguage == "Русский") "В сети • $transportName" else "Online • $transportName"
                             } else {
@@ -780,7 +802,7 @@ fun ChatScreen(
                         modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
-                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_shield_status),
+                            painter = painterResource(id = R.drawable.ic_shield_status),
                             contentDescription = "Verify",
                             tint = shieldColor,
                             modifier = Modifier.size(18.dp)
@@ -813,7 +835,7 @@ fun ChatScreen(
                                 },
                                 onClick = {
                                     showMenu = false
-                                    com.example.twopchat.P2PMessageRelay.reconnectSession(context, peerName) { success ->
+                                    P2PMessageRelay.reconnectSession(context, peerName) { success ->
                                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                                             if (success) {
                                                 Toast.makeText(context, if (appLanguage == "Русский") "Переподключение запущено..." else "Reconnection initiated...", Toast.LENGTH_SHORT).show()
@@ -837,7 +859,7 @@ fun ChatScreen(
                                 showMenu = false
                                 db.clearMessagesForPeer(peerName)
                                 initialMessages.clear()
-                                sharedPrefs.edit().remove("last_msg_$peerName").apply()
+                                sharedPrefs.edit { remove("last_msg_$peerName") }
                             }
                         )
                     }
@@ -863,7 +885,7 @@ fun ChatScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_pin),
+                        painter = painterResource(id = R.drawable.ic_pin),
                         contentDescription = "Pinned",
                         tint = primaryColor,
                         modifier = Modifier.size(16.dp)
@@ -886,11 +908,10 @@ fun ChatScreen(
                     }
                     IconButton(
                         onClick = {
-                            sharedPrefs.edit().apply {
-                                remove("pinned_msg_id_${peerName}")
+                            sharedPrefs.edit {
+remove("pinned_msg_id_${peerName}")
                                 remove("pinned_msg_text_${peerName}")
                                 remove("pinned_msg_sender_${peerName}")
-                                apply()
                             }
                             pinnedMsgId = null
                             pinnedMsgText = null
@@ -1123,7 +1144,7 @@ fun ChatScreen(
                                                                 .background(if (msg.isMe) Color.White.copy(alpha = 0.2f) else primaryColor.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp))
                                                         ) {
                                                             Icon(
-                                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_file),
+                                                                painter = painterResource(id = R.drawable.ic_attach_file),
                                                                 contentDescription = "Document",
                                                                 tint = if (msg.isMe) {
                                                                     if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
@@ -1153,7 +1174,7 @@ fun ChatScreen(
                                                     Column {
                                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                                             Icon(
-                                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_location),
+                                                                painter = painterResource(id = R.drawable.ic_attach_location),
                                                                 contentDescription = "Location",
                                                                 tint = if (msg.isMe) {
                                                                     if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
@@ -1202,40 +1223,83 @@ fun ChatScreen(
                                                     )
                                                 }
                                             }
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(3.dp))
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(horizontal = 6.dp)
-                                    ) {
-                                        Text(
-                                            text = msg.timestamp,
-                                            color = onSurfaceVariant.copy(alpha = 0.6f),
-                                            fontSize = 10.sp
-                                        )
-                                        if (msg.isMe) {
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            val hasIncomingAfter = if (index < initialMessages.size - 1) {
-                                                initialMessages.subList(index + 1, initialMessages.size).any { !it.isMe }
-                                            } else false
-                                            
-                                            val isRead = hasIncomingAfter || msg.status == "READ" || isTyping || peerName == "Saved Messages"
-                                            val isPending = msg.status == "PENDING"
-                                            
-                                            val statusText = when {
-                                                isPending -> "🕒"
-                                                isRead -> "✓✓"
-                                                else -> "✓"
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.align(Alignment.End)
+                                            ) {
+                                                Text(
+                                                    text = msg.timestamp,
+                                                    color = (if (msg.isMe) {
+                                                        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.65f)
+                                                    } else onSurfaceColor.copy(alpha = 0.5f)),
+                                                    fontSize = 9.sp
+                                                )
+                                                if (msg.isMe) {
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    val hasIncomingAfter = if (index < initialMessages.size - 1) {
+                                                        initialMessages.subList(index + 1, initialMessages.size).any { !it.isMe }
+                                                    } else false
+                                                    
+                                                    val isRead = hasIncomingAfter || msg.status == "READ" || isTyping || peerName == "Saved Messages"
+                                                    val isPending = msg.status == "PENDING"
+                                                    
+                                                    val statusText = when {
+                                                        isPending -> "🕒"
+                                                        isRead -> "✓✓"
+                                                        else -> "✓"
+                                                    }
+                                                    val statusColor = if (msg.isMe) {
+                                                        if (primaryColor == com.example.twopchat.theme.MintGreen) {
+                                                            if (isRead) StealthBlack else StealthBlack.copy(alpha = 0.4f)
+                                                        } else {
+                                                            if (isRead) Color.White else Color.White.copy(alpha = 0.5f)
+                                                        }
+                                                    } else {
+                                                        if (isRead) primaryColor else onSurfaceVariant.copy(alpha = 0.4f)
+                                                    }
+                                                    
+                                                    Text(
+                                                        text = statusText,
+                                                        color = statusColor,
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                                if (msg.reactions.isNotEmpty()) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Row(
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        msg.reactions.forEach { (emoji, senders) ->
+                                                            Surface(
+                                                                shape = RoundedCornerShape(8.dp),
+                                                                color = if (msg.isMe) {
+                                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.25f)
+                                                                } else primaryColor.copy(alpha = 0.15f)
+                                                            ) {
+                                                                Row(
+                                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                                                                    verticalAlignment = Alignment.CenterVertically
+                                                                ) {
+                                                                    Text(text = emoji, fontSize = 11.sp)
+                                                                    if (senders.size > 1) {
+                                                                        Text(
+                                                                            text = " ${senders.size}",
+                                                                            fontSize = 9.sp,
+                                                                            color = if (msg.isMe) {
+                                                                                if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+                                                                            } else onSurfaceColor,
+                                                                            fontWeight = FontWeight.Bold
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
-                                            val statusColor = if (isRead) primaryColor else onSurfaceVariant.copy(alpha = 0.4f)
-                                            
-                                            Text(
-                                                text = statusText,
-                                                color = statusColor,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
                                         }
                                     }
                                 }
@@ -1386,12 +1450,11 @@ fun ChatScreen(
                                     db.deleteMessage(msg.id)
                                     initialMessages.remove(msg)
                                     if (msg.id == pinnedMsgId) {
-                                        sharedPrefs.edit().apply {
-                                            remove("pinned_msg_id_${peerName}")
+                                        sharedPrefs.edit {
+remove("pinned_msg_id_${peerName}")
                                             remove("pinned_msg_text_${peerName}")
                                             remove("pinned_msg_sender_${peerName}")
-                                            apply()
-                                        }
+                            }
                                         pinnedMsgId = null
                                         pinnedMsgText = null
                                         pinnedMsgSender = null
@@ -1403,7 +1466,7 @@ fun ChatScreen(
                             enabled = selectedMessages.isNotEmpty()
                         ) {
                             Icon(
-                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_delete),
+                                painter = painterResource(id = R.drawable.ic_delete),
                                 contentDescription = "Delete Selected",
                                 tint = if (selectedMessages.isNotEmpty()) Color.Red else onSurfaceVariant.copy(alpha = 0.5f),
                                 modifier = Modifier.size(24.dp)
@@ -1431,7 +1494,7 @@ fun ChatScreen(
                                 )
                             } else {
                                 Icon(
-                                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_paperclip),
+                                    painter = painterResource(id = R.drawable.ic_attach_paperclip),
                                     contentDescription = "Attach",
                                     tint = primaryColor,
                                     modifier = Modifier.size(20.dp)
@@ -1477,7 +1540,7 @@ fun ChatScreen(
                                     val replyTo = replyingToMessage
                                     replyingToMessage = null
 
-                                    val endpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[peerName]
+                                    val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                                     val initialStatus = if (endpoint != null || peerName == "Saved Messages") "SENT" else "PENDING"
 
                                     // Add user message
@@ -1501,9 +1564,9 @@ fun ChatScreen(
                                     if (!activeSet.contains(peerName)) {
                                         val newSet = activeSet.toMutableSet()
                                         newSet.add(peerName)
-                                        sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
+                                        sharedPrefs.edit { putStringSet("active_chats", newSet) }
                                     }
-                                    sharedPrefs.edit().putString("last_msg_$peerName", com.example.twopchat.SecureStorage.encrypt("You: $userText")).apply()
+                                    sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt("You: $userText")) }
 
                                     // Send message payload
                                     val payload = if (replyTo != null) {
@@ -1520,7 +1583,7 @@ fun ChatScreen(
 
                                     // Send over real TCP socket if endpoint is resolved
                                     if (endpoint != null && peerName != "Saved Messages") {
-                                        com.example.twopchat.P2PMessageRelay.sendMessage(context, endpoint, username, payload) { success ->
+                                        P2PMessageRelay.sendMessage(context, endpoint, username, payload) { success ->
                                             if (!success) {
                                                 db.updateMessageStatus(outMsg.id, "PENDING")
                                                 coroutineScope.launch {
@@ -1565,7 +1628,7 @@ fun ChatScreen(
                                 .background(primaryColor, shape = CircleShape)
                         ) {
                             Icon(
-                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_send_airplane),
+                                painter = painterResource(id = R.drawable.ic_send_airplane),
                                 contentDescription = "Send",
                                 tint = if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White,
                                 modifier = Modifier.size(18.dp)
@@ -1597,6 +1660,50 @@ fun ChatScreen(
                             color = primaryColor,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                         )
+
+                        // Quick Emoji Reactions
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            listOf("👍", "❤️", "😂", "😮", "😢", "🔥").forEach { emoji ->
+                                Surface(
+                                    shape = CircleShape,
+                                    color = primaryColor.copy(alpha = 0.12f),
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clickable {
+                                            val idx = initialMessages.indexOfFirst { it.id == msg.id }
+                                            if (idx != -1) {
+                                                val current = initialMessages[idx]
+                                                val updatedMap = current.reactions.toMutableMap()
+                                                val sendersList = (updatedMap[emoji] ?: emptyList()).toMutableList()
+                                                if (!sendersList.contains("Me")) {
+                                                    sendersList.add("Me")
+                                                    updatedMap[emoji] = sendersList
+                                                    initialMessages[idx] = current.copy(reactions = updatedMap)
+                                                    db.updateMessageReactions(msg.id, updatedMap)
+                                                }
+                                            }
+                                            val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+                                            if (endpoint != null && peerName != "Saved Messages") {
+                                                P2PMessageRelay.sendReaction(context, peerName, endpoint, msg.id, emoji)
+                                            }
+                                            selectedMessageForOptions = null
+                                        }
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(text = emoji, fontSize = 20.sp)
+                                    }
+                                }
+                            }
+                        }
+                        androidx.compose.material3.HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            color = onSurfaceColor.copy(alpha = 0.08f)
+                        )
                         
                         // Reply
                         Row(
@@ -1611,7 +1718,7 @@ fun ChatScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_reply),
+                                painter = painterResource(id = R.drawable.ic_reply),
                                 contentDescription = "Reply",
                                 tint = onSurfaceColor,
                                 modifier = Modifier.size(20.dp)
@@ -1630,12 +1737,11 @@ fun ChatScreen(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable {
-                                    sharedPrefs.edit().apply {
-                                        putString("pinned_msg_id_${peerName}", msg.id)
-                                        putString("pinned_msg_text_${peerName}", com.example.twopchat.SecureStorage.encrypt(msg.text))
+                                    sharedPrefs.edit {
+putString("pinned_msg_id_${peerName}", msg.id)
+                                        putString("pinned_msg_text_${peerName}", SecureStorage.encrypt(msg.text))
                                         putString("pinned_msg_sender_${peerName}", if (msg.isMe) "You" else peerName)
-                                        apply()
-                                    }
+                            }
                                     pinnedMsgId = msg.id
                                     pinnedMsgText = msg.text
                                     pinnedMsgSender = if (msg.isMe) "You" else peerName
@@ -1645,7 +1751,7 @@ fun ChatScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_pin),
+                                painter = painterResource(id = R.drawable.ic_pin),
                                 contentDescription = "Pin",
                                 tint = onSurfaceColor,
                                 modifier = Modifier.size(20.dp)
@@ -1672,7 +1778,7 @@ fun ChatScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_copy),
+                                painter = painterResource(id = R.drawable.ic_copy),
                                 contentDescription = "Copy",
                                 tint = onSurfaceColor,
                                 modifier = Modifier.size(20.dp)
@@ -1699,7 +1805,7 @@ fun ChatScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_forward),
+                                painter = painterResource(id = R.drawable.ic_forward),
                                 contentDescription = "Forward",
                                 tint = onSurfaceColor,
                                 modifier = Modifier.size(20.dp)
@@ -1721,12 +1827,11 @@ fun ChatScreen(
                                     db.deleteMessage(msg.id)
                                     initialMessages.remove(msg)
                                     if (msg.id == pinnedMsgId) {
-                                        sharedPrefs.edit().apply {
-                                            remove("pinned_msg_id_${peerName}")
+                                        sharedPrefs.edit {
+remove("pinned_msg_id_${peerName}")
                                             remove("pinned_msg_text_${peerName}")
                                             remove("pinned_msg_sender_${peerName}")
-                                            apply()
-                                        }
+                            }
                                         pinnedMsgId = null
                                         pinnedMsgText = null
                                         pinnedMsgSender = null
@@ -1737,7 +1842,7 @@ fun ChatScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_delete),
+                                painter = painterResource(id = R.drawable.ic_delete),
                                 contentDescription = "Delete",
                                 tint = Color.Red,
                                 modifier = Modifier.size(20.dp)
@@ -1765,7 +1870,7 @@ fun ChatScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_select),
+                                painter = painterResource(id = R.drawable.ic_select),
                                 contentDescription = "Select",
                                 tint = onSurfaceColor,
                                 modifier = Modifier.size(20.dp)
@@ -1807,7 +1912,7 @@ fun ChatScreen(
                                         .clickable {
                                             val textToForward = messageToForward?.text ?: ""
                                             val forwardTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                                            val forwardEndpoint = com.example.twopchat.P2PMessageRelay.peerEndpoints[chatName]
+                                            val forwardEndpoint = P2PMessageRelay.peerEndpoints[chatName]
                                             val fwdInitialStatus = if (forwardEndpoint != null || chatName == "Saved Messages") "SENT" else "PENDING"
                                             val fwdMsg = Message(
                                                 id = newMessageId(),
@@ -1825,18 +1930,18 @@ fun ChatScreen(
                                                 db.saveMessage(chatName, fwdMsg)
                                             }
                                             // Update last message in active chats list
-                                            sharedPrefs.edit().putString("last_msg_$chatName", com.example.twopchat.SecureStorage.encrypt("You: $textToForward")).apply()
+                                            sharedPrefs.edit { putString("last_msg_$chatName", SecureStorage.encrypt("You: $textToForward")) }
                                             
                                             // Send if there is an endpoint
                                             if (forwardEndpoint != null && chatName != "Saved Messages") {
                                                 if (messageToForward?.attachmentType != null && messageToForward?.attachmentUri != null) {
-                                                    com.example.twopchat.P2PMessageRelay.sendFile(context, chatName, forwardEndpoint, messageToForward!!.attachmentUri!!) { success ->
+                                                    P2PMessageRelay.sendFile(context, chatName, forwardEndpoint, messageToForward!!.attachmentUri!!) { success ->
                                                         if (!success) {
                                                             db.updateMessageStatus(fwdMsg.id, "PENDING")
                                                         }
                                                     }
                                                 } else {
-                                                    com.example.twopchat.P2PMessageRelay.sendMessage(context, forwardEndpoint, username, textToForward) { success ->
+                                                    P2PMessageRelay.sendMessage(context, forwardEndpoint, username, textToForward) { success ->
                                                         if (!success) {
                                                             db.updateMessageStatus(fwdMsg.id, "PENDING")
                                                         }
@@ -1924,7 +2029,7 @@ fun ChatScreen(
                             ) {
                                 Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(
-                                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_location),
+                                        painter = painterResource(id = R.drawable.ic_attach_location),
                                         contentDescription = "Pin",
                                         tint = primaryColor,
                                         modifier = Modifier.size(22.dp)
@@ -2009,8 +2114,8 @@ fun ChatScreen(
                                 .fillMaxWidth()
                                 .clickable {
                                     mockMismatchToggle = !mockMismatchToggle
-                                    sharedPrefs.edit().putBoolean("mock_mismatch_${peerName}", mockMismatchToggle).apply()
-                                    sharedPrefs.edit().putBoolean("fingerprint_mismatch_${peerName}", mockMismatchToggle).apply()
+                                    sharedPrefs.edit { putBoolean("mock_mismatch_${peerName}", mockMismatchToggle) }
+                                    sharedPrefs.edit { putBoolean("fingerprint_mismatch_${peerName}", mockMismatchToggle) }
                                 }
                                 .padding(vertical = 4.dp)
                         ) {
@@ -2018,8 +2123,8 @@ fun ChatScreen(
                                 checked = mockMismatchToggle,
                                 onCheckedChange = {
                                     mockMismatchToggle = it
-                                    sharedPrefs.edit().putBoolean("mock_mismatch_${peerName}", it).apply()
-                                    sharedPrefs.edit().putBoolean("fingerprint_mismatch_${peerName}", it).apply()
+                                    sharedPrefs.edit { putBoolean("mock_mismatch_${peerName}", it) }
+                                    sharedPrefs.edit { putBoolean("fingerprint_mismatch_${peerName}", it) }
                                 },
                                 colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.error)
                             )
@@ -2038,7 +2143,7 @@ fun ChatScreen(
                         Button(
                             onClick = {
                                 isVerified = !isVerified
-                                sharedPrefs.edit().putBoolean("verified_peer_${peerName}", isVerified).apply()
+                                sharedPrefs.edit { putBoolean("verified_peer_${peerName}", isVerified) }
                             },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isVerified) MaterialTheme.colorScheme.error else Color(0xFF4CAF50),
@@ -2108,7 +2213,7 @@ fun ChatScreen(
                                             action = PacketTunnelProvider.ACTION_START
                                         }
                                         context.startService(intent)
-                                        sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+                                        sharedPrefs.edit { putBoolean("settings_yggdrasil", true) }
                                         Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
                                     }
                                 },
@@ -2155,10 +2260,10 @@ fun AttachmentPanel(
         verticalAlignment = Alignment.CenterVertically
     ) {
         val attachments = listOf(
-            AttachmentItem("Camera", com.example.twopchat.R.drawable.ic_attach_camera, primaryColor.copy(alpha = 0.1f)),
-            AttachmentItem("Gallery", com.example.twopchat.R.drawable.ic_attach_gallery, primaryColor.copy(alpha = 0.1f)),
-            AttachmentItem("File", com.example.twopchat.R.drawable.ic_attach_file, primaryColor.copy(alpha = 0.1f)),
-            AttachmentItem("Location", com.example.twopchat.R.drawable.ic_attach_location, primaryColor.copy(alpha = 0.1f))
+            AttachmentItem("Camera", R.drawable.ic_attach_camera, primaryColor.copy(alpha = 0.1f)),
+            AttachmentItem("Gallery", R.drawable.ic_attach_gallery, primaryColor.copy(alpha = 0.1f)),
+            AttachmentItem("File", R.drawable.ic_attach_file, primaryColor.copy(alpha = 0.1f)),
+            AttachmentItem("Location", R.drawable.ic_attach_location, primaryColor.copy(alpha = 0.1f))
         )
         
         attachments.forEach { item ->
@@ -2301,7 +2406,7 @@ fun FullscreenImageViewer(
                 .background(Color.Black.copy(alpha = 0.5f), CircleShape)
         ) {
             Icon(
-                painter = painterResource(id = com.example.twopchat.R.drawable.ic_back_arrow),
+                painter = painterResource(id = R.drawable.ic_back_arrow),
                 contentDescription = "Close",
                 tint = Color.White,
                 modifier = Modifier.size(20.dp)

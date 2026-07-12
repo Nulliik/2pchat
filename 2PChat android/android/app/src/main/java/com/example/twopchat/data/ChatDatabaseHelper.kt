@@ -11,7 +11,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        private const val DATABASE_VERSION = 5
+        private const val DATABASE_VERSION = 6
         private const val TABLE_MESSAGES = "messages"
         
         private const val KEY_ID = "id"
@@ -26,6 +26,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
         private const val KEY_REPLY_TO_TEXT = "reply_to_text"
         private const val KEY_REPLY_TO_NAME = "reply_to_name"
         private const val KEY_STATUS = "status"
+        private const val KEY_REACTIONS = "reactions"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -41,7 +42,8 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
                 + KEY_REPLY_TO_ID + " TEXT,"
                 + KEY_REPLY_TO_TEXT + " TEXT,"
                 + KEY_REPLY_TO_NAME + " TEXT,"
-                + KEY_STATUS + " TEXT" + ")")
+                + KEY_STATUS + " TEXT,"
+                + KEY_REACTIONS + " TEXT" + ")")
         db.execSQL(createTable)
     }
 
@@ -114,6 +116,48 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
                 }
             }
         }
+        if (oldVersion < 6) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_REACTIONS TEXT")
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun serializeReactions(reactions: Map<String, List<String>>): String {
+        val json = org.json.JSONObject()
+        reactions.forEach { (emoji, senders) ->
+            val arr = org.json.JSONArray()
+            senders.forEach { arr.put(it) }
+            json.put(emoji, arr)
+        }
+        return json.toString()
+    }
+
+    private fun deserializeReactions(jsonStr: String?): Map<String, List<String>> {
+        if (jsonStr.isNullOrEmpty()) return emptyMap()
+        return try {
+            val json = org.json.JSONObject(jsonStr)
+            val map = mutableMapOf<String, List<String>>()
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val emoji = keys.next()
+                val arr = json.optJSONArray(emoji)
+                val list = mutableListOf<String>()
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        list.add(arr.optString(i))
+                    }
+                }
+                if (list.isNotEmpty()) {
+                    map[emoji] = list
+                }
+            }
+            map
+        } catch (e: Exception) {
+            emptyMap()
+        }
     }
 
     fun saveMessage(peerName: String, msg: Message) {
@@ -131,6 +175,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
             put(KEY_REPLY_TO_TEXT, encNullable(msg.replyToText))
             put(KEY_REPLY_TO_NAME, encNullable(msg.replyToName))
             put(KEY_STATUS, msg.status)
+            put(KEY_REACTIONS, serializeReactions(msg.reactions))
         }
         db.insert(TABLE_MESSAGES, null, values)
     }
@@ -160,6 +205,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
                 val indexReplyToText = it.getColumnIndex(KEY_REPLY_TO_TEXT)
                 val indexReplyToName = it.getColumnIndex(KEY_REPLY_TO_NAME)
                 val indexStatus = it.getColumnIndex(KEY_STATUS)
+                val indexReactions = it.getColumnIndex(KEY_REACTIONS)
                 val indexId = it.getColumnIndex(KEY_ID)
                 
                 do {
@@ -173,6 +219,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
                     val replyToText = if (indexReplyToText != -1) decNullable(it.getString(indexReplyToText)) else null
                     val replyToName = if (indexReplyToName != -1) decNullable(it.getString(indexReplyToName)) else null
                     val status = if (indexStatus != -1) it.getString(indexStatus) else null
+                    val reactions = if (indexReactions != -1) deserializeReactions(it.getString(indexReactions)) else emptyMap()
                     val id = if (indexId != -1) it.getString(indexId) else System.currentTimeMillis().toString()
                     
                     messages.add(
@@ -187,7 +234,8 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
                             replyToId = replyToId,
                             replyToText = replyToText,
                             replyToName = replyToName,
-                            status = status
+                            status = status,
+                            reactions = reactions
                         )
                     )
                 } while (it.moveToNext())
@@ -215,6 +263,18 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
             val db = this.writableDatabase
             val values = ContentValues().apply {
                 put(KEY_STATUS, status)
+            }
+            db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun updateMessageReactions(id: String, reactions: Map<String, List<String>>) {
+        try {
+            val db = this.writableDatabase
+            val values = ContentValues().apply {
+                put(KEY_REACTIONS, serializeReactions(reactions))
             }
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
         } catch (e: Exception) {

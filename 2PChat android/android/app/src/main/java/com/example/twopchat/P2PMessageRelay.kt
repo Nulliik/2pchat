@@ -15,6 +15,7 @@ import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
 import androidx.core.app.NotificationCompat
+import androidx.core.content.edit
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -34,7 +35,7 @@ object P2PMessageRelay {
     private var isRunning = false
 
     /** All installations listen on the documented P2P port; identity is the fingerprint, not the port. */
-    fun listenerPort(context: Context): Int {
+    fun listenerPort(@Suppress("UNUSED_PARAMETER") context: Context): Int {
         return LISTENER_PORT
     }
 
@@ -67,6 +68,7 @@ object P2PMessageRelay {
     interface MessageListener {
         fun onMessageReceived(sender: String, text: String)
         fun onMessageStatusChanged(sender: String, msgId: String, status: String)
+        fun onMessageReactionChanged(sender: String, msgId: String, emoji: String, reactSender: String) {}
     }
 
     private val messageListeners = java.util.concurrent.CopyOnWriteArrayList<MessageListener>()
@@ -292,72 +294,96 @@ object P2PMessageRelay {
             PythonBridge.registerMessageListener(object : PythonBridge.PyMessageListener {
                 override fun onMessageReceived(sender: String, text: String) {
                     log(appContext, "Incoming secure P2P message (${text.toByteArray().size} bytes)")
-                    
+                    val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
                     try {
-                        val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
                         val trimmed = text.trim()
                         if (trimmed.startsWith("{")) {
                             val json = org.json.JSONObject(trimmed)
-                            val type = json.optString("type")
-                            if (type == "profile_avatar_share") {
-                                val b64 = json.optString("avatar_base64")
-                                // Avatars are control-plane thumbnails, not file transfers. Bound their
-                                // encoded size and decoded dimensions before allocating a full bitmap.
-                                if (b64.isNotEmpty() && b64.length <= 2_000_000) {
-                                    try {
-                                        val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-                                        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-                                        if (bounds.outWidth !in 1..4096 || bounds.outHeight !in 1..4096 ||
-                                            bounds.outWidth.toLong() * bounds.outHeight.toLong() > 16_000_000L) return
-                                        var sample = 1
-                                        while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) sample *= 2
-                                        val bitmap = android.graphics.BitmapFactory.decodeByteArray(
-                                            bytes, 0, bytes.size,
-                                            android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
-                                        )
-                                        if (bitmap != null) {
-                                            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                                peerAvatars[sender] = bitmap
+                            when (json.optString("type")) {
+                                "profile_avatar_share" -> {
+                                    val b64 = json.optString("avatar_base64")
+                                    // Avatars are control-plane thumbnails, not file transfers. Bound their
+                                    // encoded size and decoded dimensions before allocating a full bitmap.
+                                    if (b64.isNotEmpty() && b64.length <= 2_000_000) {
+                                        try {
+                                            val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                                            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                                            if (bounds.outWidth !in 1..4096 || bounds.outHeight !in 1..4096 ||
+                                                bounds.outWidth.toLong() * bounds.outHeight.toLong() > 16_000_000L) return
+                                            var sample = 1
+                                            while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) sample *= 2
+                                            val bitmap = android.graphics.BitmapFactory.decodeByteArray(
+                                                bytes, 0, bytes.size,
+                                                android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                                            )
+                                            if (bitmap != null) {
+                                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                    peerAvatars[sender] = bitmap
+                                                }
+                                                log(appContext, "Successfully received and cached avatar in RAM for $sender")
+                                                
+                                                // Persist avatar to disk
+                                                try {
+                                                    val avatarsDir = java.io.File(appContext.filesDir, "avatars")
+                                                    if (!avatarsDir.exists()) avatarsDir.mkdirs()
+                                                    val avatarFile = java.io.File(avatarsDir, "${sender}.jpg")
+                                                    val outStream = java.io.FileOutputStream(avatarFile)
+                                                    bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, outStream)
+                                                    outStream.flush()
+                                                    outStream.close()
+                                                    log(appContext, "Saved avatar for $sender to ${avatarFile.absolutePath}")
+                                                } catch (saveEx: Exception) {
+                                                    log(appContext, "Failed to save avatar file: ${saveEx.message}", "ERROR", saveEx)
+                                                }
                                             }
-                                            log(appContext, "Successfully received and cached avatar in RAM for $sender")
-                                            
-                                            // Persist avatar to disk
-                                            try {
-                                                val avatarsDir = java.io.File(appContext.filesDir, "avatars")
-                                                if (!avatarsDir.exists()) avatarsDir.mkdirs()
-                                                val avatarFile = java.io.File(avatarsDir, "${sender}.jpg")
-                                                val outStream = java.io.FileOutputStream(avatarFile)
-                                                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, outStream)
-                                                outStream.flush()
-                                                outStream.close()
-                                                log(appContext, "Saved avatar for $sender to ${avatarFile.absolutePath}")
-                                            } catch (saveEx: Exception) {
-                                                log(appContext, "Failed to save avatar file: ${saveEx.message}", "ERROR", saveEx)
+                                        } catch (e: Exception) {
+                                            log(appContext, "Error decoding avatar: ${e.message}", "ERROR", e)
+                                        }
+                                    }
+                                    return
+                                }
+                                "typing_state" -> {
+                                    val isTyping = json.optBoolean("is_typing", false)
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        peerTypingStates[sender] = isTyping
+                                    }
+                                    return
+                                }
+                                "read_receipt" -> {
+                                    val msgId = json.optString("message_id")
+                                    if (msgId.isNotEmpty()) {
+                                        val db = ChatDatabaseHelper(appContext)
+                                        db.updateMessageStatus(msgId, "READ")
+                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                            messageListeners.forEach { it.onMessageStatusChanged(sender, msgId, "READ") }
+                                        }
+                                    }
+                                    return
+                                }
+                                "reaction" -> {
+                                    val msgId = json.optString("message_id")
+                                    val emoji = json.optString("emoji")
+                                    if (msgId.isNotEmpty() && emoji.isNotEmpty()) {
+                                        val db = ChatDatabaseHelper(appContext)
+                                        val msgs = db.getMessagesForPeer(sender)
+                                        val existing = msgs.find { it.id == msgId }
+                                        if (existing != null) {
+                                            val updatedMap = existing.reactions.toMutableMap()
+                                            val sendersList = (updatedMap[emoji] ?: emptyList()).toMutableList()
+                                            if (!sendersList.contains(sender)) {
+                                                sendersList.add(sender)
+                                                updatedMap[emoji] = sendersList
+                                                db.updateMessageReactions(msgId, updatedMap)
                                             }
                                         }
-                                    } catch (e: Exception) {
-                                        log(appContext, "Error decoding avatar: ${e.message}", "ERROR", e)
+                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                            messageListeners.forEach { it.onMessageReactionChanged(sender, msgId, emoji, sender) }
+                                        }
                                     }
+                                    return
                                 }
-                                return
-                            } else if (type == "typing_state") {
-                                val isTyping = json.optBoolean("is_typing", false)
-                                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                    peerTypingStates[sender] = isTyping
-                                }
-                                return
-                            } else if (type == "read_receipt") {
-                                val msgId = json.optString("message_id")
-                                if (msgId.isNotEmpty()) {
-                                    val db = ChatDatabaseHelper(appContext)
-                                    db.updateMessageStatus(msgId, "READ")
-                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                        messageListeners.forEach { it.onMessageStatusChanged(sender, msgId, "READ") }
-                                    }
-                                }
-                                return
-                            } else if (type == "reply") {
+                                "reply" -> {
                                 val replyText = json.optString("text")
                                 val replyToId = json.optString("reply_to_id")
                                 val replyToText = json.optString("reply_to_text")
@@ -367,7 +393,7 @@ object P2PMessageRelay {
                                 if (!activeSet.contains(sender)) {
                                     val newSet = activeSet.toMutableSet()
                                     newSet.add(sender)
-                                    sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
+                                    sharedPrefs.edit { putStringSet("active_chats", newSet) }
                                 }
                                 
                                 val persistEnabled = sharedPrefs.getBoolean("persist_chat_history", true)
@@ -387,24 +413,24 @@ object P2PMessageRelay {
                                 if (persistEnabled) {
                                     db.saveMessage(sender, rxMsg)
                                 }
-                                sharedPrefs.edit().putString("last_msg_$sender", com.example.twopchat.SecureStorage.encrypt(replyText)).apply()
+                                sharedPrefs.edit { putString("last_msg_$sender", SecureStorage.encrypt(replyText)) }
                                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                                     messageListeners.forEach { it.onMessageReceived(sender, text) }
                                     if (activeChatPeerName != sender) {
                                         val currentUnread = sharedPrefs.getInt("unread_count_$sender", 0)
-                                        sharedPrefs.edit().putInt("unread_count_$sender", currentUnread + 1).apply()
+                                        sharedPrefs.edit { putInt("unread_count_$sender", currentUnread + 1) }
                                         showNotification(appContext, sender, text)
                                     }
                                 }
-                                return
                             }
                         }
+                    }
 
                         val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                         if (!activeSet.contains(sender)) {
                             val newSet = activeSet.toMutableSet()
                             newSet.add(sender)
-                            sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
+                            sharedPrefs.edit { putStringSet("active_chats", newSet) }
                         }
                         
                         val persistEnabled = sharedPrefs.getBoolean("persist_chat_history", true)
@@ -436,7 +462,7 @@ object P2PMessageRelay {
                                 ))
                             }
                         }
-                        sharedPrefs.edit().putString("last_msg_$sender", com.example.twopchat.SecureStorage.encrypt(displayMessage)).apply()
+                        sharedPrefs.edit { putString("last_msg_$sender", SecureStorage.encrypt(displayMessage)) }
                     } catch (ex: Exception) {
                         log(appContext, "Failed to persist incoming message to SharedPreferences/SQLite", "ERROR", ex)
                     }
@@ -446,7 +472,7 @@ object P2PMessageRelay {
                         messageListeners.forEach { it.onMessageReceived(sender, text) }
                         if (activeChatPeerName != sender) {
                             val currentUnread = sharedPrefs.getInt("unread_count_$sender", 0)
-                            sharedPrefs.edit().putInt("unread_count_$sender", currentUnread + 1).apply()
+                            sharedPrefs.edit { putInt("unread_count_$sender", currentUnread + 1) }
                             showNotification(appContext, sender, text)
                         }
                     }
@@ -544,7 +570,7 @@ object P2PMessageRelay {
                     }
                     try {
                         Thread.sleep(10000) // Check network change status every 10 seconds
-                    } catch (e: InterruptedException) {
+                    } catch (_: InterruptedException) {
                         break
                     }
                 }
@@ -622,7 +648,7 @@ object P2PMessageRelay {
     /**
      * Send an encrypted Double Ratchet message to a resolved peer's endpoint.
      */
-    fun sendMessage(context: Context, endpoint: String, senderName: String, text: String, onResult: (Boolean) -> Unit = {}) {
+    fun sendMessage(context: Context, endpoint: String, @Suppress("UNUSED_PARAMETER") senderName: String, text: String, onResult: (Boolean) -> Unit = {}) {
         thread(start = true) {
             try {
                 // Resolve the peer's name mapped to this endpoint
@@ -669,6 +695,7 @@ object P2PMessageRelay {
     /**
      * Backward-compatible overload resolving peerName from endpoint.
      */
+    @Suppress("unused")
     fun sendFile(context: Context, endpoint: String, filePath: String, onResult: (Boolean) -> Unit = {}) {
         var targetPeerName = "Direct Peer"
         for ((name, ep) in peerEndpoints) {
@@ -725,8 +752,26 @@ object P2PMessageRelay {
                 val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
                     .getString("peer_fingerprint_$peerName", null)
                 PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 // Ignore silent read receipt send errors
+            }
+        }
+    }
+
+    fun sendReaction(context: Context, peerName: String, endpoint: String, messageId: String, emoji: String) {
+        thread(start = true, name = "ReactionThread") {
+            try {
+                val json = JSONObject().apply {
+                    put("type", "reaction")
+                    put("message_id", messageId)
+                    put("emoji", emoji)
+                }
+                val payload = json.toString()
+                val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                    .getString("peer_fingerprint_$peerName", null)
+                PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
+            } catch (_: Exception) {
+                // Ignore silent reaction send errors
             }
         }
     }

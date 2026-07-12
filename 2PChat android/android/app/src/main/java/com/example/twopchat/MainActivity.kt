@@ -36,10 +36,7 @@ class MainActivity : ComponentActivity() {
     private var lastStopTime = System.currentTimeMillis()
     private val triggerLockCheckState = mutableStateOf(0)
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        // Secure screen from screenshots based on user preferences
+    private fun applyScreenSecurity() {
         val sharedPrefsTemp = getSharedPreferences("2pchat_prefs", MODE_PRIVATE)
         val blockScreenshots = sharedPrefsTemp.getBoolean("settings_screenshots", true)
         if (blockScreenshots) {
@@ -49,6 +46,22 @@ class MainActivity : ComponentActivity() {
             )
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applyScreenSecurity()
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        applyScreenSecurity()
+
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
         }
 
         // Initialize Chaquopy Python

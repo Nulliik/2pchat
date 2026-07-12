@@ -289,11 +289,22 @@ fun ChatsTab(
     var activeChatsSet by remember {
         mutableStateOf(sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet())
     }
+    var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
+    val profileBitmap = remember(profilePhotoUri) {
+        com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)
+    }
+    var currentUsername by remember { mutableStateOf(sharedPrefs.getString("username_profile", "Anonymous") ?: "Anonymous") }
     
     androidx.compose.runtime.DisposableEffect(sharedPrefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key == "active_chats" || key?.startsWith("last_msg_") == true || key?.startsWith("transport_") == true || key?.startsWith("unread_count_") == true) {
                 activeChatsSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+            }
+            if (key == "profile_photo_uri") {
+                profilePhotoUri = sharedPrefs.getString("profile_photo_uri", null)
+            }
+            if (key == "username_profile") {
+                currentUsername = sharedPrefs.getString("username_profile", "Anonymous") ?: "Anonymous"
             }
         }
         sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
@@ -326,7 +337,6 @@ fun ChatsTab(
     }
 
     // Hero Card live state
-    val currentUsername = remember { sharedPrefs.getString("username_profile", "Anonymous") ?: "Anonymous" }
     var heroActivePeers by remember { mutableStateOf(0) }
     var heroUpnpOk by remember { mutableStateOf<Boolean?>(null) }
     var heroTrackersOk by remember { mutableStateOf<Boolean?>(null) }
@@ -418,12 +428,23 @@ fun ChatsTab(
                                 )
                                 .border(1.5.dp, primaryColor.copy(alpha = 0.55f), CircleShape)
                         ) {
-                            Text(
-                                text = currentUsername.take(2).uppercase(),
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
+                            if (profileBitmap != null) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = profileBitmap.asImageBitmap(),
+                                    contentDescription = "My Profile Avatar",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                )
+                            } else {
+                                Text(
+                                    text = currentUsername.take(2).uppercase(),
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
                         }
                     }
 
@@ -1939,7 +1960,10 @@ fun SettingsTab(
                             val activity = context as? android.app.Activity
                             activity?.let { act ->
                                 if (it) {
-                                    act.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                                    act.window.setFlags(
+                                        android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                                        android.view.WindowManager.LayoutParams.FLAG_SECURE
+                                    )
                                 } else {
                                     act.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
                                 }
