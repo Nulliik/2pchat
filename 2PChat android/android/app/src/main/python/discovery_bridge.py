@@ -29,6 +29,7 @@ def print(*args, **kwargs):
     logger.info(msg)
 
 active_sessions = {}
+peer_operation_locks = {}
 peer_fingerprint_to_name = {}
 incoming_files = {}
 MAX_INCOMING_FILES = 16
@@ -84,6 +85,33 @@ def _session_for_peer(peer_name: str, expected_fingerprint: str | None = None):
     if len(online_sessions) == 1:
         return online_sessions[0]
     return None
+
+
+async def _register_authenticated_session(session, peer_fp: str, *, initiator: bool):
+    """Choose one stable connection when both peers dial at the same time.
+
+    The peer with the lexicographically smaller fingerprint owns the outgoing
+    side. Both devices therefore select opposite ends of the same TCP stream.
+    """
+    local_fp = local_identity_fingerprint
+    if not local_fp:
+        local_fp = fingerprint(load_or_create_identity().public_key)
+    session._bridge_initiator = initiator
+    existing = active_sessions.get(peer_fp)
+    if not existing or not getattr(existing, "is_online", False):
+        active_sessions[peer_fp] = session
+        return session
+
+    prefer_initiator = local_fp < peer_fp
+    existing_preferred = getattr(existing, "_bridge_initiator", False) == prefer_initiator
+    new_preferred = initiator == prefer_initiator
+    if existing_preferred or not new_preferred:
+        await session.close()
+        return existing
+
+    active_sessions[peer_fp] = session
+    await existing.close()
+    return session
 
 
 def _format_endpoint(host: str, port: int) -> str:
@@ -727,7 +755,21 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
         fp = session.peer_fingerprint
         peer_name = peer_fingerprint_to_name.get(fp, f"Peer ({fp[:8]})")
         
-        active_sessions[fp] = session
+        registered = await _register_authenticated_session(session, fp, initiator=False)
+        if registered is not session:
+            print(f"Ignored duplicate incoming session from {peer_name} (Fingerprint: {fp})")
+            return
+
+        # Do not wait for an identity probe: a normal incoming chat connection
+        # must learn our nickname before the UI falls back to Peer(fingerprint).
+        if local_identity_nickname:
+            await session.send_reliable({
+                "type": "identity_info",
+                "nickname": local_identity_nickname,
+                "fingerprint": local_identity_fingerprint
+                    or fingerprint(identity_priv.public_key),
+                "listen_port": listener_port,
+            })
         
         print(f"Accepted Double Ratchet session from {peer_name} (Fingerprint: {fp})")
         
@@ -762,6 +804,8 @@ async def _read_loop(session, peer_name, fp):
         while True:
             msg = await session.receive_message()
             mtype = msg.get("type")
+            if mtype == "status" and msg.get("state") == "offline":
+                break
             if mtype == "identity_info":
                 # Remote peer announced their real nickname — update our mappings
                 real_name = msg.get("nickname", "").strip()
@@ -976,6 +1020,7 @@ async def _read_loop(session, peer_name, fp):
                                 
                             file_notification = {
                                 "type": "file",
+                                "message_id": str(meta.get("message_id", "")),
                                 "file_name": file_name,
                                 "file_path": str(target),
                                 "mime": mime,
@@ -1085,7 +1130,22 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
         raise
 
 
+def _operation_lock(peer_name: str, expected_fingerprint=None):
+    """Serialize session creation and ratchet traffic for one authenticated peer."""
+    key = expected_fingerprint or peer_name.casefold()
+    lock = peer_operation_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        peer_operation_locks[key] = lock
+    return lock
+
+
 async def _send_message_async(peer_name: str, endpoint: str, body: str, expected_fingerprint=None) -> bool:
+    async with _operation_lock(peer_name, expected_fingerprint):
+        return await _send_message_unlocked(peer_name, endpoint, body, expected_fingerprint)
+
+
+async def _send_message_unlocked(peer_name: str, endpoint: str, body: str, expected_fingerprint=None) -> bool:
     try:
         session = _session_for_peer(peer_name, expected_fingerprint)
         if not session or not session.is_online:
@@ -1132,7 +1192,10 @@ async def _send_message_async(peer_name: str, endpoint: str, body: str, expected
 
             fp = session.peer_fingerprint
             peer_fingerprint_to_name[fp] = peer_name
-            active_sessions[fp] = session
+            registered = await _register_authenticated_session(session, fp, initiator=True)
+            if registered is not session:
+                session = registered
+                print(f"Reused preferred Double Ratchet session to {peer_name} (Fingerprint: {fp})")
 
             print(f"Established Double Ratchet session to {peer_name} (Fingerprint: {fp})")
 
@@ -1170,7 +1233,7 @@ async def _send_message_async(peer_name: str, endpoint: str, body: str, expected
         return False
 
 
-def send_p2p_file(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None) -> bool:
+def send_p2p_file(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="") -> bool:
     """
     Synchronous entry point called from Kotlin to send an encrypted file/photo via Double Ratchet.
     """
@@ -1184,7 +1247,7 @@ def send_p2p_file(peer_name: str, endpoint: str, file_path: str, expected_finger
             return False
             
     future = asyncio.run_coroutine_threadsafe(
-        _send_file_async(peer_name, endpoint, file_path, expected_fingerprint),
+        _send_file_async(peer_name, endpoint, file_path, expected_fingerprint, message_id),
         loop
     )
     try:
@@ -1194,7 +1257,12 @@ def send_p2p_file(peer_name: str, endpoint: str, file_path: str, expected_finger
         traceback.print_exc()
         return False
 
-async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None) -> bool:
+async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="") -> bool:
+    async with _operation_lock(peer_name, expected_fingerprint):
+        return await _send_file_unlocked(peer_name, endpoint, file_path, expected_fingerprint, message_id)
+
+
+async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="") -> bool:
     try:
         session = _session_for_peer(peer_name, expected_fingerprint)
         if not session or not session.is_online:
@@ -1230,7 +1298,9 @@ async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expect
 
             fp = session.peer_fingerprint
             peer_fingerprint_to_name[fp] = peer_name
-            active_sessions[fp] = session
+            registered = await _register_authenticated_session(session, fp, initiator=True)
+            if registered is not session:
+                session = registered
 
             print(f"Established Double Ratchet session to {peer_name} (Fingerprint: {fp})")
 
@@ -1287,6 +1357,8 @@ async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expect
             "file_nonce_prefix": base64.b64encode(file_nonce_prefix).decode(),
             "timestamp": int(datetime.now(timezone.utc).timestamp()),
         }
+        if message_id:
+            meta["message_id"] = str(message_id)[:128]
         
         print(f"Sending file_meta envelope for file_id {meta['file_id']} ({meta['file_name']}, {file_size} bytes)")
         await session.send_reliable(meta)
@@ -1312,7 +1384,7 @@ def shutdown_all_sessions():
     """
     Close all active P2P connections and clear session caches (e.g. on duress wipe).
     """
-    global active_sessions, incoming_files, loop
+    global active_sessions, incoming_files, peer_operation_locks, loop
     print("Shutdown all active sessions and clearing caches...")
     try:
         from messenger.core.upnp import stop_upnp
@@ -1328,6 +1400,7 @@ def shutdown_all_sessions():
         except Exception as e:
             print("Error closing session during shutdown:", e)
     active_sessions.clear()
+    peer_operation_locks.clear()
     for transfer_key in list(incoming_files):
         _discard_incoming_file(transfer_key)
 
@@ -1353,6 +1426,9 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
     
     # Close old session
     session = _session_for_peer(peer_name, expected_fingerprint)
+    if session and session.is_online:
+        print(f"[RECONNECT] Session with {peer_name} is already online; keeping it")
+        return True
     if session:
         try:
             if hasattr(session, "close"):
@@ -1396,7 +1472,13 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
             if connected_session:
                 fp = connected_session.peer_fingerprint
                 peer_fingerprint_to_name[fp] = peer_name
-                active_sessions[fp] = connected_session
+                registered = await _register_authenticated_session(
+                    connected_session, fp, initiator=True
+                )
+                if registered is not connected_session:
+                    connected_session = registered
+                else:
+                    asyncio.create_task(_read_loop(connected_session, peer_name, fp))
                 
                 # Trigger Kotlin session listener
                 if session_listener_callback:

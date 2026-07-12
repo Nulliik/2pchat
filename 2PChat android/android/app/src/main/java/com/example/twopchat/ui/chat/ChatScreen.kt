@@ -187,7 +187,7 @@ fun ChatScreen(
                 lowerName.endsWith(".png") || lowerName.endsWith(".gif") ||
                 lowerName.endsWith(".webp") || lowerName.endsWith(".bmp") || lowerName.endsWith(".heic")
             Message(
-                id = newMessageId(),
+                id = json.optString("message_id").ifBlank { newMessageId() },
                 text = if (isImage) "Sent an image" else fileName,
                 isMe = false,
                 timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
@@ -524,7 +524,7 @@ fun ChatScreen(
                     db.saveMessage(peerName, outMsg)
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
-                    P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath) { success ->
+                    P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath, outMsg.id) { success ->
                         if (!success) {
                             db.updateMessageStatus(outMsg.id, "PENDING")
                             coroutineScope.launch {
@@ -579,7 +579,7 @@ fun ChatScreen(
                     db.saveMessage(peerName, outMsg)
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
-                    P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath) { success ->
+                    P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id) { success ->
                         if (!success) {
                             db.updateMessageStatus(outMsg.id, "PENDING")
                             coroutineScope.launch {
@@ -635,7 +635,7 @@ fun ChatScreen(
                     db.saveMessage(peerName, outMsg)
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
-                    P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath) { success ->
+                    P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath, outMsg.id) { success ->
                         if (!success) {
                             db.updateMessageStatus(outMsg.id, "PENDING")
                             coroutineScope.launch {
@@ -1689,7 +1689,7 @@ remove("pinned_msg_id_${peerName}")
                                             }
                                             val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                                             if (endpoint != null && peerName != "Saved Messages") {
-                                                P2PMessageRelay.sendReaction(context, peerName, endpoint, msg.id, emoji)
+                                                P2PMessageRelay.sendReaction(context, peerName, endpoint, msg.id, msg.text, emoji)
                                             }
                                             selectedMessageForOptions = null
                                         }
@@ -1935,7 +1935,7 @@ remove("pinned_msg_id_${peerName}")
                                             // Send if there is an endpoint
                                             if (forwardEndpoint != null && chatName != "Saved Messages") {
                                                 if (messageToForward?.attachmentType != null && messageToForward?.attachmentUri != null) {
-                                                    P2PMessageRelay.sendFile(context, chatName, forwardEndpoint, messageToForward!!.attachmentUri!!) { success ->
+                                                    P2PMessageRelay.sendFile(context, chatName, forwardEndpoint, messageToForward!!.attachmentUri!!, fwdMsg.id) { success ->
                                                         if (!success) {
                                                             db.updateMessageStatus(fwdMsg.id, "PENDING")
                                                         }

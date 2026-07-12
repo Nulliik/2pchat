@@ -264,7 +264,18 @@ object PythonBridge {
             } else {
                 emptyList()
             }
-            val yggdrasilAddress = getYggdrasilAddress()
+            val prefs = appContext?.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+            val yggEnabled = prefs?.getBoolean("settings_yggdrasil", true) ?: false
+            val yggState = prefs?.getString("yggdrasil_runtime_state", "disabled").orEmpty()
+            val yggRoutes = prefs?.getInt("yggdrasil_runtime_routes", 0) ?: 0
+            // An address exists before the overlay is actually routable. Do
+            // not publish it until the node reports a connected state and at
+            // least two loaded routes.
+            val yggdrasilAddress = if (yggEnabled && yggState == "connected" && yggRoutes >= 2) {
+                getYggdrasilAddress()
+            } else {
+                ""
+            }
             val addresses = buildList {
                 addAll(ipv4Addresses)
                 if (yggdrasilAddress.isNotEmpty()) add(yggdrasilAddress)
@@ -370,12 +381,12 @@ object PythonBridge {
         }
     }
 
-    fun sendP2pFile(peerName: String, endpoint: String, filePath: String, expectedFingerprint: String? = null): Boolean {
+    fun sendP2pFile(peerName: String, endpoint: String, filePath: String, expectedFingerprint: String? = null, messageId: String = ""): Boolean {
         if (!isInitialized) return false
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
-            val success = bridge.callAttr("send_p2p_file", peerName, endpoint, filePath, expectedFingerprint)
+            val success = bridge.callAttr("send_p2p_file", peerName, endpoint, filePath, expectedFingerprint, messageId)
             success.toBoolean()
         } catch (e: Exception) {
             Log.e(TAG, "Error sending P2P file via Python", e)

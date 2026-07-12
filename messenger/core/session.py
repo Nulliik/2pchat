@@ -114,6 +114,15 @@ class Session:
         self.trust_status: Optional[str] = None
         self.trust_warning: Optional[str] = None
         self._message_counter = 0
+        # Double Ratchet state is mutated for every encrypted frame.  ACKs and
+        # application sends may run in different tasks, so encryption and the
+        # corresponding stream write must be one ordered critical section.
+        self._send_lock = asyncio.Lock()
+        # Reliable delivery retries the same id when an ACK is lost.  Remember
+        # a bounded window so a retry is ACKed again but not delivered twice.
+        self._received_ids = set()
+        self._received_id_order = []
+        self._received_id_limit = 4096
         self._online = True
         self._status_sent = False
 
@@ -376,7 +385,17 @@ class Session:
                             future.set_result(True)
                         continue
 
-                    await self._send_ack(message.get("id"))
+                    message_id = message.get("id")
+                    await self._send_ack(message_id)
+                    if message_id is not None:
+                        if message_id in self._received_ids:
+                            logger.debug("Ignored duplicate reliable message id=%s", message_id)
+                            continue
+                        self._received_ids.add(message_id)
+                        self._received_id_order.append(message_id)
+                        if len(self._received_id_order) > self._received_id_limit:
+                            expired = self._received_id_order.pop(0)
+                            self._received_ids.discard(expired)
                     logger.debug(
                         "Received message type=%s id=%s len=%s",
                         message.get("type"),
@@ -423,16 +442,17 @@ class Session:
     async def _send_payload(self, message: Dict[str, Any]) -> None:
         if not self.their_pub:
             raise RuntimeError("Session not established")
-        plaintext = protocol.encode_message(message)
-        ciphertext = encrypt_message_v3(self._dr_state, plaintext)
-        logger.debug(
-            "Send message type=%s %s plain=%sB cipher=%sB",
-            message.get("type"),
-            self._message_ref(message),
-            len(plaintext),
-            len(ciphertext),
-        )
-        await _write_frame(self.writer, ciphertext)
+        async with self._send_lock:
+            plaintext = protocol.encode_message(message)
+            ciphertext = encrypt_message_v3(self._dr_state, plaintext)
+            logger.debug(
+                "Send message type=%s %s plain=%sB cipher=%sB",
+                message.get("type"),
+                self._message_ref(message),
+                len(plaintext),
+                len(ciphertext),
+            )
+            await _write_frame(self.writer, ciphertext)
 
     async def send_reliable(self, message: Dict[str, Any]) -> str:
         """Send a message and wait for an ACK with retries."""
