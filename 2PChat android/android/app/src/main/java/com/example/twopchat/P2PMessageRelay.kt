@@ -60,6 +60,7 @@ object P2PMessageRelay {
     private val processingOfflineQueues = ConcurrentHashMap.newKeySet<String>()
     private val avatarSharesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val lastAvatarShareAt = ConcurrentHashMap<String, Long>()
+    private val lastReconnectAttemptAt = ConcurrentHashMap<String, Long>()
 
     // Maps peer name to their profile avatar bitmap in RAM
     val peerAvatars = mutableStateMapOf<String, Bitmap>()
@@ -171,11 +172,9 @@ object P2PMessageRelay {
         val sharedPrefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
         val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
         val updatedChats = activeSet.toMutableSet()
-        var changed = false
-        if (updatedChats.remove(fromName)) {
-            changed = true
-        }
-        if (updatedChats.add(toName)) {
+        val hadVisibleChat = updatedChats.remove(fromName)
+        var changed = hadVisibleChat
+        if (hadVisibleChat && updatedChats.add(toName)) {
             changed = true
         }
 
@@ -184,7 +183,10 @@ object P2PMessageRelay {
             editor.putStringSet("active_chats", updatedChats)
         }
 
-        val keysToMove = listOf("last_msg_", "transport_", "last_endpoint_", "verified_peer_", "fingerprint_mismatch_")
+        val keysToMove = listOf(
+            "last_msg_", "transport_", "last_endpoint_", "peer_fingerprint_",
+            "unread_count_", "verified_peer_", "fingerprint_mismatch_"
+        )
         for (prefix in keysToMove) {
             if (!sharedPrefs.contains("$prefix$fromName")) {
                 continue
@@ -194,6 +196,12 @@ object P2PMessageRelay {
                     val value = sharedPrefs.getBoolean("$prefix$fromName", false)
                     if (!sharedPrefs.contains("$prefix$toName")) {
                         editor.putBoolean("$prefix$toName", value)
+                    }
+                }
+                "unread_count_" -> {
+                    val value = sharedPrefs.getInt("$prefix$fromName", 0)
+                    if (!sharedPrefs.contains("$prefix$toName")) {
+                        editor.putInt("$prefix$toName", value)
                     }
                 }
                 else -> {
@@ -224,7 +232,24 @@ object P2PMessageRelay {
         }
         synchronized(identityLock) {
             val knownName = fingerprintToPeerName[fingerprint]
+            val persistedName = if (knownName.isNullOrBlank() && isPlaceholderPeerName(peerName)) {
+                context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                    .all.entries
+                    .firstOrNull { (key, value) ->
+                        key.startsWith("peer_fingerprint_") &&
+                            value == fingerprint &&
+                            !isPlaceholderPeerName(key.removePrefix("peer_fingerprint_"))
+                    }
+                    ?.key
+                    ?.removePrefix("peer_fingerprint_")
+            } else {
+                null
+            }
             return when {
+                !persistedName.isNullOrBlank() -> {
+                    fingerprintToPeerName[fingerprint] = persistedName
+                    persistedName
+                }
                 knownName.isNullOrBlank() -> {
                     fingerprintToPeerName[fingerprint] = peerName
                     peerName
@@ -281,6 +306,13 @@ object P2PMessageRelay {
         }
         val appContext = context.applicationContext
         loadPersistedAvatars(appContext)
+        val persistedPrefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val persistedChats = persistedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+        for (peerName in persistedChats) {
+            persistedPrefs.getString("last_endpoint_$peerName", null)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { peerEndpoints[peerName] = it }
+        }
         val port = listenerPort(appContext)
         try {
             log(appContext, "Starting Python P2P Relays on port $port...")
@@ -491,6 +523,15 @@ object P2PMessageRelay {
             PythonBridge.registerSessionListener(object : PythonBridge.PySessionListener {
                 override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String) {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
+                    // Incoming handshakes are named by fingerprint until their
+                    // authenticated identity_info arrives. Search probes and
+                    // half-open sessions must never create visible Peer (...)
+                    // chats or leave placeholder preference keys behind.
+                    if (isPlaceholderPeerName(resolvedPeerName)) {
+                        log(appContext, "Authenticated unnamed session awaiting identity_info ($fingerprint)")
+                        return
+                    }
+                    PythonBridge.rememberPeerName(fingerprint, resolvedPeerName)
                     appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
                         .edit().apply {
                             putString("peer_fingerprint_$resolvedPeerName", fingerprint)
@@ -540,7 +581,58 @@ object P2PMessageRelay {
             })
             
             log(appContext, "Python P2P Relays started successfully")
-            
+
+            // Keep saved conversations connected even while the user remains
+            // on the main screen. Fingerprints are used instead of nicknames
+            // because an incoming session may not have received identity_info
+            // yet immediately after either application restarts.
+            thread(start = true, name = "SessionMaintenanceLoop", isDaemon = true) {
+                while (isRunning) {
+                    try {
+                        val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                        val chats = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
+                            .filterNot { it == "Saved Messages" || isPlaceholderPeerName(it) }
+                        val activeFingerprints = PythonBridge.getActivePeerFingerprints().toSet()
+
+                        Handler(Looper.getMainLooper()).post {
+                            for (peerName in chats) {
+                                val fingerprint = sharedPrefs.getString("peer_fingerprint_$peerName", null)
+                                if (!fingerprint.isNullOrBlank() && fingerprint in activeFingerprints) {
+                                    peerSessionStates[peerName] = true
+                                } else {
+                                    peerSessionStates.remove(peerName)
+                                    peerConnectionTransports.remove(peerName)
+                                }
+                            }
+                        }
+
+                        val now = System.currentTimeMillis()
+                        for (peerName in chats) {
+                            val fingerprint = sharedPrefs.getString("peer_fingerprint_$peerName", null)
+                                ?.takeIf { it.isNotBlank() } ?: continue
+                            if (fingerprint in activeFingerprints) continue
+                            val endpoint = peerEndpoints[peerName]
+                                ?: sharedPrefs.getString("last_endpoint_$peerName", null)
+                                ?.takeIf { it.isNotBlank() }
+                                ?: continue
+                            val lastAttempt = lastReconnectAttemptAt[fingerprint] ?: 0L
+                            if (now - lastAttempt < 15_000L) continue
+
+                            lastReconnectAttemptAt[fingerprint] = now
+                            log(appContext, "Background reconnection for $peerName at '$endpoint'")
+                            PythonBridge.reconnectPeerSession(peerName, endpoint, fingerprint)
+                        }
+                    } catch (e: Exception) {
+                        log(appContext, "Error maintaining saved peer sessions", "ERROR", e)
+                    }
+                    try {
+                        Thread.sleep(5_000)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                }
+            }
+
             // Start a periodic announcement and network interface monitoring loop
             thread(start = true, name = "TrackerAnnounceLoop", isDaemon = true) {
                 var lastAddresses = emptyList<String>()
@@ -580,8 +672,10 @@ object P2PMessageRelay {
                                 log(appContext, "Announcing self on tracker. Network changed and stable: $networkChangedAndStable, IPs: $currentAddresses")
                                 val success = PythonBridge.announceSelf(username, fingerprint, port)
                                 log(appContext, "Announce self status: $success")
-                                lastAddresses = currentAddresses
-                                lastAnnounceTime = now
+                                if (success) {
+                                    lastAddresses = currentAddresses
+                                    lastAnnounceTime = now
+                                }
                             }
                         }
                     } catch (e: Exception) {
@@ -610,6 +704,7 @@ object P2PMessageRelay {
         synchronized(identityLock) {
             fingerprintToPeerName.clear()
         }
+        lastReconnectAttemptAt.clear()
         peerAvatars.clear()
         // Trigger Python shutdown/cleanup
         thread(start = true) {

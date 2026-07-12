@@ -50,6 +50,19 @@ def test_load_or_create_signing_identity(tmp_path, monkeypatch):
     assert isinstance(sk1.verify_key, VerifyKey)
 
 
+def test_corrupt_signing_identity_is_recovered_without_touching_identity(tmp_path):
+    identity_path = tmp_path / "identity.key"
+    signing_path = tmp_path / "identity_signing.key"
+    original_identity = identity.load_or_create_identity(str(identity_path))
+    signing_path.write_text("not-a-valid-signing-key", encoding="ascii")
+
+    recovered = identity.load_or_create_signing_identity(str(signing_path))
+
+    assert len(bytes(recovered)) == 32
+    assert bytes(identity.load_or_create_identity(str(identity_path))) == bytes(original_identity)
+    assert list(tmp_path.glob("identity_signing.key.unreadable-*"))
+
+
 def test_trust_store_records_and_labels(tmp_path, monkeypatch):
     monkeypatch.setenv(identity.CONFIG_ENV, str(tmp_path))
     store_path = tmp_path / "trust.json"

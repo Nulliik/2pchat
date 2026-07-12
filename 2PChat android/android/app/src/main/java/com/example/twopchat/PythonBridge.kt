@@ -266,44 +266,45 @@ object PythonBridge {
         if (!isInitialized) return false
         val discoveryCode = rendezvousCode?.trim()?.takeIf { it.isNotEmpty() }
             ?: getOrCreateDiscoveryCode()
-        val announceKey = "$nickname\u0000$fingerprint\u0000$discoveryCode\u0000$port"
+        val prefs = appContext?.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val ipv4Enabled = prefs
+                ?.getBoolean("settings_ipv4", true) ?: true
+        val ipv4Addresses = if (ipv4Enabled) {
+            getLocalAddresses().filter { !it.contains(':') }
+        } else {
+            emptyList()
+        }
+        val yggEnabled = prefs?.getBoolean("settings_yggdrasil", true) ?: false
+        val yggState = prefs?.getString("yggdrasil_runtime_state", "disabled").orEmpty()
+        val yggRoutes = prefs?.getInt("yggdrasil_runtime_routes", 0) ?: 0
+        // An address exists before the overlay is actually routable. Do not
+        // publish it until the node reports a connected state and routes.
+        val yggdrasilAddress = if (yggEnabled && yggState == "connected" && yggRoutes >= 2) {
+            getYggdrasilAddress()
+        } else {
+            ""
+        }
+        val addresses = buildList {
+            addAll(ipv4Addresses)
+            if (yggdrasilAddress.isNotEmpty()) add(yggdrasilAddress)
+        }.distinct().sorted()
+        // Endpoint changes are meaningful announces. In particular, do not
+        // let an early IPv4/empty announce suppress a later Yggdrasil one.
+        val endpointKey = addresses.joinToString(",")
+        val announceKey = "$nickname\u0000$fingerprint\u0000$discoveryCode\u0000$port\u0000$endpointKey"
         synchronized(announceLock) {
             val now = android.os.SystemClock.elapsedRealtime()
             val lastAt = lastAnnounceAt[announceKey]
             if (announceKey in announcesInFlight || (!force && lastAt != null && now - lastAt < MIN_ANNOUNCE_INTERVAL_MS)) {
-                Log.i(TAG, "Skipping duplicate tracker announce for '$nickname'")
+                Log.i(TAG, "Skipping duplicate tracker announce for '$nickname' at $addresses")
                 return lastAnnounceResult[announceKey] ?: false
             }
             announcesInFlight.add(announceKey)
-            lastAnnounceAt[announceKey] = now
         }
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
 
-            val ipv4Enabled = appContext?.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                ?.getBoolean("settings_ipv4", true) ?: true
-            val ipv4Addresses = if (ipv4Enabled) {
-                getLocalAddresses().filter { !it.contains(':') }
-            } else {
-                emptyList()
-            }
-            val prefs = appContext?.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-            val yggEnabled = prefs?.getBoolean("settings_yggdrasil", true) ?: false
-            val yggState = prefs?.getString("yggdrasil_runtime_state", "disabled").orEmpty()
-            val yggRoutes = prefs?.getInt("yggdrasil_runtime_routes", 0) ?: 0
-            // An address exists before the overlay is actually routable. Do
-            // not publish it until the node reports a connected state and at
-            // least two loaded routes.
-            val yggdrasilAddress = if (yggEnabled && yggState == "connected" && yggRoutes >= 2) {
-                getYggdrasilAddress()
-            } else {
-                ""
-            }
-            val addresses = buildList {
-                addAll(ipv4Addresses)
-                if (yggdrasilAddress.isNotEmpty()) add(yggdrasilAddress)
-            }.distinct()
             Log.i(
                 TAG,
                 "Announcing self on trackers. IPv4=$ipv4Addresses Yggdrasil=$yggdrasilAddress port=$port"
@@ -314,7 +315,13 @@ object PythonBridge {
             )
             success.toBoolean().also { result ->
                 synchronized(announceLock) {
-                    lastAnnounceResult[announceKey] = result
+                    if (result) {
+                        lastAnnounceAt[announceKey] = android.os.SystemClock.elapsedRealtime()
+                        lastAnnounceResult[announceKey] = true
+                    } else {
+                        lastAnnounceAt.remove(announceKey)
+                        lastAnnounceResult.remove(announceKey)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -445,6 +452,32 @@ object PythonBridge {
         } catch (e: Exception) {
             Log.e(TAG, "Error getting active peers", e)
             emptyList()
+        }
+    }
+
+    fun getActivePeerFingerprints(): List<String> {
+        if (!isInitialized) return emptyList()
+        return try {
+            val py = Python.getInstance()
+            val bridge = py.getModule("discovery_bridge")
+            val fingerprints = bridge.callAttr("probe_active_peer_fingerprints_list").toString()
+            if (fingerprints.isEmpty()) emptyList() else fingerprints.split(",")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error getting active peer fingerprints", e)
+            emptyList()
+        }
+    }
+
+    fun rememberPeerName(fingerprint: String, peerName: String): Boolean {
+        if (!isInitialized || fingerprint.isBlank() || peerName.isBlank()) return false
+        return try {
+            val py = Python.getInstance()
+            py.getModule("discovery_bridge")
+                .callAttr("remember_peer_name", fingerprint, peerName)
+                .toBoolean()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error remembering authenticated peer name", e)
+            false
         }
     }
 

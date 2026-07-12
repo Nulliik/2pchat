@@ -1472,7 +1472,16 @@ fun ContactsTab(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable(enabled = contact.verified) {
-                                    val peerKey = if (contact.ownershipVerified) contact.name else "${contact.name} · ${contact.fingerprint.take(8)}"
+                                    val existingFingerprint = sharedPrefs.getString("peer_fingerprint_${contact.name}", null)
+                                    val peerKey = if (
+                                        existingFingerprint.isNullOrBlank() || existingFingerprint == contact.fingerprint
+                                    ) {
+                                        contact.name
+                                    } else {
+                                        // Preserve both contacts only for a real
+                                        // same-name/different-key collision.
+                                        "${contact.name} · ${contact.fingerprint.take(8)}"
+                                    }
                                     val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                                     if (!activeSet.contains(peerKey)) {
                                         val newSet = activeSet.toMutableSet()

@@ -35,6 +35,8 @@ active_sessions = {}
 peer_operation_locks = {}
 peer_fingerprint_to_name = {}
 incoming_files = {}
+MOBILE_ACK_TIMEOUT = 3.0
+MOBILE_MAX_RETRIES = 1
 MAX_INCOMING_FILES = 16
 INCOMING_FILE_TTL_SECONDS = 120
 MAX_ENCRYPTED_CHUNK_SIZE = 1024 * 1024
@@ -339,6 +341,11 @@ async def _verify_live_endpoint(
                     "ownership_verified": expected_fingerprint is not None,
                     "verification_reason": "authenticated live response",
                 }
+            print(
+                "Live identity mismatch for "
+                f"{endpoint}: requested={nickname!r}, announced={announced_name!r}, "
+                f"payload_fp={announced_fp!r}, session_fp={session.peer_fingerprint!r}"
+            )
             return {
                 "endpoint": endpoint,
                 "verified": False,
@@ -887,6 +894,8 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
             identity_priv=identity_priv,
             signing_key=signing_key,
             trust_store=trust_store,
+            ack_timeout=MOBILE_ACK_TIMEOUT,
+            max_retries=MOBILE_MAX_RETRIES,
         )
         await asyncio.wait_for(session._exchange_keys(initiator=False), timeout=5.0)
         if session.peer_fingerprint == fingerprint(identity_priv.public_key):
@@ -1219,6 +1228,7 @@ def send_p2p_message(peer_name: str, endpoint: str, body: str, expected_fingerpr
     try:
         return future.result(timeout=15)
     except Exception as e:
+        future.cancel()
         print(f"Failed to send message to {peer_name} via python bridge:", e)
         traceback.print_exc()
         return False
@@ -1255,15 +1265,22 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
         reader, writer = await asyncio.wait_for(
             transport_connect("direct", host, port), timeout=5.0
         )
-        session = Session(reader, writer, identity_priv=identity_priv,
-                          signing_key=signing_key, trust_store=trust_store)
+        session = Session(
+            reader,
+            writer,
+            identity_priv=identity_priv,
+            signing_key=signing_key,
+            trust_store=trust_store,
+            ack_timeout=MOBILE_ACK_TIMEOUT,
+            max_retries=MOBILE_MAX_RETRIES,
+        )
         await asyncio.wait_for(session._exchange_keys(initiator=True, expected_fingerprint=expected_fingerprint), timeout=5.0)
         if session.peer_fingerprint == fingerprint(identity_priv.public_key):
             await session.close()
             raise ValueError("refusing self connection")
         session._start_reader()
         return session
-    except Exception:
+    except BaseException:
         if session is not None:
             try:
                 await session.close()
@@ -1288,7 +1305,20 @@ async def _send_message_async(peer_name: str, endpoint: str, body: str, expected
         return await _send_message_unlocked(peer_name, endpoint, body, expected_fingerprint)
 
 
+async def _invalidate_session(session) -> None:
+    if session is None:
+        return
+    fp = getattr(session, "peer_fingerprint", None)
+    if fp and active_sessions.get(fp) is session:
+        active_sessions.pop(fp, None)
+    try:
+        await session.close()
+    except Exception:
+        pass
+
+
 async def _send_message_unlocked(peer_name: str, endpoint: str, body: str, expected_fingerprint=None) -> bool:
+    session = None
     try:
         session = _session_for_peer(peer_name, expected_fingerprint)
         if not session or not session.is_online:
@@ -1370,7 +1400,11 @@ async def _send_message_unlocked(peer_name: str, endpoint: str, body: str, expec
         # Send the chat message
         await session.send_chat(body)
         return True
+    except asyncio.CancelledError:
+        await _invalidate_session(session)
+        raise
     except Exception as e:
+        await _invalidate_session(session)
         print(f"Error in _send_message_async to {peer_name}:", e)
         traceback.print_exc()
         return False
@@ -1396,6 +1430,7 @@ def send_p2p_file(peer_name: str, endpoint: str, file_path: str, expected_finger
     try:
         return future.result(timeout=60) # Allow up to 1 minute for larger files
     except Exception as e:
+        future.cancel()
         print(f"Failed to send file to {peer_name} via python bridge:", e)
         traceback.print_exc()
         return False
@@ -1406,6 +1441,7 @@ async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expect
 
 
 async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="") -> bool:
+    session = None
     try:
         session = _session_for_peer(peer_name, expected_fingerprint)
         if not session or not session.is_online:
@@ -1518,7 +1554,11 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
             
         print(f"File {file_path} successfully transmitted to {peer_name}!")
         return True
+    except asyncio.CancelledError:
+        await _invalidate_session(session)
+        raise
     except Exception as e:
+        await _invalidate_session(session)
         print(f"Error in _send_file_async to {peer_name}:", e)
         traceback.print_exc()
         return False
@@ -1577,6 +1617,71 @@ def get_active_peers_list() -> str:
                 name = peer_fingerprint_to_name.get(fp, f"Peer ({fp[:8]})")
                 peers.add(name)
     return ",".join(sorted(peers))
+
+
+def get_active_peer_fingerprints_list() -> str:
+    """Return authenticated identities for live sessions.
+
+    Fingerprints are stable while nicknames may still be awaiting an
+    ``identity_info`` message after reconnect. Android uses this list to keep
+    its main-screen online indicators accurate without opening a chat.
+    """
+    return ",".join(sorted(
+        fp for fp, session in active_sessions.items()
+        if session and session.is_online and fp
+    ))
+
+
+async def _probe_active_peer_fingerprints() -> list[str]:
+    async def probe(peer_fingerprint, session):
+        try:
+            # Every reliable frame is acknowledged by the authenticated remote
+            # session before it reaches the application read loop.
+            await session.send_reliable({"type": "heartbeat"})
+            return peer_fingerprint
+        except asyncio.CancelledError:
+            # Reader failure cancels pending ACK futures and marks the session
+            # offline. Do not invalidate a healthy session merely because the
+            # bridge-level probe itself was cancelled.
+            if not session.is_online:
+                await _invalidate_session(session)
+                return None
+            raise
+        except Exception:
+            await _invalidate_session(session)
+            return None
+
+    results = await asyncio.gather(*(
+        probe(fp, session)
+        for fp, session in list(active_sessions.items())
+        if session and session.is_online and fp
+    ))
+    return sorted(fp for fp in results if fp)
+
+
+def probe_active_peer_fingerprints_list() -> str:
+    """Actively confirm live sessions and return their fingerprints."""
+    if not loop or not loop.is_running():
+        return ""
+    future = asyncio.run_coroutine_threadsafe(_probe_active_peer_fingerprints(), loop)
+    try:
+        return ",".join(future.result(timeout=10.0))
+    except Exception:
+        future.cancel()
+        # A bridge-level timeout should not itself make healthy peers appear
+        # offline. The next maintenance pass will retry the probe.
+        return get_active_peer_fingerprints_list()
+
+
+def remember_peer_name(peer_fingerprint: str, peer_name: str) -> bool:
+    """Apply Android's persisted authenticated fingerprint-to-name mapping."""
+    if not peer_fingerprint or not peer_name or peer_name.startswith("Peer ("):
+        return False
+    peer_fingerprint_to_name[peer_fingerprint] = peer_name
+    session = active_sessions.get(peer_fingerprint)
+    if session is not None:
+        session.peer_label = peer_name
+    return True
 
 def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=None) -> bool:
     """

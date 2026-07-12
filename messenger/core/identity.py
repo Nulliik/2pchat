@@ -146,10 +146,18 @@ def load_or_create_signing_identity(path: Optional[str] = None) -> SigningKey:
 
     target = Path(path) if path else signing_identity_path()
     if target.exists():
-        data, needs_migration = _read_identity(target)
-        if needs_migration:
-            _write_identity(target, data)
-        return SigningKey(Base64Encoder.decode(data))
+        try:
+            data, needs_migration = _read_identity(target)
+            if needs_migration:
+                _write_identity(target, data)
+            return SigningKey(Base64Encoder.decode(data))
+        except Exception:
+            # The long-lived X25519 identity is the user-visible trust anchor
+            # and must never be replaced silently. The Ed25519 signing key is
+            # auxiliary, so recover it instead of leaving the listener
+            # permanently offline when an Android Keystore blob is unreadable.
+            quarantine = target.with_name(f"{target.name}.unreadable-{uuid4().hex}")
+            os.replace(target, quarantine)
 
     sk = SigningKey.generate()
     _write_identity(target, sk.encode(Base64Encoder).decode("ascii"))
