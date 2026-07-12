@@ -2,6 +2,7 @@ import contextlib
 import os
 import asyncio
 import struct
+import socket
 
 import pytest
 
@@ -231,3 +232,14 @@ async def test_udp_tracker_live_matrix(tracker_url, base_port):
 def test_tracker_catalog_contains_multiple_protocols():
     protocols = {spec.protocol for spec in BASE_TRACKERS}
     assert {"udp", "http", "https"}.issubset(protocols)
+
+
+def test_parse_compact_peers_ipv6():
+    ipv6_raw = socket.inet_pton(socket.AF_INET6, "200:f144:2f1d:20c9:7479:f0b0:be48:dd1b")
+    port_raw = struct.pack(">H", 50001)
+    payload = ipv6_raw + port_raw
+    peers = UdpTrackerDiscovery._parse_compact_peers(payload, family=socket.AF_INET6)
+    assert len(peers) == 1
+    assert peers[0].host == "200:f144:2f1d:20c9:7479:f0b0:be48:dd1b"
+    assert peers[0].port == 50001
+

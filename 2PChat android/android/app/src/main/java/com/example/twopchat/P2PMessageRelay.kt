@@ -140,7 +140,11 @@ object P2PMessageRelay {
             val fileName = json.optString("file_name", "file")
             val filePath = json.optString("file_path", "")
             val mime = json.optString("mime", "")
-            val isImage = mime.startsWith("image/")
+            val lowerName = fileName.lowercase()
+            val isImage = mime.startsWith("image/") ||
+                lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") ||
+                lowerName.endsWith(".png") || lowerName.endsWith(".gif") ||
+                lowerName.endsWith(".webp") || lowerName.endsWith(".bmp") || lowerName.endsWith(".heic")
             IncomingAttachment(
                 displayMessage = if (isImage) "Sent an image" else "Sent a file: $fileName",
                 attachmentType = if (isImage) "IMAGE" else "FILE",
@@ -640,30 +644,36 @@ object P2PMessageRelay {
     }
 
     /**
-     * Send an encrypted file to a resolved peer's endpoint.
+     * Send an encrypted file to a specific peer and endpoint.
      */
-    fun sendFile(context: Context, endpoint: String, filePath: String, onResult: (Boolean) -> Unit = {}) {
+    fun sendFile(context: Context, peerName: String, endpoint: String, filePath: String, onResult: (Boolean) -> Unit = {}) {
         thread(start = true) {
             try {
-                var targetPeerName = "Direct Peer"
-                for ((name, ep) in peerEndpoints) {
-                    if (ep == endpoint) {
-                        targetPeerName = name
-                        break
-                    }
-                }
-                
-                log(context, "Sending secure file via Python transport")
+                log(context, "Sending secure file via Python transport to $peerName")
                 val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                    .getString("peer_fingerprint_$targetPeerName", null)
-                val success = PythonBridge.sendP2pFile(targetPeerName, endpoint, filePath, expectedFingerprint)
-                log(context, "Sending file status to $targetPeerName: ${if (success) "SUCCESS" else "FAILED"}")
+                    .getString("peer_fingerprint_$peerName", null)
+                val success = PythonBridge.sendP2pFile(peerName, endpoint, filePath, expectedFingerprint)
+                log(context, "Sending file status to $peerName: ${if (success) "SUCCESS" else "FAILED"}")
                 Handler(Looper.getMainLooper()).post { onResult(success) }
             } catch (e: Exception) {
-                log(context, "Failed to send secure file", "ERROR")
+                log(context, "Failed to send secure file", "ERROR", e)
                 Handler(Looper.getMainLooper()).post { onResult(false) }
             }
         }
+    }
+
+    /**
+     * Backward-compatible overload resolving peerName from endpoint.
+     */
+    fun sendFile(context: Context, endpoint: String, filePath: String, onResult: (Boolean) -> Unit = {}) {
+        var targetPeerName = "Direct Peer"
+        for ((name, ep) in peerEndpoints) {
+            if (ep == endpoint) {
+                targetPeerName = name
+                break
+            }
+        }
+        sendFile(context, targetPeerName, endpoint, filePath, onResult)
     }
 
     fun reconnectSession(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {

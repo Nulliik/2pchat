@@ -203,7 +203,7 @@ class UdpTrackerDiscovery(DiscoveryProvider):
                         raise RuntimeError(response[8:].decode("utf-8", errors="replace"))
                     if action != TRACKER_ACTION_ANNOUNCE or rx != tx:
                         raise RuntimeError("Tracker announce transaction mismatch")
-                    peers = self._parse_compact_peers(response[20:])
+                    peers = self._parse_compact_peers(response[20:], family=family)
                     return interval, peers
                 except Exception as exc:  # noqa: BLE001
                     last_error = exc
@@ -214,14 +214,30 @@ class UdpTrackerDiscovery(DiscoveryProvider):
         raise RuntimeError("Unable to contact tracker")
 
     @staticmethod
-    def _parse_compact_peers(payload: bytes) -> list[PeerEndpoint]:
-        if len(payload) % 6 != 0:
-            raise RuntimeError("Tracker returned malformed compact peer list")
+    def _parse_compact_peers(payload: bytes, family: int = socket.AF_INET) -> list[PeerEndpoint]:
         peers: list[PeerEndpoint] = []
+        if family == socket.AF_INET6 and len(payload) % 18 == 0:
+            for offset in range(0, len(payload), 18):
+                chunk = payload[offset : offset + 18]
+                ip = socket.inet_ntop(socket.AF_INET6, chunk[:16])
+                port = struct.unpack(">H", chunk[16:18])[0]
+                peers.append(PeerEndpoint(host=ip, port=port))
+            return peers
+
+        if len(payload) % 6 != 0:
+            if len(payload) % 18 == 0:
+                for offset in range(0, len(payload), 18):
+                    chunk = payload[offset : offset + 18]
+                    ip = socket.inet_ntop(socket.AF_INET6, chunk[:16])
+                    port = struct.unpack(">H", chunk[16:18])[0]
+                    peers.append(PeerEndpoint(host=ip, port=port))
+                return peers
+            raise RuntimeError(f"Tracker returned malformed compact peer list (len={len(payload)})")
+
         for offset in range(0, len(payload), 6):
             chunk = payload[offset : offset + 6]
             ip = socket.inet_ntoa(chunk[:4])
-            port = struct.unpack(">H", chunk[4:])[0]
+            port = struct.unpack(">H", chunk[4:6])[0]
             try:
                 ipaddress.IPv4Address(ip)
             except ValueError as exc:

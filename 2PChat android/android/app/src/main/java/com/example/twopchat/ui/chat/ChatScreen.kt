@@ -175,7 +175,11 @@ fun ChatScreen(
             val fileName = json.optString("file_name", "file")
             val filePath = json.optString("file_path", "")
             val mime = json.optString("mime", "")
-            val isImage = mime.startsWith("image/")
+            val lowerName = fileName.lowercase()
+            val isImage = mime.startsWith("image/") ||
+                lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") ||
+                lowerName.endsWith(".png") || lowerName.endsWith(".gif") ||
+                lowerName.endsWith(".webp") || lowerName.endsWith(".bmp") || lowerName.endsWith(".heic")
             Message(
                 id = newMessageId(),
                 text = if (isImage) "Sent an image" else fileName,
@@ -471,7 +475,10 @@ fun ChatScreen(
             context.contentResolver.query(it, null, null, null, null)?.use { cursor ->
                 val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                 if (nameIndex != -1 && cursor.moveToFirst()) {
-                    fileName = cursor.getString(nameIndex)
+                    val queried = cursor.getString(nameIndex)
+                    if (!queried.isNullOrBlank()) {
+                        fileName = if (!queried.contains(".")) "$queried.jpg" else queried
+                    }
                 }
             }
             val tempFile = saveUriToTempFile(context, it, fileName)
@@ -494,7 +501,7 @@ fun ChatScreen(
                     db.saveMessage(peerName, outMsg)
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
-                    com.example.twopchat.P2PMessageRelay.sendFile(context, endpoint, tempFile.absolutePath) { success ->
+                    com.example.twopchat.P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath) { success ->
                         if (!success) {
                             db.updateMessageStatus(outMsg.id, "PENDING")
                             coroutineScope.launch {
@@ -549,7 +556,7 @@ fun ChatScreen(
                     db.saveMessage(peerName, outMsg)
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
-                    com.example.twopchat.P2PMessageRelay.sendFile(context, endpoint, file.absolutePath) { success ->
+                    com.example.twopchat.P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath) { success ->
                         if (!success) {
                             db.updateMessageStatus(outMsg.id, "PENDING")
                             coroutineScope.launch {
@@ -605,7 +612,7 @@ fun ChatScreen(
                     db.saveMessage(peerName, outMsg)
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
-                    com.example.twopchat.P2PMessageRelay.sendFile(context, endpoint, tempFile.absolutePath) { success ->
+                    com.example.twopchat.P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath) { success ->
                         if (!success) {
                             db.updateMessageStatus(outMsg.id, "PENDING")
                             coroutineScope.launch {
@@ -1822,7 +1829,7 @@ fun ChatScreen(
                                             // Send if there is an endpoint
                                             if (forwardEndpoint != null && chatName != "Saved Messages") {
                                                 if (messageToForward?.attachmentType != null && messageToForward?.attachmentUri != null) {
-                                                    com.example.twopchat.P2PMessageRelay.sendFile(context, forwardEndpoint, messageToForward!!.attachmentUri!!) { success ->
+                                                    com.example.twopchat.P2PMessageRelay.sendFile(context, chatName, forwardEndpoint, messageToForward!!.attachmentUri!!) { success ->
                                                         if (!success) {
                                                             db.updateMessageStatus(fwdMsg.id, "PENDING")
                                                         }

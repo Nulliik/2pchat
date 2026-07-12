@@ -61,15 +61,29 @@ YGG_TRACKERS = (
 
 
 def _session_for_peer(peer_name: str, expected_fingerprint: str | None = None):
-    """Resolve a live session through authenticated identity, not a name key."""
+    """Resolve a live session through authenticated identity, not just a name key."""
     if expected_fingerprint:
-        return active_sessions.get(expected_fingerprint)
-    matches = {
-        fp: active_sessions.get(fp)
+        session = active_sessions.get(expected_fingerprint)
+        if session and getattr(session, "is_online", False):
+            return session
+
+    matches = [
+        active_sessions.get(fp)
         for fp, name in peer_fingerprint_to_name.items()
         if name == peer_name and active_sessions.get(fp) is not None
-    }
-    return next(iter(matches.values())) if len(matches) == 1 else None
+    ]
+    online_matches = [s for s in matches if s and getattr(s, "is_online", False)]
+    if len(online_matches) == 1:
+        return online_matches[0]
+
+    online_sessions = [s for s in active_sessions.values() if s and getattr(s, "is_online", False)]
+    for s in online_sessions:
+        if getattr(s, "peer_label", None) == peer_name:
+            return s
+
+    if len(online_sessions) == 1:
+        return online_sessions[0]
+    return None
 
 
 def _format_endpoint(host: str, port: int) -> str:
@@ -160,9 +174,7 @@ def _has_ipv6_endpoint(endpoints: list[PeerEndpoint]) -> bool:
 
 def _resolve_tracker_names(primary_tracker: str | None = None) -> list[str]:
     names = []
-    requested = (primary_tracker, *CLEARNET_TRACKERS)
-    if local_yggdrasil_available:
-        requested = (*requested, *YGG_TRACKERS)
+    requested = (primary_tracker, *CLEARNET_TRACKERS, *YGG_TRACKERS)
     for tracker_name in requested:
         if tracker_name and tracker_name not in names:
             names.append(tracker_name)
@@ -224,7 +236,7 @@ async def _verify_live_endpoint(
         )
         await session.send_reliable({"type": "identity_probe"})
         while True:
-            message = await asyncio.wait_for(session.receive_message(), timeout=3.0)
+            message = await asyncio.wait_for(session.receive_message(), timeout=7.0)
             if message.get("type") != "identity_info":
                 continue
             announced_name = str(message.get("nickname", ""))
@@ -249,8 +261,8 @@ async def _verify_live_endpoint(
                 "verification_reason": "live identity did not match the requested name",
             }
     except Exception as exc:
-        print(f"Live peer verification failed for {endpoint}: {exc}")
-        reason = str(exc).strip() or type(exc).__name__
+        print(f"Live peer verification failed for {endpoint}: {exc!r}")
+        reason = str(exc).strip() or f"{type(exc).__name__} (no detail)"
         return {
             "endpoint": endpoint,
             "verified": False,
@@ -930,7 +942,35 @@ async def _read_loop(session, peer_name, fp):
                             print(f"File fully received and decrypted: {target}")
                             incoming_files.pop(transfer_key, None)
                             
-                            mime, _ = mimetypes.guess_type(file_name)
+                            ext_lower = target.suffix.lower()
+                            ext_mime_map = {
+                                ".jpg": "image/jpeg",
+                                ".jpeg": "image/jpeg",
+                                ".png": "image/png",
+                                ".gif": "image/gif",
+                                ".webp": "image/webp",
+                                ".bmp": "image/bmp",
+                                ".heic": "image/heic",
+                            }
+                            mime = ext_mime_map.get(ext_lower)
+                            if not mime:
+                                mime, _ = mimetypes.guess_type(file_name)
+                            if not mime or mime == "application/octet-stream":
+                                try:
+                                    with open(target, "rb") as hfile:
+                                        hdr = hfile.read(16)
+                                    if hdr.startswith(b"\xff\xd8\xff"):
+                                        mime = "image/jpeg"
+                                    elif hdr.startswith(b"\x89PNG\r\n\x1a\n"):
+                                        mime = "image/png"
+                                    elif hdr.startswith(b"GIF87a") or hdr.startswith(b"GIF89a"):
+                                        mime = "image/gif"
+                                    elif hdr.startswith(b"RIFF") and len(hdr) >= 12 and hdr[8:12] == b"WEBP":
+                                        mime = "image/webp"
+                                    elif hdr.startswith(b"BM"):
+                                        mime = "image/bmp"
+                                except Exception:
+                                    pass
                             if not mime:
                                 mime = "application/octet-stream"
                                 
@@ -1022,6 +1062,7 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
 
     reader = None
     writer = None
+    session = None
     try:
         reader, writer = await asyncio.wait_for(
             transport_connect("direct", host, port), timeout=5.0
@@ -1035,6 +1076,11 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
         session._start_reader()
         return session
     except Exception:
+        if session is not None:
+            try:
+                await session.close()
+            except Exception:
+                pass
         await _close_writer_safely(writer)
         raise
 
