@@ -363,7 +363,7 @@ fun ChatsTab(
     LaunchedEffect(Unit) {
         while (true) {
             if (PythonBridge.isInitialized) {
-                heroActivePeers = P2PMessageRelay.peerSessionStates.count { it.value == true }
+                heroActivePeers = PythonBridge.getActivePeers().distinct().size
                 heroUpnpOk = PythonBridge.isUpnpMapped()
                 val trackers = PythonBridge.getTrackerDiagnostics()
                 heroTrackersOk = trackers.isNotEmpty() && trackers.values.any {
@@ -489,7 +489,12 @@ fun ChatsTab(
                                         java.security.SecureRandom().nextBytes(tokenBytes)
                                         val token = "2pchat_inv_" + tokenBytes.joinToString("") { "%02x".format(it) }
                                         val link = "2pchat://connect?token=$token&name=$currentUsername&fp=$fp"
-                                        PythonBridge.announceSelf(token, fp, P2PMessageRelay.listenerPort(context))
+                                        PythonBridge.announceSelf(
+                                            token,
+                                            fp,
+                                            P2PMessageRelay.listenerPort(context),
+                                            rendezvousCode = token,
+                                        )
                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                             heroInviteLink = link
                                             heroInviteGenerating = false
@@ -649,6 +654,8 @@ fun ContactsTab(
     
     val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
+    val discoveryCode = remember { PythonBridge.getOrCreateDiscoveryCode() }
+    val contactAddress = remember(username, discoveryCode) { "$username#$discoveryCode" }
     var fingerprint by remember { mutableStateOf("Loading...") }
     LaunchedEffect(Unit) {
         while (!PythonBridge.isInitialized) {
@@ -680,19 +687,19 @@ fun ContactsTab(
                 onValueChange = { searchQuery = it },
                 placeholder = {
                     Text(
-                        if (appLanguage == "Русский") "Ник или 2pchat:// ссылка" else "Nickname or 2pchat:// link",
+                        if (appLanguage == "Русский") "Имя#код или ссылка 2PChat" else "Name#code or 2PChat link",
                         color = onSurfaceVariant.copy(alpha = 0.5f)
                     )
                 },
                 trailingIcon = {
                     IconButton(onClick = {
                         val pasted = clipboardManager.getText()?.text?.trim().orEmpty()
-                        if (pasted.startsWith("2pchat://connect")) {
+                        if (pasted.startsWith("2pchat://connect") || pasted.contains('#')) {
                             searchQuery = pasted
                         } else {
                             Toast.makeText(
                                 context,
-                                if (appLanguage == "Русский") "В буфере нет ссылки 2PChat" else "Clipboard doesn't contain a 2PChat link",
+                                if (appLanguage == "Русский") "В буфере нет адреса контакта" else "Clipboard doesn't contain a contact address",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
@@ -823,13 +830,23 @@ fun ContactsTab(
                             }
                             return@IconButton
                         }
+                        val separator = trimmed.lastIndexOf('#')
+                        if (separator <= 0 || separator == trimmed.lastIndex) {
+                            searchSummary = if (appLanguage == "Русский") {
+                                "Введите полный адрес в формате Имя#код. Поиск только по нику отключён."
+                            } else {
+                                "Enter the full Name#code address. Nickname-only search is disabled."
+                            }
+                            searchResults = emptyList()
+                            return@IconButton
+                        }
                         isSearching = true
                         searchResults = emptyList()
                         searchSummary = ""
                         searchProgress = if (appLanguage == "Русский") {
-                            "1/3 · Запрашиваем HTTP и UDP-трекеры…"
+                            "1/3 · Запрашиваем трекеры и Mainline DHT…"
                         } else {
-                            "1/3 · Querying HTTP and UDP trackers…"
+                            "1/3 · Querying trackers and Mainline DHT…"
                         }
                         coroutineScope.launch(Dispatchers.IO) {
                             val progressJob = launch {
@@ -850,7 +867,13 @@ fun ContactsTab(
                                     }
                                 }
                             }
-                            val peers = PythonBridge.searchPeers(searchQuery)
+                            val searchName = trimmed.substring(0, separator).trim()
+                            val searchCode = trimmed.substring(separator + 1).trim()
+                            val peers = PythonBridge.searchPeers(
+                                searchName,
+                                expectedLiveName = searchName,
+                                sharedCode = searchCode,
+                            )
                             progressJob.cancel()
                             val items = peers.map { peer ->
                                 val name = peer["nickname"] as? String ?: "Unknown"
@@ -914,6 +937,52 @@ fun ContactsTab(
                     modifier = Modifier.size(22.dp)
                 )
             }
+        }
+
+        if (discoveryCode.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (appLanguage == "Русский") "Ваш адрес для поиска" else "Your search address",
+                        fontSize = 11.sp,
+                        color = onSurfaceVariant,
+                    )
+                    Text(
+                        text = contactAddress,
+                        fontSize = 13.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = onSurfaceColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                TextButton(onClick = {
+                    clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(contactAddress))
+                    Toast.makeText(
+                        context,
+                        if (appLanguage == "Русский") "Адрес скопирован" else "Address copied",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }) {
+                    Text(if (appLanguage == "Русский") "Копировать" else "Copy", color = primaryColor)
+                }
+            }
+            Text(
+                text = if (appLanguage == "Русский") {
+                    "Отправьте этот адрес собеседнику. Код и SHA-1 приложение обработает само."
+                } else {
+                    "Send this address to your contact. The app handles the code and SHA-1 automatically."
+                },
+                fontSize = 11.sp,
+                color = onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+            )
         }
 
         if (searchQuery.trim().startsWith("2pchat://connect")) {
@@ -985,7 +1054,12 @@ fun ContactsTab(
                                 val tokenVal = "2pchat_inv_" + tokenBytes.joinToString("") { "%02x".format(it) }
                                 inviteLinkState = "2pchat://connect?token=$tokenVal&name=$username&fp=$fingerprint"
                                 coroutineScope.launch(Dispatchers.IO) {
-                                    PythonBridge.announceSelf(tokenVal, fingerprint, P2PMessageRelay.listenerPort(context))
+                                    PythonBridge.announceSelf(
+                                        tokenVal,
+                                        fingerprint,
+                                        P2PMessageRelay.listenerPort(context),
+                                        rendezvousCode = tokenVal,
+                                    )
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
@@ -3036,7 +3110,7 @@ fun PeerRow(
                         }
                     }
                     if (peer.name != "Saved Messages") {
-                        val isOnline = com.example.twopchat.P2PMessageRelay.peerEndpoints[peer.name] != null
+                        val isOnline = com.example.twopchat.P2PMessageRelay.peerSessionStates[peer.name] == true
                         if (isOnline) {
                             Box(
                                 modifier = Modifier
@@ -3545,14 +3619,13 @@ fun NetworkDiagnosticsDialog(
                                             }
                                         }
                                         Spacer(modifier = Modifier.height(6.dp))
-                                        val publicTrackerIpv4 = com.example.twopchat.P2PMessageRelay.peerEndpoints
-                                            .values
-                                            .flatMap { endpointCsv -> endpointCsv.split(",") }
-                                            .map { it.trim() }
-                                            .filter { endpoint -> endpoint.isNotEmpty() && !endpoint.startsWith("[") }
-                                            .mapNotNull { endpoint ->
-                                                val host = endpoint.substringBeforeLast(":", "")
-                                                if (host.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+")) && host != "10.0.2.16") host else null
+                                        val publicTrackerIpv4 = PythonBridge.getObservedPublicAddresses()
+                                            .filter { address ->
+                                                address.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+")) &&
+                                                    !address.startsWith("10.") &&
+                                                    !address.startsWith("127.") &&
+                                                    !address.startsWith("192.168.") &&
+                                                    !address.startsWith("172.16.")
                                             }
                                             .distinct()
                                         Row(
@@ -3560,7 +3633,7 @@ fun NetworkDiagnosticsDialog(
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
                                             Text(
-                                                text = if (appLanguage == "Русский") "Публичный IPv4 по данным трекеров:" else "Public IPv4 seen by trackers:",
+                                                text = if (appLanguage == "Русский") "Публичный IPv4 по данным discovery:" else "Public IPv4 seen by discovery:",
                                                 fontSize = 13.sp,
                                                 color = onSurfaceColor
                                             )
@@ -4042,7 +4115,7 @@ fun NetworkDiagnosticsDialog(
                                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                                 verticalAlignment = Alignment.CenterVertically
                                                             ) {
-                                                                Column {
+                                                                Column(modifier = Modifier.weight(1f)) {
                                                                     Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = onSurfaceColor)
                                                                     Text("EP: $endpoint", fontSize = 11.sp, color = onSurfaceVariant)
                                                                     Text("Transport: $transport", fontSize = 11.sp, color = primaryColor)
@@ -4051,7 +4124,10 @@ fun NetworkDiagnosticsDialog(
                                                                     text = if (isEstablished) "ONLINE" else "WAITING",
                                                                     fontWeight = FontWeight.Bold,
                                                                     fontSize = 11.sp,
-                                                                    color = if (isEstablished) Color(0xFF4CAF50) else Color(0xFFFFC107)
+                                                                    color = if (isEstablished) Color(0xFF4CAF50) else Color(0xFFFFC107),
+                                                                    maxLines = 1,
+                                                                    softWrap = false,
+                                                                    modifier = Modifier.widthIn(min = 58.dp),
                                                                 )
                                                             }
                                                         }

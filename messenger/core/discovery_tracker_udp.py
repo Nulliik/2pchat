@@ -11,8 +11,8 @@ from typing import List, Tuple
 from urllib.parse import urlparse
 
 from .discovery_base import DiscoveryProvider, PeerDescriptor, PeerEndpoint
+from .discovery_rendezvous import derive_rendezvous_key, normalize_nickname
 
-TRACKER_CONTEXT = b"2pchat-udp-tracker-v1"
 TRACKER_PROTO_ID = 0x41727101980
 TRACKER_ACTION_CONNECT = 0
 TRACKER_ACTION_ANNOUNCE = 1
@@ -66,32 +66,11 @@ class UdpTrackerDiscovery(DiscoveryProvider):
 
     @staticmethod
     def normalize_nickname(value: str) -> str:
-        normalized = " ".join(value.strip().lower().split())
-        if not normalized:
-            raise ValueError("Nickname must not be empty")
-        return normalized
-
-    @staticmethod
-    def _normalize_shared_code(value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("Shared code must not be empty")
-        return normalized
+        return normalize_nickname(value)
 
     @classmethod
     def derive_info_hash(cls, nickname: str, shared_code: str) -> bytes:
-        normalized_nick = cls.normalize_nickname(nickname)
-        normalized_code = cls._normalize_shared_code(shared_code)
-        import hashlib
-
-        payload = (
-            TRACKER_CONTEXT
-            + b":"
-            + normalized_nick.encode("utf-8")
-            + b":"
-            + normalized_code.encode("utf-8")
-        )
-        return hashlib.sha1(payload).digest()
+        return derive_rendezvous_key(nickname, shared_code)
 
     @staticmethod
     def _make_peer_id() -> bytes:

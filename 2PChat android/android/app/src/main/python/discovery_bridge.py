@@ -9,6 +9,9 @@ import time
 import tempfile
 import hashlib
 import base64
+import os
+import socket
+import struct
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -37,6 +40,7 @@ INCOMING_FILE_TTL_SECONDS = 120
 MAX_ENCRYPTED_CHUNK_SIZE = 1024 * 1024
 MAX_CONCURRENT_HANDSHAKES = 10
 tracker_diagnostics = {}
+public_address_observations = set()
 local_identity_nickname = ""
 local_identity_fingerprint = ""
 local_yggdrasil_available = False
@@ -59,6 +63,7 @@ YGG_TRACKERS = (
     "Yggdrasil-only HTTP",
     "Yggdrasil-only UDP",
 )
+MAINLINE_DHT = "Mainline DHT (BEP 5)"
 
 
 def _session_for_peer(peer_name: str, expected_fingerprint: str | None = None):
@@ -220,6 +225,57 @@ def _set_tracker_diagnostic(tracker_name: str, operation: str, status: str) -> N
     tracker_diagnostics.setdefault(tracker_name, {})[operation] = status
 
 
+def _record_public_addresses(provider) -> None:
+    for address in getattr(provider, "observed_addresses", ()):
+        candidate = str(address).strip()
+        if candidate and candidate not in public_address_observations:
+            public_address_observations.add(candidate)
+            print(f"Discovery observed our public address as {candidate}")
+
+
+def _discover_public_ipv4_stun(timeout: float = 2.5) -> str | None:
+    """Return the NAT-mapped IPv4 address from an RFC 5389 binding response."""
+    cookie = 0x2112A442
+    transaction_id = os.urandom(12)
+    request = struct.pack(">HHI12s", 0x0001, 0, cookie, transaction_id)
+    servers = (
+        ("stun.cloudflare.com", 3478),
+        ("stun.l.google.com", 19302),
+    )
+    for host, port in servers:
+        try:
+            addresses = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_DGRAM)
+        except OSError:
+            continue
+        for _family, _kind, _proto, _name, target in addresses:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(timeout)
+            try:
+                sock.sendto(request, target)
+                response, _source = sock.recvfrom(2048)
+                if len(response) < 20 or response[8:20] != transaction_id:
+                    continue
+                message_length = struct.unpack(">H", response[2:4])[0]
+                offset = 20
+                limit = min(len(response), 20 + message_length)
+                while offset + 4 <= limit:
+                    attr_type, attr_length = struct.unpack(">HH", response[offset : offset + 4])
+                    value = response[offset + 4 : offset + 4 + attr_length]
+                    offset += 4 + ((attr_length + 3) & ~3)
+                    if attr_type not in {0x0001, 0x0020} or len(value) < 8 or value[1] != 0x01:
+                        continue
+                    packed_ip = value[4:8]
+                    if attr_type == 0x0020:
+                        mask = struct.pack(">I", cookie)
+                        packed_ip = bytes(left ^ right for left, right in zip(packed_ip, mask))
+                    return socket.inet_ntop(socket.AF_INET, packed_ip)
+            except (OSError, struct.error):
+                continue
+            finally:
+                sock.close()
+    return None
+
+
 def _same_nickname(left: str, right: str) -> bool:
     """Match display names without making case or repeated spaces significant."""
     return " ".join(left.strip().casefold().split()) == " ".join(right.strip().casefold().split())
@@ -329,6 +385,7 @@ def resolve_peers(
                 transport="direct"
             )
             result = await provider.resolve(nickname, shared_code)
+            _record_public_addresses(provider)
             endpoint_count = sum(len(getattr(item, "endpoints", ())) for item in result)
             _set_tracker_diagnostic(t_name, "resolve", f"OK ({endpoint_count} endpoints)")
             _set_tracker_diagnostic(t_name, "resolve_rtt_ms", str(round((time.monotonic() - started) * 1000)))
@@ -340,14 +397,40 @@ def resolve_peers(
             return []
         except Exception as e:
             _set_tracker_diagnostic(t_name, "resolve", f"FAIL ({e})")
-            _set_tracker_diagnostic(t_name, "resolve_rtt_ms", str(round((time.monotonic() - started) * 1000)))
+            _set_tracker_diagnostic(
+                t_name,
+                "resolve_rtt_ms",
+                str(round((time.monotonic() - started) * 1000)),
+            )
             print(f"Error resolving peers from {t_name}: {e}")
+            return []
+
+    async def _query_dht():
+        started = time.monotonic()
+        try:
+            provider = get_discovery_provider(
+                "mainline-dht", peer_port=listener_port, transport="direct"
+            )
+            result = await provider.resolve(nickname, shared_code)
+            _record_public_addresses(provider)
+            endpoint_count = sum(len(item.endpoints) for item in result)
+            _set_tracker_diagnostic(MAINLINE_DHT, "resolve", f"OK ({endpoint_count} endpoints)")
+            _set_tracker_diagnostic(
+                MAINLINE_DHT,
+                "resolve_rtt_ms",
+                str(round((time.monotonic() - started) * 1000)),
+            )
+            return result
+        except Exception as exc:
+            _set_tracker_diagnostic(MAINLINE_DHT, "resolve", f"FAIL ({exc})")
+            print(f"Error resolving peers from {MAINLINE_DHT}: {exc}")
             return []
 
     async def _resolve_all():
         tasks = []
         for t_name in _resolve_tracker_names(tracker_name):
             tasks.append(_query_async(t_name))
+        tasks.append(_query_dht())
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         flat_results = []
@@ -391,7 +474,7 @@ def resolve_peers(
                 all_endpoints.append(ep_str)
 
     all_endpoints.sort(key=_endpoint_sort_key)
-    print(f"Resolved {len(all_endpoints)} endpoints from trackers for nickname '{nickname}': {all_endpoints}")
+    print(f"Resolved {len(all_endpoints)} discovery endpoints for nickname '{nickname}': {all_endpoints}")
     if not ipv4_enabled:
         all_endpoints = [endpoint for endpoint in all_endpoints if not _is_ipv4_endpoint(endpoint)]
     if not all_endpoints:
@@ -511,8 +594,19 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
             print(f"[RECONNECT] Endpoint resolve failed on {tracker_name}: {exc}")
             return []
 
+    async def _query_dht():
+        try:
+            provider = get_discovery_provider(
+                "mainline-dht", peer_port=listener_port, transport="direct"
+            )
+            return await provider.resolve(expected, expected)
+        except Exception as exc:
+            print(f"[RECONNECT] Endpoint resolve failed on {MAINLINE_DHT}: {exc}")
+            return []
+
     batches = await asyncio.gather(
         *[_query(name) for name in _resolve_tracker_names("OpenTrackr HTTP")],
+        _query_dht(),
         return_exceptions=True,
     )
     endpoints = []
@@ -529,7 +623,13 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
     return result if ipv4_enabled else [ep for ep in result if not _is_ipv4_endpoint(ep)]
 
 
-def announce_peer_endpoints(nickname: str, fingerprint: str, endpoints_json: str, port: int) -> bool:
+def announce_peer_endpoints(
+    nickname: str,
+    fingerprint: str,
+    endpoints_json: str,
+    port: int,
+    discovery_code: str = "",
+) -> bool:
     """
     Announce all current IPv4 and Yggdrasil/global IPv6 endpoints across the tracker set.
     """
@@ -560,6 +660,12 @@ def announce_peer_endpoints(nickname: str, fingerprint: str, endpoints_json: str
     loop = asyncio.new_event_loop()
     try:
         asyncio.set_event_loop(loop)
+        variants = []
+        if discovery_code.strip():
+            variants.append((nickname, discovery_code.strip()))
+        if fingerprint and len(fingerprint) > 10:
+            variants.append((nickname, fingerprint))
+            variants.append((fingerprint, fingerprint))
 
         async def _announce_tracker(tracker_name: str):
             started = time.monotonic()
@@ -570,18 +676,12 @@ def announce_peer_endpoints(nickname: str, fingerprint: str, endpoints_json: str
                 peer_port=port,
                 transport="direct",
             )
-            variants = [
-                (nickname, nickname),
-            ]
-            if fingerprint and len(fingerprint) > 10:
-                variants.append((nickname, fingerprint))
-                variants.append((fingerprint, fingerprint))
-
             tasks = [
                 provider.announce(nick, shared_code, transport="direct", endpoints=endpoints)
                 for nick, shared_code in variants
             ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
+            _record_public_addresses(provider)
             _set_tracker_diagnostic(
                 tracker_name, "announce_rtt_ms", str(round((time.monotonic() - started) * 1000))
             )
@@ -603,17 +703,56 @@ def announce_peer_endpoints(nickname: str, fingerprint: str, endpoints_json: str
 
         async def _announce_all():
             tracker_names = _announce_tracker_names(endpoints)
-            results = await asyncio.gather(
+            tracker_results = await asyncio.gather(
                 *[_announce_tracker(tracker_name) for tracker_name in tracker_names],
                 return_exceptions=True,
             )
             total_success = 0
-            for tracker_name, result in zip(tracker_names, results):
+            for tracker_name, result in zip(tracker_names, tracker_results):
                 if isinstance(result, Exception):
                     print(f"Tracker announce task crashed for {tracker_name}: {result}")
                     continue
                 total_success += result
                 print(f"Tracker {tracker_name} accepted {result} announce registrations.")
+
+            dht_started = time.monotonic()
+            try:
+                dht = get_discovery_provider(
+                    "mainline-dht", peer_port=port, transport="direct"
+                )
+                dht_results = await asyncio.gather(
+                    *[
+                        dht.announce(
+                            nick,
+                            shared_code,
+                            transport="direct",
+                            endpoints=endpoints,
+                        )
+                        for nick, shared_code in variants
+                    ],
+                    return_exceptions=True,
+                )
+                _record_public_addresses(dht)
+                dht_success = sum(not isinstance(result, Exception) for result in dht_results)
+                dht_errors = [str(result) for result in dht_results if isinstance(result, Exception)]
+                status = f"OK ({dht_success})" if dht_success else f"FAIL ({'; '.join(dht_errors)})"
+                _set_tracker_diagnostic(MAINLINE_DHT, "announce", status)
+                print(f"{MAINLINE_DHT} accepted {dht_success} announce registrations.")
+                total_success += dht_success
+            except Exception as exc:
+                _set_tracker_diagnostic(MAINLINE_DHT, "announce", f"FAIL ({exc})")
+                print(f"Mainline DHT announce failed: {exc}")
+            finally:
+                _set_tracker_diagnostic(
+                    MAINLINE_DHT,
+                    "announce_rtt_ms",
+                    str(round((time.monotonic() - dht_started) * 1000)),
+                )
+            observed_ipv4 = await asyncio.to_thread(_discover_public_ipv4_stun)
+            if observed_ipv4:
+                if observed_ipv4 not in public_address_observations:
+                    public_address_observations.add(observed_ipv4)
+                    print(f"STUN observed our public address as {observed_ipv4}")
             return total_success
 
         endpoint_strings = [_format_endpoint(ep.host, ep.port) for ep in endpoints]
@@ -653,6 +792,10 @@ def announce_peer_ygg(nickname: str, fingerprint: str, ygg_host: str, port: int)
 
 def get_tracker_diagnostics_json() -> str:
     return json.dumps(tracker_diagnostics, sort_keys=True)
+
+
+def get_public_addresses_json() -> str:
+    return json.dumps(sorted(public_address_observations))
 
 
 # =====================================================================

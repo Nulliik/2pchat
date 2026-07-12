@@ -12,8 +12,7 @@ from typing import List
 
 from .discovery_base import DiscoveryProvider, PeerDescriptor, PeerEndpoint
 from .discovery_bencode import bdecode
-
-TRACKER_HTTP_CONTEXT = b"2pchat-http-tracker-v1"
+from .discovery_rendezvous import derive_rendezvous_key, normalize_nickname
 
 
 class HttpTrackerDiscovery(DiscoveryProvider):
@@ -46,35 +45,15 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         self._time_fn = time_fn
         self._peer_id = self._make_peer_id()
         self._key = random.randint(0, 0xFFFFFFFF)
+        self.observed_addresses: set[str] = set()
 
     @staticmethod
     def normalize_nickname(value: str) -> str:
-        normalized = " ".join(value.strip().lower().split())
-        if not normalized:
-            raise ValueError("Nickname must not be empty")
-        return normalized
-
-    @staticmethod
-    def _normalize_shared_code(value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("Shared code must not be empty")
-        return normalized
+        return normalize_nickname(value)
 
     @classmethod
     def derive_info_hash(cls, nickname: str, shared_code: str) -> bytes:
-        import hashlib
-
-        normalized_nick = cls.normalize_nickname(nickname)
-        normalized_code = cls._normalize_shared_code(shared_code)
-        payload = (
-            TRACKER_HTTP_CONTEXT
-            + b":"
-            + normalized_nick.encode("utf-8")
-            + b":"
-            + normalized_code.encode("utf-8")
-        )
-        return hashlib.sha1(payload).digest()
+        return derive_rendezvous_key(nickname, shared_code)
 
     @staticmethod
     def _make_peer_id() -> bytes:
@@ -139,12 +118,37 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         for _attempt in range(self._retries):
             try:
                 with urllib.request.urlopen(request, timeout=self._timeout) as response:
-                    return response.read()
+                    payload = response.read()
+                    self._record_observed_addresses(payload)
+                    return payload
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
         if last_error:
             raise last_error
         raise RuntimeError("Unable to contact tracker")
+
+    def _record_observed_addresses(self, payload: bytes) -> None:
+        try:
+            decoded = bdecode(payload)
+        except Exception:
+            return
+        if not isinstance(decoded, dict):
+            return
+        for key in ("external ip", "external_ip", "ip"):
+            value = decoded.get(key)
+            if not isinstance(value, bytes):
+                continue
+            try:
+                if len(value) == 4:
+                    self.observed_addresses.add(socket.inet_ntop(socket.AF_INET, value))
+                elif len(value) == 16:
+                    self.observed_addresses.add(socket.inet_ntop(socket.AF_INET6, value))
+                else:
+                    candidate = value.decode("ascii").strip()
+                    ipaddress.ip_address(candidate)
+                    self.observed_addresses.add(candidate)
+            except (ValueError, UnicodeDecodeError, OSError):
+                continue
 
     @staticmethod
     def _parse_compact_peers(payload: bytes) -> list[PeerEndpoint]:

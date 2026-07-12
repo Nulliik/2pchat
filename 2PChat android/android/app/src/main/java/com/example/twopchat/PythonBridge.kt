@@ -102,13 +102,14 @@ object PythonBridge {
         query: String,
         expectedLiveName: String = query,
         expectedFingerprint: String? = null,
+        sharedCode: String = query,
     ): List<Map<String, Any>> {
         if (!isInitialized) return emptyList()
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
             val pyResults = bridge.callAttr(
-                "resolve_peers", query, query, "OpenTrackr HTTP",
+                "resolve_peers", query, sharedCode, "OpenTrackr HTTP",
                 expectedLiveName, expectedFingerprint
             )
             val results = mutableListOf<Map<String, Any>>()
@@ -135,6 +136,21 @@ object PythonBridge {
             Log.e(TAG, "Error resolving peers", e)
             emptyList()
         }
+    }
+
+    /** Stable, human-shareable discovery code. It is never the user's fingerprint. */
+    fun getOrCreateDiscoveryCode(): String {
+        val context = appContext ?: return ""
+        val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        prefs.getString("discovery_code_v1", null)?.takeIf { it.isNotBlank() }?.let { return it }
+
+        val alphabet = "23456789bcdfghjkmnpqrstvwxyz"
+        val random = java.security.SecureRandom()
+        val code = (1..3).joinToString("-") {
+            (1..4).map { alphabet[random.nextInt(alphabet.length)] }.joinToString("")
+        }
+        prefs.edit().putString("discovery_code_v1", code).apply()
+        return code
     }
 
     /**
@@ -240,9 +256,17 @@ object PythonBridge {
         emptyMap()
     }
 
-    fun announceSelf(nickname: String, fingerprint: String, port: Int, force: Boolean = false): Boolean {
+    fun announceSelf(
+        nickname: String,
+        fingerprint: String,
+        port: Int,
+        force: Boolean = false,
+        rendezvousCode: String? = null,
+    ): Boolean {
         if (!isInitialized) return false
-        val announceKey = "$nickname\u0000$fingerprint\u0000$port"
+        val discoveryCode = rendezvousCode?.trim()?.takeIf { it.isNotEmpty() }
+            ?: getOrCreateDiscoveryCode()
+        val announceKey = "$nickname\u0000$fingerprint\u0000$discoveryCode\u0000$port"
         synchronized(announceLock) {
             val now = android.os.SystemClock.elapsedRealtime()
             val lastAt = lastAnnounceAt[announceKey]
@@ -285,7 +309,9 @@ object PythonBridge {
                 "Announcing self on trackers. IPv4=$ipv4Addresses Yggdrasil=$yggdrasilAddress port=$port"
             )
             val endpointsJson = JSONArray(addresses).toString()
-            val success = bridge.callAttr("announce_peer_endpoints", nickname, fingerprint, endpointsJson, port)
+            val success = bridge.callAttr(
+                "announce_peer_endpoints", nickname, fingerprint, endpointsJson, port, discoveryCode
+            )
             success.toBoolean().also { result ->
                 synchronized(announceLock) {
                     lastAnnounceResult[announceKey] = result
@@ -323,6 +349,21 @@ object PythonBridge {
         } catch (e: Exception) {
             Log.e(TAG, "Error getting tracker diagnostics", e)
             emptyMap()
+        }
+    }
+
+    fun getObservedPublicAddresses(): List<String> {
+        if (!isInitialized) return emptyList()
+        return try {
+            val raw = Python.getInstance().getModule("discovery_bridge")
+                .callAttr("get_public_addresses_json").toString()
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { index ->
+                array.optString(index).trim().takeIf { it.isNotEmpty() }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading observed public addresses", e)
+            emptyList()
         }
     }
 
