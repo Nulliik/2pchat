@@ -47,17 +47,13 @@ fun OnboardingScreen(
     var nickname by remember { mutableStateOf("") }
     var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
     var profileBitmap by remember { mutableStateOf<Bitmap?>(loadBitmapFromUri(context, profilePhotoUri)) }
+    var pendingCropUri by remember { mutableStateOf<Uri?>(null) }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
-            val localPath = saveImageToInternalStorage(context, it)
-            if (localPath != null) {
-                profilePhotoUri = localPath
-                sharedPrefs.edit().putString("profile_photo_uri", localPath).apply()
-                profileBitmap = loadBitmapFromUri(context, localPath)
-            }
+            pendingCropUri = it
         }
     }
 
@@ -75,6 +71,23 @@ fun OnboardingScreen(
     val backgroundColor = MaterialTheme.colorScheme.background
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+
+    if (pendingCropUri != null) {
+        ImageCropper(
+            imageUri = pendingCropUri!!,
+            onCropSuccess = { localPath ->
+                profilePhotoUri = localPath
+                sharedPrefs.edit().putString("profile_photo_uri", localPath).apply()
+                profileBitmap = loadBitmapFromUri(context, localPath)
+                pendingCropUri = null
+            },
+            onCancel = {
+                pendingCropUri = null
+            },
+            appLanguage = appLanguage
+        )
+        return
+    }
 
     Column(
         modifier = modifier

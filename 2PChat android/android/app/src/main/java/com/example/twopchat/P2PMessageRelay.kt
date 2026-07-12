@@ -708,6 +708,59 @@ object P2PMessageRelay {
         }
     }
 
+    fun deleteChat(context: Context, peerName: String) {
+        val sharedPrefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val expectedFingerprint = sharedPrefs.getString("peer_fingerprint_$peerName", null)
+        val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+        val newSet = activeSet.toMutableSet()
+        if (newSet.remove(peerName)) {
+            sharedPrefs.edit {
+                putStringSet("active_chats", newSet)
+                remove("last_msg_$peerName")
+                remove("unread_count_$peerName")
+                remove("transport_$peerName")
+                remove("peer_fingerprint_$peerName")
+            }
+        } else {
+            sharedPrefs.edit {
+                remove("last_msg_$peerName")
+                remove("unread_count_$peerName")
+                remove("transport_$peerName")
+                remove("peer_fingerprint_$peerName")
+            }
+        }
+        
+        // Close Python session asynchronously
+        thread(start = true) {
+            try {
+                PythonBridge.closePeerSession(peerName, expectedFingerprint)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        
+        // Remove from memory caches
+        peerEndpoints.remove(peerName)
+        peerSessionStates.remove(peerName)
+        peerTypingStates.remove(peerName)
+        peerAvatars.remove(peerName)
+        
+        // Remove avatar file if exists
+        try {
+            val avatarsDir = java.io.File(context.filesDir, "avatars")
+            val avatarFile = java.io.File(avatarsDir, "$peerName.jpg")
+            if (avatarFile.exists()) {
+                avatarFile.delete()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Clear messages database
+        val db = ChatDatabaseHelper(context)
+        db.clearMessagesForPeer(peerName)
+    }
+
     /**
      * Send an encrypted file to a specific peer and endpoint.
      */

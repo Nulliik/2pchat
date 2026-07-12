@@ -293,6 +293,7 @@ fun ChatScreen(
     }
 
     var inputText by remember { mutableStateOf("") }
+    var showDeleteDialog by remember { mutableStateOf(false) }
     var myTypingState by remember { mutableStateOf(false) }
     var localMockTyping by remember { mutableStateOf(false) }
     val isTyping = localMockTyping || (P2PMessageRelay.peerTypingStates[peerName] ?: false)
@@ -927,8 +928,54 @@ fun ChatScreen(
                                 sharedPrefs.edit { remove("last_msg_$peerName") }
                             }
                         )
+                        if (peerName != "Saved Messages") {
+                            DropdownMenuItem(
+                                text = { 
+                                    Text(
+                                        text = if (appLanguage == "Русский") "Удалить чат" else "Delete Chat", 
+                                        color = Color.Red,
+                                        fontSize = 14.sp
+                                    ) 
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    showDeleteDialog = true
+                                }
+                            )
+                        }
                     }
                 }
+            }
+            if (showDeleteDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteDialog = false },
+                    title = {
+                        Text(if (appLanguage == "Русский") "Удалить чат?" else "Delete chat?")
+                    },
+                    text = {
+                        Text(
+                            if (appLanguage == "Русский") {
+                                "Вы уверены, что хотите полностью удалить этот чат? Все сообщения будут безвозвратно удалены."
+                            } else {
+                                "Are you sure you want to delete this chat? All message history will be permanently lost."
+                            }
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            com.example.twopchat.P2PMessageRelay.deleteChat(context, peerName)
+                            showDeleteDialog = false
+                            onBack()
+                        }) {
+                            Text(if (appLanguage == "Русский") "Удалить" else "Delete", color = Color.Red)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteDialog = false }) {
+                            Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
+                        }
+                    }
+                )
             }
             } // end else (normal header)
 

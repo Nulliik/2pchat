@@ -1547,6 +1547,26 @@ def shutdown_all_sessions():
     for transfer_key in list(incoming_files):
         _discard_incoming_file(transfer_key)
 
+def close_peer_session(peer_name: str, expected_fingerprint=None) -> bool:
+    """
+    Closes the session for the specified peer and removes it from active_sessions.
+    """
+    global loop, active_sessions
+    if not loop:
+        return False
+    session = _session_for_peer(peer_name, expected_fingerprint)
+    if session:
+        try:
+            if hasattr(session, "close"):
+                if loop and loop.is_running():
+                    asyncio.run_coroutine_threadsafe(session.close(), loop)
+        except Exception:
+            pass
+        if session.peer_fingerprint:
+            active_sessions.pop(session.peer_fingerprint, None)
+        return True
+    return False
+
 def get_active_peers_list() -> str:
     """Returns a comma-separated list of active peer names."""
     global active_sessions, peer_fingerprint_to_name

@@ -448,6 +448,19 @@ object PythonBridge {
         }
     }
 
+    fun closePeerSession(peerName: String, expectedFingerprint: String? = null): Boolean {
+        if (!isInitialized) return false
+        return try {
+            val py = Python.getInstance()
+            val bridge = py.getModule("discovery_bridge")
+            val success = bridge.callAttr("close_peer_session", peerName, expectedFingerprint)
+            success.toBoolean()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error closing P2P session via Python", e)
+            false
+        }
+    }
+
     fun reconnectPeerSession(peerName: String, endpoint: String, expectedFingerprint: String? = null): Boolean {
         if (!isInitialized) return false
         return try {

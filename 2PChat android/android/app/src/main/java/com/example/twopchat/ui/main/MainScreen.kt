@@ -8,6 +8,7 @@ import org.json.JSONArray
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -294,6 +295,7 @@ fun ChatsTab(
         com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)
     }
     var currentUsername by remember { mutableStateOf(sharedPrefs.getString("username_profile", "Anonymous") ?: "Anonymous") }
+    var chatToDelete by remember { mutableStateOf<String?>(null) }
     
     androidx.compose.runtime.DisposableEffect(sharedPrefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -617,8 +619,53 @@ fun ChatsTab(
                 onClick = { onItemClick(Chat("Saved Messages")) }
             )
             mockPeers.forEach { peer ->
-                PeerRow(peer, appLanguage, primaryColor, surfaceColor, onSurfaceColor, onSurfaceVariant, onClick = { onItemClick(Chat(peer.name)) })
+                PeerRow(
+                    peer = peer,
+                    appLanguage = appLanguage,
+                    primaryColor = primaryColor,
+                    surfaceColor = surfaceColor,
+                    onSurfaceColor = onSurfaceColor,
+                    onSurfaceVariant = onSurfaceVariant,
+                    onClick = { onItemClick(Chat(peer.name)) },
+                    onLongClick = {
+                        chatToDelete = peer.name
+                    }
+                )
             }
+        }
+
+        if (chatToDelete != null) {
+            AlertDialog(
+                onDismissRequest = { chatToDelete = null },
+                title = {
+                    Text(if (appLanguage == "Русский") "Удалить чат?" else "Delete chat?")
+                },
+                text = {
+                    Text(
+                        if (appLanguage == "Русский") {
+                            "Вы уверены, что хотите удалить чат с пользователем \"${chatToDelete}\"? Это действие сотрет всю историю переписки."
+                        } else {
+                            "Are you sure you want to delete the chat with \"${chatToDelete}\"? This action will erase all message history."
+                        }
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val name = chatToDelete
+                        if (name != null) {
+                            com.example.twopchat.P2PMessageRelay.deleteChat(context, name)
+                        }
+                        chatToDelete = null
+                    }) {
+                        Text(if (appLanguage == "Русский") "Удалить" else "Delete", color = Color.Red)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { chatToDelete = null }) {
+                        Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
+                    }
+                }
+            )
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -1557,19 +1604,13 @@ fun SettingsTab(
     // Profile photo states
     var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
     var profileBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)) }
+    var pendingCropUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
         uri?.let {
-            val localPath = com.example.twopchat.ui.onboarding.saveImageToInternalStorage(context, it)
-            if (localPath != null) {
-                profilePhotoUri = localPath
-                sharedPrefs.edit().putString("profile_photo_uri", localPath).apply()
-                profileBitmap = com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, localPath)
-                com.example.twopchat.P2PMessageRelay.shareAvatarWithConnectedPeers(context)
-                Toast.makeText(context, "Profile photo updated", Toast.LENGTH_SHORT).show()
-            }
+            pendingCropUri = it
         }
     }
 
@@ -1655,6 +1696,25 @@ fun SettingsTab(
                 }
             },
         )
+    }
+
+    if (pendingCropUri != null) {
+        com.example.twopchat.ui.onboarding.ImageCropper(
+            imageUri = pendingCropUri!!,
+            onCropSuccess = { localPath ->
+                profilePhotoUri = localPath
+                sharedPrefs.edit().putString("profile_photo_uri", localPath).apply()
+                profileBitmap = com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, localPath)
+                com.example.twopchat.P2PMessageRelay.shareAvatarWithConnectedPeers(context)
+                Toast.makeText(context, "Profile photo updated", Toast.LENGTH_SHORT).show()
+                pendingCropUri = null
+            },
+            onCancel = {
+                pendingCropUri = null
+            },
+            appLanguage = appLanguage
+        )
+        return
     }
 
     Column(
@@ -3050,6 +3110,7 @@ data class NavigationTabItem(
     val iconRes: Int
 )
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun PeerRow(
     peer: PeerItem,
@@ -3059,6 +3120,7 @@ fun PeerRow(
     onSurfaceColor: Color,
     onSurfaceVariant: Color,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
@@ -3069,7 +3131,10 @@ fun PeerRow(
         shape = RoundedCornerShape(16.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
             .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
     ) {
         Row(
