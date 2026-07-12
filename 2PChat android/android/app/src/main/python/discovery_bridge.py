@@ -1048,7 +1048,8 @@ async def _read_loop(session, peer_name, fp):
                         expected_hash = base64.b64decode(str(msg["file_hash"]), validate=True)
                         if len(file_key) != SecretBox.KEY_SIZE or len(nonce_prefix) != 16 or len(expected_hash) != 32:
                             raise ValueError("invalid file crypto metadata")
-                        temp = tempfile.NamedTemporaryFile(prefix="2pchat-recv-", suffix=".part", delete=False)
+                        config_dir = os.environ.get("P2PCHAT_CONFIG_DIR")
+                        temp = tempfile.NamedTemporaryFile(prefix="2pchat-recv-", suffix=".part", dir=config_dir, delete=False)
                         state = {
                             "meta": msg, "handle": temp, "temp_path": temp.name,
                             "box": SecretBox(file_key), "nonce_prefix": nonce_prefix,

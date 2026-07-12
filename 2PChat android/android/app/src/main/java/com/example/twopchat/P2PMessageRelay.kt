@@ -433,6 +433,7 @@ object P2PMessageRelay {
                                         showNotification(appContext, sender, text)
                                     }
                                 }
+                                return
                             }
                         }
                     }
