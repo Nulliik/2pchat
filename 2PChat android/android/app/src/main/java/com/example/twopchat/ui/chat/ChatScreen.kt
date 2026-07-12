@@ -660,6 +660,8 @@ fun ChatScreen(
 
     var showLocationDialog by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var isSearchMode by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -686,6 +688,55 @@ fun ChatScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Header: Glassmorphic surface feel with border
+            if (isSearchMode) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(surfaceColor)
+                        .border(width = 0.5.dp, color = onSurfaceColor.copy(alpha = 0.05f))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = {
+                        isSearchMode = false
+                        searchQuery = ""
+                    }) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_back_arrow),
+                            contentDescription = "Close search",
+                            tint = onSurfaceColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    androidx.compose.material3.OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = {
+                            Text(
+                                text = if (appLanguage == "Русский") "Поиск по сообщениям..." else "Search messages...",
+                                color = onSurfaceVariant,
+                                fontSize = 14.sp
+                            )
+                        },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = primaryColor,
+                            unfocusedBorderColor = onSurfaceColor.copy(alpha = 0.2f),
+                            cursorColor = primaryColor,
+                            focusedTextColor = onSurfaceColor,
+                            unfocusedTextColor = onSurfaceColor
+                        ),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
+                        shape = RoundedCornerShape(24.dp)
+                    )
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Text("×", fontSize = 22.sp, color = onSurfaceVariant, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            } else {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -811,6 +862,20 @@ fun ChatScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                 }
 
+                // Search icon button
+                IconButton(
+                    onClick = { isSearchMode = true },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_menu_search),
+                        contentDescription = if (appLanguage == "Русский") "Поиск" else "Search",
+                        tint = onSurfaceColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+
                 // Three-dot Action Menu
                 Box {
                     IconButton(
@@ -865,6 +930,7 @@ fun ChatScreen(
                     }
                 }
             }
+            } // end else (normal header)
 
             // Pinned Message Bar
             if (pinnedMsgId != null && pinnedMsgText != null) {
@@ -934,8 +1000,34 @@ remove("pinned_msg_id_${peerName}")
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
             ) {
+                if (isSearchMode && searchQuery.isNotEmpty()) {
+                    item {
+                        val count = initialMessages.count { msg ->
+                            msg.text.contains(searchQuery, ignoreCase = true) ||
+                            (msg.attachmentName?.contains(searchQuery, ignoreCase = true) == true)
+                        }
+                        Text(
+                            text = if (appLanguage == "Русский") "Найдено сообщений: $count" else "Messages found: $count",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(primaryColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            fontSize = 12.sp,
+                            color = primaryColor,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+                val displayMessages = if (isSearchMode && searchQuery.isNotEmpty()) {
+                    initialMessages.filter { msg ->
+                        msg.text.contains(searchQuery, ignoreCase = true) ||
+                        (msg.attachmentName?.contains(searchQuery, ignoreCase = true) == true)
+                    }
+                } else {
+                    initialMessages.toList()
+                }
                 itemsIndexed(
-                    items = initialMessages,
+                    items = displayMessages,
                     key = { _, msg -> msg.id }
                 ) { index, msg ->
                     val visibleState = remember(msg.id) {

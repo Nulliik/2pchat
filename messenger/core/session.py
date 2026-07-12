@@ -442,6 +442,8 @@ class Session:
     async def _send_payload(self, message: Dict[str, Any]) -> None:
         if not self.their_pub:
             raise RuntimeError("Session not established")
+        if not self._online:
+            raise ConnectionError("Session is no longer online")
         async with self._send_lock:
             plaintext = protocol.encode_message(message)
             ciphertext = encrypt_message_v3(self._dr_state, plaintext)
@@ -452,7 +454,11 @@ class Session:
                 len(plaintext),
                 len(ciphertext),
             )
-            await _write_frame(self.writer, ciphertext)
+            try:
+                await _write_frame(self.writer, ciphertext)
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError) as write_err:
+                self._online = False
+                raise ConnectionError(f"Socket write failed, session marked offline: {write_err}") from write_err
 
     async def send_reliable(self, message: Dict[str, Any]) -> str:
         """Send a message and wait for an ACK with retries."""
