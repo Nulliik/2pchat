@@ -955,6 +955,13 @@ async def _read_loop(session, peer_name, fp):
     try:
         while True:
             msg = await session.receive_message()
+            # Kotlin may restore a canonical name from its persisted,
+            # authenticated fingerprint mapping before identity_info arrives.
+            # Always use the freshest mapping for application callbacks; the
+            # name captured when the read loop was created may be Peer (...).
+            mapped_name = peer_fingerprint_to_name.get(fp)
+            if mapped_name and not mapped_name.startswith("Peer ("):
+                peer_name = mapped_name
             mtype = msg.get("type")
             if mtype == "status" and msg.get("state") == "offline":
                 break

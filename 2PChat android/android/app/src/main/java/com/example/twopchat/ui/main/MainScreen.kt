@@ -290,6 +290,7 @@ fun ChatsTab(
     var activeChatsSet by remember {
         mutableStateOf(sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet())
     }
+    var chatListRevision by remember { mutableIntStateOf(0) }
     var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
     val profileBitmap = remember(profilePhotoUri) {
         com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)
@@ -299,8 +300,14 @@ fun ChatsTab(
     
     androidx.compose.runtime.DisposableEffect(sharedPrefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "active_chats" || key?.startsWith("last_msg_") == true || key?.startsWith("transport_") == true || key?.startsWith("unread_count_") == true) {
+            if (key == "active_chats") {
                 activeChatsSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+            }
+            if (key == "active_chats" || key?.startsWith("last_msg_") == true || key?.startsWith("transport_") == true || key?.startsWith("unread_count_") == true) {
+                // The chat set itself usually stays equal when a message
+                // arrives. Keep a separate revision so Compose refreshes the
+                // preview and unread badge on the main screen.
+                chatListRevision++
             }
             if (key == "profile_photo_uri") {
                 profilePhotoUri = sharedPrefs.getString("profile_photo_uri", null)
@@ -315,7 +322,7 @@ fun ChatsTab(
         }
     }
 
-    val mockPeers = remember(activeChatsSet) {
+    val mockPeers = remember(activeChatsSet, chatListRevision) {
         activeChatsSet.map { name ->
             val lastMsg = com.example.twopchat.SecureStorage.decrypt(sharedPrefs.getString("last_msg_$name", null)) ?: when(name) {
                 "Eleanor Vance" -> "You: The designs look fantastic!"
@@ -325,7 +332,7 @@ fun ChatsTab(
             }
             val transport = sharedPrefs.getString("transport_$name", null) ?: when(name) {
                 "Liam O'Connor" -> "YGGDRASIL"
-                else -> "DIRECT P2P"
+                else -> "UNKNOWN"
             }
             PeerItem(
                 name = name,

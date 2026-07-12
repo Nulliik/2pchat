@@ -76,6 +76,7 @@ fun MainNavigation(
           entry<Chat> { chatKey ->
             ChatScreen(
               peerName = chatKey.peerName,
+              isActive = backStack.lastOrNull() == chatKey,
               appLanguage = appLanguage,
               onBack = { backStack.removeLastOrNull() },
               modifier = Modifier.fillMaxSize()

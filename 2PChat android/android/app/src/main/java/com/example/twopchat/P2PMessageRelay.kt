@@ -194,14 +194,19 @@ object P2PMessageRelay {
             when (prefix) {
                 "verified_peer_", "fingerprint_mismatch_" -> {
                     val value = sharedPrefs.getBoolean("$prefix$fromName", false)
-                    if (!sharedPrefs.contains("$prefix$toName")) {
-                        editor.putBoolean("$prefix$toName", value)
-                    }
+                    val existing = sharedPrefs.getBoolean("$prefix$toName", false)
+                    editor.putBoolean("$prefix$toName", existing || value)
                 }
                 "unread_count_" -> {
                     val value = sharedPrefs.getInt("$prefix$fromName", 0)
-                    if (!sharedPrefs.contains("$prefix$toName")) {
-                        editor.putInt("$prefix$toName", value)
+                    val existing = sharedPrefs.getInt("$prefix$toName", 0)
+                    editor.putInt("$prefix$toName", existing + value)
+                }
+                "last_msg_" -> {
+                    // Placeholder messages are the most recently received
+                    // ones which triggered this migration.
+                    sharedPrefs.getString("$prefix$fromName", null)?.let {
+                        editor.putString("$prefix$toName", it)
                     }
                 }
                 else -> {
@@ -216,10 +221,24 @@ object P2PMessageRelay {
         editor.apply()
 
         try {
-            ChatDatabaseHelper(context).renamePeer(fromName, toName)
+            val db = ChatDatabaseHelper(context)
+            db.renamePeer(fromName, toName)
+            refreshLastMessageFromHistory(context, db, toName)
         } catch (e: Exception) {
             log(context, "Failed to migrate chat history from $fromName to $toName", "ERROR", e)
         }
+    }
+
+    private fun refreshLastMessageFromHistory(
+        context: Context,
+        db: ChatDatabaseHelper,
+        peerName: String
+    ) {
+        val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("persist_chat_history", true)) return
+        val latest = db.getMessagesForPeer(peerName).lastOrNull() ?: return
+        val preview = if (latest.isMe) "You: ${latest.text}" else latest.text
+        prefs.edit().putString("last_msg_$peerName", SecureStorage.encrypt(preview)).apply()
     }
 
     private fun canonicalPeerName(
@@ -248,6 +267,14 @@ object P2PMessageRelay {
             return when {
                 !persistedName.isNullOrBlank() -> {
                     fingerprintToPeerName[fingerprint] = persistedName
+                    if (peerName != persistedName && isPlaceholderPeerName(peerName)) {
+                        moveChatState(context, peerName, persistedName)
+                        Handler(Looper.getMainLooper()).post {
+                            peerEndpoints.remove(peerName)
+                            peerSessionStates.remove(peerName)
+                            peerConnectionTransports.remove(peerName)
+                        }
+                    }
                     persistedName
                 }
                 knownName.isNullOrBlank() -> {
@@ -274,6 +301,31 @@ object P2PMessageRelay {
                     fingerprintToPeerName[fingerprint] = peerName
                     peerName
                 }
+            }
+        }
+    }
+
+    private fun migratePersistedPlaceholderChats(context: Context) {
+        val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val placeholders = prefs.getStringSet("active_chats", emptySet()).orEmpty()
+            .filter(::isPlaceholderPeerName)
+        if (placeholders.isEmpty()) return
+
+        val canonicalIdentities = prefs.all.entries.mapNotNull { (key, value) ->
+            if (!key.startsWith("peer_fingerprint_") || value !is String) return@mapNotNull null
+            val name = key.removePrefix("peer_fingerprint_")
+            if (isPlaceholderPeerName(name)) null else name to value
+        }
+        for (placeholder in placeholders) {
+            val abbreviatedFingerprint = placeholder.removePrefix("Peer (").removeSuffix(")")
+            val matches = canonicalIdentities.filter { (_, fingerprint) ->
+                fingerprint.startsWith(abbreviatedFingerprint)
+            }
+            if (matches.size == 1) {
+                val (canonicalName, fingerprint) = matches.single()
+                fingerprintToPeerName[fingerprint] = canonicalName
+                moveChatState(context, placeholder, canonicalName)
+                log(context, "Migrated stale placeholder chat $placeholder to $canonicalName")
             }
         }
     }
@@ -306,8 +358,15 @@ object P2PMessageRelay {
         }
         val appContext = context.applicationContext
         loadPersistedAvatars(appContext)
+        migratePersistedPlaceholderChats(appContext)
         val persistedPrefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
         val persistedChats = persistedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+        if (persistedPrefs.getBoolean("persist_chat_history", true)) {
+            val db = ChatDatabaseHelper(appContext)
+            for (peerName in persistedChats) {
+                refreshLastMessageFromHistory(appContext, db, peerName)
+            }
+        }
         for (peerName in persistedChats) {
             persistedPrefs.getString("last_endpoint_$peerName", null)
                 ?.takeIf { it.isNotBlank() }

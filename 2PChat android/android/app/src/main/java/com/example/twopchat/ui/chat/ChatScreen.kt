@@ -168,6 +168,7 @@ fun SwipeToReplyContainer(
 @Composable
 fun ChatScreen(
     peerName: String,
+    isActive: Boolean,
     appLanguage: String,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -490,13 +491,19 @@ fun ChatScreen(
         }
     }
 
-    DisposableEffect(peerName) {
-        P2PMessageRelay.activeChatPeerName = peerName
-        sharedPrefs.edit().putInt("unread_count_$peerName", 0).apply()
-        P2PMessageRelay.registerMessageListener(messageListener)
+    DisposableEffect(peerName, isActive) {
+        if (isActive) {
+            P2PMessageRelay.activeChatPeerName = peerName
+            sharedPrefs.edit().putInt("unread_count_$peerName", 0).apply()
+            P2PMessageRelay.registerMessageListener(messageListener)
+        }
         onDispose {
-            P2PMessageRelay.activeChatPeerName = null
-            P2PMessageRelay.unregisterMessageListener(messageListener)
+            if (P2PMessageRelay.activeChatPeerName == peerName) {
+                P2PMessageRelay.activeChatPeerName = null
+            }
+            if (isActive) {
+                P2PMessageRelay.unregisterMessageListener(messageListener)
+            }
             val endpoint = P2PMessageRelay.peerEndpoints[peerName]
             if (endpoint != null && peerName != "Saved Messages" && myTypingState) {
                 P2PMessageRelay.sendTypingState(context, peerName, endpoint, false)
