@@ -1,5 +1,7 @@
 package com.example.twopchat.ui.chat
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.widget.Toast
 import android.content.Intent
 import android.net.VpnService
@@ -10,6 +12,8 @@ import com.example.twopchat.data.Localizations
 import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.SecureStorage
 import com.example.twopchat.R
+import com.example.twopchat.VoiceMessageSupport
+import androidx.core.content.ContextCompat
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -75,7 +79,7 @@ data class Message(
     val text: String,
     val isMe: Boolean,
     val timestamp: String,
-    val attachmentType: String? = null, // "IMAGE", "FILE", "LOCATION"
+    val attachmentType: String? = null, // "IMAGE", "FILE", "VOICE", "LOCATION"
     val attachmentUri: String? = null,
     val attachmentName: String? = null,
     val replyToId: String? = null,
@@ -181,17 +185,13 @@ fun ChatScreen(
             val fileName = json.optString("file_name", "file")
             val filePath = json.optString("file_path", "")
             val mime = json.optString("mime", "")
-            val lowerName = fileName.lowercase()
-            val isImage = mime.startsWith("image/") ||
-                lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") ||
-                lowerName.endsWith(".png") || lowerName.endsWith(".gif") ||
-                lowerName.endsWith(".webp") || lowerName.endsWith(".bmp") || lowerName.endsWith(".heic")
+            val attachmentType = VoiceMessageSupport.attachmentType(fileName, mime)
             Message(
                 id = json.optString("message_id").ifBlank { newMessageId() },
-                text = if (isImage) "Sent an image" else fileName,
+                text = VoiceMessageSupport.displayMessage(attachmentType, fileName),
                 isMe = false,
                 timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
-                attachmentType = if (isImage) "IMAGE" else "FILE",
+                attachmentType = attachmentType,
                 attachmentUri = filePath,
                 attachmentName = fileName
             )
@@ -221,6 +221,41 @@ fun ChatScreen(
     var showConnectionErrorDialog by remember { mutableStateOf(false) }
     var errorReasonYggdrasilDisabled by remember { mutableStateOf(true) }
     var mockMismatchToggle by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("mock_mismatch_${peerName}", false)) }
+    val voiceRecorder = remember(context) { VoiceRecorder(context.applicationContext) }
+    var isRecordingVoice by remember { mutableStateOf(false) }
+    var recordingElapsedMs by remember { mutableIntStateOf(0) }
+    var recordingStartedAt by remember { mutableLongStateOf(0L) }
+
+    fun beginVoiceRecording() {
+        if (voiceRecorder.start()) {
+            recordingStartedAt = android.os.SystemClock.elapsedRealtime()
+            recordingElapsedMs = 0
+            isRecordingVoice = true
+        } else {
+            Toast.makeText(context, if (appLanguage == "Русский") "Не удалось начать запись" else "Could not start recording", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            beginVoiceRecording()
+        } else {
+            Toast.makeText(context, if (appLanguage == "Русский") "Разрешите доступ к микрофону" else "Microphone permission is required", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    LaunchedEffect(isRecordingVoice) {
+        while (isRecordingVoice) {
+            recordingElapsedMs = (android.os.SystemClock.elapsedRealtime() - recordingStartedAt).toInt()
+            delay(100)
+        }
+    }
+
+    DisposableEffect(voiceRecorder) {
+        onDispose { voiceRecorder.cancel() }
+    }
 
     val vpnLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -289,6 +324,48 @@ fun ChatScreen(
                 addAll(mockList)
                 addAll(list.filter { it.status == "PENDING" })
             }
+        }
+    }
+
+    fun sendVoiceRecording(recording: VoiceRecording) {
+        val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+        val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+        val initialStatus = if (endpoint != null || peerName == "Saved Messages") "SENT" else "PENDING"
+        val outMsg = Message(
+            id = newMessageId(),
+            text = "Voice message",
+            isMe = true,
+            timestamp = time,
+            attachmentType = "VOICE",
+            attachmentUri = recording.file.absolutePath,
+            attachmentName = recording.file.name,
+            status = initialStatus,
+        )
+        initialMessages.add(outMsg)
+        if (persistEnabled || initialStatus == "PENDING") {
+            db.saveMessage(peerName, outMsg)
+        }
+        val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+        if (!activeSet.contains(peerName)) {
+            sharedPrefs.edit { putStringSet("active_chats", activeSet.toMutableSet().apply { add(peerName) }) }
+        }
+        sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt("You: Voice message")) }
+
+        if (endpoint != null && peerName != "Saved Messages") {
+            P2PMessageRelay.sendFile(context, peerName, endpoint, recording.file.absolutePath, outMsg.id) { success ->
+                if (!success) {
+                    db.updateMessageStatus(outMsg.id, "PENDING")
+                    coroutineScope.launch {
+                        val index = initialMessages.indexOfFirst { it.id == outMsg.id }
+                        if (index != -1) initialMessages[index] = outMsg.copy(status = "PENDING")
+                        errorReasonYggdrasilDisabled = !sharedPrefs.getBoolean("settings_yggdrasil", true)
+                        showConnectionErrorDialog = true
+                    }
+                }
+            }
+        } else if (peerName != "Saved Messages") {
+            errorReasonYggdrasilDisabled = !sharedPrefs.getBoolean("settings_yggdrasil", true)
+            showConnectionErrorDialog = true
         }
     }
 
@@ -1309,6 +1386,14 @@ remove("pinned_msg_id_${peerName}")
                                                         }
                                                     }
                                                 }
+                                                "VOICE" -> {
+                                                    VoiceMessagePlayer(
+                                                        filePath = msg.attachmentUri,
+                                                        isMine = msg.isMe,
+                                                        primaryColor = primaryColor,
+                                                        contentColor = textColor,
+                                                    )
+                                                }
                                                 "LOCATION" -> {
                                                     Column {
                                                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1619,12 +1704,20 @@ remove("pinned_msg_id_${peerName}")
                     ) {
                         // Attachment toggle button
                         IconButton(
-                            onClick = { showAttachments = !showAttachments },
+                            onClick = {
+                                if (isRecordingVoice) {
+                                    voiceRecorder.cancel()
+                                    isRecordingVoice = false
+                                    recordingElapsedMs = 0
+                                } else {
+                                    showAttachments = !showAttachments
+                                }
+                            },
                             modifier = Modifier
                                 .size(44.dp)
                                 .background(onSurfaceColor.copy(alpha = 0.03f), shape = CircleShape)
                         ) {
-                            if (showAttachments) {
+                            if (showAttachments || isRecordingVoice) {
                                 Text(
                                     text = "×",
                                     fontSize = 22.sp,
@@ -1646,31 +1739,73 @@ remove("pinned_msg_id_${peerName}")
                         val isDark = backgroundColor == StealthBlack
                         val inputBg = if (isDark) Color(0xFF0F1012) else Color(0xFFE4E7EC)
 
-                        TextField(
-                            value = inputText,
-                            onValueChange = { inputText = it },
-                            placeholder = { Text(Localizations.getString("write_placeholder", appLanguage), color = onSurfaceVariant.copy(alpha = 0.6f)) },
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = inputBg,
-                                unfocusedContainerColor = inputBg,
-                                focusedTextColor = onSurfaceColor,
-                                unfocusedTextColor = onSurfaceColor,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent
-                            ),
-                            shape = RoundedCornerShape(22.dp),
-                            singleLine = false,
-                            maxLines = 3,
-                            modifier = Modifier
-                                .weight(1f)
-                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(22.dp))
-                        )
+                        if (isRecordingVoice) {
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .background(inputBg, RoundedCornerShape(22.dp))
+                                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(22.dp))
+                                    .padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(Modifier.size(9.dp).background(Color.Red, CircleShape))
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    text = VoiceMessageSupport.formatDuration(recordingElapsedMs),
+                                    color = onSurfaceColor,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Spacer(Modifier.weight(1f))
+                                Text(
+                                    text = if (appLanguage == "Русский") "Нажмите × для отмены" else "Tap × to cancel",
+                                    color = onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                )
+                            }
+                        } else {
+                            TextField(
+                                value = inputText,
+                                onValueChange = { inputText = it },
+                                placeholder = { Text(Localizations.getString("write_placeholder", appLanguage), color = onSurfaceVariant.copy(alpha = 0.6f)) },
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = inputBg,
+                                    unfocusedContainerColor = inputBg,
+                                    focusedTextColor = onSurfaceColor,
+                                    unfocusedTextColor = onSurfaceColor,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent
+                                ),
+                                shape = RoundedCornerShape(22.dp),
+                                singleLine = false,
+                                maxLines = 3,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(22.dp))
+                            )
+                        }
 
                         Spacer(modifier = Modifier.width(10.dp))
 
                         IconButton(
                             onClick = {
-                                if (inputText.isNotBlank()) {
+                                if (isRecordingVoice) {
+                                    val recording = voiceRecorder.stop()
+                                    isRecordingVoice = false
+                                    recordingElapsedMs = 0
+                                    if (recording != null) {
+                                        sendVoiceRecording(recording)
+                                    } else {
+                                        Toast.makeText(context, if (appLanguage == "Русский") "Запись слишком короткая" else "Recording is too short", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else if (inputText.isBlank()) {
+                                    showAttachments = false
+                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                        beginVoiceRecording()
+                                    } else {
+                                        audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                    }
+                                } else {
                                     val userText = inputText.trim()
                                     inputText = ""
                                     showAttachments = false
@@ -1767,8 +1902,18 @@ remove("pinned_msg_id_${peerName}")
                                 .background(primaryColor, shape = CircleShape)
                         ) {
                             Icon(
-                                painter = painterResource(id = R.drawable.ic_send_airplane),
-                                contentDescription = "Send",
+                                painter = painterResource(
+                                    id = when {
+                                        isRecordingVoice -> R.drawable.ic_voice_stop
+                                        inputText.isBlank() -> R.drawable.ic_voice_mic
+                                        else -> R.drawable.ic_send_airplane
+                                    }
+                                ),
+                                contentDescription = when {
+                                    isRecordingVoice -> "Send voice message"
+                                    inputText.isBlank() -> "Record voice message"
+                                    else -> "Send"
+                                },
                                 tint = if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White,
                                 modifier = Modifier.size(18.dp)
                             )

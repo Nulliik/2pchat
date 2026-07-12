@@ -145,15 +145,11 @@ object P2PMessageRelay {
             val fileName = json.optString("file_name", "file")
             val filePath = json.optString("file_path", "")
             val mime = json.optString("mime", "")
-            val lowerName = fileName.lowercase()
-            val isImage = mime.startsWith("image/") ||
-                lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg") ||
-                lowerName.endsWith(".png") || lowerName.endsWith(".gif") ||
-                lowerName.endsWith(".webp") || lowerName.endsWith(".bmp") || lowerName.endsWith(".heic")
+            val attachmentType = VoiceMessageSupport.attachmentType(fileName, mime)
             IncomingAttachment(
                 messageId = json.optString("message_id"),
-                displayMessage = if (isImage) "Sent an image" else "Sent a file: $fileName",
-                attachmentType = if (isImage) "IMAGE" else "FILE",
+                displayMessage = VoiceMessageSupport.displayMessage(attachmentType, fileName),
+                attachmentType = attachmentType,
                 attachmentUri = filePath,
                 attachmentName = fileName
             )
