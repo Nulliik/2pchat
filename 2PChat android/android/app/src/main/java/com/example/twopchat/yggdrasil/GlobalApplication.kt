@@ -18,6 +18,10 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
 
     override fun onCreate() {
         super.onCreate()
+        val prefs = yggdrasilPrefs(applicationContext)
+        if (!prefs.contains(PREF_KEY_ENABLED)) {
+            prefs.edit().putBoolean(PREF_KEY_ENABLED, true).apply()
+        }
         config = ConfigurationProxy(applicationContext)
         val callback = NetworkStateCallback(this)
         callback.register()

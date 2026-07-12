@@ -392,6 +392,7 @@ fun ChatScreen(
 
     DisposableEffect(peerName) {
         com.example.twopchat.P2PMessageRelay.activeChatPeerName = peerName
+        sharedPrefs.edit().putInt("unread_count_$peerName", 0).apply()
         com.example.twopchat.P2PMessageRelay.registerMessageListener(messageListener)
         onDispose {
             com.example.twopchat.P2PMessageRelay.activeChatPeerName = null
@@ -509,14 +510,14 @@ fun ChatScreen(
                                 if (idx != -1) {
                                     initialMessages[idx] = outMsg.copy(status = "PENDING")
                                 }
-                                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
+                                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
                                 errorReasonYggdrasilDisabled = !isYggEnabled
                                 showConnectionErrorDialog = true
                             }
                         }
                     }
                 } else if (peerName != "Saved Messages") {
-                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
+                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
                     errorReasonYggdrasilDisabled = !isYggEnabled
                     showConnectionErrorDialog = true
                 }
@@ -564,14 +565,14 @@ fun ChatScreen(
                                 if (idx != -1) {
                                     initialMessages[idx] = outMsg.copy(status = "PENDING")
                                 }
-                                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
+                                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
                                 errorReasonYggdrasilDisabled = !isYggEnabled
                                 showConnectionErrorDialog = true
                             }
                         }
                     }
                 } else if (peerName != "Saved Messages") {
-                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
+                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
                     errorReasonYggdrasilDisabled = !isYggEnabled
                     showConnectionErrorDialog = true
                 }
@@ -620,14 +621,14 @@ fun ChatScreen(
                                 if (idx != -1) {
                                     initialMessages[idx] = outMsg.copy(status = "PENDING")
                                 }
-                                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
+                                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
                                 errorReasonYggdrasilDisabled = !isYggEnabled
                                 showConnectionErrorDialog = true
                             }
                         }
                     }
                 } else if (peerName != "Saved Messages") {
-                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
+                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
                     errorReasonYggdrasilDisabled = !isYggEnabled
                     showConnectionErrorDialog = true
                 }
@@ -1527,7 +1528,7 @@ fun ChatScreen(
                                                     if (idx != -1) {
                                                         initialMessages[idx] = outMsg.copy(status = "PENDING")
                                                     }
-                                                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
+                                                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
                                                     errorReasonYggdrasilDisabled = !isYggEnabled
                                                     showConnectionErrorDialog = true
                                                 }

@@ -78,6 +78,27 @@ fun MainScreen(
     val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
     var activeIconAlias by remember { mutableStateOf(sharedPrefs.getString("active_icon_alias", "MainActivityAliasDefault") ?: "MainActivityAliasDefault") }
 
+    var mainActiveChatsSet by remember {
+        mutableStateOf(sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet())
+    }
+    var totalUnreadCount by remember {
+        mutableStateOf(mainActiveChatsSet.sumOf { sharedPrefs.getInt("unread_count_$it", 0) })
+    }
+
+    DisposableEffect(sharedPrefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "active_chats" || key?.startsWith("unread_count_") == true) {
+                val chats = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+                mainActiveChatsSet = chats
+                totalUnreadCount = chats.sumOf { sharedPrefs.getInt("unread_count_$it", 0) }
+            }
+        }
+        sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+    }
+
     val primaryColor = MaterialTheme.colorScheme.primary
     val backgroundColor = MaterialTheme.colorScheme.background
     val surfaceColor = MaterialTheme.colorScheme.surface
@@ -227,7 +248,8 @@ fun MainScreen(
             appLanguage = appLanguage,
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
-            onSurfaceColor = onSurfaceColor
+            onSurfaceColor = onSurfaceColor,
+            unreadCount = totalUnreadCount
         )
     }
 
@@ -270,7 +292,7 @@ fun ChatsTab(
     
     androidx.compose.runtime.DisposableEffect(sharedPrefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "active_chats" || key?.startsWith("last_msg_") == true || key?.startsWith("transport_") == true) {
+            if (key == "active_chats" || key?.startsWith("last_msg_") == true || key?.startsWith("transport_") == true || key?.startsWith("unread_count_") == true) {
                 activeChatsSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
             }
         }
@@ -297,7 +319,8 @@ fun ChatsTab(
                 lastMsg = lastMsg,
                 transport = transport,
                 isDirect = transport == "DIRECT P2P",
-                initials = if (name.length >= 2) name.substring(0, 2).uppercase() else name.uppercase()
+                initials = if (name.length >= 2) name.substring(0, 2).uppercase() else name.uppercase(),
+                unreadCount = sharedPrefs.getInt("unread_count_$name", 0)
             )
         }
     }
@@ -1462,14 +1485,14 @@ fun SettingsTab(
     var blockScreenshots by remember { mutableStateOf(sharedPrefs.getBoolean("settings_screenshots", true)) }
     var passcodeLock by remember { mutableStateOf(sharedPrefs.getBoolean("settings_passcode", false)) }
     var wifiDiscovery by remember { mutableStateOf(sharedPrefs.getBoolean("settings_wifi", true)) }
-    var yggdrasilRouting by remember { mutableStateOf(sharedPrefs.getBoolean("settings_yggdrasil", false)) }
+    var yggdrasilRouting by remember { mutableStateOf(sharedPrefs.getBoolean("settings_yggdrasil", true)) }
     var ipv4Routing by remember { mutableStateOf(sharedPrefs.getBoolean("settings_ipv4", true)) }
     var persistChatHistory by remember { mutableStateOf(sharedPrefs.getBoolean("persist_chat_history", true)) }
     var stealthDisguise by remember { mutableStateOf(sharedPrefs.getBoolean("settings_stealth_disguise", false)) }
     var showDisguiseInstructionDialog by remember { mutableStateOf(false) }
     
     LaunchedEffect(Unit) {
-        yggdrasilRouting = sharedPrefs.getBoolean("settings_yggdrasil", false)
+        yggdrasilRouting = sharedPrefs.getBoolean("settings_yggdrasil", true)
     }
 
     val vpnLauncher = rememberLauncherForActivityResult(
@@ -2829,7 +2852,8 @@ fun TabNavigationRow(
     appLanguage: String,
     primaryColor: Color,
     surfaceColor: Color,
-    onSurfaceColor: Color
+    onSurfaceColor: Color,
+    unreadCount: Int = 0
 ) {
     NavigationBar(
         containerColor = surfaceColor,
@@ -2856,13 +2880,24 @@ fun TabNavigationRow(
                 selected = isSelected,
                 onClick = { onTabSelected(index) },
                 icon = {
-                    Icon(
-                        painter = painterResource(id = tab.iconRes),
-                        contentDescription = tab.label,
-                        modifier = Modifier
-                            .size(20.dp)
-                            .graphicsLayer(scaleX = iconScale, scaleY = iconScale)
-                    )
+                    Box {
+                        Icon(
+                            painter = painterResource(id = tab.iconRes),
+                            contentDescription = tab.label,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .graphicsLayer(scaleX = iconScale, scaleY = iconScale)
+                        )
+                        if (index == 0 && unreadCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .size(9.dp)
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 6.dp, y = (-4).dp)
+                                    .background(Color(0xFFE53935), shape = CircleShape)
+                            )
+                        }
+                    }
                 },
                 label = {
                     Text(
@@ -2888,7 +2923,8 @@ data class PeerItem(
     val lastMsg: String,
     val transport: String,
     val isDirect: Boolean,
-    val initials: String
+    val initials: String,
+    val unreadCount: Int = 0
 )
 
 data class ContactItem(
@@ -2997,18 +3033,42 @@ fun PeerRow(
                 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                Column {
-                    Text(
-                        text = peer.name,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = onSurfaceColor
-                    )
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = peer.name,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onSurfaceColor,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (peer.unreadCount > 0) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .padding(start = 6.dp)
+                                    .background(primaryColor, shape = CircleShape)
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = peer.unreadCount.toString(),
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = peer.lastMsg,
                         fontSize = 12.sp,
-                        color = onSurfaceVariant,
+                        color = if (peer.unreadCount > 0) onSurfaceColor else onSurfaceVariant,
+                        fontWeight = if (peer.unreadCount > 0) FontWeight.Bold else FontWeight.Normal,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )

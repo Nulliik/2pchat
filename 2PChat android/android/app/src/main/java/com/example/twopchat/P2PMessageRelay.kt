@@ -391,6 +391,8 @@ object P2PMessageRelay {
                                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                                     messageListeners.forEach { it.onMessageReceived(sender, text) }
                                     if (activeChatPeerName != sender) {
+                                        val currentUnread = sharedPrefs.getInt("unread_count_$sender", 0)
+                                        sharedPrefs.edit().putInt("unread_count_$sender", currentUnread + 1).apply()
                                         showNotification(appContext, sender, text)
                                     }
                                 }
@@ -443,6 +445,8 @@ object P2PMessageRelay {
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
                         messageListeners.forEach { it.onMessageReceived(sender, text) }
                         if (activeChatPeerName != sender) {
+                            val currentUnread = sharedPrefs.getInt("unread_count_$sender", 0)
+                            sharedPrefs.edit().putInt("unread_count_$sender", currentUnread + 1).apply()
                             showNotification(appContext, sender, text)
                         }
                     }

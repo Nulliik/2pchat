@@ -20,7 +20,7 @@ class BootUpReceiver : BroadcastReceiver() {
             return
         }
         val preferences = yggdrasilPrefs(context)
-        if (!preferences.getBoolean(PREF_KEY_ENABLED, false)) {
+        if (!preferences.getBoolean(PREF_KEY_ENABLED, true)) {
             Log.i(TAG, "Yggdrasil disabled, not starting service")
             return
         }
