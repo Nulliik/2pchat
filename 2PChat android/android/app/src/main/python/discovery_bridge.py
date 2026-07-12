@@ -1078,8 +1078,7 @@ async def _read_loop(session, peer_name, fp):
                         print(f"Rejected oversized encrypted file chunk ({len(payload)} bytes)")
                         continue
                     try:
-                        nonce = state["nonce_prefix"] + chunk_index.to_bytes(8, "big")
-                        plaintext = state["box"].decrypt(payload, nonce)
+                        plaintext = state["box"].decrypt(payload)
                     except Exception as decrypt_err:
                         _discard_incoming_file(transfer_key)
                         print(f"Rejected unauthenticated file chunk: {decrypt_err}")
