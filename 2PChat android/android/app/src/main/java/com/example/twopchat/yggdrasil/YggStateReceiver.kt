@@ -4,7 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import androidx.core.content.ContextCompat
 
 const val STATE_ENABLED = "enabled"
 const val STATE_DISABLED = "disabled"
@@ -31,13 +31,16 @@ class YggStateReceiver(var receiver: StateReceiver): BroadcastReceiver() {
     }
 
     fun register(context: Context) {
-        LocalBroadcastManager.getInstance(context).registerReceiver(
-            this, IntentFilter(YGG_STATE_INTENT)
+        ContextCompat.registerReceiver(
+            context,
+            this,
+            IntentFilter(YGG_STATE_INTENT),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
         )
     }
 
     fun unregister(context: Context) {
-        LocalBroadcastManager.getInstance(context).unregisterReceiver(this)
+        context.unregisterReceiver(this)
     }
 
     interface StateReceiver {

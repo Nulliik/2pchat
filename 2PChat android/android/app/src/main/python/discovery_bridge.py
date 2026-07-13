@@ -710,10 +710,64 @@ def announce_peer_endpoints(
 
         async def _announce_all():
             tracker_names = _announce_tracker_names(endpoints)
-            tracker_results = await asyncio.gather(
+
+            async def _announce_dht():
+                dht_started = time.monotonic()
+                try:
+                    dht = get_discovery_provider(
+                        "mainline-dht", peer_port=port, transport="direct"
+                    )
+                    dht_results = await asyncio.gather(
+                        *[
+                            dht.announce(
+                                nick,
+                                shared_code,
+                                transport="direct",
+                                endpoints=endpoints,
+                            )
+                            for nick, shared_code in variants
+                        ],
+                        return_exceptions=True,
+                    )
+                    _record_public_addresses(dht)
+                    dht_success = sum(
+                        not isinstance(result, Exception) for result in dht_results
+                    )
+                    dht_errors = [
+                        str(result)
+                        for result in dht_results
+                        if isinstance(result, Exception)
+                    ]
+                    status = (
+                        f"OK ({dht_success})"
+                        if dht_success
+                        else f"FAIL ({'; '.join(dht_errors)})"
+                    )
+                    _set_tracker_diagnostic(MAINLINE_DHT, "announce", status)
+                    print(f"{MAINLINE_DHT} accepted {dht_success} announce registrations.")
+                    return dht_success
+                except Exception as exc:
+                    _set_tracker_diagnostic(MAINLINE_DHT, "announce", f"FAIL ({exc})")
+                    print(f"Mainline DHT announce failed: {exc}")
+                    return 0
+                finally:
+                    _set_tracker_diagnostic(
+                        MAINLINE_DHT,
+                        "announce_rtt_ms",
+                        str(round((time.monotonic() - dht_started) * 1000)),
+                    )
+
+            # Start every discovery channel immediately. Previously BEP 5 was
+            # delayed until even the slowest tracker request had completed.
+            combined_results = await asyncio.gather(
                 *[_announce_tracker(tracker_name) for tracker_name in tracker_names],
+                _announce_dht(),
+                asyncio.to_thread(_discover_public_ipv4_stun),
                 return_exceptions=True,
             )
+            tracker_results = combined_results[:len(tracker_names)]
+            dht_result = combined_results[len(tracker_names)]
+            observed_ipv4 = combined_results[len(tracker_names) + 1]
             total_success = 0
             for tracker_name, result in zip(tracker_names, tracker_results):
                 if isinstance(result, Exception):
@@ -721,42 +775,12 @@ def announce_peer_endpoints(
                     continue
                 total_success += result
                 print(f"Tracker {tracker_name} accepted {result} announce registrations.")
+            if not isinstance(dht_result, Exception):
+                total_success += dht_result
+            else:
+                print(f"Mainline DHT announce task crashed: {dht_result}")
 
-            dht_started = time.monotonic()
-            try:
-                dht = get_discovery_provider(
-                    "mainline-dht", peer_port=port, transport="direct"
-                )
-                dht_results = await asyncio.gather(
-                    *[
-                        dht.announce(
-                            nick,
-                            shared_code,
-                            transport="direct",
-                            endpoints=endpoints,
-                        )
-                        for nick, shared_code in variants
-                    ],
-                    return_exceptions=True,
-                )
-                _record_public_addresses(dht)
-                dht_success = sum(not isinstance(result, Exception) for result in dht_results)
-                dht_errors = [str(result) for result in dht_results if isinstance(result, Exception)]
-                status = f"OK ({dht_success})" if dht_success else f"FAIL ({'; '.join(dht_errors)})"
-                _set_tracker_diagnostic(MAINLINE_DHT, "announce", status)
-                print(f"{MAINLINE_DHT} accepted {dht_success} announce registrations.")
-                total_success += dht_success
-            except Exception as exc:
-                _set_tracker_diagnostic(MAINLINE_DHT, "announce", f"FAIL ({exc})")
-                print(f"Mainline DHT announce failed: {exc}")
-            finally:
-                _set_tracker_diagnostic(
-                    MAINLINE_DHT,
-                    "announce_rtt_ms",
-                    str(round((time.monotonic() - dht_started) * 1000)),
-                )
-            observed_ipv4 = await asyncio.to_thread(_discover_public_ipv4_stun)
-            if observed_ipv4:
+            if isinstance(observed_ipv4, str) and observed_ipv4:
                 if observed_ipv4 not in public_address_observations:
                     public_address_observations.add(observed_ipv4)
                     print(f"STUN observed our public address as {observed_ipv4}")

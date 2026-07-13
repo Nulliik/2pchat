@@ -1,20 +1,22 @@
+
+
+
 package com.example.twopchat
 
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.thread
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.ui.chat.Message
 import android.content.Context
 import android.content.Intent
-import android.app.PendingIntent
-import android.app.NotificationManager
-import android.app.NotificationChannel
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
-import androidx.core.app.NotificationCompat
 import androidx.core.content.edit
 import org.json.JSONObject
 import java.io.File
@@ -23,6 +25,7 @@ import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.Date
+import java.util.UUID
 import android.util.Base64
 import androidx.compose.runtime.mutableStateMapOf
 import com.chaquo.python.Python
@@ -30,9 +33,15 @@ import com.chaquo.python.Python
 object P2PMessageRelay {
     private const val TAG = "P2PMessageRelay"
     private const val LISTENER_PORT = 50001
+    private val logTimestampFormatter = ThreadLocal.withInitial {
+        SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS", Locale.getDefault())
+    }
     private val startStopLock = Any()
     private val identityLock = Any()
-    private var isRunning = false
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var isRunning = false
+    private val avatarCache = PeerAvatarCache()
+    private val notificationService = MessageNotificationService()
 
     /** All installations listen on the documented P2P port; identity is the fingerprint, not the port. */
     fun listenerPort(@Suppress("UNUSED_PARAMETER") context: Context): Int {
@@ -57,16 +66,28 @@ object P2PMessageRelay {
     val peerConnectionTransports = mutableStateMapOf<String, String>()
     val peerSessionStates = mutableStateMapOf<String, Boolean>()
     private val fingerprintToPeerName = ConcurrentHashMap<String, String>()
-    private val processingOfflineQueues = ConcurrentHashMap.newKeySet<String>()
     private val avatarSharesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val lastAvatarShareAt = ConcurrentHashMap<String, Long>()
-    private val lastReconnectAttemptAt = ConcurrentHashMap<String, Long>()
 
     // Maps peer name to their profile avatar bitmap in RAM
-    val peerAvatars = mutableStateMapOf<String, Bitmap>()
+    val peerAvatars = avatarCache.avatars
 
     // Maps peer name to typing state
     val peerTypingStates = mutableStateMapOf<String, Boolean>()
+
+    private val maintenanceCoordinator = RelayMaintenanceCoordinator(
+        scope = serviceScope,
+        isRunning = { isRunning },
+        peerEndpoints = peerEndpoints,
+        peerConnectionTransports = peerConnectionTransports,
+        peerSessionStates = peerSessionStates,
+        log = ::log,
+    )
+    private val outboundMessenger by lazy {
+        P2POutboundMessenger(peerEndpoints, ::log) { peerName, messageId, status ->
+            messageListeners.forEach { it.onMessageStatusChanged(peerName, messageId, status) }
+        }
+    }
 
     interface MessageListener {
         fun onMessageReceived(sender: String, text: String)
@@ -89,78 +110,16 @@ object P2PMessageRelay {
         messageListeners.remove(listener)
     }
 
-    private const val MESSAGES_CHANNEL_ID = "p2p_chat_messages"
-
     private fun showNotification(context: Context, sender: String, text: String) {
         try {
-            val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                val channel = NotificationChannel(
-                    MESSAGES_CHANNEL_ID,
-                    "P2P Messages",
-                    NotificationManager.IMPORTANCE_DEFAULT
-                )
-                notificationManager.createNotificationChannel(channel)
-            }
-
-            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            } ?: Intent()
-
-            var pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                pendingFlags = pendingFlags or PendingIntent.FLAG_IMMUTABLE
-            }
-            val pendingIntent = PendingIntent.getActivity(context, sender.hashCode(), intent, pendingFlags)
-
-            val displayMessage = parseIncomingAttachment(text)?.displayMessage ?: text
-
-            val builder = NotificationCompat.Builder(context, MESSAGES_CHANNEL_ID)
-                .setContentTitle(sender)
-                .setContentText(displayMessage)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setAutoCancel(true)
-                .setContentIntent(pendingIntent)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-
-            notificationManager.notify(sender.hashCode(), builder.build())
+            notificationService.show(context, sender, text)
         } catch (e: Exception) {
             log(context, "Failed to show message notification: ${e.message}", "ERROR", e)
         }
     }
 
-    private data class IncomingAttachment(
-        val messageId: String,
-        val displayMessage: String,
-        val attachmentType: String,
-        val attachmentUri: String,
-        val attachmentName: String
-    )
-
     private fun parseIncomingAttachment(text: String): IncomingAttachment? {
-        val trimmed = text.trim()
-        if (!trimmed.startsWith("{")) {
-            return null
-        }
-        return try {
-            val json = JSONObject(trimmed)
-            if (json.optString("type") != "file") {
-                return null
-            }
-            val fileName = json.optString("file_name", "file")
-            val filePath = json.optString("file_path", "")
-            val mime = json.optString("mime", "")
-            val attachmentType = VoiceMessageSupport.attachmentType(fileName, mime)
-            IncomingAttachment(
-                messageId = json.optString("message_id"),
-                displayMessage = VoiceMessageSupport.displayMessage(attachmentType, fileName),
-                attachmentType = attachmentType,
-                attachmentUri = filePath,
-                attachmentName = fileName
-            )
-        } catch (_: Exception) {
-            null
-        }
+        return IncomingMessageParser.parseAttachment(text)
     }
 
     private fun isPlaceholderPeerName(name: String): Boolean {
@@ -225,7 +184,7 @@ object P2PMessageRelay {
         editor.apply()
 
         try {
-            val db = ChatDatabaseHelper(context)
+            val db = ChatDatabaseHelper.getInstance(context)
             db.renamePeer(fromName, toName)
             refreshLastMessageFromHistory(context, db, toName)
         } catch (e: Exception) {
@@ -247,8 +206,11 @@ object P2PMessageRelay {
 
     private fun canonicalPeerName(
         context: Context,
+
         peerName: String,
+
         fingerprint: String
+
     ): String {
         if (fingerprint.isBlank()) {
             return peerName
@@ -342,11 +304,8 @@ object P2PMessageRelay {
             Log.i(TAG, fullMsg)
         }
         try {
-            val logDir = File(context.filesDir, "config")
-            if (!logDir.exists()) logDir.mkdirs()
-            val logFile = File(logDir, "app.log")
-            val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS", Locale.getDefault()).format(Date())
-            logFile.appendText("$timestamp [KOTLIN_$level] $TAG: $fullMsg\n")
+            val timestamp = checkNotNull(logTimestampFormatter.get()).format(Date())
+            AppLog.append(context, "$timestamp [KOTLIN_$level] $TAG: $fullMsg\n")
         } catch (e: Exception) {
             // Ignore
         }
@@ -366,7 +325,7 @@ object P2PMessageRelay {
         val persistedPrefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
         val persistedChats = persistedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
         if (persistedPrefs.getBoolean("persist_chat_history", true)) {
-            val db = ChatDatabaseHelper(appContext)
+            val db = ChatDatabaseHelper.getInstance(appContext)
             for (peerName in persistedChats) {
                 refreshLastMessageFromHistory(appContext, db, peerName)
             }
@@ -427,7 +386,7 @@ object P2PMessageRelay {
                                             )
                                             if (bitmap != null) {
                                                 android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                                    peerAvatars[sender] = bitmap
+                                                    avatarCache.put(sender, bitmap)
                                                 }
                                                 log(appContext, "Successfully received and cached avatar in RAM for $sender")
                                                 
@@ -448,10 +407,13 @@ object P2PMessageRelay {
                                         } catch (e: Exception) {
                                             log(appContext, "Error decoding avatar: ${e.message}", "ERROR", e)
                                         }
+
                                     }
                                     return
+
                                 }
                                 "pin_message" -> {
+
                                     val msgId = json.optString("msg_id")
                                     val text = json.optString("text")
                                     val isFromSender = json.optBoolean("is_from_sender", false)
@@ -476,7 +438,7 @@ object P2PMessageRelay {
                                 "read_receipt" -> {
                                     val msgId = json.optString("message_id")
                                     if (msgId.isNotEmpty()) {
-                                        val db = ChatDatabaseHelper(appContext)
+                                        val db = ChatDatabaseHelper.getInstance(appContext)
                                         db.updateMessageStatus(msgId, "READ")
                                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                                             messageListeners.forEach { it.onMessageStatusChanged(sender, msgId, "READ") }
@@ -489,7 +451,7 @@ object P2PMessageRelay {
                                     val emoji = json.optString("emoji")
                                     val messageText = json.optString("message_text")
                                     if (msgId.isNotEmpty() && emoji.isNotEmpty()) {
-                                        val db = ChatDatabaseHelper(appContext)
+                                        val db = ChatDatabaseHelper.getInstance(appContext)
                                         val msgs = db.getMessagesForPeer(sender)
                                         // Message ids used to be generated independently on both
                                         // Android devices. Keep id as the primary key, but use the
@@ -527,11 +489,11 @@ object P2PMessageRelay {
                                 }
                                 
                                 val persistEnabled = sharedPrefs.getBoolean("persist_chat_history", true)
-                                val db = ChatDatabaseHelper(appContext)
+                                val db = ChatDatabaseHelper.getInstance(appContext)
                                 val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
                                 
                                 val rxMsg = Message(
-                                    id = System.currentTimeMillis().toString(),
+                                    id = UUID.randomUUID().toString(),
                                     text = replyText,
                                     isMe = false,
                                     timestamp = time,
@@ -565,14 +527,14 @@ object P2PMessageRelay {
                         }
                         
                         val persistEnabled = sharedPrefs.getBoolean("persist_chat_history", true)
-                        val db = ChatDatabaseHelper(appContext)
+                        val db = ChatDatabaseHelper.getInstance(appContext)
                         var displayMessage = text
                         val incomingAttachment = parseIncomingAttachment(text)
                         if (incomingAttachment != null) {
                             displayMessage = incomingAttachment.displayMessage
                             if (persistEnabled) {
                                 db.saveMessage(sender, Message(
-                                    id = incomingAttachment.messageId.ifBlank { System.currentTimeMillis().toString() },
+                                    id = incomingAttachment.messageId.ifBlank { UUID.randomUUID().toString() },
                                     text = incomingAttachment.displayMessage,
                                     isMe = false,
                                     timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
@@ -585,7 +547,7 @@ object P2PMessageRelay {
                         } else {
                             if (persistEnabled) {
                                 db.saveMessage(sender, Message(
-                                    id = System.currentTimeMillis().toString(),
+                                    id = UUID.randomUUID().toString(),
                                     text = text,
                                     isMe = false,
                                     timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
@@ -646,12 +608,15 @@ object P2PMessageRelay {
                         val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
                         sharedPrefs.edit()
                             .putString("transport_$resolvedPeerName", transport)
+
                             .apply()
                         val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                         if (!activeSet.contains(resolvedPeerName)) {
+
                             val newSet = activeSet.toMutableSet()
                             newSet.add(resolvedPeerName)
                             sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
+
                         }
 
                         shareAvatar(appContext, resolvedPeerName, endpoint)
@@ -673,113 +638,20 @@ object P2PMessageRelay {
             
             log(appContext, "Python P2P Relays started successfully")
 
-            // Keep saved conversations connected even while the user remains
-            // on the main screen. Fingerprints are used instead of nicknames
-            // because an incoming session may not have received identity_info
-            // yet immediately after either application restarts.
-            thread(start = true, name = "SessionMaintenanceLoop", isDaemon = true) {
-                while (isRunning) {
-                    try {
-                        val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                        val chats = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
-                            .filterNot { it == "Saved Messages" || isPlaceholderPeerName(it) }
-                        val activeFingerprints = PythonBridge.getActivePeerFingerprints().toSet()
-
-                        Handler(Looper.getMainLooper()).post {
-                            for (peerName in chats) {
-                                val fingerprint = sharedPrefs.getString("peer_fingerprint_$peerName", null)
-                                if (!fingerprint.isNullOrBlank() && fingerprint in activeFingerprints) {
-                                    peerSessionStates[peerName] = true
-                                } else {
-                                    peerSessionStates.remove(peerName)
-                                    peerConnectionTransports.remove(peerName)
-                                }
-                            }
-                        }
-
-                        val now = System.currentTimeMillis()
-                        for (peerName in chats) {
-                            val fingerprint = sharedPrefs.getString("peer_fingerprint_$peerName", null)
-                                ?.takeIf { it.isNotBlank() } ?: continue
-                            if (fingerprint in activeFingerprints) continue
-                            val endpoint = peerEndpoints[peerName]
-                                ?: sharedPrefs.getString("last_endpoint_$peerName", null)
-                                ?.takeIf { it.isNotBlank() }
-                                ?: continue
-                            val lastAttempt = lastReconnectAttemptAt[fingerprint] ?: 0L
-                            if (now - lastAttempt < 15_000L) continue
-
-                            lastReconnectAttemptAt[fingerprint] = now
-                            log(appContext, "Background reconnection for $peerName at '$endpoint'")
-                            PythonBridge.reconnectPeerSession(peerName, endpoint, fingerprint)
-                        }
-                    } catch (e: Exception) {
-                        log(appContext, "Error maintaining saved peer sessions", "ERROR", e)
-                    }
-                    try {
-                        Thread.sleep(5_000)
-                    } catch (_: InterruptedException) {
-                        break
-                    }
+            // Retry persisted pending messages immediately after the listener is ready.
+            for (peerName in persistedChats) {
+                peerEndpoints[peerName]?.let { endpoint ->
+                    processOfflineQueue(appContext, peerName, endpoint)
                 }
             }
 
-            // Start a periodic announcement and network interface monitoring loop
-            thread(start = true, name = "TrackerAnnounceLoop", isDaemon = true) {
-                var lastAddresses = emptyList<String>()
-                var candidateAddresses = emptyList<String>()
-                var stableCandidateSamples = 0
-                var lastAnnounceTime = 0L
-                while (isRunning) {
-                    try {
-                        val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                        val username = sharedPrefs.getString("username_profile", "") ?: ""
-                        val fingerprint = PythonBridge.getLocalFingerprint()
-                        if (username.isNotBlank() && fingerprint != "Loading..." && fingerprint != "Not Initialized" && fingerprint != "Error") {
-                            val diagnostics = PythonBridge.getYggdrasilNetworkDiagnostics()
-                            val yggReady = sharedPrefs.getBoolean("settings_yggdrasil", true) &&
-                                diagnostics["state"] == "connected" &&
-                                (diagnostics["routes"]?.toIntOrNull() ?: 0) >= 2
-                            val currentAddresses = buildList {
-                                if (sharedPrefs.getBoolean("settings_ipv4", true)) {
-                                    addAll(PythonBridge.getLocalAddresses().filter { !it.contains(':') })
-                                }
-                                if (yggReady) {
-                                    PythonBridge.getYggdrasilAddress().takeIf { it.isNotBlank() }?.let(::add)
-                                }
-                            }.distinct().sorted()
-                            val now = System.currentTimeMillis()
-                            if (currentAddresses == candidateAddresses) {
-                                stableCandidateSamples++
-                            } else {
-                                candidateAddresses = currentAddresses
-                                stableCandidateSamples = 1
-                            }
+            maintenanceCoordinator.start(appContext, port, ::isPlaceholderPeerName)
 
-                            val firstAnnounce = lastAnnounceTime == 0L
-                            val networkChangedAndStable = currentAddresses != lastAddresses && stableCandidateSamples >= 3
-                            val periodicRefreshDue = now - lastAnnounceTime >= 300_000L
-                            if (firstAnnounce || networkChangedAndStable || periodicRefreshDue) {
-                                log(appContext, "Announcing self on tracker. Network changed and stable: $networkChangedAndStable, IPs: $currentAddresses")
-                                val success = PythonBridge.announceSelf(username, fingerprint, port)
-                                log(appContext, "Announce self status: $success")
-                                if (success) {
-                                    lastAddresses = currentAddresses
-                                    lastAnnounceTime = now
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        log(appContext, "Error in periodic announce", "ERROR", e)
-                    }
-                    try {
-                        Thread.sleep(10000) // Check network change status every 10 seconds
-                    } catch (_: InterruptedException) {
-                        break
-                    }
-                }
-            }
         } catch (e: Exception) {
+            synchronized(startStopLock) {
+                isRunning = false
+            }
+            maintenanceCoordinator.stop()
             log(appContext, "Error starting Python P2P Relays", "ERROR", e)
         }
     }
@@ -795,8 +667,8 @@ object P2PMessageRelay {
         synchronized(identityLock) {
             fingerprintToPeerName.clear()
         }
-        lastReconnectAttemptAt.clear()
-        peerAvatars.clear()
+        maintenanceCoordinator.stop()
+        avatarCache.clear()
         // Trigger Python shutdown/cleanup
         thread(start = true) {
             try {
@@ -844,6 +716,7 @@ object P2PMessageRelay {
                         val success = PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
                         if (success) lastAvatarShareAt[shareKey] = System.currentTimeMillis()
                         log(context, "Avatar send status to $peerName: $success")
+
                     }
                 } else {
                     log(context, "profile_avatar.jpg does not exist, skipping avatar share.")
@@ -866,80 +739,35 @@ object P2PMessageRelay {
      * Send an encrypted Double Ratchet message to a resolved peer's endpoint.
      */
     fun sendMessage(context: Context, endpoint: String, @Suppress("UNUSED_PARAMETER") senderName: String, text: String, onResult: (Boolean) -> Unit = {}) {
-        thread(start = true) {
-            try {
-                // Resolve the peer's name mapped to this endpoint
-                var targetPeerName = "Direct Peer"
-                for ((name, ep) in peerEndpoints) {
-                    if (ep == endpoint) {
-                        targetPeerName = name
-                        break
-                    }
-                }
-                
-                log(context, "Sending secure message via Python transport")
-                val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                    .getString("peer_fingerprint_$targetPeerName", null)
-                val success = PythonBridge.sendP2pMessage(targetPeerName, endpoint, text, expectedFingerprint)
-                log(context, "Secure message send: ${if (success) "SUCCESS" else "FAILED"}")
-                Handler(Looper.getMainLooper()).post { onResult(success) }
-            } catch (e: Exception) {
-                log(context, "Failed to send secure message", "ERROR")
-                Handler(Looper.getMainLooper()).post { onResult(false) }
-            }
-        }
+        outboundMessenger.sendMessage(context, endpoint, text, onResult)
     }
 
     fun sendVerificationRequest(context: Context, peerName: String, onResult: (Boolean) -> Unit) {
-        val endpoint = peerEndpoints[peerName]
-        if (endpoint.isNullOrBlank()) {
-            onResult(false)
-            return
-        }
-        val json = org.json.JSONObject().apply {
+        outboundMessenger.sendControlMessage(context, peerName, JSONObject().apply {
             put("type", "verification_request")
-        }
-        sendMessage(context, endpoint, "", json.toString(), onResult)
+        }, onResult)
     }
 
     fun sendVerificationResponse(context: Context, peerName: String, success: Boolean, onResult: (Boolean) -> Unit = {}) {
-        val endpoint = peerEndpoints[peerName]
-        if (endpoint.isNullOrBlank()) {
-            onResult(false)
-            return
-        }
-        val json = org.json.JSONObject().apply {
+        outboundMessenger.sendControlMessage(context, peerName, JSONObject().apply {
             put("type", "verification_response")
             put("success", success)
-        }
-        sendMessage(context, endpoint, "", json.toString(), onResult)
+        }, onResult)
     }
 
     fun sendPinMessage(context: Context, peerName: String, msgId: String, text: String, isFromSender: Boolean, onResult: (Boolean) -> Unit = {}) {
-        val endpoint = peerEndpoints[peerName]
-        if (endpoint.isNullOrBlank()) {
-            onResult(false)
-            return
-        }
-        val json = org.json.JSONObject().apply {
+        outboundMessenger.sendControlMessage(context, peerName, JSONObject().apply {
             put("type", "pin_message")
             put("msg_id", msgId)
             put("text", text)
             put("is_from_sender", isFromSender)
-        }
-        sendMessage(context, endpoint, "", json.toString(), onResult)
+        }, onResult)
     }
 
     fun sendUnpinMessage(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
-        val endpoint = peerEndpoints[peerName]
-        if (endpoint.isNullOrBlank()) {
-            onResult(false)
-            return
-        }
-        val json = org.json.JSONObject().apply {
+        outboundMessenger.sendControlMessage(context, peerName, JSONObject().apply {
             put("type", "unpin_message")
-        }
-        sendMessage(context, endpoint, "", json.toString(), onResult)
+        }, onResult)
     }
 
     fun deleteChat(context: Context, peerName: String) {
@@ -977,7 +805,7 @@ object P2PMessageRelay {
         peerEndpoints.remove(peerName)
         peerSessionStates.remove(peerName)
         peerTypingStates.remove(peerName)
-        peerAvatars.remove(peerName)
+        avatarCache.remove(peerName)
         
         // Remove avatar file if exists
         try {
@@ -991,7 +819,7 @@ object P2PMessageRelay {
         }
 
         // Clear messages database
-        val db = ChatDatabaseHelper(context)
+        val db = ChatDatabaseHelper.getInstance(context)
         db.clearMessagesForPeer(peerName)
     }
 
@@ -999,184 +827,38 @@ object P2PMessageRelay {
      * Send an encrypted file to a specific peer and endpoint.
      */
     fun sendFile(context: Context, peerName: String, endpoint: String, filePath: String, messageId: String = "", onResult: (Boolean) -> Unit = {}) {
-        thread(start = true) {
-            try {
-                log(context, "Sending secure file via Python transport to $peerName")
-                val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                    .getString("peer_fingerprint_$peerName", null)
-                val success = PythonBridge.sendP2pFile(peerName, endpoint, filePath, expectedFingerprint, messageId)
-                log(context, "Sending file status to $peerName: ${if (success) "SUCCESS" else "FAILED"}")
-                Handler(Looper.getMainLooper()).post { onResult(success) }
-            } catch (e: Exception) {
-                log(context, "Failed to send secure file", "ERROR", e)
-                Handler(Looper.getMainLooper()).post { onResult(false) }
-            }
-        }
+        outboundMessenger.sendFile(context, peerName, endpoint, filePath, messageId, onResult)
     }
 
-    /**
-     * Backward-compatible overload resolving peerName from endpoint.
-     */
     @Suppress("unused")
     fun sendFile(context: Context, endpoint: String, filePath: String, messageId: String = "", onResult: (Boolean) -> Unit = {}) {
-        var targetPeerName = "Direct Peer"
-        for ((name, ep) in peerEndpoints) {
-            if (ep == endpoint) {
-                targetPeerName = name
-                break
-            }
-        }
-        sendFile(context, targetPeerName, endpoint, filePath, messageId, onResult)
+        val peerName = peerEndpoints.entries.firstOrNull { it.value == endpoint }?.key ?: "Direct Peer"
+        outboundMessenger.sendFile(context, peerName, endpoint, filePath, messageId, onResult)
     }
 
     fun reconnectSession(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
-        thread(start = true) {
-            try {
-                val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                val endpoint = peerEndpoints[peerName]
-                    ?: prefs.getString("last_endpoint_$peerName", "").orEmpty()
-                val expectedFingerprint = prefs.getString("peer_fingerprint_$peerName", null)
-                log(context, "Requesting reconnection for $peerName at endpoint '$endpoint'")
-                val success = PythonBridge.reconnectPeerSession(peerName, endpoint, expectedFingerprint)
-                onResult(success)
-            } catch (e: Exception) {
-                log(context, "Failed to initiate reconnection for $peerName", "ERROR", e)
-                onResult(false)
-            }
-        }
+        outboundMessenger.reconnect(context, peerName, onResult)
     }
 
     fun sendTypingState(context: Context, peerName: String, endpoint: String, isTyping: Boolean) {
-        thread(start = true, name = "TypingStateThread") {
-            try {
-                val json = JSONObject().apply {
-                    put("type", "typing_state")
-                    put("is_typing", isTyping)
-                }
-                val payload = json.toString()
-                val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                    .getString("peer_fingerprint_$peerName", null)
-                PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
-            } catch (e: Exception) {
-                // Ignore silent typing state send errors
-            }
-        }
+        outboundMessenger.sendTypingState(context, peerName, endpoint, isTyping)
     }
 
     fun sendReadReceipt(context: Context, peerName: String, endpoint: String, messageId: String) {
-        thread(start = true, name = "ReadReceiptThread") {
-            try {
-                val json = JSONObject().apply {
-                    put("type", "read_receipt")
-                    put("message_id", messageId)
-                }
-                val payload = json.toString()
-                val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                    .getString("peer_fingerprint_$peerName", null)
-                PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
-            } catch (_: Exception) {
-                // Ignore silent read receipt send errors
-            }
-        }
+        outboundMessenger.sendReadReceipt(context, peerName, endpoint, messageId)
     }
 
     fun sendReaction(context: Context, peerName: String, endpoint: String, messageId: String, messageText: String, emoji: String) {
-        thread(start = true, name = "ReactionThread") {
-            try {
-                val json = JSONObject().apply {
-                    put("type", "reaction")
-                    put("message_id", messageId)
-                    put("message_text", messageText)
-                    put("emoji", emoji)
-                }
-                val payload = json.toString()
-                val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                    .getString("peer_fingerprint_$peerName", null)
-                PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
-            } catch (_: Exception) {
-                // Ignore silent reaction send errors
-            }
-        }
+        outboundMessenger.sendReaction(context, peerName, endpoint, messageId, messageText, emoji)
     }
 
     fun processOfflineQueue(context: Context, peerName: String, endpoint: String) {
-        if (endpoint.isBlank() || !processingOfflineQueues.add(peerName)) return
-        thread(start = true, name = "OfflineQueueThread") {
-            try {
-                val db = ChatDatabaseHelper(context)
-                val pending = db.getPendingMessagesForPeer(peerName)
-                if (pending.isNotEmpty()) {
-                    log(context, "Processing ${pending.size} pending offline messages for $peerName")
-                    val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                        .getString("peer_fingerprint_$peerName", null)
-                    
-                    for (msg in pending) {
-                        val payload = if (msg.replyToId != null) {
-                            JSONObject().apply {
-                                put("type", "reply")
-                                put("text", msg.text)
-                                put("reply_to_id", msg.replyToId)
-                                put("reply_to_text", msg.replyToText)
-                                put("reply_to_name", msg.replyToName)
-                            }.toString()
-                        } else {
-                            msg.text
-                        }
-                        
-                        val success = if (msg.attachmentType != null && !msg.attachmentUri.isNullOrBlank()) {
-                            val attachment = File(msg.attachmentUri)
-                            attachment.exists() && PythonBridge.sendP2pFile(
-                                peerName,
-                                endpoint,
-                                attachment.absolutePath,
-                                expectedFingerprint,
-                                msg.id
-                            )
-                        } else {
-                            PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
-                        }
-                        if (success) {
-                            db.updateMessageStatus(msg.id, "SENT")
-                            Handler(Looper.getMainLooper()).post {
-                                messageListeners.forEach { it.onMessageStatusChanged(peerName, msg.id, "SENT") }
-                            }
-                        } else {
-                            log(context, "Failed to send pending message ${msg.id}, stopping queue processing.")
-                            break
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                log(context, "Error in processOfflineQueue: ${e.message}", "ERROR", e)
-            } finally {
-                processingOfflineQueues.remove(peerName)
-            }
-        }
+        outboundMessenger.processOfflineQueue(context, peerName, endpoint)
     }
 
     fun loadPersistedAvatars(context: Context) {
-        thread(start = true, name = "LoadAvatarsThread") {
-            try {
-                val avatarsDir = File(context.filesDir, "avatars")
-                if (avatarsDir.exists() && avatarsDir.isDirectory) {
-                    val files = avatarsDir.listFiles()
-                    if (files != null) {
-                        for (file in files) {
-                            if (file.isFile && file.name.endsWith(".jpg")) {
-                                val peerName = file.name.substringBeforeLast(".jpg")
-                                val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                                if (bitmap != null) {
-                                    Handler(Looper.getMainLooper()).post {
-                                        peerAvatars[peerName] = bitmap
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error loading persisted avatars", e)
-            }
+        avatarCache.loadPersisted(context) { error ->
+            Log.e(TAG, "Error loading persisted avatars", error)
         }
     }
 }

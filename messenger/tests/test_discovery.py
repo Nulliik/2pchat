@@ -1,3 +1,6 @@
+import socket
+import struct
+
 import pytest
 
 from messenger.core.discovery_base import PeerEndpoint
@@ -78,3 +81,49 @@ def test_mainline_discovery_normalization_rejects_empty_values():
         MainlineDHTDiscovery.normalize_nickname("   ")
     with pytest.raises(ValueError):
         MainlineDHTDiscovery.derive_lookup_namespace("alice", "   ")
+
+
+@pytest.mark.asyncio
+async def test_mainline_bep5_announces_before_lookup_finishes():
+    from messenger.core.discovery_mainline_dht import MainlineDHTBackend
+
+    bootstrap_address = ("192.0.2.1", 6881)
+    closer_address = ("192.0.2.2", 6881)
+    events = []
+
+    class RecordingBackend(MainlineDHTBackend):
+        async def _bootstrap(self):
+            return [(b"", bootstrap_address)]
+
+        async def _query(self, address, method, arguments):
+            del arguments
+            if method == b"announce_peer":
+                events.append(("announce", address))
+                return {"id": b"R" * 20}
+
+            events.append(("lookup", address))
+            if address == bootstrap_address:
+                compact_node = (
+                    b"B" * 20
+                    + socket.inet_aton(closer_address[0])
+                    + struct.pack(">H", closer_address[1])
+                )
+                return {
+                    "_source": bootstrap_address,
+                    "id": b"A" * 20,
+                    "token": b"first-token",
+                    "nodes": compact_node,
+                }
+            return {
+                "_source": closer_address,
+                "id": b"B" * 20,
+                "token": b"closer-token",
+            }
+
+    backend = RecordingBackend(bootstrap_nodes=(), max_queries=8)
+    await backend.announce_peer(b"T" * 20, 50001)
+
+    assert events.index(("announce", bootstrap_address)) < events.index(
+        ("lookup", closer_address)
+    )
+    assert ("announce", closer_address) in events

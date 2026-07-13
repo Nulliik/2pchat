@@ -10,7 +10,6 @@ import android.os.ParcelFileDescriptor
 import android.system.OsConstants
 import android.util.Log
 import androidx.core.app.ServiceCompat
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.example.twopchat.yggdrasil.YggStateReceiver.Companion.YGG_STATE_INTENT
 import mobile.Yggdrasil
 import org.json.JSONArray
@@ -206,7 +205,8 @@ open class PacketTunnelProvider: VpnService() {
 
         val intent = Intent(YGG_STATE_INTENT)
         intent.putExtra("state", STATE_ENABLED)
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        intent.setPackage(packageName)
+        sendBroadcast(intent)
     }
 
     private fun stop(stopService: Boolean = true) {
@@ -246,14 +246,16 @@ open class PacketTunnelProvider: VpnService() {
         var intent = Intent(STATE_INTENT)
         intent.putExtra("type", "state")
         intent.putExtra("started", false)
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        intent.setPackage(packageName)
+        sendBroadcast(intent)
 
         intent = Intent(YGG_STATE_INTENT)
         intent.putExtra("state", STATE_DISABLED)
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        intent.setPackage(packageName)
+        sendBroadcast(intent)
         updateRuntimeState("", STATE_DISABLED)
 
-        stopForeground(true)
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         if (stopService) {
             stopSelf()
         }
@@ -287,7 +289,8 @@ open class PacketTunnelProvider: VpnService() {
                 intent.putExtra("subnet", yggdrasil.subnetString)
                 intent.putExtra("pubkey", yggdrasil.publicKeyString)
                 intent.putExtra("peers", yggdrasil.peersJSON)
-                LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+                intent.setPackage(packageName)
+                sendBroadcast(intent)
             }
             val curTime = System.currentTimeMillis()
             if (lastStateUpdate + 10000 < curTime) {
@@ -306,7 +309,8 @@ open class PacketTunnelProvider: VpnService() {
                 }
                 updateRuntimeState(yggdrasil.addressString, state, peerCount, routes, treeNodes, yggdrasil.peersJSON)
                 intent.putExtra("state", state)
-                LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+                intent.setPackage(packageName)
+                sendBroadcast(intent)
                 lastStateUpdate = curTime
             }
 

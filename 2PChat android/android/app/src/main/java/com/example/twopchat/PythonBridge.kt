@@ -62,7 +62,6 @@ object PythonBridge {
         try {
             val logDir = java.io.File(context.filesDir, "config")
             if (!logDir.exists()) logDir.mkdirs()
-            val logFile = java.io.File(logDir, "app.log")
             val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS", java.util.Locale.getDefault()).format(java.util.Date())
             val sb = java.lang.StringBuilder()
             sb.append("$timestamp [KOTLIN_INFO] Network Interfaces Diagnostics:\n")
@@ -77,7 +76,7 @@ object PythonBridge {
                     sb.append("    Address: ${address.hostAddress} (Type: ${address.javaClass.simpleName}, Loopback: ${address.isLoopbackAddress}, RawBytes: $rawBytesHex)\n")
                 }
             }
-            logFile.appendText(sb.toString())
+            AppLog.append(context, sb.toString())
         } catch (e: Exception) {
             Log.e(TAG, "Error scanning network interfaces", e)
         }

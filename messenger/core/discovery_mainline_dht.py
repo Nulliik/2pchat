@@ -6,7 +6,7 @@ import socket
 import struct
 import time
 from dataclasses import dataclass
-from typing import Protocol, Sequence
+from typing import Awaitable, Callable, Protocol, Sequence
 
 from .discovery_base import DiscoveryProvider, PeerDescriptor, PeerEndpoint
 from .discovery_bencode import bdecode
@@ -115,15 +115,24 @@ class MainlineDHTBackend:
 
     async def _bootstrap(self) -> list[tuple[bytes, tuple]]:
         loop = asyncio.get_running_loop()
-        result = []
-        for host, port in self.bootstrap_nodes:
+
+        async def _resolve(host: str, port: int) -> list[tuple[bytes, tuple]]:
             try:
                 infos = await loop.getaddrinfo(host, port, type=socket.SOCK_DGRAM)
             except OSError:
-                continue
+                return []
+            resolved = []
             for family, _kind, _proto, _name, address in infos:
                 if family in {socket.AF_INET, socket.AF_INET6}:
-                    result.append((b"", address))
+                    resolved.append((b"", address))
+            return resolved
+
+        batches = await asyncio.gather(
+            *(_resolve(host, port) for host, port in self.bootstrap_nodes)
+        )
+        result = []
+        for batch in batches:
+            result.extend(batch)
         return result
 
     async def _query(self, address: tuple, method: bytes, arguments: dict) -> dict:
@@ -153,7 +162,12 @@ class MainlineDHTBackend:
         finally:
             sock.close()
 
-    async def _lookup(self, info_hash: bytes) -> tuple[list[PeerEndpoint], list[_Token]]:
+    async def _lookup(
+        self,
+        info_hash: bytes,
+        *,
+        on_tokens: Callable[[Sequence[_Token]], Awaitable[None]] | None = None,
+    ) -> tuple[list[PeerEndpoint], list[_Token]]:
         pending = await self._bootstrap()
         visited: set[tuple[str, int]] = set()
         peers: dict[tuple[str, int], PeerEndpoint] = {}
@@ -193,6 +207,7 @@ class MainlineDHTBackend:
                 *requests,
                 return_exceptions=True,
             )
+            round_tokens = []
             for response in responses:
                 if not isinstance(response, dict):
                     continue
@@ -205,7 +220,9 @@ class MainlineDHTBackend:
                     and isinstance(response_node_id, bytes)
                     and len(response_node_id) == 20
                 ):
-                    tokens.append(_Token(response_node_id, source, token))
+                    discovered_token = _Token(response_node_id, source, token)
+                    tokens.append(discovered_token)
+                    round_tokens.append(discovered_token)
                 values = response.get("values", ())
                 if isinstance(values, list):
                     for value in values:
@@ -219,6 +236,11 @@ class MainlineDHTBackend:
                     if isinstance(compact, bytes):
                         pending.extend(_compact_nodes(compact, family))
 
+            # announce_peer can publish to the first responsive nodes here,
+            # while the lookup continues towards nodes closer to info_hash.
+            if round_tokens and on_tokens is not None:
+                await on_tokens(tuple(round_tokens))
+
         return list(peers.values()), tokens
 
     async def get_peers(self, info_hash: bytes) -> Sequence[PeerEndpoint]:
@@ -226,32 +248,55 @@ class MainlineDHTBackend:
         return peers
 
     async def announce_peer(self, info_hash: bytes, port: int) -> None:
-        _peers, tokens = await self._lookup(info_hash)
+        target_number = int.from_bytes(info_hash, "big")
+        attempted: set[tuple] = set()
+        successful: set[tuple] = set()
+
+        async def _announce_to(tokens: Sequence[_Token]) -> int:
+            candidates = [
+                token
+                for token in sorted(
+                    tokens,
+                    key=lambda item: int.from_bytes(item.node_id, "big") ^ target_number,
+                )
+                if token.address not in attempted
+            ][:8]
+            if not candidates:
+                return 0
+            attempted.update(token.address for token in candidates)
+            results = await asyncio.gather(
+                *(
+                    self._query(
+                        token.address,
+                        b"announce_peer",
+                        {
+                            b"id": self.node_id,
+                            b"info_hash": info_hash,
+                            b"implied_port": 0,
+                            b"port": port,
+                            b"token": token.value,
+                        },
+                    )
+                    for token in candidates
+                ),
+                return_exceptions=True,
+            )
+            for token, result in zip(candidates, results):
+                if isinstance(result, dict):
+                    successful.add(token.address)
+            return sum(isinstance(result, dict) for result in results)
+
+        async def _publish_early(tokens: Sequence[_Token]) -> None:
+            # One successful early copy is enough to make the peer discoverable.
+            # Failed nodes don't block trying freshly discovered tokens next round.
+            if not successful:
+                await _announce_to(tokens)
+
+        _peers, tokens = await self._lookup(info_hash, on_tokens=_publish_early)
         if not tokens:
             raise RuntimeError("Mainline DHT bootstrap succeeded but returned no announce tokens")
-        target_number = int.from_bytes(info_hash, "big")
-        closest_tokens = sorted(
-            tokens,
-            key=lambda token: int.from_bytes(token.node_id, "big") ^ target_number,
-        )[:8]
-        results = await asyncio.gather(
-            *(
-                self._query(
-                    token.address,
-                    b"announce_peer",
-                    {
-                        b"id": self.node_id,
-                        b"info_hash": info_hash,
-                        b"implied_port": 0,
-                        b"port": port,
-                        b"token": token.value,
-                    },
-                )
-                for token in closest_tokens
-            ),
-            return_exceptions=True,
-        )
-        if not any(isinstance(result, dict) for result in results):
+        await _announce_to(tokens)
+        if not successful:
             raise RuntimeError("All Mainline DHT announce_peer requests failed")
 
 

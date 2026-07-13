@@ -10,6 +10,8 @@ import androidx.core.content.edit
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.PythonBridge
+import com.example.twopchat.copyTextToClipboard
 import com.example.twopchat.SecureStorage
 import com.example.twopchat.R
 import com.example.twopchat.VoiceMessageSupport
@@ -54,9 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -73,21 +73,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.IntOffset
 import kotlin.math.roundToInt
 import kotlin.math.abs
-
-data class Message(
-    val id: String,
-    val text: String,
-    val isMe: Boolean,
-    val timestamp: String,
-    val attachmentType: String? = null, // "IMAGE", "FILE", "VOICE", "LOCATION"
-    val attachmentUri: String? = null,
-    val attachmentName: String? = null,
-    val replyToId: String? = null,
-    val replyToText: String? = null,
-    val replyToName: String? = null,
-    val status: String? = null,
-    val reactions: Map<String, List<String>> = emptyMap()
-)
 
 private fun newMessageId(): String = java.util.UUID.randomUUID().toString()
 
@@ -214,7 +199,6 @@ fun ChatScreen(
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
     val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
     var pinnedMsgId by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_id_${peerName}", null)) }
     var pinnedMsgText by remember(peerName) { mutableStateOf(SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
@@ -275,39 +259,29 @@ fun ChatScreen(
             }
         }
     )
-    val activeFingerprint = remember(peerName) {
-        when (peerName) {
-            "Eleanor Vance" -> "2TFcRb7mE1eAnOrVaNcE9823471029837419"
-            "Liam O'Connor" -> "2TFcRb7mLiAmOcOnNoR1029384756102938"
-            "Sarah Chen" -> "2TFcRb7mSaRaHcHeN92837410293847102938"
-            else -> "2TFcRb7m" + peerName.hashCode().toString().padStart(16, 'x')
-        }
+    val activeFingerprint = sharedPrefs.getString("peer_fingerprint_$peerName", null).orEmpty()
+    var localFingerprint by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        localFingerprint = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            PythonBridge.getLocalFingerprint()
+        }.takeUnless { it == "Error" || it == "Not Initialized" || it == "Loading..." }.orEmpty()
     }
 
 
 
-    // Determine initial messages based on peer
-    val db = remember(context) { ChatDatabaseHelper(context) }
+    // Load only real persisted messages. Saved Messages keeps its local welcome entry.
+    val db = remember(context) { ChatDatabaseHelper.getInstance(context) }
     val persistEnabled = remember(context) { sharedPrefs.getBoolean("persist_chat_history", true) }
     val initialMessages = remember(peerName) {
-        val mockList = when (peerName) {
-            "Eleanor Vance" -> listOf(
-                Message("1", "Hey! Did you check out the new design mockups?", false, "12:35"),
-                Message("2", "Yes, they look fantastic! Especially the dark theme.", true, "12:36"),
-                Message("3", "The designs look fantastic!", true, "12:36")
-            )
-            "Liam O'Connor" -> listOf(
-                Message("1", "Did we get the testing keys from the server?", false, "11:15"),
-                Message("2", "Yes, I loaded them into the P2P transport module.", true, "11:18"),
-                Message("3", "Thanks for the feedback.", false, "11:20")
-            )
-            "Sarah Chen" -> listOf(
-                Message("1", "The direct connection looks very stable.", false, "09:40"),
-                Message("2", "Awesome. I'll verify the latency metrics.", true, "09:42"),
-                Message("3", "Last message, your work is great!", false, "09:45")
-            )
+        val localDefaults = when (peerName) {
             "Saved Messages" -> listOf(
-                Message("1", Localizations.getString("saved_messages_welcome", appLanguage), true, "12:00")
+                Message(
+                    "saved-messages-welcome",
+                    Localizations.getString("saved_messages_welcome", appLanguage),
+                    true,
+                    "",
+                    sentAtEpochMs = 0L,
+                )
             )
             else -> emptyList()
         }
@@ -315,14 +289,14 @@ fun ChatScreen(
         val list = db.getMessagesForPeer(peerName)
         if (persistEnabled) {
             if (list.isEmpty()) {
-                mockList.forEach { db.saveMessage(peerName, it) }
-                mutableStateListOf<Message>().apply { addAll(mockList) }
+                localDefaults.forEach { db.saveMessage(peerName, it) }
+                mutableStateListOf<Message>().apply { addAll(localDefaults) }
             } else {
                 mutableStateListOf<Message>().apply { addAll(list) }
             }
         } else {
             mutableStateListOf<Message>().apply {
-                addAll(mockList)
+                addAll(localDefaults)
                 addAll(list.filter { it.status == "PENDING" })
             }
         }
@@ -373,8 +347,7 @@ fun ChatScreen(
     var inputText by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var myTypingState by remember { mutableStateOf(false) }
-    var localMockTyping by remember { mutableStateOf(false) }
-    val isTyping = localMockTyping || (P2PMessageRelay.peerTypingStates[peerName] ?: false)
+    val isTyping = P2PMessageRelay.peerTypingStates[peerName] ?: false
 
     LaunchedEffect(peerName) {
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
@@ -566,29 +539,6 @@ fun ChatScreen(
     val selectedMessages = remember { mutableStateListOf<Message>() }
     var showForwardDialog by remember { mutableStateOf(false) }
     var messageToForward by remember { mutableStateOf<Message?>(null) }
-
-    // Auto replies repository
-    val autoReplies = remember(peerName) {
-        when (peerName) {
-            "Eleanor Vance" -> listOf(
-                "Thanks, let me know if you need anything else!",
-                "By the way, I'm working on the active sessions screen now.",
-                "Let's sync up over the P2P link later!"
-            )
-            "Liam O'Connor" -> listOf(
-                "Great! I see the connection peer-to-peer active now.",
-                "Let's check if the double ratchet session keys rotate correctly.",
-                "Acknowledged. I'll run the Yggdrasil daemon benchmarks."
-            )
-            "Sarah Chen" -> listOf(
-                "Thank you! Let me know when you run the metrics on your end.",
-                "I will be online for another hour checking the handshake packets.",
-                "Perfect. Security rules look completely green."
-            )
-            else -> listOf("Message received securely.")
-        }
-    }
-    var replyIndex by remember { mutableStateOf(0) }
 
     // Helper to copy Uri contents to a persistent file
     fun saveUriToTempFile(context: android.content.Context, uri: Uri, originalName: String): java.io.File? {
@@ -975,7 +925,17 @@ fun ChatScreen(
 
                 if (peerName != "Saved Messages") {
                     IconButton(
-                        onClick = { showVerifyDialog = true },
+                        onClick = {
+                            if (activeFingerprint.isBlank() || localFingerprint.isBlank()) {
+                                Toast.makeText(
+                                    context,
+                                    if (appLanguage == "Русский") "Fingerprint ещё недоступен" else "Fingerprint is not available yet",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                showVerifyDialog = true
+                            }
+                        },
                         modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
@@ -1502,7 +1462,7 @@ remove("pinned_msg_id_${peerName}")
                                                 modifier = Modifier.align(Alignment.End)
                                             ) {
                                                 Text(
-                                                    text = msg.timestamp,
+                                                    text = MessageTimestampFormatter.format(msg, appLanguage),
                                                     color = (if (msg.isMe) {
                                                         if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.65f)
                                                     } else onSurfaceColor.copy(alpha = 0.5f)),
@@ -1923,28 +1883,6 @@ remove("pinned_msg_id_${peerName}")
                                         }
                                     }
 
-                                    // Trigger mock reply with typing delay (only for demo mockup contacts)
-                                    if (peerName == "Eleanor Vance" || peerName == "Liam O'Connor" || peerName == "Sarah Chen") {
-                                        coroutineScope.launch {
-                                            delay(1000)
-                                            localMockTyping = true
-                                            delay(1500)
-                                            localMockTyping = false
-                                            val replyText = autoReplies[replyIndex % autoReplies.size]
-                                            replyIndex++
-                                            val replyTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                                            val replyMsg = Message(
-                                                System.currentTimeMillis().toString(),
-                                                replyText,
-                                                false,
-                                                replyTime
-                                            )
-                                            initialMessages.add(replyMsg)
-                                            if (persistEnabled) {
-                                                db.saveMessage(peerName, replyMsg)
-                                            }
-                                        }
-                                    }
                                 }
                             },
                             modifier = Modifier
@@ -2105,7 +2043,7 @@ remove("pinned_msg_id_${peerName}")
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable {
-                                    clipboardManager.setText(AnnotatedString(msg.text))
+                                    copyTextToClipboard(context, "2PChat message", msg.text)
                                     Toast.makeText(context, if (appLanguage == "Русский") "Текст скопирован" else "Text copied to clipboard", Toast.LENGTH_SHORT).show()
                                     selectedMessageForOptions = null
                                 }
@@ -2349,17 +2287,6 @@ remove("pinned_msg_id_${peerName}")
                                                 attachmentName = loc.second
                                             )
                                         )
-                                        if (peerName != "Saved Messages") {
-                                            coroutineScope.launch {
-                                                delay(1000)
-                                                localMockTyping = true
-                                                delay(1500)
-                                                localMockTyping = false
-                                                val replyText = "Received location coordinates for ${loc.first}."
-                                                val replyTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                                                initialMessages.add(Message(newMessageId(), replyText, false, replyTime))
-                                            }
-                                        }
                                     }
                                     .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                             ) {
@@ -2386,7 +2313,9 @@ remove("pinned_msg_id_${peerName}")
         }
 
         if (showVerifyDialog) {
-            val emojis = remember(activeFingerprint) { getVerificationEmojis(activeFingerprint) }
+            val emojis = remember(localFingerprint, activeFingerprint) {
+                getVerificationEmojis(localFingerprint, activeFingerprint)
+            }
 
             AlertDialog(
                 onDismissRequest = { 
@@ -2503,15 +2432,10 @@ remove("pinned_msg_id_${peerName}")
         }
 
         if (showIncomingVerifyDialog) {
-            val peerFingerprint = remember(peerName) {
-                when (peerName) {
-                    "Eleanor Vance" -> "2TFcRb7mE1eAnOrVaNcE9823471029837419"
-                    "Liam O'Connor" -> "2TFcRb7mLiAmOcOnNoR1029384756102938"
-                    "Sarah Chen" -> "2TFcRb7mSaRaHcHeN92837410293847102938"
-                    else -> "2TFcRb7m" + peerName.hashCode().toString().padStart(16, 'x')
-                }
+            val peerFingerprint = sharedPrefs.getString("peer_fingerprint_$peerName", null).orEmpty()
+            val emojis = remember(localFingerprint, peerFingerprint) {
+                getVerificationEmojis(localFingerprint, peerFingerprint)
             }
-            val emojis = remember(peerFingerprint) { getVerificationEmojis(peerFingerprint) }
 
             AlertDialog(
                 onDismissRequest = {
@@ -2843,7 +2767,7 @@ fun FullscreenImageViewer(
     }
 }
 
-fun getVerificationEmojis(fingerprint: String): List<String> {
+fun getVerificationEmojis(localFingerprint: String, peerFingerprint: String): List<String> {
     val emojiList = listOf(
         "🦄", "🦊", "🚀", "💎", "🍕", "🎈", "🚗", "🥝", "🎸", "🌟",
         "🦁", "🐼", "🐻", "🐨", "🐙", "🦋", "🍄", "🍉", "🍓", "🍍",
@@ -2852,9 +2776,10 @@ fun getVerificationEmojis(fingerprint: String): List<String> {
     )
     val hash = try {
         val digest = java.security.MessageDigest.getInstance("SHA-256")
-        digest.digest(fingerprint.toByteArray(Charsets.UTF_8))
+        val identityPair = listOf(localFingerprint, peerFingerprint).sorted().joinToString("|")
+        digest.digest(identityPair.toByteArray(Charsets.UTF_8))
     } catch (e: java.lang.Exception) {
-        fingerprint.toByteArray(Charsets.UTF_8)
+        (localFingerprint + peerFingerprint).toByteArray(Charsets.UTF_8)
     }
     val result = mutableListOf<String>()
     for (i in 0 until 4) {

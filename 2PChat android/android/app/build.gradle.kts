@@ -105,6 +105,7 @@ dependencies {
   // Arch Components
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
+  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
   // Compose
   implementation(libs.androidx.compose.ui)
@@ -135,7 +136,6 @@ dependencies {
   // Yggdrasil dependencies
   implementation(files("libs/yggdrasil.aar"))
   implementation("androidx.preference:preference-ktx:1.2.1")
-  implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
   implementation("net.zetetic:android-database-sqlcipher:4.5.4")
   implementation("androidx.sqlite:sqlite:2.3.1")
 }

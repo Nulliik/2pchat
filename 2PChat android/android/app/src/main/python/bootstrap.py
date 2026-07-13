@@ -3,6 +3,19 @@ import sys
 from pathlib import Path
 import datetime
 
+MAX_LOG_BYTES = 5 * 1024 * 1024
+
+
+def _rotate_log_if_needed(log_file_path, incoming_bytes):
+    try:
+        if log_file_path.exists() and log_file_path.stat().st_size + incoming_bytes > MAX_LOG_BYTES:
+            backup = log_file_path.with_name("app.log.1")
+            backup.unlink(missing_ok=True)
+            log_file_path.replace(backup)
+    except OSError:
+        # Logging must never break the messaging runtime.
+        pass
+
 class LogRedirector:
     def __init__(self, original_stream, log_file_path, prefix):
         self.original_stream = original_stream
@@ -17,8 +30,10 @@ class LogRedirector:
             try:
                 timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
                 # Log to app.log
+                line = f"{timestamp} [{self.prefix}] {stripped}\n"
+                _rotate_log_if_needed(self.log_file_path, len(line.encode("utf-8")))
                 with open(self.log_file_path, "a", encoding="utf-8") as f:
-                    f.write(f"{timestamp} [{self.prefix}] {stripped}\n")
+                    f.write(line)
             except Exception:
                 pass
 

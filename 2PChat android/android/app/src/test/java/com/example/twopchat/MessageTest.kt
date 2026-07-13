@@ -1,9 +1,14 @@
 package com.example.twopchat
 
 import com.example.twopchat.ui.chat.Message
+import com.example.twopchat.ui.chat.getVerificationEmojis
+import com.example.twopchat.ui.chat.MessageTimestampFormatter
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.util.Calendar
+import java.util.TimeZone
 
 class MessageTest {
     @Test
@@ -48,5 +53,35 @@ class MessageTest {
         
         val copied = msg.copy(status = "READ")
         assertEquals("READ", copied.status)
+    }
+
+    @Test
+    fun verificationEmojis_areStableForBothSidesOfIdentityPair() {
+        val aliceView = getVerificationEmojis("alice-fingerprint", "bob-fingerprint")
+        val bobView = getVerificationEmojis("bob-fingerprint", "alice-fingerprint")
+
+        assertEquals(aliceView, bobView)
+        assertNotEquals(aliceView, getVerificationEmojis("alice-fingerprint", "mallory-fingerprint"))
+    }
+
+    @Test
+    fun timestampFormatter_distinguishesTodayYesterdayAndOlderDates() {
+        val utc = TimeZone.getTimeZone("UTC")
+        fun epoch(day: Int, hour: Int, minute: Int): Long = Calendar.getInstance(utc).apply {
+            clear()
+            set(2026, Calendar.JULY, day, hour, minute)
+        }.timeInMillis
+        val now = epoch(13, 15, 30)
+        fun messageAt(day: Int, hour: Int) = Message(
+            id = "$day-$hour",
+            text = "test",
+            isMe = true,
+            timestamp = "legacy",
+            sentAtEpochMs = epoch(day, hour, 5),
+        )
+
+        assertEquals("14:05", MessageTimestampFormatter.format(messageAt(13, 14), "English", now, utc))
+        assertEquals("вчера", MessageTimestampFormatter.format(messageAt(12, 14), "Русский", now, utc))
+        assertEquals("10 Jul", MessageTimestampFormatter.format(messageAt(10, 14), "English", now, utc))
     }
 }

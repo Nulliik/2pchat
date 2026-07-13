@@ -7,11 +7,11 @@ import android.content.ContentValues
 import com.example.twopchat.ui.chat.Message
 import com.example.twopchat.SecureStorage
 
-class ChatDatabaseHelper(private val context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+class ChatDatabaseHelper private constructor(private val context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        private const val DATABASE_VERSION = 6
+        private const val DATABASE_VERSION = 7
         private const val TABLE_MESSAGES = "messages"
         
         private const val KEY_ID = "id"
@@ -27,7 +27,14 @@ class ChatDatabaseHelper(private val context: Context) : SQLiteOpenHelper(contex
         private const val KEY_REPLY_TO_NAME = "reply_to_name"
         private const val KEY_STATUS = "status"
         private const val KEY_REACTIONS = "reactions"
+        private const val KEY_SENT_AT_MS = "sent_at_ms"
         private val activeHelpers = java.util.Collections.newSetFromMap(java.util.WeakHashMap<ChatDatabaseHelper, Boolean>())
+        @Volatile private var instance: ChatDatabaseHelper? = null
+
+        fun getInstance(context: Context): ChatDatabaseHelper =
+            instance ?: synchronized(this) {
+                instance ?: ChatDatabaseHelper(context.applicationContext).also { instance = it }
+            }
 
         fun closeAllConnections() {
             synchronized(activeHelpers) {
@@ -39,6 +46,7 @@ class ChatDatabaseHelper(private val context: Context) : SQLiteOpenHelper(contex
                     }
                 }
                 activeHelpers.clear()
+                instance = null
             }
         }
     }
@@ -79,7 +87,8 @@ class ChatDatabaseHelper(private val context: Context) : SQLiteOpenHelper(contex
                 + KEY_REPLY_TO_TEXT + " TEXT,"
                 + KEY_REPLY_TO_NAME + " TEXT,"
                 + KEY_STATUS + " TEXT,"
-                + KEY_REACTIONS + " TEXT" + ")")
+                + KEY_REACTIONS + " TEXT,"
+                + KEY_SENT_AT_MS + " INTEGER NOT NULL DEFAULT 0" + ")")
         db.execSQL(createTable)
     }
 
@@ -159,6 +168,9 @@ class ChatDatabaseHelper(private val context: Context) : SQLiteOpenHelper(contex
                 e.printStackTrace()
             }
         }
+        if (oldVersion < 7) {
+            db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_SENT_AT_MS INTEGER NOT NULL DEFAULT 0")
+        }
     }
 
     private fun serializeReactions(reactions: Map<String, List<String>>): String {
@@ -212,6 +224,7 @@ class ChatDatabaseHelper(private val context: Context) : SQLiteOpenHelper(contex
             put(KEY_REPLY_TO_NAME, encNullable(msg.replyToName))
             put(KEY_STATUS, msg.status)
             put(KEY_REACTIONS, serializeReactions(msg.reactions))
+            put(KEY_SENT_AT_MS, msg.sentAtEpochMs)
         }
         db.insert(TABLE_MESSAGES, null, values)
     }
@@ -243,6 +256,7 @@ class ChatDatabaseHelper(private val context: Context) : SQLiteOpenHelper(contex
                 val indexStatus = it.getColumnIndex(KEY_STATUS)
                 val indexReactions = it.getColumnIndex(KEY_REACTIONS)
                 val indexId = it.getColumnIndex(KEY_ID)
+                val indexSentAtMs = it.getColumnIndex(KEY_SENT_AT_MS)
                 
                 do {
                     val text = if (indexText != -1) dec(it.getString(indexText)) else ""
@@ -256,7 +270,8 @@ class ChatDatabaseHelper(private val context: Context) : SQLiteOpenHelper(contex
                     val replyToName = if (indexReplyToName != -1) decNullable(it.getString(indexReplyToName)) else null
                     val status = if (indexStatus != -1) it.getString(indexStatus) else null
                     val reactions = if (indexReactions != -1) deserializeReactions(it.getString(indexReactions)) else emptyMap()
-                    val id = if (indexId != -1) it.getString(indexId) else System.currentTimeMillis().toString()
+                    val id = if (indexId != -1) it.getString(indexId) else java.util.UUID.randomUUID().toString()
+                    val sentAtEpochMs = if (indexSentAtMs != -1) it.getLong(indexSentAtMs) else 0L
                     
                     messages.add(
                         Message(
@@ -271,7 +286,8 @@ class ChatDatabaseHelper(private val context: Context) : SQLiteOpenHelper(contex
                             replyToText = replyToText,
                             replyToName = replyToName,
                             status = status,
-                            reactions = reactions
+                            reactions = reactions,
+                            sentAtEpochMs = sentAtEpochMs,
                         )
                     )
                 } while (it.moveToNext())
@@ -344,6 +360,7 @@ class ChatDatabaseHelper(private val context: Context) : SQLiteOpenHelper(contex
                 val indexReplyToName = it.getColumnIndex(KEY_REPLY_TO_NAME)
                 val indexStatus = it.getColumnIndex(KEY_STATUS)
                 val indexId = it.getColumnIndex(KEY_ID)
+                val indexSentAtMs = it.getColumnIndex(KEY_SENT_AT_MS)
                 
                 do {
                     val text = if (indexText != -1) dec(it.getString(indexText)) else ""
@@ -356,7 +373,8 @@ class ChatDatabaseHelper(private val context: Context) : SQLiteOpenHelper(contex
                     val replyToText = if (indexReplyToText != -1) decNullable(it.getString(indexReplyToText)) else null
                     val replyToName = if (indexReplyToName != -1) decNullable(it.getString(indexReplyToName)) else null
                     val status = if (indexStatus != -1) it.getString(indexStatus) else null
-                    val id = if (indexId != -1) it.getString(indexId) else System.currentTimeMillis().toString()
+                    val id = if (indexId != -1) it.getString(indexId) else java.util.UUID.randomUUID().toString()
+                    val sentAtEpochMs = if (indexSentAtMs != -1) it.getLong(indexSentAtMs) else 0L
                     
                     messages.add(
                         Message(
@@ -370,7 +388,8 @@ class ChatDatabaseHelper(private val context: Context) : SQLiteOpenHelper(contex
                             replyToId = replyToId,
                             replyToText = replyToText,
                             replyToName = replyToName,
-                            status = status
+                            status = status,
+                            sentAtEpochMs = sentAtEpochMs
                         )
                     )
                 } while (it.moveToNext())
