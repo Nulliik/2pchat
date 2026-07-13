@@ -114,7 +114,7 @@ fun ChatsTab(
                 name = name,
                 lastMsg = lastMsg,
                 transport = transport,
-                isDirect = transport == "DIRECT P2P",
+                isDirect = isDirectP2pTransport(transport),
                 initials = if (name.length >= 2) name.substring(0, 2).uppercase() else name.uppercase(),
                 unreadCount = sharedPrefs.getInt("unread_count_$name", 0)
             )

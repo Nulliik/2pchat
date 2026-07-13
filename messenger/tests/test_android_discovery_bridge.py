@@ -1,4 +1,6 @@
 import importlib.util
+import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -73,3 +75,58 @@ def test_android_initial_announce_starts_bep5_without_waiting_for_trackers(monke
 
     assert result is True
     assert events.index("dht-start") < events.index("tracker-end")
+
+
+def test_direct_yggdrasil_neighbour_returns_before_slow_candidates(monkeypatch):
+    bridge = _load_discovery_bridge()
+    slow_cancelled = asyncio.Event()
+
+    async def fake_verify(endpoint, nickname, expected_fingerprint=None):
+        assert nickname == "bob"
+        assert expected_fingerprint is None
+        if endpoint == "[200::2]:50001":
+            return {
+                "nickname": "Bob",
+                "fingerprint": "peer-fingerprint",
+                "endpoint": endpoint,
+                "verified": True,
+            }
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            slow_cancelled.set()
+            raise
+
+    monkeypatch.setattr(bridge, "_verify_live_endpoint", fake_verify)
+
+    result = bridge.verify_live_endpoints(
+        json.dumps(["[200::1]:50001", "[200::2]:50001"]),
+        "bob",
+    )
+
+    assert result[0]["endpoints"] == ["[200::2]:50001"]
+    assert result[0]["verification_reason"] == "authenticated direct Yggdrasil neighbour"
+    assert slow_cancelled.is_set()
+
+
+def test_direct_yggdrasil_search_reuses_authenticated_active_session(monkeypatch):
+    bridge = _load_discovery_bridge()
+
+    class FakeWriter:
+        def get_extra_info(self, name):
+            assert name == "peername"
+            return ("200::2", 50001)
+
+    session = SimpleNamespace(is_online=True, peer_label="Bob", writer=FakeWriter())
+    bridge.active_sessions["peer-fingerprint"] = session
+    bridge.peer_fingerprint_to_name["peer-fingerprint"] = "Bob"
+    monkeypatch.setattr(
+        bridge,
+        "_verify_live_endpoint",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not dial")),
+    )
+
+    result = bridge.verify_live_endpoints('["[200::2]:50001"]', "bob")
+
+    assert result[0]["fingerprint"] == "peer-fingerprint"
+    assert result[0]["verification_reason"] == "authenticated active Yggdrasil session"

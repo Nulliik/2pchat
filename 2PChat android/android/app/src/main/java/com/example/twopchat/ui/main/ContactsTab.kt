@@ -872,12 +872,18 @@ fun ContactsTab(
                                         val newSet = activeSet.toMutableSet()
                                         newSet.add(peerKey)
                                         sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
-                                        val isYgg = contact.status.contains("Yggdrasil", ignoreCase = true)
+                                        val isYgg = contact.endpoints.split(',')
+                                            .map(String::trim)
+                                            .any { it.startsWith('[') }
                                         sharedPrefs.edit()
                                             .putString("transport_$peerKey", if (isYgg) "YGGDRASIL" else "DIRECT P2P")
                                             .putString("peer_fingerprint_$peerKey", contact.fingerprint)
                                             .apply()
                                     }
+                                    // The live search already authenticated this fingerprint. Seed the
+                                    // Python-side name map now so an incoming message cannot briefly be
+                                    // filed under Peer(<fingerprint-prefix>) before identity_info arrives.
+                                    PythonBridge.rememberPeerName(contact.fingerprint, peerKey)
                                     if (contact.endpoints.isNotBlank() && contact.endpoints != "Unknown") {
                                         P2PMessageRelay.peerEndpoints[peerKey] = contact.endpoints
                                     }

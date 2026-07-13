@@ -364,6 +364,118 @@ async def _verify_live_endpoint(
         if session is not None:
             await session.close()
 
+
+def verify_live_endpoints(
+    endpoints_json: str,
+    expected_live_name: str,
+    expected_live_fingerprint: str | None = None,
+):
+    """Try already-connected Yggdrasil neighbours before public discovery.
+
+    Yggdrasil's public trackers are useful for arbitrary remote peers, but a
+    directly connected mesh neighbour is already a trustworthy route
+    candidate.  The endpoint is still accepted only after the normal encrypted
+    handshake proves that its authenticated identity advertises the requested
+    name.  Return as soon as one candidate succeeds so dead public mesh peers
+    cannot add their individual timeouts to local discovery latency.
+    """
+    expected_live_fingerprint = _canonical_expected_fingerprint(expected_live_fingerprint)
+    try:
+        decoded = json.loads(endpoints_json)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(decoded, list):
+        return []
+
+    candidates = []
+    seen = set()
+    for value in decoded:
+        endpoint = str(value).strip()
+        match = re.fullmatch(r"\[([0-9a-fA-F:]+)\]:(\d{1,5})", endpoint)
+        if not match or not (1 <= int(match.group(2)) <= 65535) or endpoint in seen:
+            continue
+        seen.add(endpoint)
+        candidates.append(endpoint)
+        if len(candidates) >= 12:
+            break
+    if not candidates or not expected_live_name.strip():
+        return []
+
+    # Opening the first chat may already have established the one preferred
+    # bidirectional session.  Dialling a second search probe is then correctly
+    # rejected by duplicate-session arbitration, so reuse the authenticated
+    # session when its peer address is one of these direct neighbours.
+    for peer_fp, session in list(active_sessions.items()):
+        if not session or not getattr(session, "is_online", False):
+            continue
+        known_name = peer_fingerprint_to_name.get(peer_fp) or getattr(session, "peer_label", "")
+        if not known_name or not _same_nickname(str(known_name), expected_live_name):
+            continue
+        if expected_live_fingerprint is not None and peer_fp != expected_live_fingerprint:
+            continue
+        writer = getattr(session, "writer", None)
+        peername = writer.get_extra_info("peername") if writer is not None else None
+        peer_host = str(peername[0]).split("%", 1)[0] if peername else ""
+        matching_endpoint = next(
+            (
+                endpoint for endpoint in candidates
+                if endpoint[1:].split("]", 1)[0] == peer_host
+            ),
+            None,
+        )
+        if matching_endpoint:
+            return [{
+                "nickname": str(known_name),
+                "fingerprint": peer_fp,
+                "transport": "direct",
+                "endpoints": [matching_endpoint],
+                "verified": True,
+                "ownership_verified": expected_live_fingerprint is not None,
+                "verification_status": "verified",
+                "verification_reason": "authenticated active Yggdrasil session",
+            }]
+
+    async def _first_verified():
+        tasks = [
+            asyncio.create_task(
+                _verify_live_endpoint(endpoint, expected_live_name, expected_live_fingerprint)
+            )
+            for endpoint in candidates
+        ]
+        try:
+            for completed in asyncio.as_completed(tasks):
+                result = await completed
+                if isinstance(result, dict) and result.get("verified"):
+                    return result
+            return None
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    verify_loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(verify_loop)
+        result = verify_loop.run_until_complete(_first_verified())
+    finally:
+        verify_loop.close()
+    if not result:
+        return []
+    return [{
+        "nickname": result["nickname"],
+        "fingerprint": result["fingerprint"],
+        "transport": "direct",
+        "endpoints": [result["endpoint"]],
+        "verified": True,
+        "ownership_verified": (
+            expected_live_fingerprint is not None
+            and result["fingerprint"] == expected_live_fingerprint
+        ),
+        "verification_status": "verified",
+        "verification_reason": "authenticated direct Yggdrasil neighbour",
+    }]
+
 def resolve_peers(
     nickname: str,
     shared_code: str,
@@ -988,6 +1100,10 @@ async def _read_loop(session, peer_name, fp):
                 peer_name = mapped_name
             mtype = msg.get("type")
             if mtype == "status" and msg.get("state") == "offline":
+                print(
+                    f"Session with {peer_name} went offline: "
+                    f"{msg.get('reason') or 'remote stream closed'}"
+                )
                 break
             if mtype == "identity_info":
                 # Remote peer announced their real nickname — update our mappings

@@ -107,10 +107,26 @@ object PythonBridge {
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
-            val pyResults = bridge.callAttr(
-                "resolve_peers", query, sharedCode, "OpenTrackr HTTP",
-                expectedLiveName, expectedFingerprint
-            )
+            val directYggEndpoints = connectedYggdrasilPeerEndpoints()
+            val directResults = if (directYggEndpoints.isNotEmpty()) {
+                bridge.callAttr(
+                    "verify_live_endpoints",
+                    JSONArray(directYggEndpoints).toString(),
+                    expectedLiveName,
+                    expectedFingerprint,
+                )
+            } else {
+                null
+            }
+            val pyResults = if (directResults != null && directResults.asList().isNotEmpty()) {
+                Log.i(TAG, "Resolved '$expectedLiveName' through a direct Yggdrasil neighbour")
+                directResults
+            } else {
+                bridge.callAttr(
+                    "resolve_peers", query, sharedCode, "OpenTrackr HTTP",
+                    expectedLiveName, expectedFingerprint
+                )
+            }
             val results = mutableListOf<Map<String, Any>>()
             val list = pyResults.asList()
             for (item in list) {
@@ -450,6 +466,34 @@ object PythonBridge {
             if (peersStr.isEmpty()) emptyList() else peersStr.split(",")
         } catch (e: Exception) {
             Log.e(TAG, "Error getting active peers", e)
+            emptyList()
+        }
+    }
+
+    private fun connectedYggdrasilPeerEndpoints(): List<String> {
+        val context = appContext ?: return emptyList()
+        val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("settings_yggdrasil", true) ||
+            prefs.getString("yggdrasil_runtime_state", "disabled") != "connected"
+        ) {
+            return emptyList()
+        }
+        val ownIp = prefs.getString("yggdrasil_runtime_ip", "").orEmpty()
+        val peersJson = prefs.getString("yggdrasil_runtime_peers_json", "").orEmpty()
+        if (peersJson.isBlank()) return emptyList()
+        return try {
+            val peers = JSONArray(peersJson)
+            buildList {
+                for (index in 0 until peers.length()) {
+                    val peer = peers.optJSONObject(index) ?: continue
+                    if (!peer.optBoolean("Up", false)) continue
+                    val ip = peer.optString("IP").substringBefore('%').trim()
+                    if (ip.isBlank() || ip == ownIp || !ip.contains(':')) continue
+                    add("[$ip]:50001")
+                }
+            }.distinct().take(12)
+        } catch (e: Exception) {
+            Log.w(TAG, "Ignoring malformed Yggdrasil peer diagnostics", e)
             emptyList()
         }
     }

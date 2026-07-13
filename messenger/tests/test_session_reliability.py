@@ -62,6 +62,52 @@ async def test_reliable_send_and_ack(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_reliable_sends_can_cross_in_both_directions(monkeypatch, tmp_path):
+    """Mobile health probes may be emitted by both peers at the same time."""
+    monkeypatch.setenv("P2PCHAT_CONFIG_DIR", str(tmp_path))
+    base = Path(tmp_path)
+    server_identity = load_or_create_identity(str(base / "server.key"))
+    client_identity = load_or_create_identity(str(base / "client.key"))
+    shared_trust = TrustStore()
+    server_ready = asyncio.Future()
+
+    async def handle(reader, writer):
+        session = await Session.create(
+            reader,
+            writer,
+            initiator=False,
+            identity_priv=server_identity,
+            trust_store=shared_trust,
+        )
+        server_ready.set_result(session)
+
+    server = await asyncio.start_server(handle, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    client = await Session.create(
+        reader,
+        writer,
+        initiator=True,
+        identity_priv=client_identity,
+        trust_store=shared_trust,
+    )
+    peer = await server_ready
+
+    for sequence in range(10):
+        await asyncio.gather(
+            client.send_reliable({"type": "heartbeat", "sequence": sequence}),
+            peer.send_reliable({"type": "heartbeat", "sequence": sequence}),
+        )
+
+    assert client.is_online
+    assert peer.is_online
+    await client.close()
+    await peer.close()
+    server.close()
+    await server.wait_closed()
+
+
+@pytest.mark.asyncio
 async def test_trust_store_tracks_peer(monkeypatch, tmp_path):
     monkeypatch.setenv("P2PCHAT_CONFIG_DIR", str(tmp_path))
     server, client_session, server_box = await _create_sessions()

@@ -201,16 +201,25 @@ fun OnboardingScreen(
             Button(
                 onClick = {
                     if (currentStep < 4) {
-                        if (currentStep == 2 && nickname.isBlank()) {
-                            // Validation: nickname required
-                            return@Button
-                        }
                         if (currentStep == 2) {
-                            sharedPrefs.edit().putString("username_profile", nickname).apply()
+                            val normalizedNickname = normalizeProfileName(nickname)
+                            if (normalizedNickname.isEmpty()) {
+                                // Validation: nickname required
+                                return@Button
+                            }
+                            nickname = normalizedNickname
+                            sharedPrefs.edit()
+                                .putString("username_profile", normalizedNickname)
+                                .apply()
                         }
                         currentStep++
                     } else {
-                        sharedPrefs.edit().putString("username_profile", nickname).apply()
+                        val normalizedNickname = normalizeProfileName(nickname)
+                        if (normalizedNickname.isEmpty()) return@Button
+                        nickname = normalizedNickname
+                        sharedPrefs.edit()
+                            .putString("username_profile", normalizedNickname)
+                            .apply()
                         onComplete()
                     }
                 },
