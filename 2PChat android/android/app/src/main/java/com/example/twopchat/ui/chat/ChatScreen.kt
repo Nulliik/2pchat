@@ -33,6 +33,7 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
@@ -1184,8 +1185,9 @@ remove("pinned_msg_id_${peerName}")
                             shape = bubbleShape
                         )
                     } else {
+                        val isLight = surfaceColor.luminance() > 0.5f
                         Modifier.background(
-                            color = surfaceColor,
+                            color = if (isLight) surfaceColor else surfaceColor,
                             shape = bubbleShape
                         )
                     }
@@ -1265,7 +1267,7 @@ remove("pinned_msg_id_${peerName}")
                                                 }
                                             )
                                             // Subtle border for incoming bubbles
-                                            .then(if (!msg.isMe) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), bubbleShape) else Modifier)
+                                            .then(if (!msg.isMe) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.05f), bubbleShape) else Modifier)
                                             .padding(horizontal = 16.dp, vertical = 11.dp)
                                             .widthIn(max = 280.dp)
                                     ) {
@@ -1746,7 +1748,7 @@ remove("pinned_msg_id_${peerName}")
 
                         Spacer(modifier = Modifier.width(10.dp))
 
-                        val isDark = backgroundColor == StealthBlack
+                        val isDark = surfaceColor.luminance() < 0.5f
                         val inputBg = if (isDark) Color(0xFF0F1012) else Color(0xFFE4E7EC)
 
                         if (isRecordingVoice) {
@@ -1791,7 +1793,7 @@ remove("pinned_msg_id_${peerName}")
                                 maxLines = 3,
                                 modifier = Modifier
                                     .weight(1f)
-                                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(22.dp))
+                                    .border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.05f), RoundedCornerShape(22.dp))
                             )
                         }
 

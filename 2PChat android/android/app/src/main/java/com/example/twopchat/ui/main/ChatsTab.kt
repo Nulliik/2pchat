@@ -48,11 +48,13 @@ import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
 
 
 @Composable
@@ -126,8 +128,7 @@ fun ChatsTab(
     var heroUpnpOk by remember { mutableStateOf<Boolean?>(null) }
     var heroTrackersOk by remember { mutableStateOf<Boolean?>(null) }
     var heroYggOk by remember { mutableStateOf<Boolean?>(null) }
-    var heroInviteLink by remember { mutableStateOf("") }
-    var heroInviteGenerating by remember { mutableStateOf(false) }
+    var isRefreshingAll by remember { mutableStateOf(false) }
     val heroScope = rememberCoroutineScope()
 
     // Pulsing animations
@@ -252,57 +253,49 @@ fun ChatsTab(
                         )
                     }
 
-                    // Share invite button
+                    // Refresh connections button
                     Box(
-
                         modifier = Modifier
                             .size(44.dp)
                             .background(primaryColor.copy(alpha = 0.15f), shape = RoundedCornerShape(14.dp))
                             .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(14.dp))
-                            .clickable(enabled = !heroInviteGenerating) {
-                                if (heroInviteLink.isNotEmpty()) {
-                                    val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                        putExtra(android.content.Intent.EXTRA_TEXT, heroInviteLink)
-                                        type = "text/plain"
+                            .clickable(enabled = !isRefreshingAll) {
+                                isRefreshingAll = true
+                                val startMsg = if (appLanguage == "Русский") "Обновление всех подключений..." else "Refreshing all connections..."
+                                val endMsg = if (appLanguage == "Русский") "Подключения успешно обновлены!" else "Connections successfully refreshed!"
+                                Toast.makeText(context, startMsg, Toast.LENGTH_SHORT).show()
+                                heroScope.launch {
+                                    // 1. UPnP Reopen
+                                    withContext(Dispatchers.IO) {
+                                        PythonBridge.triggerUpnpReopen()
                                     }
-                                    context.startActivity(android.content.Intent.createChooser(sendIntent, null))
-                                } else {
-                                    heroInviteGenerating = true
-                                    heroScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                                        if (!PythonBridge.isInitialized) { heroInviteGenerating = false; return@launch }
-                                        val fp = PythonBridge.getLocalFingerprint()
-                                        val tokenBytes = ByteArray(16)
-                                        java.security.SecureRandom().nextBytes(tokenBytes)
-                                        val token = "2pchat_inv_" + tokenBytes.joinToString("") { "%02x".format(it) }
-                                        val link = "2pchat://connect?token=$token&name=$currentUsername&fp=$fp"
-                                        PythonBridge.announceSelf(
-                                            token,
-                                            fp,
-                                            P2PMessageRelay.listenerPort(context),
-                                            rendezvousCode = token,
-                                        )
-                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                            heroInviteLink = link
-                                            heroInviteGenerating = false
-                                            val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                                putExtra(android.content.Intent.EXTRA_TEXT, link)
-                                                type = "text/plain"
-                                            }
-                                            context.startActivity(android.content.Intent.createChooser(sendIntent, null))
-                                        }
+                                    // 2. Trackers Refresh
+                                    P2PMessageRelay.refreshAnnouncement(context)
+                                    // 3. Yggdrasil Restart
+                                    val stopIntent = Intent(context, PacketTunnelProvider::class.java).apply {
+                                        action = PacketTunnelProvider.ACTION_STOP
                                     }
+                                    context.startService(stopIntent)
+                                    delay(1000)
+                                    val startIntent = Intent(context, PacketTunnelProvider::class.java).apply {
+                                        action = PacketTunnelProvider.ACTION_START
+                                    }
+                                    context.startService(startIntent)
+                                    
+                                    isRefreshingAll = false
+                                    Toast.makeText(context, endMsg, Toast.LENGTH_SHORT).show()
                                 }
                             },
                         contentAlignment = Alignment.Center
                     ) {
-                        if (heroInviteGenerating) {
+                        if (isRefreshingAll) {
                             androidx.compose.material3.CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = primaryColor
                             )
                         } else {
                             Icon(
-                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_quick_link),
-                                contentDescription = "Share invite",
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh connections",
                                 tint = primaryColor,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -324,7 +317,7 @@ fun ChatsTab(
                         val pillColor = when (ok) {
                             true  -> Color(0xFF00C853)
                             false -> Color(0xFFFF5252)
-                            null  -> onSurfaceVariant.copy(alpha = 0.45f)
+                            null  -> onSurfaceVariant
                         }
                         
                         val pulseTransition = rememberInfiniteTransition(label = "pillPulse")

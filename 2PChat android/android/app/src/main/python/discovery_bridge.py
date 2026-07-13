@@ -46,6 +46,7 @@ public_address_observations = set()
 local_identity_nickname = ""
 local_identity_fingerprint = ""
 local_yggdrasil_available = False
+local_announced_ips = set()
 
 # Kotlin notification callbacks
 message_listener_callback = None
@@ -586,6 +587,8 @@ def resolve_peers(
 
     for d in descriptors:
         for ep in d.endpoints:
+            if ep.host in local_announced_ips or ep.host in {"127.0.0.1", "::1", "localhost"}:
+                continue
             ep_str = _format_endpoint(ep.host, ep.port)
             key = ep_str
             if key not in seen_ep:
@@ -737,7 +740,10 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
             if descriptor_fp and descriptor_fp != expected:
                 continue
             for endpoint in getattr(descriptor, "endpoints", ()):
-                endpoints.append(_format_endpoint(endpoint.host, endpoint.port))
+                host = endpoint.host
+                if host in local_announced_ips or host in {"127.0.0.1", "::1", "localhost"}:
+                    continue
+                endpoints.append(_format_endpoint(host, endpoint.port))
     result = sorted(dict.fromkeys(endpoints), key=_endpoint_sort_key)
     return result if ipv4_enabled else [ep for ep in result if not _is_ipv4_endpoint(ep)]
 
@@ -753,10 +759,11 @@ def announce_peer_endpoints(
     Announce all current IPv4 and Yggdrasil/global IPv6 endpoints across the tracker set.
     """
     import urllib.error
-    global local_identity_nickname, local_identity_fingerprint, local_yggdrasil_available
+    global local_identity_nickname, local_identity_fingerprint, local_yggdrasil_available, local_announced_ips
 
     try:
         addresses = json.loads(endpoints_json)
+        local_announced_ips = set(addresses)
     except Exception as exc:
         print(f"Invalid endpoints_json passed to announce_peer_endpoints: {exc}")
         return False
@@ -1075,8 +1082,17 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
                 
         asyncio.create_task(_read_loop(session, peer_name, fp))
     except Exception as e:
-        print("Error handling incoming connection:", e)
-        traceback.print_exc()
+        is_network_noise = (
+            isinstance(e, (ValueError, asyncio.TimeoutError, ConnectionError, OSError))
+            or "frame size" in str(e).lower()
+            or "refusing self connection" in str(e).lower()
+        )
+        if is_network_noise:
+            peername_str = f" from {peername}" if 'peername' in locals() and peername else ""
+            print(f"Closed invalid or noisy incoming connection{peername_str}: {e}")
+        else:
+            print("Error handling incoming connection:", e)
+            traceback.print_exc()
         if session is not None:
             await session.close()
         else:
@@ -1373,7 +1389,7 @@ def send_p2p_message(peer_name: str, endpoint: str, body: str, expected_fingerpr
         loop
     )
     try:
-        return future.result(timeout=15)
+        return future.result(timeout=45)
     except Exception as e:
         future.cancel()
         print(f"Failed to send message to {peer_name} via python bridge:", e)
@@ -1464,13 +1480,83 @@ async def _invalidate_session(session) -> None:
         pass
 
 
-async def _send_message_unlocked(peer_name: str, endpoint: str, body: str, expected_fingerprint=None) -> bool:
+async def _establish_session_async(peer_name: str, endpoint: str, expected_fingerprint=None) -> "Session":
+    identity_priv = load_or_create_identity()
+    signing_key = load_or_create_signing_identity()
+    trust_store = TrustStore()
+
+    endpoints = [e.strip() for e in endpoint.split(",") if e.strip()]
+    last_err = None
     session = None
+    connected_endpoint = ""
+
+    for ep in endpoints:
+        try:
+            session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+            connected_endpoint = ep
+            print(f"Connected to {peer_name} via {ep}")
+            break
+        except Exception as err:
+            print(f"Failed to connect to {peer_name} via {ep}: {err}")
+            last_err = err
+
+    if session is None and expected_fingerprint:
+        for ep in await _resolve_peer_endpoints_async(expected_fingerprint):
+            if ep in endpoints:
+                continue
+            try:
+                session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+                connected_endpoint = ep
+                print(f"Reconnected to {peer_name} via fresh discovery endpoint {ep}")
+                break
+            except Exception as err:
+                last_err = err
+                
+    if session is None:
+        raise ConnectionError(f"All endpoints failed for {peer_name}. Last error: {last_err}")
+
+    fp = session.peer_fingerprint
+    peer_fingerprint_to_name[fp] = peer_name
+    registered = await _register_authenticated_session(session, fp, initiator=True)
+    if registered is not session:
+        session = registered
+        print(f"Reused preferred Double Ratchet session to {peer_name} (Fingerprint: {fp})")
+    else:
+        asyncio.create_task(_read_loop(session, peer_name, fp))
+
+    print(f"Established Double Ratchet session to {peer_name} (Fingerprint: {fp})")
+
+    if session_listener_callback:
+        try:
+            session_listener_callback.onSessionEstablished(
+                peer_name, fp, connected_endpoint, _transport_for_endpoint(connected_endpoint)
+            )
+        except Exception:
+            pass
+
+    # Send identity_info so the remote side learns our nickname immediately.
     try:
-        session = _session_for_peer(peer_name, expected_fingerprint)
+        local_identity = load_or_create_identity()
+        local_fp = local_identity_fingerprint or fingerprint(local_identity.public_key)
+        local_name = local_identity_nickname
+        if local_name:
+            await session.send_reliable({
+                "type": "identity_info",
+                "nickname": local_name,
+                "fingerprint": local_fp,
+                "listen_port": listener_port,
+            })
+    except Exception as id_err:
+        print(f"Could not send identity_info to {peer_name}: {id_err}")
+
+    return session
+
+
+async def _send_message_unlocked(peer_name: str, endpoint: str, body: str, expected_fingerprint=None) -> bool:
+    session = _session_for_peer(peer_name, expected_fingerprint)
+    was_cached = session is not None and session.is_online
+    try:
         if not session or not session.is_online:
-            # Close the old dead session explicitly so its _read_loop finally-block
-            # doesn't race-delete the new session we're about to create.
             if session and not session.is_online:
                 try:
                     asyncio.create_task(session.close())
@@ -1478,75 +1564,21 @@ async def _send_message_unlocked(peer_name: str, endpoint: str, body: str, expec
                     pass
                 if session.peer_fingerprint:
                     active_sessions.pop(session.peer_fingerprint, None)
+            session = await _establish_session_async(peer_name, endpoint, expected_fingerprint)
+            was_cached = False
 
-            identity_priv = load_or_create_identity()
-            signing_key = load_or_create_signing_identity()
-            trust_store = TrustStore()
-
-            # Support comma-separated list of endpoints for fallback
-            endpoints = [e.strip() for e in endpoint.split(",") if e.strip()]
-            last_err = None
-            session = None
-
-            for ep in endpoints:
-                try:
-                    session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
-                    print(f"Connected to {peer_name} via {ep}")
-                    break
-                except Exception as err:
-                    print(f"Failed to connect to {peer_name} via {ep}: {err}")
-                    last_err = err
-
-            if session is None and expected_fingerprint:
-                for ep in await _resolve_peer_endpoints_async(expected_fingerprint):
-                    if ep in endpoints:
-                        continue
-                    try:
-                        session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
-                        print(f"Reconnected to {peer_name} via fresh discovery endpoint {ep}")
-                        break
-                    except Exception as err:
-                        last_err = err
-            if session is None:
-                raise ConnectionError(f"All endpoints failed for {peer_name}. Last error: {last_err}")
-
-            fp = session.peer_fingerprint
-            peer_fingerprint_to_name[fp] = peer_name
-            registered = await _register_authenticated_session(session, fp, initiator=True)
-            if registered is not session:
-                session = registered
-                print(f"Reused preferred Double Ratchet session to {peer_name} (Fingerprint: {fp})")
-
-            print(f"Established Double Ratchet session to {peer_name} (Fingerprint: {fp})")
-
-            asyncio.create_task(_read_loop(session, peer_name, fp))
-
-            if session_listener_callback:
-                try:
-                    session_listener_callback.onSessionEstablished(
-                        peer_name, fp, ep, _transport_for_endpoint(ep)
-                    )
-                except Exception:
-                    pass
-
-            # Send identity_info so the remote side learns our nickname immediately.
-            try:
-                local_identity = load_or_create_identity()
-                local_fp = local_identity_fingerprint or fingerprint(local_identity.public_key)
-                local_name = local_identity_nickname
-                if local_name:
-                    await session.send_reliable({
-                        "type": "identity_info",
-                        "nickname": local_name,
-                        "fingerprint": local_fp,
-                        "listen_port": listener_port,
-                    })
-            except Exception as id_err:
-                print(f"Could not send identity_info to {peer_name}: {id_err}")
-
-        # Send the chat message
-        await session.send_chat(body)
-        return True
+        try:
+            await session.send_chat(body)
+            return True
+        except (ConnectionError, OSError) as send_err:
+            if was_cached:
+                print(f"Cached session to {peer_name} failed on write: {send_err}. Retrying with a new connection...")
+                await _invalidate_session(session)
+                session = await _establish_session_async(peer_name, endpoint, expected_fingerprint)
+                await session.send_chat(body)
+                return True
+            else:
+                raise
     except asyncio.CancelledError:
         await _invalidate_session(session)
         raise
@@ -1588,72 +1620,20 @@ async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expect
 
 
 async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="") -> bool:
-    session = None
+    session = _session_for_peer(peer_name, expected_fingerprint)
+    was_cached = session is not None and session.is_online
     try:
-        session = _session_for_peer(peer_name, expected_fingerprint)
         if not session or not session.is_online:
-            identity_priv = load_or_create_identity()
-            signing_key = load_or_create_signing_identity()
-            trust_store = TrustStore()
-
-            # Support comma-separated list of endpoints for fallback
-            endpoints = [e.strip() for e in endpoint.split(",") if e.strip()]
-            last_err = None
-            session = None
-
-            for ep in endpoints:
+            if session and not session.is_online:
                 try:
-                    session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
-                    print(f"Connected to {peer_name} via {ep} for file sending")
-                    break
-                except Exception as err:
-                    print(f"Failed to connect to {peer_name} via {ep} for file sending: {err}")
-                    last_err = err
-
-            if session is None and expected_fingerprint:
-                for ep in await _resolve_peer_endpoints_async(expected_fingerprint):
-                    if ep in endpoints:
-                        continue
-                    try:
-                        session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
-                        break
-                    except Exception as err:
-                        last_err = err
-            if session is None:
-                raise ConnectionError(f"All endpoints failed for {peer_name} file sending. Last error: {last_err}")
-
-            fp = session.peer_fingerprint
-            peer_fingerprint_to_name[fp] = peer_name
-            registered = await _register_authenticated_session(session, fp, initiator=True)
-            if registered is not session:
-                session = registered
-
-            print(f"Established Double Ratchet session to {peer_name} (Fingerprint: {fp})")
-
-            asyncio.create_task(_read_loop(session, peer_name, fp))
-
-            if session_listener_callback:
-                try:
-                    session_listener_callback.onSessionEstablished(
-                        peer_name, fp, ep, _transport_for_endpoint(ep)
-                    )
+                    asyncio.create_task(session.close())
                 except Exception:
                     pass
+                if session.peer_fingerprint:
+                    active_sessions.pop(session.peer_fingerprint, None)
+            session = await _establish_session_async(peer_name, endpoint, expected_fingerprint)
+            was_cached = False
 
-            try:
-                local_identity = load_or_create_identity()
-                local_fp = local_identity_fingerprint or fingerprint(local_identity.public_key)
-                local_name = local_identity_nickname
-                if local_name:
-                    await session.send_reliable({
-                        "type": "identity_info",
-                        "nickname": local_name,
-                        "fingerprint": local_fp,
-                        "listen_port": listener_port,
-                    })
-            except Exception as id_err:
-                print(f"Could not send identity_info to {peer_name} during file transfer: {id_err}")
-                     
         # Encrypt and send the file
         from messenger.core.crypto import encrypt_file_in_chunks
         import base64
@@ -1687,7 +1667,17 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
             meta["message_id"] = str(message_id)[:128]
         
         print(f"Sending file_meta envelope for file_id {meta['file_id']} ({meta['file_name']}, {file_size} bytes)")
-        await session.send_reliable(meta)
+        try:
+            await session.send_reliable(meta)
+        except (ConnectionError, OSError) as send_err:
+            if was_cached:
+                print(f"Cached session to {peer_name} failed on file meta write: {send_err}. Retrying with a new connection...")
+                await _invalidate_session(session)
+                session = await _establish_session_async(peer_name, endpoint, expected_fingerprint)
+                was_cached = False
+                await session.send_reliable(meta)
+            else:
+                raise
         
         print("Sending file chunks...")
         for chunk_index, encrypted_chunk in chunk_iterator:

@@ -699,10 +699,25 @@ object P2PMessageRelay {
                 if (file.exists()) {
                     val bitmap = BitmapFactory.decodeFile(file.absolutePath)
                     if (bitmap != null) {
+                        val maxDimension = 320
+                        val scaledBitmap = if (bitmap.width > maxDimension || bitmap.height > maxDimension) {
+                            val aspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
+                            val width = if (aspectRatio > 1) maxDimension else (maxDimension * aspectRatio).toInt()
+                            val height = if (aspectRatio > 1) (maxDimension / aspectRatio).toInt() else maxDimension
+                            Bitmap.createScaledBitmap(bitmap, width, height, true)
+                        } else {
+                            bitmap
+                        }
+                        
                         val outputStream = ByteArrayOutputStream()
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
+                        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
                         val bytes = outputStream.toByteArray()
                         val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                        
+                        if (scaledBitmap !== bitmap) {
+                            scaledBitmap.recycle()
+                        }
+                        bitmap.recycle()
                         
                         val json = JSONObject().apply {
                             put("type", "profile_avatar_share")

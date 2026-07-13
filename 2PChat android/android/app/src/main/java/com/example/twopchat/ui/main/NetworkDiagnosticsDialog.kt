@@ -53,6 +53,9 @@ import androidx.compose.animation.core.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
 
 
 private fun readLogFile(context: android.content.Context): String {
@@ -88,9 +91,54 @@ private fun getTrackerPing(announceUrl: String): Long {
 
 @Composable
 private fun DetailRow(label: String, value: String, valueColor: Color) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(text = label, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(text = value, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = valueColor, modifier = Modifier.padding(top = 2.dp))
+    val isMultiLine = value.contains("\n")
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.20f)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+    ) {
+        if (isMultiLine) {
+            Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                Text(
+                    text = label,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = value,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = valueColor,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = label,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = value,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = valueColor,
+                    fontFamily = FontFamily.Monospace,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(start = 16.dp)
+                )
+            }
+        }
     }
 }
 
@@ -124,6 +172,54 @@ private fun shareLogFile(context: android.content.Context) {
     } catch (e: Exception) {
         android.widget.Toast.makeText(context, "Failed to share logs", android.widget.Toast.LENGTH_SHORT).show()
     }
+}
+
+@Composable
+private fun formatLogs(logsText: String): AnnotatedString {
+    val builder = remember(logsText) {
+        AnnotatedString.Builder().apply {
+            val lines = logsText.split("\n")
+            lines.forEachIndexed { index, line ->
+                if (line.isBlank()) return@forEachIndexed
+                
+                val kotlinInfoIndex = line.indexOf("[KOTLIN_INFO]")
+                val pythonErrIndex = line.indexOf("[PYTHON_ERR]")
+                val pythonOutIndex = line.indexOf("[PYTHON_OUT]")
+                val infoIndex = line.indexOf("[INFO]")
+                val errIndex = line.indexOf("[ERROR]")
+                val warnIndex = line.indexOf("[WARNING]")
+                val debugIndex = line.indexOf("[DEBUG]")
+                
+                when {
+                    pythonErrIndex != -1 || errIndex != -1 -> {
+                        pushStyle(androidx.compose.ui.text.SpanStyle(color = Color(0xFFFF5252))) // Coral Red
+                    }
+                    kotlinInfoIndex != -1 -> {
+                        pushStyle(androidx.compose.ui.text.SpanStyle(color = Color(0xFF40C4FF))) // Electric Blue
+                    }
+                    pythonOutIndex != -1 || infoIndex != -1 -> {
+                        pushStyle(androidx.compose.ui.text.SpanStyle(color = Color(0xFF69F0AE))) // Mint Green
+                    }
+                    warnIndex != -1 -> {
+                        pushStyle(androidx.compose.ui.text.SpanStyle(color = Color(0xFFFFD740))) // Amber Yellow
+                    }
+                    debugIndex != -1 -> {
+                        pushStyle(androidx.compose.ui.text.SpanStyle(color = Color(0xFF90A4AE))) // Slate Gray
+                    }
+                    else -> {
+                        pushStyle(androidx.compose.ui.text.SpanStyle(color = Color(0xFFECEFF1))) // Warm White
+                    }
+                }
+                
+                append(line)
+                pop()
+                if (index < lines.size - 1) {
+                    append("\n")
+                }
+            }
+        }.toAnnotatedString()
+    }
+    return builder
 }
 
 @Composable
@@ -231,13 +327,14 @@ fun NetworkDiagnosticsDialog(
         }
 
         androidx.compose.ui.window.Dialog(
-            onDismissRequest = { onDismissRequest() }
+            onDismissRequest = { onDismissRequest() },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
         ) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = surfaceColor),
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxWidth(0.92f)
                     .fillMaxHeight(0.85f)
                     .padding(vertical = 12.dp)
                     .border(0.5.dp, primaryColor.copy(alpha = 0.15f), RoundedCornerShape(24.dp))
@@ -255,7 +352,6 @@ fun NetworkDiagnosticsDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-
                                 text = if (appLanguage == "Русский") "Сетевой отладчик" else "Network Debugger",
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
@@ -268,9 +364,14 @@ fun NetworkDiagnosticsDialog(
                                 // Refresh
                                 IconButton(
                                     onClick = { refreshDiagnostics() },
-                                    modifier = Modifier.size(36.dp).background(onSurfaceColor.copy(alpha = 0.04f), shape = CircleShape)
+                                    modifier = Modifier.size(36.dp).background(onSurfaceColor.copy(alpha = 0.05f), shape = CircleShape)
                                 ) {
-                                    Text("↻", fontSize = 16.sp, color = primaryColor, fontWeight = FontWeight.Bold)
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Refresh",
+                                        tint = primaryColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                 }
                                 // Clear (only logs)
                                 IconButton(
@@ -278,20 +379,25 @@ fun NetworkDiagnosticsDialog(
                                         clearLogFile(context)
                                         logsText = readLogFile(context)
                                     },
-                                    modifier = Modifier.size(36.dp).background(onSurfaceColor.copy(alpha = 0.04f), shape = CircleShape)
+                                    modifier = Modifier.size(36.dp).background(onSurfaceColor.copy(alpha = 0.05f), shape = CircleShape)
                                 ) {
-                                    Text("🗑", fontSize = 16.sp, color = Color.Red)
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Clear",
+                                        tint = Color.Red,
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                 }
                                 // Share (only logs)
                                 IconButton(
                                     onClick = { shareLogFile(context) },
-                                    modifier = Modifier.size(36.dp).background(onSurfaceColor.copy(alpha = 0.04f), shape = CircleShape)
+                                    modifier = Modifier.size(36.dp).background(onSurfaceColor.copy(alpha = 0.05f), shape = CircleShape)
                                 ) {
                                     Icon(
-                                        painter = painterResource(id = android.R.drawable.ic_menu_share),
+                                        imageVector = Icons.Default.Share,
                                         contentDescription = "Share",
                                         tint = primaryColor,
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
@@ -299,44 +405,45 @@ fun NetworkDiagnosticsDialog(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Toggle Buttons (Radar vs Logs)
+                        // Segmented Control (Radar vs Logs)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(onSurfaceColor.copy(alpha = 0.04f), shape = RoundedCornerShape(12.dp))
-                                .padding(4.dp),
+                                .height(40.dp)
+                                .background(onSurfaceColor.copy(alpha = 0.05f), shape = RoundedCornerShape(12.dp))
+                                .padding(2.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Button(
-                                onClick = { onShowRadarViewChange(true) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (showRadarView) primaryColor else Color.Transparent,
-                                    contentColor = if (showRadarView) Color.White else onSurfaceColor
-                                ),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(vertical = 8.dp)
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (showRadarView) primaryColor else Color.Transparent)
+                                    .clickable { onShowRadarViewChange(true) }
                             ) {
                                 Text(
                                     text = if (appLanguage == "Русский") "Радар связей" else "Radar View",
                                     fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (showRadarView) (if (primaryColor == MintGreen) StealthBlack else Color.White) else onSurfaceColor
                                 )
                             }
-                            Button(
-                                onClick = { onShowRadarViewChange(false) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (!showRadarView) primaryColor else Color.Transparent,
-                                    contentColor = if (!showRadarView) Color.White else onSurfaceColor
-                                ),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(vertical = 8.dp)
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (!showRadarView) primaryColor else Color.Transparent)
+                                    .clickable { onShowRadarViewChange(false) }
                             ) {
                                 Text(
                                     text = if (appLanguage == "Русский") "Консоль логов" else "Logs Console",
                                     fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (!showRadarView) (if (primaryColor == MintGreen) StealthBlack else Color.White) else onSurfaceColor
                                 )
                             }
                         }
@@ -346,7 +453,7 @@ fun NetworkDiagnosticsDialog(
                         if (showRadarView) {
                             // RADAR VIEW MODE
                             Column(
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.fillMaxWidth().weight(1f),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.Center
                             ) {
@@ -624,8 +731,8 @@ fun NetworkDiagnosticsDialog(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(280.dp)
-                                        .background(Color(0xFF070809), shape = RoundedCornerShape(12.dp))
-                                        .border(0.5.dp, Color(0xFF39FF14).copy(alpha = 0.2f), shape = RoundedCornerShape(12.dp))
+                                        .background(Color(0xFF0F1115), shape = RoundedCornerShape(12.dp))
+                                        .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), shape = RoundedCornerShape(12.dp))
                                         .padding(10.dp)
                                 ) {
                                     val consoleScrollState = rememberScrollState()
@@ -635,8 +742,7 @@ fun NetworkDiagnosticsDialog(
                                     
                                     SelectionContainer {
                                         Text(
-                                            text = logsText,
-                                            color = Color(0xFF39FF14),
+                                            text = formatLogs(logsText),
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 10.sp,
                                             modifier = Modifier
@@ -685,8 +791,17 @@ fun NetworkDiagnosticsDialog(
                                 Column(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(16.dp)
+                                        .padding(horizontal = 16.dp, vertical = 10.dp)
                                 ) {
+                                    // Drag Handle
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.CenterHorizontally)
+                                            .padding(bottom = 12.dp)
+                                            .width(36.dp)
+                                            .height(4.dp)
+                                            .background(onSurfaceColor.copy(alpha = 0.15f), shape = CircleShape)
+                                    )
                                     // Drawer Header
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),

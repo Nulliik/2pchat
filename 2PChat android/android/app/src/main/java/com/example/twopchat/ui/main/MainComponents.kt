@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -178,16 +179,20 @@ fun PeerRow(
     val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
     val isVerified = remember(peer.name) { sharedPrefs.getBoolean("verified_peer_${peer.name}", false) }
 
+    val isLight = surfaceColor.luminance() > 0.5f
+    val borderAlpha = if (isLight) 0.08f else 0.04f
+
     Card(
         colors = CardDefaults.cardColors(containerColor = surfaceColor),
         shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 2.dp else 0.dp),
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
             )
-            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
+            .border(0.5.dp, onSurfaceColor.copy(alpha = borderAlpha), RoundedCornerShape(16.dp))
     ) {
         Row(
             modifier = Modifier.padding(14.dp).fillMaxWidth(),
