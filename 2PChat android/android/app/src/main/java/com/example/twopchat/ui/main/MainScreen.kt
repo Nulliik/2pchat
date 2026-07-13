@@ -50,6 +50,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 
 @Composable
 fun MainScreen(
@@ -550,6 +553,26 @@ fun ChatsTab(
                             null  -> onSurfaceVariant.copy(alpha = 0.45f)
                         }
                         
+                        val pulseTransition = rememberInfiniteTransition(label = "pillPulse")
+                        val pulseScale by pulseTransition.animateFloat(
+                            initialValue = 1.0f,
+                            targetValue = 2.4f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1600, easing = LinearEasing),
+                                repeatMode = RepeatMode.Restart
+                            ),
+                            label = "pulseScale"
+                        )
+                        val pulseAlpha by pulseTransition.animateFloat(
+                            initialValue = 0.6f,
+                            targetValue = 0.0f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1600, easing = LinearEasing),
+                                repeatMode = RepeatMode.Restart
+                            ),
+                            label = "pulseAlpha"
+                        )
+
                         // Slowly blink the dot if there is a warning/error (ok == false)
                         val dotAlpha = if (ok == false) warningAlpha else 1.0f
 
@@ -564,32 +587,85 @@ fun ChatsTab(
                                 .padding(vertical = 8.dp, horizontal = 2.dp)
                         ) {
                             Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .graphicsLayer { alpha = dotAlpha }
-                                    .background(pillColor, CircleShape)
-                            )
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.size(14.dp)
+                            ) {
+                                if (ok != null) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .graphicsLayer {
+                                                scaleX = pulseScale
+                                                scaleY = pulseScale
+                                                alpha = pulseAlpha
+                                            }
+                                            .border(1.dp, pillColor, CircleShape)
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .graphicsLayer { alpha = dotAlpha }
+                                        .background(pillColor, CircleShape)
+                                )
+                            }
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text(text = value, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = pillColor, maxLines = 1)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(horizontal = 2.dp)
+                            ) {
+                                if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "OK",
+                                        tint = pillColor,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Error",
+                                        tint = pillColor,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                }
+                                Text(
+                                    text = if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                        "OK"
+                                    } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                        if (appLanguage == "Русский") "Нет" else "No"
+                                    } else {
+                                        value
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = pillColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                             Text(text = label, fontSize = 9.sp, color = onSurfaceVariant, letterSpacing = 0.3.sp, maxLines = 1)
                         }
                     }
 
                     StatusPill(
                         label = "UPnP",
-                        value = when (heroUpnpOk) { true -> "✓ OK"; false -> "✗ Нет"; else -> "…" },
+                        value = "…",
                         ok = heroUpnpOk,
                         node = RadarNode.ROUTER
                     )
                     StatusPill(
                         label = if (appLanguage == "Русский") "Трекеры" else "Trackers",
-                        value = when (heroTrackersOk) { true -> "✓ OK"; false -> "✗ Нет"; else -> "…" },
+                        value = "…",
                         ok = heroTrackersOk,
                         node = RadarNode.TRACKERS
                     )
                     StatusPill(
                         label = "Yggdrasil",
-                        value = when (heroYggOk) { true -> "✓ OK"; false -> "✗ Нет"; else -> "…" },
+                        value = "…",
                         ok = heroYggOk,
                         node = RadarNode.YGGDRASIL
                     )
@@ -613,7 +689,10 @@ fun ChatsTab(
         )
 
         // Peers List
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            modifier = Modifier.animateContentSize(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             val savedMessagesName = Localizations.getString("saved_messages_title", appLanguage)
             val savedMessagesDesc = Localizations.getString("saved_messages_desc", appLanguage)
             PeerRow(
@@ -829,7 +908,7 @@ fun ContactsTab(
                                 val uri = android.net.Uri.parse(trimmed)
                                 val parsedName = uri.getQueryParameter("name") ?: "Invited Peer"
                                 val token = uri.getQueryParameter("token") ?: ""
-                                val expectedFp = uri.getQueryParameter("fp")?.trim().orEmpty()
+                                val expectedFp = (uri.getQueryParameter("fp")?.trim().orEmpty()).replace(" ", "+")
                                 val validFingerprint = try {
                                     val decoded = android.util.Base64.decode(expectedFp, android.util.Base64.NO_WRAP)
                                     decoded.size == 32 && android.util.Base64.encodeToString(decoded, android.util.Base64.NO_WRAP) == expectedFp
@@ -2524,6 +2603,14 @@ fun SettingsTab(
             }
         }
 
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "V 1.0.1",
+            fontSize = 12.sp,
+            color = onSurfaceVariant.copy(alpha = 0.5f),
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        )
         Spacer(modifier = Modifier.height(40.dp))
     }
 

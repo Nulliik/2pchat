@@ -72,6 +72,10 @@ object P2PMessageRelay {
         fun onMessageReceived(sender: String, text: String)
         fun onMessageStatusChanged(sender: String, msgId: String, status: String)
         fun onMessageReactionChanged(sender: String, msgId: String, emoji: String, reactSender: String) {}
+        fun onVerificationRequest(sender: String) {}
+        fun onVerificationResponse(sender: String, success: Boolean) {}
+        fun onMessagePinned(sender: String, msgId: String, text: String, isFromSender: Boolean) {}
+        fun onMessageUnpinned(sender: String) {}
     }
 
     private val messageListeners = java.util.concurrent.CopyOnWriteArrayList<MessageListener>()
@@ -391,6 +395,19 @@ object P2PMessageRelay {
                         if (trimmed.startsWith("{")) {
                             val json = org.json.JSONObject(trimmed)
                             when (json.optString("type")) {
+                                "verification_request" -> {
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        messageListeners.forEach { it.onVerificationRequest(sender) }
+                                    }
+                                    return
+                                }
+                                "verification_response" -> {
+                                    val success = json.optBoolean("success", false)
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        messageListeners.forEach { it.onVerificationResponse(sender, success) }
+                                    }
+                                    return
+                                }
                                 "profile_avatar_share" -> {
                                     val b64 = json.optString("avatar_base64")
                                     // Avatars are control-plane thumbnails, not file transfers. Bound their
@@ -431,6 +448,21 @@ object P2PMessageRelay {
                                         } catch (e: Exception) {
                                             log(appContext, "Error decoding avatar: ${e.message}", "ERROR", e)
                                         }
+                                    }
+                                    return
+                                }
+                                "pin_message" -> {
+                                    val msgId = json.optString("msg_id")
+                                    val text = json.optString("text")
+                                    val isFromSender = json.optBoolean("is_from_sender", false)
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        messageListeners.forEach { it.onMessagePinned(sender, msgId, text, isFromSender) }
+                                    }
+                                    return
+                                }
+                                "unpin_message" -> {
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        messageListeners.forEach { it.onMessageUnpinned(sender) }
                                     }
                                     return
                                 }
@@ -856,6 +888,58 @@ object P2PMessageRelay {
                 Handler(Looper.getMainLooper()).post { onResult(false) }
             }
         }
+    }
+
+    fun sendVerificationRequest(context: Context, peerName: String, onResult: (Boolean) -> Unit) {
+        val endpoint = peerEndpoints[peerName]
+        if (endpoint.isNullOrBlank()) {
+            onResult(false)
+            return
+        }
+        val json = org.json.JSONObject().apply {
+            put("type", "verification_request")
+        }
+        sendMessage(context, endpoint, "", json.toString(), onResult)
+    }
+
+    fun sendVerificationResponse(context: Context, peerName: String, success: Boolean, onResult: (Boolean) -> Unit = {}) {
+        val endpoint = peerEndpoints[peerName]
+        if (endpoint.isNullOrBlank()) {
+            onResult(false)
+            return
+        }
+        val json = org.json.JSONObject().apply {
+            put("type", "verification_response")
+            put("success", success)
+        }
+        sendMessage(context, endpoint, "", json.toString(), onResult)
+    }
+
+    fun sendPinMessage(context: Context, peerName: String, msgId: String, text: String, isFromSender: Boolean, onResult: (Boolean) -> Unit = {}) {
+        val endpoint = peerEndpoints[peerName]
+        if (endpoint.isNullOrBlank()) {
+            onResult(false)
+            return
+        }
+        val json = org.json.JSONObject().apply {
+            put("type", "pin_message")
+            put("msg_id", msgId)
+            put("text", text)
+            put("is_from_sender", isFromSender)
+        }
+        sendMessage(context, endpoint, "", json.toString(), onResult)
+    }
+
+    fun sendUnpinMessage(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
+        val endpoint = peerEndpoints[peerName]
+        if (endpoint.isNullOrBlank()) {
+            onResult(false)
+            return
+        }
+        val json = org.json.JSONObject().apply {
+            put("type", "unpin_message")
+        }
+        sendMessage(context, endpoint, "", json.toString(), onResult)
     }
 
     fun deleteChat(context: Context, peerName: String) {

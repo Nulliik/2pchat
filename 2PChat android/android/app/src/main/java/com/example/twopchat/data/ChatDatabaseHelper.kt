@@ -1,13 +1,13 @@
 package com.example.twopchat.data
 
 import android.content.Context
-import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteOpenHelper
+import net.sqlcipher.database.SQLiteDatabase
+import net.sqlcipher.database.SQLiteOpenHelper
 import android.content.ContentValues
 import com.example.twopchat.ui.chat.Message
 import com.example.twopchat.SecureStorage
 
-class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+class ChatDatabaseHelper(private val context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
@@ -27,7 +27,43 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
         private const val KEY_REPLY_TO_NAME = "reply_to_name"
         private const val KEY_STATUS = "status"
         private const val KEY_REACTIONS = "reactions"
+        private val activeHelpers = java.util.Collections.newSetFromMap(java.util.WeakHashMap<ChatDatabaseHelper, Boolean>())
+
+        fun closeAllConnections() {
+            synchronized(activeHelpers) {
+                for (helper in activeHelpers) {
+                    try {
+                        helper.close()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+                activeHelpers.clear()
+            }
+        }
     }
+
+    init {
+        synchronized(activeHelpers) {
+            activeHelpers.add(this)
+        }
+    }
+
+    private val safeWritableDatabase: SQLiteDatabase
+        get() {
+            val pass = SecureStorage.getOrGenerateDbPassphrase(context)
+            val dbFile = context.getDatabasePath(DATABASE_NAME)
+            checkAndMigrateDatabase(context, dbFile, pass)
+            return getWritableDatabase(pass)
+        }
+
+    private val safeReadableDatabase: SQLiteDatabase
+        get() {
+            val pass = SecureStorage.getOrGenerateDbPassphrase(context)
+            val dbFile = context.getDatabasePath(DATABASE_NAME)
+            checkAndMigrateDatabase(context, dbFile, pass)
+            return getReadableDatabase(pass)
+        }
 
     override fun onCreate(db: SQLiteDatabase) {
         val createTable = ("CREATE TABLE " + TABLE_MESSAGES + "("
@@ -161,7 +197,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
     }
 
     fun saveMessage(peerName: String, msg: Message) {
-        val db = this.writableDatabase
+        val db = this.safeWritableDatabase
         val values = ContentValues().apply {
             put(KEY_ID, msg.id)
             put(KEY_PEER_NAME, peerName)
@@ -182,7 +218,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
 
     fun getMessagesForPeer(peerName: String): List<Message> {
         val messages = mutableListOf<Message>()
-        val db = this.readableDatabase
+        val db = this.safeReadableDatabase
         val cursor = db.query(
             TABLE_MESSAGES,
             null,
@@ -245,13 +281,13 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
     }
 
     fun clearMessagesForPeer(peerName: String) {
-        val db = this.writableDatabase
+        val db = this.safeWritableDatabase
         db.delete(TABLE_MESSAGES, "$KEY_PEER_NAME = ?", arrayOf(peerName))
     }
 
     fun deleteMessage(id: String) {
         try {
-            val db = this.writableDatabase
+            val db = this.safeWritableDatabase
             db.delete(TABLE_MESSAGES, "$KEY_ID = ?", arrayOf(id))
         } catch (e: Exception) {
             e.printStackTrace()
@@ -260,7 +296,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
 
     fun updateMessageStatus(id: String, status: String) {
         try {
-            val db = this.writableDatabase
+            val db = this.safeWritableDatabase
             val values = ContentValues().apply {
                 put(KEY_STATUS, status)
             }
@@ -272,7 +308,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
 
     fun updateMessageReactions(id: String, reactions: Map<String, List<String>>) {
         try {
-            val db = this.writableDatabase
+            val db = this.safeWritableDatabase
             val values = ContentValues().apply {
                 put(KEY_REACTIONS, serializeReactions(reactions))
             }
@@ -284,7 +320,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
 
     fun getPendingMessagesForPeer(peerName: String): List<Message> {
         val messages = mutableListOf<Message>()
-        val db = this.readableDatabase
+        val db = this.safeReadableDatabase
         val cursor = db.query(
             TABLE_MESSAGES,
             null,
@@ -345,7 +381,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
 
     fun renamePeer(oldPeerName: String, newPeerName: String) {
         if (oldPeerName == newPeerName) return
-        val db = this.writableDatabase
+        val db = this.safeWritableDatabase
         val values = ContentValues().apply {
             put(KEY_PEER_NAME, newPeerName)
         }
@@ -358,7 +394,7 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
     }
 
     fun clearAllMessages() {
-        val db = this.writableDatabase
+        val db = this.safeWritableDatabase
         db.delete(TABLE_MESSAGES, null, null)
     }
 
@@ -366,4 +402,41 @@ class ChatDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_
     private fun encNullable(value: String?) = value?.let(SecureStorage::encrypt)
     private fun dec(value: String?) = SecureStorage.decrypt(value).orEmpty()
     private fun decNullable(value: String?) = SecureStorage.decrypt(value)
+
+    private fun checkAndMigrateDatabase(context: Context, dbFile: java.io.File, pass: String) {
+        if (!dbFile.exists()) return
+        try {
+            val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, pass, null, SQLiteDatabase.OPEN_READWRITE)
+            db.close()
+            return
+        } catch (e: Exception) {
+            val msg = e.message ?: ""
+            if (!msg.contains("file is not a database") && !msg.contains("not a database")) {
+                return
+            }
+        }
+        try {
+            val unencryptedDb = SQLiteDatabase.openDatabase(dbFile.absolutePath, "", null, SQLiteDatabase.OPEN_READWRITE)
+            unencryptedDb.close()
+        } catch (e: Exception) {
+            return
+        }
+        val tempFile = java.io.File(context.cacheDir, "encrypted.db")
+        if (tempFile.exists()) tempFile.delete()
+        try {
+            val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, "", null, SQLiteDatabase.OPEN_READWRITE)
+            val escPath = tempFile.absolutePath.replace("'", "''")
+            val escPass = pass.replace("'", "''")
+            db.execSQL("ATTACH DATABASE '$escPath' AS encrypted KEY '$escPass'")
+            db.execSQL("SELECT sqlcipher_export('encrypted')")
+            db.execSQL("DETACH DATABASE encrypted")
+            db.close()
+            if (dbFile.delete()) {
+                tempFile.renameTo(dbFile)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            if (tempFile.exists()) tempFile.delete()
+        }
+    }
 }

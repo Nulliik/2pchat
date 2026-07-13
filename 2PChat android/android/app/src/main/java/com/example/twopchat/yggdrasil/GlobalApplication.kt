@@ -18,6 +18,7 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
 
     override fun onCreate() {
         super.onCreate()
+        net.sqlcipher.database.SQLiteDatabase.loadLibs(this)
         val prefs = yggdrasilPrefs(applicationContext)
         if (!prefs.contains(PREF_KEY_ENABLED)) {
             prefs.edit().putBoolean(PREF_KEY_ENABLED, true).apply()

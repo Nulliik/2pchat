@@ -49,4 +49,32 @@ object SecureStorage {
     }
 
     fun isEncrypted(value: String?) = value?.startsWith(PREFIX) == true
+
+    private var dbPassphraseMem: String? = null
+
+    @Synchronized
+    fun getOrGenerateDbPassphrase(context: android.content.Context): String {
+        dbPassphraseMem?.let { return it }
+        val sharedPrefs = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+        val enc = sharedPrefs.getString("db_passphrase_enc", null)
+        if (enc != null) {
+            val dec = decrypt(enc)
+            if (dec != null) {
+                dbPassphraseMem = dec
+                return dec
+            }
+        }
+        val bytes = ByteArray(32)
+        java.security.SecureRandom().nextBytes(bytes)
+        val pass = Base64.encodeToString(bytes, Base64.NO_WRAP)
+        val encrypted = encrypt(pass)
+        sharedPrefs.edit().putString("db_passphrase_enc", encrypted).apply()
+        dbPassphraseMem = pass
+        return pass
+    }
+
+    @Synchronized
+    fun clearDbPassphrase() {
+        dbPassphraseMem = null
+    }
 }

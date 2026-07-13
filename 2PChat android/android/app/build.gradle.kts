@@ -110,6 +110,7 @@ dependencies {
   implementation(libs.androidx.compose.ui)
   implementation(libs.androidx.compose.ui.tooling.preview)
   implementation(libs.androidx.compose.material3)
+  implementation("androidx.compose.material:material-icons-core")
   // Tooling
   debugImplementation(libs.androidx.compose.ui.tooling)
   // Instrumented tests
@@ -135,6 +136,8 @@ dependencies {
   implementation(files("libs/yggdrasil.aar"))
   implementation("androidx.preference:preference-ktx:1.2.1")
   implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
+  implementation("net.zetetic:android-database-sqlcipher:4.5.4")
+  implementation("androidx.sqlite:sqlite:2.3.1")
 }
 
 

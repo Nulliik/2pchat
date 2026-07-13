@@ -216,12 +216,16 @@ fun ChatScreen(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
+    var pinnedMsgId by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_id_${peerName}", null)) }
+    var pinnedMsgText by remember(peerName) { mutableStateOf(SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
+    var pinnedMsgSender by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_sender_${peerName}", null)) }
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
     var isVerified by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("verified_peer_${peerName}", false)) }
     var showVerifyDialog by remember { mutableStateOf(false) }
+    var showIncomingVerifyDialog by remember { mutableStateOf(false) }
+    var isWaitingForVerifyResponse by remember { mutableStateOf(false) }
     var showConnectionErrorDialog by remember { mutableStateOf(false) }
     var errorReasonYggdrasilDisabled by remember { mutableStateOf(true) }
-    var mockMismatchToggle by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("mock_mismatch_${peerName}", false)) }
     val voiceRecorder = remember(context) { VoiceRecorder(context.applicationContext) }
     var isRecordingVoice by remember { mutableStateOf(false) }
     var recordingElapsedMs by remember { mutableIntStateOf(0) }
@@ -271,16 +275,12 @@ fun ChatScreen(
             }
         }
     )
-    val activeFingerprint = remember(peerName, mockMismatchToggle) {
-        if (mockMismatchToggle) {
-            "WARNING_MISMATCHED_ATTACK_KEY_999999"
-        } else {
-            when (peerName) {
-                "Eleanor Vance" -> "2TFcRb7mE1eAnOrVaNcE9823471029837419"
-                "Liam O'Connor" -> "2TFcRb7mLiAmOcOnNoR1029384756102938"
-                "Sarah Chen" -> "2TFcRb7mSaRaHcHeN92837410293847102938"
-                else -> "2TFcRb7m" + peerName.hashCode().toString().padStart(16, 'x')
-            }
+    val activeFingerprint = remember(peerName) {
+        when (peerName) {
+            "Eleanor Vance" -> "2TFcRb7mE1eAnOrVaNcE9823471029837419"
+            "Liam O'Connor" -> "2TFcRb7mLiAmOcOnNoR1029384756102938"
+            "Sarah Chen" -> "2TFcRb7mSaRaHcHeN92837410293847102938"
+            else -> "2TFcRb7m" + peerName.hashCode().toString().padStart(16, 'x')
         }
     }
 
@@ -488,6 +488,51 @@ fun ChatScreen(
                     }
                 }
             }
+
+            override fun onVerificationRequest(sender: String) {
+                if (sender == peerName) {
+                    showIncomingVerifyDialog = true
+                }
+            }
+
+            override fun onVerificationResponse(sender: String, success: Boolean) {
+                if (sender == peerName) {
+                    isWaitingForVerifyResponse = false
+                    if (success) {
+                        isVerified = true
+                        showVerifyDialog = false
+                        Toast.makeText(context, if (appLanguage == "Русский") "Собеседник подтвердил личность!" else "Peer successfully verified!", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, if (appLanguage == "Русский") "Запрос верификации отклонен собеседником." else "Verification request declined.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+
+            override fun onMessagePinned(sender: String, msgId: String, text: String, isFromSender: Boolean) {
+                if (sender == peerName) {
+                    sharedPrefs.edit {
+                        putString("pinned_msg_id_${peerName}", msgId)
+                        putString("pinned_msg_text_${peerName}", SecureStorage.encrypt(text))
+                        putString("pinned_msg_sender_${peerName}", if (isFromSender) peerName else "You")
+                    }
+                    pinnedMsgId = msgId
+                    pinnedMsgText = text
+                    pinnedMsgSender = if (isFromSender) peerName else "You"
+                }
+            }
+
+            override fun onMessageUnpinned(sender: String) {
+                if (sender == peerName) {
+                    sharedPrefs.edit {
+                        remove("pinned_msg_id_${peerName}")
+                        remove("pinned_msg_text_${peerName}")
+                        remove("pinned_msg_sender_${peerName}")
+                    }
+                    pinnedMsgId = null
+                    pinnedMsgText = null
+                    pinnedMsgSender = null
+                }
+            }
         }
     }
 
@@ -517,10 +562,6 @@ fun ChatScreen(
     var selectedMessageForOptions by remember { mutableStateOf<Message?>(null) }
     var replyingToMessage by remember { mutableStateOf<Message?>(null) }
     
-    var pinnedMsgId by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_id_${peerName}", null)) }
-    var pinnedMsgText by remember(peerName) { mutableStateOf(SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
-    var pinnedMsgSender by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_sender_${peerName}", null)) }
-
     var isSelectMode by remember { mutableStateOf(false) }
     val selectedMessages = remember { mutableStateListOf<Message>() }
     var showForwardDialog by remember { mutableStateOf(false) }
@@ -889,7 +930,7 @@ fun ChatScreen(
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                val isMismatch = mockMismatchToggle
+                val isMismatch = sharedPrefs.getBoolean("fingerprint_mismatch_${peerName}", false)
                 val shieldColor = when {
                     isMismatch -> Color(0xFFF44336) // Red
                     isVerified -> Color(0xFF4CAF50) // Green
@@ -1113,6 +1154,7 @@ remove("pinned_msg_id_${peerName}")
                             pinnedMsgId = null
                             pinnedMsgText = null
                             pinnedMsgSender = null
+                            P2PMessageRelay.sendUnpinMessage(context, peerName)
                         },
                         modifier = Modifier.size(24.dp)
                     ) {
@@ -1689,6 +1731,7 @@ remove("pinned_msg_id_${peerName}")
                                         pinnedMsgId = null
                                         pinnedMsgText = null
                                         pinnedMsgSender = null
+                                        P2PMessageRelay.sendUnpinMessage(context, peerName)
                                     }
                                 }
                                 selectedMessages.clear()
@@ -1959,12 +2002,12 @@ remove("pinned_msg_id_${peerName}")
                                 .padding(horizontal = 4.dp, vertical = 8.dp),
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
-                            listOf("👍", "❤️", "😂", "😮", "😢", "🔥").forEach { emoji ->
+                            listOf("👍", "❤️", "😂", "😮", "😢", "🔥", "💩").forEach { emoji ->
                                 Surface(
                                     shape = CircleShape,
                                     color = primaryColor.copy(alpha = 0.12f),
                                     modifier = Modifier
-                                        .size(44.dp)
+                                        .size(36.dp)
                                         .clickable {
                                             val idx = initialMessages.indexOfFirst { it.id == msg.id }
                                             if (idx != -1) {
@@ -1986,7 +2029,7 @@ remove("pinned_msg_id_${peerName}")
                                         }
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Text(text = emoji, fontSize = 20.sp)
+                                        Text(text = emoji, fontSize = 18.sp)
                                     }
                                 }
                             }
@@ -2029,13 +2072,14 @@ remove("pinned_msg_id_${peerName}")
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable {
                                     sharedPrefs.edit {
-putString("pinned_msg_id_${peerName}", msg.id)
+                                        putString("pinned_msg_id_${peerName}", msg.id)
                                         putString("pinned_msg_text_${peerName}", SecureStorage.encrypt(msg.text))
                                         putString("pinned_msg_sender_${peerName}", if (msg.isMe) "You" else peerName)
                             }
                                     pinnedMsgId = msg.id
                                     pinnedMsgText = msg.text
                                     pinnedMsgSender = if (msg.isMe) "You" else peerName
+                                    P2PMessageRelay.sendPinMessage(context, peerName, msg.id, msg.text, msg.isMe)
                                     selectedMessageForOptions = null
                                 }
                                 .padding(vertical = 12.dp, horizontal = 12.dp),
@@ -2126,6 +2170,7 @@ remove("pinned_msg_id_${peerName}")
                                         pinnedMsgId = null
                                         pinnedMsgText = null
                                         pinnedMsgSender = null
+                                        P2PMessageRelay.sendUnpinMessage(context, peerName)
                                     }
                                     selectedMessageForOptions = null
                                 }
@@ -2341,20 +2386,18 @@ remove("pinned_msg_id_${peerName}")
         }
 
         if (showVerifyDialog) {
-            val peerFingerprint = remember(peerName) {
-                when (peerName) {
-                    "Eleanor Vance" -> "2TFcRb7mE1eAnOrVaNcE9823471029837419"
-                    "Liam O'Connor" -> "2TFcRb7mLiAmOcOnNoR1029384756102938"
-                    "Sarah Chen" -> "2TFcRb7mSaRaHcHeN92837410293847102938"
-                    else -> "2TFcRb7m" + peerName.hashCode().toString().padStart(16, 'x')
-                }
-            }
+            val emojis = remember(activeFingerprint) { getVerificationEmojis(activeFingerprint) }
 
             AlertDialog(
-                onDismissRequest = { showVerifyDialog = false },
+                onDismissRequest = { 
+                    if (!isWaitingForVerifyResponse) showVerifyDialog = false 
+                },
                 confirmButton = {},
                 dismissButton = {
-                    TextButton(onClick = { showVerifyDialog = false }) {
+                    TextButton(
+                        enabled = !isWaitingForVerifyResponse,
+                        onClick = { showVerifyDialog = false }
+                    ) {
                         Text(Localizations.getString("close", appLanguage), color = primaryColor)
                     }
                 },
@@ -2367,85 +2410,179 @@ remove("pinned_msg_id_${peerName}")
                     ) 
                 },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Text(
-                            text = Localizations.getString("verify_desc", appLanguage),
+                            text = if (appLanguage == "Русский") {
+                                "Сравните эти эмодзи безопасности со своим собеседником по другому каналу или голосом:"
+                            } else {
+                                "Compare these security emojis with your peer over another channel or voice:"
+                            },
                             fontSize = 13.sp,
-                            color = onSurfaceVariant
+                            color = onSurfaceVariant,
+                            textAlign = TextAlign.Center
                         )
                         
-                        Text(
-                            text = Localizations.getString("fingerprint_label", appLanguage) + ":",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = onSurfaceVariant
-                        )
-
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = surfaceVariant.copy(alpha = 0.5f)),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                        ) {
-                            Text(
-                                text = peerFingerprint,
-                                fontSize = 12.sp,
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                color = onSurfaceColor,
-                                modifier = Modifier.padding(12.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
                         Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
+                                .padding(vertical = 12.dp)
                                 .fillMaxWidth()
-                                .clickable {
-                                    mockMismatchToggle = !mockMismatchToggle
-                                    sharedPrefs.edit { putBoolean("mock_mismatch_${peerName}", mockMismatchToggle) }
-                                    sharedPrefs.edit { putBoolean("fingerprint_mismatch_${peerName}", mockMismatchToggle) }
-                                }
-                                .padding(vertical = 4.dp)
                         ) {
-                            Checkbox(
-                                checked = mockMismatchToggle,
-                                onCheckedChange = {
-                                    mockMismatchToggle = it
-                                    sharedPrefs.edit { putBoolean("mock_mismatch_${peerName}", it) }
-                                    sharedPrefs.edit { putBoolean("fingerprint_mismatch_${peerName}", it) }
-                                },
-                                colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.error)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (appLanguage == "Русский") "Симулировать MitM-атаку (Красный щит)"
-                                       else "Simulate MitM Attack (Red Shield)",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.error,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            emojis.forEach { emoji ->
+                                Text(text = emoji, fontSize = 32.sp)
+                            }
                         }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                        if (isVerified) {
+                            Button(
+                                onClick = {
+                                    isVerified = false
+                                    sharedPrefs.edit { putBoolean("verified_peer_${peerName}", false) }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.error,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(Localizations.getString("unverify_btn", appLanguage))
+                            }
+                        } else {
+                            if (isWaitingForVerifyResponse) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    CircularProgressIndicator(
+                                        color = primaryColor,
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Text(
+                                        text = if (appLanguage == "Русский") "Ожидание подтверждения от собеседника..." else "Waiting for confirmation from peer...",
+                                        fontSize = 11.sp,
+                                        color = onSurfaceVariant
+                                    )
+                                }
+                            } else {
+                                Button(
+                                    onClick = {
+                                        isWaitingForVerifyResponse = true
+                                        P2PMessageRelay.sendVerificationRequest(context, peerName) { success ->
+                                            if (!success) {
+                                                isWaitingForVerifyResponse = false
+                                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось отправить запрос" else "Failed to send request", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF4CAF50),
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = if (appLanguage == "Русский") "Отправить запрос верификации" else "Send verification request"
+                                    )
+                                }
+                            }
+                        }
+                    }
+                },
+                containerColor = surfaceColor,
+                shape = RoundedCornerShape(20.dp)
+            )
+        }
+
+        if (showIncomingVerifyDialog) {
+            val peerFingerprint = remember(peerName) {
+                when (peerName) {
+                    "Eleanor Vance" -> "2TFcRb7mE1eAnOrVaNcE9823471029837419"
+                    "Liam O'Connor" -> "2TFcRb7mLiAmOcOnNoR1029384756102938"
+                    "Sarah Chen" -> "2TFcRb7mSaRaHcHeN92837410293847102938"
+                    else -> "2TFcRb7m" + peerName.hashCode().toString().padStart(16, 'x')
+                }
+            }
+            val emojis = remember(peerFingerprint) { getVerificationEmojis(peerFingerprint) }
+
+            AlertDialog(
+                onDismissRequest = {
+                    showIncomingVerifyDialog = false
+                    P2PMessageRelay.sendVerificationResponse(context, peerName, false)
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showIncomingVerifyDialog = false
+                            P2PMessageRelay.sendVerificationResponse(context, peerName, false)
+                        }
+                    ) {
+                        Text(if (appLanguage == "Русский") "Отклонить" else "Decline", color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                title = {
+                    Text(
+                        text = if (appLanguage == "Русский") "Запрос верификации" else "Verification Request",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = onSurfaceColor
+                    )
+                },
+                text = {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (appLanguage == "Русский") {
+                                "$peerName предлагает подтвердить безопасность вашего подключения. Сверьте эти эмодзи:"
+                            } else {
+                                "$peerName wants to verify the security of your connection. Compare these emojis:"
+                            },
+                            fontSize = 13.sp,
+                            color = onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .padding(vertical = 12.dp)
+                                .fillMaxWidth()
+                        ) {
+                            emojis.forEach { emoji ->
+                                Text(text = emoji, fontSize = 32.sp)
+                            }
+                        }
 
                         Button(
                             onClick = {
-                                isVerified = !isVerified
-                                sharedPrefs.edit { putBoolean("verified_peer_${peerName}", isVerified) }
+                                isVerified = true
+                                sharedPrefs.edit { putBoolean("verified_peer_${peerName}", true) }
+                                P2PMessageRelay.sendVerificationResponse(context, peerName, true)
+                                showIncomingVerifyDialog = false
+                                Toast.makeText(context, if (appLanguage == "Русский") "Личность подтверждена! Соединение защищено." else "Identity verified! Connection secured.", Toast.LENGTH_SHORT).show()
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isVerified) MaterialTheme.colorScheme.error else Color(0xFF4CAF50),
+                                containerColor = Color(0xFF4CAF50),
                                 contentColor = Color.White
                             ),
                             shape = RoundedCornerShape(14.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = if (isVerified) Localizations.getString("unverify_btn", appLanguage)
-                                       else Localizations.getString("verify_btn", appLanguage)
+                                text = if (appLanguage == "Русский") "Подтвердить совпадение" else "Confirm Match"
                             )
                         }
                     }
@@ -2704,4 +2841,26 @@ fun FullscreenImageViewer(
             )
         }
     }
+}
+
+fun getVerificationEmojis(fingerprint: String): List<String> {
+    val emojiList = listOf(
+        "🦄", "🦊", "🚀", "💎", "🍕", "🎈", "🚗", "🥝", "🎸", "🌟",
+        "🦁", "🐼", "🐻", "🐨", "🐙", "🦋", "🍄", "🍉", "🍓", "🍍",
+        "🥞", "🍔", "🍿", "🍩", "🍪", "🛹", "🚲", "⛵", "🛸", "🌈",
+        "☀️", "⚡", "🔥", "🔮", "🛡️", "🔑", "📦", "🎨", "🎭", "🎮"
+    )
+    val hash = try {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        digest.digest(fingerprint.toByteArray(Charsets.UTF_8))
+    } catch (e: java.lang.Exception) {
+        fingerprint.toByteArray(Charsets.UTF_8)
+    }
+    val result = mutableListOf<String>()
+    for (i in 0 until 4) {
+        val byteVal = if (i < hash.size) hash[i].toInt() and 0xFF else 0
+        val index = byteVal % emojiList.size
+        result.add(emojiList[index])
+    }
+    return result
 }

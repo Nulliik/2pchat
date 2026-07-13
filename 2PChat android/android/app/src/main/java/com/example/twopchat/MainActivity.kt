@@ -14,6 +14,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -25,6 +30,7 @@ import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 
 import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.widget.Toast
 import com.example.twopchat.theme.StealthBlack
@@ -74,6 +80,21 @@ class MainActivity : ComponentActivity() {
         
         // Start background P2P Message Server
         P2PMessageRelay.startServer(applicationContext)
+
+        // Start Yggdrasil VPN service automatically if enabled and prepared
+        val yggPrefs = getSharedPreferences("2pchat_prefs", MODE_PRIVATE)
+        if (yggPrefs.getBoolean("settings_yggdrasil", true)) {
+            if (android.net.VpnService.prepare(applicationContext) == null) {
+                val yggIntent = Intent(applicationContext, com.example.twopchat.yggdrasil.PacketTunnelProvider::class.java).apply {
+                    action = com.example.twopchat.yggdrasil.PacketTunnelProvider.ACTION_START
+                }
+                try {
+                    startService(yggIntent)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
 
         val sharedPrefs = getSharedPreferences("2pchat_prefs", MODE_PRIVATE)
 
@@ -126,111 +147,138 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            LaunchedEffect(isAppLocked) {
+                if (isAppLocked) {
+                    SecureStorage.clearDbPassphrase()
+                    com.example.twopchat.data.ChatDatabaseHelper.closeAllConnections()
+                }
+            }
+
             _2PChatTheme(darkTheme = isDarkTheme, useCerulean = useCerulean) { 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) { 
-                    if (showSplash) {
-                        Image(
-                            painter = androidx.compose.ui.res.painterResource(id = R.drawable.splash_background),
-                            contentDescription = "Splash Screen",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                        )
-                    } else if (isStealthDisguiseLocked && sharedPrefs.getBoolean("settings_stealth_disguise", false)) {
-                        CurrencyRatesScreen(
-                            appLanguage = appLanguage,
-                            onUnlock = { isStealthDisguiseLocked = false }
-                        )
-                    } else if (isAppLocked && passcodeVal.isNotEmpty()) {
-                        PasscodeUnlockScreen(
-                            appLanguage = appLanguage,
-                            primaryColor = MaterialTheme.colorScheme.primary,
-                            surfaceColor = MaterialTheme.colorScheme.surface,
-                            onSurfaceColor = MaterialTheme.colorScheme.onSurface,
-                            correctPasscode = passcodeVal,
-                            duressPasscode = duressPinVal,
-                             onUnlock = {
-                                 isAppLocked = false
-                                 lastInteractionTime = System.currentTimeMillis()
-                             },
-                             onDuressTriggered = {
-                                 // 1. Python-side session shutdown
-                                 try {
-                                     if (PythonBridge.isInitialized) {
-                                         val py = com.chaquo.python.Python.getInstance()
-                                         val bridge = py.getModule("discovery_bridge")
-                                         bridge.callAttr("shutdown_all_sessions")
-                                     }
-                                 } catch (e: Exception) {
-                                     android.util.Log.e("MainActivity", "Failed to shutdown sessions on duress", e)
-                                 }
-
-                                 // 2. Clear default shared preferences
-                                 sharedPrefs.edit().clear().apply()
-
-                                 // 3. Delete all SharedPreferences XML files
-                                 try {
-                                     val sharedPrefsDir = java.io.File(filesDir.parent, "shared_prefs")
-                                     if (sharedPrefsDir.exists()) {
-                                         sharedPrefsDir.listFiles()?.forEach { it.delete() }
-                                     }
-                                 } catch (e: Exception) {
-                                     android.util.Log.e("MainActivity", "Failed to clear shared_prefs on duress", e)
-                                 }
-
-                                 // 4. Delete SQLite database files
-                                 try {
-                                     val databasesDir = java.io.File(filesDir.parent, "databases")
-                                     if (databasesDir.exists()) {
-                                         databasesDir.listFiles()?.forEach { it.deleteRecursively() }
-                                     }
-                                 } catch (e: Exception) {
-                                     android.util.Log.e("MainActivity", "Failed to clear databases on duress", e)
-                                 }
-
-                                 // 5. Delete all other files and caches
-                                 try {
-                                     filesDir.listFiles()?.forEach { it.deleteRecursively() }
-                                     cacheDir.listFiles()?.forEach { it.deleteRecursively() }
-                                 } catch (e: Exception) {
-                                     android.util.Log.e("MainActivity", "Failed to clear files on duress", e)
-                                 }
-
-                                 try {
-                                     setAppIconAlias("MainActivityAliasDefault")
-                                 } catch (e: Exception) {
-                                     android.util.Log.e("MainActivity", "Failed to reset icon on duress", e)
-                                 }
-                                 isDarkTheme = true
-                                 useCerulean = false
-                                 appLanguage = "English"
-                                 isAppLocked = false
-                                 recreate()
-                             }
-                        )
-                    } else {
-                        MainNavigation(
-                            isDarkTheme = isDarkTheme,
-                            onThemeChanged = { dark ->
-                                isDarkTheme = dark
-                                sharedPrefs.edit().putString("theme_mode", if (dark) "dark" else "light").apply()
-                            },
-                            useCerulean = useCerulean,
-                            onAccentChanged = { cerulean ->
-                                useCerulean = cerulean
-                                sharedPrefs.edit().putBoolean("use_cerulean", cerulean).apply()
-                            },
-                            appLanguage = appLanguage,
-                            onLanguageChanged = { lang ->
-                                appLanguage = lang
-                                sharedPrefs.edit().putString("settings_language", lang).apply()
-                            },
-                            onIconChanged = { aliasName ->
-                                setAppIconAlias(aliasName)
+                    val currentScreen = when {
+                        showSplash -> "splash"
+                        isStealthDisguiseLocked && sharedPrefs.getBoolean("settings_stealth_disguise", false) -> "disguise"
+                        isAppLocked && passcodeVal.isNotEmpty() -> "unlock"
+                        else -> "main"
+                    }
+                    AnimatedContent(
+                        targetState = currentScreen,
+                        transitionSpec = {
+                            fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+                        },
+                        label = "screen_transition",
+                        modifier = Modifier.fillMaxSize()
+                    ) { targetScreen ->
+                        when (targetScreen) {
+                            "splash" -> {
+                                Image(
+                                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.splash_background),
+                                    contentDescription = "Splash Screen",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
                             }
-                        )
+                            "disguise" -> {
+                                CurrencyRatesScreen(
+                                    appLanguage = appLanguage,
+                                    onUnlock = { isStealthDisguiseLocked = false }
+                                )
+                            }
+                            "unlock" -> {
+                                PasscodeUnlockScreen(
+                                    appLanguage = appLanguage,
+                                    primaryColor = MaterialTheme.colorScheme.primary,
+                                    surfaceColor = MaterialTheme.colorScheme.surface,
+                                    onSurfaceColor = MaterialTheme.colorScheme.onSurface,
+                                    correctPasscode = passcodeVal,
+                                    duressPasscode = duressPinVal,
+                                    onUnlock = {
+                                        isAppLocked = false
+                                        lastInteractionTime = System.currentTimeMillis()
+                                    },
+                                    onDuressTriggered = {
+                                        // 1. Python-side session shutdown
+                                        try {
+                                            if (PythonBridge.isInitialized) {
+                                                val py = com.chaquo.python.Python.getInstance()
+                                                val bridge = py.getModule("discovery_bridge")
+                                                bridge.callAttr("shutdown_all_sessions")
+                                            }
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("MainActivity", "Failed to shutdown sessions on duress", e)
+                                        }
+
+                                        // 2. Clear default shared preferences
+                                        sharedPrefs.edit().clear().apply()
+
+                                        // 3. Delete all SharedPreferences XML files
+                                        try {
+                                            val sharedPrefsDir = java.io.File(filesDir.parent, "shared_prefs")
+                                            if (sharedPrefsDir.exists()) {
+                                                sharedPrefsDir.listFiles()?.forEach { it.delete() }
+                                            }
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("MainActivity", "Failed to clear shared_prefs on duress", e)
+                                        }
+
+                                        // 4. Delete SQLite database files
+                                        try {
+                                            val databasesDir = java.io.File(filesDir.parent, "databases")
+                                            if (databasesDir.exists()) {
+                                                databasesDir.listFiles()?.forEach { it.deleteRecursively() }
+                                            }
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("MainActivity", "Failed to clear databases on duress", e)
+                                        }
+
+                                        // 5. Delete all other files and caches
+                                        try {
+                                            filesDir.listFiles()?.forEach { it.deleteRecursively() }
+                                            cacheDir.listFiles()?.forEach { it.deleteRecursively() }
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("MainActivity", "Failed to clear files on duress", e)
+                                        }
+
+                                        try {
+                                            setAppIconAlias("MainActivityAliasDefault")
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("MainActivity", "Failed to reset icon on duress", e)
+                                        }
+                                        isDarkTheme = true
+                                        useCerulean = false
+                                        appLanguage = "English"
+                                        isAppLocked = false
+                                        recreate()
+                                    }
+                                )
+                            }
+                            "main" -> {
+                                MainNavigation(
+                                    isDarkTheme = isDarkTheme,
+                                    onThemeChanged = { dark ->
+                                        isDarkTheme = dark
+                                        sharedPrefs.edit().putString("theme_mode", if (dark) "dark" else "light").apply()
+                                    },
+                                    useCerulean = useCerulean,
+                                    onAccentChanged = { cerulean ->
+                                        useCerulean = cerulean
+                                        sharedPrefs.edit().putBoolean("use_cerulean", cerulean).apply()
+                                    },
+                                    appLanguage = appLanguage,
+                                    onLanguageChanged = { lang ->
+                                        appLanguage = lang
+                                        sharedPrefs.edit().putString("settings_language", lang).apply()
+                                    },
+                                    onIconChanged = { aliasName ->
+                                        setAppIconAlias(aliasName)
+                                    }
+                                )
+                            }
+                        }
                     }
                 } 
             }
