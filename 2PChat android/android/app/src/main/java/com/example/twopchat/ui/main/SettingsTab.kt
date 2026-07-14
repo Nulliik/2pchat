@@ -81,6 +81,7 @@ fun SettingsTab(
     var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
     var profileBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)) }
     var pendingCropUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var showAvatarOptions by remember { mutableStateOf(false) }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -208,66 +209,108 @@ fun SettingsTab(
                 .padding(vertical = 12.dp)
                 .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Profile Photo container (clickable)
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(primaryColor.copy(alpha = 0.15f), shape = CircleShape)
-                        .border(1.dp, primaryColor, CircleShape)
-                        .clickable { imagePickerLauncher.launch("image/*") }
-                ) {
-                    if (profileBitmap != null) {
-                        Image(
-                            bitmap = profileBitmap!!.asImageBitmap(),
-                            contentDescription = "Profile Photo",
-                            modifier = Modifier.fillMaxSize().clip(CircleShape)
-                        )
-                    } else {
-                        Icon(
-                            painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_add_photo_smiley),
-                            contentDescription = "Edit Photo",
-                            tint = primaryColor,
+                        Row(
                             modifier = Modifier
-                                .size(28.dp)
-                                .align(Alignment.Center)
-                        )
-                        Text(
-                            text = Localizations.getString("edit_photo", appLanguage),
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = primaryColor,
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 4.dp)
-                        )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.width(16.dp))
-                
-                Column {
-                    Text(
-
-                        text = Localizations.getString("username_profile", appLanguage),
-                        fontSize = 13.sp,
-                        color = onSurfaceVariant
-                    )
-                    Text(
-                        text = username,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = onSurfaceColor
-                    )
-                }
-            }
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Profile Photo container (clickable)
+                            Box(
+                                modifier = Modifier.size(64.dp)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(CircleShape)
+                                        .background(primaryColor.copy(alpha = 0.15f), shape = CircleShape)
+                                        .border(1.dp, primaryColor, CircleShape)
+                                        .clickable {
+                                            if (profileBitmap != null) {
+                                                showAvatarOptions = true
+                                            } else {
+                                                imagePickerLauncher.launch("image/*")
+                                            }
+                                        }
+                                ) {
+                                    if (profileBitmap != null) {
+                                        Image(
+                                            bitmap = profileBitmap!!.asImageBitmap(),
+                                            contentDescription = "Profile Photo",
+                                            modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                        )
+                                    } else {
+                                        Icon(
+                                            painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_add_photo_smiley),
+                                            contentDescription = "Edit Photo",
+                                            tint = primaryColor,
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .align(Alignment.Center)
+                                        )
+                                        Text(
+                                            text = Localizations.getString("edit_photo", appLanguage),
+                                            fontSize = 8.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = primaryColor,
+                                            modifier = Modifier
+                                                .align(Alignment.BottomCenter)
+                                                .padding(bottom = 4.dp)
+                                        )
+                                    }
+                                }
+                                if (profileBitmap != null) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(20.dp)
+                                            .align(Alignment.BottomEnd)
+                                            .background(primaryColor, CircleShape)
+                                            .border(1.dp, surfaceColor, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_attach_camera),
+                                            contentDescription = "Edit",
+                                            tint = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.width(16.dp))
+                            
+                            Column {
+                                Text(
+                                    text = Localizations.getString("username_profile", appLanguage),
+                                    fontSize = 13.sp,
+                                    color = onSurfaceVariant
+                                )
+                                Text(
+                                    text = username,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = onSurfaceColor
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = if (appLanguage == "Русский") "Изменить фото профиля" else "Change profile photo",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = primaryColor,
+                                    modifier = Modifier
+                                        .clickable {
+                                            if (profileBitmap != null) {
+                                                showAvatarOptions = true
+                                            } else {
+                                                imagePickerLauncher.launch("image/*")
+                                            }
+                                        }
+                                        .padding(vertical = 2.dp)
+                                )
+                            }
+                        }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -997,6 +1040,73 @@ fun SettingsTab(
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )
         Spacer(modifier = Modifier.height(40.dp))
+    }
+
+    if (showAvatarOptions) {
+        AlertDialog(
+            onDismissRequest = { showAvatarOptions = false },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showAvatarOptions = false }) {
+                    Text(if (appLanguage == "Русский") "Отмена" else "Cancel", color = primaryColor)
+                }
+            },
+            title = {
+                Text(
+                    text = if (appLanguage == "Русский") "Фото профиля" else "Profile Photo",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    TextButton(
+                        onClick = {
+                            showAvatarOptions = false
+                            imagePickerLauncher.launch("image/*")
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Выбрать новое фото" else "Choose New Photo",
+                            color = primaryColor,
+                            fontSize = 15.sp
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            showAvatarOptions = false
+                            profilePhotoUri = null
+                            profileBitmap = null
+                            sharedPrefs.edit().remove("profile_photo_uri").apply()
+                            try {
+                                val file = java.io.File(context.filesDir, "profile_avatar.jpg")
+                                if (file.exists()) {
+                                    file.delete()
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                            com.example.twopchat.P2PMessageRelay.shareAvatarWithConnectedPeers(context)
+                            Toast.makeText(context, if (appLanguage == "Русский") "Фото профиля удалено" else "Profile photo removed", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Удалить фото" else "Remove Photo",
+                            color = Color.Red,
+                            fontSize = 15.sp
+                        )
+                    }
+                }
+            },
+            containerColor = surfaceColor,
+            shape = RoundedCornerShape(24.dp)
+        )
     }
 
     // Language Selector dialog

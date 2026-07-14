@@ -207,6 +207,7 @@ fun ChatScreen(
     val coroutineScope = rememberCoroutineScope()
     val screenInitTime = remember { System.currentTimeMillis() }
     val listState = rememberLazyListState()
+    var hasScrolledToBottomOnInit by remember(peerName) { mutableStateOf(false) }
     val showScrollDownButton by remember {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
@@ -248,6 +249,8 @@ fun ChatScreen(
     var pinnedMsgText by remember(peerName) { mutableStateOf(SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
     var pinnedMsgSender by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_sender_${peerName}", null)) }
     var pinnedBy by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_by_${peerName}", null)) }
+    var isMuted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("mute_notifications_${peerName}", false)) }
+    var isBlocked by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("blocked_peer_${peerName}", false)) }
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
     var isVerified by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("verified_peer_${peerName}", false)) }
     var showVerifyDialog by remember { mutableStateOf(false) }
@@ -800,7 +803,12 @@ fun ChatScreen(
         if (initialMessages.isNotEmpty() || isTyping) {
             val lastIndex = initialMessages.size - 1 + (if (isTyping) 1 else 0)
             if (lastIndex >= 0) {
-                listState.animateScrollToItem(lastIndex)
+                if (!hasScrolledToBottomOnInit) {
+                    listState.scrollToItem(lastIndex)
+                    hasScrolledToBottomOnInit = true
+                } else {
+                    listState.animateScrollToItem(lastIndex)
+                }
             }
         }
     }
@@ -1044,6 +1052,33 @@ fun ChatScreen(
                                             }
                                         }
                                     }
+                                }
+                            )
+                        }
+                        if (peerName != "Saved Messages") {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = if (isMuted) {
+                                            if (appLanguage == "Русский") "Включить уведомления" else "Unmute Notifications"
+                                        } else {
+                                            if (appLanguage == "Русский") "Выключить уведомления" else "Mute Notifications"
+                                        },
+                                        color = onSurfaceColor,
+                                        fontSize = 14.sp
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    val targetState = !isMuted
+                                    sharedPrefs.edit { putBoolean("mute_notifications_${peerName}", targetState) }
+                                    isMuted = targetState
+                                    val toastText = if (targetState) {
+                                        if (appLanguage == "Русский") "Уведомления отключены" else "Notifications muted"
+                                    } else {
+                                        if (appLanguage == "Русский") "Уведомления включены" else "Notifications unmuted"
+                                    }
+                                    Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
                                 }
                             )
                         }
@@ -1803,6 +1838,36 @@ remove("pinned_msg_id_${peerName}")
                                 modifier = Modifier.size(24.dp)
                             )
                         }
+                    }
+                } else if (isBlocked && peerName != "Saved Messages") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                            .border(0.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Пользователь заблокирован" else "User is blocked",
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = if (appLanguage == "Русский") "Разблокировать" else "Unblock",
+                            color = primaryColor,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clickable {
+                                    sharedPrefs.edit { putBoolean("blocked_peer_${peerName}", false) }
+                                    isBlocked = false
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
                     }
                 } else {
                     Row(

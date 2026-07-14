@@ -135,7 +135,9 @@ data class PeerItem(
     val transport: String,
     val isDirect: Boolean,
     val initials: String,
-    val unreadCount: Int = 0
+    val unreadCount: Int = 0,
+    val isPinned: Boolean = false,
+    val isBlocked: Boolean = false
 )
 
 data class ContactItem(
@@ -254,36 +256,14 @@ fun PeerRow(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-
-                            text = peer.name,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = onSurfaceColor,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (peer.unreadCount > 0) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .padding(start = 6.dp)
-                                    .background(primaryColor, shape = CircleShape)
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = peer.unreadCount.toString(),
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    }
+                    Text(
+                        text = peer.name,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = onSurfaceColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = peer.lastMsg,
@@ -299,10 +279,25 @@ fun PeerRow(
             Spacer(modifier = Modifier.width(8.dp))
 
             // Transport Badge (Quiet Luxury design)
-            val badgeBg = if (peer.isDirect) primaryColor.copy(alpha = 0.1f) else onSurfaceColor.copy(alpha = 0.05f)
-            val badgeFg = if (peer.isDirect) primaryColor else onSurfaceVariant
+            val badgeBg = if (peer.isBlocked) {
+                Color(0xFFFFEBEE)
+            } else if (peer.isDirect) {
+                primaryColor.copy(alpha = 0.1f)
+            } else {
+                onSurfaceColor.copy(alpha = 0.05f)
+            }
             
-            val localizedTransport = if (peer.transport == "LOCAL RAM") {
+            val badgeFg = if (peer.isBlocked) {
+                Color(0xFFC62828)
+            } else if (peer.isDirect) {
+                primaryColor
+            } else {
+                onSurfaceVariant
+            }
+            
+            val localizedTransport = if (peer.isBlocked) {
+                if (appLanguage == "Русский") "ЗАБЛОКИРОВАН" else "BLOCKED"
+            } else if (peer.transport == "LOCAL RAM") {
                 Localizations.getString("local_storage", appLanguage)
             } else if (peer.isDirect) {
                 Localizations.getString("direct_p2p", appLanguage)
@@ -311,6 +306,33 @@ fun PeerRow(
             }
             
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (peer.isPinned) {
+                    Icon(
+                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_pin),
+                        contentDescription = "Pinned",
+                        tint = primaryColor,
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(14.dp)
+                    )
+                }
+                if (peer.unreadCount > 0) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(20.dp)
+                            .background(primaryColor, shape = CircleShape)
+                    ) {
+                        Text(
+                            text = peer.unreadCount.toString(),
+                            color = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
                 if (peer.name != "Saved Messages") {
                     val isMismatch = sharedPrefs.getBoolean("fingerprint_mismatch_${peer.name}", false)
                     val shieldColor = when {

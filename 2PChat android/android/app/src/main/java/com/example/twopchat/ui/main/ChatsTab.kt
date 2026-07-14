@@ -37,7 +37,15 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.material.icons.filled.Close
+import com.example.twopchat.data.ChatDatabaseHelper
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
 import com.example.twopchat.PythonBridge
@@ -80,7 +88,7 @@ fun ChatsTab(
         com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)
     }
     var currentUsername by remember { mutableStateOf(sharedPrefs.getString("username_profile", "Anonymous") ?: "Anonymous") }
-    var chatToDelete by remember { mutableStateOf<String?>(null) }
+    var activeMenuPeer by remember { mutableStateOf<PeerItem?>(null) }
     
     androidx.compose.runtime.DisposableEffect(sharedPrefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -112,15 +120,22 @@ fun ChatsTab(
                 sharedPrefs.getString("last_msg_$name", null)
             ) ?: "No messages yet"
             val transport = sharedPrefs.getString("transport_$name", null) ?: "UNKNOWN"
+            val isPinned = sharedPrefs.getBoolean("pinned_chat_$name", false)
+            val isBlocked = sharedPrefs.getBoolean("blocked_peer_$name", false)
             PeerItem(
                 name = name,
                 lastMsg = lastMsg,
                 transport = transport,
                 isDirect = isDirectP2pTransport(transport),
                 initials = if (name.length >= 2) name.substring(0, 2).uppercase() else name.uppercase(),
-                unreadCount = sharedPrefs.getInt("unread_count_$name", 0)
+                unreadCount = sharedPrefs.getInt("unread_count_$name", 0),
+                isPinned = isPinned,
+                isBlocked = isBlocked
             )
-        }
+        }.sortedWith(
+            compareByDescending<PeerItem> { it.isPinned }
+                .thenBy { it.name }
+        )
     }
 
     // Hero Card live state
@@ -482,47 +497,262 @@ fun ChatsTab(
                     onSurfaceVariant = onSurfaceVariant,
                     onClick = { onItemClick(Chat(peer.name)) },
                     onLongClick = {
-                        chatToDelete = peer.name
+                        activeMenuPeer = peer
                     }
                 )
             }
         }
 
-        if (chatToDelete != null) {
-            AlertDialog(
-                onDismissRequest = { chatToDelete = null },
-                title = {
-                    Text(if (appLanguage == "Русский") "Удалить чат?" else "Delete chat?")
-                },
-                text = {
-                    Text(
-                        if (appLanguage == "Русский") {
-                            "Вы уверены, что хотите удалить чат с пользователем \"${chatToDelete}\"? Это действие сотрет всю историю переписки."
-                        } else {
-                            "Are you sure you want to delete the chat with \"${chatToDelete}\"? This action will erase all message history."
+        if (activeMenuPeer != null) {
+            val peer = activeMenuPeer!!
+            val isPinned = peer.isPinned
+            val isMuted = sharedPrefs.getBoolean("mute_notifications_${peer.name}", false)
+            val isBlocked = sharedPrefs.getBoolean("blocked_peer_${peer.name}", false)
+
+            Dialog(
+                onDismissRequest = { activeMenuPeer = null },
+                properties = DialogProperties(usePlatformDefaultWidth = true)
+            ) {
+                var animateIn by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) {
+                    animateIn = true
+                }
+
+                val scale by animateFloatAsState(
+                    targetValue = if (animateIn) 1f else 0.85f,
+                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                )
+                val opacity by animateFloatAsState(
+                    targetValue = if (animateIn) 1f else 0f,
+                    animationSpec = tween(200)
+                )
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            alpha = opacity
                         }
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        val name = chatToDelete
-                        if (name != null) {
-                            com.example.twopchat.P2PMessageRelay.deleteChat(context, name)
+                        .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier.size(40.dp)) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
+                                    ) {
+                                        val avatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[peer.name]
+                                        if (avatarBitmap != null) {
+                                            Image(
+                                                bitmap = avatarBitmap.asImageBitmap(),
+                                                contentDescription = "Avatar",
+                                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                            )
+                                        } else if (peer.initials == "🔖") {
+                                            Icon(
+                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_saved_messages),
+                                                contentDescription = "Saved Messages",
+                                                tint = primaryColor,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        } else {
+                                            Text(
+                                                text = peer.initials,
+                                                color = primaryColor,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = peer.name,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = onSurfaceColor
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    val statusText = if (peer.name == Localizations.getString("saved_messages_title", appLanguage)) {
+                                        if (appLanguage == "Русский") "Личное облако" else "Personal storage"
+                                    } else {
+                                        val isOnline = com.example.twopchat.P2PMessageRelay.peerSessionStates[peer.name] == true
+                                        if (isOnline) {
+                                            if (appLanguage == "Русский") "В сети" else "Online"
+                                        } else {
+                                            if (appLanguage == "Русский") "Не в сети" else "Offline"
+                                        }
+                                    }
+                                    Text(
+                                        text = statusText,
+                                        fontSize = 11.sp,
+                                        color = if (peer.name != Localizations.getString("saved_messages_title", appLanguage) && com.example.twopchat.P2PMessageRelay.peerSessionStates[peer.name] == true) primaryColor else onSurfaceVariant
+                                    )
+                                }
+                            }
+                            IconButton(onClick = { activeMenuPeer = null }) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = onSurfaceVariant)
+                            }
                         }
-                        chatToDelete = null
-                    }) {
-                        Text(if (appLanguage == "Русский") "Удалить" else "Delete", color = Color.Red)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { chatToDelete = null }) {
-                        Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
+
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.08f), thickness = 0.5.dp)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Menu Options
+                        DialogOptionRow(
+                            iconRes = com.example.twopchat.R.drawable.ic_pin,
+                            label = if (isPinned) {
+                                if (appLanguage == "Русский") "Открепить чат" else "Unpin Chat"
+                            } else {
+                                if (appLanguage == "Русский") "Закрепить чат" else "Pin Chat"
+                            },
+                            textColor = onSurfaceColor,
+                            iconTint = primaryColor,
+                            onClick = {
+                                sharedPrefs.edit().putBoolean("pinned_chat_${peer.name}", !isPinned).apply()
+                                chatListRevision++
+                                activeMenuPeer = null
+                            }
+                        )
+
+                        if (peer.name != Localizations.getString("saved_messages_title", appLanguage)) {
+                            DialogOptionRow(
+                                label = if (isMuted) {
+                                    if (appLanguage == "Русский") "Включить уведомления" else "Unmute Notifications"
+                                } else {
+                                    if (appLanguage == "Русский") "Выключить уведомления" else "Mute Notifications"
+                                },
+                                textColor = onSurfaceColor,
+                                iconTint = primaryColor,
+                                iconRes = if (isMuted) com.example.twopchat.R.drawable.ic_notifications else com.example.twopchat.R.drawable.ic_notifications_off,
+                                onClick = {
+                                    sharedPrefs.edit().putBoolean("mute_notifications_${peer.name}", !isMuted).apply()
+                                    chatListRevision++
+                                    activeMenuPeer = null
+                                }
+                            )
+                        }
+
+                        DialogOptionRow(
+                            label = if (appLanguage == "Русский") "Очистить историю" else "Clear History",
+                            textColor = Color.Red,
+                            iconTint = Color.Red,
+                            iconRes = com.example.twopchat.R.drawable.ic_broom,
+                            onClick = {
+                                val db = ChatDatabaseHelper.getInstance(context)
+                                db.clearMessagesForPeer(peer.name)
+                                sharedPrefs.edit().remove("last_msg_${peer.name}").apply()
+                                chatListRevision++
+                                activeMenuPeer = null
+                                Toast.makeText(context, if (appLanguage == "Русский") "История очищена" else "History cleared", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+
+                        if (peer.name != Localizations.getString("saved_messages_title", appLanguage)) {
+                            DialogOptionRow(
+                                label = if (isBlocked) {
+                                    if (appLanguage == "Русский") "Разблокировать" else "Unblock"
+                                } else {
+                                    if (appLanguage == "Русский") "Заблокировать" else "Block"
+                                },
+                                textColor = if (isBlocked) primaryColor else Color.Red,
+                                iconTint = if (isBlocked) primaryColor else Color.Red,
+                                iconRes = com.example.twopchat.R.drawable.ic_block,
+                                onClick = {
+                                    sharedPrefs.edit().putBoolean("blocked_peer_${peer.name}", !isBlocked).apply()
+                                    chatListRevision++
+                                    activeMenuPeer = null
+                                    val toastMsg = if (isBlocked) {
+                                        if (appLanguage == "Русский") "Пользователь разблокирован" else "User unblocked"
+                                    } else {
+                                        if (appLanguage == "Русский") "Пользователь заблокирован" else "User blocked"
+                                    }
+                                    Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
+
+                        if (peer.name != Localizations.getString("saved_messages_title", appLanguage)) {
+                            DialogOptionRow(
+                                iconRes = com.example.twopchat.R.drawable.ic_delete,
+                                label = if (appLanguage == "Русский") "Удалить чат" else "Delete Chat",
+                                textColor = Color.Red,
+                                iconTint = Color.Red,
+                                onClick = {
+                                    com.example.twopchat.P2PMessageRelay.deleteChat(context, peer.name)
+                                    chatListRevision++
+                                    activeMenuPeer = null
+                                    Toast.makeText(context, if (appLanguage == "Русский") "Чат удален" else "Chat deleted", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
                     }
                 }
-            )
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+
+@Composable
+fun DialogOptionRow(
+    label: String,
+    textColor: Color,
+    iconTint: Color,
+    onClick: () -> Unit,
+    iconRes: Int? = null,
+    emoji: String? = null,
+    iconSize: Dp = 18.dp
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(vertical = 12.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (iconRes != null) {
+                Icon(
+                    painter = painterResource(id = iconRes),
+                    contentDescription = label,
+                    tint = iconTint,
+                    modifier = Modifier.size(iconSize)
+                )
+            } else if (emoji != null) {
+                Text(text = emoji, fontSize = 16.sp)
+            }
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = label,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            color = textColor
+        )
     }
 }
 

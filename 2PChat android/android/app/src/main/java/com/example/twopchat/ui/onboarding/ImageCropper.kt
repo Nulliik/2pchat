@@ -7,8 +7,12 @@ import android.widget.Toast
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +28,8 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.io.File
@@ -39,6 +45,9 @@ fun ImageCropper(
     appLanguage: String
 ) {
     val context = LocalContext.current
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val surfaceColor = MaterialTheme.colorScheme.surface
+
     val sourceBitmap = remember(imageUri) {
         try {
             val inputStream = context.contentResolver.openInputStream(imageUri)
@@ -90,8 +99,8 @@ fun ImageCropper(
                         val scaledW = imageWidth * fitScale * newScale
                         val scaledH = imageHeight * fitScale * newScale
                         
-                        val maxOffsetX = max(0f, scaledW / 2f - cropRadiusPx)
-                        val maxOffsetY = max(0f, scaledH / 2f - cropRadiusPx)
+                        val maxOffsetX = max(0f, (scaledW - cropDiameter) / 2f)
+                        val maxOffsetY = max(0f, (scaledH - cropDiameter) / 2f)
 
                         userScale = newScale
                         userOffset = Offset(
@@ -102,10 +111,15 @@ fun ImageCropper(
                 },
             contentAlignment = Alignment.Center
         ) {
+            val density = LocalDensity.current
+            val imageWidthDp = with(density) { imageWidth.toDp() }
+            val imageHeightDp = with(density) { imageHeight.toDp() }
+
             Image(
                 bitmap = sourceBitmap.asImageBitmap(),
                 contentDescription = null,
                 modifier = Modifier
+                    .requiredSize(imageWidthDp, imageHeightDp)
                     .graphicsLayer {
                         scaleX = fitScale * userScale
                         scaleY = fitScale * userScale
@@ -175,22 +189,33 @@ fun ImageCropper(
             }
         }
 
-        // Top control buttons (Header)
+        // Top control buttons (Header Toolbar)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .height(64.dp)
+                .background(Color.Black.copy(alpha = 0.4f))
+                .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
                 onClick = onCancel,
-                colors = IconButtonDefaults.iconButtonColors(containerColor = Color.Black.copy(alpha = 0.5f))
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(Color.White.copy(alpha = 0.1f), CircleShape)
             ) {
-                Text("✕", color = Color.White, fontSize = 20.sp)
+                Text("✕", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
 
-            TextButton(
+            Text(
+                text = if (appLanguage == "Русский") "Фото профиля" else "Profile Photo",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Button(
                 onClick = {
                     // Compose cropped matrix
                     val targetSize = 512
@@ -235,14 +260,39 @@ fun ImageCropper(
                         Toast.makeText(context, "Failed to crop image", Toast.LENGTH_SHORT).show()
                     }
                 },
-                colors = ButtonDefaults.textButtonColors(containerColor = Color.Black.copy(alpha = 0.5f))
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = primaryColor,
+                    contentColor = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White
+                ),
+                shape = RoundedCornerShape(20.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)
             ) {
                 Text(
                     text = if (appLanguage == "Русский") "Готово" else "Done",
-                    color = Color.White,
-                    fontSize = 16.sp
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
+        }
+
+        // Bottom instruction tip
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 32.dp)
+                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Text(
+                text = if (appLanguage == "Русский") {
+                    "Перетаскивайте для перемещения, сжимайте для масштабирования"
+                } else {
+                    "Drag to pan, pinch to zoom"
+                },
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }

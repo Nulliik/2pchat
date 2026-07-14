@@ -349,6 +349,10 @@ object P2PMessageRelay {
                 override fun onMessageReceived(sender: String, text: String) {
                     log(appContext, "Incoming secure P2P message (${text.toByteArray().size} bytes)")
                     val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+                    if (sharedPrefs.getBoolean("blocked_peer_$sender", false)) {
+                        log(appContext, "Ignored message from blocked peer $sender")
+                        return
+                    }
                     try {
                         val trimmed = text.trim()
                         if (trimmed.startsWith("{")) {
