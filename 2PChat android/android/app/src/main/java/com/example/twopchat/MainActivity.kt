@@ -374,7 +374,7 @@ fun PasscodeUnlockScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(StealthBlack) // Always dark/secure background for lock screens
+            .background(MaterialTheme.colorScheme.background)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
@@ -401,7 +401,7 @@ fun PasscodeUnlockScreen(
                 text = Localizations.getString("unlock_app", appLanguage),
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = onSurfaceColor
             )
             Text(
                 text = if (lockoutTimeRemaining > 0) {
@@ -413,7 +413,7 @@ fun PasscodeUnlockScreen(
                     Localizations.getString("enter_pin_to_unlock", appLanguage)
                 },
                 fontSize = 14.sp,
-                color = if (lockoutTimeRemaining > 0 || showError) Color.Red else Color.LightGray
+                color = if (lockoutTimeRemaining > 0 || showError) Color.Red else onSurfaceColor.copy(alpha = 0.6f)
             )
         }
 
@@ -458,8 +458,8 @@ fun PasscodeUnlockScreen(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier
                                 .size(72.dp)
-                                .background(Color.White.copy(alpha = 0.05f), shape = CircleShape)
-                                .border(0.5.dp, Color.White.copy(alpha = 0.1f), CircleShape)
+                                .background(onSurfaceColor.copy(alpha = 0.05f), shape = CircleShape)
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.1f), CircleShape)
                                 .clickable {
                                     if (lockoutTimeRemaining > 0) return@clickable
                                     showError = false
@@ -505,7 +505,7 @@ fun PasscodeUnlockScreen(
                                 text = digit,
                                 fontSize = 24.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color.White
+                                color = onSurfaceColor
                             )
                         }
                     }

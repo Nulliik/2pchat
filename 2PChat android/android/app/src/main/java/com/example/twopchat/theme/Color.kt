@@ -29,3 +29,13 @@ val CardLight = Color(0xFFE2E7EC) // Text fields / secondary buttons background
 val MintGreenLight = Color(0xFF008F6B) // Deep emerald mint green
 val CeruleanBlueLight = Color(0xFF007AFF) // Deep iOS blue
 
+// Premium Tinted Darks for Mint Green theme
+val DarkBgMint = Color(0xFF080C0A) // Extremely dark forest green/black
+val DarkSurfaceMint = Color(0xFF111A16) // Deep pine tinted dark grey
+val DarkSurfaceVariantMint = Color(0xFF16221D) // Slightly lighter pine tinted dark grey
+
+// Premium Tinted Darks for Cerulean Blue theme
+val DarkBgBlue = Color(0xFF08090E) // Extremely dark navy/black
+val DarkSurfaceBlue = Color(0xFF10141F) // Deep navy tinted dark grey
+val DarkSurfaceVariantBlue = Color(0xFF151A29) // Slightly lighter navy tinted dark grey
+

@@ -5,6 +5,13 @@ import android.content.pm.PackageManager
 import android.widget.Toast
 import android.content.Intent
 import android.net.VpnService
+import android.util.LruCache
+import android.content.ContentValues
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.media.MediaScannerConnection
+import java.io.FileInputStream
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import androidx.core.content.edit
 import com.example.twopchat.data.ChatDatabaseHelper
@@ -198,12 +205,49 @@ fun ChatScreen(
     }
     
     val coroutineScope = rememberCoroutineScope()
+    val screenInitTime = remember { System.currentTimeMillis() }
     val listState = rememberLazyListState()
+    val showScrollDownButton by remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            val visibleItems = layoutInfo.visibleItemsInfo
+            if (visibleItems.isEmpty()) {
+                false
+            } else {
+                val lastVisibleItem = visibleItems.last()
+                val totalItems = layoutInfo.totalItemsCount
+                totalItems - 1 - lastVisibleItem.index >= 5
+            }
+        }
+    }
     val context = LocalContext.current
+    var pendingDownloadPath by remember { mutableStateOf<String?>(null) }
+
+    val galleryWritePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        val path = pendingDownloadPath
+        if (isGranted && path != null) {
+            coroutineScope.launch(Dispatchers.IO) {
+                val uri = saveImageToPublicGallery(context, path)
+                withContext(Dispatchers.Main) {
+                    if (uri != null) {
+                        Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        } else if (path != null) {
+            Toast.makeText(context, if (appLanguage == "Русский") "Разрешение на запись отклонено" else "Storage permission denied", Toast.LENGTH_SHORT).show()
+        }
+        pendingDownloadPath = null
+    }
     val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
     var pinnedMsgId by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_id_${peerName}", null)) }
     var pinnedMsgText by remember(peerName) { mutableStateOf(SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
     var pinnedMsgSender by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_sender_${peerName}", null)) }
+    var pinnedBy by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_by_${peerName}", null)) }
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
     var isVerified by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("verified_peer_${peerName}", false)) }
     var showVerifyDialog by remember { mutableStateOf(false) }
@@ -488,10 +532,12 @@ fun ChatScreen(
                         putString("pinned_msg_id_${peerName}", msgId)
                         putString("pinned_msg_text_${peerName}", SecureStorage.encrypt(text))
                         putString("pinned_msg_sender_${peerName}", if (isFromSender) peerName else "You")
+                        putString("pinned_by_${peerName}", peerName)
                     }
                     pinnedMsgId = msgId
                     pinnedMsgText = text
                     pinnedMsgSender = if (isFromSender) peerName else "You"
+                    pinnedBy = peerName
                 }
             }
 
@@ -501,10 +547,12 @@ fun ChatScreen(
                         remove("pinned_msg_id_${peerName}")
                         remove("pinned_msg_text_${peerName}")
                         remove("pinned_msg_sender_${peerName}")
+                        remove("pinned_by_${peerName}")
                     }
                     pinnedMsgId = null
                     pinnedMsgText = null
                     pinnedMsgSender = null
+                    pinnedBy = null
                 }
             }
         }
@@ -1091,8 +1139,14 @@ fun ChatScreen(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
+                        val pinnedByText = if (pinnedBy == "You") {
+                            if (appLanguage == "Русский") "Вы закрепили сообщение" else "You pinned a message"
+                        } else {
+                            val name = pinnedBy ?: peerName
+                            if (appLanguage == "Русский") "$name закрепил(а) сообщение" else "$name pinned a message"
+                        }
                         Text(
-                            text = if (appLanguage == "Русский") "Закреплённое сообщение" else "Pinned Message",
+                            text = pinnedByText,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = primaryColor
@@ -1111,10 +1165,12 @@ fun ChatScreen(
 remove("pinned_msg_id_${peerName}")
                                 remove("pinned_msg_text_${peerName}")
                                 remove("pinned_msg_sender_${peerName}")
+                                remove("pinned_by_${peerName}")
                             }
                             pinnedMsgId = null
                             pinnedMsgText = null
                             pinnedMsgSender = null
+                            pinnedBy = null
                             P2PMessageRelay.sendUnpinMessage(context, peerName)
                         },
                         modifier = Modifier.size(24.dp)
@@ -1125,15 +1181,19 @@ remove("pinned_msg_id_${peerName}")
             }
 
             // Messages List
-            LazyColumn(
-                state = listState,
+            Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
             ) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
+                ) {
                 if (isSearchMode && searchQuery.isNotEmpty()) {
                     item {
                         val count = initialMessages.count { msg ->
@@ -1165,15 +1225,16 @@ remove("pinned_msg_id_${peerName}")
                     key = { _, msg -> msg.id }
                 ) { index, msg ->
                     val visibleState = remember(msg.id) {
-                        MutableTransitionState(false).apply {
+                        val isNew = msg.sentAtEpochMs > screenInitTime + 500L
+                        MutableTransitionState(if (isNew) false else true).apply {
                             targetState = true
                         }
                     }
                     val alignment = if (msg.isMe) Alignment.End else Alignment.Start
                     val bubbleShape = if (msg.isMe) {
-                        RoundedCornerShape(20.dp, 20.dp, 4.dp, 20.dp)
+                        RoundedCornerShape(18.dp, 18.dp, 2.dp, 18.dp)
                     } else {
-                        RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp)
+                        RoundedCornerShape(18.dp, 18.dp, 18.dp, 2.dp)
                     }
 
                     // Gradient for outgoing bubbles; solid surface for incoming
@@ -1196,7 +1257,7 @@ remove("pinned_msg_id_${peerName}")
                         if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
                     } else onSurfaceColor
 
-                    AnimatedVisibility(
+                    androidx.compose.animation.AnimatedVisibility(
                         visibleState = visibleState,
                         enter = fadeIn(animationSpec = tween(220)) + slideInVertically(
                             initialOffsetY = { it / 5 },
@@ -1267,7 +1328,7 @@ remove("pinned_msg_id_${peerName}")
                                                 }
                                             )
                                             // Subtle border for incoming bubbles
-                                            .then(if (!msg.isMe) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.05f), bubbleShape) else Modifier)
+                                            .then(if (!msg.isMe) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.08f), bubbleShape) else Modifier)
                                             .padding(horizontal = 16.dp, vertical = 11.dp)
                                             .widthIn(max = 280.dp)
                                     ) {
@@ -1568,6 +1629,38 @@ remove("pinned_msg_id_${peerName}")
                 }
             }
 
+            // Scroll To Bottom Button
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showScrollDownButton,
+                enter = scaleIn(animationSpec = tween(200)) + fadeIn(animationSpec = tween(200)),
+                exit = scaleOut(animationSpec = tween(200)) + fadeOut(animationSpec = tween(200)),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 16.dp)
+            ) {
+                IconButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            if (initialMessages.isNotEmpty()) {
+                                listState.animateScrollToItem(initialMessages.size - 1)
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .size(38.dp)
+                        .background(Color(0xFF1E2226).copy(alpha = 0.76f), CircleShape)
+                        .border(width = 0.5.dp, color = Color.White.copy(alpha = 0.08f), shape = CircleShape)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_scroll_down),
+                        contentDescription = "Scroll Down",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
             // Input Bar & Action Triggers
             Column(
                 modifier = Modifier
@@ -1686,13 +1779,15 @@ remove("pinned_msg_id_${peerName}")
                                     initialMessages.remove(msg)
                                     if (msg.id == pinnedMsgId) {
                                         sharedPrefs.edit {
-remove("pinned_msg_id_${peerName}")
+                                            remove("pinned_msg_id_${peerName}")
                                             remove("pinned_msg_text_${peerName}")
                                             remove("pinned_msg_sender_${peerName}")
-                            }
+                                            remove("pinned_by_${peerName}")
+                                        }
                                         pinnedMsgId = null
                                         pinnedMsgText = null
                                         pinnedMsgSender = null
+                                        pinnedBy = null
                                         P2PMessageRelay.sendUnpinMessage(context, peerName)
                                     }
                                 }
@@ -2015,10 +2110,12 @@ remove("pinned_msg_id_${peerName}")
                                         putString("pinned_msg_id_${peerName}", msg.id)
                                         putString("pinned_msg_text_${peerName}", SecureStorage.encrypt(msg.text))
                                         putString("pinned_msg_sender_${peerName}", if (msg.isMe) "You" else peerName)
+                                        putString("pinned_by_${peerName}", "You")
                             }
                                     pinnedMsgId = msg.id
                                     pinnedMsgText = msg.text
                                     pinnedMsgSender = if (msg.isMe) "You" else peerName
+                                    pinnedBy = "You"
                                     P2PMessageRelay.sendPinMessage(context, peerName, msg.id, msg.text, msg.isMe)
                                     selectedMessageForOptions = null
                                 }
@@ -2066,6 +2163,54 @@ remove("pinned_msg_id_${peerName}")
                             )
                         }
 
+                        // Save Image (Only if attachmentType is IMAGE)
+                        if (msg.attachmentType == "IMAGE" && msg.attachmentUri != null) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        val path = msg.attachmentUri
+                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                                            ContextCompat.checkSelfPermission(
+                                                context,
+                                                Manifest.permission.WRITE_EXTERNAL_STORAGE
+                                            ) == PackageManager.PERMISSION_GRANTED
+                                        ) {
+                                            coroutineScope.launch(Dispatchers.IO) {
+                                                val uri = saveImageToPublicGallery(context, path)
+                                                withContext(Dispatchers.Main) {
+                                                    if (uri != null) {
+                                                        Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            pendingDownloadPath = path
+                                            galleryWritePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                                        }
+                                        selectedMessageForOptions = null
+                                    }
+                                    .padding(vertical = 12.dp, horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_download),
+                                    contentDescription = "Save Image",
+                                    tint = onSurfaceColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Text(
+                                    text = if (appLanguage == "Русский") "Скачать изображение" else "Save Image",
+                                    fontSize = 15.sp,
+                                    color = onSurfaceColor
+                                )
+                            }
+                        }
+
                         // Forward
                         Row(
                             modifier = Modifier
@@ -2106,10 +2251,12 @@ remove("pinned_msg_id_${peerName}")
 remove("pinned_msg_id_${peerName}")
                                             remove("pinned_msg_text_${peerName}")
                                             remove("pinned_msg_sender_${peerName}")
-                            }
+                                            remove("pinned_by_${peerName}")
+                                        }
                                         pinnedMsgId = null
                                         pinnedMsgText = null
                                         pinnedMsgSender = null
+                                        pinnedBy = null
                                         P2PMessageRelay.sendUnpinMessage(context, peerName)
                                     }
                                     selectedMessageForOptions = null
@@ -2592,6 +2739,7 @@ remove("pinned_msg_id_${peerName}")
         activeFullscreenImageUri?.let { uri ->
             FullscreenImageViewer(
                 imagePath = uri,
+                appLanguage = appLanguage,
                 onClose = { activeFullscreenImageUri = null }
             )
         }
@@ -2652,11 +2800,27 @@ data class AttachmentItem(
     val bgColor: Color
 )
 
+object AttachmentImageCache {
+    private val cacheSize = (Runtime.getRuntime().maxMemory() / 1024 / 8).toInt()
+    private val cache = object : LruCache<String, Bitmap>(cacheSize) {
+        override fun sizeOf(key: String, value: Bitmap): Int {
+            return value.byteCount / 1024
+        }
+    }
+
+    fun get(key: String): Bitmap? = cache.get(key)
+    fun put(key: String, bitmap: Bitmap) {
+        cache.put(key, bitmap)
+    }
+}
+
 @Composable
 fun rememberSampledImage(filePath: String?, targetWidth: Int = 400, targetHeight: Int = 400): Bitmap? {
-    var bitmapState by remember(filePath) { mutableStateOf<Bitmap?>(null) }
+    if (filePath == null) return null
+    val cached = AttachmentImageCache.get(filePath)
+    var bitmapState by remember(filePath) { mutableStateOf<Bitmap?>(cached) }
     LaunchedEffect(filePath) {
-        if (filePath == null) return@LaunchedEffect
+        if (bitmapState != null) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             try {
                 val file = java.io.File(filePath)
@@ -2669,7 +2833,10 @@ fun rememberSampledImage(filePath: String?, targetWidth: Int = 400, targetHeight
                     options.inJustDecodeBounds = false
                     val decoded = BitmapFactory.decodeFile(filePath, options)
                     if (decoded != null) {
-                        bitmapState = decoded
+                        AttachmentImageCache.put(filePath, decoded)
+                        withContext(Dispatchers.Main) {
+                            bitmapState = decoded
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -2698,10 +2865,32 @@ fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeig
 @Composable
 fun FullscreenImageViewer(
     imagePath: String,
+    appLanguage: String,
     onClose: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            scope.launch(Dispatchers.IO) {
+                val uri = saveImageToPublicGallery(context, imagePath)
+                withContext(Dispatchers.Main) {
+                    if (uri != null) {
+                        Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        } else {
+            Toast.makeText(context, if (appLanguage == "Русский") "Разрешение на запись отклонено" else "Storage permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
     
     val state = rememberTransformableState { zoomChange, offsetChange, _ ->
         scale = (scale * zoomChange).coerceIn(1f, 5f)
@@ -2766,6 +2955,42 @@ fun FullscreenImageViewer(
                 modifier = Modifier.size(20.dp)
             )
         }
+
+        // Download Button
+        IconButton(
+            onClick = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    ) == PackageManager.PERMISSION_GRANTED
+                ) {
+                    scope.launch(Dispatchers.IO) {
+                        val uri = saveImageToPublicGallery(context, imagePath)
+                        withContext(Dispatchers.Main) {
+                            if (uri != null) {
+                                Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } else {
+                    launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 40.dp, end = 16.dp)
+                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+        ) {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_download),
+                contentDescription = "Download",
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 
@@ -2790,4 +3015,70 @@ fun getVerificationEmojis(localFingerprint: String, peerFingerprint: String): Li
         result.add(emojiList[index])
     }
     return result
+}
+
+fun saveImageToPublicGallery(context: android.content.Context, filePath: String): Uri? {
+    val srcFile = File(filePath)
+    if (!srcFile.exists()) return null
+
+    val extension = srcFile.extension.lowercase()
+    val mimeType = when (extension) {
+        "png" -> "image/png"
+        "webp" -> "image/webp"
+        "gif" -> "image/gif"
+        "bmp" -> "image/x-ms-bmp"
+        else -> "image/jpeg"
+    }
+    val fileName = "2pchat_${System.currentTimeMillis()}.${if (extension.isNotEmpty()) extension else "jpg"}"
+
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + File.separator + "2PChat")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+
+            val imageUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+            if (imageUri != null) {
+                resolver.openOutputStream(imageUri).use { outputStream ->
+                    if (outputStream != null) {
+                        FileInputStream(srcFile).use { inputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
+                    }
+                }
+                contentValues.clear()
+                contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(imageUri, contentValues, null, null)
+                return imageUri
+            }
+        } else {
+            val targetDir = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                "2PChat"
+            )
+            if (!targetDir.exists()) {
+                targetDir.mkdirs()
+            }
+            val targetFile = File(targetDir, fileName)
+            FileOutputStream(targetFile).use { outputStream ->
+                FileInputStream(srcFile).use { inputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+            MediaScannerConnection.scanFile(
+                context,
+                arrayOf(targetFile.absolutePath),
+                arrayOf(mimeType),
+                null
+            )
+            return Uri.fromFile(targetFile)
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    return null
 }

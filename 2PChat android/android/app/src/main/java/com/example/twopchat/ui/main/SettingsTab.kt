@@ -990,7 +990,7 @@ fun SettingsTab(
 
         Spacer(modifier = Modifier.height(24.dp))
         Text(
-            text = "V 1.0.1",
+            text = "1.0.2",
             fontSize = 12.sp,
             color = onSurfaceVariant.copy(alpha = 0.5f),
             fontWeight = FontWeight.Medium,

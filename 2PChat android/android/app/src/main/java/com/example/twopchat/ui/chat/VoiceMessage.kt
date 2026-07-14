@@ -16,6 +16,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.material3.SliderDefaults
+import com.example.twopchat.theme.StealthBlack
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -135,6 +138,22 @@ fun VoiceMessagePlayer(
         modifier = Modifier.widthIn(min = 220.dp, max = 280.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val playBtnBg = if (isMine) {
+            if (primaryColor.luminance() > 0.5f) {
+                StealthBlack
+            } else {
+                Color.White
+            }
+        } else {
+            primaryColor
+        }
+
+        val playBtnIconTint = if (isMine) {
+            primaryColor
+        } else {
+            if (primaryColor.luminance() > 0.5f) StealthBlack else Color.White
+        }
+
         IconButton(
             onClick = {
                 if (filePath.isNullOrBlank()) return@IconButton
@@ -163,17 +182,22 @@ fun VoiceMessagePlayer(
             },
             modifier = Modifier
                 .size(42.dp)
-                .background(if (isMine) Color.White.copy(alpha = 0.2f) else primaryColor.copy(alpha = 0.14f), CircleShape),
+                .background(playBtnBg, CircleShape),
         ) {
             Icon(
                 painter = painterResource(if (isPlaying) R.drawable.ic_voice_pause else R.drawable.ic_voice_play),
                 contentDescription = if (isPlaying) "Pause voice message" else "Play voice message",
-                tint = contentColor,
+                tint = playBtnIconTint,
                 modifier = Modifier.size(20.dp),
             )
         }
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
+            val themeColor = if (isMine) {
+                if (primaryColor.luminance() > 0.5f) StealthBlack else Color.White
+            } else {
+                primaryColor
+            }
             Slider(
                 value = position.coerceAtMost(duration).toFloat(),
                 onValueChange = { value ->
@@ -182,6 +206,11 @@ fun VoiceMessagePlayer(
                 },
                 valueRange = 0f..duration.coerceAtLeast(1).toFloat(),
                 modifier = Modifier.height(28.dp),
+                colors = SliderDefaults.colors(
+                    thumbColor = themeColor,
+                    activeTrackColor = themeColor,
+                    inactiveTrackColor = themeColor.copy(alpha = 0.24f)
+                )
             )
             Text(
                 text = VoiceMessageSupport.formatDuration(if (isPlaying) position else duration),
