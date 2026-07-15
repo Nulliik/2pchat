@@ -5,7 +5,7 @@
 | Пункт | Результат проверки | Действие |
 |---|---|---|
 | P2P-1 | Частично устарел: relay уже делегировал отправку, maintenance, avatar cache и notifications отдельным классам | Границы компонентов сохранены и расширены; LAN discovery и foreground lifecycle вынесены отдельно |
-| P2P-2 | Подтверждён как долг по сопровождаемости, но не как самостоятельный runtime-баг | Состояние и media/attachment composables уже разделены; дальнейшее дробление большого layout следует делать отдельными UI-изменениями со screenshot tests |
+| P2P-2 | Подтверждён как долг по сопровождаемости, но не как самостоятельный runtime-баг | `ChatScreen` разделён на header, message list, input bar, attachment panel, media viewers и swipe-to-reply; экран оставляет за собой orchestration и диалоги |
 | P2P-3 | Подтверждён для сообщений, ввода, reply/edit/selection | Добавлен `ChatScreenViewModel`; важное состояние переживает configuration change |
 | AND-1 | Уже исправлен до аудита | История загружается через `Dispatchers.IO`; остальные DB writes переведены в background helper |
 | AND-2 | Подтверждён | Bitmap и временные потоки освобождаются в `finally`/`use` |

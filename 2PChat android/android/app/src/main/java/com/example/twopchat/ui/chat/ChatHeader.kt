@@ -1,0 +1,254 @@
+package com.example.twopchat.ui.chat
+
+import android.widget.Toast
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.R
+import com.example.twopchat.data.Localizations
+
+@Composable
+internal fun ChatHeader(
+    peerName: String,
+    appLanguage: String,
+    isSearchMode: Boolean,
+    searchQuery: String,
+    isVerified: Boolean,
+    isMuted: Boolean,
+    activeFingerprint: String,
+    localFingerprint: String,
+    primaryColor: Color,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
+    onSurfaceVariant: Color,
+    onBack: () -> Unit,
+    onSearchModeChange: (Boolean) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+    onShowProfile: () -> Unit,
+    onVerify: () -> Unit,
+    onReconnect: () -> Unit,
+    onToggleMuted: (Boolean) -> Unit,
+    onClearHistory: () -> Unit,
+    onDeleteChat: () -> Unit,
+) {
+    val context = LocalContext.current
+    var showMenu by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (isSearchMode) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(surfaceColor)
+                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = {
+                onSearchModeChange(false)
+                onSearchQueryChange("")
+            }) {
+                Icon(
+                    painterResource(R.drawable.ic_back_arrow),
+                    contentDescription = "Close search",
+                    tint = onSurfaceColor,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                placeholder = {
+                    Text(
+                        if (appLanguage == "Русский") "Поиск по сообщениям..." else "Search messages...",
+                        color = onSurfaceVariant,
+                        fontSize = 14.sp,
+                    )
+                },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = primaryColor,
+                    unfocusedBorderColor = onSurfaceColor.copy(alpha = 0.2f),
+                    cursorColor = primaryColor,
+                    focusedTextColor = onSurfaceColor,
+                    unfocusedTextColor = onSurfaceColor,
+                ),
+                textStyle = TextStyle(fontSize = 14.sp),
+                shape = RoundedCornerShape(24.dp),
+            )
+            if (searchQuery.isNotEmpty()) {
+                IconButton(onClick = { onSearchQueryChange("") }) {
+                    Text("×", fontSize = 22.sp, color = onSurfaceVariant, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        return
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(surfaceColor)
+            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f))
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier.background(onSurfaceColor.copy(alpha = 0.03f), CircleShape),
+        ) {
+            Icon(painterResource(R.drawable.ic_back_arrow), "Back", tint = onSurfaceColor, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        val savedMessages = peerName == "Saved Messages"
+        val displayName = if (savedMessages) Localizations.getString("saved_messages_title", appLanguage) else peerName
+        val initials = when {
+            savedMessages -> "🔖"
+            peerName.contains(" ") -> peerName.split(" ").joinToString("") { it.take(1) }
+            else -> peerName.take(2).uppercase()
+        }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(44.dp)
+                .background(primaryColor.copy(alpha = 0.1f), CircleShape)
+                .clickable(enabled = !savedMessages, onClick = onShowProfile),
+        ) {
+            val avatar = P2PMessageRelay.peerAvatars[peerName]
+            when {
+                avatar != null -> Image(avatar.asImageBitmap(), "Avatar", Modifier.fillMaxSize().clip(CircleShape))
+                savedMessages -> Icon(
+                    painterResource(R.drawable.ic_saved_messages),
+                    "Saved Messages",
+                    tint = primaryColor,
+                    modifier = Modifier.size(22.dp),
+                )
+                else -> Text(initials, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        val isMismatch = com.example.twopchat.P2PPreferences.prefs(context)
+            .getBoolean("fingerprint_mismatch_$peerName", false)
+        val shieldColor = when {
+            isMismatch -> Color(0xFFF44336)
+            isVerified -> Color(0xFF4CAF50)
+            else -> Color(0xFFFFC107)
+        }
+        Column(
+            modifier = Modifier.weight(1f).clickable(enabled = !savedMessages, onClick = onShowProfile),
+        ) {
+            Text(displayName, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = onSurfaceColor)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
+                if (!savedMessages) {
+                    Box(Modifier.size(6.dp).background(if (isOnline) primaryColor else onSurfaceVariant.copy(alpha = 0.4f), CircleShape))
+                    Spacer(Modifier.width(5.dp))
+                }
+                val status = when {
+                    savedMessages -> Localizations.getString("local_storage", appLanguage)
+                    !isOnline -> if (appLanguage == "Русский") "Не в сети" else "Offline"
+                    else -> {
+                        val transport = P2PMessageRelay.peerConnectionTransports[peerName]
+                            ?: if (appLanguage == "Русский") "маршрут определяется" else "detecting route"
+                        val rtt = P2PMessageRelay.peerRttMs[peerName]?.let { " • ${it}ms" }.orEmpty()
+                        if (appLanguage == "Русский") "В сети • $transport$rtt" else "Online • $transport$rtt"
+                    }
+                }
+                Text(status, fontSize = 11.sp, color = onSurfaceVariant)
+            }
+        }
+        if (!savedMessages) {
+            IconButton(
+                onClick = {
+                    if (activeFingerprint.isBlank() || localFingerprint.isBlank()) {
+                        Toast.makeText(
+                            context,
+                            if (appLanguage == "Русский") "Fingerprint ещё недоступен" else "Fingerprint is not available yet",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    } else onVerify()
+                },
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(painterResource(R.drawable.ic_shield_status), "Verify", tint = shieldColor, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.width(8.dp))
+        }
+        IconButton(onClick = { onSearchModeChange(true) }, modifier = Modifier.size(28.dp)) {
+            Icon(painterResource(R.drawable.ic_menu_search), "Search", tint = onSurfaceColor, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(4.dp))
+        Box {
+            IconButton(onClick = { showMenu = true }, modifier = Modifier.size(28.dp)) {
+                Text("⋮", fontSize = 18.sp, color = onSurfaceColor, fontWeight = FontWeight.Bold)
+            }
+            DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, modifier = Modifier.background(surfaceColor)) {
+                if (!savedMessages) {
+                    DropdownMenuItem(
+                        text = { Text(if (appLanguage == "Русский") "Переподключить соединение" else "Reconnect Connection", color = onSurfaceColor) },
+                        onClick = { showMenu = false; onReconnect() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(
+                            if (isMuted) {
+                                if (appLanguage == "Русский") "Включить уведомления" else "Unmute Notifications"
+                            } else if (appLanguage == "Русский") "Выключить уведомления" else "Mute Notifications",
+                            color = onSurfaceColor,
+                        ) },
+                        onClick = { showMenu = false; onToggleMuted(!isMuted) },
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text(if (appLanguage == "Русский") "Очистить историю" else "Clear History", color = Color.Red) },
+                    onClick = { showMenu = false; onClearHistory() },
+                )
+                if (!savedMessages) {
+                    DropdownMenuItem(
+                        text = { Text(if (appLanguage == "Русский") "Удалить чат" else "Delete Chat", color = Color.Red) },
+                        onClick = { showMenu = false; showDeleteDialog = true },
+                    )
+                }
+            }
+        }
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text(if (appLanguage == "Русский") "Удалить чат?" else "Delete chat?") },
+            text = { Text(
+                if (appLanguage == "Русский") "Вы уверены, что хотите полностью удалить этот чат? Все сообщения будут безвозвратно удалены."
+                else "Are you sure you want to delete this chat? All message history will be permanently lost.",
+            ) },
+            confirmButton = {
+                TextButton(onClick = { showDeleteDialog = false; onDeleteChat() }) {
+                    Text(if (appLanguage == "Русский") "Удалить" else "Delete", color = Color.Red)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
+                }
+            },
+        )
+    }
+}
