@@ -501,7 +501,7 @@ def resolve_peers(
             provider = get_discovery_provider(
                 tracker.discovery_scheme,
                 tracker_url=tracker.announce_url,
-                peer_port=50001,
+                peer_port=listener_port,
                 transport="direct"
             )
             result = await provider.resolve(nickname, shared_code)

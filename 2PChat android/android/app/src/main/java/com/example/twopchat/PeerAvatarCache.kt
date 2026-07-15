@@ -7,6 +7,11 @@ import android.os.Handler
 import android.os.Looper
 import androidx.compose.runtime.mutableStateMapOf
 import java.io.File
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.DataInputStream
+import java.io.DataOutputStream
+import java.security.MessageDigest
 import kotlin.concurrent.thread
 
 internal class PeerAvatarCache(
@@ -43,16 +48,82 @@ internal class PeerAvatarCache(
         val appContext = context.applicationContext
         thread(start = true, name = "LoadAvatarsThread") {
             try {
-                val files = File(appContext.filesDir, "avatars").listFiles().orEmpty()
+                val avatarDir = File(appContext.filesDir, AVATAR_DIRECTORY)
+                val files = avatarDir.listFiles().orEmpty()
                 for (file in files) {
-                    if (!file.isFile || !file.name.endsWith(".jpg")) continue
-                    val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: continue
-                    val peerName = file.name.substringBeforeLast(".jpg")
-                    Handler(Looper.getMainLooper()).post { put(peerName, bitmap) }
+                    if (!file.isFile) continue
+                    if (file.name.endsWith(ENCRYPTED_EXTENSION)) {
+                        loadEncrypted(file)?.let { (peerName, bitmap) ->
+                            Handler(Looper.getMainLooper()).post { put(peerName, bitmap) }
+                        }
+                    } else if (file.name.endsWith(LEGACY_EXTENSION)) {
+                        // One-time migration from old plaintext avatar files.
+                        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: continue
+                        val peerName = file.name.removeSuffix(LEGACY_EXTENSION)
+                        savePersisted(appContext, peerName, bitmap)
+                        if (!file.delete()) onError(IllegalStateException("Could not remove legacy avatar"))
+                        Handler(Looper.getMainLooper()).post { put(peerName, bitmap) }
+                    }
                 }
             } catch (error: Throwable) {
                 onError(error)
             }
         }
+    }
+
+    fun savePersisted(context: Context, peerName: String, bitmap: Bitmap) {
+        require(peerName.isNotBlank()) { "Peer name cannot be blank" }
+        val jpeg = ByteArrayOutputStream().use { output ->
+            check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)) { "Avatar encoding failed" }
+            output.toByteArray()
+        }
+        val nameBytes = peerName.toByteArray(Charsets.UTF_8)
+        require(nameBytes.size <= MAX_PEER_NAME_BYTES) { "Peer name is too long" }
+        val clear = ByteArrayOutputStream().use { bytes ->
+            DataOutputStream(bytes).use { output ->
+                output.writeInt(nameBytes.size)
+                output.write(nameBytes)
+                output.write(jpeg)
+            }
+            bytes.toByteArray()
+        }
+        val directory = File(context.filesDir, AVATAR_DIRECTORY).apply { mkdirs() }
+        avatarFile(directory, peerName).writeBytes(SecureStorage.encryptBytes(clear))
+    }
+
+    fun deletePersisted(context: Context, peerName: String) {
+        val directory = File(context.filesDir, AVATAR_DIRECTORY)
+        avatarFile(directory, peerName).delete()
+        // Clean up a legacy file without ever constructing a path from an untrusted name.
+        directory.listFiles().orEmpty()
+            .filter { it.isFile && it.name.endsWith(LEGACY_EXTENSION) }
+            .firstOrNull { it.name.removeSuffix(LEGACY_EXTENSION) == peerName }
+            ?.delete()
+    }
+
+    private fun loadEncrypted(file: File): Pair<String, Bitmap>? {
+        val clear = SecureStorage.decryptBytes(file.readBytes())
+        return DataInputStream(ByteArrayInputStream(clear)).use { input ->
+            val nameLength = input.readInt()
+            require(nameLength in 1..MAX_PEER_NAME_BYTES) { "Invalid encrypted avatar name" }
+            val peerName = String(ByteArray(nameLength).also(input::readFully), Charsets.UTF_8)
+            val image = input.readBytes()
+            val bitmap = BitmapFactory.decodeByteArray(image, 0, image.size) ?: return null
+            peerName to bitmap
+        }
+    }
+
+    private fun avatarFile(directory: File, peerName: String): File {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(peerName.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        return File(directory, "$digest$ENCRYPTED_EXTENSION")
+    }
+
+    private companion object {
+        const val AVATAR_DIRECTORY = "avatars"
+        const val ENCRYPTED_EXTENSION = ".avatar"
+        const val LEGACY_EXTENSION = ".jpg"
+        const val MAX_PEER_NAME_BYTES = 1024
     }
 }

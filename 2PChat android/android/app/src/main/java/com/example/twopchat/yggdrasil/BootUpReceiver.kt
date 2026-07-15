@@ -7,6 +7,8 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
+import com.example.twopchat.P2PRelayService
 
 class BootUpReceiver : BroadcastReceiver() {
 
@@ -19,6 +21,10 @@ class BootUpReceiver : BroadcastReceiver() {
             Log.w(TAG, "Wrong action: ${intent.action}")
             return
         }
+        ContextCompat.startForegroundService(
+            context,
+            Intent(context, P2PRelayService::class.java),
+        )
         val preferences = yggdrasilPrefs(context)
         if (!preferences.getBoolean(PREF_KEY_ENABLED, true)) {
             Log.i(TAG, "Yggdrasil disabled, not starting service")

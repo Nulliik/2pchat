@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import com.example.twopchat.data.ChatDatabaseHelper
+import com.example.twopchat.data.PendingControl
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -21,8 +22,8 @@ internal class P2POutboundMessenger(
             try {
                 val peerName = peerEndpoints.entries.firstOrNull { it.value == endpoint }?.key ?: "Direct Peer"
                 log(context, "Sending secure message via Python transport", "INFO", null)
-                val fingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                    .getString("peer_fingerprint_$peerName", null)
+                val fingerprint = P2PPreferences.prefs(context)
+                    .getString(P2PPreferences.peerFingerprint(peerName), null)
                 val success = PythonBridge.sendP2pMessage(peerName, endpoint, text, fingerprint)
                 log(context, "Secure message send: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
                 postResult(onResult, success)
@@ -54,8 +55,8 @@ internal class P2POutboundMessenger(
     ) {
         thread(start = true, name = "SecureFileSend") {
             try {
-                val fingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                    .getString("peer_fingerprint_$peerName", null)
+                val fingerprint = P2PPreferences.prefs(context)
+                    .getString(P2PPreferences.peerFingerprint(peerName), null)
                 log(context, "Sending secure file via Python transport to $peerName", "INFO", null)
                 val success = PythonBridge.sendP2pFile(peerName, endpoint, filePath, fingerprint, messageId)
                 log(context, "Sending file status to $peerName: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
@@ -70,9 +71,10 @@ internal class P2POutboundMessenger(
     fun reconnect(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
         thread(start = true, name = "PeerReconnect") {
             try {
-                val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                val endpoint = peerEndpoints[peerName] ?: prefs.getString("last_endpoint_$peerName", "").orEmpty()
-                val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
+                val prefs = P2PPreferences.prefs(context)
+                val endpoint = peerEndpoints[peerName]
+                    ?: prefs.getString(P2PPreferences.lastEndpoint(peerName), "").orEmpty()
+                val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null)
                 log(context, "Requesting reconnection for $peerName at endpoint '$endpoint'", "INFO", null)
                 postResult(onResult, PythonBridge.reconnectPeerSession(peerName, endpoint, fingerprint))
             } catch (error: Exception) {
@@ -89,11 +91,14 @@ internal class P2POutboundMessenger(
         })
     }
 
-    fun sendReadReceipt(context: Context, peerName: String, endpoint: String, messageId: String) {
-        sendSilently(context, peerName, endpoint, JSONObject().apply {
+    fun sendReadReceipt(context: Context, peerName: String, endpoint: String?, messageId: String) {
+        val controlId = "read:$messageId"
+        val payload = JSONObject().apply {
             put("type", "read_receipt")
             put("message_id", messageId)
-        })
+            put("control_id", controlId)
+        }
+        sendPersistedControl(context, peerName, endpoint, controlId, "read_receipt", payload, deleteAfterSend = true)
     }
 
     fun sendReaction(
@@ -115,15 +120,18 @@ internal class P2POutboundMessenger(
     fun sendEditMessage(
         context: Context,
         peerName: String,
-        endpoint: String,
+        endpoint: String?,
         messageId: String,
         newText: String
     ) {
-        sendSilently(context, peerName, endpoint, JSONObject().apply {
+        val controlId = "edit:$messageId"
+        val payload = JSONObject().apply {
             put("type", "edit_message")
             put("message_id", messageId)
             put("text", newText)
-        })
+            put("control_id", controlId)
+        }
+        sendPersistedControl(context, peerName, endpoint, controlId, "edit_message", payload, deleteAfterSend = false)
     }
 
     fun processOfflineQueue(context: Context, peerName: String, endpoint: String) {
@@ -135,8 +143,8 @@ internal class P2POutboundMessenger(
                 if (pending.isNotEmpty()) {
                     log(context, "Processing ${pending.size} pending offline messages for $peerName", "INFO", null)
                 }
-                val fingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                    .getString("peer_fingerprint_$peerName", null)
+                val fingerprint = P2PPreferences.prefs(context)
+                    .getString(P2PPreferences.peerFingerprint(peerName), null)
                 for (message in pending) {
                     val payload = if (message.replyToId != null) JSONObject().apply {
                         put("type", "reply")
@@ -162,6 +170,7 @@ internal class P2POutboundMessenger(
                         onMessageStatusChanged(peerName, message.id, "SENT")
                     }
                 }
+                processPendingControls(context, db, peerName, endpoint, fingerprint)
             } catch (error: Exception) {
                 log(context, "Error in processOfflineQueue: ${error.message}", "ERROR", error)
             } finally {
@@ -173,12 +182,84 @@ internal class P2POutboundMessenger(
     private fun sendSilently(context: Context, peerName: String, endpoint: String, payload: JSONObject) {
         thread(start = true, name = "P2PControlMessage") {
             try {
-                val fingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                    .getString("peer_fingerprint_$peerName", null)
+                val fingerprint = P2PPreferences.prefs(context)
+                    .getString(P2PPreferences.peerFingerprint(peerName), null)
                 PythonBridge.sendP2pMessage(peerName, endpoint, payload.toString(), fingerprint)
-            } catch (_: Exception) {
-                // Ephemeral control messages are best-effort.
+            } catch (error: Exception) {
+                log(context, "Failed to send ephemeral ${payload.optString("type")} control", "ERROR", error)
             }
+        }
+    }
+
+    fun acknowledgeControl(context: Context, controlId: String) {
+        if (controlId.isBlank()) return
+        thread(start = true, name = "ControlAck") {
+            try {
+                ChatDatabaseHelper.getInstance(context).deletePendingControl(controlId)
+            } catch (error: Exception) {
+                log(context, "Failed to acknowledge control $controlId", "ERROR", error)
+            }
+        }
+    }
+
+    private fun sendPersistedControl(
+        context: Context,
+        peerName: String,
+        endpoint: String?,
+        controlId: String,
+        type: String,
+        payload: JSONObject,
+        deleteAfterSend: Boolean,
+    ) {
+        val appContext = context.applicationContext
+        thread(start = true, name = "PersistedP2PControl") {
+            val db = ChatDatabaseHelper.getInstance(appContext)
+            try {
+                db.enqueuePendingControl(
+                    PendingControl(controlId, peerName, type, payload.toString())
+                )
+                val resolvedEndpoint = endpoint?.takeIf { it.isNotBlank() }
+                    ?: peerEndpoints[peerName]
+                    ?: P2PPreferences.prefs(appContext)
+                        .getString(P2PPreferences.lastEndpoint(peerName), null)
+                        ?.takeIf { it.isNotBlank() }
+                    ?: return@thread
+                val fingerprint = P2PPreferences.prefs(appContext)
+                    .getString(P2PPreferences.peerFingerprint(peerName), null)
+                val sent = PythonBridge.sendP2pMessage(
+                    peerName,
+                    resolvedEndpoint,
+                    payload.toString(),
+                    fingerprint,
+                )
+                if (sent && deleteAfterSend) db.deletePendingControl(controlId)
+            } catch (error: Exception) {
+                log(appContext, "Failed to queue/send $type control", "ERROR", error)
+            }
+        }
+    }
+
+    private fun processPendingControls(
+        context: Context,
+        db: ChatDatabaseHelper,
+        peerName: String,
+        endpoint: String,
+        fingerprint: String?,
+    ) {
+        val controls = db.getPendingControlsForPeer(peerName)
+        if (controls.isNotEmpty()) {
+            log(context, "Processing ${controls.size} pending controls for $peerName", "INFO", null)
+        }
+        for (control in controls) {
+            val success = PythonBridge.sendP2pMessage(
+                peerName,
+                endpoint,
+                control.payload,
+                fingerprint,
+            )
+            if (!success) break
+            if (control.type == "read_receipt") db.deletePendingControl(control.id)
+            // Edits remain until the receiver returns edit_ack.
         }
     }
 

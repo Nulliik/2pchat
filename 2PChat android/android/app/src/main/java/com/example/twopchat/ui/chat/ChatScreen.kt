@@ -5,13 +5,11 @@ import android.content.pm.PackageManager
 import android.widget.Toast
 import android.content.Intent
 import android.net.VpnService
-import android.util.LruCache
 import android.content.ContentValues
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.media.MediaScannerConnection
-import java.io.FileInputStream
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import androidx.core.content.edit
 import com.example.twopchat.data.ChatDatabaseHelper
@@ -28,37 +26,28 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.compose.ui.graphics.asImageBitmap
 import java.io.File
 import java.io.FileOutputStream
 import androidx.activity.compose.BackHandler
-import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,87 +65,8 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.unit.IntOffset
-import kotlin.math.roundToInt
-import kotlin.math.abs
 
 private fun newMessageId(): String = java.util.UUID.randomUUID().toString()
-
-@Composable
-fun SwipeToReplyContainer(
-    onReply: () -> Unit,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
-    val coroutineScope = rememberCoroutineScope()
-    val offsetX = remember { androidx.compose.animation.core.Animatable(0f) }
-    val threshold = 120f
-    val limit = 200f
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragStart = {},
-                    onDragEnd = {
-                        if (abs(offsetX.value) > threshold) {
-                            onReply()
-                        }
-                        coroutineScope.launch {
-                            offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioNoBouncy))
-                        }
-                    },
-                    onDragCancel = {
-                        coroutineScope.launch {
-                            offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioNoBouncy))
-                        }
-                    },
-                    onHorizontalDrag = { change, dragAmount ->
-                        change.consume()
-                        val newOffset = (offsetX.value + dragAmount).coerceIn(-limit, limit)
-                        coroutineScope.launch {
-                            offsetX.snapTo(newOffset)
-                        }
-                    }
-                )
-            }
-    ) {
-        if (offsetX.value != 0f) {
-            val isRight = offsetX.value > 0
-            val alignment = if (isRight) Alignment.CenterStart else Alignment.CenterEnd
-            val iconAlpha = (abs(offsetX.value) / threshold).coerceIn(0f, 1f)
-            val iconScale = (abs(offsetX.value) / threshold).coerceIn(0.5f, 1f)
-            
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                contentAlignment = alignment
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_reply),
-                    contentDescription = "Reply",
-                    tint = MaterialTheme.colorScheme.primary.copy(alpha = iconAlpha),
-                    modifier = Modifier
-                        .size(24.dp)
-                        .graphicsLayer(scaleX = iconScale, scaleY = iconScale)
-                )
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .offset { IntOffset(offsetX.value.roundToInt(), 0) }
-                .fillMaxWidth()
-        ) {
-            content()
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -167,34 +77,6 @@ fun ChatScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    fun parseIncomingAttachmentMessage(text: String): Message? {
-        val trimmed = text.trim()
-        if (!trimmed.startsWith("{")) {
-            return null
-        }
-        return try {
-            val json = org.json.JSONObject(trimmed)
-            if (json.optString("type") != "file") {
-                return null
-            }
-            val fileName = json.optString("file_name", "file")
-            val filePath = json.optString("file_path", "")
-            val mime = json.optString("mime", "")
-            val attachmentType = VoiceMessageSupport.attachmentType(fileName, mime)
-            Message(
-                id = json.optString("message_id").ifBlank { newMessageId() },
-                text = VoiceMessageSupport.displayMessage(attachmentType, fileName),
-                isMe = false,
-                timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
-                attachmentType = attachmentType,
-                attachmentUri = filePath,
-                attachmentName = fileName
-            )
-        } catch (_: Exception) {
-            null
-        }
-    }
-
     var activeFullscreenImages by remember { mutableStateOf<List<String>>(emptyList()) }
     var activeFullscreenImageIndex by remember { mutableStateOf(0) }
     var activeFullscreenVideo by remember { mutableStateOf<String?>(null) }
@@ -213,6 +95,15 @@ fun ChatScreen(
     }
     
     val coroutineScope = rememberCoroutineScope()
+    fun persistDatabase(operation: () -> Unit) {
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                operation()
+            } catch (error: Exception) {
+                android.util.Log.e("ChatScreen", "Background database operation failed", error)
+            }
+        }
+    }
     val screenInitTime = remember { System.currentTimeMillis() }
     val listState = rememberLazyListState()
     var hasScrolledToBottomOnInit by remember(peerName) { mutableStateOf(false) }
@@ -328,10 +219,12 @@ fun ChatScreen(
     // Load only real persisted messages. Saved Messages keeps its local welcome entry.
     val db = remember(context) { ChatDatabaseHelper.getInstance(context) }
     val persistEnabled = remember(context) { sharedPrefs.getBoolean("persist_chat_history", true) }
-    val initialMessages = remember(peerName) { mutableStateListOf<Message>() }
-    var isHistoryLoading by remember(peerName) { mutableStateOf(true) }
+    val chatViewModel: ChatScreenViewModel = viewModel(key = "chat:$peerName")
+    val initialMessages = chatViewModel.messages
+    var isHistoryLoading by chatViewModel.isHistoryLoading
 
     LaunchedEffect(peerName) {
+        if (!chatViewModel.beginInitialLoad(peerName)) return@LaunchedEffect
         isHistoryLoading = true
         initialMessages.clear()
         val localDefaults = when (peerName) {
@@ -382,7 +275,7 @@ fun ChatScreen(
         )
         initialMessages.add(outMsg)
         if (persistEnabled || initialStatus == "PENDING") {
-            db.saveMessage(peerName, outMsg)
+            persistDatabase { db.saveMessage(peerName, outMsg) }
         }
         val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
         if (!activeSet.contains(peerName)) {
@@ -393,7 +286,7 @@ fun ChatScreen(
         if (endpoint != null && peerName != "Saved Messages") {
             P2PMessageRelay.sendFile(context, peerName, endpoint, recording.file.absolutePath, outMsg.id) { success ->
                 if (!success) {
-                    db.updateMessageStatus(outMsg.id, "PENDING")
+                    persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                     coroutineScope.launch {
                         val index = initialMessages.indexOfFirst { it.id == outMsg.id }
                         if (index != -1) initialMessages[index] = outMsg.copy(status = "PENDING")
@@ -408,29 +301,33 @@ fun ChatScreen(
         }
     }
 
-    var inputText by remember { mutableStateOf("") }
-    var showDeleteDialog by remember { mutableStateOf(false) }
+    var inputText by chatViewModel.inputText
     var myTypingState by remember { mutableStateOf(false) }
     val isTyping = P2PMessageRelay.peerTypingStates[peerName] ?: false
 
     LaunchedEffect(peerName, isHistoryLoading) {
         if (isHistoryLoading) return@LaunchedEffect
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-        if (endpoint != null && peerName != "Saved Messages") {
-            P2PMessageRelay.shareAvatar(context, peerName, endpoint)
-            P2PMessageRelay.processOfflineQueue(context, peerName, endpoint)
-            
+        if (peerName != "Saved Messages") {
+            if (endpoint != null) {
+                P2PMessageRelay.shareAvatar(context, peerName, endpoint)
+                P2PMessageRelay.processOfflineQueue(context, peerName, endpoint)
+            }
             // Mark all existing incoming messages as READ in database and send read receipts
+            var hasUnread = false
             initialMessages.forEach { msg ->
                 if (!msg.isMe && msg.status != "READ") {
-                    withContext(Dispatchers.IO) {
-                        db.updateMessageStatus(msg.id, "READ")
-                    }
+                    hasUnread = true
                     val idx = initialMessages.indexOfFirst { it.id == msg.id }
                     if (idx != -1) {
                         initialMessages[idx] = msg.copy(status = "READ")
                     }
                     P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, msg.id)
+                }
+            }
+            if (hasUnread) {
+                withContext(Dispatchers.IO) {
+                    db.markMessagesAsRead(peerName)
                 }
             }
         }
@@ -457,45 +354,11 @@ fun ChatScreen(
 
     val messageListener = remember(peerName) {
         object : P2PMessageRelay.MessageListener {
-            override fun onMessageReceived(sender: String, text: String) {
+            override fun onMessageReceived(sender: String, message: Message) {
                 if (sender == peerName) {
-                    val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
-                    val attachmentMessage = parseIncomingAttachmentMessage(text)
-                    val rxMsg = if (attachmentMessage != null) {
-                        attachmentMessage.copy(status = "READ")
-                    } else {
-                        val trimmed = text.trim()
-                        if (trimmed.startsWith("{")) {
-                            try {
-                                val json = org.json.JSONObject(trimmed)
-                                if (json.optString("type") == "reply") {
-                                    val replyText = json.optString("text")
-                                    val replyToId = json.optString("reply_to_id")
-                                    val replyToText = json.optString("reply_to_text")
-                                    val replyToName = json.optString("reply_to_name")
-                                    Message(
-                                        id = newMessageId(),
-                                        text = replyText,
-                                        isMe = false,
-                                        timestamp = time,
-                                        replyToId = replyToId,
-                                        replyToText = replyToText,
-                                        replyToName = replyToName,
-                                        status = "READ"
-                                    )
-                                } else {
-                                    Message(newMessageId(), text, false, time, status = "READ")
-                                }
-                            } catch (e: Exception) {
-                                Message(newMessageId(), text, false, time, status = "READ")
-                            }
-                        } else {
-                            Message(newMessageId(), text, false, time, status = "READ")
-                        }
-                    }
-                    
                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                    if (endpoint != null && peerName != "Saved Messages") {
+                    val rxMsg = message.copy(status = "READ")
+                    if (peerName != "Saved Messages") {
                         P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, rxMsg.id)
                         coroutineScope.launch(Dispatchers.IO) {
                             db.updateMessageStatus(rxMsg.id, "READ")
@@ -510,7 +373,9 @@ fun ChatScreen(
                     val idx = initialMessages.indexOfFirst { it.id == msgId }
                     if (idx != -1) {
                         val current = initialMessages[idx]
-                        initialMessages[idx] = current.copy(status = status)
+                        initialMessages[idx] = current.copy(
+                            status = MessageDeliveryStatus.merge(current.status, status)
+                        )
                     }
                 }
             }
@@ -617,12 +482,12 @@ fun ChatScreen(
     // Session is established lazily on the first real message send — no silent ping needed.
 
     var showAttachments by remember { mutableStateOf(false) }
-    var selectedMessageForOptions by remember { mutableStateOf<Message?>(null) }
-    var replyingToMessage by remember { mutableStateOf<Message?>(null) }
-    var editingMessage by remember { mutableStateOf<Message?>(null) }
+    var selectedMessageForOptions by chatViewModel.selectedMessageForOptions
+    var replyingToMessage by chatViewModel.replyingToMessage
+    var editingMessage by chatViewModel.editingMessage
     
     var isSelectMode by remember { mutableStateOf(false) }
-    val selectedMessages = remember { mutableStateListOf<Message>() }
+    val selectedMessages = chatViewModel.selectedMessages
     var showForwardDialog by remember { mutableStateOf(false) }
     var messageToForward by remember { mutableStateOf<Message?>(null) }
 
@@ -683,12 +548,12 @@ fun ChatScreen(
                 )
                 initialMessages.add(outMsg)
                 if (persistEnabled || initialStatus == "PENDING") {
-                    db.saveMessage(peerName, outMsg)
+                    persistDatabase { db.saveMessage(peerName, outMsg) }
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
                     P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath, outMsg.id) { success ->
                         if (!success) {
-                            db.updateMessageStatus(outMsg.id, "PENDING")
+                            persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                             coroutineScope.launch {
                                 val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
                                 if (idx != -1) {
@@ -740,12 +605,12 @@ fun ChatScreen(
                 )
                 initialMessages.add(outMsg)
                 if (persistEnabled || initialStatus == "PENDING") {
-                    db.saveMessage(peerName, outMsg)
+                    persistDatabase { db.saveMessage(peerName, outMsg) }
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
                     P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath, outMsg.id) { success ->
                         if (!success) {
-                            db.updateMessageStatus(outMsg.id, "PENDING")
+                            persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                             coroutineScope.launch {
                                 val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
                                 if (idx != -1) {
@@ -812,12 +677,12 @@ fun ChatScreen(
             )
             initialMessages.add(outMsg)
             if (persistEnabled || initialStatus == "PENDING") {
-                db.saveMessage(peerName, outMsg)
+                persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (endpoint != null && peerName != "Saved Messages") {
                 P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id) { success ->
                     if (!success) {
-                        db.updateMessageStatus(outMsg.id, "PENDING")
+                        persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                         coroutineScope.launch {
                             val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
                             if (idx != -1) {
@@ -868,12 +733,12 @@ fun ChatScreen(
                 )
                 initialMessages.add(outMsg)
                 if (persistEnabled || initialStatus == "PENDING") {
-                    db.saveMessage(peerName, outMsg)
+                    persistDatabase { db.saveMessage(peerName, outMsg) }
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
                     P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath, outMsg.id) { success ->
                         if (!success) {
-                            db.updateMessageStatus(outMsg.id, "PENDING")
+                            persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                             coroutineScope.launch {
                                 val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
                                 if (idx != -1) {
@@ -895,9 +760,8 @@ fun ChatScreen(
     }
 
 
-    var showMenu by remember { mutableStateOf(false) }
-    var isSearchMode by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
+    var isSearchMode by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -928,334 +792,54 @@ fun ChatScreen(
             .safeDrawingPadding()
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Header: Glassmorphic surface feel with border
-            if (isSearchMode) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(surfaceColor)
-                        .border(width = 0.5.dp, color = onSurfaceColor.copy(alpha = 0.05f))
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = {
-                        isSearchMode = false
-                        searchQuery = ""
-                    }) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_back_arrow),
-                            contentDescription = "Close search",
-                            tint = onSurfaceColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    androidx.compose.material3.OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder = {
-                            Text(
-                                text = if (appLanguage == "Русский") "Поиск по сообщениям..." else "Search messages...",
-                                color = onSurfaceVariant,
-                                fontSize = 14.sp
-                            )
-                        },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = primaryColor,
-                            unfocusedBorderColor = onSurfaceColor.copy(alpha = 0.2f),
-                            cursorColor = primaryColor,
-                            focusedTextColor = onSurfaceColor,
-                            unfocusedTextColor = onSurfaceColor
-                        ),
-                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp),
-                        shape = RoundedCornerShape(24.dp)
-                    )
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Text("×", fontSize = 22.sp, color = onSurfaceVariant, fontWeight = FontWeight.Bold)
+            ChatHeader(
+                peerName = peerName,
+                appLanguage = appLanguage,
+                isSearchMode = isSearchMode,
+                searchQuery = searchQuery,
+                isVerified = isVerified,
+                isMuted = isMuted,
+                activeFingerprint = activeFingerprint,
+                localFingerprint = localFingerprint,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                onBack = onBack,
+                onSearchModeChange = { isSearchMode = it },
+                onSearchQueryChange = { searchQuery = it },
+                onShowProfile = { showProfileOverlay = true },
+                onVerify = { showVerifyDialog = true },
+                onReconnect = {
+                    P2PMessageRelay.reconnectSession(context, peerName) { success ->
+                        val text = if (success) {
+                            if (appLanguage == "Русский") "Переподключение запущено..." else "Reconnection initiated..."
+                        } else {
+                            if (appLanguage == "Русский") "Не удалось переподключить" else "Failed to reconnect"
                         }
+                        Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
                     }
-                }
-            } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(surfaceColor)
-                    .border(width = 0.5.dp, color = onSurfaceColor.copy(alpha = 0.05f))
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.background(onSurfaceColor.copy(alpha = 0.03f), shape = CircleShape)
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_back_arrow),
-                        contentDescription = "Back",
-                        tint = onSurfaceColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                val displayName = if (peerName == "Saved Messages") {
-                    Localizations.getString("saved_messages_title", appLanguage)
-                } else {
-                    peerName
-                }
-
-                // Avatar Mockup
-                val initials = if (peerName == "Saved Messages") {
-                    "🔖"
-                } else if (peerName.contains(" ")) {
-                    peerName.split(" ").map { it.take(1) }.joinToString("")
-                } else peerName.take(2).uppercase()
-                
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(44.dp)
-                        .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
-                        .clickable(enabled = peerName != "Saved Messages") { showProfileOverlay = true }
-                ) {
-                    val avatarBitmap = P2PMessageRelay.peerAvatars[peerName]
-                    if (avatarBitmap != null) {
-                        Image(
-                            bitmap = avatarBitmap.asImageBitmap(),
-                            contentDescription = "Avatar",
-                            modifier = Modifier.fillMaxSize().clip(CircleShape)
-                        )
-                    } else if (initials == "🔖") {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_saved_messages),
-                            contentDescription = "Saved Messages",
-                            tint = primaryColor,
-                            modifier = Modifier.size(22.dp)
-                        )
+                },
+                onToggleMuted = { muted ->
+                    sharedPrefs.edit { putBoolean("mute_notifications_$peerName", muted) }
+                    isMuted = muted
+                    val text = if (muted) {
+                        if (appLanguage == "Русский") "Уведомления отключены" else "Notifications muted"
                     } else {
-                        Text(
-                            text = initials,
-                            color = primaryColor,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
+                        if (appLanguage == "Русский") "Уведомления включены" else "Notifications unmuted"
                     }
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                val isMismatch = sharedPrefs.getBoolean("fingerprint_mismatch_${peerName}", false)
-                val shieldColor = when {
-                    isMismatch -> Color(0xFFF44336) // Red
-                    isVerified -> Color(0xFF4CAF50) // Green
-                    else -> Color(0xFFFFC107) // Yellow
-                }
-
-                Column(modifier = Modifier.weight(1f).clickable(enabled = peerName != "Saved Messages") { showProfileOverlay = true }) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = displayName,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = onSurfaceColor
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                        val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
-                        if (peerName != "Saved Messages") {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .background(if (isOnline) primaryColor else onSurfaceVariant.copy(alpha = 0.4f), shape = CircleShape)
-                            )
-                            Spacer(modifier = Modifier.width(5.dp))
-                        }
-                        Text(
-                            text = if (peerName == "Saved Messages") {
-                                Localizations.getString("local_storage", appLanguage)
-                            } else if (isOnline) {
-                                val transportName = P2PMessageRelay.peerConnectionTransports[peerName]
-                                    ?: if (appLanguage == "Русский") "маршрут определяется" else "detecting route"
-                                if (appLanguage == "Русский") "В сети • $transportName" else "Online • $transportName"
-                            } else {
-                                if (appLanguage == "Русский") "Не в сети" else "Offline"
-                            },
-                            fontSize = 11.sp,
-                            color = onSurfaceVariant
-                        )
-                    }
-                }
-
-                if (peerName != "Saved Messages") {
-                    IconButton(
-                        onClick = {
-                            if (activeFingerprint.isBlank() || localFingerprint.isBlank()) {
-                                Toast.makeText(
-                                    context,
-                                    if (appLanguage == "Русский") "Fingerprint ещё недоступен" else "Fingerprint is not available yet",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } else {
-                                showVerifyDialog = true
-                            }
-                        },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_shield_status),
-                            contentDescription = "Verify",
-                            tint = shieldColor,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                }
-
-                // Search icon button
-                IconButton(
-                    onClick = { isSearchMode = true },
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_menu_search),
-                        contentDescription = if (appLanguage == "Русский") "Поиск" else "Search",
-                        tint = onSurfaceColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-
-                // Three-dot Action Menu
-                Box {
-                    IconButton(
-                        onClick = { showMenu = true },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Text("⋮", fontSize = 18.sp, color = onSurfaceColor, fontWeight = FontWeight.Bold)
-                    }
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false },
-                        modifier = Modifier.background(surfaceColor)
-                    ) {
-                        if (peerName != "Saved Messages") {
-                            DropdownMenuItem(
-                                text = { 
-                                    Text(
-                                        text = if (appLanguage == "Русский") "Переподключить соединение" else "Reconnect Connection", 
-                                        color = onSurfaceColor,
-                                        fontSize = 14.sp
-                                    ) 
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    P2PMessageRelay.reconnectSession(context, peerName) { success ->
-                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                            if (success) {
-                                                Toast.makeText(context, if (appLanguage == "Русский") "Переподключение запущено..." else "Reconnection initiated...", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось переподключить" else "Failed to reconnect", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    }
-                                }
-                            )
-                        }
-                        if (peerName != "Saved Messages") {
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = if (isMuted) {
-                                            if (appLanguage == "Русский") "Включить уведомления" else "Unmute Notifications"
-                                        } else {
-                                            if (appLanguage == "Русский") "Выключить уведомления" else "Mute Notifications"
-                                        },
-                                        color = onSurfaceColor,
-                                        fontSize = 14.sp
-                                    )
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    val targetState = !isMuted
-                                    sharedPrefs.edit { putBoolean("mute_notifications_${peerName}", targetState) }
-                                    isMuted = targetState
-                                    val toastText = if (targetState) {
-                                        if (appLanguage == "Русский") "Уведомления отключены" else "Notifications muted"
-                                    } else {
-                                        if (appLanguage == "Русский") "Уведомления включены" else "Notifications unmuted"
-                                    }
-                                    Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
-                                }
-                            )
-                        }
-                        DropdownMenuItem(
-                            text = { 
-                                Text(
-                                    text = if (appLanguage == "Русский") "Очистить историю" else "Clear History", 
-                                    color = Color.Red,
-                                    fontSize = 14.sp
-                                ) 
-                            },
-                            onClick = {
-                                showMenu = false
-                                db.clearMessagesForPeer(peerName)
-                                initialMessages.clear()
-                                sharedPrefs.edit { remove("last_msg_$peerName") }
-                            }
-                        )
-                        if (peerName != "Saved Messages") {
-                            DropdownMenuItem(
-                                text = { 
-                                    Text(
-                                        text = if (appLanguage == "Русский") "Удалить чат" else "Delete Chat", 
-                                        color = Color.Red,
-                                        fontSize = 14.sp
-                                    ) 
-                                },
-                                onClick = {
-                                    showMenu = false
-                                    showDeleteDialog = true
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-            if (showDeleteDialog) {
-                AlertDialog(
-                    onDismissRequest = { showDeleteDialog = false },
-                    title = {
-                        Text(if (appLanguage == "Русский") "Удалить чат?" else "Delete chat?")
-                    },
-                    text = {
-                        Text(
-                            if (appLanguage == "Русский") {
-                                "Вы уверены, что хотите полностью удалить этот чат? Все сообщения будут безвозвратно удалены."
-                            } else {
-                                "Are you sure you want to delete this chat? All message history will be permanently lost."
-                            }
-                        )
-                    },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            com.example.twopchat.P2PMessageRelay.deleteChat(context, peerName)
-                            showDeleteDialog = false
-                            onBack()
-                        }) {
-                            Text(if (appLanguage == "Русский") "Удалить" else "Delete", color = Color.Red)
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showDeleteDialog = false }) {
-                            Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
-                        }
-                    }
-                )
-            }
-            } // end else (normal header)
+                    Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+                },
+                onClearHistory = {
+                    persistDatabase { db.clearMessagesForPeer(peerName) }
+                    initialMessages.clear()
+                    sharedPrefs.edit { remove("last_msg_$peerName") }
+                },
+                onDeleteChat = {
+                    P2PMessageRelay.deleteChat(context, peerName)
+                    onBack()
+                },
+            )
 
             // Pinned Message Bar
             if (pinnedMsgId != null && pinnedMsgText != null) {
@@ -1324,166 +908,52 @@ remove("pinned_msg_id_${peerName}")
                 }
             }
 
-            // Messages List
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
-                if (isHistoryLoading) {
-                    CircularProgressIndicator(
-                        color = primaryColor,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-                } else {
-                    LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
-                ) {
-                if (isSearchMode && searchQuery.isNotEmpty()) {
-                    item {
-                        val count = initialMessages.count { msg ->
-                            msg.text.contains(searchQuery, ignoreCase = true) ||
-                            (msg.attachmentName?.contains(searchQuery, ignoreCase = true) == true)
-                        }
-                        Text(
-                            text = if (appLanguage == "Русский") "Найдено сообщений: $count" else "Messages found: $count",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(primaryColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                            fontSize = 12.sp,
-                            color = primaryColor,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-                val displayMessages = if (isSearchMode && searchQuery.isNotEmpty()) {
-                    initialMessages.filter { msg ->
-                        msg.text.contains(searchQuery, ignoreCase = true) ||
-                        (msg.attachmentName?.contains(searchQuery, ignoreCase = true) == true)
-                    }
-                } else {
-                    initialMessages.toList()
-                }
-                itemsIndexed(
-                    items = displayMessages,
-                    key = { _, msg -> msg.id }
-                ) { index, msg ->
-                    MessageBubble(
-                        msg = msg,
-                        index = index,
-                        peerName = peerName,
-                        username = username,
-                        appLanguage = appLanguage,
-                        primaryColor = primaryColor,
-                        surfaceColor = surfaceColor,
-                        onSurfaceColor = onSurfaceColor,
-                        onSurfaceVariant = onSurfaceVariant,
-                        isSelectMode = isSelectMode,
-                        selectedMessages = selectedMessages,
-                        replyingToMessage = replyingToMessage,
-                        screenInitTime = screenInitTime,
-                        isTyping = isTyping,
-                        db = db,
-                        context = context,
-                        coroutineScope = coroutineScope,
-                        initialMessages = initialMessages,
-                        sharedPrefs = sharedPrefs,
-                        listState = listState,
-                        onReplyClick = { replyingToMessage = it },
-                        onLongClick = { selectedMessageForOptions = it },
-                        onFullscreenImageClick = { paths, idx ->
-                            activeFullscreenImages = paths
-                            activeFullscreenImageIndex = idx
-                        },
-                        onFullscreenVideoClick = { videoPath ->
-                            activeFullscreenVideo = videoPath
-                        }
-                    )
-}
+            ChatMessageList(
+                modifier = Modifier.weight(1f),
+                messages = initialMessages,
+                selectedMessages = selectedMessages,
+                isHistoryLoading = isHistoryLoading,
+                isSearchMode = isSearchMode,
+                searchQuery = searchQuery,
+                isSelectMode = isSelectMode,
+                isTyping = isTyping,
+                peerName = peerName,
+                appLanguage = appLanguage,
+                screenInitTime = screenInitTime,
+                showScrollDownButton = showScrollDownButton,
+                listState = listState,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                onReply = { replyingToMessage = it },
+                onShowOptions = { selectedMessageForOptions = it },
+                onOpenImages = { images, index ->
+                    activeFullscreenImages = images
+                    activeFullscreenImageIndex = index
+                },
+                onOpenVideo = { activeFullscreenVideo = it },
+            )
 
-                if (isTyping) {
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .background(surfaceColor, shape = RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp))
-                                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(20.dp, 20.dp, 20.dp, 4.dp))
-                                    .padding(horizontal = 16.dp, vertical = 11.dp)
-                            ) {
-                                Text(
-                                    text = Localizations.getString("typing", appLanguage),
-                                    color = onSurfaceVariant,
-                                    fontSize = 14.sp
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            }
-
-            // Scroll To Bottom Button
-            androidx.compose.animation.AnimatedVisibility(
-                visible = showScrollDownButton,
-                enter = scaleIn(animationSpec = tween(200)) + fadeIn(animationSpec = tween(200)),
-                exit = scaleOut(animationSpec = tween(200)) + fadeOut(animationSpec = tween(200)),
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 16.dp)
-            ) {
-                IconButton(
-                    onClick = {
-                        coroutineScope.launch {
-                            if (initialMessages.isNotEmpty()) {
-                                listState.animateScrollToItem(initialMessages.size - 1)
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .size(38.dp)
-                        .background(Color(0xFF1E2226).copy(alpha = 0.76f), CircleShape)
-                        .border(width = 0.5.dp, color = Color.White.copy(alpha = 0.08f), shape = CircleShape)
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_scroll_down),
-                        contentDescription = "Scroll Down",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-        }
-
-            // Input Bar & Action Triggers
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(surfaceColor)
-                    .border(width = 0.5.dp, color = onSurfaceColor.copy(alpha = 0.05f))
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
-            ) {
-                // Expanded Attachment Panel mockup
-                AnimatedVisibility(
-                    visible = showAttachments,
-                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
-                ) {
-                    AttachmentPanel(
-                        primaryColor = primaryColor,
-                        surfaceVariant = surfaceVariant,
-                        onSurfaceColor = onSurfaceColor,
-                        onAttachmentClick = { type ->
+            ChatInputBar(
+                showAttachments = showAttachments,
+                replyingToMessage = replyingToMessage,
+                editingMessage = editingMessage,
+                isSelectMode = isSelectMode,
+                selectedCount = selectedMessages.size,
+                isBlocked = isBlocked,
+                isRecordingVoice = isRecordingVoice,
+                recordingElapsedMs = recordingElapsedMs,
+                inputText = inputText,
+                peerName = peerName,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                surfaceVariant = surfaceVariant,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                onAttachmentClick = { type ->
+                    showAttachments = false
                             showAttachments = false
                             when (type) {
                                 "Camera" -> {
@@ -1506,140 +976,19 @@ remove("pinned_msg_id_${peerName}")
                                 "Video" -> videoLauncher.launch("video/*")
                                 "File" -> fileLauncher.launch("*/*")
                             }
-                        }
-                    )
-                }
-
-                // Reply Preview Bar
-                AnimatedVisibility(
-                    visible = replyingToMessage != null,
-                    enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
-                ) {
-                    replyingToMessage?.let { replyMsg ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 8.dp)
-                                .background(onSurfaceColor.copy(alpha = 0.03f), RoundedCornerShape(8.dp))
-                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
-                                .padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(3.dp)
-                                    .height(36.dp)
-                                    .background(primaryColor, RoundedCornerShape(2.dp))
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (replyMsg.isMe) (if (appLanguage == "Русский") "Вы" else "You") else peerName,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryColor
-                                )
-                                Text(
-                                    text = replyMsg.text,
-                                    fontSize = 11.sp,
-                                    color = onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                )
-                            }
-                            IconButton(
-                                onClick = { replyingToMessage = null },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Text("×", fontSize = 18.sp, color = onSurfaceVariant, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-
-                // Editing Message Preview Bar
-                AnimatedVisibility(
-                    visible = editingMessage != null,
-                    enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
-                ) {
-                    editingMessage?.let { editMsg ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 8.dp)
-                                .background(onSurfaceColor.copy(alpha = 0.03f), RoundedCornerShape(8.dp))
-                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
-                                .padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(3.dp)
-                                    .height(36.dp)
-                                    .background(primaryColor, RoundedCornerShape(2.dp))
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Редактирование сообщения" else "Edit Message",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryColor
-                                )
-                                Text(
-                                    text = editMsg.text,
-                                    fontSize = 11.sp,
-                                    color = onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                )
-                            }
-                            IconButton(
-                                onClick = { 
-                                    editingMessage = null 
-                                    inputText = ""
-                                },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Text("×", fontSize = 18.sp, color = onSurfaceVariant, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-
-                if (isSelectMode) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .padding(horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = {
-                                    isSelectMode = false
-                                    selectedMessages.clear()
-                                }
-                            ) {
-                                Text("×", fontSize = 24.sp, color = onSurfaceColor, fontWeight = FontWeight.Bold)
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = if (appLanguage == "Русский") "Выбрано: ${selectedMessages.size}" else "Selected: ${selectedMessages.size}",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = onSurfaceColor
-                            )
-                        }
-
-                        IconButton(
-                            onClick = {
-                                selectedMessages.forEach { msg ->
-                                    db.deleteMessage(msg.id)
+                },
+                onDismissReply = { replyingToMessage = null },
+                onDismissEditing = {
+                    editingMessage = null
+                    inputText = ""
+                },
+                onCancelSelection = {
+                    isSelectMode = false
+                    selectedMessages.clear()
+                },
+                onDeleteSelected = {
+                    selectedMessages.forEach { msg ->
+                                    persistDatabase { db.deleteMessage(msg.id) }
                                     initialMessages.remove(msg)
                                     if (msg.id == pinnedMsgId) {
                                         sharedPrefs.edit {
@@ -1657,112 +1006,68 @@ remove("pinned_msg_id_${peerName}")
                                 }
                                 selectedMessages.clear()
                                 isSelectMode = false
-                            },
-                            enabled = selectedMessages.isNotEmpty()
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_delete),
-                                contentDescription = "Delete Selected",
-                                tint = if (selectedMessages.isNotEmpty()) Color.Red else onSurfaceVariant.copy(alpha = 0.5f),
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                },
+                onUnblock = {
+                    sharedPrefs.edit { putBoolean("blocked_peer_${peerName}", false) }
+                    isBlocked = false
+                },
+                onToggleAttachments = {
+                    if (isRecordingVoice) {
+                        voiceRecorder.cancel()
+                        isRecordingVoice = false
+                        recordingElapsedMs = 0
+                    } else {
+                        showAttachments = !showAttachments
                     }
-                } else if (isBlocked && peerName != "Saved Messages") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp)
-                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
-                            .border(0.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = if (appLanguage == "Русский") "Пользователь заблокирован" else "User is blocked",
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = if (appLanguage == "Русский") "Разблокировать" else "Unblock",
-                            color = primaryColor,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .clickable {
-                                    sharedPrefs.edit { putBoolean("blocked_peer_${peerName}", false) }
-                                    isBlocked = false
-                                }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                } else {
-                    ChatInputBar(
-                        inputText = inputText,
-                        onInputTextChange = { inputText = it },
-                        isRecordingVoice = isRecordingVoice,
-                        recordingElapsedMs = recordingElapsedMs,
-                        showAttachments = showAttachments,
-                        editingMessage = editingMessage,
-                        appLanguage = appLanguage,
-                        primaryColor = primaryColor,
-                        surfaceColor = surfaceColor,
-                        onSurfaceColor = onSurfaceColor,
-                        onSurfaceVariant = onSurfaceVariant,
-                        onAttachmentToggle = {
-                            if (isRecordingVoice) {
-                                voiceRecorder.cancel()
-                                isRecordingVoice = false
-                                recordingElapsedMs = 0
-                            } else {
-                                showAttachments = !showAttachments
-                            }
-                        },
-                        onActionClick = {
-                            if (isRecordingVoice) {
-                                val recording = voiceRecorder.stop()
-                                isRecordingVoice = false
-                                recordingElapsedMs = 0
-                                if (recording != null) {
-                                    sendVoiceRecording(recording)
-                                } else {
-                                    Toast.makeText(context, if (appLanguage == "Русский") "Запись слишком короткая" else "Recording is too short", Toast.LENGTH_SHORT).show()
-                                }
-                            } else if (inputText.isBlank()) {
-                                showAttachments = false
-                                if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                                    beginVoiceRecording()
-                                } else {
-                                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                }
-                            } else {
-                                val userText = inputText.trim()
-                                inputText = ""
-                                showAttachments = false
-                                val currentEditing = editingMessage
-                                if (currentEditing != null) {
-                                    editingMessage = null
-                                    if (userText.isNotEmpty()) {
-                                        db.updateMessageText(currentEditing.id, userText, true)
-                                        val idx = initialMessages.indexOfFirst { it.id == currentEditing.id }
-                                        if (idx != -1) {
-                                            val oldStatus = currentEditing.status ?: ""
-                                            val newStatus = if (oldStatus.contains("edited")) oldStatus else if (oldStatus.isEmpty()) "edited" else "${oldStatus}_edited"
-                                            initialMessages[idx] = currentEditing.copy(text = userText, status = newStatus)
-                                        }
-                                        val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                                        if (endpoint != null && peerName != "Saved Messages") {
-                                            P2PMessageRelay.sendEditMessage(context, peerName, endpoint, currentEditing.id, userText)
-                                        }
+                },
+                onInputTextChange = { inputText = it },
+                onActionClick = {
+                                if (isRecordingVoice) {
+                                    val recording = voiceRecorder.stop()
+                                    isRecordingVoice = false
+                                    recordingElapsedMs = 0
+                                    if (recording != null) {
+                                        sendVoiceRecording(recording)
+                                    } else {
+                                        Toast.makeText(context, if (appLanguage == "Русский") "Запись слишком короткая" else "Recording is too short", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else if (inputText.isBlank()) {
+                                    showAttachments = false
+                                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                        beginVoiceRecording()
+                                    } else {
+                                        audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                     }
                                 } else {
-                                    val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                                    val replyTo = replyingToMessage
-                                    replyingToMessage = null
+                                    val userText = inputText.trim()
+                                    inputText = ""
+                                    showAttachments = false
+                                    val currentEditing = editingMessage
+                                    if (currentEditing != null) {
+                                        editingMessage = null
+                                        if (userText.isNotEmpty()) {
+                                            persistDatabase { db.updateMessageText(currentEditing.id, userText) }
+                                            val idx = initialMessages.indexOfFirst { it.id == currentEditing.id }
+                                            if (idx != -1) {
+                                                val oldStatus = currentEditing.status ?: ""
+                                                val newStatus = if (oldStatus.contains("edited")) oldStatus else if (oldStatus.isEmpty()) "edited" else "${oldStatus}_edited"
+                                                initialMessages[idx] = currentEditing.copy(text = userText, status = newStatus)
+                                            }
+                                            val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+                                            if (peerName != "Saved Messages") {
+                                                P2PMessageRelay.sendEditMessage(context, peerName, endpoint, currentEditing.id, userText)
+                                            }
+                                        }
+                                    } else {
+                                        val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                                        
+                                        val replyTo = replyingToMessage
+                                        replyingToMessage = null
+
                                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                                     val initialStatus = if (endpoint != null || peerName == "Saved Messages") "SENT" else "PENDING"
+
+                                    // Add user message
                                     val outMsg = Message(
                                         id = newMessageId(),
                                         text = userText,
@@ -1775,8 +1080,10 @@ remove("pinned_msg_id_${peerName}")
                                     )
                                     initialMessages.add(outMsg)
                                     if (persistEnabled || initialStatus == "PENDING") {
-                                        db.saveMessage(peerName, outMsg)
+                                        persistDatabase { db.saveMessage(peerName, outMsg) }
                                     }
+
+                                    // Persist in shared preferences last message list
                                     val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                                     if (!activeSet.contains(peerName)) {
                                         val newSet = activeSet.toMutableSet()
@@ -1784,6 +1091,8 @@ remove("pinned_msg_id_${peerName}")
                                         sharedPrefs.edit { putStringSet("active_chats", newSet) }
                                     }
                                     sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt("You: $userText")) }
+
+                                    // Send message payload
                                     val payload = if (replyTo != null) {
                                         org.json.JSONObject().apply {
                                             put("type", "reply")
@@ -1800,10 +1109,12 @@ remove("pinned_msg_id_${peerName}")
                                             put("text", userText)
                                         }.toString()
                                     }
+
+                                    // Send over real TCP socket if endpoint is resolved
                                     if (endpoint != null && peerName != "Saved Messages") {
                                         P2PMessageRelay.sendMessage(context, endpoint, username, payload) { success ->
                                             if (!success) {
-                                                db.updateMessageStatus(outMsg.id, "PENDING")
+                                                persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                                                 coroutineScope.launch {
                                                     val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
                                                     if (idx != -1) {
@@ -1818,10 +1129,8 @@ remove("pinned_msg_id_${peerName}")
                                     }
                                 }
                             }
-                        }
-                    )
-                }
-            }
+                },
+            )
         }
 
         // Message Options Overlay Panel
@@ -2093,7 +1402,7 @@ remove("pinned_msg_id_${peerName}")
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable {
-                                    db.deleteMessage(msg.id)
+                                    persistDatabase { db.deleteMessage(msg.id) }
                                     initialMessages.remove(msg)
                                     if (msg.id == pinnedMsgId) {
                                         sharedPrefs.edit {
@@ -2199,7 +1508,7 @@ remove("pinned_msg_id_${peerName}")
                                             
                                             // Save to DB for the forwarded peer
                                             if (persistEnabled || fwdInitialStatus == "PENDING") {
-                                                db.saveMessage(chatName, fwdMsg)
+                                                persistDatabase { db.saveMessage(chatName, fwdMsg) }
                                             }
                                             // Update last message in active chats list
                                             sharedPrefs.edit { putString("last_msg_$chatName", SecureStorage.encrypt("You: $textToForward")) }
@@ -2209,13 +1518,13 @@ remove("pinned_msg_id_${peerName}")
                                                 if (messageToForward?.attachmentType != null && messageToForward?.attachmentUri != null) {
                                                     P2PMessageRelay.sendFile(context, chatName, forwardEndpoint, messageToForward!!.attachmentUri!!, fwdMsg.id) { success ->
                                                         if (!success) {
-                                                            db.updateMessageStatus(fwdMsg.id, "PENDING")
+                                                            persistDatabase { db.updateMessageStatus(fwdMsg.id, "PENDING") }
                                                         }
                                                     }
                                                 } else {
                                                     P2PMessageRelay.sendMessage(context, forwardEndpoint, username, textToForward) { success ->
                                                         if (!success) {
-                                                            db.updateMessageStatus(fwdMsg.id, "PENDING")
+                                                            persistDatabase { db.updateMessageStatus(fwdMsg.id, "PENDING") }
                                                         }
                                                     }
                                                 }
@@ -2565,1234 +1874,6 @@ remove("pinned_msg_id_${peerName}")
                     }
                 },
                 onBack = { showProfileOverlay = false }
-            )
-        }
-    }
-}
-
-// Media Attachment Composable
-@Composable
-fun AttachmentPanel(
-    primaryColor: Color,
-    surfaceVariant: Color,
-    onSurfaceColor: Color,
-    onAttachmentClick: (String) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 14.dp, horizontal = 6.dp),
-        horizontalArrangement = Arrangement.SpaceAround,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        val attachments = listOf(
-            AttachmentItem("Camera", R.drawable.ic_attach_camera, primaryColor.copy(alpha = 0.1f)),
-            AttachmentItem("Gallery", R.drawable.ic_attach_gallery, primaryColor.copy(alpha = 0.1f)),
-            AttachmentItem("Video", R.drawable.ic_voice_play, primaryColor.copy(alpha = 0.1f)),
-            AttachmentItem("File", R.drawable.ic_attach_file, primaryColor.copy(alpha = 0.1f))
-        )
-        
-        attachments.forEach { item ->
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.clickable { onAttachmentClick(item.label) }
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(52.dp)
-                        .background(item.bgColor, shape = CircleShape)
-                        .border(0.5.dp, primaryColor.copy(alpha = 0.2f), CircleShape)
-                ) {
-                    Icon(
-                        painter = painterResource(id = item.iconRes),
-                        contentDescription = item.label,
-                        tint = primaryColor,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(text = item.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = onSurfaceColor)
-            }
-        }
-    }
-}
-
-data class AttachmentItem(
-    val label: String,
-    val iconRes: Int,
-    val bgColor: Color
-)
-
-object AttachmentImageCache {
-    private val cacheSize = (Runtime.getRuntime().maxMemory() / 1024 / 8).toInt()
-    private val cache = object : LruCache<String, Bitmap>(cacheSize) {
-        override fun sizeOf(key: String, value: Bitmap): Int {
-            return value.byteCount / 1024
-        }
-    }
-
-    fun get(key: String): Bitmap? = cache.get(key)
-    fun put(key: String, bitmap: Bitmap) {
-        cache.put(key, bitmap)
-    }
-}
-
-@Composable
-fun rememberSampledImage(filePath: String?, targetWidth: Int = 400, targetHeight: Int = 400): Bitmap? {
-    if (filePath == null) return null
-    val cached = AttachmentImageCache.get(filePath)
-    var bitmapState by remember(filePath) { mutableStateOf<Bitmap?>(cached) }
-    LaunchedEffect(filePath) {
-        if (bitmapState != null) return@LaunchedEffect
-        withContext(Dispatchers.IO) {
-            try {
-                val file = java.io.File(filePath)
-                if (file.exists()) {
-                    val options = BitmapFactory.Options().apply {
-                        inJustDecodeBounds = true
-                    }
-                    BitmapFactory.decodeFile(filePath, options)
-                    options.inSampleSize = calculateInSampleSize(options, targetWidth, targetHeight)
-                    options.inJustDecodeBounds = false
-                    val decoded = BitmapFactory.decodeFile(filePath, options)
-                    if (decoded != null) {
-                        AttachmentImageCache.put(filePath, decoded)
-                        withContext(Dispatchers.Main) {
-                            bitmapState = decoded
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-    return bitmapState
-}
-
-@Composable
-fun rememberVideoThumbnail(filePath: String?): Bitmap? {
-    if (filePath == null) return null
-    val cacheKey = "thumb_$filePath"
-    val cached = AttachmentImageCache.get(cacheKey)
-    var bitmapState by remember(filePath) { mutableStateOf<Bitmap?>(cached) }
-    LaunchedEffect(filePath) {
-        if (bitmapState != null) return@LaunchedEffect
-        withContext(Dispatchers.IO) {
-            try {
-                val file = java.io.File(filePath)
-                if (file.exists()) {
-                    val retriever = android.media.MediaMetadataRetriever()
-                    retriever.setDataSource(filePath)
-                    val frame = retriever.getFrameAtTime(1000000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    retriever.release()
-                    if (frame != null) {
-                        AttachmentImageCache.put(cacheKey, frame)
-                        withContext(Dispatchers.Main) {
-                            bitmapState = frame
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
-    return bitmapState
-}
-
-fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
-    val height = options.outHeight
-    val width = options.outWidth
-    var inSampleSize = 1
-
-    if (height > reqHeight || width > reqWidth) {
-        val halfHeight = height / 2
-        val halfWidth = width / 2
-        while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
-            inSampleSize *= 2
-        }
-    }
-    return inSampleSize
-}
-
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable
-fun FullscreenImageViewer(
-    imagePaths: List<String>,
-    initialIndex: Int,
-    appLanguage: String,
-    onClose: () -> Unit
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
-        initialPage = initialIndex,
-        pageCount = { imagePaths.size }
-    )
-    var isZoomed by remember { mutableStateOf(false) }
-
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            scope.launch(Dispatchers.IO) {
-                val currentPath = imagePaths[pagerState.currentPage]
-                val uri = saveImageToPublicGallery(context, currentPath)
-                withContext(Dispatchers.Main) {
-                    if (uri != null) {
-                        Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        } else {
-            Toast.makeText(context, if (appLanguage == "Русский") "Разрешение на запись отклонено" else "Storage permission denied", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black),
-        contentAlignment = Alignment.Center
-    ) {
-        androidx.compose.foundation.pager.HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxSize(),
-            userScrollEnabled = !isZoomed
-        ) { page ->
-            val imagePath = imagePaths[page]
-            var scale by remember { mutableStateOf(1f) }
-            var offset by remember { mutableStateOf(Offset.Zero) }
-
-            val transformState = rememberTransformableState { zoomChange, offsetChange, _ ->
-                scale = (scale * zoomChange).coerceIn(1f, 5f)
-                if (scale > 1f) {
-                    offset += offsetChange
-                } else {
-                    offset = Offset.Zero
-                }
-            }
-
-            LaunchedEffect(scale) {
-                if (page == pagerState.currentPage) {
-                    isZoomed = scale > 1f
-                }
-            }
-
-            LaunchedEffect(pagerState.currentPage) {
-                scale = 1f
-                offset = Offset.Zero
-                if (page == pagerState.currentPage) {
-                    isZoomed = false
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clickable(
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null
-                    ) { onClose() },
-                contentAlignment = Alignment.Center
-            ) {
-                val bitmap = rememberSampledImage(imagePath, targetWidth = 1200, targetHeight = 1200)
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Fullscreen Image",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer(
-                                scaleX = scale,
-                                scaleY = scale,
-                                translationX = if (scale > 1f) offset.x else 0f,
-                                translationY = if (scale > 1f) offset.y else 0f
-                            )
-                            .transformable(state = transformState)
-                            .pointerInput(Unit) {
-                                detectTapGestures(
-                                    onTap = { onClose() },
-                                    onDoubleTap = {
-                                        if (scale > 1f) {
-                                            scale = 1f
-                                            offset = Offset.Zero
-                                        } else {
-                                            scale = 3f
-                                        }
-                                    }
-                                )
-                            }
-                    )
-                } else {
-                    CircularProgressIndicator(color = Color.White)
-                }
-            }
-        }
-
-        // Close Button
-        IconButton(
-            onClick = { onClose() },
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(top = 40.dp, start = 16.dp)
-                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_back_arrow),
-                contentDescription = "Close",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-
-        // Page Indicator
-        if (imagePaths.size > 1) {
-            Text(
-                text = "${pagerState.currentPage + 1} / ${imagePaths.size}",
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 48.dp)
-            )
-        }
-
-        // Download Button
-        IconButton(
-            onClick = {
-                val currentPath = imagePaths[pagerState.currentPage]
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
-                    ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE
-                    ) == PackageManager.PERMISSION_GRANTED
-                ) {
-                    scope.launch(Dispatchers.IO) {
-                        val uri = saveImageToPublicGallery(context, currentPath)
-                        withContext(Dispatchers.Main) {
-                            if (uri != null) {
-                                Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                } else {
-                    launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                }
-            },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 40.dp, end = 16.dp)
-                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_download),
-                contentDescription = "Download",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-fun getVerificationEmojis(localFingerprint: String, peerFingerprint: String): List<String> {
-    val emojiList = listOf(
-        "🦄", "🦊", "🚀", "💎", "🍕", "🎈", "🚗", "🥝", "🎸", "🌟",
-        "🦁", "🐼", "🐻", "🐨", "🐙", "🦋", "🍄", "🍉", "🍓", "🍍",
-        "🥞", "🍔", "🍿", "🍩", "🍪", "🛹", "🚲", "⛵", "🛸", "🌈",
-        "☀️", "⚡", "🔥", "🔮", "🛡️", "🔑", "📦", "🎨", "🎭", "🎮"
-    )
-    val hash = try {
-        val digest = java.security.MessageDigest.getInstance("SHA-256")
-        val identityPair = listOf(localFingerprint, peerFingerprint).sorted().joinToString("|")
-        digest.digest(identityPair.toByteArray(Charsets.UTF_8))
-    } catch (e: java.lang.Exception) {
-        (localFingerprint + peerFingerprint).toByteArray(Charsets.UTF_8)
-    }
-    val result = mutableListOf<String>()
-    for (i in 0 until 4) {
-        val byteVal = if (i < hash.size) hash[i].toInt() and 0xFF else 0
-        val index = byteVal % emojiList.size
-        result.add(emojiList[index])
-    }
-    return result
-}
-
-@Composable
-fun FullscreenVideoPlayer(
-    videoPath: String,
-    appLanguage: String,
-    onClose: () -> Unit
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
-            scope.launch(Dispatchers.IO) {
-                val uri = saveVideoToPublicGallery(context, videoPath)
-                withContext(Dispatchers.Main) {
-                    if (uri != null) {
-                        Toast.makeText(context, if (appLanguage == "Русский") "Видео сохранено в Галерею" else "Video saved to Gallery", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить видео" else "Failed to save video", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        } else {
-            Toast.makeText(context, if (appLanguage == "Русский") "Разрешение на запись отклонено" else "Storage permission denied", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    val exoPlayer = remember(videoPath) {
-        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
-            val mediaItem = androidx.media3.common.MediaItem.fromUri(Uri.fromFile(java.io.File(videoPath)))
-            setMediaItem(mediaItem)
-            prepare()
-            playWhenReady = true
-            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
-        }
-    }
-
-    DisposableEffect(exoPlayer) {
-        onDispose {
-            exoPlayer.release()
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black),
-        contentAlignment = Alignment.Center
-    ) {
-        AndroidView(
-            factory = { ctx ->
-                androidx.media3.ui.PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = true
-                    setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_ALWAYS)
-                    layoutParams = android.view.ViewGroup.LayoutParams(
-                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
-
-        IconButton(
-            onClick = { onClose() },
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(top = 40.dp, start = 16.dp)
-                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_back_arrow),
-                contentDescription = "Close",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-
-        IconButton(
-            onClick = {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
-                    ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE
-                    ) == PackageManager.PERMISSION_GRANTED
-                ) {
-                    scope.launch(Dispatchers.IO) {
-                        val uri = saveVideoToPublicGallery(context, videoPath)
-                        withContext(Dispatchers.Main) {
-                            if (uri != null) {
-                                Toast.makeText(context, if (appLanguage == "Русский") "Видео сохранено в Галерею" else "Video saved to Gallery", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить видео" else "Failed to save video", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                } else {
-                    launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                }
-            },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 40.dp, end = 16.dp)
-                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_download),
-                contentDescription = "Download",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-fun saveImageToPublicGallery(context: android.content.Context, filePath: String): Uri? {
-    val srcFile = File(filePath)
-    if (!srcFile.exists()) return null
-
-    val extension = srcFile.extension.lowercase()
-    val mimeType = when (extension) {
-        "png" -> "image/png"
-        "webp" -> "image/webp"
-        "gif" -> "image/gif"
-        "bmp" -> "image/x-ms-bmp"
-        else -> "image/jpeg"
-    }
-    val fileName = "2pchat_${System.currentTimeMillis()}.${if (extension.isNotEmpty()) extension else "jpg"}"
-
-    try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val resolver = context.contentResolver
-            val contentValues = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
-                put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + File.separator + "2PChat")
-                put(MediaStore.Images.Media.IS_PENDING, 1)
-            }
-
-            val imageUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-            if (imageUri != null) {
-                resolver.openOutputStream(imageUri).use { outputStream ->
-                    if (outputStream != null) {
-                        FileInputStream(srcFile).use { inputStream ->
-                            inputStream.copyTo(outputStream)
-                        }
-                    }
-                }
-                contentValues.clear()
-                contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
-                resolver.update(imageUri, contentValues, null, null)
-                return imageUri
-            }
-        } else {
-            val targetDir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
-                "2PChat"
-            )
-            if (!targetDir.exists()) {
-                targetDir.mkdirs()
-            }
-            val targetFile = File(targetDir, fileName)
-            FileOutputStream(targetFile).use { outputStream ->
-                FileInputStream(srcFile).use { inputStream ->
-                    inputStream.copyTo(outputStream)
-                }
-            }
-            MediaScannerConnection.scanFile(
-                context,
-                arrayOf(targetFile.absolutePath),
-                arrayOf(mimeType),
-                null
-            )
-            return Uri.fromFile(targetFile)
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-    return null
-}
-
-fun saveVideoToPublicGallery(context: android.content.Context, filePath: String): Uri? {
-    val srcFile = File(filePath)
-    if (!srcFile.exists()) return null
-
-    val extension = srcFile.extension.lowercase()
-    val mimeType = when (extension) {
-        "mp4" -> "video/mp4"
-        "webm" -> "video/webm"
-        "mkv" -> "video/x-matroska"
-        "avi" -> "video/x-msvideo"
-        "mov" -> "video/quicktime"
-        else -> "video/mp4"
-    }
-    val fileName = "2pchat_${System.currentTimeMillis()}.${if (extension.isNotEmpty()) extension else "mp4"}"
-
-    try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val resolver = context.contentResolver
-            val contentValues = ContentValues().apply {
-                put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
-                put(MediaStore.Video.Media.MIME_TYPE, mimeType)
-                put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + File.separator + "2PChat")
-                put(MediaStore.Video.Media.IS_PENDING, 1)
-            }
-
-            val videoUri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
-            if (videoUri != null) {
-                resolver.openOutputStream(videoUri).use { outputStream ->
-                    if (outputStream != null) {
-                        FileInputStream(srcFile).use { inputStream ->
-                            inputStream.copyTo(outputStream)
-                        }
-                    }
-                }
-                contentValues.clear()
-                contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
-                resolver.update(videoUri, contentValues, null, null)
-                return videoUri
-            }
-        } else {
-            val targetDir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
-                "2PChat"
-            )
-            if (!targetDir.exists()) {
-                targetDir.mkdirs()
-            }
-            val targetFile = File(targetDir, fileName)
-            FileOutputStream(targetFile).use { outputStream ->
-                FileInputStream(srcFile).use { inputStream ->
-                    inputStream.copyTo(outputStream)
-                }
-            }
-            MediaScannerConnection.scanFile(
-                context,
-                arrayOf(targetFile.absolutePath),
-                arrayOf(mimeType),
-                null
-            )
-            return Uri.fromFile(targetFile)
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-    return null
-}
-
-
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable
-fun MessageBubble(
-    msg: Message,
-    index: Int,
-    peerName: String,
-    username: String,
-    appLanguage: String,
-    primaryColor: Color,
-    surfaceColor: Color,
-    onSurfaceColor: Color,
-    onSurfaceVariant: Color,
-    isSelectMode: Boolean,
-    selectedMessages: androidx.compose.runtime.snapshots.SnapshotStateList<Message>,
-    replyingToMessage: Message?,
-    screenInitTime: Long,
-    isTyping: Boolean,
-    db: ChatDatabaseHelper,
-    context: android.content.Context,
-    coroutineScope: kotlinx.coroutines.CoroutineScope,
-    initialMessages: List<Message>,
-    sharedPrefs: android.content.SharedPreferences,
-    listState: androidx.compose.foundation.lazy.LazyListState,
-    onReplyClick: (Message) -> Unit,
-    onLongClick: (Message) -> Unit,
-    onFullscreenImageClick: (List<String>, Int) -> Unit,
-    onFullscreenVideoClick: (String) -> Unit
-) {
-                    val visibleState = remember(msg.id) {
-                        val isNew = msg.sentAtEpochMs > screenInitTime + 500L
-                        MutableTransitionState(if (isNew) false else true).apply {
-                            targetState = true
-                        }
-                    }
-                    val alignment = if (msg.isMe) Alignment.End else Alignment.Start
-                    val bubbleShape = if (msg.isMe) {
-                        RoundedCornerShape(18.dp, 18.dp, 2.dp, 18.dp)
-                    } else {
-                        RoundedCornerShape(18.dp, 18.dp, 18.dp, 2.dp)
-                    }
-
-                    // Gradient for outgoing bubbles; solid surface for incoming
-                    val bubbleModifier = if (msg.isMe) {
-                        Modifier.background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(primaryColor, primaryColor.copy(alpha = 0.85f))
-                            ),
-                            shape = bubbleShape
-                        )
-                    } else {
-                        val isLight = surfaceColor.luminance() > 0.5f
-                        Modifier.background(
-                            color = if (isLight) surfaceColor else surfaceColor,
-                            shape = bubbleShape
-                        )
-                    }
-
-                    val textColor = if (msg.isMe) {
-                        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
-                    } else onSurfaceColor
-
-                    androidx.compose.animation.AnimatedVisibility(
-                        visibleState = visibleState,
-                        enter = fadeIn(animationSpec = tween(220)) + slideInVertically(
-                            initialOffsetY = { it / 5 },
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMedium
-                            )
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        SwipeToReplyContainer(
-                            onReply = {
-                                onReplyClick(msg)
-                            }
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (isSelectMode) {
-                                    val isSelected = selectedMessages.contains(msg)
-                                    Checkbox(
-                                        checked = isSelected,
-                                        onCheckedChange = { checked ->
-                                            if (checked) {
-                                                selectedMessages.add(msg)
-                                            } else {
-                                                selectedMessages.remove(msg)
-                                            }
-                                        },
-                                        colors = CheckboxDefaults.colors(checkedColor = primaryColor),
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    )
-                                }
-
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable(enabled = isSelectMode) {
-                                            if (isSelectMode) {
-                                                if (selectedMessages.contains(msg)) {
-                                                    selectedMessages.remove(msg)
-                                                } else {
-                                                    selectedMessages.add(msg)
-                                                }
-                                            }
-                                        },
-                                    horizontalAlignment = alignment
-                                ) {
-                                    Box(
-                                        modifier = bubbleModifier
-                                            .combinedClickable(
-                                                onClick = {
-                                                    if (isSelectMode) {
-                                                        if (selectedMessages.contains(msg)) {
-                                                            selectedMessages.remove(msg)
-                                                        } else {
-                                                            selectedMessages.add(msg)
-                                                        }
-                                                    } else {
-                                                        onLongClick(msg)
-                                                    }
-                                                },
-                                                onLongClick = {
-                                                    if (!isSelectMode) {
-                                                        onLongClick(msg)
-                                                    }
-                                                }
-                                            )
-                                            // Subtle border for incoming bubbles
-                                            .then(if (!msg.isMe) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.08f), bubbleShape) else Modifier)
-                                            .padding(horizontal = 16.dp, vertical = 11.dp)
-                                            .widthIn(max = 280.dp)
-                                    ) {
-                                        Column {
-                                            // Render reply quote if this message is a reply
-                                            if (msg.replyToId != null) {
-                                                val replyBg = if (msg.isMe) Color.White.copy(alpha = 0.15f) else onSurfaceColor.copy(alpha = 0.05f)
-                                                val replyBarColor = if (msg.isMe) {
-                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
-                                                } else primaryColor
-                                                val replyTextColor = if (msg.isMe) {
-                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.8f)
-                                                } else onSurfaceVariant
-                                                val replyTitleColor = if (msg.isMe) {
-                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
-                                                } else primaryColor
-                                                
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(replyBg)
-                                                        .clickable {
-                                                            val targetIndex = initialMessages.indexOfFirst { it.id == msg.replyToId }
-                                                            if (targetIndex != -1) {
-                                                                coroutineScope.launch {
-                                                                    listState.animateScrollToItem(targetIndex)
-                                                                }
-                                                            }
-                                                        }
-                                                        .padding(8.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .width(3.dp)
-                                                            .height(36.dp)
-                                                            .background(replyBarColor, RoundedCornerShape(2.dp))
-                                                    )
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    Column(modifier = Modifier.weight(1f)) {
-                                                        Text(
-                                                            text = msg.replyToName ?: "Unknown",
-                                                            fontSize = 12.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = replyTitleColor
-                                                        )
-                                                        Text(
-                                                            text = msg.replyToText ?: "",
-                                                            fontSize = 11.sp,
-                                                            color = replyTextColor,
-                                                            maxLines = 1,
-                                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                                        )
-                                                    }
-                                                }
-                                                Spacer(modifier = Modifier.height(6.dp))
-                                            }
-
-                                            when (msg.attachmentType) {
-                                                "IMAGE" -> {
-                                                    val bitmap = rememberSampledImage(msg.attachmentUri)
-                                                    if (bitmap != null) {
-                                                        Column {
-                                                            Image(
-                                                                bitmap = bitmap.asImageBitmap(),
-                                                                contentDescription = "Image attachment",
-                                                                modifier = Modifier
-                                                                    .fillMaxWidth()
-                                                                    .heightIn(max = 200.dp)
-                                                                    .clip(RoundedCornerShape(8.dp))
-                                                                    .clickable {
-                                                                        val allImages = initialMessages.filter { it.attachmentType == "IMAGE" && !it.attachmentUri.isNullOrBlank() }.map { it.attachmentUri!! }
-                                                                         val clickedUri = msg.attachmentUri
-                                                                         val clickedIndex = if (clickedUri != null) allImages.indexOf(clickedUri) else -1
-                                                                         if (clickedIndex != -1) {
-                                                                             onFullscreenImageClick(allImages, clickedIndex)
-                                                                         } else if (clickedUri != null) {
-                                                                             onFullscreenImageClick(listOf(clickedUri), 0)
-                                                                         }
-                                                                    }
-                                                            )
-                                                            if (!msg.text.startsWith("Sent an image") && !msg.text.startsWith("Captured a photo")) {
-                                                                Spacer(modifier = Modifier.height(6.dp))
-                                                                Text(
-                                                                    text = msg.text,
-                                                                    color = textColor,
-                                                                    fontSize = 15.sp,
-                                                                    lineHeight = 20.sp
-                                                                )
-                                                            }
-                                                        }
-                                                    } else {
-                                                        Text(
-                                                            text = msg.text,
-                                                            color = textColor,
-                                                            fontSize = 15.sp,
-                                                            lineHeight = 20.sp
-                                                        )
-                                                    }
-                                                }
-                                                "VIDEO" -> {
-                                                    val thumbnail = rememberVideoThumbnail(msg.attachmentUri)
-                                                    Column {
-                                                        Box(
-                                                            contentAlignment = Alignment.Center,
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .height(180.dp)
-                                                                .clip(RoundedCornerShape(8.dp))
-                                                                .clickable {
-                                                                    if (msg.attachmentUri != null) {
-                                                                        onFullscreenVideoClick(msg.attachmentUri)
-                                                                    }
-                                                                }
-                                                        ) {
-                                                            if (thumbnail != null) {
-                                                                Image(
-                                                                    bitmap = thumbnail.asImageBitmap(),
-                                                                    contentDescription = "Video attachment",
-                                                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                                                    modifier = Modifier.fillMaxSize()
-                                                                )
-                                                            } else {
-                                                                Box(
-                                                                    modifier = Modifier
-                                                                        .fillMaxSize()
-                                                                        .background(Color.Black.copy(alpha = 0.2f)),
-                                                                    contentAlignment = Alignment.Center
-                                                                ) {
-                                                                    Icon(
-                                                                        painter = painterResource(id = R.drawable.ic_attach_file),
-                                                                        contentDescription = "Video",
-                                                                        tint = textColor.copy(alpha = 0.5f),
-                                                                        modifier = Modifier.size(40.dp)
-                                                                    )
-                                                                }
-                                                            }
-                                                            Box(
-                                                                contentAlignment = Alignment.Center,
-                                                                modifier = Modifier
-                                                                    .size(48.dp)
-                                                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                                            ) {
-                                                                Icon(
-                                                                    painter = painterResource(id = R.drawable.ic_voice_play),
-                                                                    contentDescription = "Play",
-                                                                    tint = Color.White,
-                                                                    modifier = Modifier.size(24.dp).padding(start = 2.dp)
-                                                                )
-                                                            }
-                                                        }
-                                                        if (!msg.text.startsWith("Sent a video")) {
-                                                            Spacer(modifier = Modifier.height(6.dp))
-                                                            Text(
-                                                                text = msg.text,
-                                                                color = textColor,
-                                                                fontSize = 15.sp,
-                                                                lineHeight = 20.sp
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                                "FILE" -> {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        Box(
-                                                            contentAlignment = Alignment.Center,
-                                                            modifier = Modifier
-                                                                .size(40.dp)
-                                                                .background(if (msg.isMe) Color.White.copy(alpha = 0.2f) else primaryColor.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp))
-                                                        ) {
-                                                            Icon(
-                                                                painter = painterResource(id = R.drawable.ic_attach_file),
-                                                                contentDescription = "Document",
-                                                                tint = if (msg.isMe) {
-                                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
-                                                                } else primaryColor,
-                                                                modifier = Modifier.size(22.dp)
-                                                            )
-                                                        }
-                                                        Spacer(modifier = Modifier.width(10.dp))
-                                                        Column {
-                                                            Text(
-                                                                text = msg.attachmentName ?: "Document.pdf",
-                                                                color = textColor,
-                                                                fontSize = 14.sp,
-                                                                fontWeight = FontWeight.SemiBold,
-                                                                maxLines = 1,
-                                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                                            )
-                                                            Text(
-                                                                text = "Encrypted Document",
-                                                                color = textColor.copy(alpha = 0.7f),
-                                                                fontSize = 11.sp
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                                "VOICE" -> {
-                                                    VoiceMessagePlayer(
-                                                        filePath = msg.attachmentUri,
-                                                        isMine = msg.isMe,
-                                                        primaryColor = primaryColor,
-                                                        contentColor = textColor,
-                                                    )
-                                                }
-                                                "LOCATION" -> {
-                                                    Column {
-                                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                                            Icon(
-                                                                painter = painterResource(id = R.drawable.ic_attach_location),
-                                                                contentDescription = "Location",
-                                                                tint = if (msg.isMe) {
-                                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
-                                                                } else primaryColor,
-                                                                modifier = Modifier.size(20.dp)
-                                                            )
-                                                            Spacer(modifier = Modifier.width(8.dp))
-                                                            Text(
-                                                                text = msg.text,
-                                                                color = textColor,
-                                                                fontSize = 14.sp,
-                                                                fontWeight = FontWeight.SemiBold
-                                                            )
-                                                        }
-                                                        Spacer(modifier = Modifier.height(8.dp))
-                                                        Box(
-                                                            contentAlignment = Alignment.Center,
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .height(100.dp)
-                                                                .background(if (msg.isMe) Color.White.copy(alpha = 0.15f) else onSurfaceColor.copy(alpha = 0.05f), shape = RoundedCornerShape(8.dp))
-                                                                .border(0.5.dp, textColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                                                        ) {
-                                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                                Text(
-                                                                    text = msg.attachmentName ?: "Coordinates",
-                                                                    color = textColor,
-                                                                    fontSize = 12.sp,
-                                                                    fontWeight = FontWeight.Medium
-                                                                )
-                                                                Text(
-                                                                    text = "Secure Peer Location",
-                                                                    color = textColor.copy(alpha = 0.6f),
-                                                                    fontSize = 10.sp
-                                                                )
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                else -> {
-                                                    Text(
-                                                        text = msg.text,
-                                                        color = textColor,
-                                                        fontSize = 15.sp,
-                                                        lineHeight = 20.sp
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.align(Alignment.End)
-                                            ) {
-                                                Text(
-                                                    text = MessageTimestampFormatter.format(msg, appLanguage),
-                                                    color = (if (msg.isMe) {
-                                                        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.65f)
-                                                    } else onSurfaceColor.copy(alpha = 0.5f)),
-                                                    fontSize = 9.sp
-                                                )
-                                                if (msg.isMe) {
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    val hasIncomingAfter = if (index < initialMessages.size - 1) {
-                                                        initialMessages.subList(index + 1, initialMessages.size).any { !it.isMe }
-                                                    } else false
-                                                    
-                                                    val isRead = hasIncomingAfter || msg.status == "READ" || isTyping || peerName == "Saved Messages"
-                                                    val isPending = msg.status == "PENDING"
-                                                    
-                                                    val statusText = when {
-                                                        isPending -> "🕒"
-                                                        isRead -> "✓✓"
-                                                        else -> "✓"
-                                                    }
-                                                    val statusColor = if (msg.isMe) {
-                                                        if (primaryColor == com.example.twopchat.theme.MintGreen) {
-                                                            if (isRead) StealthBlack else StealthBlack.copy(alpha = 0.4f)
-                                                        } else {
-                                                            if (isRead) Color.White else Color.White.copy(alpha = 0.5f)
-                                                        }
-                                                    } else {
-                                                        if (isRead) primaryColor else onSurfaceVariant.copy(alpha = 0.4f)
-                                                    }
-                                                    
-                                                    Text(
-                                                        text = statusText,
-                                                        color = statusColor,
-                                                        fontSize = 10.sp,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
-                                                }
-                                                if (msg.reactions.isNotEmpty()) {
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                    Row(
-                                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                                        verticalAlignment = Alignment.CenterVertically
-                                                    ) {
-                                                        msg.reactions.forEach { (emoji, senders) ->
-                                                            Surface(
-                                                                shape = RoundedCornerShape(8.dp),
-                                                                color = if (msg.isMe) {
-                                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.25f)
-                                                                } else primaryColor.copy(alpha = 0.15f)
-                                                            ) {
-                                                                Row(
-                                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                                                                    verticalAlignment = Alignment.CenterVertically
-                                                                ) {
-                                                                    Text(text = emoji, fontSize = 11.sp)
-                                                                    if (senders.size > 1) {
-                                                                        Text(
-                                                                            text = " ${senders.size}",
-                                                                            fontSize = 9.sp,
-                                                                            color = if (msg.isMe) {
-                                                                                if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
-                                                                            } else onSurfaceColor,
-                                                                            fontWeight = FontWeight.Bold
-                                                                        )
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                
-}
-
-@Composable
-fun AudioRecordingIndicator(
-    recordingElapsedMs: Int,
-    appLanguage: String,
-    onSurfaceColor: Color,
-    onSurfaceVariant: Color,
-    inputBg: Color,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .height(48.dp)
-            .background(inputBg, RoundedCornerShape(22.dp))
-            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(22.dp))
-            .padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(9.dp).background(Color.Red, CircleShape))
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = VoiceMessageSupport.formatDuration(recordingElapsedMs),
-            color = onSurfaceColor,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.weight(1f))
-        Text(
-            text = if (appLanguage == "Русский") "Нажмите × для отмены" else "Tap × to cancel",
-            color = onSurfaceVariant,
-            fontSize = 11.sp,
-        )
-    }
-}
-
-@Composable
-fun ChatInputBar(
-    inputText: String,
-    onInputTextChange: (String) -> Unit,
-    isRecordingVoice: Boolean,
-    recordingElapsedMs: Int,
-    showAttachments: Boolean,
-    editingMessage: Message?,
-    appLanguage: String,
-    primaryColor: Color,
-    surfaceColor: Color,
-    onSurfaceColor: Color,
-    onSurfaceVariant: Color,
-    onAttachmentToggle: () -> Unit,
-    onActionClick: () -> Unit
-) {
-    val isDark = surfaceColor.luminance() < 0.5f
-    val inputBg = if (isDark) Color(0xFF0F1012) else Color(0xFFE4E7EC)
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(
-            onClick = onAttachmentToggle,
-            modifier = Modifier
-                .size(44.dp)
-                .background(onSurfaceColor.copy(alpha = 0.03f), shape = CircleShape)
-        ) {
-            if (showAttachments || isRecordingVoice) {
-                Text(
-                    text = "×",
-                    fontSize = 22.sp,
-                    color = primaryColor,
-                    fontWeight = FontWeight.Bold
-                )
-            } else {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_attach_paperclip),
-                    contentDescription = "Attach",
-                    tint = primaryColor,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.width(10.dp))
-
-        if (isRecordingVoice) {
-            AudioRecordingIndicator(
-                recordingElapsedMs = recordingElapsedMs,
-                appLanguage = appLanguage,
-                onSurfaceColor = onSurfaceColor,
-                onSurfaceVariant = onSurfaceVariant,
-                inputBg = inputBg,
-                modifier = Modifier.weight(1f)
-            )
-        } else {
-            TextField(
-                value = inputText,
-                onValueChange = onInputTextChange,
-                placeholder = { Text(Localizations.getString("write_placeholder", appLanguage), color = onSurfaceVariant.copy(alpha = 0.6f)) },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = inputBg,
-                    unfocusedContainerColor = inputBg,
-                    focusedTextColor = onSurfaceColor,
-                    unfocusedTextColor = onSurfaceColor,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
-                ),
-                shape = RoundedCornerShape(22.dp),
-                singleLine = false,
-                maxLines = 3,
-                modifier = Modifier
-                    .weight(1f)
-                    .border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.05f), RoundedCornerShape(22.dp))
-            )
-        }
-
-        Spacer(modifier = Modifier.width(10.dp))
-
-        IconButton(
-            onClick = onActionClick,
-            modifier = Modifier
-                .size(44.dp)
-                .background(primaryColor, shape = CircleShape)
-        ) {
-            Icon(
-                painter = painterResource(
-                    id = when {
-                        isRecordingVoice -> R.drawable.ic_voice_stop
-                        editingMessage != null -> R.drawable.ic_check
-                        inputText.isBlank() -> R.drawable.ic_voice_mic
-                        else -> R.drawable.ic_send_airplane
-                    }
-                ),
-                contentDescription = when {
-                    isRecordingVoice -> "Send voice message"
-                    editingMessage != null -> "Confirm edit"
-                    inputText.isBlank() -> "Record voice message"
-                    else -> "Send"
-                },
-                tint = if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White,
-                modifier = Modifier.size(18.dp)
             )
         }
     }

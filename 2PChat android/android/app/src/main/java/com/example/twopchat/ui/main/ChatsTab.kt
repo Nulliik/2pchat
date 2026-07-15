@@ -42,10 +42,9 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.material.icons.filled.Close
 import com.example.twopchat.data.ChatDatabaseHelper
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
 import com.example.twopchat.PythonBridge

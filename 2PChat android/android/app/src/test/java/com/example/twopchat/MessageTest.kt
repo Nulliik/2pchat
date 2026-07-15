@@ -3,6 +3,7 @@ package com.example.twopchat
 import com.example.twopchat.ui.chat.Message
 import com.example.twopchat.ui.chat.getVerificationEmojis
 import com.example.twopchat.ui.chat.MessageTimestampFormatter
+import com.example.twopchat.ui.chat.MessageDeliveryStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -83,5 +84,11 @@ class MessageTest {
         assertEquals("14:05", MessageTimestampFormatter.format(messageAt(13, 14), "English", now, utc))
         assertEquals("вчера", MessageTimestampFormatter.format(messageAt(12, 14), "Русский", now, utc))
         assertEquals("10 Jul", MessageTimestampFormatter.format(messageAt(10, 14), "English", now, utc))
+    }
+
+    @Test
+    fun deliveryStatus_preservesEditedMarkerAcrossReadReceipt() {
+        assertEquals("READ_edited", MessageDeliveryStatus.merge("SENT_edited", "READ"))
+        assertEquals("READ", MessageDeliveryStatus.merge("SENT", "READ"))
     }
 }

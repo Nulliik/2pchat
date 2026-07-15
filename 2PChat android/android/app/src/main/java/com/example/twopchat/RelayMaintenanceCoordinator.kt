@@ -16,6 +16,7 @@ internal class RelayMaintenanceCoordinator(
     private val peerEndpoints: Map<String, String>,
     private val peerConnectionTransports: MutableMap<String, String>,
     private val peerSessionStates: MutableMap<String, Boolean>,
+    private val onConnectedPeerHeartbeat: (Context, String) -> Unit,
     private val log: (Context, String, String, Throwable?) -> Unit,
 ) {
     private val lastReconnectAttemptAt = ConcurrentHashMap<String, Long>()
@@ -37,6 +38,7 @@ internal class RelayMaintenanceCoordinator(
                             val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
                             if (!fingerprint.isNullOrBlank() && fingerprint in activeFingerprints) {
                                 peerSessionStates[peerName] = true
+                                onConnectedPeerHeartbeat(appContext, peerName)
                             } else {
                                 peerSessionStates.remove(peerName)
                                 peerConnectionTransports.remove(peerName)

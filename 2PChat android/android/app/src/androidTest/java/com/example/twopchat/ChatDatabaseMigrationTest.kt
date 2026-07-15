@@ -3,10 +3,12 @@ package com.example.twopchat
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.twopchat.data.ChatDatabaseHelper
+import com.example.twopchat.data.PendingControl
 import com.example.twopchat.ui.chat.Message
 import net.sqlcipher.database.SQLiteDatabase
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -54,5 +56,23 @@ class ChatDatabaseMigrationTest {
 
         val restored = helper.getMessagesForPeer("Alice").single()
         assertEquals(expectedTimestamp, restored.sentAtEpochMs)
+    }
+
+    @Test
+    fun version6DatabaseMigratesPendingControlQueue() {
+        val helper = ChatDatabaseHelper.getInstance(context)
+        val control = PendingControl(
+            id = "edit:message-1",
+            peerName = "Alice",
+            type = "edit_message",
+            payload = "{\"type\":\"edit_message\",\"text\":\"secret\"}",
+            createdAtEpochMs = 1234L,
+        )
+
+        helper.enqueuePendingControl(control)
+        assertEquals(listOf(control), helper.getPendingControlsForPeer("Alice"))
+
+        helper.deletePendingControl(control.id)
+        assertFalse(helper.getPendingControlsForPeer("Alice").isNotEmpty())
     }
 }
