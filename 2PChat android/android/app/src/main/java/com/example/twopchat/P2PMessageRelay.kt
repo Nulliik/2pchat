@@ -200,7 +200,7 @@ object P2PMessageRelay {
     ) {
         val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
         if (!prefs.getBoolean("persist_chat_history", true)) return
-        val latest = db.getMessagesForPeer(peerName).lastOrNull() ?: return
+        val latest = db.getLastMessageForPeer(peerName) ?: return
         val preview = if (latest.isMe) "You: ${latest.text}" else latest.text
         prefs.edit().putString("last_msg_$peerName", SecureStorage.encrypt(preview)).apply()
     }
@@ -469,12 +469,7 @@ object P2PMessageRelay {
                                     val messageText = json.optString("message_text")
                                     if (msgId.isNotEmpty() && emoji.isNotEmpty()) {
                                         val db = ChatDatabaseHelper.getInstance(appContext)
-                                        val msgs = db.getMessagesForPeer(sender)
-                                        // Message ids used to be generated independently on both
-                                        // Android devices. Keep id as the primary key, but use the
-                                        // immutable message contents for reactions from older chats.
-                                        val existing = msgs.find { it.id == msgId }
-                                            ?: msgs.lastOrNull { it.isMe && messageText.isNotEmpty() && it.text == messageText }
+                                        val existing = db.findMessageForReaction(sender, msgId, messageText)
                                         if (existing != null) {
                                             val updatedMap = existing.reactions.toMutableMap()
                                             val sendersList = (updatedMap[emoji] ?: emptyList()).toMutableList()

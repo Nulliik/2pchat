@@ -229,6 +229,52 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
         db.insert(TABLE_MESSAGES, null, values)
     }
 
+    private fun readMessageFromCursor(cursor: android.database.Cursor): Message {
+        val indexText = cursor.getColumnIndex(KEY_MESSAGE_TEXT)
+        val indexIsMe = cursor.getColumnIndex(KEY_IS_ME)
+        val indexTimestamp = cursor.getColumnIndex(KEY_TIMESTAMP)
+        val indexAttachType = cursor.getColumnIndex(KEY_ATTACHMENT_TYPE)
+        val indexAttachUri = cursor.getColumnIndex(KEY_ATTACHMENT_URI)
+        val indexAttachName = cursor.getColumnIndex(KEY_ATTACHMENT_NAME)
+        val indexReplyToId = cursor.getColumnIndex(KEY_REPLY_TO_ID)
+        val indexReplyToText = cursor.getColumnIndex(KEY_REPLY_TO_TEXT)
+        val indexReplyToName = cursor.getColumnIndex(KEY_REPLY_TO_NAME)
+        val indexStatus = cursor.getColumnIndex(KEY_STATUS)
+        val indexReactions = cursor.getColumnIndex(KEY_REACTIONS)
+        val indexId = cursor.getColumnIndex(KEY_ID)
+        val indexSentAtMs = cursor.getColumnIndex(KEY_SENT_AT_MS)
+
+        val text = if (indexText != -1) dec(cursor.getString(indexText)) else ""
+        val isMe = if (indexIsMe != -1) cursor.getInt(indexIsMe) == 1 else false
+        val timestamp = if (indexTimestamp != -1) cursor.getString(indexTimestamp) else ""
+        val attachType = if (indexAttachType != -1) cursor.getString(indexAttachType) else null
+        val attachUri = if (indexAttachUri != -1) decNullable(cursor.getString(indexAttachUri)) else null
+        val attachName = if (indexAttachName != -1) decNullable(cursor.getString(indexAttachName)) else null
+        val replyToId = if (indexReplyToId != -1) cursor.getString(indexReplyToId) else null
+        val replyToText = if (indexReplyToText != -1) decNullable(cursor.getString(indexReplyToText)) else null
+        val replyToName = if (indexReplyToName != -1) decNullable(cursor.getString(indexReplyToName)) else null
+        val status = if (indexStatus != -1) cursor.getString(indexStatus) else null
+        val reactions = if (indexReactions != -1) deserializeReactions(cursor.getString(indexReactions)) else emptyMap()
+        val id = if (indexId != -1) cursor.getString(indexId) else java.util.UUID.randomUUID().toString()
+        val sentAtEpochMs = if (indexSentAtMs != -1) cursor.getLong(indexSentAtMs) else 0L
+
+        return Message(
+            id = id,
+            text = text,
+            isMe = isMe,
+            timestamp = timestamp,
+            attachmentType = attachType,
+            attachmentUri = attachUri,
+            attachmentName = attachName,
+            replyToId = replyToId,
+            replyToText = replyToText,
+            replyToName = replyToName,
+            status = status,
+            reactions = reactions,
+            sentAtEpochMs = sentAtEpochMs,
+        )
+    }
+
     fun getMessagesForPeer(peerName: String): List<Message> {
         val messages = mutableListOf<Message>()
         val db = this.safeReadableDatabase
@@ -241,59 +287,110 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
             null,
             "rowid ASC"
         )
-        
         cursor.use {
             if (it.moveToFirst()) {
-                val indexText = it.getColumnIndex(KEY_MESSAGE_TEXT)
-                val indexIsMe = it.getColumnIndex(KEY_IS_ME)
-                val indexTimestamp = it.getColumnIndex(KEY_TIMESTAMP)
-                val indexAttachType = it.getColumnIndex(KEY_ATTACHMENT_TYPE)
-                val indexAttachUri = it.getColumnIndex(KEY_ATTACHMENT_URI)
-                val indexAttachName = it.getColumnIndex(KEY_ATTACHMENT_NAME)
-                val indexReplyToId = it.getColumnIndex(KEY_REPLY_TO_ID)
-                val indexReplyToText = it.getColumnIndex(KEY_REPLY_TO_TEXT)
-                val indexReplyToName = it.getColumnIndex(KEY_REPLY_TO_NAME)
-                val indexStatus = it.getColumnIndex(KEY_STATUS)
-                val indexReactions = it.getColumnIndex(KEY_REACTIONS)
-                val indexId = it.getColumnIndex(KEY_ID)
-                val indexSentAtMs = it.getColumnIndex(KEY_SENT_AT_MS)
-                
                 do {
-                    val text = if (indexText != -1) dec(it.getString(indexText)) else ""
-                    val isMe = if (indexIsMe != -1) it.getInt(indexIsMe) == 1 else false
-                    val timestamp = if (indexTimestamp != -1) it.getString(indexTimestamp) else ""
-                    val attachType = if (indexAttachType != -1) it.getString(indexAttachType) else null
-                    val attachUri = if (indexAttachUri != -1) decNullable(it.getString(indexAttachUri)) else null
-                    val attachName = if (indexAttachName != -1) decNullable(it.getString(indexAttachName)) else null
-                    val replyToId = if (indexReplyToId != -1) it.getString(indexReplyToId) else null
-                    val replyToText = if (indexReplyToText != -1) decNullable(it.getString(indexReplyToText)) else null
-                    val replyToName = if (indexReplyToName != -1) decNullable(it.getString(indexReplyToName)) else null
-                    val status = if (indexStatus != -1) it.getString(indexStatus) else null
-                    val reactions = if (indexReactions != -1) deserializeReactions(it.getString(indexReactions)) else emptyMap()
-                    val id = if (indexId != -1) it.getString(indexId) else java.util.UUID.randomUUID().toString()
-                    val sentAtEpochMs = if (indexSentAtMs != -1) it.getLong(indexSentAtMs) else 0L
-                    
-                    messages.add(
-                        Message(
-                            id = id,
-                            text = text,
-                            isMe = isMe,
-                            timestamp = timestamp,
-                            attachmentType = attachType,
-                            attachmentUri = attachUri,
-                            attachmentName = attachName,
-                            replyToId = replyToId,
-                            replyToText = replyToText,
-                            replyToName = replyToName,
-                            status = status,
-                            reactions = reactions,
-                            sentAtEpochMs = sentAtEpochMs,
-                        )
-                    )
+                    messages.add(readMessageFromCursor(it))
                 } while (it.moveToNext())
             }
         }
         return messages
+    }
+
+    fun getMessagesForPeerPaged(peerName: String, limit: Int, offset: Int): List<Message> {
+        val messages = mutableListOf<Message>()
+        val db = this.safeReadableDatabase
+        val cursor = db.query(
+            TABLE_MESSAGES,
+            null,
+            "$KEY_PEER_NAME = ?",
+            arrayOf(peerName),
+            null,
+            null,
+            "rowid DESC",
+            "$limit OFFSET $offset"
+        )
+        cursor.use {
+            if (it.moveToFirst()) {
+                do {
+                    messages.add(readMessageFromCursor(it))
+                } while (it.moveToNext())
+            }
+        }
+        messages.reverse()
+        return messages
+    }
+
+    fun getLastMessageForPeer(peerName: String): Message? {
+        val db = this.safeReadableDatabase
+        val cursor = db.query(
+            TABLE_MESSAGES,
+            null,
+            "$KEY_PEER_NAME = ?",
+            arrayOf(peerName),
+            null,
+            null,
+            "rowid DESC",
+            "1"
+        )
+        cursor.use {
+            if (it.moveToFirst()) {
+                return readMessageFromCursor(it)
+            }
+        }
+        return null
+    }
+
+    fun findMessageForReaction(peerName: String, msgId: String, messageText: String): Message? {
+        val db = this.safeReadableDatabase
+        var cursor = db.query(
+            TABLE_MESSAGES,
+            null,
+            "$KEY_ID = ?",
+            arrayOf(msgId),
+            null,
+            null,
+            null
+        )
+        cursor.use {
+            if (it.moveToFirst()) {
+                return readMessageFromCursor(it)
+            }
+        }
+        if (messageText.isNotEmpty()) {
+            cursor = db.query(
+                TABLE_MESSAGES,
+                null,
+                "$KEY_PEER_NAME = ? AND $KEY_IS_ME = 1 AND $KEY_MESSAGE_TEXT = ?",
+                arrayOf(peerName, enc(messageText)),
+                null,
+                null,
+                "rowid DESC",
+                "1"
+            )
+            cursor.use {
+                if (it.moveToFirst()) {
+                    return readMessageFromCursor(it)
+                }
+            }
+        }
+        return null
+    }
+
+    fun markMessagesAsRead(peerName: String) {
+        val db = this.safeWritableDatabase
+        db.beginTransaction()
+        try {
+            val values = ContentValues().apply {
+                put(KEY_STATUS, "READ")
+            }
+            db.update(TABLE_MESSAGES, values, "$KEY_PEER_NAME = ? AND $KEY_IS_ME = 0 AND $KEY_STATUS != ?", arrayOf(peerName, "READ"))
+            db.setTransactionSuccessful()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            db.endTransaction()
+        }
     }
 
     fun clearMessagesForPeer(peerName: String) {
