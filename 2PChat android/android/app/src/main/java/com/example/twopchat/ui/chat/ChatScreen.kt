@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import java.io.File
 import java.io.FileOutputStream
 import androidx.activity.compose.BackHandler
+import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.geometry.Offset
@@ -196,11 +197,14 @@ fun ChatScreen(
 
     var activeFullscreenImages by remember { mutableStateOf<List<String>>(emptyList()) }
     var activeFullscreenImageIndex by remember { mutableStateOf(0) }
+    var activeFullscreenVideo by remember { mutableStateOf<String?>(null) }
     var showProfileOverlay by remember { mutableStateOf(false) }
 
     BackHandler {
         if (activeFullscreenImages.isNotEmpty()) {
             activeFullscreenImages = emptyList()
+        } else if (activeFullscreenVideo != null) {
+            activeFullscreenVideo = null
         } else if (showProfileOverlay) {
             showProfileOverlay = false
         } else {
@@ -1580,25 +1584,6 @@ remove("pinned_msg_id_${peerName}")
                                                 }
                                                 "VIDEO" -> {
                                                     val thumbnail = rememberVideoThumbnail(msg.attachmentUri)
-                                                    val openVideo = {
-                                                        msg.attachmentUri?.let { uriPath ->
-                                                            try {
-                                                                val file = java.io.File(uriPath)
-                                                                val contentUri = androidx.core.content.FileProvider.getUriForFile(
-                                                                    context,
-                                                                    "${context.packageName}.fileprovider",
-                                                                    file
-                                                                )
-                                                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                                                    setDataAndType(contentUri, "video/*")
-                                                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                                                }
-                                                                context.startActivity(intent)
-                                                            } catch (e: Exception) {
-                                                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось открыть видео" else "Cannot open video", Toast.LENGTH_SHORT).show()
-                                                            }
-                                                        }
-                                                    }
                                                     Column {
                                                         Box(
                                                             contentAlignment = Alignment.Center,
@@ -1606,7 +1591,11 @@ remove("pinned_msg_id_${peerName}")
                                                                 .fillMaxWidth()
                                                                 .height(180.dp)
                                                                 .clip(RoundedCornerShape(8.dp))
-                                                                .clickable { openVideo() }
+                                                                .clickable {
+                                                                    if (msg.attachmentUri != null) {
+                                                                        activeFullscreenVideo = msg.attachmentUri
+                                                                    }
+                                                                }
                                                         ) {
                                                             if (thumbnail != null) {
                                                                 Image(
@@ -3065,6 +3054,14 @@ remove("pinned_msg_id_${peerName}")
             )
         }
 
+        if (activeFullscreenVideo != null) {
+            FullscreenVideoPlayer(
+                videoPath = activeFullscreenVideo!!,
+                appLanguage = appLanguage,
+                onClose = { activeFullscreenVideo = null }
+            )
+        }
+
         if (showProfileOverlay && peerName != "Saved Messages") {
             SharedMediaScreen(
                 peerName = peerName,
@@ -3448,6 +3445,123 @@ fun getVerificationEmojis(localFingerprint: String, peerFingerprint: String): Li
     return result
 }
 
+@Composable
+fun FullscreenVideoPlayer(
+    videoPath: String,
+    appLanguage: String,
+    onClose: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            scope.launch(Dispatchers.IO) {
+                val uri = saveVideoToPublicGallery(context, videoPath)
+                withContext(Dispatchers.Main) {
+                    if (uri != null) {
+                        Toast.makeText(context, if (appLanguage == "Русский") "Видео сохранено в Галерею" else "Video saved to Gallery", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить видео" else "Failed to save video", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        } else {
+            Toast.makeText(context, if (appLanguage == "Русский") "Разрешение на запись отклонено" else "Storage permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val exoPlayer = remember(videoPath) {
+        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            val mediaItem = androidx.media3.common.MediaItem.fromUri(Uri.fromFile(java.io.File(videoPath)))
+            setMediaItem(mediaItem)
+            prepare()
+            playWhenReady = true
+            repeatMode = androidx.media3.common.Player.REPEAT_MODE_ONE
+        }
+    }
+
+    DisposableEffect(exoPlayer) {
+        onDispose {
+            exoPlayer.release()
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        AndroidView(
+            factory = { ctx ->
+                androidx.media3.ui.PlayerView(ctx).apply {
+                    player = exoPlayer
+                    useController = true
+                    setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_ALWAYS)
+                    layoutParams = android.view.ViewGroup.LayoutParams(
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        IconButton(
+            onClick = { onClose() },
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(top = 40.dp, start = 16.dp)
+                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+        ) {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_back_arrow),
+                contentDescription = "Close",
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        IconButton(
+            onClick = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                    ContextCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    ) == PackageManager.PERMISSION_GRANTED
+                ) {
+                    scope.launch(Dispatchers.IO) {
+                        val uri = saveVideoToPublicGallery(context, videoPath)
+                        withContext(Dispatchers.Main) {
+                            if (uri != null) {
+                                Toast.makeText(context, if (appLanguage == "Русский") "Видео сохранено в Галерею" else "Video saved to Gallery", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить видео" else "Failed to save video", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                } else {
+                    launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 40.dp, end = 16.dp)
+                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+        ) {
+            Icon(
+                painter = painterResource(id = R.drawable.ic_download),
+                contentDescription = "Download",
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
 fun saveImageToPublicGallery(context: android.content.Context, filePath: String): Uri? {
     val srcFile = File(filePath)
     if (!srcFile.exists()) return null
@@ -3489,6 +3603,73 @@ fun saveImageToPublicGallery(context: android.content.Context, filePath: String)
         } else {
             val targetDir = File(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+                "2PChat"
+            )
+            if (!targetDir.exists()) {
+                targetDir.mkdirs()
+            }
+            val targetFile = File(targetDir, fileName)
+            FileOutputStream(targetFile).use { outputStream ->
+                FileInputStream(srcFile).use { inputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+            MediaScannerConnection.scanFile(
+                context,
+                arrayOf(targetFile.absolutePath),
+                arrayOf(mimeType),
+                null
+            )
+            return Uri.fromFile(targetFile)
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    return null
+}
+
+fun saveVideoToPublicGallery(context: android.content.Context, filePath: String): Uri? {
+    val srcFile = File(filePath)
+    if (!srcFile.exists()) return null
+
+    val extension = srcFile.extension.lowercase()
+    val mimeType = when (extension) {
+        "mp4" -> "video/mp4"
+        "webm" -> "video/webm"
+        "mkv" -> "video/x-matroska"
+        "avi" -> "video/x-msvideo"
+        "mov" -> "video/quicktime"
+        else -> "video/mp4"
+    }
+    val fileName = "2pchat_${System.currentTimeMillis()}.${if (extension.isNotEmpty()) extension else "mp4"}"
+
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME, fileName)
+                put(MediaStore.Video.Media.MIME_TYPE, mimeType)
+                put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + File.separator + "2PChat")
+                put(MediaStore.Video.Media.IS_PENDING, 1)
+            }
+
+            val videoUri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+            if (videoUri != null) {
+                resolver.openOutputStream(videoUri).use { outputStream ->
+                    if (outputStream != null) {
+                        FileInputStream(srcFile).use { inputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
+                    }
+                }
+                contentValues.clear()
+                contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
+                resolver.update(videoUri, contentValues, null, null)
+                return videoUri
+            }
+        } else {
+            val targetDir = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
                 "2PChat"
             )
             if (!targetDir.exists()) {
