@@ -705,6 +705,63 @@ fun ChatScreen(
         }
     }
 
+    val videoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            var fileName = "video.mp4"
+            context.contentResolver.query(it, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1 && cursor.moveToFirst()) {
+                    val queried = cursor.getString(nameIndex)
+                    if (!queried.isNullOrBlank()) {
+                        fileName = if (!queried.contains(".")) "$queried.mp4" else queried
+                    }
+                }
+            }
+            val tempFile = saveUriToTempFile(context, it, fileName)
+            if (tempFile != null) {
+                val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+                val initialStatus = if (endpoint != null) "SENT" else "PENDING"
+                val outMsg = Message(
+                    id = newMessageId(),
+                    text = "Sent a video",
+                    isMe = true,
+                    timestamp = time,
+                    attachmentType = "VIDEO",
+                    attachmentUri = tempFile.absolutePath,
+                    attachmentName = fileName,
+                    status = initialStatus
+                )
+                initialMessages.add(outMsg)
+                if (persistEnabled || initialStatus == "PENDING") {
+                    db.saveMessage(peerName, outMsg)
+                }
+                if (endpoint != null && peerName != "Saved Messages") {
+                    P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath, outMsg.id) { success ->
+                        if (!success) {
+                            db.updateMessageStatus(outMsg.id, "PENDING")
+                            coroutineScope.launch {
+                                val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                                if (idx != -1) {
+                                    initialMessages[idx] = outMsg.copy(status = "PENDING")
+                                }
+                                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
+                                errorReasonYggdrasilDisabled = !isYggEnabled
+                                showConnectionErrorDialog = true
+                            }
+                        }
+                    }
+                } else if (peerName != "Saved Messages") {
+                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
+                    errorReasonYggdrasilDisabled = !isYggEnabled
+                    showConnectionErrorDialog = true
+                }
+            }
+        }
+    }
+
     var tempCameraFile by remember { mutableStateOf<File?>(null) }
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
@@ -1521,6 +1578,83 @@ remove("pinned_msg_id_${peerName}")
                                                         )
                                                     }
                                                 }
+                                                "VIDEO" -> {
+                                                    val thumbnail = rememberVideoThumbnail(msg.attachmentUri)
+                                                    val openVideo = {
+                                                        msg.attachmentUri?.let { uriPath ->
+                                                            try {
+                                                                val file = java.io.File(uriPath)
+                                                                val contentUri = androidx.core.content.FileProvider.getUriForFile(
+                                                                    context,
+                                                                    "${context.packageName}.fileprovider",
+                                                                    file
+                                                                )
+                                                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                                    setDataAndType(contentUri, "video/*")
+                                                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                                                }
+                                                                context.startActivity(intent)
+                                                            } catch (e: Exception) {
+                                                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось открыть видео" else "Cannot open video", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
+                                                    }
+                                                    Column {
+                                                        Box(
+                                                            contentAlignment = Alignment.Center,
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .height(180.dp)
+                                                                .clip(RoundedCornerShape(8.dp))
+                                                                .clickable { openVideo() }
+                                                        ) {
+                                                            if (thumbnail != null) {
+                                                                Image(
+                                                                    bitmap = thumbnail.asImageBitmap(),
+                                                                    contentDescription = "Video attachment",
+                                                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                                    modifier = Modifier.fillMaxSize()
+                                                                )
+                                                            } else {
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .fillMaxSize()
+                                                                        .background(Color.Black.copy(alpha = 0.2f)),
+                                                                    contentAlignment = Alignment.Center
+                                                                ) {
+                                                                    Icon(
+                                                                        painter = painterResource(id = R.drawable.ic_attach_file),
+                                                                        contentDescription = "Video",
+                                                                        tint = textColor.copy(alpha = 0.5f),
+                                                                        modifier = Modifier.size(40.dp)
+                                                                    )
+                                                                }
+                                                            }
+                                                            Box(
+                                                                contentAlignment = Alignment.Center,
+                                                                modifier = Modifier
+                                                                    .size(48.dp)
+                                                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                                            ) {
+                                                                Icon(
+                                                                    painter = painterResource(id = R.drawable.ic_voice_play),
+                                                                    contentDescription = "Play",
+                                                                    tint = Color.White,
+                                                                    modifier = Modifier.size(24.dp).padding(start = 2.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                        if (!msg.text.startsWith("Sent a video")) {
+                                                            Spacer(modifier = Modifier.height(6.dp))
+                                                            Text(
+                                                                text = msg.text,
+                                                                color = textColor,
+                                                                fontSize = 15.sp,
+                                                                lineHeight = 20.sp
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                                 "FILE" -> {
                                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                                         Box(
@@ -1798,6 +1932,7 @@ remove("pinned_msg_id_${peerName}")
                                     }
                                 }
                                 "Gallery" -> galleryLauncher.launch("image/*")
+                                "Video" -> videoLauncher.launch("video/*")
                                 "File" -> fileLauncher.launch("*/*")
                                 "Location" -> showLocationDialog = true
                             }
@@ -3037,6 +3172,7 @@ fun AttachmentPanel(
         val attachments = listOf(
             AttachmentItem("Camera", R.drawable.ic_attach_camera, primaryColor.copy(alpha = 0.1f)),
             AttachmentItem("Gallery", R.drawable.ic_attach_gallery, primaryColor.copy(alpha = 0.1f)),
+            AttachmentItem("Video", R.drawable.ic_voice_play, primaryColor.copy(alpha = 0.1f)),
             AttachmentItem("File", R.drawable.ic_attach_file, primaryColor.copy(alpha = 0.1f)),
             AttachmentItem("Location", R.drawable.ic_attach_location, primaryColor.copy(alpha = 0.1f))
         )
@@ -3109,6 +3245,37 @@ fun rememberSampledImage(filePath: String?, targetWidth: Int = 400, targetHeight
                         AttachmentImageCache.put(filePath, decoded)
                         withContext(Dispatchers.Main) {
                             bitmapState = decoded
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+    return bitmapState
+}
+
+@Composable
+fun rememberVideoThumbnail(filePath: String?): Bitmap? {
+    if (filePath == null) return null
+    val cacheKey = "thumb_$filePath"
+    val cached = AttachmentImageCache.get(cacheKey)
+    var bitmapState by remember(filePath) { mutableStateOf<Bitmap?>(cached) }
+    LaunchedEffect(filePath) {
+        if (bitmapState != null) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            try {
+                val file = java.io.File(filePath)
+                if (file.exists()) {
+                    val retriever = android.media.MediaMetadataRetriever()
+                    retriever.setDataSource(filePath)
+                    val frame = retriever.getFrameAtTime(1000000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    retriever.release()
+                    if (frame != null) {
+                        AttachmentImageCache.put(cacheKey, frame)
+                        withContext(Dispatchers.Main) {
+                            bitmapState = frame
                         }
                     }
                 }

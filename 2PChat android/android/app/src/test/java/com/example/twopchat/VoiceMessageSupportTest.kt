@@ -18,6 +18,12 @@ class VoiceMessageSupportTest {
     }
 
     @Test
+    fun classifiesVideoByMimeOrExtension() {
+        assertEquals("VIDEO", VoiceMessageSupport.attachmentType("movie.mp4", "video/mp4"))
+        assertEquals("VIDEO", VoiceMessageSupport.attachmentType("clip.MOV", "application/octet-stream"))
+    }
+
+    @Test
     fun formatsDurationsForVoiceBubble() {
         assertEquals("0:00", VoiceMessageSupport.formatDuration(0))
         assertEquals("0:01", VoiceMessageSupport.formatDuration(1_501))
