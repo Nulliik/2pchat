@@ -890,7 +890,7 @@ fun ChatScreen(
         }
     }
 
-    var showLocationDialog by remember { mutableStateOf(false) }
+
     var showMenu by remember { mutableStateOf(false) }
     var isSearchMode by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -1934,7 +1934,6 @@ remove("pinned_msg_id_${peerName}")
                                 "Gallery" -> galleryLauncher.launch("image/*")
                                 "Video" -> videoLauncher.launch("video/*")
                                 "File" -> fileLauncher.launch("*/*")
-                                "Location" -> showLocationDialog = true
                             }
                         }
                     )
@@ -2780,67 +2779,7 @@ remove("pinned_msg_id_${peerName}")
             )
         }
 
-        if (showLocationDialog) {
-            val locationsList = listOf(
-                "Moscow" to "55.7558° N, 37.6173° E",
-                "New York" to "40.7128° N, -74.0060° E",
-                "London" to "51.5074° N, -0.1278° W",
-                "Tokyo" to "35.6762° N, 139.6503° E"
-            )
-            AlertDialog(
-                onDismissRequest = { showLocationDialog = false },
-                confirmButton = {},
-                dismissButton = {
-                    TextButton(onClick = { showLocationDialog = false }) {
-                        Text(Localizations.getString("close", appLanguage), color = primaryColor)
-                    }
-                },
-                title = { Text("Select Location", fontWeight = FontWeight.Bold, color = onSurfaceColor) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        locationsList.forEach { loc ->
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = surfaceColor),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        showLocationDialog = false
-                                        val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                                        initialMessages.add(
-                                            Message(
-                                                id = newMessageId(),
-                                                text = loc.first,
-                                                isMe = true,
-                                                timestamp = time,
-                                                attachmentType = "LOCATION",
-                                                attachmentName = loc.second
-                                            )
-                                        )
-                                    }
-                                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
-                            ) {
-                                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        painter = painterResource(id = R.drawable.ic_attach_location),
-                                        contentDescription = "Pin",
-                                        tint = primaryColor,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column {
-                                        Text(text = loc.first, fontWeight = FontWeight.SemiBold, color = onSurfaceColor)
-                                        Text(text = loc.second, fontSize = 11.sp, color = onSurfaceVariant)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                containerColor = surfaceColor,
-                shape = RoundedCornerShape(20.dp)
-            )
-        }
+
 
         if (showVerifyDialog) {
             val emojis = remember(localFingerprint, activeFingerprint) {
@@ -3173,8 +3112,7 @@ fun AttachmentPanel(
             AttachmentItem("Camera", R.drawable.ic_attach_camera, primaryColor.copy(alpha = 0.1f)),
             AttachmentItem("Gallery", R.drawable.ic_attach_gallery, primaryColor.copy(alpha = 0.1f)),
             AttachmentItem("Video", R.drawable.ic_voice_play, primaryColor.copy(alpha = 0.1f)),
-            AttachmentItem("File", R.drawable.ic_attach_file, primaryColor.copy(alpha = 0.1f)),
-            AttachmentItem("Location", R.drawable.ic_attach_location, primaryColor.copy(alpha = 0.1f))
+            AttachmentItem("File", R.drawable.ic_attach_file, primaryColor.copy(alpha = 0.1f))
         )
         
         attachments.forEach { item ->
