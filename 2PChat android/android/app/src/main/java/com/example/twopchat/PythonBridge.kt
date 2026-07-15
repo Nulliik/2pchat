@@ -489,7 +489,10 @@ object PythonBridge {
                     if (!peer.optBoolean("Up", false)) continue
                     val ip = peer.optString("IP").substringBefore('%').trim()
                     if (ip.isBlank() || ip == ownIp || !ip.contains(':')) continue
-                    add("[$ip]:50001")
+                    // Direct-neighbour diagnostics do not expose the remote app port;
+                    // use the legacy default only as a probe. Tracker/NSD results carry
+                    // the peer's actual configurable port and are preferred.
+                    add("[$ip]:${P2PPreferences.DEFAULT_LISTENER_PORT}")
                 }
             }.distinct().take(12)
         } catch (e: Exception) {

@@ -43,6 +43,8 @@ import androidx.navigation3.runtime.NavKey
 import com.example.twopchat.PythonBridge
 import com.example.twopchat.Chat
 import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.P2PPreferences
+import com.example.twopchat.P2PRelayService
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
@@ -98,6 +100,9 @@ fun SettingsTab(
     var blockScreenshots by remember { mutableStateOf(sharedPrefs.getBoolean("settings_screenshots", true)) }
     var passcodeLock by remember { mutableStateOf(sharedPrefs.getBoolean("settings_passcode", false)) }
     var wifiDiscovery by remember { mutableStateOf(sharedPrefs.getBoolean("settings_wifi", true)) }
+    var listenerPortText by remember {
+        mutableStateOf(P2PPreferences.listenerPort(context).toString())
+    }
     var yggdrasilRouting by remember { mutableStateOf(sharedPrefs.getBoolean("settings_yggdrasil", true)) }
     var ipv4Routing by remember { mutableStateOf(sharedPrefs.getBoolean("settings_ipv4", true)) }
     var persistChatHistory by remember { mutableStateOf(sharedPrefs.getBoolean("persist_chat_history", true)) }
@@ -731,9 +736,68 @@ fun SettingsTab(
                         onCheckedChange = {
                             wifiDiscovery = it
                             sharedPrefs.edit().putBoolean("settings_wifi", it).apply()
+                            P2PMessageRelay.setLocalDiscoveryEnabled(context, it)
                         },
                         colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
                     )
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                val parsedListenerPort = listenerPortText.toIntOrNull()
+                val listenerPortValid = parsedListenerPort in
+                    P2PPreferences.MIN_LISTENER_PORT..P2PPreferences.MAX_LISTENER_PORT
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        if (appLanguage == "Русский") "Порт входящих подключений" else "Incoming listener port",
+                        fontWeight = FontWeight.Medium,
+                        color = onSurfaceColor,
+                    )
+                    Text(
+                        if (appLanguage == "Русский") {
+                            "Одинаковый порт не требуется: он публикуется через DHT, трекеры и локальную сеть"
+                        } else {
+                            "Peers learn this port through DHT, trackers, and local discovery"
+                        },
+                        fontSize = 12.sp,
+                        color = onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = listenerPortText,
+                            onValueChange = { value ->
+                                listenerPortText = value.filter(Char::isDigit).take(5)
+                            },
+                            singleLine = true,
+                            isError = listenerPortText.isNotEmpty() && !listenerPortValid,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextButton(
+                            enabled = listenerPortValid &&
+                                parsedListenerPort != P2PPreferences.listenerPort(context),
+                            onClick = {
+                                val port = parsedListenerPort ?: return@TextButton
+                                sharedPrefs.edit().putInt(P2PPreferences.LISTENER_PORT, port).apply()
+                                androidx.core.content.ContextCompat.startForegroundService(
+                                    context,
+                                    Intent(context, P2PRelayService::class.java).apply {
+                                        action = P2PRelayService.ACTION_RESTART
+                                    },
+                                )
+                                Toast.makeText(
+                                    context,
+                                    if (appLanguage == "Русский") "P2P-порт изменён на $port" else "P2P port changed to $port",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            },
+                        ) {
+                            Text(if (appLanguage == "Русский") "Применить" else "Apply")
+                        }
+                    }
                 }
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))

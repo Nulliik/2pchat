@@ -58,6 +58,20 @@ object SecureStorage {
 
     fun isEncrypted(value: String?) = value?.startsWith(PREFIX) == true
 
+    /** Binary envelope used for private media which must not be left as plaintext files. */
+    fun encryptBytes(value: ByteArray): ByteArray {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key())
+        return byteArrayOf(BINARY_VERSION) + cipher.iv + cipher.doFinal(value)
+    }
+
+    fun decryptBytes(value: ByteArray): ByteArray {
+        require(value.size > 13 && value[0] == BINARY_VERSION) { "Invalid encrypted binary value" }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, value, 1, 12))
+        return cipher.doFinal(value, 13, value.size - 13)
+    }
+
     private var dbPassphraseMem: String? = null
 
     @Synchronized
@@ -85,4 +99,6 @@ object SecureStorage {
     fun clearDbPassphrase() {
         dbPassphraseMem = null
     }
+
+    private const val BINARY_VERSION: Byte = 1
 }

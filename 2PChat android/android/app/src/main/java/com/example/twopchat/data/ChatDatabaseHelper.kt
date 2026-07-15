@@ -6,13 +6,16 @@ import net.sqlcipher.database.SQLiteOpenHelper
 import android.content.ContentValues
 import com.example.twopchat.ui.chat.Message
 import com.example.twopchat.SecureStorage
+import android.util.Log
+import com.example.twopchat.ui.chat.MessageDeliveryStatus
 
 class ChatDatabaseHelper private constructor(private val context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        private const val DATABASE_VERSION = 7
+        private const val DATABASE_VERSION = 8
         private const val TABLE_MESSAGES = "messages"
+        private const val TABLE_PENDING_CONTROLS = "pending_controls"
         
         private const val KEY_ID = "id"
         private const val KEY_PEER_NAME = "peer_name"
@@ -28,6 +31,11 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
         private const val KEY_STATUS = "status"
         private const val KEY_REACTIONS = "reactions"
         private const val KEY_SENT_AT_MS = "sent_at_ms"
+        private const val KEY_CONTROL_ID = "control_id"
+        private const val KEY_CONTROL_TYPE = "control_type"
+        private const val KEY_CONTROL_PAYLOAD = "control_payload"
+        private const val KEY_CREATED_AT_MS = "created_at_ms"
+        private const val TAG = "ChatDatabaseHelper"
         private val activeHelpers = java.util.Collections.newSetFromMap(java.util.WeakHashMap<ChatDatabaseHelper, Boolean>())
         @Volatile private var instance: ChatDatabaseHelper? = null
 
@@ -42,7 +50,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
                     try {
                         helper.close()
                     } catch (e: Exception) {
-                        e.printStackTrace()
+                        Log.e(TAG, "Failed to close database connection", e)
                     }
                 }
                 activeHelpers.clear()
@@ -90,6 +98,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
                 + KEY_REACTIONS + " TEXT,"
                 + KEY_SENT_AT_MS + " INTEGER NOT NULL DEFAULT 0" + ")")
         db.execSQL(createTable)
+        createPendingControlsTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -99,14 +108,14 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
                 db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_REPLY_TO_TEXT TEXT")
                 db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_REPLY_TO_NAME TEXT")
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e(TAG, "Legacy reply-column migration failed", e)
             }
         }
         if (oldVersion < 3) {
             try {
                 db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_STATUS TEXT")
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e(TAG, "Legacy status-column migration failed", e)
             }
         }
         if (oldVersion < 4) {
@@ -165,11 +174,14 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
             try {
                 db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_REACTIONS TEXT")
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e(TAG, "Legacy reactions-column migration failed", e)
             }
         }
         if (oldVersion < 7) {
             db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_SENT_AT_MS INTEGER NOT NULL DEFAULT 0")
+        }
+        if (oldVersion < 8) {
+            createPendingControlsTable(db)
         }
     }
 
@@ -306,19 +318,28 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
             val db = this.safeWritableDatabase
             db.delete(TABLE_MESSAGES, "$KEY_ID = ?", arrayOf(id))
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Failed to delete message $id", e)
         }
     }
 
     fun updateMessageStatus(id: String, status: String) {
         try {
             val db = this.safeWritableDatabase
+            var mergedStatus = status
+            db.rawQuery(
+                "SELECT $KEY_STATUS FROM $TABLE_MESSAGES WHERE $KEY_ID = ?",
+                arrayOf(id),
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    mergedStatus = MessageDeliveryStatus.merge(cursor.getString(0), status)
+                }
+            }
             val values = ContentValues().apply {
-                put(KEY_STATUS, status)
+                put(KEY_STATUS, mergedStatus)
             }
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Failed to update status for $id", e)
         }
     }
 
@@ -330,11 +351,11 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
             }
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Failed to update reactions for $id", e)
         }
     }
 
-    fun updateMessageText(id: String, newText: String, isMe: Boolean) {
+    fun updateMessageText(id: String, newText: String) {
         try {
             val db = this.safeWritableDatabase
             val values = ContentValues().apply {
@@ -352,7 +373,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
             }
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Failed to update text for $id", e)
         }
     }
 
@@ -420,6 +441,62 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
         return messages
     }
 
+    fun enqueuePendingControl(control: PendingControl) {
+        val values = ContentValues().apply {
+            put(KEY_CONTROL_ID, control.id)
+            put(KEY_PEER_NAME, control.peerName)
+            put(KEY_CONTROL_TYPE, control.type)
+            put(KEY_CONTROL_PAYLOAD, enc(control.payload))
+            put(KEY_CREATED_AT_MS, control.createdAtEpochMs)
+        }
+        safeWritableDatabase.insertWithOnConflict(
+            TABLE_PENDING_CONTROLS,
+            null,
+            values,
+            SQLiteDatabase.CONFLICT_REPLACE,
+        )
+    }
+
+    fun getPendingControlsForPeer(peerName: String): List<PendingControl> {
+        val controls = mutableListOf<PendingControl>()
+        safeReadableDatabase.query(
+            TABLE_PENDING_CONTROLS,
+            null,
+            "$KEY_PEER_NAME = ?",
+            arrayOf(peerName),
+            null,
+            null,
+            "$KEY_CREATED_AT_MS ASC",
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                controls += PendingControl(
+                    id = cursor.getString(cursor.getColumnIndexOrThrow(KEY_CONTROL_ID)),
+                    peerName = cursor.getString(cursor.getColumnIndexOrThrow(KEY_PEER_NAME)),
+                    type = cursor.getString(cursor.getColumnIndexOrThrow(KEY_CONTROL_TYPE)),
+                    payload = dec(cursor.getString(cursor.getColumnIndexOrThrow(KEY_CONTROL_PAYLOAD))),
+                    createdAtEpochMs = cursor.getLong(cursor.getColumnIndexOrThrow(KEY_CREATED_AT_MS)),
+                )
+            }
+        }
+        return controls
+    }
+
+    fun deletePendingControl(controlId: String) {
+        safeWritableDatabase.delete(
+            TABLE_PENDING_CONTROLS,
+            "$KEY_CONTROL_ID = ?",
+            arrayOf(controlId),
+        )
+    }
+
+    fun deletePendingControlsForPeer(peerName: String) {
+        safeWritableDatabase.delete(
+            TABLE_PENDING_CONTROLS,
+            "$KEY_PEER_NAME = ?",
+            arrayOf(peerName),
+        )
+    }
+
     fun renamePeer(oldPeerName: String, newPeerName: String) {
         if (oldPeerName == newPeerName) return
         val db = this.safeWritableDatabase
@@ -444,6 +521,21 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
     private fun dec(value: String?) = SecureStorage.decrypt(value).orEmpty()
     private fun decNullable(value: String?) = SecureStorage.decrypt(value)
 
+    private fun createPendingControlsTable(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS $TABLE_PENDING_CONTROLS(" +
+                "$KEY_CONTROL_ID TEXT PRIMARY KEY," +
+                "$KEY_PEER_NAME TEXT NOT NULL," +
+                "$KEY_CONTROL_TYPE TEXT NOT NULL," +
+                "$KEY_CONTROL_PAYLOAD TEXT NOT NULL," +
+                "$KEY_CREATED_AT_MS INTEGER NOT NULL)"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS pending_controls_peer_created " +
+                "ON $TABLE_PENDING_CONTROLS($KEY_PEER_NAME, $KEY_CREATED_AT_MS)"
+        )
+    }
+
     private fun checkAndMigrateDatabase(context: Context, dbFile: java.io.File, pass: String) {
         if (!dbFile.exists()) return
         try {
@@ -462,22 +554,39 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
         } catch (e: Exception) {
             return
         }
-        val tempFile = java.io.File(context.cacheDir, "encrypted.db")
+        // The temporary database is already SQLCipher-encrypted. Keep it beside the
+        // destination so the final rename is on the same filesystem and always clean it.
+        val tempFile = java.io.File(dbFile.parentFile, "$DATABASE_NAME.encrypted.tmp")
         if (tempFile.exists()) tempFile.delete()
+        var source: SQLiteDatabase? = null
         try {
             val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, "", null, SQLiteDatabase.OPEN_READWRITE)
+            source = db
             val escPath = tempFile.absolutePath.replace("'", "''")
             val escPass = pass.replace("'", "''")
             db.execSQL("ATTACH DATABASE '$escPath' AS encrypted KEY '$escPass'")
             db.execSQL("SELECT sqlcipher_export('encrypted')")
             db.execSQL("DETACH DATABASE encrypted")
             db.close()
-            if (dbFile.delete()) {
-                tempFile.renameTo(dbFile)
-            }
+            source = null
+            check(dbFile.delete()) { "Could not replace legacy plaintext database" }
+            check(tempFile.renameTo(dbFile)) { "Could not install encrypted database" }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "Failed to migrate plaintext database", e)
+        } finally {
+            try {
+                source?.close()
+            } catch (_: Exception) {
+            }
             if (tempFile.exists()) tempFile.delete()
         }
     }
 }
+
+data class PendingControl(
+    val id: String,
+    val peerName: String,
+    val type: String,
+    val payload: String,
+    val createdAtEpochMs: Long = System.currentTimeMillis(),
+)

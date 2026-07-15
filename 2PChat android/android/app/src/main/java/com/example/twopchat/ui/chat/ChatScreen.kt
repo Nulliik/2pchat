@@ -39,8 +39,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -59,6 +57,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -167,34 +167,6 @@ fun ChatScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    fun parseIncomingAttachmentMessage(text: String): Message? {
-        val trimmed = text.trim()
-        if (!trimmed.startsWith("{")) {
-            return null
-        }
-        return try {
-            val json = org.json.JSONObject(trimmed)
-            if (json.optString("type") != "file") {
-                return null
-            }
-            val fileName = json.optString("file_name", "file")
-            val filePath = json.optString("file_path", "")
-            val mime = json.optString("mime", "")
-            val attachmentType = VoiceMessageSupport.attachmentType(fileName, mime)
-            Message(
-                id = json.optString("message_id").ifBlank { newMessageId() },
-                text = VoiceMessageSupport.displayMessage(attachmentType, fileName),
-                isMe = false,
-                timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
-                attachmentType = attachmentType,
-                attachmentUri = filePath,
-                attachmentName = fileName
-            )
-        } catch (_: Exception) {
-            null
-        }
-    }
-
     var activeFullscreenImages by remember { mutableStateOf<List<String>>(emptyList()) }
     var activeFullscreenImageIndex by remember { mutableStateOf(0) }
     var activeFullscreenVideo by remember { mutableStateOf<String?>(null) }
@@ -213,6 +185,15 @@ fun ChatScreen(
     }
     
     val coroutineScope = rememberCoroutineScope()
+    fun persistDatabase(operation: () -> Unit) {
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                operation()
+            } catch (error: Exception) {
+                android.util.Log.e("ChatScreen", "Background database operation failed", error)
+            }
+        }
+    }
     val screenInitTime = remember { System.currentTimeMillis() }
     val listState = rememberLazyListState()
     var hasScrolledToBottomOnInit by remember(peerName) { mutableStateOf(false) }
@@ -328,10 +309,12 @@ fun ChatScreen(
     // Load only real persisted messages. Saved Messages keeps its local welcome entry.
     val db = remember(context) { ChatDatabaseHelper.getInstance(context) }
     val persistEnabled = remember(context) { sharedPrefs.getBoolean("persist_chat_history", true) }
-    val initialMessages = remember(peerName) { mutableStateListOf<Message>() }
-    var isHistoryLoading by remember(peerName) { mutableStateOf(true) }
+    val chatViewModel: ChatScreenViewModel = viewModel(key = "chat:$peerName")
+    val initialMessages = chatViewModel.messages
+    var isHistoryLoading by chatViewModel.isHistoryLoading
 
     LaunchedEffect(peerName) {
+        if (!chatViewModel.beginInitialLoad(peerName)) return@LaunchedEffect
         isHistoryLoading = true
         initialMessages.clear()
         val localDefaults = when (peerName) {
@@ -382,7 +365,7 @@ fun ChatScreen(
         )
         initialMessages.add(outMsg)
         if (persistEnabled || initialStatus == "PENDING") {
-            db.saveMessage(peerName, outMsg)
+            persistDatabase { db.saveMessage(peerName, outMsg) }
         }
         val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
         if (!activeSet.contains(peerName)) {
@@ -393,7 +376,7 @@ fun ChatScreen(
         if (endpoint != null && peerName != "Saved Messages") {
             P2PMessageRelay.sendFile(context, peerName, endpoint, recording.file.absolutePath, outMsg.id) { success ->
                 if (!success) {
-                    db.updateMessageStatus(outMsg.id, "PENDING")
+                    persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                     coroutineScope.launch {
                         val index = initialMessages.indexOfFirst { it.id == outMsg.id }
                         if (index != -1) initialMessages[index] = outMsg.copy(status = "PENDING")
@@ -408,7 +391,7 @@ fun ChatScreen(
         }
     }
 
-    var inputText by remember { mutableStateOf("") }
+    var inputText by chatViewModel.inputText
     var showDeleteDialog by remember { mutableStateOf(false) }
     var myTypingState by remember { mutableStateOf(false) }
     val isTyping = P2PMessageRelay.peerTypingStates[peerName] ?: false
@@ -416,10 +399,11 @@ fun ChatScreen(
     LaunchedEffect(peerName, isHistoryLoading) {
         if (isHistoryLoading) return@LaunchedEffect
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-        if (endpoint != null && peerName != "Saved Messages") {
-            P2PMessageRelay.shareAvatar(context, peerName, endpoint)
-            P2PMessageRelay.processOfflineQueue(context, peerName, endpoint)
-            
+        if (peerName != "Saved Messages") {
+            if (endpoint != null) {
+                P2PMessageRelay.shareAvatar(context, peerName, endpoint)
+                P2PMessageRelay.processOfflineQueue(context, peerName, endpoint)
+            }
             // Mark all existing incoming messages as READ in database and send read receipts
             initialMessages.forEach { msg ->
                 if (!msg.isMe && msg.status != "READ") {
@@ -457,45 +441,11 @@ fun ChatScreen(
 
     val messageListener = remember(peerName) {
         object : P2PMessageRelay.MessageListener {
-            override fun onMessageReceived(sender: String, text: String) {
+            override fun onMessageReceived(sender: String, message: Message) {
                 if (sender == peerName) {
-                    val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
-                    val attachmentMessage = parseIncomingAttachmentMessage(text)
-                    val rxMsg = if (attachmentMessage != null) {
-                        attachmentMessage.copy(status = "READ")
-                    } else {
-                        val trimmed = text.trim()
-                        if (trimmed.startsWith("{")) {
-                            try {
-                                val json = org.json.JSONObject(trimmed)
-                                if (json.optString("type") == "reply") {
-                                    val replyText = json.optString("text")
-                                    val replyToId = json.optString("reply_to_id")
-                                    val replyToText = json.optString("reply_to_text")
-                                    val replyToName = json.optString("reply_to_name")
-                                    Message(
-                                        id = newMessageId(),
-                                        text = replyText,
-                                        isMe = false,
-                                        timestamp = time,
-                                        replyToId = replyToId,
-                                        replyToText = replyToText,
-                                        replyToName = replyToName,
-                                        status = "READ"
-                                    )
-                                } else {
-                                    Message(newMessageId(), text, false, time, status = "READ")
-                                }
-                            } catch (e: Exception) {
-                                Message(newMessageId(), text, false, time, status = "READ")
-                            }
-                        } else {
-                            Message(newMessageId(), text, false, time, status = "READ")
-                        }
-                    }
-                    
                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                    if (endpoint != null && peerName != "Saved Messages") {
+                    val rxMsg = message.copy(status = "READ")
+                    if (peerName != "Saved Messages") {
                         P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, rxMsg.id)
                         coroutineScope.launch(Dispatchers.IO) {
                             db.updateMessageStatus(rxMsg.id, "READ")
@@ -510,7 +460,9 @@ fun ChatScreen(
                     val idx = initialMessages.indexOfFirst { it.id == msgId }
                     if (idx != -1) {
                         val current = initialMessages[idx]
-                        initialMessages[idx] = current.copy(status = status)
+                        initialMessages[idx] = current.copy(
+                            status = MessageDeliveryStatus.merge(current.status, status)
+                        )
                     }
                 }
             }
@@ -617,12 +569,12 @@ fun ChatScreen(
     // Session is established lazily on the first real message send — no silent ping needed.
 
     var showAttachments by remember { mutableStateOf(false) }
-    var selectedMessageForOptions by remember { mutableStateOf<Message?>(null) }
-    var replyingToMessage by remember { mutableStateOf<Message?>(null) }
-    var editingMessage by remember { mutableStateOf<Message?>(null) }
+    var selectedMessageForOptions by chatViewModel.selectedMessageForOptions
+    var replyingToMessage by chatViewModel.replyingToMessage
+    var editingMessage by chatViewModel.editingMessage
     
     var isSelectMode by remember { mutableStateOf(false) }
-    val selectedMessages = remember { mutableStateListOf<Message>() }
+    val selectedMessages = chatViewModel.selectedMessages
     var showForwardDialog by remember { mutableStateOf(false) }
     var messageToForward by remember { mutableStateOf<Message?>(null) }
 
@@ -683,12 +635,12 @@ fun ChatScreen(
                 )
                 initialMessages.add(outMsg)
                 if (persistEnabled || initialStatus == "PENDING") {
-                    db.saveMessage(peerName, outMsg)
+                    persistDatabase { db.saveMessage(peerName, outMsg) }
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
                     P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath, outMsg.id) { success ->
                         if (!success) {
-                            db.updateMessageStatus(outMsg.id, "PENDING")
+                            persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                             coroutineScope.launch {
                                 val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
                                 if (idx != -1) {
@@ -740,12 +692,12 @@ fun ChatScreen(
                 )
                 initialMessages.add(outMsg)
                 if (persistEnabled || initialStatus == "PENDING") {
-                    db.saveMessage(peerName, outMsg)
+                    persistDatabase { db.saveMessage(peerName, outMsg) }
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
                     P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath, outMsg.id) { success ->
                         if (!success) {
-                            db.updateMessageStatus(outMsg.id, "PENDING")
+                            persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                             coroutineScope.launch {
                                 val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
                                 if (idx != -1) {
@@ -812,12 +764,12 @@ fun ChatScreen(
             )
             initialMessages.add(outMsg)
             if (persistEnabled || initialStatus == "PENDING") {
-                db.saveMessage(peerName, outMsg)
+                persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (endpoint != null && peerName != "Saved Messages") {
                 P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id) { success ->
                     if (!success) {
-                        db.updateMessageStatus(outMsg.id, "PENDING")
+                        persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                         coroutineScope.launch {
                             val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
                             if (idx != -1) {
@@ -868,12 +820,12 @@ fun ChatScreen(
                 )
                 initialMessages.add(outMsg)
                 if (persistEnabled || initialStatus == "PENDING") {
-                    db.saveMessage(peerName, outMsg)
+                    persistDatabase { db.saveMessage(peerName, outMsg) }
                 }
                 if (endpoint != null && peerName != "Saved Messages") {
                     P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath, outMsg.id) { success ->
                         if (!success) {
-                            db.updateMessageStatus(outMsg.id, "PENDING")
+                            persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                             coroutineScope.launch {
                                 val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
                                 if (idx != -1) {
@@ -896,8 +848,8 @@ fun ChatScreen(
 
 
     var showMenu by remember { mutableStateOf(false) }
-    var isSearchMode by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
+    var isSearchMode by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -1079,7 +1031,8 @@ fun ChatScreen(
                             } else if (isOnline) {
                                 val transportName = P2PMessageRelay.peerConnectionTransports[peerName]
                                     ?: if (appLanguage == "Русский") "маршрут определяется" else "detecting route"
-                                if (appLanguage == "Русский") "В сети • $transportName" else "Online • $transportName"
+                                val rtt = P2PMessageRelay.peerRttMs[peerName]?.let { " • ${it}ms" }.orEmpty()
+                                if (appLanguage == "Русский") "В сети • $transportName$rtt" else "Online • $transportName$rtt"
                             } else {
                                 if (appLanguage == "Русский") "Не в сети" else "Offline"
                             },
@@ -1201,7 +1154,7 @@ fun ChatScreen(
                             },
                             onClick = {
                                 showMenu = false
-                                db.clearMessagesForPeer(peerName)
+                                persistDatabase { db.clearMessagesForPeer(peerName) }
                                 initialMessages.clear()
                                 sharedPrefs.edit { remove("last_msg_$peerName") }
                             }
@@ -1758,8 +1711,8 @@ remove("pinned_msg_id_${peerName}")
                                                         initialMessages.subList(index + 1, initialMessages.size).any { !it.isMe }
                                                     } else false
                                                     
-                                                    val isRead = hasIncomingAfter || msg.status == "READ" || isTyping || peerName == "Saved Messages"
-                                                    val isPending = msg.status == "PENDING"
+                                                    val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
+                                                    val isPending = msg.status?.startsWith("PENDING") == true
                                                     
                                                     val statusText = when {
                                                         isPending -> "🕒"
@@ -2057,7 +2010,7 @@ remove("pinned_msg_id_${peerName}")
                         IconButton(
                             onClick = {
                                 selectedMessages.forEach { msg ->
-                                    db.deleteMessage(msg.id)
+                                    persistDatabase { db.deleteMessage(msg.id) }
                                     initialMessages.remove(msg)
                                     if (msg.id == pinnedMsgId) {
                                         sharedPrefs.edit {
@@ -2232,7 +2185,7 @@ remove("pinned_msg_id_${peerName}")
                                     if (currentEditing != null) {
                                         editingMessage = null
                                         if (userText.isNotEmpty()) {
-                                            db.updateMessageText(currentEditing.id, userText, true)
+                                            persistDatabase { db.updateMessageText(currentEditing.id, userText) }
                                             val idx = initialMessages.indexOfFirst { it.id == currentEditing.id }
                                             if (idx != -1) {
                                                 val oldStatus = currentEditing.status ?: ""
@@ -2240,7 +2193,7 @@ remove("pinned_msg_id_${peerName}")
                                                 initialMessages[idx] = currentEditing.copy(text = userText, status = newStatus)
                                             }
                                             val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                                            if (endpoint != null && peerName != "Saved Messages") {
+                                            if (peerName != "Saved Messages") {
                                                 P2PMessageRelay.sendEditMessage(context, peerName, endpoint, currentEditing.id, userText)
                                             }
                                         }
@@ -2266,7 +2219,7 @@ remove("pinned_msg_id_${peerName}")
                                     )
                                     initialMessages.add(outMsg)
                                     if (persistEnabled || initialStatus == "PENDING") {
-                                        db.saveMessage(peerName, outMsg)
+                                        persistDatabase { db.saveMessage(peerName, outMsg) }
                                     }
 
                                     // Persist in shared preferences last message list
@@ -2300,7 +2253,7 @@ remove("pinned_msg_id_${peerName}")
                                     if (endpoint != null && peerName != "Saved Messages") {
                                         P2PMessageRelay.sendMessage(context, endpoint, username, payload) { success ->
                                             if (!success) {
-                                                db.updateMessageStatus(outMsg.id, "PENDING")
+                                                persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                                                 coroutineScope.launch {
                                                     val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
                                                     if (idx != -1) {
@@ -2613,7 +2566,7 @@ remove("pinned_msg_id_${peerName}")
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable {
-                                    db.deleteMessage(msg.id)
+                                    persistDatabase { db.deleteMessage(msg.id) }
                                     initialMessages.remove(msg)
                                     if (msg.id == pinnedMsgId) {
                                         sharedPrefs.edit {
@@ -2719,7 +2672,7 @@ remove("pinned_msg_id_${peerName}")
                                             
                                             // Save to DB for the forwarded peer
                                             if (persistEnabled || fwdInitialStatus == "PENDING") {
-                                                db.saveMessage(chatName, fwdMsg)
+                                                persistDatabase { db.saveMessage(chatName, fwdMsg) }
                                             }
                                             // Update last message in active chats list
                                             sharedPrefs.edit { putString("last_msg_$chatName", SecureStorage.encrypt("You: $textToForward")) }
@@ -2729,13 +2682,13 @@ remove("pinned_msg_id_${peerName}")
                                                 if (messageToForward?.attachmentType != null && messageToForward?.attachmentUri != null) {
                                                     P2PMessageRelay.sendFile(context, chatName, forwardEndpoint, messageToForward!!.attachmentUri!!, fwdMsg.id) { success ->
                                                         if (!success) {
-                                                            db.updateMessageStatus(fwdMsg.id, "PENDING")
+                                                            persistDatabase { db.updateMessageStatus(fwdMsg.id, "PENDING") }
                                                         }
                                                     }
                                                 } else {
                                                     P2PMessageRelay.sendMessage(context, forwardEndpoint, username, textToForward) { success ->
                                                         if (!success) {
-                                                            db.updateMessageStatus(fwdMsg.id, "PENDING")
+                                                            persistDatabase { db.updateMessageStatus(fwdMsg.id, "PENDING") }
                                                         }
                                                     }
                                                 }
@@ -3251,7 +3204,13 @@ fun FullscreenImageViewer(
         initialPage = initialIndex,
         pageCount = { imagePaths.size }
     )
-    var isZoomed by remember { mutableStateOf(false) }
+    var zoomedPage by remember { mutableIntStateOf(-1) }
+
+    LaunchedEffect(pagerState.currentPage) {
+        // Zoom belongs to a page, never to the pager. Re-enable swiping as soon
+        // as the selected page changes, even during a fast gesture.
+        zoomedPage = -1
+    }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -3282,11 +3241,11 @@ fun FullscreenImageViewer(
         androidx.compose.foundation.pager.HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
-            userScrollEnabled = !isZoomed
+            userScrollEnabled = zoomedPage != pagerState.currentPage
         ) { page ->
             val imagePath = imagePaths[page]
-            var scale by remember { mutableStateOf(1f) }
-            var offset by remember { mutableStateOf(Offset.Zero) }
+            var scale by remember(page) { mutableStateOf(1f) }
+            var offset by remember(page) { mutableStateOf(Offset.Zero) }
 
             val transformState = rememberTransformableState { zoomChange, offsetChange, _ ->
                 scale = (scale * zoomChange).coerceIn(1f, 5f)
@@ -3295,19 +3254,8 @@ fun FullscreenImageViewer(
                 } else {
                     offset = Offset.Zero
                 }
-            }
-
-            LaunchedEffect(scale) {
                 if (page == pagerState.currentPage) {
-                    isZoomed = scale > 1f
-                }
-            }
-
-            LaunchedEffect(pagerState.currentPage) {
-                scale = 1f
-                offset = Offset.Zero
-                if (page == pagerState.currentPage) {
-                    isZoomed = false
+                    zoomedPage = if (scale > 1f) page else -1
                 }
             }
 
@@ -3341,8 +3289,10 @@ fun FullscreenImageViewer(
                                         if (scale > 1f) {
                                             scale = 1f
                                             offset = Offset.Zero
+                                            zoomedPage = -1
                                         } else {
                                             scale = 3f
+                                            zoomedPage = page
                                         }
                                     }
                                 )
@@ -3445,6 +3395,7 @@ fun getVerificationEmojis(localFingerprint: String, peerFingerprint: String): Li
     return result
 }
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun FullscreenVideoPlayer(
     videoPath: String,

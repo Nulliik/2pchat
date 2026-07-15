@@ -78,8 +78,11 @@ class MainActivity : ComponentActivity() {
         // Initialize PythonBridge
         PythonBridge.init(applicationContext)
         
-        // Start background P2P Message Server
-        P2PMessageRelay.startServer(applicationContext)
+        // The foreground service, rather than this Activity, owns the P2P listener.
+        androidx.core.content.ContextCompat.startForegroundService(
+            this,
+            Intent(this, P2PRelayService::class.java),
+        )
 
         // Start Yggdrasil VPN service automatically if enabled and prepared
         val yggPrefs = getSharedPreferences("2pchat_prefs", MODE_PRIVATE)
@@ -330,12 +333,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        if (isFinishing) {
-            P2PMessageRelay.stopServer()
-        }
-    }
 }
 
 // Full Screen Secure Passcode Pinpad Unlock
