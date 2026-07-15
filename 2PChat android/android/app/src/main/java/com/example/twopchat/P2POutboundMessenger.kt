@@ -112,6 +112,20 @@ internal class P2POutboundMessenger(
         })
     }
 
+    fun sendEditMessage(
+        context: Context,
+        peerName: String,
+        endpoint: String,
+        messageId: String,
+        newText: String
+    ) {
+        sendSilently(context, peerName, endpoint, JSONObject().apply {
+            put("type", "edit_message")
+            put("message_id", messageId)
+            put("text", newText)
+        })
+    }
+
     fun processOfflineQueue(context: Context, peerName: String, endpoint: String) {
         if (endpoint.isBlank() || !processingOfflineQueues.add(peerName)) return
         thread(start = true, name = "OfflineQueueThread") {

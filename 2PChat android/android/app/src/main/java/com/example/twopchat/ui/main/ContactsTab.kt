@@ -241,6 +241,7 @@ fun ContactsTab(
                                                         .putStringSet("active_chats", activeSet + parsedName)
                                                         .putString("transport_$parsedName", "DIRECT P2P")
                                                         .putString("peer_fingerprint_$parsedName", expectedFp)
+                                                        .putString("discovery_code_$parsedName", token)
                                                         .apply()
                                                 }
                                                 com.example.twopchat.P2PMessageRelay.peerEndpoints[parsedName] = endpointStr
@@ -878,6 +879,7 @@ fun ContactsTab(
                                         sharedPrefs.edit()
                                             .putString("transport_$peerKey", if (isYgg) "YGGDRASIL" else "DIRECT P2P")
                                             .putString("peer_fingerprint_$peerKey", contact.fingerprint)
+                                            .putString("discovery_code_$peerKey", (if (searchQuery.trim().split('#').size > 1) searchQuery.trim().split('#')[1].trim() else ""))
                                             .apply()
                                     }
                                     // The live search already authenticated this fingerprint. Seed the

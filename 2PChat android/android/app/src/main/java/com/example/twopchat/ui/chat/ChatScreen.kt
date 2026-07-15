@@ -574,6 +574,18 @@ fun ChatScreen(
                     pinnedBy = null
                 }
             }
+
+            override fun onMessageEdited(sender: String, msgId: String, text: String) {
+                if (sender == peerName) {
+                    val idx = initialMessages.indexOfFirst { it.id == msgId }
+                    if (idx != -1) {
+                        val current = initialMessages[idx]
+                        val oldStatus = current.status ?: ""
+                        val newStatus = if (oldStatus.contains("edited")) oldStatus else if (oldStatus.isEmpty()) "edited" else "${oldStatus}_edited"
+                        initialMessages[idx] = current.copy(text = text, status = newStatus)
+                    }
+                }
+            }
         }
     }
 
@@ -602,6 +614,7 @@ fun ChatScreen(
     var showAttachments by remember { mutableStateOf(false) }
     var selectedMessageForOptions by remember { mutableStateOf<Message?>(null) }
     var replyingToMessage by remember { mutableStateOf<Message?>(null) }
+    var editingMessage by remember { mutableStateOf<Message?>(null) }
     
     var isSelectMode by remember { mutableStateOf(false) }
     val selectedMessages = remember { mutableStateListOf<Message>() }
@@ -1830,6 +1843,57 @@ remove("pinned_msg_id_${peerName}")
                     }
                 }
 
+                // Editing Message Preview Bar
+                AnimatedVisibility(
+                    visible = editingMessage != null,
+                    enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut()
+                ) {
+                    editingMessage?.let { editMsg ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                                .background(onSurfaceColor.copy(alpha = 0.03f), RoundedCornerShape(8.dp))
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(3.dp)
+                                    .height(36.dp)
+                                    .background(primaryColor, RoundedCornerShape(2.dp))
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Редактирование сообщения" else "Edit Message",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryColor
+                                )
+                                Text(
+                                    text = editMsg.text,
+                                    fontSize = 11.sp,
+                                    color = onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(
+                                onClick = { 
+                                    editingMessage = null 
+                                    inputText = ""
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Text("×", fontSize = 18.sp, color = onSurfaceVariant, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
                 if (isSelectMode) {
                     Row(
                         modifier = Modifier
@@ -2031,10 +2095,27 @@ remove("pinned_msg_id_${peerName}")
                                     val userText = inputText.trim()
                                     inputText = ""
                                     showAttachments = false
-                                    val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                                    
-                                    val replyTo = replyingToMessage
-                                    replyingToMessage = null
+                                    val currentEditing = editingMessage
+                                    if (currentEditing != null) {
+                                        editingMessage = null
+                                        if (userText.isNotEmpty()) {
+                                            db.updateMessageText(currentEditing.id, userText, true)
+                                            val idx = initialMessages.indexOfFirst { it.id == currentEditing.id }
+                                            if (idx != -1) {
+                                                val oldStatus = currentEditing.status ?: ""
+                                                val newStatus = if (oldStatus.contains("edited")) oldStatus else if (oldStatus.isEmpty()) "edited" else "${oldStatus}_edited"
+                                                initialMessages[idx] = currentEditing.copy(text = userText, status = newStatus)
+                                            }
+                                            val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+                                            if (endpoint != null && peerName != "Saved Messages") {
+                                                P2PMessageRelay.sendEditMessage(context, peerName, endpoint, currentEditing.id, userText)
+                                            }
+                                        }
+                                    } else {
+                                        val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                                        
+                                        val replyTo = replyingToMessage
+                                        replyingToMessage = null
 
                                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                                     val initialStatus = if (endpoint != null || peerName == "Saved Messages") "SENT" else "PENDING"
@@ -2094,9 +2175,9 @@ remove("pinned_msg_id_${peerName}")
                                             }
                                         }
                                     }
-
                                 }
-                            },
+                            }
+                        },
                             modifier = Modifier
                                 .size(44.dp)
                                 .background(primaryColor, shape = CircleShape)
@@ -2105,12 +2186,14 @@ remove("pinned_msg_id_${peerName}")
                                 painter = painterResource(
                                     id = when {
                                         isRecordingVoice -> R.drawable.ic_voice_stop
+                                        editingMessage != null -> R.drawable.ic_check
                                         inputText.isBlank() -> R.drawable.ic_voice_mic
                                         else -> R.drawable.ic_send_airplane
                                     }
                                 ),
                                 contentDescription = when {
                                     isRecordingVoice -> "Send voice message"
+                                    editingMessage != null -> "Confirm edit"
                                     inputText.isBlank() -> "Record voice message"
                                     else -> "Send"
                                 },
@@ -2249,6 +2332,39 @@ remove("pinned_msg_id_${peerName}")
                                 fontSize = 15.sp,
                                 color = onSurfaceColor
                             )
+                        }
+
+                        // Edit
+                        val isEditable = msg.isMe && 
+                                (System.currentTimeMillis() - msg.sentAtEpochMs <= 3600_000L) && 
+                                msg.attachmentType == null
+                        
+                        if (isEditable) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        editingMessage = msg
+                                        inputText = msg.text
+                                        selectedMessageForOptions = null
+                                    }
+                                    .padding(vertical = 12.dp, horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_edit),
+                                    contentDescription = "Edit",
+                                    tint = onSurfaceColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Text(
+                                    text = if (appLanguage == "Русский") "Редактировать" else "Edit",
+                                    fontSize = 15.sp,
+                                    color = onSurfaceColor
+                                )
+                            }
                         }
 
                         // Copy

@@ -334,6 +334,28 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
         }
     }
 
+    fun updateMessageText(id: String, newText: String, isMe: Boolean) {
+        try {
+            val db = this.safeWritableDatabase
+            val values = ContentValues().apply {
+                put(KEY_MESSAGE_TEXT, enc(newText))
+            }
+            val selectQuery = "SELECT $KEY_STATUS FROM $TABLE_MESSAGES WHERE $KEY_ID = ?"
+            db.rawQuery(selectQuery, arrayOf(id)).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val oldStatus = cursor.getString(0) ?: ""
+                    if (!oldStatus.contains("edited")) {
+                        val newStatus = if (oldStatus.isEmpty()) "edited" else "${oldStatus}_edited"
+                        values.put(KEY_STATUS, newStatus)
+                    }
+                }
+            }
+            db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     fun getPendingMessagesForPeer(peerName: String): List<Message> {
         val messages = mutableListOf<Message>()
         val db = this.safeReadableDatabase
