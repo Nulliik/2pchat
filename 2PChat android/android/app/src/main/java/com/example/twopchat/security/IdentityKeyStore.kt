@@ -14,21 +14,29 @@ object IdentityKeyStore {
     private const val ALIAS = "2pchat_identity_storage_v1"
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
 
+    @Volatile
+    private var cachedKey: SecretKey? = null
+
     private fun key(): SecretKey {
-        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getKey(ALIAS, null) as? SecretKey)?.let { return it }
-        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").run {
-            init(
-                KeyGenParameterSpec.Builder(
-                    ALIAS,
-                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+        cachedKey?.let { return it }
+        return synchronized(this) {
+            cachedKey?.let { return it }
+            val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+            val key = (store.getKey(ALIAS, null) as? SecretKey) ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").run {
+                init(
+                    KeyGenParameterSpec.Builder(
+                        ALIAS,
+                        KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+                    )
+                        .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                        .setKeySize(256)
+                        .build(),
                 )
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .setKeySize(256)
-                    .build(),
-            )
-            generateKey()
+                generateKey()
+            }
+            cachedKey = key
+            key
         }
     }
 

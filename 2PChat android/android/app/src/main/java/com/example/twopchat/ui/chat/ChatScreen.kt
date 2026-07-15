@@ -195,10 +195,13 @@ fun ChatScreen(
     }
 
     var activeFullscreenImageUri by remember { mutableStateOf<String?>(null) }
+    var showProfileOverlay by remember { mutableStateOf(false) }
 
     BackHandler {
         if (activeFullscreenImageUri != null) {
             activeFullscreenImageUri = null
+        } else if (showProfileOverlay) {
+            showProfileOverlay = false
         } else {
             onBack()
         }
@@ -320,7 +323,12 @@ fun ChatScreen(
     // Load only real persisted messages. Saved Messages keeps its local welcome entry.
     val db = remember(context) { ChatDatabaseHelper.getInstance(context) }
     val persistEnabled = remember(context) { sharedPrefs.getBoolean("persist_chat_history", true) }
-    val initialMessages = remember(peerName) {
+    val initialMessages = remember(peerName) { mutableStateListOf<Message>() }
+    var isHistoryLoading by remember(peerName) { mutableStateOf(true) }
+
+    LaunchedEffect(peerName) {
+        isHistoryLoading = true
+        initialMessages.clear()
         val localDefaults = when (peerName) {
             "Saved Messages" -> listOf(
                 Message(
@@ -334,20 +342,23 @@ fun ChatScreen(
             else -> emptyList()
         }
 
-        val list = db.getMessagesForPeer(peerName)
+        val list = withContext(Dispatchers.IO) {
+            db.getMessagesForPeer(peerName)
+        }
         if (persistEnabled) {
             if (list.isEmpty()) {
-                localDefaults.forEach { db.saveMessage(peerName, it) }
-                mutableStateListOf<Message>().apply { addAll(localDefaults) }
+                withContext(Dispatchers.IO) {
+                    localDefaults.forEach { db.saveMessage(peerName, it) }
+                }
+                initialMessages.addAll(localDefaults)
             } else {
-                mutableStateListOf<Message>().apply { addAll(list) }
+                initialMessages.addAll(list)
             }
         } else {
-            mutableStateListOf<Message>().apply {
-                addAll(localDefaults)
-                addAll(list.filter { it.status == "PENDING" })
-            }
+            initialMessages.addAll(localDefaults)
+            initialMessages.addAll(list.filter { it.status == "PENDING" })
         }
+        isHistoryLoading = false
     }
 
     fun sendVoiceRecording(recording: VoiceRecording) {
@@ -397,7 +408,8 @@ fun ChatScreen(
     var myTypingState by remember { mutableStateOf(false) }
     val isTyping = P2PMessageRelay.peerTypingStates[peerName] ?: false
 
-    LaunchedEffect(peerName) {
+    LaunchedEffect(peerName, isHistoryLoading) {
+        if (isHistoryLoading) return@LaunchedEffect
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
         if (endpoint != null && peerName != "Saved Messages") {
             P2PMessageRelay.shareAvatar(context, peerName, endpoint)
@@ -406,7 +418,9 @@ fun ChatScreen(
             // Mark all existing incoming messages as READ in database and send read receipts
             initialMessages.forEach { msg ->
                 if (!msg.isMe && msg.status != "READ") {
-                    db.updateMessageStatus(msg.id, "READ")
+                    withContext(Dispatchers.IO) {
+                        db.updateMessageStatus(msg.id, "READ")
+                    }
                     val idx = initialMessages.indexOfFirst { it.id == msg.id }
                     if (idx != -1) {
                         initialMessages[idx] = msg.copy(status = "READ")
@@ -478,7 +492,9 @@ fun ChatScreen(
                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                     if (endpoint != null && peerName != "Saved Messages") {
                         P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, rxMsg.id)
-                        db.updateMessageStatus(rxMsg.id, "READ")
+                        coroutineScope.launch(Dispatchers.IO) {
+                            db.updateMessageStatus(rxMsg.id, "READ")
+                        }
                     }
                     initialMessages.add(rxMsg)
                 }
@@ -675,62 +691,79 @@ fun ChatScreen(
         }
     }
 
+    var tempCameraFile by remember { mutableStateOf<File?>(null) }
     val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap: Bitmap? ->
-        bitmap?.let {
-            val attachmentsDir = File(context.filesDir, "attachments")
-            if (!attachmentsDir.exists()) {
-                attachmentsDir.mkdirs()
+        contract = ActivityResultContracts.TakePicture()
+    ) { success: Boolean ->
+        if (!success) return@rememberLauncherForActivityResult
+        val file = tempCameraFile ?: return@rememberLauncherForActivityResult
+        try {
+            // Correct EXIF rotation so photo is not upside-down when sent
+            val exif = android.media.ExifInterface(file.absolutePath)
+            val orientation = exif.getAttributeInt(
+                android.media.ExifInterface.TAG_ORIENTATION,
+                android.media.ExifInterface.ORIENTATION_NORMAL
+            )
+            val rotationAngle = when (orientation) {
+                android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
             }
-            val file = File(attachmentsDir, "camera_capture_${System.currentTimeMillis()}.jpg")
-            try {
-                val out = FileOutputStream(file)
-                it.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                out.flush()
-                out.close()
-                val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                val initialStatus = if (endpoint != null) "SENT" else "PENDING"
-                val outMsg = Message(
-                    id = newMessageId(),
-                    text = "Captured a photo",
-                    isMe = true,
-                    timestamp = time,
-                    attachmentType = "IMAGE",
-                    attachmentUri = file.absolutePath,
-                    attachmentName = file.name,
-                    status = initialStatus
-                )
-                initialMessages.add(outMsg)
-                if (persistEnabled || initialStatus == "PENDING") {
-                    db.saveMessage(peerName, outMsg)
+            if (rotationAngle != 0) {
+                val decoded = BitmapFactory.decodeFile(file.absolutePath)
+                if (decoded != null) {
+                    val matrix = android.graphics.Matrix().apply { postRotate(rotationAngle.toFloat()) }
+                    val rotated = android.graphics.Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+                    val out = FileOutputStream(file)
+                    rotated.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, out)
+                    out.flush(); out.close()
+                    if (rotated != decoded) decoded.recycle()
+                    rotated.recycle()
                 }
-                if (endpoint != null && peerName != "Saved Messages") {
-                    P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id) { success ->
-                        if (!success) {
-                            db.updateMessageStatus(outMsg.id, "PENDING")
-                            coroutineScope.launch {
-                                val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                                if (idx != -1) {
-                                    initialMessages[idx] = outMsg.copy(status = "PENDING")
-                                }
-                                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
-                                errorReasonYggdrasilDisabled = !isYggEnabled
-                                showConnectionErrorDialog = true
+            }
+            val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+            val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+            val initialStatus = if (endpoint != null) "SENT" else "PENDING"
+            val outMsg = Message(
+                id = newMessageId(),
+                text = "Captured a photo",
+                isMe = true,
+                timestamp = time,
+                attachmentType = "IMAGE",
+                attachmentUri = file.absolutePath,
+                attachmentName = file.name,
+                status = initialStatus
+            )
+            initialMessages.add(outMsg)
+            if (persistEnabled || initialStatus == "PENDING") {
+                db.saveMessage(peerName, outMsg)
+            }
+            if (endpoint != null && peerName != "Saved Messages") {
+                P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id) { success ->
+                    if (!success) {
+                        db.updateMessageStatus(outMsg.id, "PENDING")
+                        coroutineScope.launch {
+                            val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                            if (idx != -1) {
+                                initialMessages[idx] = outMsg.copy(status = "PENDING")
                             }
+                            val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
+                            errorReasonYggdrasilDisabled = !isYggEnabled
+                            showConnectionErrorDialog = true
                         }
                     }
-                } else if (peerName != "Saved Messages") {
-                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
-                    errorReasonYggdrasilDisabled = !isYggEnabled
-                    showConnectionErrorDialog = true
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } else if (peerName != "Saved Messages") {
+                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
+                errorReasonYggdrasilDisabled = !isYggEnabled
+                showConnectionErrorDialog = true
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
+
 
     val fileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -910,6 +943,7 @@ fun ChatScreen(
                     modifier = Modifier
                         .size(44.dp)
                         .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
+                        .clickable(enabled = peerName != "Saved Messages") { showProfileOverlay = true }
                 ) {
                     val avatarBitmap = P2PMessageRelay.peerAvatars[peerName]
                     if (avatarBitmap != null) {
@@ -944,7 +978,7 @@ fun ChatScreen(
                     else -> Color(0xFFFFC107) // Yellow
                 }
 
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f).clickable(enabled = peerName != "Saved Messages") { showProfileOverlay = true }) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = displayName,
@@ -1221,7 +1255,13 @@ remove("pinned_msg_id_${peerName}")
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                LazyColumn(
+                if (isHistoryLoading) {
+                    CircularProgressIndicator(
+                        color = primaryColor,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                } else {
+                    LazyColumn(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
@@ -1663,6 +1703,7 @@ remove("pinned_msg_id_${peerName}")
                     }
                 }
             }
+            }
 
             // Scroll To Bottom Button
             androidx.compose.animation.AnimatedVisibility(
@@ -1719,7 +1760,16 @@ remove("pinned_msg_id_${peerName}")
                             when (type) {
                                 "Camera" -> {
                                     try {
-                                        cameraLauncher.launch(null)
+                                        val attachmentsDir = File(context.filesDir, "attachments")
+                                        if (!attachmentsDir.exists()) attachmentsDir.mkdirs()
+                                        val file = File(attachmentsDir, "camera_capture_${System.currentTimeMillis()}.jpg")
+                                        tempCameraFile = file
+                                        val photoUri = androidx.core.content.FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.fileprovider",
+                                            file
+                                        )
+                                        cameraLauncher.launch(photoUri)
                                     } catch (e: Exception) {
                                         Toast.makeText(context, "Camera launch failed", Toast.LENGTH_SHORT).show()
                                     }
@@ -2806,6 +2856,31 @@ remove("pinned_msg_id_${peerName}")
                 imagePath = uri,
                 appLanguage = appLanguage,
                 onClose = { activeFullscreenImageUri = null }
+            )
+        }
+
+        if (showProfileOverlay && peerName != "Saved Messages") {
+            SharedMediaScreen(
+                peerName = peerName,
+                messages = initialMessages.toList(),
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                appLanguage = appLanguage,
+                isVerified = isVerified,
+                isMuted = isMuted,
+                onToggleMute = { newMuted ->
+                    isMuted = newMuted
+                    sharedPrefs.edit().putBoolean("mute_notifications_$peerName", newMuted).apply()
+                },
+                onImageClick = { paths, index ->
+                    if (paths.isNotEmpty()) {
+                        activeFullscreenImageUri = paths[index]
+                        showProfileOverlay = false
+                    }
+                },
+                onBack = { showProfileOverlay = false }
             )
         }
     }

@@ -97,6 +97,7 @@ object P2PMessageRelay {
         fun onVerificationResponse(sender: String, success: Boolean) {}
         fun onMessagePinned(sender: String, msgId: String, text: String, isFromSender: Boolean) {}
         fun onMessageUnpinned(sender: String) {}
+        fun onMessageEdited(sender: String, msgId: String, text: String) {}
     }
 
     private val messageListeners = java.util.concurrent.CopyOnWriteArrayList<MessageListener>()
@@ -450,6 +451,18 @@ object P2PMessageRelay {
                                     }
                                     return
                                 }
+                                "edit_message" -> {
+                                    val msgId = json.optString("message_id")
+                                    val text = json.optString("text")
+                                    if (msgId.isNotEmpty() && text.isNotEmpty()) {
+                                        val db = ChatDatabaseHelper.getInstance(appContext)
+                                        db.updateMessageText(msgId, text, false)
+                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                            messageListeners.forEach { it.onMessageEdited(sender, msgId, text) }
+                                        }
+                                    }
+                                    return
+                                }
                                 "reaction" -> {
                                     val msgId = json.optString("message_id")
                                     val emoji = json.optString("emoji")
@@ -475,6 +488,42 @@ object P2PMessageRelay {
                                             messageListeners.forEach {
                                                 it.onMessageReactionChanged(sender, existing?.id ?: msgId, emoji, sender)
                                             }
+                                        }
+                                    }
+                                    return
+                                }
+                                "text" -> {
+                                    val msgId = json.optString("message_id")
+                                    val msgText = json.optString("text")
+                                    
+                                    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+                                    if (!activeSet.contains(sender)) {
+                                        val newSet = activeSet.toMutableSet()
+                                        newSet.add(sender)
+                                        sharedPrefs.edit { putStringSet("active_chats", newSet) }
+                                    }
+                                    
+                                    val persistEnabled = sharedPrefs.getBoolean("persist_chat_history", true)
+                                    val db = ChatDatabaseHelper.getInstance(appContext)
+                                    val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
+                                    
+                                    val rxMsg = Message(
+                                        id = if (msgId.isNotEmpty()) msgId else UUID.randomUUID().toString(),
+                                        text = msgText,
+                                        isMe = false,
+                                        timestamp = time,
+                                        status = "SENT"
+                                    )
+                                    if (persistEnabled) {
+                                        db.saveMessage(sender, rxMsg)
+                                    }
+                                    sharedPrefs.edit { putString("last_msg_$sender", SecureStorage.encrypt(msgText)) }
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        messageListeners.forEach { it.onMessageReceived(sender, msgText) }
+                                        if (activeChatPeerName != sender) {
+                                            val currentUnread = sharedPrefs.getInt("unread_count_$sender", 0)
+                                            sharedPrefs.edit { putInt("unread_count_$sender", currentUnread + 1) }
+                                            showNotification(appContext, sender, msgText)
                                         }
                                     }
                                     return
@@ -511,11 +560,11 @@ object P2PMessageRelay {
                                 }
                                 sharedPrefs.edit { putString("last_msg_$sender", SecureStorage.encrypt(replyText)) }
                                 android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                    messageListeners.forEach { it.onMessageReceived(sender, text) }
+                                    messageListeners.forEach { it.onMessageReceived(sender, replyText) }
                                     if (activeChatPeerName != sender) {
                                         val currentUnread = sharedPrefs.getInt("unread_count_$sender", 0)
                                         sharedPrefs.edit { putInt("unread_count_$sender", currentUnread + 1) }
-                                        showNotification(appContext, sender, text)
+                                        showNotification(appContext, sender, replyText)
                                     }
                                 }
                                 return
@@ -869,6 +918,10 @@ object P2PMessageRelay {
 
     fun sendReaction(context: Context, peerName: String, endpoint: String, messageId: String, messageText: String, emoji: String) {
         outboundMessenger.sendReaction(context, peerName, endpoint, messageId, messageText, emoji)
+    }
+
+    fun sendEditMessage(context: Context, peerName: String, endpoint: String, messageId: String, newText: String) {
+        outboundMessenger.sendEditMessage(context, peerName, endpoint, messageId, newText)
     }
 
     fun processOfflineQueue(context: Context, peerName: String, endpoint: String) {
