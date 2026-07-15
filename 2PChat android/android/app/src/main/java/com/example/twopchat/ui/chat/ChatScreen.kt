@@ -194,12 +194,13 @@ fun ChatScreen(
         }
     }
 
-    var activeFullscreenImageUri by remember { mutableStateOf<String?>(null) }
+    var activeFullscreenImages by remember { mutableStateOf<List<String>>(emptyList()) }
+    var activeFullscreenImageIndex by remember { mutableStateOf(0) }
     var showProfileOverlay by remember { mutableStateOf(false) }
 
     BackHandler {
-        if (activeFullscreenImageUri != null) {
-            activeFullscreenImageUri = null
+        if (activeFullscreenImages.isNotEmpty()) {
+            activeFullscreenImages = emptyList()
         } else if (showProfileOverlay) {
             showProfileOverlay = false
         } else {
@@ -1489,7 +1490,16 @@ remove("pinned_msg_id_${peerName}")
                                                                     .heightIn(max = 200.dp)
                                                                     .clip(RoundedCornerShape(8.dp))
                                                                     .clickable {
-                                                                        activeFullscreenImageUri = msg.attachmentUri
+                                                                        val allImages = initialMessages.filter { it.attachmentType == "IMAGE" && !it.attachmentUri.isNullOrBlank() }.map { it.attachmentUri!! }
+                                                                        val clickedUri = msg.attachmentUri
+                                                                        val clickedIndex = if (clickedUri != null) allImages.indexOf(clickedUri) else -1
+                                                                        if (clickedIndex != -1) {
+                                                                            activeFullscreenImages = allImages
+                                                                            activeFullscreenImageIndex = clickedIndex
+                                                                        } else if (clickedUri != null) {
+                                                                            activeFullscreenImages = listOf(clickedUri)
+                                                                            activeFullscreenImageIndex = 0
+                                                                        }
                                                                     }
                                                             )
                                                             if (!msg.text.startsWith("Sent an image") && !msg.text.startsWith("Captured a photo")) {
@@ -2967,11 +2977,12 @@ remove("pinned_msg_id_${peerName}")
             )
         }
 
-        activeFullscreenImageUri?.let { uri ->
+        if (activeFullscreenImages.isNotEmpty()) {
             FullscreenImageViewer(
-                imagePath = uri,
+                imagePaths = activeFullscreenImages,
+                initialIndex = activeFullscreenImageIndex,
                 appLanguage = appLanguage,
-                onClose = { activeFullscreenImageUri = null }
+                onClose = { activeFullscreenImages = emptyList() }
             )
         }
 
@@ -2992,7 +3003,8 @@ remove("pinned_msg_id_${peerName}")
                 },
                 onImageClick = { paths, index ->
                     if (paths.isNotEmpty()) {
-                        activeFullscreenImageUri = paths[index]
+                        activeFullscreenImages = paths
+                        activeFullscreenImageIndex = index
                         showProfileOverlay = false
                     }
                 },
@@ -3118,23 +3130,29 @@ fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeig
     return inSampleSize
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun FullscreenImageViewer(
-    imagePath: String,
+    imagePaths: List<String>,
+    initialIndex: Int,
     appLanguage: String,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
+    val pagerState = androidx.compose.foundation.pager.rememberPagerState(
+        initialPage = initialIndex,
+        pageCount = { imagePaths.size }
+    )
+    var isZoomed by remember { mutableStateOf(false) }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
             scope.launch(Dispatchers.IO) {
-                val uri = saveImageToPublicGallery(context, imagePath)
+                val currentPath = imagePaths[pagerState.currentPage]
+                val uri = saveImageToPublicGallery(context, currentPath)
                 withContext(Dispatchers.Main) {
                     if (uri != null) {
                         Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
@@ -3146,11 +3164,6 @@ fun FullscreenImageViewer(
         } else {
             Toast.makeText(context, if (appLanguage == "Русский") "Разрешение на запись отклонено" else "Storage permission denied", Toast.LENGTH_SHORT).show()
         }
-    }
-    
-    val state = rememberTransformableState { zoomChange, offsetChange, _ ->
-        scale = (scale * zoomChange).coerceIn(1f, 5f)
-        offset += offsetChange
     }
 
     Box(
@@ -3164,36 +3177,74 @@ fun FullscreenImageViewer(
             },
         contentAlignment = Alignment.Center
     ) {
-        val bitmap = rememberSampledImage(imagePath, targetWidth = 1200, targetHeight = 1200)
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap.asImageBitmap(),
-                contentDescription = "Fullscreen Image",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(
-                        scaleX = scale,
-                        scaleY = scale,
-                        translationX = offset.x,
-                        translationY = offset.y
-                    )
-                    .transformable(state = state)
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { onClose() },
-                            onDoubleTap = {
-                                if (scale > 1f) {
-                                    scale = 1f
-                                    offset = Offset.Zero
-                                } else {
-                                    scale = 3f
-                                }
+        androidx.compose.foundation.pager.HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            userScrollEnabled = !isZoomed
+        ) { page ->
+            val imagePath = imagePaths[page]
+            var scale by remember { mutableStateOf(1f) }
+            var offset by remember { mutableStateOf(Offset.Zero) }
+
+            val transformState = rememberTransformableState { zoomChange, offsetChange, _ ->
+                scale = (scale * zoomChange).coerceIn(1f, 5f)
+                if (scale > 1f) {
+                    offset += offsetChange
+                } else {
+                    offset = Offset.Zero
+                }
+            }
+
+            LaunchedEffect(scale) {
+                if (page == pagerState.currentPage) {
+                    isZoomed = scale > 1f
+                }
+            }
+
+            LaunchedEffect(pagerState.currentPage) {
+                scale = 1f
+                offset = Offset.Zero
+                if (page == pagerState.currentPage) {
+                    isZoomed = false
+                }
+            }
+
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                val bitmap = rememberSampledImage(imagePath, targetWidth = 1200, targetHeight = 1200)
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Fullscreen Image",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = if (scale > 1f) offset.x else 0f,
+                                translationY = if (scale > 1f) offset.y else 0f
+                            )
+                            .transformable(state = transformState)
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onTap = { onClose() },
+                                    onDoubleTap = {
+                                        if (scale > 1f) {
+                                            scale = 1f
+                                            offset = Offset.Zero
+                                        } else {
+                                            scale = 3f
+                                        }
+                                    }
+                                )
                             }
-                        )
-                    }
-            )
-        } else {
-            CircularProgressIndicator(color = Color.White)
+                    )
+                } else {
+                    CircularProgressIndicator(color = Color.White)
+                }
+            }
         }
 
         // Close Button
@@ -3212,9 +3263,23 @@ fun FullscreenImageViewer(
             )
         }
 
+        // Page Indicator
+        if (imagePaths.size > 1) {
+            Text(
+                text = "${pagerState.currentPage + 1} / ${imagePaths.size}",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 48.dp)
+            )
+        }
+
         // Download Button
         IconButton(
             onClick = {
+                val currentPath = imagePaths[pagerState.currentPage]
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
                     ContextCompat.checkSelfPermission(
                         context,
@@ -3222,7 +3287,7 @@ fun FullscreenImageViewer(
                     ) == PackageManager.PERMISSION_GRANTED
                 ) {
                     scope.launch(Dispatchers.IO) {
-                        val uri = saveImageToPublicGallery(context, imagePath)
+                        val uri = saveImageToPublicGallery(context, currentPath)
                         withContext(Dispatchers.Main) {
                             if (uri != null) {
                                 Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
