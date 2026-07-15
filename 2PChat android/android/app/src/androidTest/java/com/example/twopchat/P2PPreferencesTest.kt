@@ -4,6 +4,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -13,7 +15,10 @@ class P2PPreferencesTest {
 
     @After
     fun resetPort() {
-        P2PPreferences.prefs(context).edit().remove(P2PPreferences.LISTENER_PORT).commit()
+        P2PPreferences.prefs(context).edit()
+            .remove(P2PPreferences.LISTENER_PORT)
+            .remove(P2PPreferences.verifiedPeer("Alice"))
+            .commit()
     }
 
     @Test
@@ -24,5 +29,16 @@ class P2PPreferencesTest {
 
         prefs.edit().putInt(P2PPreferences.LISTENER_PORT, 99999).commit()
         assertEquals(P2PPreferences.MAX_LISTENER_PORT, P2PPreferences.listenerPort(context))
+    }
+
+    @Test
+    fun peerVerificationPersistsOutsideChatUiLifetime() {
+        assertFalse(P2PPreferences.isPeerVerified(context, "Alice"))
+
+        P2PPreferences.setPeerVerified(context, "Alice", true)
+        assertTrue(P2PPreferences.isPeerVerified(context, "Alice"))
+
+        P2PPreferences.setPeerVerified(context, "Alice", false)
+        assertFalse(P2PPreferences.isPeerVerified(context, "Alice"))
     }
 }

@@ -1,18 +1,36 @@
 package com.example.twopchat.ui.chat
 
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ChatScreenViewModelTest {
     @Test
-    fun initialLoadRunsOnlyOnceForConfigurationStablePeerState() {
-        val viewModel = ChatScreenViewModel()
+    fun historyRefreshIncludesMessagePersistedWhileChatWasInactive() {
+        val stale = Message("1", "old", false, "12:00")
+        val receivedOnMainScreen = Message("2", "new", false, "12:01")
 
-        assertTrue(viewModel.beginInitialLoad("Alice"))
-        viewModel.messages += Message("1", "hello", false, "12:00")
+        val merged = mergeHistorySnapshot(
+            persistedMessages = listOf(stale, receivedOnMainScreen),
+            currentMessages = listOf(stale),
+            defaultMessages = emptyList(),
+            persistHistory = true,
+        )
 
-        assertFalse(viewModel.beginInitialLoad("Alice"))
-        assertTrue(viewModel.messages.any { it.id == "1" })
+        assertEquals(listOf("1", "2"), merged.map { it.id })
+    }
+
+    @Test
+    fun historyRefreshDeduplicatesLiveMessageAndUsesPersistedRow() {
+        val persisted = Message("2", "stored", false, "12:01", status = "READ")
+        val liveCopy = persisted.copy(text = "stale", status = "SENT")
+
+        val merged = mergeHistorySnapshot(
+            persistedMessages = listOf(persisted),
+            currentMessages = listOf(liveCopy),
+            defaultMessages = emptyList(),
+            persistHistory = true,
+        )
+
+        assertEquals(listOf(persisted), merged)
     }
 }

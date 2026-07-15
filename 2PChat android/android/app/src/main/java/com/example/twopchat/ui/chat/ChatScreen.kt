@@ -15,6 +15,7 @@ import androidx.core.content.edit
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.P2PPreferences
 import com.example.twopchat.PythonBridge
 import com.example.twopchat.copyTextToClipboard
 import com.example.twopchat.SecureStorage
@@ -79,12 +80,14 @@ fun ChatScreen(
 ) {
     var activeFullscreenImages by remember { mutableStateOf<List<String>>(emptyList()) }
     var activeFullscreenImageIndex by remember { mutableStateOf(0) }
+    var activeFullscreenBitmapOverrides by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
     var activeFullscreenVideo by remember { mutableStateOf<String?>(null) }
     var showProfileOverlay by remember { mutableStateOf(false) }
 
     BackHandler {
         if (activeFullscreenImages.isNotEmpty()) {
             activeFullscreenImages = emptyList()
+            activeFullscreenBitmapOverrides = emptyMap()
         } else if (activeFullscreenVideo != null) {
             activeFullscreenVideo = null
         } else if (showProfileOverlay) {
@@ -151,7 +154,17 @@ fun ChatScreen(
     var isMuted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("mute_notifications_${peerName}", false)) }
     var isBlocked by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("blocked_peer_${peerName}", false)) }
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
-    var isVerified by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("verified_peer_${peerName}", false)) }
+    var isVerified by remember(peerName) { mutableStateOf(P2PPreferences.isPeerVerified(context, peerName)) }
+    DisposableEffect(sharedPrefs, peerName) {
+        val verificationKey = P2PPreferences.verifiedPeer(peerName)
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+            if (key == verificationKey) {
+                isVerified = prefs.getBoolean(verificationKey, false)
+            }
+        }
+        sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
     var showVerifyDialog by remember { mutableStateOf(false) }
     var showIncomingVerifyDialog by remember { mutableStateOf(false) }
     var isWaitingForVerifyResponse by remember { mutableStateOf(false) }
@@ -223,10 +236,13 @@ fun ChatScreen(
     val initialMessages = chatViewModel.messages
     var isHistoryLoading by chatViewModel.isHistoryLoading
 
-    LaunchedEffect(peerName) {
-        if (!chatViewModel.beginInitialLoad(peerName)) return@LaunchedEffect
-        isHistoryLoading = true
-        initialMessages.clear()
+    LaunchedEffect(peerName, isActive) {
+        if (!isActive) return@LaunchedEffect
+        // Navigation keeps the keyed ViewModel alive after leaving a chat. Refresh
+        // every time the entry becomes active so messages received on MainScreen
+        // are loaded from the database instead of leaving a stale in-memory list.
+        isHistoryLoading = initialMessages.isEmpty()
+        val currentSnapshot = initialMessages.toList()
         val localDefaults = when (peerName) {
             "Saved Messages" -> listOf(
                 Message(
@@ -243,19 +259,19 @@ fun ChatScreen(
         val list = withContext(Dispatchers.IO) {
             db.getMessagesForPeer(peerName)
         }
-        if (persistEnabled) {
-            if (list.isEmpty()) {
-                withContext(Dispatchers.IO) {
-                    localDefaults.forEach { db.saveMessage(peerName, it) }
-                }
-                initialMessages.addAll(localDefaults)
-            } else {
-                initialMessages.addAll(list)
+        if (persistEnabled && list.isEmpty() && localDefaults.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                localDefaults.forEach { db.saveMessage(peerName, it) }
             }
-        } else {
-            initialMessages.addAll(localDefaults)
-            initialMessages.addAll(list.filter { it.status == "PENDING" })
         }
+        val mergedMessages = mergeHistorySnapshot(
+            persistedMessages = list,
+            currentMessages = currentSnapshot,
+            defaultMessages = localDefaults,
+            persistHistory = persistEnabled,
+        )
+        initialMessages.clear()
+        initialMessages.addAll(mergedMessages)
         isHistoryLoading = false
     }
 
@@ -364,7 +380,12 @@ fun ChatScreen(
                             db.updateMessageStatus(rxMsg.id, "READ")
                         }
                     }
-                    initialMessages.add(rxMsg)
+                    val existingIndex = initialMessages.indexOfFirst { it.id == rxMsg.id }
+                    if (existingIndex == -1) {
+                        initialMessages.add(rxMsg)
+                    } else {
+                        initialMessages[existingIndex] = rxMsg
+                    }
                 }
             }
 
@@ -407,6 +428,7 @@ fun ChatScreen(
                     isWaitingForVerifyResponse = false
                     if (success) {
                         isVerified = true
+                        P2PPreferences.setPeerVerified(context, peerName, true)
                         showVerifyDialog = false
                         Toast.makeText(context, if (appLanguage == "Русский") "Собеседник подтвердил личность!" else "Peer successfully verified!", Toast.LENGTH_LONG).show()
                     } else {
@@ -929,6 +951,7 @@ remove("pinned_msg_id_${peerName}")
                 onReply = { replyingToMessage = it },
                 onShowOptions = { selectedMessageForOptions = it },
                 onOpenImages = { images, index ->
+                    activeFullscreenBitmapOverrides = emptyMap()
                     activeFullscreenImages = images
                     activeFullscreenImageIndex = index
                 },
@@ -1618,7 +1641,7 @@ remove("pinned_msg_id_${peerName}")
                             Button(
                                 onClick = {
                                     isVerified = false
-                                    sharedPrefs.edit { putBoolean("verified_peer_${peerName}", false) }
+                                    P2PPreferences.setPeerVerified(context, peerName, false)
                                 },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = MaterialTheme.colorScheme.error,
@@ -1740,7 +1763,7 @@ remove("pinned_msg_id_${peerName}")
                         Button(
                             onClick = {
                                 isVerified = true
-                                sharedPrefs.edit { putBoolean("verified_peer_${peerName}", true) }
+                                P2PPreferences.setPeerVerified(context, peerName, true)
                                 P2PMessageRelay.sendVerificationResponse(context, peerName, true)
                                 showIncomingVerifyDialog = false
                                 Toast.makeText(context, if (appLanguage == "Русский") "Личность подтверждена! Соединение защищено." else "Identity verified! Connection secured.", Toast.LENGTH_SHORT).show()
@@ -1839,7 +1862,11 @@ remove("pinned_msg_id_${peerName}")
                 imagePaths = activeFullscreenImages,
                 initialIndex = activeFullscreenImageIndex,
                 appLanguage = appLanguage,
-                onClose = { activeFullscreenImages = emptyList() }
+                bitmapOverrides = activeFullscreenBitmapOverrides,
+                onClose = {
+                    activeFullscreenImages = emptyList()
+                    activeFullscreenBitmapOverrides = emptyMap()
+                }
             )
         }
 
@@ -1866,8 +1893,16 @@ remove("pinned_msg_id_${peerName}")
                     isMuted = newMuted
                     sharedPrefs.edit().putBoolean("mute_notifications_$peerName", newMuted).apply()
                 },
+                onAvatarClick = { avatarBitmap ->
+                    val avatarKey = "avatar:$peerName"
+                    activeFullscreenBitmapOverrides = mapOf(avatarKey to avatarBitmap)
+                    activeFullscreenImages = listOf(avatarKey)
+                    activeFullscreenImageIndex = 0
+                    showProfileOverlay = false
+                },
                 onImageClick = { paths, index ->
                     if (paths.isNotEmpty()) {
+                        activeFullscreenBitmapOverrides = emptyMap()
                         activeFullscreenImages = paths
                         activeFullscreenImageIndex = index
                         showProfileOverlay = false

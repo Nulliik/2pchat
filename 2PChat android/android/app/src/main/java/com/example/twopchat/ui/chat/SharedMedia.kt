@@ -2,6 +2,7 @@ package com.example.twopchat.ui.chat
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.*
@@ -21,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -67,6 +69,7 @@ fun SharedMediaScreen(
     isVerified: Boolean,
     isMuted: Boolean,
     onToggleMute: (Boolean) -> Unit,
+    onAvatarClick: (Bitmap) -> Unit,
     onImageClick: (List<String>, Int) -> Unit,
     onBack: () -> Unit
 ) {
@@ -177,21 +180,18 @@ fun SharedMediaScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                             // Large Avatar Box
-                            val avatarFile = remember(peerName) {
-                                if (peerName == "Saved Messages") {
-                                    File(context.filesDir, "profile_avatar.jpg")
-                                } else {
-                                    File(File(context.filesDir, "avatars"), "$peerName.jpg")
-                                }
-                            }
+                            val avatarBitmap = P2PMessageRelay.peerAvatars[peerName]
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
                                     .size(96.dp)
                                     .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
-                                    .then(if (avatarFile.exists()) Modifier.clickable { onImageClick(listOf(avatarFile.absolutePath), 0) } else Modifier)
+                                    .then(
+                                        if (avatarBitmap != null) {
+                                            Modifier.clickable { onAvatarClick(avatarBitmap) }
+                                        } else Modifier
+                                    )
                             ) {
-                                val avatarBitmap = P2PMessageRelay.peerAvatars[peerName]
                                 if (avatarBitmap != null) {
                                     Image(
                                         bitmap = avatarBitmap.asImageBitmap(),
@@ -472,7 +472,8 @@ fun SharedMediaScreen(
                                             Image(
                                                 bitmap = bitmap.asImageBitmap(),
                                                 contentDescription = "Shared image",
-                                                modifier = Modifier.fillMaxSize()
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop,
                                             )
                                         } else {
                                             Box(

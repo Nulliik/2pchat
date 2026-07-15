@@ -5,6 +5,7 @@ import android.widget.Toast
 import android.content.Intent
 import android.net.VpnService
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
+import com.example.twopchat.P2PPreferences
 import org.json.JSONArray
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -178,8 +179,20 @@ fun PeerRow(
     onLongClick: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
-    val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
-    val isVerified = remember(peer.name) { sharedPrefs.getBoolean("verified_peer_${peer.name}", false) }
+    val sharedPrefs = remember(context) { P2PPreferences.prefs(context) }
+    var isVerified by remember(peer.name) {
+        mutableStateOf(sharedPrefs.getBoolean(P2PPreferences.verifiedPeer(peer.name), false))
+    }
+    DisposableEffect(sharedPrefs, peer.name) {
+        val verificationKey = P2PPreferences.verifiedPeer(peer.name)
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+            if (key == verificationKey) {
+                isVerified = prefs.getBoolean(verificationKey, false)
+            }
+        }
+        sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
 
     val isLight = surfaceColor.luminance() > 0.5f
     val borderAlpha = if (isLight) 0.08f else 0.04f

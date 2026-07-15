@@ -96,12 +96,16 @@ object AttachmentImageCache {
     }
 }
 
+internal fun sampledImageCacheKey(filePath: String, targetWidth: Int, targetHeight: Int): String =
+    "sample:$filePath:${targetWidth}x$targetHeight"
+
 @Composable
 fun rememberSampledImage(filePath: String?, targetWidth: Int = 400, targetHeight: Int = 400): Bitmap? {
     if (filePath == null) return null
-    val cached = AttachmentImageCache.get(filePath)
-    var bitmapState by remember(filePath) { mutableStateOf<Bitmap?>(cached) }
-    LaunchedEffect(filePath) {
+    val cacheKey = sampledImageCacheKey(filePath, targetWidth, targetHeight)
+    val cached = AttachmentImageCache.get(cacheKey)
+    var bitmapState by remember(cacheKey) { mutableStateOf<Bitmap?>(cached) }
+    LaunchedEffect(cacheKey) {
         if (bitmapState != null) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             try {
@@ -115,7 +119,7 @@ fun rememberSampledImage(filePath: String?, targetWidth: Int = 400, targetHeight
                     options.inJustDecodeBounds = false
                     val decoded = BitmapFactory.decodeFile(filePath, options)
                     if (decoded != null) {
-                        AttachmentImageCache.put(filePath, decoded)
+                        AttachmentImageCache.put(cacheKey, decoded)
                         withContext(Dispatchers.Main) {
                             bitmapState = decoded
                         }
@@ -181,6 +185,7 @@ fun FullscreenImageViewer(
     imagePaths: List<String>,
     initialIndex: Int,
     appLanguage: String,
+    bitmapOverrides: Map<String, Bitmap> = emptyMap(),
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
@@ -253,7 +258,13 @@ fun FullscreenImageViewer(
                     ) { onClose() },
                 contentAlignment = Alignment.Center
             ) {
-                val bitmap = rememberSampledImage(imagePath, targetWidth = 1200, targetHeight = 1200)
+                val overriddenBitmap = bitmapOverrides[imagePath]
+                val sampledBitmap = rememberSampledImage(
+                    filePath = imagePath.takeIf { overriddenBitmap == null },
+                    targetWidth = 2048,
+                    targetHeight = 2048,
+                )
+                val bitmap = overriddenBitmap ?: sampledBitmap
                 if (bitmap != null) {
                     Image(
                         bitmap = bitmap.asImageBitmap(),
@@ -266,7 +277,12 @@ fun FullscreenImageViewer(
                                 translationX = if (scale > 1f) offset.x else 0f,
                                 translationY = if (scale > 1f) offset.y else 0f
                             )
-                            .transformable(state = transformState)
+                            .transformable(
+                                state = transformState,
+                                // At 1x the pager owns one-finger horizontal drags. Pinch still
+                                // starts zoom, and once zoomed the image owns panning.
+                                canPan = { scale > 1f },
+                            )
                             .pointerInput(Unit) {
                                 detectTapGestures(
                                     onTap = { onClose() },
@@ -318,41 +334,44 @@ fun FullscreenImageViewer(
             )
         }
 
-        // Download Button
-        IconButton(
-            onClick = {
-                val currentPath = imagePaths[pagerState.currentPage]
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
-                    ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE
-                    ) == PackageManager.PERMISSION_GRANTED
-                ) {
-                    scope.launch(Dispatchers.IO) {
-                        val uri = saveImageToPublicGallery(context, currentPath)
-                        withContext(Dispatchers.Main) {
-                            if (uri != null) {
-                                Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image", Toast.LENGTH_SHORT).show()
+        // Bitmap overrides are decrypted in-memory avatars. Do not materialize
+        // them as plaintext files or expose a misleading download action.
+        if (bitmapOverrides[imagePaths[pagerState.currentPage]] == null) {
+            IconButton(
+                onClick = {
+                    val currentPath = imagePaths[pagerState.currentPage]
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE
+                        ) == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        scope.launch(Dispatchers.IO) {
+                            val uri = saveImageToPublicGallery(context, currentPath)
+                            withContext(Dispatchers.Main) {
+                                if (uri != null) {
+                                    Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
+                    } else {
+                        launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                     }
-                } else {
-                    launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                }
-            },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 40.dp, end = 16.dp)
-                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_download),
-                contentDescription = "Download",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp)
-            )
+                },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 40.dp, end = 16.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_download),
+                    contentDescription = "Download",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }

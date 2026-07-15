@@ -448,6 +448,11 @@ object P2PMessageRelay {
                                 "verification_response" -> {
                                     val success = json.optBoolean("success", false)
                                     android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        if (success) {
+                                            // Verification responses can arrive while the chat screen is not
+                                            // composed. Persist the trust decision before notifying UI listeners.
+                                            P2PPreferences.setPeerVerified(appContext, sender, true)
+                                        }
                                         messageListeners.forEach { it.onVerificationResponse(sender, success) }
                                     }
                                     return
