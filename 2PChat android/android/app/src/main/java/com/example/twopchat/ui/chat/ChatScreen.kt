@@ -2159,13 +2159,18 @@ remove("pinned_msg_id_${peerName}")
                                     val payload = if (replyTo != null) {
                                         org.json.JSONObject().apply {
                                             put("type", "reply")
+                                            put("message_id", outMsg.id)
                                             put("text", userText)
                                             put("reply_to_id", replyTo.id)
                                             put("reply_to_text", replyTo.text)
                                             put("reply_to_name", replyTo.let { if (it.isMe) username else peerName })
                                         }.toString()
                                     } else {
-                                        userText
+                                        org.json.JSONObject().apply {
+                                            put("type", "text")
+                                            put("message_id", outMsg.id)
+                                            put("text", userText)
+                                        }.toString()
                                     }
 
                                     // Send over real TCP socket if endpoint is resolved
@@ -3169,12 +3174,7 @@ fun FullscreenImageViewer(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = { onClose() }
-                )
-            },
+            .background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
         androidx.compose.foundation.pager.HorizontalPager(
@@ -3210,7 +3210,12 @@ fun FullscreenImageViewer(
             }
 
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                        indication = null
+                    ) { onClose() },
                 contentAlignment = Alignment.Center
             ) {
                 val bitmap = rememberSampledImage(imagePath, targetWidth = 1200, targetHeight = 1200)

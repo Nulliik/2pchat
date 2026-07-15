@@ -29,19 +29,27 @@ object MessageTimestampFormatter {
         nowEpochMs: Long = System.currentTimeMillis(),
         timeZone: TimeZone = TimeZone.getDefault(),
     ): String {
-        if (message.sentAtEpochMs <= 0L) return message.timestamp
-
-        val locale = if (language == "Русский") Locale.forLanguageTag("ru") else Locale.ENGLISH
-        val sent = Calendar.getInstance(timeZone).apply { timeInMillis = message.sentAtEpochMs }
-        val today = Calendar.getInstance(timeZone).apply { timeInMillis = nowEpochMs }
-        val yesterday = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
-        val pattern = when {
-            isSameDate(sent, today) -> "HH:mm"
-            isSameDate(sent, yesterday) -> return if (language == "Русский") "вчера" else "yesterday"
-            sent.get(Calendar.YEAR) == today.get(Calendar.YEAR) -> "d MMM"
-            else -> "dd.MM.yyyy"
+        val base = if (message.sentAtEpochMs <= 0L) {
+            message.timestamp
+        } else {
+            val locale = if (language == "Русский") Locale.forLanguageTag("ru") else Locale.ENGLISH
+            val sent = Calendar.getInstance(timeZone).apply { timeInMillis = message.sentAtEpochMs }
+            val today = Calendar.getInstance(timeZone).apply { timeInMillis = nowEpochMs }
+            val yesterday = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
+            val pattern = when {
+                isSameDate(sent, today) -> "HH:mm"
+                isSameDate(sent, yesterday) -> return (if (language == "Русский") "вчера" else "yesterday") + (if (message.status?.contains("edited") == true) (if (language == "Русский") " (ред.)" else " (edited)") else "")
+                sent.get(Calendar.YEAR) == today.get(Calendar.YEAR) -> "d MMM"
+                else -> "dd.MM.yyyy"
+            }
+            formatDate(pattern, locale, timeZone, sent)
         }
-        return formatDate(pattern, locale, timeZone, sent)
+        val isEdited = message.status?.contains("edited") == true
+        return if (isEdited) {
+            base + (if (language == "Русский") " (ред.)" else " (edited)")
+        } else {
+            base
+        }
     }
 
     private fun isSameDate(left: Calendar, right: Calendar): Boolean =

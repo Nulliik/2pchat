@@ -529,6 +529,7 @@ object P2PMessageRelay {
                                     return
                                 }
                                 "reply" -> {
+                                val msgId = json.optString("message_id")
                                 val replyText = json.optString("text")
                                 val replyToId = json.optString("reply_to_id")
                                 val replyToText = json.optString("reply_to_text")
@@ -546,7 +547,7 @@ object P2PMessageRelay {
                                 val time = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
                                 
                                 val rxMsg = Message(
-                                    id = UUID.randomUUID().toString(),
+                                    id = if (msgId.isNotEmpty()) msgId else UUID.randomUUID().toString(),
                                     text = replyText,
                                     isMe = false,
                                     timestamp = time,
