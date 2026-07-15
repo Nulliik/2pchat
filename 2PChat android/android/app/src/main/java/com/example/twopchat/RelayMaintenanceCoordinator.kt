@@ -38,6 +38,11 @@ internal class RelayMaintenanceCoordinator(
                             val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
                             if (!fingerprint.isNullOrBlank() && fingerprint in activeFingerprints) {
                                 peerSessionStates[peerName] = true
+                                canonicalConnectionTransport(
+                                    rawTransport = prefs.getString(P2PPreferences.transport(peerName), null),
+                                    endpoint = peerEndpoints[peerName]
+                                        ?: prefs.getString(P2PPreferences.lastEndpoint(peerName), null),
+                                )?.let { peerConnectionTransports[peerName] = it }
                                 onConnectedPeerHeartbeat(appContext, peerName)
                             } else {
                                 peerSessionStates.remove(peerName)

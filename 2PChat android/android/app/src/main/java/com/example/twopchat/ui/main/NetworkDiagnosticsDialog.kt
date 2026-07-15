@@ -43,11 +43,14 @@ import androidx.navigation3.runtime.NavKey
 import com.example.twopchat.PythonBridge
 import com.example.twopchat.Chat
 import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.connectionTransportLabel
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.material.icons.Icons
@@ -71,6 +74,22 @@ private fun readLogFile(context: android.content.Context): String {
         "Error reading log file: ${e.message}"
     }
 }
+
+private data class DiagnosticsSnapshot(
+    val logs: String,
+    val upnp: Map<String, String>,
+    val trackers: Map<String, String>,
+    val yggdrasil: Map<String, String>,
+    val activePeers: List<String>,
+)
+
+private fun readDiagnosticsSnapshot(context: android.content.Context) = DiagnosticsSnapshot(
+    logs = readLogFile(context),
+    upnp = runCatching { PythonBridge.getUpnpDetails() }.getOrDefault(emptyMap()),
+    trackers = runCatching { PythonBridge.getTrackerDiagnostics() }.getOrDefault(emptyMap()),
+    yggdrasil = runCatching { PythonBridge.getYggdrasilNetworkDiagnostics() }.getOrDefault(emptyMap()),
+    activePeers = runCatching { PythonBridge.getActivePeers() }.getOrDefault(emptyList()),
+)
 
 private fun getTrackerPing(announceUrl: String): Long {
     val startTime = System.currentTimeMillis()
@@ -245,16 +264,28 @@ fun NetworkDiagnosticsDialog(
         var upnpDetails by remember { mutableStateOf(emptyMap<String, String>()) }
         var trackerDiagnostics by remember { mutableStateOf(emptyMap<String, String>()) }
         var yggDiagnostics by remember { mutableStateOf(emptyMap<String, String>()) }
+        var activePeers by remember { mutableStateOf(emptyList<String>()) }
+        val diagnosticsScope = rememberCoroutineScope()
+
+        val applySnapshot: (DiagnosticsSnapshot) -> Unit = { snapshot ->
+            logsText = snapshot.logs
+            upnpDetails = snapshot.upnp
+            trackerDiagnostics = snapshot.trackers
+            yggDiagnostics = snapshot.yggdrasil
+            activePeers = snapshot.activePeers
+        }
         
         val refreshDiagnostics = {
-            logsText = readLogFile(context)
-            upnpDetails = PythonBridge.getUpnpDetails()
-            trackerDiagnostics = PythonBridge.getTrackerDiagnostics()
-            yggDiagnostics = PythonBridge.getYggdrasilNetworkDiagnostics()
+            diagnosticsScope.launch {
+                applySnapshot(withContext(Dispatchers.IO) { readDiagnosticsSnapshot(context) })
+            }
         }
         
         LaunchedEffect(Unit) {
-            refreshDiagnostics()
+            while (isActive) {
+                applySnapshot(withContext(Dispatchers.IO) { readDiagnosticsSnapshot(context) })
+                delay(2_000)
+            }
         }
 
         val upnpStatus = remember(upnpDetails) {
@@ -1045,7 +1076,6 @@ fun NetworkDiagnosticsDialog(
                                                 }
                                             }
                                             RadarNode.PEERS -> {
-                                                val activePeers = PythonBridge.getActivePeers()
                                                 if (activePeers.isEmpty()) {
                                                     Text(
                                                         text = if (appLanguage == "Русский") "Нет активных сессий Double Ratchet" else "No active Double Ratchet sessions established",
@@ -1055,8 +1085,12 @@ fun NetworkDiagnosticsDialog(
                                                 } else {
                                                     activePeers.forEach { name ->
                                                         val endpoint = P2PMessageRelay.peerEndpoints[name] ?: "resolving..."
-                                                        val transport = P2PMessageRelay.peerConnectionTransports[name] ?: "direct"
-                                                        val isEstablished = P2PMessageRelay.peerSessionStates[name] ?: true
+                                                        val transport = connectionTransportLabel(
+                                                            rawTransport = P2PMessageRelay.peerConnectionTransports[name],
+                                                            endpoint = P2PMessageRelay.peerEndpoints[name],
+                                                            appLanguage = appLanguage,
+                                                        )
+                                                        val isEstablished = name in activePeers
                                                         Card(
                                                             colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.3f)),
                                                             modifier = Modifier.fillMaxWidth().border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))

@@ -24,6 +24,7 @@ object P2PPreferences {
     fun lastEndpoint(peerName: String) = "last_endpoint_$peerName"
     fun lastMessage(peerName: String) = "last_msg_$peerName"
     fun unreadCount(peerName: String) = "unread_count_$peerName"
+    fun transport(peerName: String) = "transport_$peerName"
     fun verifiedPeer(peerName: String) = "verified_peer_$peerName"
 
     fun isPeerVerified(context: Context, peerName: String): Boolean =

@@ -670,6 +670,7 @@ object P2PMessageRelay {
             PythonBridge.registerSessionListener(object : PythonBridge.PySessionListener {
                 override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String) {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
+                    val canonicalTransport = canonicalConnectionTransport(transport, endpoint)
                     // Incoming handshakes are named by fingerprint until their
                     // authenticated identity_info arrives. Search probes and
                     // half-open sessions must never create visible Peer (...)
@@ -690,20 +691,23 @@ object P2PMessageRelay {
                     log(appContext, "Secure Double Ratchet session established with $resolvedPeerName ($fingerprint) at $endpoint")
                     Handler(Looper.getMainLooper()).post {
                         peerSessionStates[resolvedPeerName] = true
-                        peerConnectionTransports[resolvedPeerName] = transport
+                        if (canonicalTransport != null) {
+                            peerConnectionTransports[resolvedPeerName] = canonicalTransport
+                        }
                         if (endpoint.isNotEmpty()) {
                             peerEndpoints[resolvedPeerName] = endpoint
                         }
                     }
 
-                    if (endpoint.isNotEmpty()) {
-                        
-                        // Save to active chats so the UI updates and shows the peer chat screen
-                        val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                    val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                    if (canonicalTransport != null) {
                         sharedPrefs.edit()
-                            .putString("transport_$resolvedPeerName", transport)
-
+                            .putString(P2PPreferences.transport(resolvedPeerName), canonicalTransport)
                             .apply()
+                    }
+
+                    if (endpoint.isNotEmpty()) {
+                        // Save to active chats so the UI updates and shows the peer chat screen
                         val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                         if (!activeSet.contains(resolvedPeerName)) {
 

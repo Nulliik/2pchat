@@ -6,6 +6,8 @@ import android.content.Intent
 import android.net.VpnService
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import com.example.twopchat.P2PPreferences
+import com.example.twopchat.ConnectionTransportKind
+import com.example.twopchat.connectionTransportKind
 import org.json.JSONArray
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -292,9 +294,10 @@ fun PeerRow(
             Spacer(modifier = Modifier.width(8.dp))
 
             // Transport Badge (Quiet Luxury design)
+            val transportKind = connectionTransportKind(peer.transport)
             val badgeBg = if (peer.isBlocked) {
                 Color(0xFFFFEBEE)
-            } else if (peer.isDirect) {
+            } else if (transportKind == ConnectionTransportKind.DIRECT) {
                 primaryColor.copy(alpha = 0.1f)
             } else {
                 onSurfaceColor.copy(alpha = 0.05f)
@@ -302,7 +305,7 @@ fun PeerRow(
             
             val badgeFg = if (peer.isBlocked) {
                 Color(0xFFC62828)
-            } else if (peer.isDirect) {
+            } else if (transportKind == ConnectionTransportKind.DIRECT) {
                 primaryColor
             } else {
                 onSurfaceVariant
@@ -312,10 +315,12 @@ fun PeerRow(
                 if (appLanguage == "Русский") "ЗАБЛОКИРОВАН" else "BLOCKED"
             } else if (peer.transport == "LOCAL RAM") {
                 Localizations.getString("local_storage", appLanguage)
-            } else if (peer.isDirect) {
+            } else if (transportKind == ConnectionTransportKind.DIRECT) {
                 Localizations.getString("direct_p2p", appLanguage)
-            } else {
+            } else if (transportKind == ConnectionTransportKind.YGGDRASIL) {
                 Localizations.getString("yggdrasil", appLanguage)
+            } else {
+                if (appLanguage == "Русский") "МАРШРУТ..." else "DETECTING..."
             }
             
             Row(verticalAlignment = Alignment.CenterVertically) {

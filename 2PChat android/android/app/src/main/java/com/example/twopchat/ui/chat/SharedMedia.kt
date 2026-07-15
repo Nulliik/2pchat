@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.example.twopchat.R
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.connectionTransportLabel
 import com.example.twopchat.copyTextToClipboard
 import com.example.twopchat.theme.StealthBlack
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -230,8 +231,11 @@ fun SharedMediaScreen(
                             val statusText = if (peerName == "Saved Messages") {
                                 Localizations.getString("local_storage", appLanguage)
                             } else if (isOnline) {
-                                val transportName = P2PMessageRelay.peerConnectionTransports[peerName]
-                                    ?: if (appLanguage == "Русский") "маршрут определяется" else "detecting route"
+                                val transportName = connectionTransportLabel(
+                                    rawTransport = P2PMessageRelay.peerConnectionTransports[peerName],
+                                    endpoint = P2PMessageRelay.peerEndpoints[peerName],
+                                    appLanguage = appLanguage,
+                                )
                                 if (appLanguage == "Русский") "В сети • $transportName" else "Online • $transportName"
                             } else {
                                 if (appLanguage == "Русский") "Не в сети" else "Offline"

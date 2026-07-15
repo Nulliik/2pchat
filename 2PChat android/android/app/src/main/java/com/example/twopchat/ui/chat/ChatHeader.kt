@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.R
+import com.example.twopchat.connectionTransportLabel
 import com.example.twopchat.data.Localizations
 
 @Composable
@@ -167,8 +168,11 @@ internal fun ChatHeader(
                     savedMessages -> Localizations.getString("local_storage", appLanguage)
                     !isOnline -> if (appLanguage == "Русский") "Не в сети" else "Offline"
                     else -> {
-                        val transport = P2PMessageRelay.peerConnectionTransports[peerName]
-                            ?: if (appLanguage == "Русский") "маршрут определяется" else "detecting route"
+                        val transport = connectionTransportLabel(
+                            rawTransport = P2PMessageRelay.peerConnectionTransports[peerName],
+                            endpoint = P2PMessageRelay.peerEndpoints[peerName],
+                            appLanguage = appLanguage,
+                        )
                         val rtt = P2PMessageRelay.peerRttMs[peerName]?.let { " • ${it}ms" }.orEmpty()
                         if (appLanguage == "Русский") "В сети • $transport$rtt" else "Online • $transport$rtt"
                     }

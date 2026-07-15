@@ -50,6 +50,7 @@ import androidx.navigation3.runtime.NavKey
 import com.example.twopchat.PythonBridge
 import com.example.twopchat.Chat
 import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.canonicalConnectionTransport
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
@@ -94,7 +95,7 @@ fun ChatsTab(
             if (key == "active_chats") {
                 activeChatsSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
             }
-            if (key == "active_chats" || key?.startsWith("last_msg_") == true || key?.startsWith("transport_") == true || key?.startsWith("unread_count_") == true) {
+            if (key == "active_chats" || key?.startsWith("last_msg_") == true || key?.startsWith("transport_") == true || key?.startsWith("last_endpoint_") == true || key?.startsWith("unread_count_") == true) {
                 // The chat set itself usually stays equal when a message
                 // arrives. Keep a separate revision so Compose refreshes the
                 // preview and unread badge on the main screen.
@@ -113,12 +114,19 @@ fun ChatsTab(
         }
     }
 
-    val peers = remember(activeChatsSet, chatListRevision) {
-        activeChatsSet.map { name ->
+    // Read relay SnapshotState maps during composition so route changes are
+    // visible immediately even when SharedPreferences hasn't changed.
+    val peerNames = remember(activeChatsSet, chatListRevision) { activeChatsSet.toList() }
+    val peers = peerNames.map { name ->
             val lastMsg = com.example.twopchat.SecureStorage.decrypt(
                 sharedPrefs.getString("last_msg_$name", null)
             ) ?: "No messages yet"
-            val transport = sharedPrefs.getString("transport_$name", null) ?: "UNKNOWN"
+            val transport = canonicalConnectionTransport(
+                rawTransport = P2PMessageRelay.peerConnectionTransports[name]
+                    ?: sharedPrefs.getString("transport_$name", null),
+                endpoint = P2PMessageRelay.peerEndpoints[name]
+                    ?: sharedPrefs.getString("last_endpoint_$name", null),
+            ) ?: "UNKNOWN"
             val isPinned = sharedPrefs.getBoolean("pinned_chat_$name", false)
             val isBlocked = sharedPrefs.getBoolean("blocked_peer_$name", false)
             PeerItem(
@@ -131,11 +139,10 @@ fun ChatsTab(
                 isPinned = isPinned,
                 isBlocked = isBlocked
             )
-        }.sortedWith(
-            compareByDescending<PeerItem> { it.isPinned }
-                .thenBy { it.name }
-        )
-    }
+    }.sortedWith(
+        compareByDescending<PeerItem> { it.isPinned }
+            .thenBy { it.name }
+    )
 
     // Hero Card live state
     var heroActivePeers by remember { mutableStateOf(0) }
