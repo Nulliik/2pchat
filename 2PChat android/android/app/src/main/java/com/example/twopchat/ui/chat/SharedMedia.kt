@@ -153,31 +153,29 @@ fun SharedMediaScreen(
             item {
                 Spacer(modifier = Modifier.height(12.dp))
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = cardBg),
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                     shape = RoundedCornerShape(20.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                                colors = listOf(
+                                    primaryColor.copy(alpha = 0.10f),
+                                    surfaceColor.copy(alpha = 0.90f),
+                                    primaryColor.copy(alpha = 0.04f)
+                                )
+                            ),
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .border(0.5.dp, primaryColor.copy(alpha = 0.20f), RoundedCornerShape(20.dp))
                 ) {
-                    Box(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(
-                                androidx.compose.ui.graphics.Brush.verticalGradient(
-                                    colors = listOf(
-                                        primaryColor.copy(alpha = 0.05f),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
+                            .padding(vertical = 20.dp, horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 20.dp, horizontal = 16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
                             // Large Avatar Box
                             val avatarFile = remember(peerName) {
                                 if (peerName == "Saved Messages") {
@@ -274,7 +272,6 @@ fun SharedMediaScreen(
                                         onClick = { onToggleMute(!isMuted) }
                                     )
                                 }
-                            }
                         }
                     }
                 }
@@ -284,12 +281,22 @@ fun SharedMediaScreen(
             item {
                 Spacer(modifier = Modifier.height(12.dp))
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = cardBg),
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
                     shape = RoundedCornerShape(20.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                        .background(
+                            brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                                colors = listOf(
+                                    primaryColor.copy(alpha = 0.10f),
+                                    surfaceColor.copy(alpha = 0.90f),
+                                    primaryColor.copy(alpha = 0.04f)
+                                )
+                            ),
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .border(0.5.dp, primaryColor.copy(alpha = 0.20f), RoundedCornerShape(20.dp))
                 ) {
                     Column(
                         modifier = Modifier
