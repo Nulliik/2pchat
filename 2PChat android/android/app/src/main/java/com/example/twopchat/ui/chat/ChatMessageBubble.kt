@@ -38,6 +38,12 @@ import androidx.compose.ui.unit.sp
 import com.example.twopchat.R
 import com.example.twopchat.theme.StealthBlack
 import kotlinx.coroutines.launch
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.style.TextDecoration
+import java.util.regex.Pattern
 
 @Composable
 internal fun ChatMessageBubble(
@@ -93,6 +99,9 @@ internal fun ChatMessageBubble(
     val textColor = if (msg.isMe) {
         if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
     } else onSurfaceColor
+    val linkColor = if (msg.isMe) {
+        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+    } else primaryColor
 
     androidx.compose.animation.AnimatedVisibility(
         visibleState = visibleState,
@@ -250,18 +259,20 @@ internal fun ChatMessageBubble(
                                             )
                                             if (!msg.text.startsWith("Sent an image") && !msg.text.startsWith("Captured a photo")) {
                                                 Spacer(modifier = Modifier.height(6.dp))
-                                                Text(
+                                                LinkifiedText(
                                                     text = msg.text,
-                                                    color = textColor,
+                                                    textColor = textColor,
+                                                    linkColor = linkColor,
                                                     fontSize = 15.sp,
                                                     lineHeight = 20.sp
                                                 )
                                             }
                                         }
                                     } else {
-                                        Text(
+                                        LinkifiedText(
                                             text = msg.text,
-                                            color = textColor,
+                                            textColor = textColor,
+                                            linkColor = linkColor,
                                             fontSize = 15.sp,
                                             lineHeight = 20.sp
                                         )
@@ -318,9 +329,10 @@ internal fun ChatMessageBubble(
                                         }
                                         if (!msg.text.startsWith("Sent a video")) {
                                             Spacer(modifier = Modifier.height(6.dp))
-                                            Text(
+                                            LinkifiedText(
                                                 text = msg.text,
-                                                color = textColor,
+                                                textColor = textColor,
+                                                linkColor = linkColor,
                                                 fontSize = 15.sp,
                                                 lineHeight = 20.sp
                                             )
@@ -382,9 +394,10 @@ internal fun ChatMessageBubble(
                                                 modifier = Modifier.size(20.dp)
                                             )
                                             Spacer(modifier = Modifier.width(8.dp))
-                                            Text(
+                                            LinkifiedText(
                                                 text = msg.text,
-                                                color = textColor,
+                                                textColor = textColor,
+                                                linkColor = linkColor,
                                                 fontSize = 14.sp,
                                                 fontWeight = FontWeight.SemiBold
                                             )
@@ -415,9 +428,10 @@ internal fun ChatMessageBubble(
                                     }
                                 }
                                 else -> {
-                                    Text(
+                                    LinkifiedText(
                                         text = msg.text,
-                                        color = textColor,
+                                        textColor = textColor,
+                                        linkColor = linkColor,
                                         fontSize = 15.sp,
                                         lineHeight = 20.sp
                                     )
@@ -506,4 +520,78 @@ internal fun ChatMessageBubble(
             }
         }
     }
+}
+
+private val URL_PATTERN = Pattern.compile(
+    "(?:^|[\\s])((?:https?://|www\\.)[\\w\\-_]+(?:\\.[\\w\\-_]+)+(?:[\\w\\-\\.,@?^=%&:/~\\+#]*[\\w\\-\\@?^=%&/~\\+#])?)",
+    Pattern.CASE_INSENSITIVE
+)
+
+@Composable
+internal fun LinkifiedText(
+    text: String,
+    textColor: Color,
+    linkColor: Color,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    lineHeight: androidx.compose.ui.unit.TextUnit = androidx.compose.ui.unit.TextUnit.Unspecified,
+    fontWeight: FontWeight? = null,
+    modifier: Modifier = Modifier
+) {
+    val annotatedString = remember(text, textColor, linkColor) {
+        buildAnnotatedString {
+            val matcher = URL_PATTERN.matcher(text)
+            var lastMatchEnd = 0
+            while (matcher.find()) {
+                val start = matcher.start(1)
+                val end = matcher.end(1)
+                
+                // Append text before link
+                append(text.substring(lastMatchEnd, start))
+                
+                val originalUrl = text.substring(start, end)
+                val destinationUrl = if (!originalUrl.startsWith("http://", ignoreCase = true) && 
+                                          !originalUrl.startsWith("https://", ignoreCase = true)) {
+                    "https://$originalUrl"
+                } else {
+                    originalUrl
+                }
+                
+                val linkStyles = TextLinkStyles(
+                    style = SpanStyle(
+                        color = linkColor,
+                        textDecoration = TextDecoration.Underline,
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+                val linkAnnotation = LinkAnnotation.Url(
+                    url = destinationUrl,
+                    styles = linkStyles
+                )
+                
+                val linkStart = this.length
+                append(originalUrl)
+                val linkEnd = this.length
+                
+                addLink(
+                    url = linkAnnotation,
+                    start = linkStart,
+                    end = linkEnd
+                )
+                
+                lastMatchEnd = end
+            }
+            if (lastMatchEnd < text.length) {
+                append(text.substring(lastMatchEnd))
+            }
+        }
+    }
+
+    Text(
+        text = annotatedString,
+        color = textColor,
+        fontSize = fontSize,
+        lineHeight = lineHeight,
+        fontWeight = fontWeight,
+        modifier = modifier
+    )
 }
