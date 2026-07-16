@@ -60,27 +60,37 @@ private val AmoledBlueColorScheme = darkColorScheme(
 )
 
 private val LightMintColorScheme = lightColorScheme(
-    primary = MintGreenLight,
-    secondary = DeepPine,
-    background = AlabasterCream,
-    surface = PremiumWhite,
-    onPrimary = Color.White,
-    onBackground = TextDark,
-    onSurface = TextDark,
-    surfaceVariant = CardLight,
-    onSurfaceVariant = TextSubdued
+    primary            = MintGreenLight,
+    onPrimary          = Color.White,
+    primaryContainer   = Color(0xFFB8F0DC),  // soft mint tint for chips/badges
+    onPrimaryContainer = Color(0xFF00382A),
+    secondary          = DeepPine,
+    background         = AlabasterCream,
+    onBackground       = TextDark,
+    surface            = LightSurface,
+    onSurface          = TextDark,
+    surfaceVariant     = LightSurfaceVariant,
+    onSurfaceVariant   = TextSubdued,
+    surfaceContainer   = LightSurfaceContainer,
+    outline            = BorderLight,
+    outlineVariant     = Color(0xFFE4EAE4)
 )
 
 private val LightBlueColorScheme = lightColorScheme(
-    primary = CeruleanBlueLight,
-    secondary = DeepCerulean,
-    background = AlabasterCream,
-    surface = PremiumWhite,
-    onPrimary = Color.White,
-    onBackground = TextDark,
-    onSurface = TextDark,
-    surfaceVariant = CardLight,
-    onSurfaceVariant = TextSubdued
+    primary            = CeruleanBlueLight,
+    onPrimary          = Color.White,
+    primaryContainer   = Color(0xFFCCE4FF),
+    onPrimaryContainer = Color(0xFF001F4A),
+    secondary          = DeepCerulean,
+    background         = Color(0xFFF4F6FA),  // very slightly blue-tinted background
+    onBackground       = TextDark,
+    surface            = LightSurface,
+    onSurface          = TextDark,
+    surfaceVariant     = Color(0xFFE8EDF5),
+    onSurfaceVariant   = TextSubdued,
+    surfaceContainer   = Color(0xFFEEF2F8),
+    outline            = Color(0xFFD4DCE8),
+    outlineVariant     = Color(0xFFDDE4EE)
 )
 
 @Composable
