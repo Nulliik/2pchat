@@ -74,11 +74,8 @@ fun ContactsTab(
     var searchSummary by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
     var inviteLinkState by remember { mutableStateOf("") }
-    var directIpVal by remember { mutableStateOf("") }
-    var directPortVal by remember { mutableStateOf(P2PMessageRelay.listenerPort(context).toString()) }
-    var directNameVal by remember { mutableStateOf("") }
     var showInvitePanel by remember { mutableStateOf(false) }
-    var showDirectIpPanel by remember { mutableStateOf(false) }
+    var showQrPanel by remember { mutableStateOf(false) }
     var isResolvingInvite by remember { mutableStateOf(false) }
     var resolveInviteStatus by remember { mutableStateOf("") }
     
@@ -97,6 +94,152 @@ fun ContactsTab(
     // Search results must come from an authenticated live peer.  The former
     // hard-coded demo directory made fictional users look searchable/online.
     val filteredContacts = emptyList<ContactItem>()
+
+    // Reusable search execution lambda (used by search button & QR scanner)
+    val performSearch = { query: String ->
+        if (query.isNotBlank()) {
+            val trimmed = query.trim()
+            if (trimmed.startsWith("2pchat://connect")) {
+                try {
+                    val uri = android.net.Uri.parse(trimmed)
+                    val parsedName = uri.getQueryParameter("name") ?: "Invited Peer"
+                    val token = uri.getQueryParameter("token") ?: ""
+                    val expectedFp = (uri.getQueryParameter("fp")?.trim().orEmpty()).replace(" ", "+")
+                    val validFingerprint = try {
+                        val decoded = android.util.Base64.decode(expectedFp, android.util.Base64.NO_WRAP)
+                        decoded.size == 32 && android.util.Base64.encodeToString(decoded, android.util.Base64.NO_WRAP) == expectedFp
+                    } catch (_: IllegalArgumentException) {
+                        false
+                    }
+
+                    if (token.isEmpty() || !validFingerprint) {
+                        resolveInviteStatus = if (appLanguage == "Русский") {
+                            "Некорректная ссылка: отсутствует token или 32-байтный fingerprint"
+                        } else {
+                            "Invalid invite: missing token or 32-byte fingerprint"
+                        }
+                    } else {
+                        isResolvingInvite = true
+                        resolveInviteStatus = if (appLanguage == "Русский") "Поиск собеседника..." else "Finding peer..."
+                        coroutineScope.launch(Dispatchers.IO) {
+                            val peers = PythonBridge.searchPeers(token, parsedName, expectedFp)
+                            val verified = peers.firstOrNull()?.get("verified")?.toString()?.equals("true", ignoreCase = true) == true
+                            val ownershipVerified = peers.firstOrNull()?.get("ownership_verified")?.toString()?.equals("true", ignoreCase = true) == true
+                            val endpoints = if (peers.isNotEmpty()) peers[0]["endpoints"] as? List<*> else null
+                            val endpointStr = if (endpoints != null && endpoints.isNotEmpty()) endpoints.joinToString(",") { it.toString() } else ""
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                isResolvingInvite = false
+                                if (endpointStr.isNotEmpty() && verified && ownershipVerified) {
+                                    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+                                    if (!activeSet.contains(parsedName)) {
+                                        sharedPrefs.edit()
+                                            .putStringSet("active_chats", activeSet + parsedName)
+                                            .putString("transport_$parsedName", "DIRECT P2P")
+                                            .putString("peer_fingerprint_$parsedName", expectedFp)
+                                            .putString("discovery_code_$parsedName", token)
+                                            .apply()
+                                    }
+                                    com.example.twopchat.P2PMessageRelay.peerEndpoints[parsedName] = endpointStr
+                                    resolveInviteStatus = ""
+                                    onItemClick(Chat(parsedName))
+                                } else {
+                                    resolveInviteStatus = if (appLanguage == "Русский") "Собеседник не найден. Попробуйте позже." else "Peer not found. They may be offline."
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Invalid link", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                val separator = trimmed.lastIndexOf('#')
+                if (separator <= 0 || separator == trimmed.lastIndex) {
+                    searchSummary = if (appLanguage == "Русский") {
+                        "Введите полный адрес в формате Имя#код. Поиск только по нику отключён."
+                    } else {
+                        "Enter the full Name#code address. Nickname-only search is disabled."
+                    }
+                    searchResults = emptyList()
+                } else {
+                    isSearching = true
+                    searchResults = emptyList()
+                    searchSummary = ""
+                    searchProgress = if (appLanguage == "Русский") {
+                        "1/3 · Запрашиваем трекеры и Mainline DHT…"
+                    } else {
+                        "1/3 · Querying trackers and Mainline DHT…"
+                    }
+                    coroutineScope.launch(Dispatchers.IO) {
+                        val progressJob = launch {
+                            kotlinx.coroutines.delay(1200)
+                            withContext(Dispatchers.Main) {
+                                searchProgress = if (appLanguage == "Русский") {
+                                    "2/3 · Собираем IPv4 и Yggdrasil endpoint-ы…"
+                                } else {
+                                    "2/3 · Collecting IPv4 and Yggdrasil endpoints…"
+                                }
+                            }
+                            kotlinx.coroutines.delay(1800)
+                            withContext(Dispatchers.Main) {
+                                searchProgress = if (appLanguage == "Русский") {
+                                    "3/3 · Проверяем живой узел и криптографическую идентичность…"
+                                } else {
+                                    "3/3 · Verifying live node and cryptographic identity…"
+                                }
+                            }
+                        }
+
+                        val results = PythonBridge.searchPeers(trimmed)
+                        progressJob.cancel()
+
+                        withContext(Dispatchers.Main) {
+                            isSearching = false
+                            searchProgress = ""
+                            val list = mutableListOf<ContactItem>()
+                            var verifiedCount = 0
+                            var unverifiedCount = 0
+
+                            for (peer in results) {
+                                val pName = peer["name"]?.toString() ?: "Unnamed"
+                                val pFp = peer["fingerprint"]?.toString() ?: ""
+                                val pCode = peer["discovery_code"]?.toString() ?: ""
+                                val pVerified = peer["verified"]?.toString()?.equals("true", ignoreCase = true) == true
+                                val pOwnership = peer["ownership_verified"]?.toString()?.equals("true", ignoreCase = true) == true
+                                val pEndpoints = peer["endpoints"] as? List<*>
+                                val endpointStr = if (pEndpoints != null && pEndpoints.isNotEmpty()) pEndpoints.joinToString(",") { it.toString() } else ""
+
+                                if (pVerified && pOwnership) {
+                                    verifiedCount++
+                                    list.add(ContactItem(pName, pFp, pCode, pVerified, endpointStr))
+                                } else {
+                                    unverifiedCount++
+                                }
+                            }
+
+                            searchResults = list
+                            searchSummary = if (appLanguage == "Русский") {
+                                if (verifiedCount == 0 && unverifiedCount > 0) {
+                                    "Найдено: $unverifiedCount без live-подтверждения. Добавление заблокировано."
+                                } else {
+                                    "Поиск завершён: подтверждено $verifiedCount, найдено без live-подтверждения $unverifiedCount"
+                                }
+                            } else {
+                                if (verifiedCount == 0 && unverifiedCount > 0) {
+                                    "Found: $unverifiedCount without live verification. Connection blocked."
+                                } else {
+                                    "Search complete: $verifiedCount verified, $unverifiedCount found without live verification"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            searchResults = emptyList()
+            searchProgress = ""
+            searchSummary = ""
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -161,7 +304,7 @@ fun ContactsTab(
             IconButton(
                 onClick = {
                     showInvitePanel = !showInvitePanel
-                    if (showInvitePanel) showDirectIpPanel = false
+                    if (showInvitePanel) showQrPanel = false
                 },
                 modifier = Modifier
                     .size(52.dp)
@@ -176,188 +319,28 @@ fun ContactsTab(
                 )
             }
 
-            // Direct IP Connection Panel Toggle Button
+            // QR Code Connection Panel Toggle Button
             IconButton(
                 onClick = {
-                    showDirectIpPanel = !showDirectIpPanel
-                    if (showDirectIpPanel) showInvitePanel = false
+                    showQrPanel = !showQrPanel
+                    if (showQrPanel) showInvitePanel = false
                 },
                 modifier = Modifier
                     .size(52.dp)
-                    .background(if (showDirectIpPanel) primaryColor else surfaceColor, shape = RoundedCornerShape(14.dp))
+                    .background(if (showQrPanel) primaryColor else surfaceColor, shape = RoundedCornerShape(14.dp))
                     .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
             ) {
                 Icon(
-                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_quick_ip),
-                    contentDescription = "Direct IP Connection",
-                    tint = if (showDirectIpPanel) StealthBlack else primaryColor,
+                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_qr_code),
+                    contentDescription = "QR Code Connection",
+                    tint = if (showQrPanel) StealthBlack else primaryColor,
                     modifier = Modifier.size(22.dp)
                 )
             }
             
             // Search Execute Button
             IconButton(
-                onClick = {
-                    if (searchQuery.isNotBlank()) {
-                        val trimmed = searchQuery.trim()
-                        if (trimmed.startsWith("2pchat://connect")) {
-                            try {
-                                val uri = android.net.Uri.parse(trimmed)
-                                val parsedName = uri.getQueryParameter("name") ?: "Invited Peer"
-                                val token = uri.getQueryParameter("token") ?: ""
-                                val expectedFp = (uri.getQueryParameter("fp")?.trim().orEmpty()).replace(" ", "+")
-                                val validFingerprint = try {
-                                    val decoded = android.util.Base64.decode(expectedFp, android.util.Base64.NO_WRAP)
-                                    decoded.size == 32 && android.util.Base64.encodeToString(decoded, android.util.Base64.NO_WRAP) == expectedFp
-                                } catch (_: IllegalArgumentException) {
-                                    false
-                                }
-
-                                if (token.isEmpty() || !validFingerprint) {
-                                    resolveInviteStatus = if (appLanguage == "Русский") {
-                                        "Некорректная ссылка: отсутствует token или 32-байтный fingerprint"
-                                    } else {
-                                        "Invalid invite: missing token or 32-byte fingerprint"
-                                    }
-                                    return@IconButton
-                                }
-
-                                if (token.isNotEmpty()) {
-                                    isResolvingInvite = true
-                                    resolveInviteStatus = if (appLanguage == "Русский") "Поиск собеседника..." else "Finding peer..."
-                                    coroutineScope.launch(Dispatchers.IO) {
-                                        val peers = PythonBridge.searchPeers(token, parsedName, expectedFp)
-                                        val verified = peers.firstOrNull()?.get("verified")?.toString()?.equals("true", ignoreCase = true) == true
-                                        val ownershipVerified = peers.firstOrNull()?.get("ownership_verified")?.toString()?.equals("true", ignoreCase = true) == true
-                                        val endpoints = if (peers.isNotEmpty()) peers[0]["endpoints"] as? List<*> else null
-                                        // Pass ALL endpoints comma-separated so Python can try each (IPv4 first, Yggdrasil IPv6 as fallback)
-                                        val endpointStr = if (endpoints != null && endpoints.isNotEmpty()) endpoints.joinToString(",") { it.toString() } else ""
-                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                            isResolvingInvite = false
-                                            if (endpointStr.isNotEmpty() && verified && ownershipVerified) {
-                                                val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-                                                if (!activeSet.contains(parsedName)) {
-                                                    sharedPrefs.edit()
-                                                        .putStringSet("active_chats", activeSet + parsedName)
-                                                        .putString("transport_$parsedName", "DIRECT P2P")
-                                                        .putString("peer_fingerprint_$parsedName", expectedFp)
-                                                        .putString("discovery_code_$parsedName", token)
-                                                        .apply()
-                                                }
-                                                com.example.twopchat.P2PMessageRelay.peerEndpoints[parsedName] = endpointStr
-                                                resolveInviteStatus = ""
-                                                onItemClick(Chat(parsedName))
-                                            } else {
-                                                resolveInviteStatus = if (appLanguage == "Русский") "Собеседник не найден. Попробуйте позже." else "Peer not found. They may be offline."
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    // No token — navigate directly if the link had no token (manual)
-                                    onItemClick(Chat(parsedName))
-                                }
-                            } catch (e: Exception) {
-
-                                Toast.makeText(context, "Invalid link", Toast.LENGTH_SHORT).show()
-                            }
-                            return@IconButton
-                        }
-                        val separator = trimmed.lastIndexOf('#')
-                        if (separator <= 0 || separator == trimmed.lastIndex) {
-                            searchSummary = if (appLanguage == "Русский") {
-                                "Введите полный адрес в формате Имя#код. Поиск только по нику отключён."
-                            } else {
-                                "Enter the full Name#code address. Nickname-only search is disabled."
-                            }
-                            searchResults = emptyList()
-                            return@IconButton
-                        }
-                        isSearching = true
-                        searchResults = emptyList()
-                        searchSummary = ""
-                        searchProgress = if (appLanguage == "Русский") {
-                            "1/3 · Запрашиваем трекеры и Mainline DHT…"
-                        } else {
-                            "1/3 · Querying trackers and Mainline DHT…"
-                        }
-                        coroutineScope.launch(Dispatchers.IO) {
-                            val progressJob = launch {
-                                kotlinx.coroutines.delay(1200)
-                                withContext(Dispatchers.Main) {
-                                    searchProgress = if (appLanguage == "Русский") {
-                                        "2/3 · Собираем IPv4 и Yggdrasil endpoint-ы…"
-                                    } else {
-                                        "2/3 · Collecting IPv4 and Yggdrasil endpoints…"
-                                    }
-                                }
-                                kotlinx.coroutines.delay(1800)
-                                withContext(Dispatchers.Main) {
-                                    searchProgress = if (appLanguage == "Русский") {
-                                        "3/3 · Проверяем живой узел и криптографическую идентичность…"
-                                    } else {
-                                        "3/3 · Verifying live node and cryptographic identity…"
-                                    }
-                                }
-                            }
-                            val searchName = trimmed.substring(0, separator).trim()
-                            val searchCode = trimmed.substring(separator + 1).trim()
-                            val peers = PythonBridge.searchPeers(
-                                searchName,
-                                expectedLiveName = searchName,
-                                sharedCode = searchCode,
-                            )
-                            progressJob.cancel()
-                            val items = peers.map { peer ->
-                                val name = peer["nickname"] as? String ?: "Unknown"
-                                val fp = peer["fingerprint"] as? String ?: ""
-                                val endpoints = peer["endpoints"] as? List<*> ?: emptyList<Any>()
-                                val endpointStr = if (endpoints.isNotEmpty()) {
-                                    endpoints.joinToString(",") { it.toString() }
-                                } else {
-                                    "Unknown"
-                                }
-                                val verified = peer["verified"]?.toString()?.equals("true", ignoreCase = true) == true
-                                val ownershipVerified = peer["ownership_verified"]?.toString()?.equals("true", ignoreCase = true) == true
-                                val reason = peer["verification_reason"]?.toString().orEmpty()
-                                val displayName = if (name.startsWith("2TFcRb7m") || name.length > 20) {
-                                    "Peer (" + name.take(8) + "...)"
-                                } else {
-                                    name
-                                }
-                                ContactItem(
-                                    name = displayName,
-                                    status = if (verified && ownershipVerified) {
-                                        if (appLanguage == "Русский") "Подтверждён ссылкой приглашения" else "Verified by invite link"
-                                    } else if (verified) {
-                                        if (appLanguage == "Русский") "Узел и ключ активны · владелец ника не подтверждён" else "Live node and key · nickname ownership unverified"
-                                    } else if (appLanguage == "Русский") "Найден на трекере · live-проверка не пройдена" else "Found on tracker · live verification failed",
-                                    initials = if (displayName.length >= 2) displayName.substring(0, 2).uppercase() else displayName.uppercase(),
-                                    verified = verified,
-                                    endpoints = endpointStr,
-                                    verificationDetails = reason,
-                                    fingerprint = fp,
-                                    ownershipVerified = ownershipVerified,
-                                )
-                            }
-                            withContext(Dispatchers.Main) {
-                                searchResults = items
-                                isSearching = false
-                                searchProgress = ""
-                                val verifiedCount = items.count { it.verified }
-                                val unverifiedCount = items.size - verifiedCount
-                                searchSummary = if (appLanguage == "Русский") {
-                                    "Поиск завершён: подтверждено $verifiedCount, найдено без live-подтверждения $unverifiedCount"
-                                } else {
-                                    "Search complete: $verifiedCount verified, $unverifiedCount found without live verification"
-                                }
-                            }
-                        }
-                    } else {
-                        searchResults = emptyList()
-                        searchProgress = ""
-                        searchSummary = ""
-                    }
-                },
+                onClick = { performSearch(searchQuery) },
                 modifier = Modifier
                     .size(52.dp)
                     .background(primaryColor, shape = RoundedCornerShape(14.dp))
@@ -640,8 +623,23 @@ fun ContactsTab(
             }
         }
 
-        // Expanded Direct IP Connection Card
-        if (showDirectIpPanel) {
+        // QR Code Connection Panel
+        if (showQrPanel) {
+            val qrBitmap = remember(contactAddress) {
+                try {
+                    val size = 512
+                    val writer = com.google.zxing.qrcode.QRCodeWriter()
+                    val bitMatrix = writer.encode(contactAddress, com.google.zxing.BarcodeFormat.QR_CODE, size, size)
+                    val bmp = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+                    for (x in 0 until size) {
+                        for (y in 0 until size) {
+                            bmp.setPixel(x, y, if (bitMatrix[x, y]) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
+                        }
+                    }
+                    bmp
+                } catch (e: Exception) { null }
+            }
+
             Card(
                 colors = CardDefaults.cardColors(containerColor = surfaceColor),
                 shape = RoundedCornerShape(20.dp),
@@ -650,126 +648,93 @@ fun ContactsTab(
                     .padding(vertical = 10.dp)
                     .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     Text(
-                        text = if (appLanguage == "Русский") "Прямое IP-подключение" else "Direct IP Connection",
+                        text = if (appLanguage == "Русский") "Личный QR-код" else "Personal QR Code",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = onSurfaceColor
                     )
-
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = if (appLanguage == "Русский") "Подключение по локальному IP или Yggdrasil адресу без трекеров" else "Connect to a peer directly using their network address",
+                        text = if (appLanguage == "Русский")
+                            "Покажите этот QR другу — пусть отсканирует"
+                        else
+                            "Show this QR to a friend to connect securely",
                         fontSize = 12.sp,
-                        color = onSurfaceVariant
+                        color = onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        // Nickname input (weight 1f)
-                        OutlinedTextField(
-                            value = directNameVal,
-                            onValueChange = { directNameVal = it },
-                            placeholder = { Text("Bob", fontSize = 12.sp, color = onSurfaceVariant.copy(alpha = 0.4f)) },
-                            label = { Text(if (appLanguage == "Русский") "Имя" else "Name", fontSize = 10.sp) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = primaryColor,
-                                unfocusedBorderColor = onSurfaceColor.copy(alpha = 0.1f),
-                                focusedLabelColor = primaryColor,
-                                unfocusedLabelColor = onSurfaceVariant
-                            )
-                        )
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                        // IP Address input (weight 1.5f)
-                        OutlinedTextField(
-                            value = directIpVal,
-                            onValueChange = { directIpVal = it },
-                            placeholder = { Text("192.168.1.100", fontSize = 12.sp, color = onSurfaceVariant.copy(alpha = 0.4f)) },
-                            label = { Text("IP", fontSize = 10.sp) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1.5f),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = primaryColor,
-                                unfocusedBorderColor = onSurfaceColor.copy(alpha = 0.1f),
-                                focusedLabelColor = primaryColor,
-                                unfocusedLabelColor = onSurfaceVariant
+                    // QR Code Display
+                    if (qrBitmap != null) {
+                        Card(
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            modifier = Modifier
+                                .size(220.dp)
+                                .border(2.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                        ) {
+                            androidx.compose.foundation.Image(
+                                bitmap = qrBitmap.asImageBitmap(),
+                                contentDescription = "QR Code",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(12.dp)
                             )
-                        )
-
-                        // Port input (weight 0.8f)
-                        OutlinedTextField(
-                            value = directPortVal,
-                            onValueChange = { directPortVal = it },
-                            placeholder = { Text(P2PMessageRelay.listenerPort(context).toString(), fontSize = 12.sp, color = onSurfaceVariant.copy(alpha = 0.4f)) },
-                            label = { Text(if (appLanguage == "Русский") "Порт" else "Port", fontSize = 10.sp) },
-                            singleLine = true,
-                            modifier = Modifier.weight(0.8f),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = primaryColor,
-                                unfocusedBorderColor = onSurfaceColor.copy(alpha = 0.1f),
-                                focusedLabelColor = primaryColor,
-                                unfocusedLabelColor = onSurfaceVariant
-                            )
-                        )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(220.dp)
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("—", color = onSurfaceVariant)
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
+                    // Scan button
                     Button(
                         onClick = {
-                            val ip = directIpVal.trim()
-                            val port = directPortVal.trim()
-                            val rawName = if (directNameVal.isNotBlank()) directNameVal.trim() else "Direct Peer"
-
-                            if (ip.isEmpty() || port.isEmpty()) {
-                                Toast.makeText(context, if (appLanguage == "Русский") "Введите IP и Порт" else "Please enter IP and Port", Toast.LENGTH_SHORT).show()
-                                return@Button
-                            }
-
-                            val portInt = port.toIntOrNull()
-                            if (portInt == null || portInt !in 1..65535) {
-                                Toast.makeText(context, if (appLanguage == "Русский") "Неверный порт (1-65535)" else "Invalid port (1-65535)", Toast.LENGTH_SHORT).show()
-                                return@Button
-                            }
-
-                            val name = rawName.replace(Regex("[^a-zA-Z0-9 ]"), "").trim()
-                            if (name.isEmpty()) {
-                                Toast.makeText(context, if (appLanguage == "Русский") "Неверное имя" else "Invalid name", Toast.LENGTH_SHORT).show()
-                                return@Button
-                            }
-
-                            val endpointStr = "$ip:$port"
-                            com.example.twopchat.P2PMessageRelay.peerEndpoints[name] = endpointStr
-
-                            // Add to active chats set
-                            val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-                            if (!activeSet.contains(name)) {
-                                val newSet = activeSet.toMutableSet()
-                                newSet.add(name)
-                                sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
-                                sharedPrefs.edit().putString("transport_$name", "DIRECT P2P").apply()
-                            }
-
-                            // Send handshake ping to register ourselves on Bob's side
-                            coroutineScope.launch(Dispatchers.IO) {
-                                com.example.twopchat.P2PMessageRelay.sendMessage(context, endpointStr, username, "")
-                            }
-
-                            Toast.makeText(context, if (appLanguage == "Русский") "Подключение по IP..." else "Connecting via IP...", Toast.LENGTH_SHORT).show()
-                            onItemClick(Chat(name))
+                            val options = com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions.Builder()
+                                .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
+                                .enableAutoZoom()
+                                .build()
+                            val scanner = com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(context, options)
+                            scanner.startScan()
+                                .addOnSuccessListener { barcode: com.google.mlkit.vision.barcode.common.Barcode ->
+                                    val rawValue = barcode.rawValue ?: ""
+                                    if (rawValue.isNotBlank()) {
+                                        searchQuery = rawValue
+                                        performSearch(rawValue)
+                                        showQrPanel = false
+                                    }
+                                }
+                                .addOnFailureListener { e: Exception ->
+                                    Toast.makeText(context, e.message ?: "Scan failed", Toast.LENGTH_SHORT).show()
+                                }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
+                        Icon(
+                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_qr_code),
+                            contentDescription = null,
+                            tint = if (primaryColor == MintGreen) StealthBlack else Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (appLanguage == "Русский") "Подключить по IP" else "Connect via IP",
+                            text = if (appLanguage == "Русский") "Сканировать QR" else "Scan QR Code",
                             color = if (primaryColor == MintGreen) StealthBlack else Color.White,
                             fontWeight = FontWeight.Bold
                         )

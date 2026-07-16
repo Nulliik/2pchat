@@ -142,6 +142,10 @@ dependencies {
   // Media3 ExoPlayer for Video Player
   implementation("androidx.media3:media3-exoplayer:1.5.1")
   implementation("androidx.media3:media3-ui:1.5.1")
+
+  // QR Code Generation & Scanning
+  implementation("com.google.zxing:core:3.5.3")
+  implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 }
 
 
