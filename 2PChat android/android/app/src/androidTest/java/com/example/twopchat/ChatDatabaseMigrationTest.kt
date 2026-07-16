@@ -5,7 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.data.PendingControl
 import com.example.twopchat.ui.chat.Message
-import net.sqlcipher.database.SQLiteDatabase
+import net.zetetic.database.sqlcipher.SQLiteDatabase
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -20,13 +20,19 @@ class ChatDatabaseMigrationTest {
     @Before
     fun createVersion6Database() {
         ChatDatabaseHelper.closeAllConnections()
-        context.deleteDatabase("twopchat.db")
-        SQLiteDatabase.loadLibs(context)
+        val dbFile = context.getDatabasePath("twopchat.db")
+        if (dbFile.exists()) {
+            dbFile.delete()
+        }
+        dbFile.parentFile?.mkdirs()
+        System.loadLibrary("sqlcipher")
         val passphrase = SecureStorage.getOrGenerateDbPassphrase(context)
         val database = SQLiteDatabase.openOrCreateDatabase(
-            context.getDatabasePath("twopchat.db"),
+            dbFile.absolutePath,
             passphrase,
             null,
+            null,
+            null
         )
         database.execSQL(
             """CREATE TABLE messages(

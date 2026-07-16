@@ -30,6 +30,8 @@ class MainScreenTest {
         onThemeChanged = {},
         useCerulean = false,
         onAccentChanged = {},
+        useAmoled = false,
+        onAmoledChanged = {},
         appLanguage = "English",
         onLanguageChanged = {},
         onIconChanged = {},

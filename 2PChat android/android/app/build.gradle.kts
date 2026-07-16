@@ -136,7 +136,7 @@ dependencies {
   // Yggdrasil dependencies
   implementation(files("libs/yggdrasil.aar"))
   implementation("androidx.preference:preference-ktx:1.2.1")
-  implementation("net.zetetic:android-database-sqlcipher:4.5.4")
+  implementation("net.zetetic:sqlcipher-android:4.6.1")
   implementation("androidx.sqlite:sqlite:2.3.1")
 
   // Media3 ExoPlayer for Video Player

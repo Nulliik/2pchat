@@ -1,15 +1,26 @@
 package com.example.twopchat.data
 
 import android.content.Context
-import net.sqlcipher.database.SQLiteDatabase
-import net.sqlcipher.database.SQLiteOpenHelper
+import net.zetetic.database.sqlcipher.SQLiteDatabase
+import net.zetetic.database.sqlcipher.SQLiteOpenHelper
 import android.content.ContentValues
 import com.example.twopchat.ui.chat.Message
 import com.example.twopchat.SecureStorage
 import android.util.Log
 import com.example.twopchat.ui.chat.MessageDeliveryStatus
 
-class ChatDatabaseHelper private constructor(private val context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
+class ChatDatabaseHelper private constructor(private val context: Context) : 
+    SQLiteOpenHelper(
+        context, 
+        DATABASE_NAME, 
+        SecureStorage.getOrGenerateDbPassphrase(context), 
+        null, 
+        DATABASE_VERSION, 
+        0, 
+        null, 
+        null, 
+        false
+    ) {
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
@@ -70,7 +81,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
             val pass = SecureStorage.getOrGenerateDbPassphrase(context)
             val dbFile = context.getDatabasePath(DATABASE_NAME)
             checkAndMigrateDatabase(context, dbFile, pass)
-            return getWritableDatabase(pass)
+            return writableDatabase
         }
 
     private val safeReadableDatabase: SQLiteDatabase
@@ -78,7 +89,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
             val pass = SecureStorage.getOrGenerateDbPassphrase(context)
             val dbFile = context.getDatabasePath(DATABASE_NAME)
             checkAndMigrateDatabase(context, dbFile, pass)
-            return getReadableDatabase(pass)
+            return readableDatabase
         }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -636,7 +647,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
     private fun checkAndMigrateDatabase(context: Context, dbFile: java.io.File, pass: String) {
         if (!dbFile.exists()) return
         try {
-            val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, pass, null, SQLiteDatabase.OPEN_READWRITE)
+            val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, pass, null, SQLiteDatabase.OPEN_READWRITE, null)
             db.close()
             return
         } catch (e: Exception) {
@@ -646,7 +657,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
             }
         }
         try {
-            val unencryptedDb = SQLiteDatabase.openDatabase(dbFile.absolutePath, "", null, SQLiteDatabase.OPEN_READWRITE)
+            val unencryptedDb = SQLiteDatabase.openDatabase(dbFile.absolutePath, null as String?, null, SQLiteDatabase.OPEN_READWRITE, null)
             unencryptedDb.close()
         } catch (e: Exception) {
             return
@@ -657,7 +668,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) : SQL
         if (tempFile.exists()) tempFile.delete()
         var source: SQLiteDatabase? = null
         try {
-            val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, "", null, SQLiteDatabase.OPEN_READWRITE)
+            val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null as String?, null, SQLiteDatabase.OPEN_READWRITE, null)
             source = db
             val escPath = tempFile.absolutePath.replace("'", "''")
             val escPass = pass.replace("'", "''")

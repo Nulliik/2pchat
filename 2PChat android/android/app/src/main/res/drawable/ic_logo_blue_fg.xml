@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 2PChat Cerulean Blue logo variant -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Main large chat bubble body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M16,20 C16,13 22,8 30,8 L68,8 C76,8 82,13 82,20 L82,52 C82,59 76,64 68,64 L54,64 L43,76 L43,64 L30,64 C22,64 16,59 16,52 Z" />
+
+    <!-- Shadow/depth for main bubble -->
+    <path
+        android:fillColor="#D0E8FF"
+        android:pathData="M16,20 C16,13 22,8 30,8 L68,8 C76,8 82,13 82,20 L82,24 C82,17 76,12 68,12 L30,12 C22,12 16,17 16,24 Z" />
+
+    <!-- Secondary bubble top-right -->
+    <path
+        android:fillColor="#9CC8FF"
+        android:pathData="M56,36 C56,30 61,26 67,26 L84,26 C90,26 95,30 95,36 L95,56 C95,62 90,66 84,66 L77,66 L71,74 L71,66 L67,66 C61,66 56,62 56,56 Z" />
+
+    <!-- Bold "2" in main bubble -->
+    <path
+        android:fillColor="#0A4FA3"
+        android:pathData="M30,50 L46,50 L46,46 L37,46 Q43,40 44.5,37 Q46,34 46,31 Q46,26 43,24 Q40,22 36,22 Q31,22 29,24.5 Q27,27 27,31 L31,31 Q31,29 32.5,28 Q34,27 36,27 Q38,27 39.5,28.5 Q41,30 41,32 Q41,34.5 39,38 Q37,41 30,47 Z" />
+
+    <!-- Bold "P" letter in secondary bubble -->
+    <path
+        android:fillColor="#0A4FA3"
+        android:pathData="M64,61 L64,40 L73,40 Q77,40 79,42 Q81,44 81,47.5 Q81,51 79,53 Q77,55 73,55 L68,55 L68,61 Z M68,44 L68,51 L72.5,51 Q74.5,51 75.5,50 Q76.5,49 76.5,47.5 Q76.5,46 75.5,45 Q74.5,44 72.5,44 Z" />
+
+</vector>

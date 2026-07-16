@@ -55,6 +55,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.activity.compose.BackHandler
 
 
 @Composable
@@ -63,6 +64,8 @@ fun SettingsTab(
     onThemeChanged: (Boolean) -> Unit,
     useCerulean: Boolean,
     onAccentChanged: (Boolean) -> Unit,
+    useAmoled: Boolean,
+    onAmoledChanged: (Boolean) -> Unit,
     activeIconAlias: String,
     onIconChanged: (String) -> Unit,
     appLanguage: String,
@@ -140,6 +143,7 @@ fun SettingsTab(
     var showDeleteAccountDialog by remember { mutableStateOf(false) }
     var showSetDuressDialog by remember { mutableStateOf(false) }
     var showLauncherIconsPicker by remember { mutableStateOf(false) }
+    var showThemesPicker by remember { mutableStateOf(false) }
     var showRegenerateYggdrasilKeysDialog by remember { mutableStateOf(false) }
 
     if (showRegenerateYggdrasilKeysDialog) {
@@ -199,21 +203,44 @@ fun SettingsTab(
         return
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp)
-            .verticalScroll(scrollState)
-    ) {
-        // Visual Profile Card with interactive photo selector
-        Card(
-            colors = CardDefaults.cardColors(containerColor = surfaceColor),
-            shape = RoundedCornerShape(20.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp)
-                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
-        ) {
+    var activeSubPage by remember { mutableStateOf<String?>(null) }
+
+    if (activeSubPage != null) {
+        BackHandler {
+            activeSubPage = null
+        }
+    }
+
+    AnimatedContent(
+        targetState = activeSubPage,
+        transitionSpec = {
+            if (targetState != null) {
+                slideInHorizontally { width -> width } + fadeIn() togetherWith
+                        slideOutHorizontally { width -> -width } + fadeOut()
+            } else {
+                slideInHorizontally { width -> -width } + fadeIn() togetherWith
+                        slideOutHorizontally { width -> width } + fadeOut()
+            }
+        },
+        label = "SettingsSubPageNavigation"
+    ) { subPage ->
+        when (subPage) {
+            null -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp)
+                        .verticalScroll(scrollState)
+                ) {
+                    // Visual Profile Card with interactive photo selector
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp)
+                            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
+                    ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -222,8 +249,17 @@ fun SettingsTab(
                         ) {
                             // Profile Photo container (clickable)
                             Box(
-                                modifier = Modifier.size(64.dp)
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clickable {
+                                        if (profileBitmap != null) {
+                                            showAvatarOptions = true
+                                        } else {
+                                            imagePickerLauncher.launch("image/*")
+                                        }
+                                    }
                             ) {
+                                // Avatar circle
                                 Box(
                                     contentAlignment = Alignment.Center,
                                     modifier = Modifier
@@ -231,13 +267,6 @@ fun SettingsTab(
                                         .clip(CircleShape)
                                         .background(primaryColor.copy(alpha = 0.15f), shape = CircleShape)
                                         .border(1.dp, primaryColor, CircleShape)
-                                        .clickable {
-                                            if (profileBitmap != null) {
-                                                showAvatarOptions = true
-                                            } else {
-                                                imagePickerLauncher.launch("image/*")
-                                            }
-                                        }
                                 ) {
                                     if (profileBitmap != null) {
                                         Image(
@@ -248,863 +277,923 @@ fun SettingsTab(
                                     } else {
                                         Icon(
                                             painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_add_photo_smiley),
-                                            contentDescription = "Edit Photo",
+                                            contentDescription = "No Profile Photo",
                                             tint = primaryColor,
-                                            modifier = Modifier
-                                                .size(28.dp)
-                                                .align(Alignment.Center)
-                                        )
-                                        Text(
-                                            text = Localizations.getString("edit_photo", appLanguage),
-                                            fontSize = 8.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = primaryColor,
-                                            modifier = Modifier
-                                                .align(Alignment.BottomCenter)
-                                                .padding(bottom = 4.dp)
+                                            modifier = Modifier.size(24.dp)
                                         )
                                     }
                                 }
-                                if (profileBitmap != null) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(20.dp)
-                                            .align(Alignment.BottomEnd)
-                                            .background(primaryColor, CircleShape)
-                                            .border(1.dp, surfaceColor, CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_attach_camera),
-                                            contentDescription = "Edit",
-                                            tint = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                    }
+                                // Camera badge — bottom-right corner
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .align(Alignment.BottomEnd)
+                                        .background(primaryColor, shape = CircleShape)
+                                        .border(1.5.dp, surfaceColor, CircleShape)
+                                ) {
+                                    Icon(
+                                        painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_attach_camera),
+                                        contentDescription = "Change photo",
+                                        tint = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else androidx.compose.ui.graphics.Color.White,
+                                        modifier = Modifier.size(11.dp)
+                                    )
                                 }
                             }
-                            
+
                             Spacer(modifier = Modifier.width(16.dp))
-                            
-                            Column {
-                                Text(
-                                    text = Localizations.getString("username_profile", appLanguage),
-                                    fontSize = 13.sp,
-                                    color = onSurfaceVariant
-                                )
+
+                            Column(
+                                modifier = Modifier.weight(1f)
+                            ) {
                                 Text(
                                     text = username,
-                                    fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
                                     color = onSurfaceColor
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = if (appLanguage == "Русский") "Изменить фото профиля" else "Change profile photo",
+                                    text = "Your Identity",
                                     fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = primaryColor,
-                                    modifier = Modifier
-                                        .clickable {
-                                            if (profileBitmap != null) {
-                                                showAvatarOptions = true
-                                            } else {
-                                                imagePickerLauncher.launch("image/*")
-                                            }
-                                        }
-                                        .padding(vertical = 2.dp)
+                                    color = onSurfaceVariant
                                 )
                             }
                         }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Appearance Settings Card
-        Text(
-            text = Localizations.getString("appearance", appLanguage),
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = onSurfaceColor,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        Card(
-            colors = CardDefaults.cardColors(containerColor = surfaceColor),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                // Light Mode Toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(Localizations.getString("light_theme", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                        Text(Localizations.getString("light_theme_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
                     }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Switch(
-                        checked = !isDarkTheme,
-                        onCheckedChange = { light -> onThemeChanged(!light) },
-                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
-                    )
-                }
-                
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
 
-                // Cerulean Accent Toggle
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(Localizations.getString("cerulean_blue", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                        Text(Localizations.getString("cerulean_blue_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Switch(
-                        checked = useCerulean,
-                        onCheckedChange = onAccentChanged,
-                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
-                    )
-                }
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
-
-                // Expandable Launcher Icons Picker Row
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showLauncherIconsPicker = !showLauncherIconsPicker }
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(Localizations.getString("premium_icons", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                        Text(Localizations.getString("select_icons_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val activeIconLabel = when (activeIconAlias) {
-                            "MainActivityAliasBlue" -> "Cerulean Blue"
-                            "MainActivityAliasNoir" -> "Noir Luxury"
-                            "MainActivityAliasNeon" -> "Neon Bright"
-                            else -> "Mint Classic"
-                        }
-                        Text(text = activeIconLabel, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = if (showLauncherIconsPicker) "▼" else "❯", fontSize = 12.sp, color = onSurfaceVariant)
-                    }
-                }
-
-                androidx.compose.animation.AnimatedVisibility(visible = showLauncherIconsPicker) {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.padding(top = 16.dp)
+                    // Categories Group Card
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
                     ) {
-                        val iconOptions = listOf(
-                            AppIconOption("MainActivityAliasDefault", "Mint Classic", StealthBlack, MintGreen, "Dark/Mint", com.example.twopchat.R.drawable.ic_logo_default_fg),
-                            AppIconOption("MainActivityAliasBlue", "Cerulean Blue", CeruleanBlue, Color.White, "Cerulean", com.example.twopchat.R.drawable.ic_logo_blue_fg),
-                            AppIconOption("MainActivityAliasNoir", "Noir Luxury", Onyx, ChampagneGold, "Charcoal/Gold", com.example.twopchat.R.drawable.ic_logo_noir_fg),
-                            AppIconOption("MainActivityAliasNeon", "Neon Bright", Color.White, NeonPurple, "Light/Violet", com.example.twopchat.R.drawable.ic_logo_neon_fg)
-                        )
+                        Column {
+                            // Category: Chat Settings / Оформление
+                            SettingsRow(
+                                title = if (appLanguage == "Русский") "Настройки чатов и Оформление" else "Chat Settings & Theme",
+                                subtitle = if (appLanguage == "Русский") "Тема, цвет акцента, иконка приложения" else "Theme, accent color, launcher icon",
+                                iconRes = com.example.twopchat.R.drawable.ic_menu_chats,
+                                iconColor = Color(0xFFF5B041),
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                onClick = { activeSubPage = "chat_settings" }
+                            )
+                            
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+                            
+                            // Category: Privacy & Security / Конфиденциальность
+                            SettingsRow(
+                                title = if (appLanguage == "Русский") "Конфиденциальность и Сеть" else "Privacy & Security",
+                                subtitle = if (appLanguage == "Русский") "Код-пароль, скриншоты, порты и маршруты" else "Passcode, screenshots, ports and routes",
+                                iconRes = com.example.twopchat.R.drawable.ic_shield_status,
+                                iconColor = Color(0xFF4CAF50),
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                onClick = { activeSubPage = "security" }
+                            )
+                            
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+                            
+                            // Category: Notifications / Уведомления
+                            SettingsRow(
+                                title = if (appLanguage == "Русский") "Уведомления и звуки" else "Notifications",
+                                subtitle = if (appLanguage == "Русский") "Включение уведомлений, превью сообщений" else "Toggles, previews",
+                                iconRes = com.example.twopchat.R.drawable.ic_notifications,
+                                iconColor = Color(0xFFE57373),
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                onClick = { activeSubPage = "notifications" }
+                            )
+                            
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+                            
+                            // Category: Language / Язык
+                            SettingsRow(
+                                title = Localizations.getString("language", appLanguage),
+                                subtitle = if (appLanguage == "Русский") "Выбор языка приложения" else "Choose app language",
+                                value = appLanguage,
+                                iconRes = com.example.twopchat.R.drawable.ic_quick_link,
+                                iconColor = Color(0xFF29B6F6),
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                onClick = { showLanguageDialog = true }
+                            )
+                        }
+                    }
 
-                        iconOptions.forEach { option ->
-                            val isSelected = activeIconAlias == option.alias
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = if (isSelected) primaryColor.copy(alpha = 0.08f) else surfaceColor),
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        if (activeIconAlias != option.alias) {
-                                            onIconChanged(option.alias)
-                                            Toast.makeText(context, "${option.name} Launcher Icon Selected! Launchers rotate on next restart.", Toast.LENGTH_LONG).show()
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // System Group Card
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
+                    ) {
+                        Column {
+                            // Network Diagnostics & Logs
+                            SettingsRow(
+                                title = if (appLanguage == "Русский") "Сетевой отладчик и Логи" else "Network Diagnostics & Logs",
+                                iconRes = com.example.twopchat.R.drawable.ic_menu_settings,
+                                iconColor = Color(0xFF78909C),
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                onClick = { onShowLogs() }
+                            )
+                            
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+                            
+                            // Export Logs
+                            SettingsRow(
+                                title = if (appLanguage == "Русский") "Экспорт логов приложения" else "Export App Logs",
+                                iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
+                                iconColor = Color(0xFF8D6E63),
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                onClick = {
+                                    val logFile = java.io.File(java.io.File(context.filesDir, "config"), "app.log")
+                                    if (logFile.exists() && logFile.length() > 0) {
+                                        try {
+                                            val authority = "${context.packageName}.fileprovider"
+                                            val fileUri: android.net.Uri = androidx.core.content.FileProvider.getUriForFile(context, authority, logFile)
+                                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(android.content.Intent.EXTRA_STREAM, fileUri)
+                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            context.startActivity(android.content.Intent.createChooser(shareIntent, if (appLanguage == "Русский") "Поделиться логами" else "Share Logs"))
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Error sharing logs: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        Toast.makeText(context, if (appLanguage == "Русский") "Лог-файл пуст или еще не создан" else "Log file is empty or not created yet", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            )
+                            
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+                            
+                            // Delete Account
+                            SettingsRow(
+                                title = Localizations.getString("delete_account", appLanguage),
+                                iconRes = com.example.twopchat.R.drawable.ic_delete,
+                                iconColor = MaterialTheme.colorScheme.error,
+                                onSurfaceColor = MaterialTheme.colorScheme.error,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                isWarning = true,
+                                onClick = { showDeleteAccountDialog = true }
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Text(
+                        text = "V 0.0.3",
+                        fontSize = 12.sp,
+                        color = onSurfaceVariant.copy(alpha = 0.5f),
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    )
+                    Spacer(modifier = Modifier.height(40.dp))
+                }
+            }
+            "chat_settings" -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    SubPageLayout(
+                        title = if (appLanguage == "Русский") "Настройки чатов" else "Chat Settings",
+                        appLanguage = appLanguage,
+                        onBackClick = { activeSubPage = null },
+                        surfaceColor = surfaceColor,
+                        onSurfaceColor = onSurfaceColor
+                    ) {
+                        // Appearance Settings Card
+                        Text(
+                            text = Localizations.getString("appearance", appLanguage),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onSurfaceColor,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+
+                                // ── Themes Dropdown Trigger ────────────────────────────
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showThemesPicker = !showThemesPicker }
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (appLanguage == "Русский") "Тема оформления" else "App Theme",
+                                            fontWeight = FontWeight.Medium,
+                                            color = onSurfaceColor
+                                        )
+                                        Text(
+                                            text = if (appLanguage == "Русский") "Светлая, цвет акцента, AMOLED" else "Light mode, accent color, AMOLED",
+                                            fontSize = 12.sp,
+                                            color = onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        val themeLabel = when {
+                                            !isDarkTheme -> if (appLanguage == "Русский") "Светлая" else "Light"
+                                            useAmoled -> "AMOLED"
+                                            useCerulean -> "Cerulean"
+                                            else -> if (appLanguage == "Русский") "Тёмная" else "Dark"
+                                        }
+                                        Text(text = themeLabel, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(text = if (showThemesPicker) "▼" else "❯", fontSize = 12.sp, color = onSurfaceVariant)
+                                    }
+                                }
+
+                                AnimatedVisibility(visible = showThemesPicker) {
+                                    Column(
+                                        modifier = Modifier.padding(top = 16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(0.dp)
+                                    ) {
+                                        // Light Mode Toggle
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(Localizations.getString("light_theme", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                                Text(Localizations.getString("light_theme_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                                            }
+                                            Spacer(modifier = Modifier.width(16.dp))
+                                            Switch(
+                                                checked = !isDarkTheme,
+                                                onCheckedChange = { onThemeChanged(!it) },
+                                                colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                            )
+                                        }
+
+                                        HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                        // Cerulean Blue Toggle
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(Localizations.getString("cerulean_blue", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                                Text(Localizations.getString("cerulean_blue_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                                            }
+                                            Spacer(modifier = Modifier.width(16.dp))
+                                            Switch(
+                                                checked = useCerulean,
+                                                onCheckedChange = { onAccentChanged(it) },
+                                                colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                            )
+                                        }
+
+                                        if (isDarkTheme) {
+                                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                            // AMOLED Theme Toggle
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(Localizations.getString("amoled_theme", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                                    Text(Localizations.getString("amoled_theme_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                                                }
+                                                Spacer(modifier = Modifier.width(16.dp))
+                                                Switch(
+                                                    checked = useAmoled,
+                                                    onCheckedChange = { onAmoledChanged(it) },
+                                                    colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                                )
+                                            }
                                         }
                                     }
-                                    .border(
-                                        width = if (isSelected) 1.5.dp else 0.5.dp,
-                                        color = if (isSelected) primaryColor else onSurfaceColor.copy(alpha = 0.05f),
-                                        shape = RoundedCornerShape(16.dp)
-                                    )
-                            ) {
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                // ── Launcher Icon Picker Trigger ───────────────────────
                                 Row(
-                                    modifier = Modifier.padding(14.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showLauncherIconsPicker = !showLauncherIconsPicker }
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (appLanguage == "Русский") "Иконка приложения" else "App Launcher Icon",
+                                            fontWeight = FontWeight.Medium,
+                                            color = onSurfaceColor
+                                        )
+                                        Text(
+                                            text = if (appLanguage == "Русский") {
+                                                "Выберите тему значка для домашнего экрана"
+                                            } else {
+                                                "Select a style for your home screen app icon"
+                                            },
+                                            fontSize = 12.sp,
+                                            color = onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        val activeLabel = when (activeIconAlias) {
+                                            "MainActivityAliasDefault" -> "Mint Classic"
+                                            "MainActivityAliasBlue" -> "Cerulean Blue"
+                                            "MainActivityAliasNoir" -> "Noir Luxury"
+                                            "MainActivityAliasNeon" -> "Neon Bright"
+                                            else -> "Default"
+                                        }
+                                        Text(text = activeLabel, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(text = if (showLauncherIconsPicker) "▼" else "❯", fontSize = 12.sp, color = onSurfaceVariant)
+                                    }
+                                }
+
+                                AnimatedVisibility(visible = showLauncherIconsPicker) {
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                                        modifier = Modifier.padding(top = 16.dp)
+                                    ) {
+                                        val iconOptions = listOf(
+                                            AppIconOption("MainActivityAliasDefault", "Mint Classic", StealthBlack, MintGreen, "Dark/Mint", com.example.twopchat.R.drawable.ic_logo_default_fg),
+                                            AppIconOption("MainActivityAliasBlue", "Cerulean Blue", CeruleanBlue, Color.White, "Cerulean", com.example.twopchat.R.drawable.ic_logo_blue_fg),
+                                            AppIconOption("MainActivityAliasNoir", "Noir Luxury", Onyx, ChampagneGold, "Charcoal/Gold", com.example.twopchat.R.drawable.ic_logo_noir_fg),
+                                            AppIconOption("MainActivityAliasNeon", "Neon Bright", Color.White, NeonPurple, "Light/Violet", com.example.twopchat.R.drawable.ic_logo_neon_fg)
+                                        )
+
+                                        iconOptions.forEach { option ->
+                                            val isSelected = activeIconAlias == option.alias
+                                            Card(
+                                                colors = CardDefaults.cardColors(containerColor = if (isSelected) primaryColor.copy(alpha = 0.08f) else surfaceColor),
+                                                shape = RoundedCornerShape(16.dp),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        if (activeIconAlias != option.alias) {
+                                                            onIconChanged(option.alias)
+                                                            Toast.makeText(context, "${option.name} Launcher Icon Selected! Launchers rotate on next restart.", Toast.LENGTH_LONG).show()
+                                                        }
+                                                    }
+                                                    .border(
+                                                        width = if (isSelected) 1.5.dp else 0.5.dp,
+                                                        color = if (isSelected) primaryColor else onSurfaceColor.copy(alpha = 0.05f),
+                                                        shape = RoundedCornerShape(16.dp)
+                                                    )
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(14.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Box(
+                                                            contentAlignment = Alignment.Center,
+                                                            modifier = Modifier
+                                                                .size(46.dp)
+                                                                .background(option.bg, shape = RoundedCornerShape(10.dp))
+                                                                .border(1.dp, option.fg.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                                        ) {
+                                                            Image(
+                                                                painter = painterResource(id = option.fgRes),
+                                                                contentDescription = option.name,
+                                                                modifier = Modifier.size(30.dp)
+                                                            )
+                                                        }
+                                                        Spacer(modifier = Modifier.width(14.dp))
+                                                        Column {
+                                                            Text(text = option.name, fontWeight = FontWeight.SemiBold, color = onSurfaceColor)
+                                                            Text(text = option.styleDesc, fontSize = 11.sp, color = onSurfaceVariant)
+                                                        }
+                                                    }
+                                                    RadioButton(
+                                                        selected = isSelected,
+                                                        onClick = {
+                                                            if (activeIconAlias != option.alias) {
+                                                                onIconChanged(option.alias)
+                                                                Toast.makeText(context, "${option.name} Launcher Icon Selected! Launchers rotate on next restart.", Toast.LENGTH_LONG).show()
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Message History / RAM Mode Settings Card
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        // Icon Preview box
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier
-                                                .size(46.dp)
-                                                .background(option.bg, shape = RoundedCornerShape(10.dp))
-                                                .border(1.dp, option.fg.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-                                        ) {
-                                            Image(
-                                                painter = painterResource(id = option.fgRes),
-                                                contentDescription = option.name,
-                                                modifier = Modifier.size(30.dp),
-                                                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(option.fg)
-                                            )
-                                        }
-                                        
-                                        Spacer(modifier = Modifier.width(14.dp))
-                                        
-                                        Column {
-                                            Text(
-                                                text = option.name,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = onSurfaceColor
-                                            )
-                                            Text(
-                                                text = option.styleDesc,
-                                                fontSize = 11.sp,
-                                                color = onSurfaceVariant
-                                            )
-                                        }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (appLanguage == "Русский") "Сохранять историю переписок" else "Persist Chat History",
+                                            fontWeight = FontWeight.Medium,
+                                            color = onSurfaceColor
+                                        )
+                                        Text(
+                                            text = if (appLanguage == "Русский") {
+                                                "Если выключено, сообщения будут находиться только в ОЗУ (стираться при выходе из диалога)"
+                                            } else {
+                                                "If disabled, messages reside strictly in RAM and clear when exiting the chat"
+                                            },
+                                            fontSize = 12.sp,
+                                            color = onSurfaceVariant
+                                        )
                                     }
-                                    
-                                    RadioButton(
-                                        selected = isSelected,
-                                        onClick = {
-                                            if (activeIconAlias != option.alias) {
-                                                onIconChanged(option.alias)
-                                                Toast.makeText(context, "${option.name} Launcher Icon Selected! Launchers rotate on next restart.", Toast.LENGTH_LONG).show()
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = persistChatHistory,
+                                        onCheckedChange = {
+                                            persistChatHistory = it
+                                            sharedPrefs.edit().putBoolean("persist_chat_history", it).apply()
+                                        },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = primaryColor,
+                                            checkedTrackColor = primaryColor.copy(alpha = 0.3f)
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(40.dp))
+                    }
+                }
+            }
+            "security" -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    SubPageLayout(
+                        title = if (appLanguage == "Русский") "Конфиденциальность" else "Privacy & Security",
+                        appLanguage = appLanguage,
+                        onBackClick = { activeSubPage = null },
+                        surfaceColor = surfaceColor,
+                        onSurfaceColor = onSurfaceColor
+                    ) {
+                        // Security & Network Settings Card
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                // Stealth Disguise Mode
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(Localizations.getString("stealth_disguise", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                        Text(Localizations.getString("stealth_disguise_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = stealthDisguise,
+                                        onCheckedChange = { checked ->
+                                            stealthDisguise = checked
+                                            sharedPrefs.edit().putBoolean("settings_stealth_disguise", checked).apply()
+                                            if (checked) {
+                                                onIconChanged("MainActivityAliasCurrency")
+                                                showDisguiseInstructionDialog = true
+                                            } else {
+                                                onIconChanged(activeIconAlias)
+                                                Toast.makeText(context, if (appLanguage == "Русский") "Маскировка выключена." else "Disguise inactive.", Toast.LENGTH_SHORT).show()
                                             }
                                         },
-                                        colors = RadioButtonDefaults.colors(selectedColor = primaryColor)
+                                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                // Screenshot blocking
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(Localizations.getString("block_screenshots", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                        Text(Localizations.getString("block_screenshots_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = blockScreenshots,
+                                        onCheckedChange = {
+                                            blockScreenshots = it
+                                            sharedPrefs.edit().putBoolean("settings_screenshots", it).apply()
+                                            val activity = context as? android.app.Activity
+                                            activity?.let { act ->
+                                                if (it) {
+                                                    act.window.setFlags(
+                                                        android.view.WindowManager.LayoutParams.FLAG_SECURE,
+                                                        android.view.WindowManager.LayoutParams.FLAG_SECURE
+                                                    )
+                                                } else {
+                                                    act.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                                                }
+                                            }
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                // Passcode
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(Localizations.getString("passcode_lock", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                        Text(Localizations.getString("passcode_lock_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = passcodeLock,
+                                        onCheckedChange = { checked ->
+                                            if (checked) {
+                                                showSetPasscodeDialog = true
+                                            } else {
+                                                showDisablePasscodeDialog = true
+                                            }
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                    )
+                                }
+
+                                if (passcodeLock) {
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { showAutolockDialog = true }
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(Localizations.getString("autolock_title", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                            Text(Localizations.getString("autolock_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                                        }
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        val autolockLabel = when (autolockMinutes) {
+                                            1 -> Localizations.getString("minutes_1", appLanguage)
+                                            5 -> Localizations.getString("minutes_5", appLanguage)
+                                            10 -> Localizations.getString("minutes_10", appLanguage)
+                                            30 -> Localizations.getString("minutes_30", appLanguage)
+                                            else -> "${autolockMinutes}m"
+                                        }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(text = autolockLabel, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(text = "❯", fontSize = 12.sp, color = onSurfaceVariant)
+                                        }
+                                    }
+
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable { showSetDuressDialog = true }
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(Localizations.getString("duress_pin_title", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                            Text(Localizations.getString("duress_pin_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                                        }
+                                        Spacer(modifier = Modifier.width(16.dp))
+                                        val duressPinValue = sharedPrefs.getString("passcode_duress_value", "") ?: ""
+                                        val duressSet = duressPinValue.isNotEmpty()
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+
+                                            Text(
+                                                text = if (duressSet) Localizations.getString("enabled", appLanguage) else Localizations.getString("disabled", appLanguage),
+                                                color = if (duressSet) primaryColor else onSurfaceVariant,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 14.sp
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(text = "❯", fontSize = 12.sp, color = onSurfaceVariant)
+                                        }
+                                    }
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                // Direct WiFi discovery
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(Localizations.getString("wifi_discovery", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                        Text(Localizations.getString("wifi_discovery_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = wifiDiscovery,
+                                        onCheckedChange = {
+                                            wifiDiscovery = it
+                                            sharedPrefs.edit().putBoolean("settings_wifi", it).apply()
+                                            P2PMessageRelay.setLocalDiscoveryEnabled(context, it)
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                val parsedListenerPort = listenerPortText.toIntOrNull()
+                                val listenerPortValid = parsedListenerPort in
+                                    P2PPreferences.MIN_LISTENER_PORT..P2PPreferences.MAX_LISTENER_PORT
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        if (appLanguage == "Русский") "Порт входящих подключений" else "Incoming listener port",
+                                        fontWeight = FontWeight.Medium,
+                                        color = onSurfaceColor,
+                                    )
+                                    Text(
+                                        if (appLanguage == "Русский") {
+                                            "Одинаковый порт не требуется: он публикуется через DHT, трекеры и локальную сеть"
+                                        } else {
+                                            "Peers learn this port through DHT, trackers, and local discovery"
+                                        },
+                                        fontSize = 12.sp,
+                                        color = onSurfaceVariant,
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        OutlinedTextField(
+                                            value = listenerPortText,
+                                            onValueChange = { value ->
+                                                listenerPortText = value.filter(Char::isDigit).take(5)
+                                            },
+                                            singleLine = true,
+                                            isError = listenerPortText.isNotEmpty() && !listenerPortValid,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        TextButton(
+                                            enabled = listenerPortValid &&
+                                                parsedListenerPort != P2PPreferences.listenerPort(context),
+                                            onClick = {
+                                                val port = parsedListenerPort ?: return@TextButton
+                                                sharedPrefs.edit().putInt(P2PPreferences.LISTENER_PORT, port).apply()
+                                                androidx.core.content.ContextCompat.startForegroundService(
+                                                    context,
+                                                    Intent(context, P2PRelayService::class.java).apply {
+                                                        action = P2PRelayService.ACTION_RESTART
+                                                    },
+                                                )
+                                                Toast.makeText(
+                                                    context,
+                                                    if (appLanguage == "Русский") "P2P-порт изменён на $port" else "P2P port changed to $port",
+                                                    Toast.LENGTH_SHORT,
+                                                ).show()
+                                            },
+                                        ) {
+                                            Text(if (appLanguage == "Русский") "Применить" else "Apply")
+                                        }
+                                    }
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                // IPv4 transport
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            if (appLanguage == "Русский") "Подключение по IPv4" else "IPv4 connections",
+                                            fontWeight = FontWeight.Medium,
+                                            color = onSurfaceColor
+                                        )
+                                        Text(
+                                            if (appLanguage == "Русский") {
+                                                "Анонсировать и использовать прямые IPv4-подключения"
+                                            } else {
+                                                "Announce and use direct IPv4 connections"
+                                            },
+                                            fontSize = 12.sp,
+                                            color = onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = ipv4Routing,
+                                        onCheckedChange = { enabled ->
+                                            ipv4Routing = enabled
+                                            sharedPrefs.edit().putBoolean("settings_ipv4", enabled).apply()
+                                            com.example.twopchat.PythonBridge.setIpv4Enabled(enabled)
+                                            com.example.twopchat.P2PMessageRelay.refreshAnnouncement(context)
+                                        },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = primaryColor,
+                                            checkedTrackColor = primaryColor.copy(alpha = 0.3f)
+                                        )
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                // Yggdrasil
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(Localizations.getString("yggdrasil_routing", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                        Text(Localizations.getString("yggdrasil_routing_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = yggdrasilRouting,
+                                        onCheckedChange = { isChecked ->
+                                            if (isChecked) {
+                                                val vpnIntent = VpnService.prepare(context)
+                                                if (vpnIntent != null) {
+                                                    vpnLauncher.launch(vpnIntent)
+                                                } else {
+                                                    val intent = Intent(context, PacketTunnelProvider::class.java).apply {
+                                                        action = PacketTunnelProvider.ACTION_START
+                                                    }
+                                                    context.startService(intent)
+                                                    yggdrasilRouting = true
+                                                    sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+                                                }
+                                            } else {
+                                                val intent = Intent(context, PacketTunnelProvider::class.java).apply {
+                                                    action = PacketTunnelProvider.ACTION_STOP
+                                                }
+                                                context.startService(intent)
+                                                yggdrasilRouting = false
+                                                sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
+                                            }
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                    )
+                                }
+
+                                TextButton(
+                                    onClick = { showRegenerateYggdrasilKeysDialog = true },
+                                    modifier = Modifier.align(Alignment.End),
+                                ) {
+                                    Text(
+                                        if (appLanguage == "Русский") "Сгенерировать новый ключ Yggdrasil" else "Generate new Yggdrasil key"
                                     )
                                 }
                             }
                         }
+                        
+                        Spacer(modifier = Modifier.height(40.dp))
                     }
                 }
             }
-        }
-
-        Spacer(modifier = Modifier.height(18.dp))
-
-        // Notifications Settings Card
-        Text(
-            text = Localizations.getString("notifications", appLanguage),
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = onSurfaceColor,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        Card(
-            colors = CardDefaults.cardColors(containerColor = surfaceColor),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier
-
-                .fillMaxWidth()
-                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+            "notifications" -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(Localizations.getString("push_notifications", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                        Text(Localizations.getString("push_notifications_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Switch(
-                        checked = notificationsEnabled,
-                        onCheckedChange = {
-                            notificationsEnabled = it
-                            sharedPrefs.edit().putBoolean("settings_notifications", it).apply()
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(Localizations.getString("message_previews", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                        Text(Localizations.getString("message_previews_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Switch(
-                        checked = previewsEnabled,
-                        onCheckedChange = {
-                            previewsEnabled = it
-                            sharedPrefs.edit().putBoolean("settings_previews", it).apply()
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(18.dp))
-
-        // Security & Network Settings Card
-        Text(
-            text = Localizations.getString("security_network", appLanguage),
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = onSurfaceColor,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        Card(
-            colors = CardDefaults.cardColors(containerColor = surfaceColor),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                // Stealth Disguise Mode
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(Localizations.getString("stealth_disguise", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                        Text(Localizations.getString("stealth_disguise_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Switch(
-                        checked = stealthDisguise,
-                        onCheckedChange = { checked ->
-                            stealthDisguise = checked
-                            sharedPrefs.edit().putBoolean("settings_stealth_disguise", checked).apply()
-                            if (checked) {
-                                onIconChanged("MainActivityAliasCurrency")
-                                showDisguiseInstructionDialog = true
-                            } else {
-                                onIconChanged(activeIconAlias)
-                                Toast.makeText(context, if (appLanguage == "Русский") "Маскировка выключена." else "Disguise inactive.", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
-
-                // Screenshot blocking
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(Localizations.getString("block_screenshots", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                        Text(Localizations.getString("block_screenshots_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Switch(
-                        checked = blockScreenshots,
-                        onCheckedChange = {
-                            blockScreenshots = it
-                            sharedPrefs.edit().putBoolean("settings_screenshots", it).apply()
-                            val activity = context as? android.app.Activity
-                            activity?.let { act ->
-                                if (it) {
-                                    act.window.setFlags(
-                                        android.view.WindowManager.LayoutParams.FLAG_SECURE,
-                                        android.view.WindowManager.LayoutParams.FLAG_SECURE
-                                    )
-                                } else {
-                                    act.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
-                                }
-                            }
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
-
-                // Passcode
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(Localizations.getString("passcode_lock", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                        Text(Localizations.getString("passcode_lock_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Switch(
-                        checked = passcodeLock,
-                        onCheckedChange = { checked ->
-                            if (checked) {
-                                showSetPasscodeDialog = true
-                            } else {
-                                showDisablePasscodeDialog = true
-                            }
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
-                    )
-                }
-
-                if (passcodeLock) {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showAutolockDialog = true }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    SubPageLayout(
+                        title = if (appLanguage == "Русский") "Уведомления" else "Notifications",
+                        appLanguage = appLanguage,
+                        onBackClick = { activeSubPage = null },
+                        surfaceColor = surfaceColor,
+                        onSurfaceColor = onSurfaceColor
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(Localizations.getString("autolock_title", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                            Text(Localizations.getString("autolock_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        val autolockLabel = when (autolockMinutes) {
-                            1 -> Localizations.getString("minutes_1", appLanguage)
-                            5 -> Localizations.getString("minutes_5", appLanguage)
-                            10 -> Localizations.getString("minutes_10", appLanguage)
-                            30 -> Localizations.getString("minutes_30", appLanguage)
-                            else -> "${autolockMinutes}m"
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(text = autolockLabel, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "❯", fontSize = 12.sp, color = onSurfaceVariant)
-                        }
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showSetDuressDialog = true }
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(Localizations.getString("duress_pin_title", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                            Text(Localizations.getString("duress_pin_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        val duressPinValue = sharedPrefs.getString("passcode_duress_value", "") ?: ""
-                        val duressSet = duressPinValue.isNotEmpty()
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-
-                            Text(
-                                text = if (duressSet) Localizations.getString("enabled", appLanguage) else Localizations.getString("disabled", appLanguage),
-                                color = if (duressSet) primaryColor else onSurfaceVariant,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(text = "❯", fontSize = 12.sp, color = onSurfaceVariant)
-                        }
-                    }
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
-
-                // Direct WiFi discovery
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(Localizations.getString("wifi_discovery", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                        Text(Localizations.getString("wifi_discovery_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Switch(
-                        checked = wifiDiscovery,
-                        onCheckedChange = {
-                            wifiDiscovery = it
-                            sharedPrefs.edit().putBoolean("settings_wifi", it).apply()
-                            P2PMessageRelay.setLocalDiscoveryEnabled(context, it)
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
-
-                val parsedListenerPort = listenerPortText.toIntOrNull()
-                val listenerPortValid = parsedListenerPort in
-                    P2PPreferences.MIN_LISTENER_PORT..P2PPreferences.MAX_LISTENER_PORT
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        if (appLanguage == "Русский") "Порт входящих подключений" else "Incoming listener port",
-                        fontWeight = FontWeight.Medium,
-                        color = onSurfaceColor,
-                    )
-                    Text(
-                        if (appLanguage == "Русский") {
-                            "Одинаковый порт не требуется: он публикуется через DHT, трекеры и локальную сеть"
-                        } else {
-                            "Peers learn this port through DHT, trackers, and local discovery"
-                        },
-                        fontSize = 12.sp,
-                        color = onSurfaceVariant,
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        OutlinedTextField(
-                            value = listenerPortText,
-                            onValueChange = { value ->
-                                listenerPortText = value.filter(Char::isDigit).take(5)
-                            },
-                            singleLine = true,
-                            isError = listenerPortText.isNotEmpty() && !listenerPortValid,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        TextButton(
-                            enabled = listenerPortValid &&
-                                parsedListenerPort != P2PPreferences.listenerPort(context),
-                            onClick = {
-                                val port = parsedListenerPort ?: return@TextButton
-                                sharedPrefs.edit().putInt(P2PPreferences.LISTENER_PORT, port).apply()
-                                androidx.core.content.ContextCompat.startForegroundService(
-                                    context,
-                                    Intent(context, P2PRelayService::class.java).apply {
-                                        action = P2PRelayService.ACTION_RESTART
-                                    },
-                                )
-                                Toast.makeText(
-                                    context,
-                                    if (appLanguage == "Русский") "P2P-порт изменён на $port" else "P2P port changed to $port",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            },
+                        // Notifications Settings Card
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
                         ) {
-                            Text(if (appLanguage == "Русский") "Применить" else "Apply")
-                        }
-                    }
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
-
-                // IPv4 transport
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            if (appLanguage == "Русский") "Подключение по IPv4" else "IPv4 connections",
-                            fontWeight = FontWeight.Medium,
-                            color = onSurfaceColor
-                        )
-                        Text(
-                            if (appLanguage == "Русский") {
-                                "Анонсировать и использовать прямые IPv4-подключения"
-                            } else {
-                                "Announce and use direct IPv4 connections"
-                            },
-                            fontSize = 12.sp,
-                            color = onSurfaceVariant
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Switch(
-                        checked = ipv4Routing,
-                        onCheckedChange = { enabled ->
-                            ipv4Routing = enabled
-                            sharedPrefs.edit().putBoolean("settings_ipv4", enabled).apply()
-                            com.example.twopchat.PythonBridge.setIpv4Enabled(enabled)
-                            com.example.twopchat.P2PMessageRelay.refreshAnnouncement(context)
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = primaryColor,
-                            checkedTrackColor = primaryColor.copy(alpha = 0.3f)
-                        )
-                    )
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
-
-                // Yggdrasil
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(Localizations.getString("yggdrasil_routing", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                        Text(Localizations.getString("yggdrasil_routing_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Switch(
-                        checked = yggdrasilRouting,
-                        onCheckedChange = { isChecked ->
-                            if (isChecked) {
-                                val vpnIntent = VpnService.prepare(context)
-                                if (vpnIntent != null) {
-                                    vpnLauncher.launch(vpnIntent)
-                                } else {
-                                    val intent = Intent(context, PacketTunnelProvider::class.java).apply {
-                                        action = PacketTunnelProvider.ACTION_START
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                // Master Toggle
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(Localizations.getString("push_notifications", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                        Text(Localizations.getString("push_notifications_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
                                     }
-                                    context.startService(intent)
-                                    yggdrasilRouting = true
-                                    sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = notificationsEnabled,
+                                        onCheckedChange = {
+                                            notificationsEnabled = it
+                                            sharedPrefs.edit().putBoolean("settings_notifications", it).apply()
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                    )
                                 }
-                            } else {
-                                val intent = Intent(context, PacketTunnelProvider::class.java).apply {
-                                    action = PacketTunnelProvider.ACTION_STOP
-                                }
-                                context.startService(intent)
-                                yggdrasilRouting = false
-                                sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
-                            }
-                        },
-                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
-                    )
-                }
 
-                TextButton(
-                    onClick = { showRegenerateYggdrasilKeysDialog = true },
-                    modifier = Modifier.align(Alignment.End),
-                ) {
-                    Text(
-                        if (appLanguage == "Русский") "Сгенерировать новый ключ Yggdrasil" else "Generate new Yggdrasil key"
-                    )
-                }
-            }
-        }
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Message History / RAM Mode Settings Card
-        Card(
-            colors = CardDefaults.cardColors(containerColor = surfaceColor),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (appLanguage == "Русский") "Сохранять историю переписок" else "Persist Chat History",
-                            fontWeight = FontWeight.Medium,
-                            color = onSurfaceColor
-                        )
-                        Text(
-                            text = if (appLanguage == "Русский") {
-                                "Если выключено, сообщения будут находиться только в ОЗУ (стираться при выходе из диалога)"
-                            } else {
-                                "If disabled, messages reside strictly in RAM and clear when exiting the chat"
-                            },
-                            fontSize = 12.sp,
-                            color = onSurfaceVariant
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Switch(
-                        checked = persistChatHistory,
-                        onCheckedChange = {
-                            persistChatHistory = it
-                            sharedPrefs.edit().putBoolean("persist_chat_history", it).apply()
-                        },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = primaryColor,
-                            checkedTrackColor = primaryColor.copy(alpha = 0.3f)
-                        )
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(18.dp))
-
-        // Language Settings Card
-        Text(
-            text = Localizations.getString("language", appLanguage),
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = onSurfaceColor,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        Card(
-            colors = CardDefaults.cardColors(containerColor = surfaceColor),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { showLanguageDialog = true }
-                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-
-                Column {
-                    Text(Localizations.getString("app_language", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                    Text(Localizations.getString("app_language_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = appLanguage, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "❯", fontSize = 12.sp, color = onSurfaceVariant)
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(30.dp))
-
-        // Delete Account Warning Card
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.08f)),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { showDeleteAccountDialog = true }
-                .border(0.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.15f), RoundedCornerShape(16.dp))
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = Localizations.getString("delete_account", appLanguage),
-                    color = MaterialTheme.colorScheme.error,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(18.dp))
-
-        // Developer Options Section (grouped)
-        Text(
-            text = if (appLanguage == "Русский") "Настройки разработчика" else "Developer Options",
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Bold,
-            color = onSurfaceColor,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-        Card(
-            colors = CardDefaults.cardColors(containerColor = surfaceColor),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                // Network Diagnostics & Logs
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onShowLogs() }
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (appLanguage == "Русский") "Сетевой отладчик и Логи" else "Network Diagnostics & Logs",
-                            fontWeight = FontWeight.Medium,
-                            color = onSurfaceColor
-                        )
-                        Text(
-                            text = if (appLanguage == "Русский") {
-                                "Просмотр системного лога работы P2P и сетевого статуса"
-                            } else {
-                                "View system P2P logs and network connection diagnostic status"
-                            },
-                            fontSize = 12.sp,
-                            color = onSurfaceVariant
-                        )
-                    }
-                    Text(text = "❯", fontSize = 12.sp, color = onSurfaceVariant)
-                }
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
-
-                // Export/Share App Logs
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            // Export/Share log file
-                            val logFile = java.io.File(java.io.File(context.filesDir, "config"), "app.log")
-                            if (logFile.exists() && logFile.length() > 0) {
-                                try {
-                                    val authority = "${context.packageName}.fileprovider"
-                                    val fileUri: android.net.Uri = androidx.core.content.FileProvider.getUriForFile(context, authority, logFile)
-                                    val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(android.content.Intent.EXTRA_STREAM, fileUri)
-                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                // Previews Toggle
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(Localizations.getString("message_previews", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                        Text(Localizations.getString("message_previews_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
                                     }
-                                    context.startActivity(android.content.Intent.createChooser(shareIntent, if (appLanguage == "Русский") "Поделиться логами" else "Share Logs"))
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Error sharing logs: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = previewsEnabled,
+                                        onCheckedChange = {
+                                            previewsEnabled = it
+                                            sharedPrefs.edit().putBoolean("settings_previews", it).apply()
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                    )
                                 }
-                            } else {
-                                Toast.makeText(context, if (appLanguage == "Русский") "Лог-файл пуст или еще не создан" else "Log file is empty or not created yet", Toast.LENGTH_SHORT).show()
                             }
                         }
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(if (appLanguage == "Русский") "Экспорт логов приложения" else "Export App Logs", fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                        Text(if (appLanguage == "Русский") "Поделиться файлом app.log" else "Share the app.log file", fontSize = 12.sp, color = onSurfaceVariant)
+                        
+                        Spacer(modifier = Modifier.height(40.dp))
                     }
-                    Icon(
-                        painter = painterResource(id = android.R.drawable.ic_menu_share),
-                        contentDescription = "Share",
-                        tint = primaryColor,
-                        modifier = Modifier.size(20.dp)
-                    )
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            text = "V 0.0.3",
-            fontSize = 12.sp,
-            color = onSurfaceVariant.copy(alpha = 0.5f),
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.align(Alignment.CenterHorizontally)
-        )
-        Spacer(modifier = Modifier.height(40.dp))
     }
+
 
     if (showAvatarOptions) {
         AlertDialog(
@@ -1667,4 +1756,122 @@ fun SettingsTab(
     }
 }
 
-// Bottom Tab Navigation Bar Helper Composable
+
+@Composable
+fun SettingsRow(
+    title: String,
+    subtitle: String? = null,
+    value: String? = null,
+    iconRes: Int,
+    iconColor: Color,
+    onSurfaceColor: Color,
+    onSurfaceVariant: Color,
+    primaryColor: Color,
+    isWarning: Boolean = false,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(vertical = 12.dp, horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(36.dp)
+                .background(color = if (isWarning) MaterialTheme.colorScheme.error.copy(alpha = 0.1f) else iconColor.copy(alpha = 0.15f), shape = CircleShape)
+        ) {
+            Icon(
+                painter = painterResource(id = iconRes),
+                contentDescription = null,
+                tint = if (isWarning) MaterialTheme.colorScheme.error else iconColor,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        
+        Spacer(modifier = Modifier.width(16.dp))
+        
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = onSurfaceColor
+            )
+            if (subtitle != null) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+        }
+        
+        if (value != null) {
+            Text(
+                text = value,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = primaryColor,
+                modifier = Modifier.padding(end = 8.dp)
+            )
+        }
+        
+        Icon(
+            painter = painterResource(id = com.example.twopchat.R.drawable.ic_forward),
+            contentDescription = null,
+            tint = onSurfaceVariant.copy(alpha = 0.3f),
+            modifier = Modifier.size(12.dp)
+        )
+    }
+}
+
+@Composable
+fun SubPageLayout(
+    title: String,
+    appLanguage: String,
+    onBackClick: () -> Unit,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = onBackClick,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_back_arrow),
+                    contentDescription = if (appLanguage == "Русский") "Назад" else "Back",
+                    tint = onSurfaceColor,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = title,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = onSurfaceColor
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        content()
+    }
+}

@@ -62,6 +62,8 @@ fun MainScreen(
     onThemeChanged: (Boolean) -> Unit,
     useCerulean: Boolean,
     onAccentChanged: (Boolean) -> Unit,
+    useAmoled: Boolean,
+    onAmoledChanged: (Boolean) -> Unit,
     appLanguage: String,
     onLanguageChanged: (String) -> Unit,
     onIconChanged: (String) -> Unit,
@@ -223,6 +225,8 @@ fun MainScreen(
                         onThemeChanged = onThemeChanged,
                         useCerulean = useCerulean,
                         onAccentChanged = onAccentChanged,
+                        useAmoled = useAmoled,
+                        onAmoledChanged = onAmoledChanged,
                         activeIconAlias = activeIconAlias,
                         onIconChanged = { alias ->
                             activeIconAlias = alias

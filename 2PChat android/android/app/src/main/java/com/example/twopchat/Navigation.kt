@@ -22,6 +22,8 @@ fun MainNavigation(
     onThemeChanged: (Boolean) -> Unit,
     useCerulean: Boolean,
     onAccentChanged: (Boolean) -> Unit,
+    useAmoled: Boolean,
+    onAmoledChanged: (Boolean) -> Unit,
     appLanguage: String,
     onLanguageChanged: (String) -> Unit,
     onIconChanged: (String) -> Unit
@@ -58,6 +60,8 @@ fun MainNavigation(
               onThemeChanged = onThemeChanged,
               useCerulean = useCerulean,
               onAccentChanged = onAccentChanged,
+              useAmoled = useAmoled,
+              onAmoledChanged = onAmoledChanged,
               appLanguage = appLanguage,
               onLanguageChanged = onLanguageChanged,
               onIconChanged = onIconChanged,

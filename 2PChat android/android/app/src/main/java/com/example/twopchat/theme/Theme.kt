@@ -35,6 +35,30 @@ private val DarkBlueColorScheme = darkColorScheme(
     onSurfaceVariant = TextGray
 )
 
+private val AmoledMintColorScheme = darkColorScheme(
+    primary = MintGreen,
+    secondary = DeepPine,
+    background = Color.Black,
+    surface = StealthBlack,
+    onPrimary = StealthBlack,
+    onBackground = TextLight,
+    onSurface = TextLight,
+    surfaceVariant = Color(0xFF161A1D),
+    onSurfaceVariant = TextGray
+)
+
+private val AmoledBlueColorScheme = darkColorScheme(
+    primary = CeruleanBlue,
+    secondary = DeepCerulean,
+    background = Color.Black,
+    surface = StealthBlack,
+    onPrimary = StealthBlack,
+    onBackground = TextLight,
+    onSurface = TextLight,
+    surfaceVariant = Color(0xFF151D2A),
+    onSurfaceVariant = TextGray
+)
+
 private val LightMintColorScheme = lightColorScheme(
     primary = MintGreenLight,
     secondary = DeepPine,
@@ -63,6 +87,7 @@ private val LightBlueColorScheme = lightColorScheme(
 fun _2PChatTheme(
   darkTheme: Boolean = true,
   useCerulean: Boolean = false,
+  useAmoled: Boolean = false,
   dynamicColor: Boolean = false,
   content: @Composable () -> Unit,
 ) {
@@ -73,7 +98,11 @@ fun _2PChatTheme(
         if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
       }
       darkTheme -> {
-        if (useCerulean) DarkBlueColorScheme else DarkMintColorScheme
+        if (useAmoled) {
+          if (useCerulean) AmoledBlueColorScheme else AmoledMintColorScheme
+        } else {
+          if (useCerulean) DarkBlueColorScheme else DarkMintColorScheme
+        }
       }
       else -> {
         if (useCerulean) LightBlueColorScheme else LightMintColorScheme
