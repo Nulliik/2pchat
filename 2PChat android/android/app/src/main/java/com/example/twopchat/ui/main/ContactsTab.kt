@@ -56,6 +56,66 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 
+internal data class PeerSearchAddress(
+    val nickname: String,
+    val discoveryCode: String,
+)
+
+internal fun parsePeerSearchAddress(value: String): PeerSearchAddress? {
+    val trimmed = value.trim()
+    val separator = trimmed.lastIndexOf('#')
+    if (separator <= 0 || separator == trimmed.lastIndex) return null
+
+    val nickname = trimmed.substring(0, separator).trim()
+    val discoveryCode = trimmed.substring(separator + 1).trim()
+    if (nickname.isEmpty() || discoveryCode.isEmpty()) return null
+    return PeerSearchAddress(nickname, discoveryCode)
+}
+
+internal fun contactFromPeerSearchResult(
+    peer: Map<String, Any>,
+    appLanguage: String,
+): ContactItem {
+    val name = peer["nickname"]?.toString()?.trim().orEmpty().ifEmpty { "Unknown" }
+    val fingerprint = peer["fingerprint"]?.toString().orEmpty()
+    val endpoints = (peer["endpoints"] as? List<*>)
+        .orEmpty()
+        .joinToString(",") { it.toString() }
+        .ifEmpty { "Unknown" }
+    val verified = peer["verified"]?.toString()?.equals("true", ignoreCase = true) == true
+    val ownershipVerified = peer["ownership_verified"]?.toString()
+        ?.equals("true", ignoreCase = true) == true
+    val reason = peer["verification_reason"]?.toString().orEmpty()
+    val displayName = if (name.startsWith("2TFcRb7m") || name.length > 20) {
+        "Peer (${name.take(8)}...)"
+    } else {
+        name
+    }
+
+    return ContactItem(
+        name = displayName,
+        status = if (verified && ownershipVerified) {
+            if (appLanguage == "Русский") "Подтверждён ссылкой приглашения" else "Verified by invite link"
+        } else if (verified) {
+            if (appLanguage == "Русский") {
+                "Узел и ключ активны · владелец ника не подтверждён"
+            } else {
+                "Live node and key · nickname ownership unverified"
+            }
+        } else if (appLanguage == "Русский") {
+            "Найден на трекере · live-проверка не пройдена"
+        } else {
+            "Found on tracker · live verification failed"
+        },
+        initials = displayName.take(2).uppercase(),
+        verified = verified,
+        endpoints = endpoints,
+        verificationDetails = reason,
+        fingerprint = fingerprint,
+        ownershipVerified = ownershipVerified,
+    )
+}
+
 
 @Composable
 fun ContactsTab(
@@ -152,8 +212,8 @@ fun ContactsTab(
                     Toast.makeText(context, "Invalid link", Toast.LENGTH_SHORT).show()
                 }
             } else {
-                val separator = trimmed.lastIndexOf('#')
-                if (separator <= 0 || separator == trimmed.lastIndex) {
+                val address = parsePeerSearchAddress(trimmed)
+                if (address == null) {
                     searchSummary = if (appLanguage == "Русский") {
                         "Введите полный адрес в формате Имя#код. Поиск только по нику отключён."
                     } else {
@@ -189,32 +249,19 @@ fun ContactsTab(
                             }
                         }
 
-                        val results = PythonBridge.searchPeers(trimmed)
+                        val results = PythonBridge.searchPeers(
+                            address.nickname,
+                            expectedLiveName = address.nickname,
+                            sharedCode = address.discoveryCode,
+                        )
                         progressJob.cancel()
 
                         withContext(Dispatchers.Main) {
                             isSearching = false
                             searchProgress = ""
-                            val list = mutableListOf<ContactItem>()
-                            var verifiedCount = 0
-                            var unverifiedCount = 0
-
-                            for (peer in results) {
-                                val pName = peer["name"]?.toString() ?: "Unnamed"
-                                val pFp = peer["fingerprint"]?.toString() ?: ""
-                                val pCode = peer["discovery_code"]?.toString() ?: ""
-                                val pVerified = peer["verified"]?.toString()?.equals("true", ignoreCase = true) == true
-                                val pOwnership = peer["ownership_verified"]?.toString()?.equals("true", ignoreCase = true) == true
-                                val pEndpoints = peer["endpoints"] as? List<*>
-                                val endpointStr = if (pEndpoints != null && pEndpoints.isNotEmpty()) pEndpoints.joinToString(",") { it.toString() } else ""
-
-                                if (pVerified && pOwnership) {
-                                    verifiedCount++
-                                    list.add(ContactItem(pName, pFp, pCode, pVerified, endpointStr))
-                                } else {
-                                    unverifiedCount++
-                                }
-                            }
+                            val list = results.map { contactFromPeerSearchResult(it, appLanguage) }
+                            val verifiedCount = list.count { it.verified }
+                            val unverifiedCount = list.size - verifiedCount
 
                             searchResults = list
                             searchSummary = if (appLanguage == "Русский") {
