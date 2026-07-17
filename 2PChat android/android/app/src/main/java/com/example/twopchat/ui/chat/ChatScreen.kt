@@ -59,6 +59,10 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
@@ -1571,57 +1575,75 @@ remove("pinned_msg_id_${peerName}")
                         Spacer(modifier = Modifier.height(16.dp))
                         
                         // Search Bar
-                        TextField(
+                        BasicTextField(
                             value = forwardSearchQuery,
                             onValueChange = { forwardSearchQuery = it },
-                            placeholder = { 
-                                Text(
-                                    text = if (appLanguage == "Русский") "Поиск получателя..." else "Search recipient...", 
-                                    color = onSurfaceVariant.copy(alpha = 0.5f),
-                                    fontSize = 14.sp
-                                ) 
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = "Search",
-                                    tint = onSurfaceVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            trailingIcon = {
-                                if (forwardSearchQuery.isNotEmpty()) {
-                                    IconButton(
-                                        onClick = { forwardSearchQuery = "" },
-                                        modifier = Modifier.size(20.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "Clear",
-                                            tint = onSurfaceVariant.copy(alpha = 0.5f),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            },
                             singleLine = true,
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = surfaceVariant.copy(alpha = 0.3f),
-                                unfocusedContainerColor = surfaceVariant.copy(alpha = 0.3f),
-                                focusedTextColor = onSurfaceColor,
-                                unfocusedTextColor = onSurfaceColor,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent
+                            textStyle = TextStyle(
+                                color = onSurfaceColor,
+                                fontSize = 14.sp,
+                                platformStyle = PlatformTextStyle(
+                                    includeFontPadding = false
+                                )
                             ),
-                            shape = RoundedCornerShape(12.dp),
+                            cursorBrush = SolidColor(onSurfaceColor),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp)
+                                .height(44.dp)
+                                .background(surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
                                 .border(
                                     width = 0.5.dp, 
                                     color = onSurfaceColor.copy(alpha = 0.08f), 
                                     shape = RoundedCornerShape(12.dp)
-                                )
+                                ),
+                            decorationBox = { innerTextField ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "Search",
+                                        tint = onSurfaceVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Box(
+                                        modifier = Modifier.weight(1f),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        if (forwardSearchQuery.isEmpty()) {
+                                            Text(
+                                                text = if (appLanguage == "Русский") "Поиск получателя..." else "Search recipient...", 
+                                                color = onSurfaceVariant.copy(alpha = 0.5f),
+                                                fontSize = 14.sp,
+                                                style = TextStyle(
+                                                    platformStyle = PlatformTextStyle(
+                                                        includeFontPadding = false
+                                                    )
+                                                )
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                    if (forwardSearchQuery.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        IconButton(
+                                            onClick = { forwardSearchQuery = "" },
+                                            modifier = Modifier.size(20.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Clear",
+                                                tint = onSurfaceVariant.copy(alpha = 0.5f),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         )
                         
                         Spacer(modifier = Modifier.height(16.dp))
