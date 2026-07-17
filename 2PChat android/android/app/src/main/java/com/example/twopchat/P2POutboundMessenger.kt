@@ -8,7 +8,9 @@ import com.example.twopchat.data.PendingControl
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.concurrent.thread
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 internal class P2POutboundMessenger(
     private val peerEndpoints: Map<String, String>,
@@ -16,9 +18,10 @@ internal class P2POutboundMessenger(
     private val onMessageStatusChanged: (String, String, String) -> Unit,
 ) {
     private val processingOfflineQueues = ConcurrentHashMap.newKeySet<String>()
+    private val scope = CoroutineScope(Dispatchers.IO)
 
     fun sendMessage(context: Context, endpoint: String, text: String, onResult: (Boolean) -> Unit = {}) {
-        thread(start = true, name = "SecureMessageSend") {
+        scope.launch {
             try {
                 val peerName = peerEndpoints.entries.firstOrNull { it.value == endpoint }?.key ?: "Direct Peer"
                 log(context, "Sending secure message via Python transport", "INFO", null)
@@ -53,7 +56,7 @@ internal class P2POutboundMessenger(
         messageId: String = "",
         onResult: (Boolean) -> Unit = {},
     ) {
-        thread(start = true, name = "SecureFileSend") {
+        scope.launch {
             try {
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
@@ -69,7 +72,7 @@ internal class P2POutboundMessenger(
     }
 
     fun reconnect(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
-        thread(start = true, name = "PeerReconnect") {
+        scope.launch {
             try {
                 val prefs = P2PPreferences.prefs(context)
                 val endpoint = peerEndpoints[peerName]
@@ -136,7 +139,7 @@ internal class P2POutboundMessenger(
 
     fun processOfflineQueue(context: Context, peerName: String, endpoint: String) {
         if (endpoint.isBlank() || !processingOfflineQueues.add(peerName)) return
-        thread(start = true, name = "OfflineQueueThread") {
+        scope.launch {
             try {
                 val db = ChatDatabaseHelper.getInstance(context)
                 val pending = db.getPendingMessagesForPeer(peerName)
@@ -180,7 +183,7 @@ internal class P2POutboundMessenger(
     }
 
     private fun sendSilently(context: Context, peerName: String, endpoint: String, payload: JSONObject) {
-        thread(start = true, name = "P2PControlMessage") {
+        scope.launch {
             try {
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
@@ -193,7 +196,7 @@ internal class P2POutboundMessenger(
 
     fun acknowledgeControl(context: Context, controlId: String) {
         if (controlId.isBlank()) return
-        thread(start = true, name = "ControlAck") {
+        scope.launch {
             try {
                 ChatDatabaseHelper.getInstance(context).deletePendingControl(controlId)
             } catch (error: Exception) {
@@ -212,7 +215,7 @@ internal class P2POutboundMessenger(
         deleteAfterSend: Boolean,
     ) {
         val appContext = context.applicationContext
-        thread(start = true, name = "PersistedP2PControl") {
+        scope.launch {
             val db = ChatDatabaseHelper.getInstance(appContext)
             try {
                 db.enqueuePendingControl(
@@ -223,7 +226,7 @@ internal class P2POutboundMessenger(
                     ?: P2PPreferences.prefs(appContext)
                         .getString(P2PPreferences.lastEndpoint(peerName), null)
                         ?.takeIf { it.isNotBlank() }
-                    ?: return@thread
+                    ?: return@launch
                 val fingerprint = P2PPreferences.prefs(appContext)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
                 val sent = PythonBridge.sendP2pMessage(

@@ -49,6 +49,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         private const val TAG = "ChatDatabaseHelper"
         private val activeHelpers = java.util.Collections.newSetFromMap(java.util.WeakHashMap<ChatDatabaseHelper, Boolean>())
         @Volatile private var instance: ChatDatabaseHelper? = null
+        @Volatile private var isMigrationChecked = false
 
         fun getInstance(context: Context): ChatDatabaseHelper =
             instance ?: synchronized(this) {
@@ -66,6 +67,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 }
                 activeHelpers.clear()
                 instance = null
+                isMigrationChecked = false
             }
         }
     }
@@ -78,17 +80,31 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     private val safeWritableDatabase: SQLiteDatabase
         get() {
-            val pass = SecureStorage.getOrGenerateDbPassphrase(context)
-            val dbFile = context.getDatabasePath(DATABASE_NAME)
-            checkAndMigrateDatabase(context, dbFile, pass)
+            if (!isMigrationChecked) {
+                synchronized(ChatDatabaseHelper::class.java) {
+                    if (!isMigrationChecked) {
+                        val pass = SecureStorage.getOrGenerateDbPassphrase(context)
+                        val dbFile = context.getDatabasePath(DATABASE_NAME)
+                        checkAndMigrateDatabase(context, dbFile, pass)
+                        isMigrationChecked = true
+                    }
+                }
+            }
             return writableDatabase
         }
 
     private val safeReadableDatabase: SQLiteDatabase
         get() {
-            val pass = SecureStorage.getOrGenerateDbPassphrase(context)
-            val dbFile = context.getDatabasePath(DATABASE_NAME)
-            checkAndMigrateDatabase(context, dbFile, pass)
+            if (!isMigrationChecked) {
+                synchronized(ChatDatabaseHelper::class.java) {
+                    if (!isMigrationChecked) {
+                        val pass = SecureStorage.getOrGenerateDbPassphrase(context)
+                        val dbFile = context.getDatabasePath(DATABASE_NAME)
+                        checkAndMigrateDatabase(context, dbFile, pass)
+                        isMigrationChecked = true
+                    }
+                }
+            }
             return readableDatabase
         }
 

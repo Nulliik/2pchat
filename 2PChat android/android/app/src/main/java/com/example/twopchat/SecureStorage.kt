@@ -72,17 +72,13 @@ object SecureStorage {
         return cipher.doFinal(value, 13, value.size - 13)
     }
 
-    private var dbPassphraseMem: String? = null
-
     @Synchronized
     fun getOrGenerateDbPassphrase(context: android.content.Context): String {
-        dbPassphraseMem?.let { return it }
         val sharedPrefs = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
         val enc = sharedPrefs.getString("db_passphrase_enc", null)
         if (enc != null) {
             val dec = decrypt(enc)
             if (dec != null) {
-                dbPassphraseMem = dec
                 return dec
             }
         }
@@ -91,13 +87,12 @@ object SecureStorage {
         val pass = Base64.encodeToString(bytes, Base64.NO_WRAP)
         val encrypted = encrypt(pass)
         sharedPrefs.edit().putString("db_passphrase_enc", encrypted).apply()
-        dbPassphraseMem = pass
         return pass
     }
 
     @Synchronized
     fun clearDbPassphrase() {
-        dbPassphraseMem = null
+        // No-op (memory-safe: passphrase is not cached in memory)
     }
 
     private const val BINARY_VERSION: Byte = 1

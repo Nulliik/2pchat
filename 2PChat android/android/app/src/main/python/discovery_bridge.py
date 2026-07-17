@@ -53,6 +53,20 @@ message_listener_callback = None
 session_listener_callback = None
 loop = None
 
+def _setup_socket_keepalive(writer) -> None:
+    try:
+        sock = writer.get_extra_info('socket')
+        if sock is not None:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            if hasattr(socket, "TCP_KEEPIDLE"):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 30)
+            if hasattr(socket, "TCP_KEEPINTVL"):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
+            if hasattr(socket, "TCP_KEEPCNT"):
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
+    except Exception as e:
+        print(f"Failed to setup socket keep-alive: {e}")
+
 # Track which Yggdrasil listener is running
 _ygg_listener_running = False
 listener_port = 50001
@@ -1031,6 +1045,7 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
             await writer.wait_closed()
             print(f"Rejected incoming IPv4 connection from {peername[0]}: IPv4 is disabled")
             return
+        _setup_socket_keepalive(writer)
         session = Session(
             reader,
             writer,
@@ -1428,6 +1443,7 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
         reader, writer = await asyncio.wait_for(
             transport_connect("direct", host, port), timeout=5.0
         )
+        _setup_socket_keepalive(writer)
         session = Session(
             reader,
             writer,
