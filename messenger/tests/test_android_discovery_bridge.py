@@ -179,6 +179,7 @@ def test_local_identity_info_uses_authenticated_identity_key(monkeypatch):
     assert sent == [{
         "type": "identity_info",
         "nickname": "jiji",
+        "about_me": "",
         "fingerprint": "actual-fingerprint",
         "listen_port": 50001,
     }]

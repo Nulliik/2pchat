@@ -98,6 +98,8 @@ fun SettingsTab(
 
     // Dynamic settings states
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
+    var aboutMeText by remember { mutableStateOf(sharedPrefs.getString("about_me_profile", "") ?: "") }
+    var showEditAboutMeDialog by remember { mutableStateOf(false) }
     var notificationsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_notifications", true)) }
     var previewsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_previews", true)) }
     var blockScreenshots by remember { mutableStateOf(sharedPrefs.getBoolean("settings_screenshots", true)) }
@@ -145,6 +147,60 @@ fun SettingsTab(
     var showLauncherIconsPicker by remember { mutableStateOf(false) }
     var showThemesPicker by remember { mutableStateOf(false) }
     var showRegenerateYggdrasilKeysDialog by remember { mutableStateOf(false) }
+
+    if (showEditAboutMeDialog) {
+        var tempText by remember { mutableStateOf(aboutMeText) }
+        AlertDialog(
+            onDismissRequest = { showEditAboutMeDialog = false },
+            title = { Text(if (appLanguage == "Русский") "О себе" else "About Me") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = tempText,
+                        onValueChange = {
+                            if (it.length <= 70) {
+                                tempText = it
+                            }
+                        },
+                        placeholder = {
+                            Text(if (appLanguage == "Русский") "Расскажите немного о себе..." else "Tell something about yourself...")
+                        },
+                        singleLine = false,
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${tempText.length} / 70",
+                        fontSize = 11.sp,
+                        color = onSurfaceVariant,
+                        modifier = Modifier.align(Alignment.End)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        aboutMeText = tempText.trim()
+                        sharedPrefs.edit().putString("about_me_profile", aboutMeText).apply()
+                        showEditAboutMeDialog = false
+                        
+                        // Update Python identity & announce
+                        val localFingerprint = PythonBridge.getLocalFingerprint()
+                        PythonBridge.configureLocalIdentity(username, localFingerprint, aboutMeText)
+                        P2PMessageRelay.refreshAnnouncement(context)
+                    }
+                ) {
+                    Text(if (appLanguage == "Русский") "Сохранить" else "Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditAboutMeDialog = false }) {
+                    Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
+                }
+            }
+        )
+    }
 
     if (showRegenerateYggdrasilKeysDialog) {
         AlertDialog(
@@ -318,6 +374,32 @@ fun SettingsTab(
                                     fontSize = 12.sp,
                                     color = onSurfaceVariant
                                 )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clickable { showEditAboutMeDialog = true }
+                                        .padding(vertical = 2.dp)
+                                ) {
+                                    Icon(
+                                        painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_edit),
+                                        contentDescription = "Edit bio",
+                                        tint = primaryColor,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (aboutMeText.isEmpty()) {
+                                            if (appLanguage == "Русский") "О себе: Нажмите, чтобы добавить..." else "About me: Tap to add..."
+                                        } else {
+                                            if (appLanguage == "Русский") "О себе: $aboutMeText" else "About me: $aboutMeText"
+                                        },
+                                        fontSize = 13.sp,
+                                        color = if (aboutMeText.isEmpty()) onSurfaceVariant.copy(alpha = 0.6f) else onSurfaceColor.copy(alpha = 0.8f),
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }

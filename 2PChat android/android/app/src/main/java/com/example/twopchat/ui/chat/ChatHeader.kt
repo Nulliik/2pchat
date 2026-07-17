@@ -25,6 +25,8 @@ import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.R
 import com.example.twopchat.connectionTransportLabel
 import com.example.twopchat.data.Localizations
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 
 @Composable
 internal fun ChatHeader(
@@ -34,6 +36,8 @@ internal fun ChatHeader(
     searchQuery: String,
     isVerified: Boolean,
     isMuted: Boolean,
+    isForwardingRestricted: Boolean,
+    onToggleForwardingRestriction: (Boolean) -> Unit,
     activeFingerprint: String,
     localFingerprint: String,
     primaryColor: Color,
@@ -210,6 +214,14 @@ internal fun ChatHeader(
                     DropdownMenuItem(
                         text = { Text(if (appLanguage == "Русский") "Переподключить соединение" else "Reconnect Connection", color = onSurfaceColor) },
                         onClick = { showMenu = false; onReconnect() },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Reconnect",
+                                tint = onSurfaceColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     )
                     DropdownMenuItem(
                         text = { Text(
@@ -219,16 +231,57 @@ internal fun ChatHeader(
                             color = onSurfaceColor,
                         ) },
                         onClick = { showMenu = false; onToggleMuted(!isMuted) },
+                        leadingIcon = {
+                            Icon(
+                                painter = painterResource(if (isMuted) R.drawable.ic_notifications else R.drawable.ic_notifications_off),
+                                contentDescription = "Mute/Unmute",
+                                tint = onSurfaceColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(
+                            if (isForwardingRestricted) {
+                                if (appLanguage == "Русский") "Разрешить пересылку" else "Allow Forwarding"
+                            } else if (appLanguage == "Русский") "Запретить пересылку" else "Restrict Forwarding",
+                            color = onSurfaceColor,
+                        ) },
+                        onClick = { showMenu = false; onToggleForwardingRestriction(!isForwardingRestricted) },
+                        leadingIcon = {
+                            Icon(
+                                painter = painterResource(if (isForwardingRestricted) R.drawable.ic_forward else R.drawable.ic_forward_off),
+                                contentDescription = "Restrict Forwarding",
+                                tint = onSurfaceColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     )
                 }
                 DropdownMenuItem(
                     text = { Text(if (appLanguage == "Русский") "Очистить историю" else "Clear History", color = Color.Red) },
                     onClick = { showMenu = false; onClearHistory() },
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_broom),
+                            contentDescription = "Clear History",
+                            tint = Color.Red,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 )
                 if (!savedMessages) {
                     DropdownMenuItem(
                         text = { Text(if (appLanguage == "Русский") "Удалить чат" else "Delete Chat", color = Color.Red) },
                         onClick = { showMenu = false; showDeleteDialog = true },
+                        leadingIcon = {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_delete),
+                                contentDescription = "Delete Chat",
+                                tint = Color.Red,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     )
                 }
             }

@@ -70,8 +70,6 @@ fun SharedMediaScreen(
     isVerified: Boolean,
     isMuted: Boolean,
     onToggleMute: (Boolean) -> Unit,
-    isForwardingRestricted: Boolean = false,
-    onToggleForwardingRestriction: (Boolean) -> Unit = {},
     onAvatarClick: (Bitmap) -> Unit,
     onImageClick: (List<String>, Int) -> Unit,
     onBack: () -> Unit
@@ -357,6 +355,20 @@ fun SharedMediaScreen(
                             }
                         )
 
+                        val peerAboutMe = remember(peerName) {
+                            val sp = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                            sp.getString("peer_about_me_$peerName", "") ?: ""
+                        }
+                        if (peerAboutMe.isNotEmpty()) {
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
+                            InfoDetailRow(
+                                label = if (appLanguage == "Русский") "О себе" else "About me",
+                                value = peerAboutMe,
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant
+                            )
+                        }
+
                         if (peerName != "Saved Messages") {
                             HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
 
@@ -391,50 +403,6 @@ fun SharedMediaScreen(
                                 }
                             }
 
-                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
-
-                            // Restrict Forwarding Row
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(
-                                        painter = painterResource(id = R.drawable.ic_forward_off),
-                                        contentDescription = "Restrict Forwarding",
-                                        tint = if (isForwardingRestricted) primaryColor else onSurfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    Column {
-                                        Text(
-                                            text = if (appLanguage == "Русский") "Запретить пересылку" else "Restrict Forwarding",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = onSurfaceColor
-                                        )
-                                        Text(
-                                            text = if (appLanguage == "Русский") "Обе стороны не смогут пересылать сообщения" else "Neither side can forward messages",
-                                            fontSize = 11.sp,
-                                            color = onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                Switch(
-                                    checked = isForwardingRestricted,
-                                    onCheckedChange = onToggleForwardingRestriction,
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = Color.White,
-                                        checkedTrackColor = primaryColor,
-                                        uncheckedThumbColor = onSurfaceVariant.copy(alpha = 0.6f),
-                                        uncheckedTrackColor = onSurfaceColor.copy(alpha = 0.05f)
-                                    )
-                                )
-                            }
                         }
                     }
                 }

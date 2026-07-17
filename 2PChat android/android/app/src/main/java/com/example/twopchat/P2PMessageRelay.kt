@@ -445,8 +445,9 @@ object P2PMessageRelay {
                 .getBoolean("settings_ipv4", true)
             PythonBridge.setIpv4Enabled(ipv4Enabled)
             val localName = persistedPrefs.getString("username_profile", "").orEmpty()
+            val aboutMe = persistedPrefs.getString("about_me_profile", "").orEmpty()
             val localFingerprint = PythonBridge.getLocalFingerprint()
-            check(PythonBridge.configureLocalIdentity(localName, localFingerprint)) {
+            check(PythonBridge.configureLocalIdentity(localName, localFingerprint, aboutMe)) {
                 "Local P2P identity is not configured"
             }
             // Start the Python P2P listener
@@ -703,9 +704,8 @@ object P2PMessageRelay {
                 }
             })
 
-            // Register session status callbacks from Python
             PythonBridge.registerSessionListener(object : PythonBridge.PySessionListener {
-                override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String): Boolean {
+                override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String, aboutMe: String): Boolean {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
                     val canonicalTransport = canonicalConnectionTransport(transport, endpoint)
                     // Incoming handshakes are named by fingerprint until their
@@ -750,6 +750,7 @@ object P2PMessageRelay {
                     appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
                         .edit().apply {
                             putString("peer_fingerprint_$resolvedPeerName", fingerprint)
+                            putString("peer_about_me_$resolvedPeerName", aboutMe)
                             if (endpoint.isNotEmpty()) {
                                 putString("last_endpoint_$resolvedPeerName", endpoint)
                             }

@@ -44,6 +44,7 @@ MAX_CONCURRENT_HANDSHAKES = 10
 tracker_diagnostics = {}
 public_address_observations = set()
 local_identity_nickname = ""
+local_identity_about_me = ""
 local_identity_fingerprint = ""
 local_yggdrasil_available = False
 local_announced_ips = set()
@@ -303,9 +304,9 @@ def _same_nickname(left: str, right: str) -> bool:
     return " ".join(left.strip().casefold().split()) == " ".join(right.strip().casefold().split())
 
 
-def configure_local_identity(nickname: str, claimed_fingerprint: str = "") -> bool:
+def configure_local_identity(nickname: str, claimed_fingerprint: str = "", about_me: str = "") -> bool:
     """Set application identity independently from tracker availability."""
-    global local_identity_nickname, local_identity_fingerprint
+    global local_identity_nickname, local_identity_about_me, local_identity_fingerprint
     local_name = str(nickname or "").strip()
     actual_fingerprint = fingerprint(load_or_create_identity().public_key)
     if not local_name:
@@ -313,6 +314,7 @@ def configure_local_identity(nickname: str, claimed_fingerprint: str = "") -> bo
     if claimed_fingerprint and str(claimed_fingerprint).strip() != actual_fingerprint:
         raise ValueError("configured local fingerprint does not match the identity key")
     local_identity_nickname = local_name
+    local_identity_about_me = str(about_me or "").strip()
     local_identity_fingerprint = actual_fingerprint
     return True
 
@@ -327,6 +329,7 @@ async def _send_local_identity_info(session) -> bool:
     await session.send_reliable({
         "type": "identity_info",
         "nickname": local_identity_nickname,
+        "about_me": local_identity_about_me,
         "fingerprint": actual_fingerprint,
         "listen_port": listener_port,
     })
@@ -1034,13 +1037,13 @@ def register_session_listener(callback):
     print("Python session listener callback registered")
 
 
-def _notify_session_established(peer_name, peer_fingerprint, endpoint, transport) -> bool:
+def _notify_session_established(peer_name, peer_fingerprint, endpoint, transport, about_me="") -> bool:
     """Let Android synchronously reject a key before application frames are read."""
     if session_listener_callback is None:
         return True
     try:
         accepted = session_listener_callback.onSessionEstablished(
-            peer_name, peer_fingerprint, endpoint, transport
+            peer_name, peer_fingerprint, endpoint, transport, about_me
         )
         return accepted is not False
     except Exception as callback_error:
@@ -1251,6 +1254,7 @@ async def _read_loop(session, peer_name, fp):
             if mtype == "identity_info":
                 # Remote peer announced their real nickname — update our mappings
                 real_name = msg.get("nickname", "").strip()
+                about_me = msg.get("about_me", "").strip()
                 claimed_fp = msg.get("fingerprint", fp)
                 # The authenticated session fingerprint is authoritative. A
                 # peer-controlled identity_info payload must not be able to
@@ -1258,8 +1262,9 @@ async def _read_loop(session, peer_name, fp):
                 remote_fp = fp if claimed_fp != fp else claimed_fp
                 if claimed_fp != fp:
                     print(f"Ignored mismatched identity_info fingerprint from {fp}")
-                if real_name and real_name != peer_name:
-                    print(f"Peer renamed: '{peer_name}' → '{real_name}' (fp={remote_fp})")
+                if real_name:
+                    if real_name != peer_name:
+                        print(f"Peer renamed: '{peer_name}' → '{real_name}' (fp={remote_fp})")
                     peername = session.writer.get_extra_info('peername') if hasattr(session, 'writer') else None
                     advertised_port = msg.get("listen_port")
                     if isinstance(advertised_port, int) and 1 <= advertised_port <= 65535 and peername:
@@ -1269,7 +1274,7 @@ async def _read_loop(session, peer_name, fp):
                     remote_transport = (
                         "Yggdrasil" if peername and ":" in str(peername[0]) else "Direct P2P"
                     )
-                    if not _notify_session_established(real_name, remote_fp, remote_ep, remote_transport):
+                    if not _notify_session_established(real_name, remote_fp, remote_ep, remote_transport, about_me):
                         print(f"Android rejected fingerprint {remote_fp} for nickname '{real_name}'")
                         await _invalidate_session(session)
                         return

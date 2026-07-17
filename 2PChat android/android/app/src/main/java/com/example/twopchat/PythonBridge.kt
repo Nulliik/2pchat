@@ -397,15 +397,15 @@ object PythonBridge {
     }
 
     interface PySessionListener {
-        fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String): Boolean
+        fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String, aboutMe: String): Boolean
         fun onSessionClosed(peerName: String, fingerprint: String)
     }
 
-    fun configureLocalIdentity(nickname: String, fingerprint: String): Boolean {
+    fun configureLocalIdentity(nickname: String, fingerprint: String, aboutMe: String = ""): Boolean {
         if (!isInitialized || nickname.isBlank() || fingerprint.isBlank()) return false
         return try {
             Python.getInstance().getModule("discovery_bridge")
-                .callAttr("configure_local_identity", nickname, fingerprint)
+                .callAttr("configure_local_identity", nickname, fingerprint, aboutMe)
                 .toBoolean()
         } catch (e: Exception) {
             Log.e(TAG, "Error configuring local P2P identity", e)

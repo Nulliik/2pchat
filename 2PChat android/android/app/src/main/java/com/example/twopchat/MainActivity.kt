@@ -111,6 +111,26 @@ class MainActivity : ComponentActivity() {
             }
 
             var isDarkTheme by remember { mutableStateOf(sharedPrefs.getString("theme_mode", "dark") == "dark") }
+            LaunchedEffect(isDarkTheme) {
+                enableEdgeToEdge(
+                    statusBarStyle = if (isDarkTheme) {
+                        androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                    } else {
+                        androidx.activity.SystemBarStyle.light(
+                            android.graphics.Color.TRANSPARENT,
+                            android.graphics.Color.TRANSPARENT
+                        )
+                    },
+                    navigationBarStyle = if (isDarkTheme) {
+                        androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                    } else {
+                        androidx.activity.SystemBarStyle.light(
+                            android.graphics.Color.TRANSPARENT,
+                            android.graphics.Color.TRANSPARENT
+                        )
+                    }
+                )
+            }
             var useCerulean by remember { mutableStateOf(sharedPrefs.getBoolean("use_cerulean", false)) }
             var useAmoled by remember { mutableStateOf(sharedPrefs.getBoolean("use_amoled", false)) }
             val systemDefaultLanguage = if (java.util.Locale.getDefault().language == "ru") "Русский" else "English"

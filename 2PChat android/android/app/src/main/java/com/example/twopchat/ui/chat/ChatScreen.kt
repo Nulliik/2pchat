@@ -886,6 +886,12 @@ fun ChatScreen(
                 searchQuery = searchQuery,
                 isVerified = isVerified,
                 isMuted = isMuted,
+                isForwardingRestricted = isForwardingRestricted,
+                onToggleForwardingRestriction = { restricted ->
+                    isForwardingRestricted = restricted
+                    sharedPrefs.edit().putBoolean("restrict_forwarding_$peerName", restricted).apply()
+                    P2PMessageRelay.sendForwardingState(context, peerName, restricted)
+                },
                 activeFingerprint = activeFingerprint,
                 localFingerprint = localFingerprint,
                 primaryColor = primaryColor,
@@ -2331,6 +2337,38 @@ remove("pinned_msg_id_${peerName}")
             )
         }
 
+        if (showProfileOverlay && peerName != "Saved Messages") {
+            SharedMediaScreen(
+                peerName = peerName,
+                messages = initialMessages.toList(),
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                appLanguage = appLanguage,
+                isVerified = isVerified,
+                isMuted = isMuted,
+                onToggleMute = { newMuted ->
+                    isMuted = newMuted
+                    sharedPrefs.edit().putBoolean("mute_notifications_$peerName", newMuted).apply()
+                },
+                onAvatarClick = { avatarBitmap ->
+                    val avatarKey = "avatar:$peerName"
+                    activeFullscreenBitmapOverrides = mapOf(avatarKey to avatarBitmap)
+                    activeFullscreenImages = listOf(avatarKey)
+                    activeFullscreenImageIndex = 0
+                },
+                onImageClick = { paths, index ->
+                    if (paths.isNotEmpty()) {
+                        activeFullscreenBitmapOverrides = emptyMap()
+                        activeFullscreenImages = paths
+                        activeFullscreenImageIndex = index
+                    }
+                },
+                onBack = { showProfileOverlay = false }
+            )
+        }
+
         if (activeFullscreenImages.isNotEmpty()) {
             FullscreenImageViewer(
                 imagePaths = activeFullscreenImages,
@@ -2349,46 +2387,6 @@ remove("pinned_msg_id_${peerName}")
                 videoPath = activeFullscreenVideo!!,
                 appLanguage = appLanguage,
                 onClose = { activeFullscreenVideo = null }
-            )
-        }
-
-        if (showProfileOverlay && peerName != "Saved Messages") {
-            SharedMediaScreen(
-                peerName = peerName,
-                messages = initialMessages.toList(),
-                primaryColor = primaryColor,
-                surfaceColor = surfaceColor,
-                onSurfaceColor = onSurfaceColor,
-                onSurfaceVariant = onSurfaceVariant,
-                appLanguage = appLanguage,
-                isVerified = isVerified,
-                isMuted = isMuted,
-                onToggleMute = { newMuted ->
-                    isMuted = newMuted
-                    sharedPrefs.edit().putBoolean("mute_notifications_$peerName", newMuted).apply()
-                },
-                isForwardingRestricted = isForwardingRestricted,
-                onToggleForwardingRestriction = { restricted ->
-                    isForwardingRestricted = restricted
-                    sharedPrefs.edit().putBoolean("restrict_forwarding_$peerName", restricted).apply()
-                    P2PMessageRelay.sendForwardingState(context, peerName, restricted)
-                },
-                onAvatarClick = { avatarBitmap ->
-                    val avatarKey = "avatar:$peerName"
-                    activeFullscreenBitmapOverrides = mapOf(avatarKey to avatarBitmap)
-                    activeFullscreenImages = listOf(avatarKey)
-                    activeFullscreenImageIndex = 0
-                    showProfileOverlay = false
-                },
-                onImageClick = { paths, index ->
-                    if (paths.isNotEmpty()) {
-                        activeFullscreenBitmapOverrides = emptyMap()
-                        activeFullscreenImages = paths
-                        activeFullscreenImageIndex = index
-                        showProfileOverlay = false
-                    }
-                },
-                onBack = { showProfileOverlay = false }
             )
         }
     }
