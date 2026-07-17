@@ -298,6 +298,37 @@ def _same_nickname(left: str, right: str) -> bool:
     return " ".join(left.strip().casefold().split()) == " ".join(right.strip().casefold().split())
 
 
+def configure_local_identity(nickname: str, claimed_fingerprint: str = "") -> bool:
+    """Set application identity independently from tracker availability."""
+    global local_identity_nickname, local_identity_fingerprint
+    local_name = str(nickname or "").strip()
+    actual_fingerprint = fingerprint(load_or_create_identity().public_key)
+    if not local_name:
+        return False
+    if claimed_fingerprint and str(claimed_fingerprint).strip() != actual_fingerprint:
+        raise ValueError("configured local fingerprint does not match the identity key")
+    local_identity_nickname = local_name
+    local_identity_fingerprint = actual_fingerprint
+    return True
+
+
+async def _send_local_identity_info(session) -> bool:
+    """Send the authenticated local name before application traffic."""
+    if not local_identity_nickname:
+        return False
+    actual_fingerprint = fingerprint(load_or_create_identity().public_key)
+    if local_identity_fingerprint and local_identity_fingerprint != actual_fingerprint:
+        print("Ignoring stale configured local fingerprint")
+    await session.send_reliable({
+        "type": "identity_info",
+        "nickname": local_identity_nickname,
+        "fingerprint": actual_fingerprint,
+        "listen_port": listener_port,
+    })
+    print(f"Sent authenticated identity_info as '{local_identity_nickname}'")
+    return True
+
+
 def _canonical_expected_fingerprint(value: str | None) -> str | None:
     if value is None or not str(value).strip():
         return None
@@ -312,6 +343,28 @@ def _canonical_expected_fingerprint(value: str | None) -> str | None:
     if candidate != canonical:
         raise ValueError("invite fingerprint is not in canonical Base64 form")
     return canonical
+
+
+def _parse_numeric_endpoint(endpoint: str) -> tuple[str, int] | None:
+    """Accept only numeric IPv4 or IPv6 endpoints supplied by local discovery."""
+    ipv6_match = re.fullmatch(r"\[([0-9a-fA-F:]+)\]:(\d{1,5})", endpoint)
+    if ipv6_match:
+        host, raw_port = ipv6_match.groups()
+        family = socket.AF_INET6
+    else:
+        ipv4_match = re.fullmatch(r"([0-9.]+):(\d{1,5})", endpoint)
+        if not ipv4_match:
+            return None
+        host, raw_port = ipv4_match.groups()
+        family = socket.AF_INET
+    port = int(raw_port)
+    if port not in range(1, 65536):
+        return None
+    try:
+        socket.inet_pton(family, host)
+    except OSError:
+        return None
+    return host, port
 
 
 async def _verify_live_endpoint(
@@ -385,7 +438,7 @@ def verify_live_endpoints(
     expected_live_name: str,
     expected_live_fingerprint: str | None = None,
 ):
-    """Try already-connected Yggdrasil neighbours before public discovery.
+    """Try local-network and connected Yggdrasil candidates before trackers.
 
     Yggdrasil's public trackers are useful for arbitrary remote peers, but a
     directly connected mesh neighbour is already a trustworthy route
@@ -406,8 +459,7 @@ def verify_live_endpoints(
     seen = set()
     for value in decoded:
         endpoint = str(value).strip()
-        match = re.fullmatch(r"\[([0-9a-fA-F:]+)\]:(\d{1,5})", endpoint)
-        if not match or not (1 <= int(match.group(2)) <= 65535) or endpoint in seen:
+        if _parse_numeric_endpoint(endpoint) is None or endpoint in seen:
             continue
         seen.add(endpoint)
         candidates.append(endpoint)
@@ -434,7 +486,7 @@ def verify_live_endpoints(
         matching_endpoint = next(
             (
                 endpoint for endpoint in candidates
-                if endpoint[1:].split("]", 1)[0] == peer_host
+                if _parse_numeric_endpoint(endpoint)[0] == peer_host
             ),
             None,
         )
@@ -447,7 +499,7 @@ def verify_live_endpoints(
                 "verified": True,
                 "ownership_verified": expected_live_fingerprint is not None,
                 "verification_status": "verified",
-                "verification_reason": "authenticated active Yggdrasil session",
+                "verification_reason": "authenticated active direct session",
             }]
 
     async def _first_verified():
@@ -488,7 +540,7 @@ def verify_live_endpoints(
             and result["fingerprint"] == expected_live_fingerprint
         ),
         "verification_status": "verified",
-        "verification_reason": "authenticated direct Yggdrasil neighbour",
+        "verification_reason": "authenticated direct discovery peer",
     }]
 
 def resolve_peers(
@@ -1072,14 +1124,7 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
 
         # Do not wait for an identity probe: a normal incoming chat connection
         # must learn our nickname before the UI falls back to Peer(fingerprint).
-        if local_identity_nickname:
-            await session.send_reliable({
-                "type": "identity_info",
-                "nickname": local_identity_nickname,
-                "fingerprint": local_identity_fingerprint
-                    or fingerprint(identity_priv.public_key),
-                "listen_port": listener_port,
-            })
+        await _send_local_identity_info(session)
         
         print(f"Accepted Double Ratchet session from {peer_name} (Fingerprint: {fp})")
         
@@ -1150,6 +1195,7 @@ async def _read_loop(session, peer_name, fp):
                     print(f"Peer renamed: '{peer_name}' → '{real_name}' (fp={remote_fp})")
                     peer_fingerprint_to_name[remote_fp] = real_name
                     peer_fingerprint_to_name[fp] = real_name
+                    session.peer_label = real_name
                     # Re-register session under real name
                     # Notify Kotlin so UI can open/rename the chat
                     if session_listener_callback:
@@ -1176,13 +1222,7 @@ async def _read_loop(session, peer_name, fp):
                 # A search result is only shown after this authenticated reply.
                 # Do not invent a name: nodes that have not configured one
                 # cannot be discovered by nickname.
-                if local_identity_nickname:
-                    await session.send_reliable({
-                        "type": "identity_info",
-                        "nickname": local_identity_nickname,
-                        "fingerprint": fingerprint(load_or_create_identity().public_key),
-                        "listen_port": listener_port,
-                    })
+                await _send_local_identity_info(session)
                 continue
             elif mtype == "chat":
                 body = msg.get("body", "")
@@ -1380,7 +1420,7 @@ async def _read_loop(session, peer_name, fp):
         )
         if session_listener_callback and not has_replacement:
             try:
-                session_listener_callback.onSessionClosed(peer_name)
+                session_listener_callback.onSessionClosed(peer_name, fp)
             except Exception as cb_err:
                 pass
 
@@ -1469,6 +1509,30 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
         raise
 
 
+async def _dial_identified_endpoint(
+    endpoint_str: str,
+    identity_priv,
+    signing_key,
+    trust_store,
+    expected_fingerprint=None,
+) -> "Session":
+    """Dial a peer and make identity_info the first application frame."""
+    session = await _dial_endpoint(
+        endpoint_str,
+        identity_priv,
+        signing_key,
+        trust_store,
+        expected_fingerprint,
+    )
+    try:
+        if not await _send_local_identity_info(session):
+            raise RuntimeError("local identity is not configured")
+        return session
+    except BaseException:
+        await _invalidate_session(session)
+        raise
+
+
 def _operation_lock(peer_name: str, expected_fingerprint=None):
     """Serialize session creation and ratchet traffic for one authenticated peer."""
     key = expected_fingerprint or peer_name.casefold()
@@ -1508,7 +1572,7 @@ async def _establish_session_async(peer_name: str, endpoint: str, expected_finge
 
     for ep in endpoints:
         try:
-            session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+            session = await _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
             connected_endpoint = ep
             print(f"Connected to {peer_name} via {ep}")
             break
@@ -1521,7 +1585,7 @@ async def _establish_session_async(peer_name: str, endpoint: str, expected_finge
             if ep in endpoints:
                 continue
             try:
-                session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+                session = await _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
                 connected_endpoint = ep
                 print(f"Reconnected to {peer_name} via fresh discovery endpoint {ep}")
                 break
@@ -1549,21 +1613,6 @@ async def _establish_session_async(peer_name: str, endpoint: str, expected_finge
             )
         except Exception:
             pass
-
-    # Send identity_info so the remote side learns our nickname immediately.
-    try:
-        local_identity = load_or_create_identity()
-        local_fp = local_identity_fingerprint or fingerprint(local_identity.public_key)
-        local_name = local_identity_nickname
-        if local_name:
-            await session.send_reliable({
-                "type": "identity_info",
-                "nickname": local_name,
-                "fingerprint": local_fp,
-                "listen_port": listener_port,
-            })
-    except Exception as id_err:
-        print(f"Could not send identity_info to {peer_name}: {id_err}")
 
     return session
 
@@ -1871,7 +1920,7 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
             connected_endpoint = ""
             for ep in endpoints:
                 try:
-                    connected_session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+                    connected_session = await _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
                     connected_endpoint = ep
                     print(f"[RECONNECT] Successfully connected to {peer_name} via {ep}")
                     break
@@ -1883,7 +1932,7 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
                     if ep in endpoints:
                         continue
                     try:
-                        connected_session = await _dial_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+                        connected_session = await _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
                         connected_endpoint = ep
                         print(f"[RECONNECT] Reconnected to {peer_name} via fresh discovery endpoint {ep}")
                         break

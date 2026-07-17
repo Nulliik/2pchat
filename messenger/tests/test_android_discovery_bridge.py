@@ -105,7 +105,7 @@ def test_direct_yggdrasil_neighbour_returns_before_slow_candidates(monkeypatch):
     )
 
     assert result[0]["endpoints"] == ["[200::2]:50001"]
-    assert result[0]["verification_reason"] == "authenticated direct Yggdrasil neighbour"
+    assert result[0]["verification_reason"] == "authenticated direct discovery peer"
     assert slow_cancelled.is_set()
 
 
@@ -129,4 +129,102 @@ def test_direct_yggdrasil_search_reuses_authenticated_active_session(monkeypatch
     result = bridge.verify_live_endpoints('["[200::2]:50001"]', "bob")
 
     assert result[0]["fingerprint"] == "peer-fingerprint"
-    assert result[0]["verification_reason"] == "authenticated active Yggdrasil session"
+    assert result[0]["verification_reason"] == "authenticated active direct session"
+
+
+def test_local_ipv4_candidate_is_live_verified(monkeypatch):
+    bridge = _load_discovery_bridge()
+
+    async def fake_verify(endpoint, nickname, expected_fingerprint=None):
+        assert endpoint == "192.0.2.20:50001"
+        assert nickname == "foxy"
+        assert expected_fingerprint is None
+        return {
+            "nickname": "foxy",
+            "fingerprint": "peer-fingerprint",
+            "endpoint": endpoint,
+            "verified": True,
+        }
+
+    monkeypatch.setattr(bridge, "_verify_live_endpoint", fake_verify)
+
+    result = bridge.verify_live_endpoints(
+        json.dumps(["192.0.2.20:50001", "not-an-endpoint", "999.1.1.1:50001"]),
+        "foxy",
+    )
+
+    assert result[0]["nickname"] == "foxy"
+    assert result[0]["endpoints"] == ["192.0.2.20:50001"]
+
+
+def test_local_identity_info_uses_authenticated_identity_key(monkeypatch):
+    bridge = _load_discovery_bridge()
+    sent = []
+
+    class FakeSession:
+        async def send_reliable(self, payload):
+            sent.append(payload)
+
+    monkeypatch.setattr(
+        bridge,
+        "load_or_create_identity",
+        lambda: SimpleNamespace(public_key="local-public-key"),
+    )
+    monkeypatch.setattr(bridge, "fingerprint", lambda _key: "actual-fingerprint")
+    bridge.local_identity_nickname = "jiji"
+    bridge.local_identity_fingerprint = "stale-fingerprint"
+
+    assert asyncio.run(bridge._send_local_identity_info(FakeSession())) is True
+    assert sent == [{
+        "type": "identity_info",
+        "nickname": "jiji",
+        "fingerprint": "actual-fingerprint",
+        "listen_port": 50001,
+    }]
+
+
+def test_background_reconnect_sends_identity_before_session_callback(monkeypatch):
+    bridge = _load_discovery_bridge()
+    events = []
+
+    class FakeSession:
+        peer_fingerprint = "remote-fingerprint"
+        is_online = True
+
+        async def send_reliable(self, payload):
+            events.append(payload["type"])
+
+    class FakeCallback:
+        def onSessionEstablished(self, *_args):
+            events.append("callback")
+
+    async def scenario():
+        session = FakeSession()
+        monkeypatch.setattr(
+            bridge,
+            "load_or_create_identity",
+            lambda: SimpleNamespace(public_key="local-public-key"),
+        )
+        monkeypatch.setattr(bridge, "load_or_create_signing_identity", lambda: object())
+        monkeypatch.setattr(bridge, "fingerprint", lambda _key: "local-fingerprint")
+        monkeypatch.setattr(bridge, "TrustStore", lambda: object())
+        monkeypatch.setattr(bridge, "_dial_endpoint", lambda *_args: asyncio.sleep(0, result=session))
+        monkeypatch.setattr(
+            bridge,
+            "_register_authenticated_session",
+            lambda *_args, **_kwargs: asyncio.sleep(0, result=session),
+        )
+        monkeypatch.setattr(bridge, "_read_loop", lambda *_args: asyncio.sleep(0))
+        bridge.local_identity_nickname = "jiji"
+        bridge.local_identity_fingerprint = "local-fingerprint"
+        bridge.session_listener_callback = FakeCallback()
+        bridge.loop = asyncio.get_running_loop()
+
+        assert bridge.reconnect_peer_session("foxy", "192.0.2.20:50001") is True
+        for _ in range(20):
+            if "callback" in events:
+                break
+            await asyncio.sleep(0)
+
+    asyncio.run(scenario())
+    assert events[:2] == ["identity_info", "callback"]

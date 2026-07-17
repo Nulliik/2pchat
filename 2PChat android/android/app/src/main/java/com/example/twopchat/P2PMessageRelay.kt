@@ -10,6 +10,7 @@ import kotlin.concurrent.thread
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.ui.chat.Message
 import android.content.Context
@@ -29,6 +30,9 @@ import android.util.Base64
 import androidx.compose.runtime.mutableStateMapOf
 import com.chaquo.python.Python
 
+internal fun isExpectedPeerFingerprint(persisted: String?, received: String): Boolean =
+    persisted.isNullOrBlank() || persisted == received
+
 object P2PMessageRelay {
     private const val TAG = "P2PMessageRelay"
     private val logTimestampFormatter = ThreadLocal.withInitial {
@@ -41,6 +45,17 @@ object P2PMessageRelay {
     private val avatarCache = PeerAvatarCache()
     private val notificationService = MessageNotificationService()
     @Volatile private var localPeerDiscovery: LocalPeerDiscovery? = null
+    private val localPeerCandidates = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
+
+    private fun localPeerCandidateKey(peerName: String): String =
+        peerName.trim().lowercase(Locale.ROOT)
+
+    internal fun localDiscoveryEndpoints(peerName: String): List<String> =
+        localPeerCandidates[localPeerCandidateKey(peerName)]
+            ?.values
+            ?.distinct()
+            ?.take(12)
+            .orEmpty()
 
     fun listenerPort(context: Context): Int = P2PPreferences.listenerPort(context)
 
@@ -145,6 +160,7 @@ object P2PMessageRelay {
         val appContext = context.applicationContext
         if (!enabled) {
             localPeerDiscovery?.stop()
+            localPeerCandidates.clear()
             return
         }
         if (!isRunning) return
@@ -158,6 +174,12 @@ object P2PMessageRelay {
         val fingerprint = PythonBridge.getLocalFingerprint()
         if (username.isBlank() || fingerprint.length < 40) return
         val discovery = localPeerDiscovery ?: LocalPeerDiscovery(context) { peerName, peerFingerprint, endpoint ->
+            // NSD metadata is only a route candidate. It is deliberately not
+            // trusted here: search performs the encrypted identity probe before
+            // exposing a new contact to the user.
+            localPeerCandidates
+                .computeIfAbsent(localPeerCandidateKey(peerName)) { ConcurrentHashMap() }
+                .put(peerFingerprint, endpoint)
             val currentPrefs = P2PPreferences.prefs(context)
             val knownName = currentPrefs.all.entries.firstOrNull { (key, value) ->
                 key.startsWith("peer_fingerprint_") && value == peerFingerprint
@@ -422,6 +444,11 @@ object P2PMessageRelay {
             val ipv4Enabled = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
                 .getBoolean("settings_ipv4", true)
             PythonBridge.setIpv4Enabled(ipv4Enabled)
+            val localName = persistedPrefs.getString("username_profile", "").orEmpty()
+            val localFingerprint = PythonBridge.getLocalFingerprint()
+            check(PythonBridge.configureLocalIdentity(localName, localFingerprint)) {
+                "Local P2P identity is not configured"
+            }
             // Start the Python P2P listener
             PythonBridge.startP2pListener(port)
             startLocalDiscovery(appContext, port)
@@ -689,6 +716,24 @@ object P2PMessageRelay {
                         log(appContext, "Authenticated unnamed session awaiting identity_info ($fingerprint)")
                         return
                     }
+                    val identityPrefs = P2PPreferences.prefs(appContext)
+                    val persistedFingerprint = identityPrefs
+                        .getString(P2PPreferences.peerFingerprint(resolvedPeerName), null)
+                    if (!isExpectedPeerFingerprint(persistedFingerprint, fingerprint)) {
+                        identityPrefs.edit()
+                            .putBoolean("fingerprint_mismatch_$resolvedPeerName", true)
+                            .apply()
+                        log(
+                            appContext,
+                            "Rejected fingerprint change for $resolvedPeerName: expected $persistedFingerprint, received $fingerprint",
+                            "ERROR",
+                        )
+                        serviceScope.launch {
+                            PythonBridge.closePeerSession(resolvedPeerName, fingerprint)
+                        }
+                        return
+                    }
+                    identityPrefs.edit().putBoolean("fingerprint_mismatch_$resolvedPeerName", false).apply()
                     PythonBridge.rememberPeerName(fingerprint, resolvedPeerName)
                     appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
                         .edit().apply {
@@ -732,10 +777,8 @@ object P2PMessageRelay {
                     }
                 }
 
-                override fun onSessionClosed(peerName: String) {
-                    val fingerprint = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
-                        .getString("peer_fingerprint_$peerName", null)
-                    val resolvedPeerName = if (fingerprint != null) canonicalPeerName(appContext, peerName, fingerprint) else peerName
+                override fun onSessionClosed(peerName: String, fingerprint: String) {
+                    val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
                     log(appContext, "Secure Double Ratchet session closed with $resolvedPeerName")
                     Handler(Looper.getMainLooper()).post {
                         peerConnectionTransports.remove(resolvedPeerName)
@@ -778,6 +821,7 @@ object P2PMessageRelay {
         }
         maintenanceCoordinator.stop()
         localPeerDiscovery?.stop()
+        localPeerCandidates.clear()
         avatarCache.clear()
         // Trigger Python shutdown/cleanup
         thread(start = true) {

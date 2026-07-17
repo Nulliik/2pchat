@@ -13,4 +13,15 @@ class ChatMediaTest {
         assertNotEquals(thumbnail, fullscreen)
         assertEquals(thumbnail, sampledImageCacheKey("image.jpg", 200, 200))
     }
+
+    @Test
+    fun verificationEmojisAreSymmetricForBothPeers() {
+        val jiji = "5rSGKjQS1DnWdn1SmfsTLd93XmZTl2DVXUlr/QlNfgY="
+        val foxy = "V4fj+FK9wjtpR13J+aU6IgDxYAlWwatYrA5FSLU+CC8="
+
+        assertEquals(
+            getVerificationEmojis(jiji, foxy),
+            getVerificationEmojis(foxy, jiji),
+        )
+    }
 }

@@ -159,13 +159,19 @@ fun ChatScreen(
     var isBlocked by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("blocked_peer_${peerName}", false)) }
     var isForwardingRestricted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("restrict_forwarding_${peerName}", false)) }
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
+    var activeFingerprint by remember(peerName) {
+        mutableStateOf(sharedPrefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty())
+    }
     var isVerified by remember(peerName) { mutableStateOf(P2PPreferences.isPeerVerified(context, peerName)) }
     DisposableEffect(sharedPrefs, peerName) {
         val verificationKey = P2PPreferences.verifiedPeer(peerName)
+        val fingerprintKey = P2PPreferences.peerFingerprint(peerName)
         val forwardingKey = "restrict_forwarding_${peerName}"
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
             if (key == verificationKey) {
                 isVerified = prefs.getBoolean(verificationKey, false)
+            } else if (key == fingerprintKey) {
+                activeFingerprint = prefs.getString(fingerprintKey, null).orEmpty()
             } else if (key == forwardingKey) {
                 isForwardingRestricted = prefs.getBoolean(forwardingKey, false)
             }
@@ -227,7 +233,6 @@ fun ChatScreen(
             }
         }
     )
-    val activeFingerprint = sharedPrefs.getString("peer_fingerprint_$peerName", null).orEmpty()
     var localFingerprint by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
         localFingerprint = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {

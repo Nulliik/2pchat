@@ -107,11 +107,14 @@ object PythonBridge {
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
-            val directYggEndpoints = connectedYggdrasilPeerEndpoints()
-            val directResults = if (directYggEndpoints.isNotEmpty()) {
+            val directEndpoints = (
+                P2PMessageRelay.localDiscoveryEndpoints(expectedLiveName) +
+                    connectedYggdrasilPeerEndpoints()
+                ).distinct()
+            val directResults = if (directEndpoints.isNotEmpty()) {
                 bridge.callAttr(
                     "verify_live_endpoints",
-                    JSONArray(directYggEndpoints).toString(),
+                    JSONArray(directEndpoints).toString(),
                     expectedLiveName,
                     expectedFingerprint,
                 )
@@ -119,7 +122,7 @@ object PythonBridge {
                 null
             }
             val pyResults = if (directResults != null && directResults.asList().isNotEmpty()) {
-                Log.i(TAG, "Resolved '$expectedLiveName' through a direct Yggdrasil neighbour")
+                Log.i(TAG, "Resolved '$expectedLiveName' through a direct discovery candidate")
                 directResults
             } else {
                 bridge.callAttr(
@@ -395,7 +398,19 @@ object PythonBridge {
 
     interface PySessionListener {
         fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String)
-        fun onSessionClosed(peerName: String)
+        fun onSessionClosed(peerName: String, fingerprint: String)
+    }
+
+    fun configureLocalIdentity(nickname: String, fingerprint: String): Boolean {
+        if (!isInitialized || nickname.isBlank() || fingerprint.isBlank()) return false
+        return try {
+            Python.getInstance().getModule("discovery_bridge")
+                .callAttr("configure_local_identity", nickname, fingerprint)
+                .toBoolean()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error configuring local P2P identity", e)
+            false
+        }
     }
 
     fun registerMessageListener(listener: PyMessageListener) {
