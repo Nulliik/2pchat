@@ -12,9 +12,13 @@ import androidx.navigation3.ui.NavDisplay
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import android.content.Context
+import android.widget.Toast
 import com.example.twopchat.ui.onboarding.OnboardingScreen
 import com.example.twopchat.ui.main.MainScreen
 import com.example.twopchat.ui.chat.ChatScreen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun MainNavigation(
@@ -30,7 +34,9 @@ fun MainNavigation(
 ) {
   val context = LocalContext.current
   val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE) }
+  val coroutineScope = rememberCoroutineScope()
   var isOnboardingCompleted by remember { mutableStateOf(sharedPrefs.getBoolean("onboarding_completed", false)) }
+  var accountDeletionInProgress by remember { mutableStateOf(false) }
 
   if (!isOnboardingCompleted) {
     OnboardingScreen(
@@ -38,10 +44,9 @@ fun MainNavigation(
       onComplete = {
         sharedPrefs.edit().putBoolean("onboarding_completed", true).apply()
         isOnboardingCompleted = true
-        // The relay is started before onboarding, when no username exists yet.
-        // Announce immediately now that the profile is complete instead of
-        // leaving tracker diagnostics empty until the periodic loop wakes up.
-        P2PMessageRelay.refreshAnnouncement(context)
+        // Account deletion stops the listener completely. Recreate it only
+        // after onboarding persisted the new name and generated a new key.
+        P2PMessageRelay.restartServer(context)
       },
       modifier = Modifier.fillMaxSize()
     )
@@ -66,13 +71,24 @@ fun MainNavigation(
               onLanguageChanged = onLanguageChanged,
               onIconChanged = onIconChanged,
               onDeleteAccount = {
-                  sharedPrefs.edit().clear().apply()
-                  try {
-                      context.filesDir.deleteRecursively()
-                  } catch (e: Exception) {
-                      android.util.Log.e("Navigation", "Failed to clear identity files", e)
+                  if (!accountDeletionInProgress) {
+                      accountDeletionInProgress = true
+                      coroutineScope.launch {
+                          val deleted = withContext(Dispatchers.IO) {
+                              AccountLifecycle.deleteAccount(context)
+                          }
+                          accountDeletionInProgress = false
+                          if (deleted) {
+                              isOnboardingCompleted = false
+                          } else {
+                              Toast.makeText(
+                                  context,
+                                  "Account deletion failed: secure sessions are still active",
+                                  Toast.LENGTH_LONG,
+                              ).show()
+                          }
+                      }
                   }
-                  isOnboardingCompleted = false
               },
               modifier = Modifier.fillMaxSize()
             )

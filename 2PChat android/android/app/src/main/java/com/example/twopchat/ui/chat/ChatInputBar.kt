@@ -35,6 +35,7 @@ internal fun ChatInputBar(
     isSelectMode: Boolean,
     selectedCount: Int,
     isBlocked: Boolean,
+    isIdentityPaused: Boolean,
     isRecordingVoice: Boolean,
     recordingElapsedMs: Int,
     inputText: String,
@@ -51,6 +52,7 @@ internal fun ChatInputBar(
     onCancelSelection: () -> Unit,
     onDeleteSelected: () -> Unit,
     onUnblock: () -> Unit,
+    onReviewIdentity: () -> Unit,
     onToggleAttachments: () -> Unit,
     onInputTextChange: (String) -> Unit,
     onActionClick: () -> Unit,
@@ -99,6 +101,10 @@ internal fun ChatInputBar(
         )
 
         when {
+            isIdentityPaused && peerName != "Saved Messages" -> IdentityPausedBar(
+                appLanguage = appLanguage,
+                onReviewIdentity = onReviewIdentity,
+            )
             isSelectMode -> SelectionBar(
                 selectedCount = selectedCount,
                 appLanguage = appLanguage,
@@ -127,6 +133,37 @@ internal fun ChatInputBar(
                 onInputTextChange = onInputTextChange,
                 onActionClick = onActionClick,
             )
+        }
+    }
+}
+
+@Composable
+private fun IdentityPausedBar(appLanguage: String, onReviewIdentity: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.1f), RoundedCornerShape(16.dp))
+            .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (appLanguage == "Русский") "Отправка приостановлена" else "Sending paused",
+                color = MaterialTheme.colorScheme.error,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+            )
+            Text(
+                if (appLanguage == "Русский") "Сначала подтвердите новый ключ" else "Confirm the new key first",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp,
+            )
+        }
+        TextButton(onClick = onReviewIdentity) {
+            Text(if (appLanguage == "Русский") "Проверить" else "Review")
         }
     }
 }

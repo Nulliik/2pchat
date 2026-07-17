@@ -28,7 +28,6 @@ import java.util.Date
 import java.util.UUID
 import android.util.Base64
 import androidx.compose.runtime.mutableStateMapOf
-import com.chaquo.python.Python
 
 internal fun isExpectedPeerFingerprint(persisted: String?, received: String): Boolean =
     persisted.isNullOrBlank() || persisted == received
@@ -251,7 +250,8 @@ object P2PMessageRelay {
 
         val keysToMove = listOf(
             "last_msg_", "transport_", "last_endpoint_", "peer_fingerprint_",
-            "unread_count_", "verified_peer_", "fingerprint_mismatch_"
+            "unread_count_", "verified_peer_", "fingerprint_mismatch_",
+            "pending_peer_fingerprint_", "pending_peer_endpoint_"
         )
         for (prefix in keysToMove) {
             if (!sharedPrefs.contains("$prefix$fromName")) {
@@ -705,7 +705,7 @@ object P2PMessageRelay {
 
             // Register session status callbacks from Python
             PythonBridge.registerSessionListener(object : PythonBridge.PySessionListener {
-                override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String) {
+                override fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String): Boolean {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
                     val canonicalTransport = canonicalConnectionTransport(transport, endpoint)
                     // Incoming handshakes are named by fingerprint until their
@@ -714,26 +714,38 @@ object P2PMessageRelay {
                     // chats or leave placeholder preference keys behind.
                     if (isPlaceholderPeerName(resolvedPeerName)) {
                         log(appContext, "Authenticated unnamed session awaiting identity_info ($fingerprint)")
-                        return
+                        return true
                     }
                     val identityPrefs = P2PPreferences.prefs(appContext)
                     val persistedFingerprint = identityPrefs
                         .getString(P2PPreferences.peerFingerprint(resolvedPeerName), null)
                     if (!isExpectedPeerFingerprint(persistedFingerprint, fingerprint)) {
-                        identityPrefs.edit()
-                            .putBoolean("fingerprint_mismatch_$resolvedPeerName", true)
-                            .apply()
+                        P2PPreferences.recordPendingPeerIdentity(
+                            appContext,
+                            resolvedPeerName,
+                            fingerprint,
+                            endpoint,
+                        )
+                        Handler(Looper.getMainLooper()).post {
+                            peerSessionStates.remove(resolvedPeerName)
+                            peerConnectionTransports.remove(resolvedPeerName)
+                            peerRttMs.remove(resolvedPeerName)
+                        }
                         log(
                             appContext,
                             "Rejected fingerprint change for $resolvedPeerName: expected $persistedFingerprint, received $fingerprint",
                             "ERROR",
                         )
-                        serviceScope.launch {
-                            PythonBridge.closePeerSession(resolvedPeerName, fingerprint)
-                        }
-                        return
+                        return false
                     }
-                    identityPrefs.edit().putBoolean("fingerprint_mismatch_$resolvedPeerName", false).apply()
+                    if (P2PPreferences.isPeerIdentityChangePending(appContext, resolvedPeerName)) {
+                        log(
+                            appContext,
+                            "Rejected session for $resolvedPeerName while an identity change awaits confirmation",
+                            "ERROR",
+                        )
+                        return false
+                    }
                     PythonBridge.rememberPeerName(fingerprint, resolvedPeerName)
                     appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
                         .edit().apply {
@@ -775,6 +787,7 @@ object P2PMessageRelay {
                         shareAvatar(appContext, resolvedPeerName, endpoint)
                         processOfflineQueue(appContext, resolvedPeerName, endpoint)
                     }
+                    return true
                 }
 
                 override fun onSessionClosed(peerName: String, fingerprint: String) {
@@ -825,16 +838,39 @@ object P2PMessageRelay {
         avatarCache.clear()
         // Trigger Python shutdown/cleanup
         thread(start = true) {
-            try {
-                if (PythonBridge.isInitialized) {
-                    val py = Python.getInstance()
-                    val bridge = py.getModule("discovery_bridge")
-                    bridge.callAttr("shutdown_all_sessions")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error shutting down Python sessions", e)
+            if (!PythonBridge.shutdownAllSessions()) {
+                Log.e(TAG, "Python P2P runtime did not stop cleanly")
             }
         }
+    }
+
+    /** Stop every account-bound transport before identity files are erased. */
+    fun shutdownForAccountDeletion(context: Context): Boolean {
+        val appContext = context.applicationContext
+        synchronized(startStopLock) {
+            isRunning = false
+        }
+        synchronized(identityLock) {
+            fingerprintToPeerName.clear()
+        }
+        maintenanceCoordinator.stop()
+        localPeerDiscovery?.stop()
+        localPeerDiscovery = null
+        localPeerCandidates.clear()
+        peerEndpoints.clear()
+        avatarCache.clear()
+        Handler(Looper.getMainLooper()).post {
+            peerConnectionTransports.clear()
+            peerSessionStates.clear()
+            peerRttMs.clear()
+        }
+        val stopped = PythonBridge.shutdownAllSessions()
+        log(
+            appContext,
+            "Account P2P runtime shutdown complete: $stopped",
+            if (stopped) "INFO" else "ERROR",
+        )
+        return stopped
     }
 
     fun restartServer(context: Context) {
@@ -848,13 +884,9 @@ object P2PMessageRelay {
         avatarCache.clear()
         Handler(Looper.getMainLooper()).post { peerRttMs.clear() }
         thread(start = true, name = "P2PRelayRestart") {
-            try {
-                if (PythonBridge.isInitialized) {
-                    Python.getInstance().getModule("discovery_bridge")
-                        .callAttr("shutdown_all_sessions")
-                }
-            } catch (error: Exception) {
-                log(appContext, "Error shutting down sessions for listener restart", "ERROR", error)
+            if (!PythonBridge.shutdownAllSessions()) {
+                log(appContext, "Listener restart aborted because the old identity runtime is still active", "ERROR")
+                return@thread
             }
             startServer(appContext)
         }
@@ -902,6 +934,11 @@ object P2PMessageRelay {
                         val payload = json.toString()
                         val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
                             .getString("peer_fingerprint_$peerName", null)
+
+                        if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
+                            log(context, "Blocked avatar share to $peerName while its identity change awaits confirmation", "ERROR")
+                            return@thread
+                        }
                         
                         log(context, "Sending profile avatar to $peerName (length: ${payload.length})")
                         val success = PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
@@ -975,6 +1012,11 @@ object P2PMessageRelay {
                 remove("unread_count_$peerName")
                 remove("transport_$peerName")
                 remove("peer_fingerprint_$peerName")
+                remove("last_endpoint_$peerName")
+                remove("verified_peer_$peerName")
+                remove("fingerprint_mismatch_$peerName")
+                remove("pending_peer_fingerprint_$peerName")
+                remove("pending_peer_endpoint_$peerName")
             }
         } else {
             sharedPrefs.edit {
@@ -982,6 +1024,11 @@ object P2PMessageRelay {
                 remove("unread_count_$peerName")
                 remove("transport_$peerName")
                 remove("peer_fingerprint_$peerName")
+                remove("last_endpoint_$peerName")
+                remove("verified_peer_$peerName")
+                remove("fingerprint_mismatch_$peerName")
+                remove("pending_peer_fingerprint_$peerName")
+                remove("pending_peer_endpoint_$peerName")
             }
         }
         
@@ -1027,6 +1074,56 @@ object P2PMessageRelay {
 
     fun reconnectSession(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
         outboundMessenger.reconnect(context, peerName, onResult)
+    }
+
+    fun acceptPendingPeerIdentity(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
+        val appContext = context.applicationContext
+        val prefs = P2PPreferences.prefs(appContext)
+        val oldFingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
+        val pendingFingerprint = prefs.getString(P2PPreferences.pendingPeerFingerprint(peerName), null).orEmpty()
+        if (!canAcceptPendingPeerFingerprint(oldFingerprint, pendingFingerprint)) {
+            Handler(Looper.getMainLooper()).post { onResult(false) }
+            return
+        }
+        thread(start = true) {
+            // Keep the pause active while the old ratchet is closed. Only then
+            // atomically replace the pin and start a completely new session.
+            PythonBridge.closePeerSession(peerName, oldFingerprint)
+            val accepted = P2PPreferences.acceptPendingPeerIdentity(appContext, peerName)
+            if (accepted == null) {
+                Handler(Looper.getMainLooper()).post { onResult(false) }
+                return@thread
+            }
+            PythonBridge.rememberPeerName(accepted.acceptedFingerprint, peerName)
+            val endpoint = accepted.endpoint.takeIf { it.isNotBlank() }
+                ?: prefs.getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
+            if (endpoint.isNotBlank()) peerEndpoints[peerName] = endpoint
+            Handler(Looper.getMainLooper()).post {
+                peerSessionStates.remove(peerName)
+                peerConnectionTransports.remove(peerName)
+                peerRttMs.remove(peerName)
+            }
+            val success = endpoint.isNotBlank() &&
+                PythonBridge.reconnectPeerSession(peerName, endpoint, accepted.acceptedFingerprint)
+            Handler(Looper.getMainLooper()).post { onResult(success) }
+        }
+    }
+
+    fun rejectPendingPeerIdentity(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
+        val appContext = context.applicationContext
+        val prefs = P2PPreferences.prefs(appContext)
+        val oldFingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
+        val endpoint = prefs.getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
+        val cleared = P2PPreferences.rejectPendingPeerIdentity(appContext, peerName)
+        if (!cleared) {
+            Handler(Looper.getMainLooper()).post { onResult(false) }
+            return
+        }
+        thread(start = true) {
+            val success = endpoint.isNotBlank() && oldFingerprint.isNotBlank() &&
+                PythonBridge.reconnectPeerSession(peerName, endpoint, oldFingerprint)
+            Handler(Looper.getMainLooper()).post { onResult(success) }
+        }
     }
 
     fun sendTypingState(context: Context, peerName: String, endpoint: String, isTyping: Boolean) {

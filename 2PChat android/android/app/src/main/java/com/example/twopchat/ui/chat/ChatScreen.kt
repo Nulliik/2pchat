@@ -166,16 +166,36 @@ fun ChatScreen(
     var activeFingerprint by remember(peerName) {
         mutableStateOf(sharedPrefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty())
     }
+    var pendingFingerprint by remember(peerName) {
+        mutableStateOf(sharedPrefs.getString(P2PPreferences.pendingPeerFingerprint(peerName), null).orEmpty())
+    }
+    var isIdentityPaused by remember(peerName) {
+        mutableStateOf(P2PPreferences.isPeerIdentityChangePending(context, peerName))
+    }
+    var showIdentityWarning by remember(peerName) { mutableStateOf(isIdentityPaused) }
+    var showIdentityConfirmation by remember(peerName) { mutableStateOf(false) }
+    var identityDecisionInProgress by remember(peerName) { mutableStateOf(false) }
     var isVerified by remember(peerName) { mutableStateOf(P2PPreferences.isPeerVerified(context, peerName)) }
     DisposableEffect(sharedPrefs, peerName) {
         val verificationKey = P2PPreferences.verifiedPeer(peerName)
         val fingerprintKey = P2PPreferences.peerFingerprint(peerName)
+        val mismatchKey = P2PPreferences.fingerprintMismatch(peerName)
+        val pendingFingerprintKey = P2PPreferences.pendingPeerFingerprint(peerName)
         val forwardingKey = "restrict_forwarding_${peerName}"
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
             if (key == verificationKey) {
                 isVerified = prefs.getBoolean(verificationKey, false)
             } else if (key == fingerprintKey) {
                 activeFingerprint = prefs.getString(fingerprintKey, null).orEmpty()
+            } else if (key == mismatchKey || key == pendingFingerprintKey) {
+                val wasPaused = isIdentityPaused
+                pendingFingerprint = prefs.getString(pendingFingerprintKey, null).orEmpty()
+                isIdentityPaused = P2PPreferences.isPeerIdentityChangePending(context, peerName)
+                if (!wasPaused && isIdentityPaused) showIdentityWarning = true
+                if (!isIdentityPaused) {
+                    showIdentityWarning = false
+                    showIdentityConfirmation = false
+                }
             } else if (key == forwardingKey) {
                 isForwardingRestricted = prefs.getBoolean(forwardingKey, false)
             }
@@ -293,6 +313,11 @@ fun ChatScreen(
     }
 
     fun sendVoiceRecording(recording: VoiceRecording) {
+        if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
+            recording.file.delete()
+            Toast.makeText(context, if (appLanguage == "Русский") "Отправка приостановлена до подтверждения ключа" else "Sending is paused until the key is confirmed", Toast.LENGTH_LONG).show()
+            return
+        }
         val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
         val initialStatus = if (endpoint != null || peerName == "Saved Messages") "SENT" else "PENDING"
@@ -565,6 +590,10 @@ fun ChatScreen(
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
+        if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
+            Toast.makeText(context, if (appLanguage == "Русский") "Отправка приостановлена до подтверждения ключа" else "Sending is paused until the key is confirmed", Toast.LENGTH_LONG).show()
+            return@rememberLauncherForActivityResult
+        }
         uri?.let {
             var fileName = "photo.jpg"
             context.contentResolver.query(it, null, null, null, null)?.use { cursor ->
@@ -622,6 +651,10 @@ fun ChatScreen(
     val videoLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
+        if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
+            Toast.makeText(context, if (appLanguage == "Русский") "Отправка приостановлена до подтверждения ключа" else "Sending is paused until the key is confirmed", Toast.LENGTH_LONG).show()
+            return@rememberLauncherForActivityResult
+        }
         uri?.let {
             var fileName = "video.mp4"
             context.contentResolver.query(it, null, null, null, null)?.use { cursor ->
@@ -681,6 +714,11 @@ fun ChatScreen(
         contract = ActivityResultContracts.TakePicture()
     ) { success: Boolean ->
         if (!success) return@rememberLauncherForActivityResult
+        if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
+            tempCameraFile?.delete()
+            Toast.makeText(context, if (appLanguage == "Русский") "Отправка приостановлена до подтверждения ключа" else "Sending is paused until the key is confirmed", Toast.LENGTH_LONG).show()
+            return@rememberLauncherForActivityResult
+        }
         val file = tempCameraFile ?: return@rememberLauncherForActivityResult
         try {
             // Correct EXIF rotation so photo is not upside-down when sent
@@ -753,6 +791,10 @@ fun ChatScreen(
     val fileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
+        if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
+            Toast.makeText(context, if (appLanguage == "Русский") "Отправка приостановлена до подтверждения ключа" else "Sending is paused until the key is confirmed", Toast.LENGTH_LONG).show()
+            return@rememberLauncherForActivityResult
+        }
         uri?.let {
             var fileName = "Document.pdf"
             context.contentResolver.query(it, null, null, null, null)?.use { cursor ->
@@ -886,6 +928,40 @@ fun ChatScreen(
                 },
             )
 
+            if (isIdentityPaused && peerName != "Saved Messages") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
+                        .border(0.5.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f))
+                        .clickable { showIdentityWarning = true }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("⚠", fontSize = 20.sp)
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (appLanguage == "Русский") "Ключ безопасности изменился" else "Security key changed",
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                        )
+                        Text(
+                            if (appLanguage == "Русский") "Соединение и отправка приостановлены" else "Connection and sending are paused",
+                            color = onSurfaceVariant,
+                            fontSize = 12.sp,
+                        )
+                    }
+                    Text(
+                        if (appLanguage == "Русский") "Подробнее" else "Review",
+                        color = primaryColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+
             // Pinned Message Bar
             if (pinnedMsgId != null && pinnedMsgText != null) {
                 Row(
@@ -988,6 +1064,7 @@ remove("pinned_msg_id_${peerName}")
                 isSelectMode = isSelectMode,
                 selectedCount = selectedMessages.size,
                 isBlocked = isBlocked,
+                isIdentityPaused = isIdentityPaused,
                 isRecordingVoice = isRecordingVoice,
                 recordingElapsedMs = recordingElapsedMs,
                 inputText = inputText,
@@ -1057,6 +1134,7 @@ remove("pinned_msg_id_${peerName}")
                     sharedPrefs.edit { putBoolean("blocked_peer_${peerName}", false) }
                     isBlocked = false
                 },
+                onReviewIdentity = { showIdentityWarning = true },
                 onToggleAttachments = {
                     if (isRecordingVoice) {
                         voiceRecorder.cancel()
@@ -1696,7 +1774,15 @@ remove("pinned_msg_id_${peerName}")
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(12.dp))
-                                            .clickable {
+                                            .clickable forwardClick@{
+                                                if (P2PPreferences.isPeerIdentityChangePending(context, chatName)) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        if (appLanguage == "Русский") "В чате $chatName отправка приостановлена из-за смены ключа" else "Sending to $chatName is paused because its key changed",
+                                                        Toast.LENGTH_LONG,
+                                                    ).show()
+                                                    return@forwardClick
+                                                }
                                                 val textToForward = messageToForward?.text ?: ""
                                                 val forwardTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                                                 val forwardEndpoint = P2PMessageRelay.peerEndpoints[chatName]
@@ -2043,7 +2129,138 @@ remove("pinned_msg_id_${peerName}")
             )
         }
 
-        if (showConnectionErrorDialog) {
+        if (showIdentityWarning && isIdentityPaused) {
+            AlertDialog(
+                onDismissRequest = { showIdentityWarning = false },
+                title = {
+                    Text(
+                        if (appLanguage == "Русский") "Ключ безопасности изменился" else "Security key changed",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
+                text = {
+                    Text(
+                        if (appLanguage == "Русский") {
+                            "У $peerName появился новый ключ. Это может быть переустановка приложения, новый аккаунт с тем же именем или попытка перехвата. До вашего решения соединение, сообщения, файлы и служебные подтверждения заблокированы."
+                        } else {
+                            "$peerName presented a new key. This may be an app reinstall, a new account with the same name, or an interception attempt. Connection, messages, files, and delivery controls are blocked until you decide."
+                        },
+                        color = onSurfaceColor,
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showIdentityWarning = false
+                            showIdentityConfirmation = true
+                        },
+                        enabled = pendingFingerprint.isNotBlank(),
+                    ) {
+                        Text(if (appLanguage == "Русский") "Проверить новый ключ" else "Review new key")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showIdentityWarning = false }) {
+                        Text(if (appLanguage == "Русский") "Оставить заблокированным" else "Keep blocked")
+                    }
+                },
+                containerColor = surfaceColor,
+                shape = RoundedCornerShape(20.dp),
+            )
+        }
+
+        if (showIdentityConfirmation && isIdentityPaused) {
+            AlertDialog(
+                onDismissRequest = {
+                    if (!identityDecisionInProgress) {
+                        showIdentityConfirmation = false
+                        showIdentityWarning = true
+                    }
+                },
+                title = {
+                    Text(
+                        if (appLanguage == "Русский") "Подтвердить новый ключ?" else "Confirm the new key?",
+                        fontWeight = FontWeight.Bold,
+                        color = onSurfaceColor,
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            if (appLanguage == "Русский") {
+                                "Сверьте новый ключ с $peerName по другому доверенному каналу. После принятия прежняя верификация будет сброшена и создастся новая защищённая сессия."
+                            } else {
+                                "Compare the new key with $peerName over another trusted channel. Accepting it resets the previous verification and creates a new secure session."
+                            },
+                            color = onSurfaceColor,
+                        )
+                        Text(
+                            (if (appLanguage == "Русский") "Прежний: " else "Previous: ") +
+                                activeFingerprint.chunked(4).joinToString(" "),
+                            color = onSurfaceVariant,
+                            fontSize = 12.sp,
+                        )
+                        Text(
+                            (if (appLanguage == "Русский") "Новый: " else "New: ") +
+                                pendingFingerprint.chunked(4).joinToString(" "),
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        if (identityDecisionInProgress) {
+                            LinearProgressIndicator(Modifier.fillMaxWidth())
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        enabled = !identityDecisionInProgress && pendingFingerprint.isNotBlank(),
+                        onClick = {
+                            identityDecisionInProgress = true
+                            P2PMessageRelay.acceptPendingPeerIdentity(context, peerName) { connected ->
+                                identityDecisionInProgress = false
+                                val accepted = !P2PPreferences.isPeerIdentityChangePending(context, peerName)
+                                showIdentityConfirmation = !accepted
+                                val message = if (!accepted) {
+                                    if (appLanguage == "Русский") "Не удалось принять новый ключ" else "Could not accept the new key"
+                                } else if (appLanguage == "Русский") {
+                                    if (connected) "Новый ключ принят, создаётся новая сессия" else "Новый ключ принят; подключиться сейчас не удалось"
+                                } else {
+                                    if (connected) "New key accepted; creating a new session" else "New key accepted; could not reconnect now"
+                                }
+                                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                            }
+                        },
+                    ) {
+                        Text(if (appLanguage == "Русский") "Я сверил(а), принять" else "I verified it, accept")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        enabled = !identityDecisionInProgress,
+                        onClick = {
+                            identityDecisionInProgress = true
+                            P2PMessageRelay.rejectPendingPeerIdentity(context, peerName) {
+                                identityDecisionInProgress = false
+                                showIdentityConfirmation = false
+                                Toast.makeText(
+                                    context,
+                                    if (appLanguage == "Русский") "Новый ключ отклонён; сохранён прежний ключ" else "New key rejected; previous key remains pinned",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        },
+                    ) {
+                        Text(if (appLanguage == "Русский") "Отклонить новый ключ" else "Reject new key")
+                    }
+                },
+                containerColor = surfaceColor,
+                shape = RoundedCornerShape(20.dp),
+            )
+        }
+
+        if (showConnectionErrorDialog && !isIdentityPaused) {
             AlertDialog(
                 onDismissRequest = { showConnectionErrorDialog = false },
                 confirmButton = {},

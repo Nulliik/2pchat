@@ -205,46 +205,12 @@ class MainActivity : ComponentActivity() {
                                         lastInteractionTime = System.currentTimeMillis()
                                     },
                                     onDuressTriggered = {
-                                        // 1. Python-side session shutdown
-                                        try {
-                                            if (PythonBridge.isInitialized) {
-                                                val py = com.chaquo.python.Python.getInstance()
-                                                val bridge = py.getModule("discovery_bridge")
-                                                bridge.callAttr("shutdown_all_sessions")
-                                            }
-                                        } catch (e: Exception) {
-                                            android.util.Log.e("MainActivity", "Failed to shutdown sessions on duress", e)
-                                        }
-
-                                        // 2. Clear default shared preferences
-                                        sharedPrefs.edit().clear().apply()
-
-                                        // 3. Delete all SharedPreferences XML files
-                                        try {
-                                            val sharedPrefsDir = java.io.File(filesDir.parent, "shared_prefs")
-                                            if (sharedPrefsDir.exists()) {
-                                                sharedPrefsDir.listFiles()?.forEach { it.delete() }
-                                            }
-                                        } catch (e: Exception) {
-                                            android.util.Log.e("MainActivity", "Failed to clear shared_prefs on duress", e)
-                                        }
-
-                                        // 4. Delete SQLite database files
-                                        try {
-                                            val databasesDir = java.io.File(filesDir.parent, "databases")
-                                            if (databasesDir.exists()) {
-                                                databasesDir.listFiles()?.forEach { it.deleteRecursively() }
-                                            }
-                                        } catch (e: Exception) {
-                                            android.util.Log.e("MainActivity", "Failed to clear databases on duress", e)
-                                        }
-
-                                        // 5. Delete all other files and caches
-                                        try {
-                                            filesDir.listFiles()?.forEach { it.deleteRecursively() }
-                                            cacheDir.listFiles()?.forEach { it.deleteRecursively() }
-                                        } catch (e: Exception) {
-                                            android.util.Log.e("MainActivity", "Failed to clear files on duress", e)
+                                        if (!AccountLifecycle.deleteAccount(applicationContext)) {
+                                            android.util.Log.e(
+                                                "MainActivity",
+                                                "Duress wipe aborted because the P2P runtime did not stop cleanly",
+                                            )
+                                            return@PasscodeUnlockScreen
                                         }
 
                                         try {

@@ -20,10 +20,18 @@ internal class P2POutboundMessenger(
     private val processingOfflineQueues = ConcurrentHashMap.newKeySet<String>()
     private val scope = CoroutineScope(Dispatchers.IO)
 
+    private fun isPaused(context: Context, peerName: String): Boolean =
+        peerName != "Direct Peer" && P2PPreferences.isPeerIdentityChangePending(context, peerName)
+
     fun sendMessage(context: Context, endpoint: String, text: String, onResult: (Boolean) -> Unit = {}) {
+        val peerName = peerEndpoints.entries.firstOrNull { it.value == endpoint }?.key ?: "Direct Peer"
+        if (isPaused(context, peerName)) {
+            log(context, "Blocked message to $peerName while its identity change awaits confirmation", "ERROR", null)
+            return postResult(onResult, false)
+        }
         scope.launch {
             try {
-                val peerName = peerEndpoints.entries.firstOrNull { it.value == endpoint }?.key ?: "Direct Peer"
+                if (isPaused(context, peerName)) return@launch postResult(onResult, false)
                 log(context, "Sending secure message via Python transport", "INFO", null)
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
@@ -43,6 +51,7 @@ internal class P2POutboundMessenger(
         payload: JSONObject,
         onResult: (Boolean) -> Unit = {},
     ) {
+        if (isPaused(context, peerName)) return postResult(onResult, false)
         val endpoint = peerEndpoints[peerName]
         if (endpoint.isNullOrBlank()) return onResult(false)
         sendMessage(context, endpoint, payload.toString(), onResult)
@@ -56,8 +65,13 @@ internal class P2POutboundMessenger(
         messageId: String = "",
         onResult: (Boolean) -> Unit = {},
     ) {
+        if (isPaused(context, peerName)) {
+            log(context, "Blocked file to $peerName while its identity change awaits confirmation", "ERROR", null)
+            return postResult(onResult, false)
+        }
         scope.launch {
             try {
+                if (isPaused(context, peerName)) return@launch postResult(onResult, false)
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
                 log(context, "Sending secure file via Python transport to $peerName", "INFO", null)
@@ -72,8 +86,10 @@ internal class P2POutboundMessenger(
     }
 
     fun reconnect(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
+        if (isPaused(context, peerName)) return postResult(onResult, false)
         scope.launch {
             try {
+                if (isPaused(context, peerName)) return@launch postResult(onResult, false)
                 val prefs = P2PPreferences.prefs(context)
                 val endpoint = peerEndpoints[peerName]
                     ?: prefs.getString(P2PPreferences.lastEndpoint(peerName), "").orEmpty()
@@ -138,9 +154,10 @@ internal class P2POutboundMessenger(
     }
 
     fun processOfflineQueue(context: Context, peerName: String, endpoint: String) {
-        if (endpoint.isBlank() || !processingOfflineQueues.add(peerName)) return
+        if (endpoint.isBlank() || isPaused(context, peerName) || !processingOfflineQueues.add(peerName)) return
         scope.launch {
             try {
+                if (isPaused(context, peerName)) return@launch
                 val db = ChatDatabaseHelper.getInstance(context)
                 val pending = db.getPendingMessagesForPeer(peerName)
                 if (pending.isNotEmpty()) {
@@ -149,6 +166,10 @@ internal class P2POutboundMessenger(
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
                 for (message in pending) {
+                    if (isPaused(context, peerName)) {
+                        log(context, "Paused offline queue for $peerName after an identity change", "ERROR", null)
+                        break
+                    }
                     val payload = if (message.replyToId != null) JSONObject().apply {
                         put("type", "reply")
                         put("text", message.text)
@@ -173,7 +194,9 @@ internal class P2POutboundMessenger(
                         onMessageStatusChanged(peerName, message.id, "SENT")
                     }
                 }
-                processPendingControls(context, db, peerName, endpoint, fingerprint)
+                if (!isPaused(context, peerName)) {
+                    processPendingControls(context, db, peerName, endpoint, fingerprint)
+                }
             } catch (error: Exception) {
                 log(context, "Error in processOfflineQueue: ${error.message}", "ERROR", error)
             } finally {
@@ -183,8 +206,10 @@ internal class P2POutboundMessenger(
     }
 
     private fun sendSilently(context: Context, peerName: String, endpoint: String, payload: JSONObject) {
+        if (isPaused(context, peerName)) return
         scope.launch {
             try {
+                if (isPaused(context, peerName)) return@launch
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
                 PythonBridge.sendP2pMessage(peerName, endpoint, payload.toString(), fingerprint)
@@ -215,9 +240,13 @@ internal class P2POutboundMessenger(
         deleteAfterSend: Boolean,
     ) {
         val appContext = context.applicationContext
+        // Security-sensitive controls must not be queued for automatic delivery to
+        // a replacement identity which has not been accepted yet.
+        if (isPaused(appContext, peerName)) return
         scope.launch {
             val db = ChatDatabaseHelper.getInstance(appContext)
             try {
+                if (isPaused(appContext, peerName)) return@launch
                 db.enqueuePendingControl(
                     PendingControl(controlId, peerName, type, payload.toString())
                 )
@@ -254,6 +283,7 @@ internal class P2POutboundMessenger(
             log(context, "Processing ${controls.size} pending controls for $peerName", "INFO", null)
         }
         for (control in controls) {
+            if (isPaused(context, peerName)) break
             val success = PythonBridge.sendP2pMessage(
                 peerName,
                 endpoint,

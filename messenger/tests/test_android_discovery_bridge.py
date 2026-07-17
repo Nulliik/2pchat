@@ -1,6 +1,7 @@
 import importlib.util
 import asyncio
 import json
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -228,3 +229,116 @@ def test_background_reconnect_sends_identity_before_session_callback(monkeypatch
 
     asyncio.run(scenario())
     assert events[:2] == ["identity_info", "callback"]
+
+
+def test_account_shutdown_closes_sessions_and_stops_identity_listener(monkeypatch):
+    bridge = _load_discovery_bridge()
+    listener_started = threading.Event()
+    listener_cancelled = threading.Event()
+    session_closed = threading.Event()
+
+    async def fake_listener(_port):
+        listener_started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            listener_cancelled.set()
+
+    class FakeSession:
+        async def close(self):
+            session_closed.set()
+
+    monkeypatch.setattr(bridge, "_listen_loop_dual", fake_listener)
+    monkeypatch.setattr(bridge, "_discard_incoming_file", lambda key: bridge.incoming_files.pop(key, None))
+    bridge.active_sessions["old-fingerprint"] = FakeSession()
+    bridge.peer_fingerprint_to_name["old-fingerprint"] = "alice"
+    bridge.incoming_files["old-transfer"] = object()
+    bridge.local_identity_nickname = "alice"
+    bridge.local_identity_fingerprint = "old-fingerprint"
+
+    assert bridge.start_p2p_listener(0) is True
+    assert listener_started.wait(timeout=1.0)
+    assert bridge.shutdown_all_sessions(timeout_seconds=2.0) is True
+
+    assert session_closed.is_set()
+    assert listener_cancelled.is_set()
+    assert bridge.active_sessions == {}
+    assert bridge.peer_fingerprint_to_name == {}
+    assert bridge.incoming_files == {}
+    assert bridge.local_identity_nickname == ""
+    assert bridge.local_identity_fingerprint == ""
+    assert bridge.loop is None
+
+
+def test_listener_can_restart_with_a_new_account_runtime(monkeypatch):
+    bridge = _load_discovery_bridge()
+    starts = []
+
+    async def fake_listener(port):
+        starts.append(port)
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(bridge, "_listen_loop_dual", fake_listener)
+
+    assert bridge.start_p2p_listener(41001) is True
+    assert bridge.shutdown_all_sessions(timeout_seconds=2.0) is True
+    assert bridge.start_p2p_listener(41002) is True
+    assert bridge.shutdown_all_sessions(timeout_seconds=2.0) is True
+
+    assert starts == [41001, 41002]
+
+
+def test_rejected_same_name_identity_is_closed_before_chat_delivery():
+    bridge = _load_discovery_bridge()
+    delivered = []
+
+    class FakeWriter:
+        def get_extra_info(self, name):
+            assert name == "peername"
+            return ("192.0.2.20", 50001)
+
+    class FakeSession:
+        peer_fingerprint = "new-fingerprint"
+        is_online = True
+        writer = FakeWriter()
+
+        def __init__(self):
+            self.closed = False
+            self.messages = iter([
+                {
+                    "type": "identity_info",
+                    "nickname": "alice",
+                    "fingerprint": "new-fingerprint",
+                    "listen_port": 50001,
+                },
+                {"type": "chat", "body": "must-not-reach-old-chat"},
+            ])
+
+        async def receive_message(self):
+            return next(self.messages)
+
+        async def close(self):
+            self.closed = True
+            self.is_online = False
+
+    class RejectingSessionListener:
+        def onSessionEstablished(self, peer_name, *_args):
+            return peer_name != "alice"
+
+        def onSessionClosed(self, *_args):
+            pass
+
+    class MessageListener:
+        def onMessageReceived(self, sender, body):
+            delivered.append((sender, body))
+
+    session = FakeSession()
+    bridge.active_sessions[session.peer_fingerprint] = session
+    bridge.session_listener_callback = RejectingSessionListener()
+    bridge.message_listener_callback = MessageListener()
+
+    asyncio.run(bridge._read_loop(session, "Peer (new-fing)", session.peer_fingerprint))
+
+    assert session.closed is True
+    assert delivered == []
+    assert session.peer_fingerprint not in bridge.active_sessions

@@ -61,4 +61,14 @@ object IdentityKeyStore {
         }
         return cipher.doFinal(ciphertext).toString(Charsets.UTF_8)
     }
+
+    @JvmStatic
+    @Synchronized
+    fun deleteKey() {
+        cachedKey = null
+        KeyStore.getInstance("AndroidKeyStore").apply {
+            load(null)
+            if (containsAlias(ALIAS)) deleteEntry(ALIAS)
+        }
+    }
 }

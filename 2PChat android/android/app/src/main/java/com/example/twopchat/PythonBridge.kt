@@ -397,7 +397,7 @@ object PythonBridge {
     }
 
     interface PySessionListener {
-        fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String)
+        fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String): Boolean
         fun onSessionClosed(peerName: String, fingerprint: String)
     }
 
@@ -410,6 +410,26 @@ object PythonBridge {
         } catch (e: Exception) {
             Log.e(TAG, "Error configuring local P2P identity", e)
             false
+        }
+    }
+
+    fun shutdownAllSessions(timeoutSeconds: Double = 5.0): Boolean {
+        if (!isInitialized) return true
+        return try {
+            Python.getInstance().getModule("discovery_bridge")
+                .callAttr("shutdown_all_sessions", timeoutSeconds)
+                .toBoolean()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error shutting down P2P runtime", e)
+            false
+        }
+    }
+
+    fun clearAccountCaches() {
+        synchronized(announceLock) {
+            lastAnnounceAt.clear()
+            lastAnnounceResult.clear()
+            announcesInFlight.clear()
         }
     }
 

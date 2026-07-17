@@ -53,6 +53,7 @@ internal class RelayMaintenanceCoordinator(
 
                     val now = System.currentTimeMillis()
                     for (peerName in chats) {
+                        if (P2PPreferences.isPeerIdentityChangePending(appContext, peerName)) continue
                         val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
                             ?.takeIf { it.isNotBlank() } ?: continue
                         if (fingerprint in activeFingerprints) continue

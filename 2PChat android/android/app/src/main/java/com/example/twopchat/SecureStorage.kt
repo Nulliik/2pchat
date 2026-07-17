@@ -95,5 +95,14 @@ object SecureStorage {
         // No-op (memory-safe: passphrase is not cached in memory)
     }
 
+    @Synchronized
+    fun deleteKey() {
+        cachedKey = null
+        KeyStore.getInstance("AndroidKeyStore").apply {
+            load(null)
+            if (containsAlias(KEY_ALIAS)) deleteEntry(KEY_ALIAS)
+        }
+    }
+
     private const val BINARY_VERSION: Byte = 1
 }

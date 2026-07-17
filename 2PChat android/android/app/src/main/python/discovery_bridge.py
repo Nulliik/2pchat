@@ -52,6 +52,11 @@ local_announced_ips = set()
 message_listener_callback = None
 session_listener_callback = None
 loop = None
+_listener_thread = None
+_listener_task = None
+_listener_stopped = None
+_runtime_shutdown_requested = False
+_runtime_lock = threading.RLock()
 
 def _setup_socket_keepalive(writer) -> None:
     try:
@@ -1028,16 +1033,33 @@ def register_session_listener(callback):
     session_listener_callback = callback
     print("Python session listener callback registered")
 
+
+def _notify_session_established(peer_name, peer_fingerprint, endpoint, transport) -> bool:
+    """Let Android synchronously reject a key before application frames are read."""
+    if session_listener_callback is None:
+        return True
+    try:
+        accepted = session_listener_callback.onSessionEstablished(
+            peer_name, peer_fingerprint, endpoint, transport
+        )
+        return accepted is not False
+    except Exception as callback_error:
+        print("Error invoking session listener callback:", callback_error)
+        return False
+
 def start_p2p_listener(port=50001):
     """
     Start the background asyncio event loop and dual-stack listener thread.
     Listens on both 0.0.0.0 (IPv4) and :: (IPv6/Yggdrasil) simultaneously.
     """
-    global loop, listener_port
+    global loop, listener_port, _listener_thread, _listener_task, _listener_stopped
+    global _runtime_shutdown_requested
     listener_port = port
-    if loop and loop.is_running():
-        print(f"P2P listener already running on port {port}, skipping duplicate start")
-        return
+    with _runtime_lock:
+        if _listener_thread is not None and _listener_thread.is_alive():
+            print(f"P2P listener already running on port {port}, skipping duplicate start")
+            return True
+        _runtime_shutdown_requested = False
 
     try:
         from messenger.core.upnp import setup_upnp_in_background
@@ -1045,19 +1067,60 @@ def start_p2p_listener(port=50001):
     except Exception as upnp_err:
         print("[UPNP] Failed to trigger background setup:", upnp_err)
 
+    ready = threading.Event()
+    stopped = threading.Event()
+
     def run():
-        global loop
+        global loop, _listener_thread, _listener_task, _listener_stopped
+        global _runtime_shutdown_requested
+        runtime_loop = asyncio.new_event_loop()
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(_listen_loop_dual(port))
+            asyncio.set_event_loop(runtime_loop)
+            with _runtime_lock:
+                loop = runtime_loop
+                _listener_task = runtime_loop.create_task(_listen_loop_dual(port))
+            ready.set()
+
+            def _listener_finished(task):
+                if not task.cancelled():
+                    error = task.exception()
+                    if error is not None:
+                        print(f"P2P listener event loop crashed: {error}")
+                with _runtime_lock:
+                    shutting_down = _runtime_shutdown_requested
+                if not shutting_down:
+                    runtime_loop.call_soon(runtime_loop.stop)
+
+            _listener_task.add_done_callback(_listener_finished)
+            runtime_loop.run_forever()
         except Exception as e:
             print("P2P listener event loop crashed:", e)
             traceback.print_exc()
+        finally:
+            pending = [task for task in asyncio.all_tasks(runtime_loop) if not task.done()]
+            for task in pending:
+                task.cancel()
+            if pending:
+                runtime_loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            runtime_loop.close()
+            with _runtime_lock:
+                if loop is runtime_loop:
+                    loop = None
+                if _listener_thread is threading.current_thread():
+                    _listener_thread = None
+                _listener_task = None
+                _listener_stopped = None
+                _runtime_shutdown_requested = False
+            stopped.set()
 
     t = threading.Thread(target=run, daemon=True)
+    with _runtime_lock:
+        _listener_thread = t
+        _listener_stopped = stopped
     t.start()
+    ready.wait(timeout=2.0)
     print(f"P2P Listener background thread started on port {port} (IPv4 + IPv6)")
+    return ready.is_set()
 
 
 async def _listen_loop_dual(port: int):
@@ -1085,6 +1148,11 @@ async def _listen_loop_dual(port: int):
     except Exception as e:
         print(f"Error in dual-stack P2P Server listen loop on port {port}: {e}")
         traceback.print_exc()
+    finally:
+        for task in list(handshake_tasks):
+            task.cancel()
+        if handshake_tasks:
+            await asyncio.gather(*handshake_tasks, return_exceptions=True)
 
 
 
@@ -1134,11 +1202,10 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
         if peername:
             remote_transport = "Yggdrasil" if ":" in str(peername[0]) else "Direct P2P"
 
-        if session_listener_callback:
-            try:
-                session_listener_callback.onSessionEstablished(peer_name, fp, remote_ep, remote_transport)
-            except Exception as cb_err:
-                print("Error invoking session listener callback:", cb_err)
+        if not _notify_session_established(peer_name, fp, remote_ep, remote_transport):
+            print(f"Android rejected authenticated session from {peer_name} ({fp})")
+            await _invalidate_session(session)
+            return
                 
         asyncio.create_task(_read_loop(session, peer_name, fp))
     except Exception as e:
@@ -1193,27 +1260,22 @@ async def _read_loop(session, peer_name, fp):
                     print(f"Ignored mismatched identity_info fingerprint from {fp}")
                 if real_name and real_name != peer_name:
                     print(f"Peer renamed: '{peer_name}' → '{real_name}' (fp={remote_fp})")
+                    peername = session.writer.get_extra_info('peername') if hasattr(session, 'writer') else None
+                    advertised_port = msg.get("listen_port")
+                    if isinstance(advertised_port, int) and 1 <= advertised_port <= 65535 and peername:
+                        remote_ep = _format_endpoint(peername[0], advertised_port)
+                    else:
+                        remote_ep = ""
+                    remote_transport = (
+                        "Yggdrasil" if peername and ":" in str(peername[0]) else "Direct P2P"
+                    )
+                    if not _notify_session_established(real_name, remote_fp, remote_ep, remote_transport):
+                        print(f"Android rejected fingerprint {remote_fp} for nickname '{real_name}'")
+                        await _invalidate_session(session)
+                        return
                     peer_fingerprint_to_name[remote_fp] = real_name
                     peer_fingerprint_to_name[fp] = real_name
                     session.peer_label = real_name
-                    # Re-register session under real name
-                    # Notify Kotlin so UI can open/rename the chat
-                    if session_listener_callback:
-                        try:
-                            peername = session.writer.get_extra_info('peername') if hasattr(session, 'writer') else None
-                            advertised_port = msg.get("listen_port")
-                            if isinstance(advertised_port, int) and 1 <= advertised_port <= 65535 and peername:
-                                remote_ep = _format_endpoint(peername[0], advertised_port)
-                            else:
-                                remote_ep = ""
-                            remote_transport = (
-                                "Yggdrasil" if peername and ":" in str(peername[0]) else "Direct P2P"
-                            )
-                            session_listener_callback.onSessionEstablished(
-                                real_name, remote_fp, remote_ep, remote_transport
-                            )
-                        except Exception as cb_err:
-                            print("Error invoking session listener on identity_info:", cb_err)
                     # Update loop variables so cleanup is correct
                     peer_name = real_name
                     fp = remote_fp
@@ -1606,13 +1668,11 @@ async def _establish_session_async(peer_name: str, endpoint: str, expected_finge
 
     print(f"Established Double Ratchet session to {peer_name} (Fingerprint: {fp})")
 
-    if session_listener_callback:
-        try:
-            session_listener_callback.onSessionEstablished(
-                peer_name, fp, connected_endpoint, _transport_for_endpoint(connected_endpoint)
-            )
-        except Exception:
-            pass
+    if not _notify_session_established(
+        peer_name, fp, connected_endpoint, _transport_for_endpoint(connected_endpoint)
+    ):
+        await _invalidate_session(session)
+        raise ValueError(f"Android rejected fingerprint {fp} for nickname '{peer_name}'")
 
     return session
 
@@ -1765,29 +1825,83 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
         traceback.print_exc()
         return False
 
-def shutdown_all_sessions():
-    """
-    Close all active P2P connections and clear session caches (e.g. on duress wipe).
-    """
-    global active_sessions, incoming_files, peer_operation_locks, loop
-    print("Shutdown all active sessions and clearing caches...")
+def _clear_account_runtime_state():
+    global message_listener_callback, session_listener_callback
+    global local_identity_nickname, local_identity_fingerprint
+    global local_yggdrasil_available
+
+    active_sessions.clear()
+    peer_operation_locks.clear()
+    peer_fingerprint_to_name.clear()
+    for transfer_key in list(incoming_files):
+        _discard_incoming_file(transfer_key)
+    message_listener_callback = None
+    session_listener_callback = None
+    local_identity_nickname = ""
+    local_identity_fingerprint = ""
+    local_yggdrasil_available = False
+    local_announced_ips.clear()
+    public_address_observations.clear()
+    tracker_diagnostics.clear()
+
+
+async def _shutdown_runtime():
+    """Close account-bound state on the listener loop before its key is erased."""
+    global _listener_task
+
+    sessions = list({id(session): session for session in active_sessions.values()}.values())
+    if sessions:
+        await asyncio.gather(
+            *[session.close() for session in sessions if hasattr(session, "close")],
+            return_exceptions=True,
+        )
+    _clear_account_runtime_state()
+
+    listener_task = _listener_task
+    if listener_task is not None and listener_task is not asyncio.current_task():
+        listener_task.cancel()
+        await asyncio.gather(listener_task, return_exceptions=True)
+
+
+def shutdown_all_sessions(timeout_seconds=5.0):
+    """Synchronously stop the listener and erase every in-memory account secret."""
+    global loop, _runtime_shutdown_requested
+    print("Shutting down P2P runtime and clearing account-bound caches...")
     try:
         from messenger.core.upnp import stop_upnp
         stop_upnp()
     except Exception as upnp_err:
         print("[UPNP] Failed to trigger stop_upnp:", upnp_err)
 
-    for fp, session in list(active_sessions.items()):
+    with _runtime_lock:
+        runtime_loop = loop
+        runtime_thread = _listener_thread
+        stopped = _listener_stopped
+
+    if runtime_thread is threading.current_thread():
+        print("Refusing synchronous P2P shutdown from the listener thread")
+        return False
+
+    if runtime_loop is not None and runtime_loop.is_running():
         try:
-            if hasattr(session, "close"):
-                if loop and loop.is_running():
-                    asyncio.run_coroutine_threadsafe(session.close(), loop)
-        except Exception as e:
-            print("Error closing session during shutdown:", e)
-    active_sessions.clear()
-    peer_operation_locks.clear()
-    for transfer_key in list(incoming_files):
-        _discard_incoming_file(transfer_key)
+            with _runtime_lock:
+                _runtime_shutdown_requested = True
+            future = asyncio.run_coroutine_threadsafe(_shutdown_runtime(), runtime_loop)
+            future.result(timeout=max(0.1, float(timeout_seconds)))
+            runtime_loop.call_soon_threadsafe(runtime_loop.stop)
+        except Exception as exc:
+            print("Failed to stop P2P runtime cleanly:", exc)
+            return False
+    else:
+        _clear_account_runtime_state()
+
+    if stopped is not None:
+        stopped.wait(timeout=max(0.1, float(timeout_seconds)))
+    if runtime_thread is not None and runtime_thread.is_alive():
+        runtime_thread.join(timeout=max(0.1, float(timeout_seconds)))
+    clean = runtime_thread is None or not runtime_thread.is_alive()
+    print(f"P2P runtime shutdown complete: {clean}")
+    return clean
 
 def close_peer_session(peer_name: str, expected_fingerprint=None) -> bool:
     """
@@ -1950,14 +2064,12 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
                 else:
                     asyncio.create_task(_read_loop(connected_session, peer_name, fp))
                 
-                # Trigger Kotlin session listener
-                if session_listener_callback:
-                    try:
-                        session_listener_callback.onSessionEstablished(
-                            peer_name, fp, connected_endpoint, _transport_for_endpoint(connected_endpoint)
-                        )
-                    except Exception as callback_err:
-                        print("Error triggering Kotlin session listener on reconnect:", callback_err)
+                if not _notify_session_established(
+                    peer_name, fp, connected_endpoint, _transport_for_endpoint(connected_endpoint)
+                ):
+                    await _invalidate_session(connected_session)
+                    print(f"Android rejected fingerprint {fp} for nickname '{peer_name}'")
+                    return
                 return True
             return False
         except Exception as e:
