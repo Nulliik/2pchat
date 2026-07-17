@@ -87,7 +87,7 @@ internal class MessageNotificationService {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setContentTitle(sender)
             .setContentText(displayText)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_logo_default_fg)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

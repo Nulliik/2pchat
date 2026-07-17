@@ -24,7 +24,7 @@ class P2PRelayService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setSmallIcon(R.drawable.ic_logo_default_fg)
             .setContentTitle("2PChat")
             .setContentText("P2P listener is active")
             .setOngoing(true)
