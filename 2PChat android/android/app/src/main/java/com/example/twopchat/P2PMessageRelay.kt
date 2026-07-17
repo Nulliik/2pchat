@@ -112,6 +112,7 @@ object P2PMessageRelay {
         fun onMessagePinned(sender: String, msgId: String, text: String, isFromSender: Boolean) {}
         fun onMessageUnpinned(sender: String) {}
         fun onMessageEdited(sender: String, msgId: String, text: String) {}
+        fun onForwardingStateChanged(sender: String, enabled: Boolean) {}
     }
 
     private val messageListeners = java.util.concurrent.CopyOnWriteArrayList<MessageListener>()
@@ -576,6 +577,15 @@ object P2PMessageRelay {
                                     outboundMessenger.acknowledgeControl(appContext, json.optString("control_id"))
                                     return
                                 }
+                                "forwarding_state" -> {
+                                    val enabled = json.optBoolean("enabled", false)
+                                    val sp = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                                    sp.edit().putBoolean("restrict_forwarding_$sender", enabled).apply()
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        messageListeners.forEach { it.onForwardingStateChanged(sender, enabled) }
+                                    }
+                                    return
+                                }
                                 "reaction" -> {
                                     val msgId = json.optString("message_id")
                                     val emoji = json.optString("emoji")
@@ -989,6 +999,15 @@ object P2PMessageRelay {
 
     fun sendEditMessage(context: Context, peerName: String, endpoint: String?, messageId: String, newText: String) {
         outboundMessenger.sendEditMessage(context, peerName, endpoint, messageId, newText)
+    }
+
+    fun sendForwardingState(context: Context, peerName: String, enabled: Boolean) {
+        val endpoint = peerEndpoints[peerName] ?: return
+        val payload = org.json.JSONObject().apply {
+            put("type", "forwarding_state")
+            put("enabled", enabled)
+        }
+        outboundMessenger.sendControlMessage(context, peerName, payload)
     }
 
     fun processOfflineQueue(context: Context, peerName: String, endpoint: String) {

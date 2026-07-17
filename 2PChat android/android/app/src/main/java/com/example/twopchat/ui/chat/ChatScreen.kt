@@ -157,13 +157,17 @@ fun ChatScreen(
     var pinnedBy by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_by_${peerName}", null)) }
     var isMuted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("mute_notifications_${peerName}", false)) }
     var isBlocked by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("blocked_peer_${peerName}", false)) }
+    var isForwardingRestricted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("restrict_forwarding_${peerName}", false)) }
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
     var isVerified by remember(peerName) { mutableStateOf(P2PPreferences.isPeerVerified(context, peerName)) }
     DisposableEffect(sharedPrefs, peerName) {
         val verificationKey = P2PPreferences.verifiedPeer(peerName)
+        val forwardingKey = "restrict_forwarding_${peerName}"
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
             if (key == verificationKey) {
                 isVerified = prefs.getBoolean(verificationKey, false)
+            } else if (key == forwardingKey) {
+                isForwardingRestricted = prefs.getBoolean(forwardingKey, false)
             }
         }
         sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
@@ -480,6 +484,12 @@ fun ChatScreen(
                         val newStatus = if (oldStatus.contains("edited")) oldStatus else if (oldStatus.isEmpty()) "edited" else "${oldStatus}_edited"
                         initialMessages[idx] = current.copy(text = text, status = newStatus)
                     }
+                }
+            }
+
+            override fun onForwardingStateChanged(sender: String, enabled: Boolean) {
+                if (sender == peerName) {
+                    isForwardingRestricted = enabled
                 }
             }
         }
@@ -1397,30 +1407,32 @@ remove("pinned_msg_id_${peerName}")
                         }
 
                         // Forward
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    messageToForward = msg
-                                    showForwardDialog = true
-                                    selectedMessageForOptions = null
-                                }
-                                .padding(vertical = 12.dp, horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_forward),
-                                contentDescription = "Forward",
-                                tint = onSurfaceColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = if (appLanguage == "Русский") "Переслать" else "Forward",
-                                fontSize = 15.sp,
-                                color = onSurfaceColor
-                            )
+                        if (!isForwardingRestricted) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        messageToForward = msg
+                                        showForwardDialog = true
+                                        selectedMessageForOptions = null
+                                    }
+                                    .padding(vertical = 12.dp, horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_forward),
+                                    contentDescription = "Forward",
+                                    tint = onSurfaceColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Text(
+                                    text = if (appLanguage == "Русский") "Переслать" else "Forward",
+                                    fontSize = 15.sp,
+                                    color = onSurfaceColor
+                                )
+                            }
                         }
 
                         // Delete
@@ -2110,6 +2122,12 @@ remove("pinned_msg_id_${peerName}")
                 onToggleMute = { newMuted ->
                     isMuted = newMuted
                     sharedPrefs.edit().putBoolean("mute_notifications_$peerName", newMuted).apply()
+                },
+                isForwardingRestricted = isForwardingRestricted,
+                onToggleForwardingRestriction = { restricted ->
+                    isForwardingRestricted = restricted
+                    sharedPrefs.edit().putBoolean("restrict_forwarding_$peerName", restricted).apply()
+                    P2PMessageRelay.sendForwardingState(context, peerName, restricted)
                 },
                 onAvatarClick = { avatarBitmap ->
                     val avatarKey = "avatar:$peerName"
