@@ -73,6 +73,7 @@ android {
       }
       jniLibs {
         useLegacyPackaging = true
+        doNotStrip("**/libgojni.so")
       }
     }
 }
