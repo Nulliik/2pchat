@@ -49,6 +49,36 @@ local_identity_fingerprint = ""
 local_yggdrasil_available = False
 local_announced_ips = set()
 
+rejected_fingerprints = {}
+
+def is_fingerprint_rejected(peer_name: str = "", fingerprint: str = "") -> bool:
+    now = time.time()
+    for key in (fingerprint, (peer_name, fingerprint)):
+        if not key:
+            continue
+        exp = rejected_fingerprints.get(key)
+        if exp:
+            if now < exp:
+                return True
+            else:
+                rejected_fingerprints.pop(key, None)
+    return False
+
+def record_rejected_fingerprint(peer_name: str, fingerprint: str, cooldown_seconds: float = 300.0):
+    now = time.time()
+    if fingerprint:
+        rejected_fingerprints[fingerprint] = now + cooldown_seconds
+    if peer_name and fingerprint:
+        rejected_fingerprints[(peer_name, fingerprint)] = now + cooldown_seconds
+
+def clear_rejected_fingerprint(peer_name: str = "", fingerprint: str = ""):
+    if fingerprint:
+        rejected_fingerprints.pop(fingerprint, None)
+    if peer_name:
+        for k in list(rejected_fingerprints.keys()):
+            if k == peer_name or (isinstance(k, tuple) and k[0] == peer_name):
+                rejected_fingerprints.pop(k, None)
+
 # Kotlin notification callbacks
 message_listener_callback = None
 session_listener_callback = None
@@ -1039,13 +1069,18 @@ def register_session_listener(callback):
 
 def _notify_session_established(peer_name, peer_fingerprint, endpoint, transport, about_me="") -> bool:
     """Let Android synchronously reject a key before application frames are read."""
+    if is_fingerprint_rejected(peer_name, peer_fingerprint):
+        return False
     if session_listener_callback is None:
         return True
     try:
         accepted = session_listener_callback.onSessionEstablished(
             peer_name, peer_fingerprint, endpoint, transport, about_me
         )
-        return accepted is not False
+        if accepted is False:
+            record_rejected_fingerprint(peer_name, peer_fingerprint)
+            return False
+        return True
     except Exception as callback_error:
         print("Error invoking session listener callback:", callback_error)
         return False
@@ -2013,6 +2048,10 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
         print("Cannot reconnect: loop is not running")
         return False
     
+    if is_fingerprint_rejected(peer_name, expected_fingerprint):
+        print(f"[RECONNECT] Suppressing reconnect to '{peer_name}' (fingerprint change pending approval)")
+        return False
+
     # Close old session
     session = _session_for_peer(peer_name, expected_fingerprint)
     if session and session.is_online:

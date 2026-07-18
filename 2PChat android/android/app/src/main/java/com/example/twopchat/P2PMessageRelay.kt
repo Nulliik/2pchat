@@ -1101,6 +1101,7 @@ object P2PMessageRelay {
                 Handler(Looper.getMainLooper()).post { onResult(false) }
                 return@thread
             }
+            PythonBridge.clearRejectedFingerprint(peerName)
             PythonBridge.rememberPeerName(accepted.acceptedFingerprint, peerName)
             val endpoint = accepted.endpoint.takeIf { it.isNotBlank() }
                 ?: prefs.getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()

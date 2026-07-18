@@ -425,6 +425,16 @@ object PythonBridge {
         }
     }
 
+    fun clearRejectedFingerprint(peerName: String, fingerprint: String = "") {
+        if (!isInitialized) return
+        try {
+            Python.getInstance().getModule("discovery_bridge")
+                .callAttr("clear_rejected_fingerprint", peerName, fingerprint)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clearing rejected fingerprint", e)
+        }
+    }
+
     fun clearAccountCaches() {
         synchronized(announceLock) {
             lastAnnounceAt.clear()
