@@ -67,6 +67,14 @@ internal fun ChatMessageBubble(
     onOpenVideo: (String) -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val myAvatarBitmap = remember(context) {
+        val sharedPrefs = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+        val uri = sharedPrefs.getString("profile_photo_uri", null)
+        com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, uri)
+    }
+    val isText = msg.attachmentType == null
+    val isOnlyEmoji = isText && isSingleEmoji(msg.text)
     val visibleState = remember(msg.id) {
         val isNew = msg.sentAtEpochMs > screenInitTime + 500L
         MutableTransitionState(if (isNew) false else true).apply {
@@ -81,7 +89,9 @@ internal fun ChatMessageBubble(
     }
 
     // Gradient for outgoing bubbles; solid surface for incoming
-    val bubbleModifier = if (msg.isMe) {
+    val bubbleModifier = if (isOnlyEmoji) {
+        Modifier
+    } else if (msg.isMe) {
         Modifier.background(
             brush = Brush.linearGradient(
                 colors = listOf(primaryColor, primaryColor.copy(alpha = 0.85f))
@@ -174,8 +184,11 @@ internal fun ChatMessageBubble(
                                 }
                             )
                             // Subtle border for incoming bubbles
-                            .then(if (!msg.isMe) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.08f), bubbleShape) else Modifier)
-                            .padding(horizontal = 16.dp, vertical = 11.dp)
+                            .then(if (!msg.isMe && !isOnlyEmoji) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.08f), bubbleShape) else Modifier)
+                            .padding(
+                                horizontal = if (isOnlyEmoji) 6.dp else 16.dp,
+                                vertical = if (isOnlyEmoji) 4.dp else 11.dp
+                            )
                             .widthIn(max = 280.dp)
                     ) {
                         Column {
@@ -428,13 +441,21 @@ internal fun ChatMessageBubble(
                                     }
                                 }
                                 else -> {
-                                    LinkifiedText(
-                                        text = msg.text,
-                                        textColor = textColor,
-                                        linkColor = linkColor,
-                                        fontSize = 15.sp,
-                                        lineHeight = 20.sp
-                                    )
+                                    if (isOnlyEmoji) {
+                                        Text(
+                                            text = msg.text.trim(),
+                                            fontSize = 72.sp,
+                                            lineHeight = 80.sp
+                                        )
+                                    } else {
+                                        LinkifiedText(
+                                            text = msg.text,
+                                            textColor = textColor,
+                                            linkColor = linkColor,
+                                            fontSize = 15.sp,
+                                            lineHeight = 20.sp
+                                        )
+                                    }
                                 }
                             }
                             Spacer(modifier = Modifier.height(4.dp))
@@ -444,7 +465,9 @@ internal fun ChatMessageBubble(
                             ) {
                                 Text(
                                     text = MessageTimestampFormatter.format(msg, appLanguage),
-                                    color = (if (msg.isMe) {
+                                    color = (if (isOnlyEmoji) {
+                                        onSurfaceColor.copy(alpha = 0.5f)
+                                    } else if (msg.isMe) {
                                         if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.65f)
                                     } else onSurfaceColor.copy(alpha = 0.5f)),
                                     fontSize = 9.sp
@@ -463,7 +486,9 @@ internal fun ChatMessageBubble(
                                         isRead -> "✓✓"
                                         else -> "✓"
                                     }
-                                    val statusColor = if (msg.isMe) {
+                                    val statusColor = if (isOnlyEmoji) {
+                                        if (isRead) primaryColor else onSurfaceVariant.copy(alpha = 0.4f)
+                                    } else if (msg.isMe) {
                                         if (primaryColor == com.example.twopchat.theme.MintGreen) {
                                             if (isRead) StealthBlack else StealthBlack.copy(alpha = 0.4f)
                                         } else {
@@ -487,26 +512,86 @@ internal fun ChatMessageBubble(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         msg.reactions.forEach { (emoji, senders) ->
-                                            Surface(
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = if (msg.isMe) {
+                                            val hasLocalUserReacted = senders.contains("Me") || senders.contains("me")
+                                            val chipBg = if (hasLocalUserReacted) {
+                                                if (isOnlyEmoji) {
+                                                    primaryColor
+                                                } else if (msg.isMe) {
+                                                    Color.White
+                                                } else {
+                                                    primaryColor
+                                                }
+                                            } else {
+                                                if (isOnlyEmoji) {
+                                                    onSurfaceColor.copy(alpha = 0.08f)
+                                                } else if (msg.isMe) {
                                                     if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.25f)
-                                                } else primaryColor.copy(alpha = 0.15f)
+                                                } else {
+                                                    primaryColor.copy(alpha = 0.12f)
+                                                }
+                                            }
+                                            
+                                            val contentColor = if (hasLocalUserReacted) {
+                                                if (isOnlyEmoji) {
+                                                    Color.White
+                                                } else if (msg.isMe) {
+                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else primaryColor
+                                                } else {
+                                                    Color.White
+                                                }
+                                            } else {
+                                                if (isOnlyEmoji) {
+                                                    onSurfaceColor.copy(alpha = 0.85f)
+                                                } else if (msg.isMe) {
+                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+                                                } else {
+                                                    onSurfaceColor.copy(alpha = 0.85f)
+                                                }
+                                            }
+
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = chipBg,
+                                                modifier = Modifier.padding(vertical = 2.dp)
                                             ) {
                                                 Row(
-                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                 ) {
                                                     Text(text = emoji, fontSize = 11.sp)
-                                                    if (senders.size > 1) {
-                                                        Text(
-                                                            text = " ${senders.size}",
-                                                            fontSize = 9.sp,
-                                                            color = if (msg.isMe) {
-                                                                if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
-                                                            } else onSurfaceColor,
-                                                            fontWeight = FontWeight.Bold
-                                                        )
+                                                    
+                                                    senders.forEach { sender ->
+                                                        val avatar = if (sender.equals("Me", ignoreCase = true)) {
+                                                            myAvatarBitmap
+                                                        } else {
+                                                            com.example.twopchat.P2PMessageRelay.peerAvatars[peerName]
+                                                        }
+                                                        
+                                                        if (avatar != null) {
+                                                            Image(
+                                                                bitmap = avatar.asImageBitmap(),
+                                                                contentDescription = "Avatar",
+                                                                modifier = Modifier
+                                                                    .size(16.dp)
+                                                                    .clip(CircleShape)
+                                                            )
+                                                        } else {
+                                                            val initials = if (sender.equals("Me", ignoreCase = true)) "M" else sender.take(1).uppercase()
+                                                            Box(
+                                                                contentAlignment = Alignment.Center,
+                                                                modifier = Modifier
+                                                                    .size(16.dp)
+                                                                    .background(contentColor.copy(alpha = 0.2f), shape = CircleShape)
+                                                            ) {
+                                                                Text(
+                                                                    text = initials,
+                                                                    fontSize = 9.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = contentColor
+                                                                )
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -594,4 +679,60 @@ internal fun LinkifiedText(
         fontWeight = fontWeight,
         modifier = modifier
     )
+}
+
+private fun isEmojiCodePoint(codePoint: Int): Boolean {
+    return (codePoint in 0x1F300..0x1F5FF) || // Misc Symbols & Pictographs
+           (codePoint in 0x1F600..0x1F64F) || // Emoticons
+           (codePoint in 0x1F680..0x1F6FF) || // Transport & Map
+           (codePoint in 0x2600..0x26FF) ||   // Misc Symbols
+           (codePoint in 0x2700..0x27BF) ||   // Dingbats
+           (codePoint in 0x1F900..0x1F9FF) || // Supplemental Symbols & Pictographs
+           (codePoint in 0x1FA70..0x1FAFF) || // Symbols & Pictographs Extended-A
+           (codePoint in 0x1F1E6..0x1F1FF) || // Flags (Regional Indicators)
+           (codePoint in 0xE0020..0xE007F) || // Tag characters (flag subregions)
+           (codePoint in 0x1F000..0x1F02F) || // Mahjong
+           (codePoint in 0x1F0A0..0x1F0FF) || // Playing cards
+           (codePoint in 0x2190..0x21FF) ||   // Arrows (some are emojis)
+           (codePoint in 0x2300..0x23FF) ||   // Misc Technical
+           (codePoint in 0x2900..0x297F) ||   // Supplemental Arrows
+           (codePoint in 0x2B00..0x2BFF) ||   // Misc Symbols & Arrows
+           (codePoint in 0x3030..0x303D) ||
+           (codePoint in 0x3297..0x3299) ||
+           (codePoint == 0x203C || codePoint == 0x2049) ||
+           (codePoint in 0x2050..0x205F) ||
+           (codePoint in 0x2000..0x206F && codePoint == 0x200D) // ZWJ
+}
+
+private fun isSingleEmoji(text: String): Boolean {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return false
+    
+    val boundary = java.text.BreakIterator.getCharacterInstance()
+    boundary.setText(trimmed)
+    var graphemeCount = 0
+    var start = boundary.first()
+    var end = boundary.next()
+    var singleGrapheme = ""
+    while (end != java.text.BreakIterator.DONE) {
+        graphemeCount++
+        if (graphemeCount == 1) {
+            singleGrapheme = trimmed.substring(start, end)
+        }
+        start = end
+        end = boundary.next()
+    }
+    
+    if (graphemeCount != 1) return false
+    
+    var i = 0
+    while (i < singleGrapheme.length) {
+        val codePoint = singleGrapheme.codePointAt(i)
+        if (isEmojiCodePoint(codePoint)) {
+            return true
+        }
+        i += Character.charCount(codePoint)
+    }
+    
+    return false
 }
