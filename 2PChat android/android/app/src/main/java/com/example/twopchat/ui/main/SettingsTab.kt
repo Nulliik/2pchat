@@ -111,6 +111,7 @@ fun SettingsTab(
     var yggdrasilRouting by remember { mutableStateOf(sharedPrefs.getBoolean("settings_yggdrasil", true)) }
     var ipv4Routing by remember { mutableStateOf(sharedPrefs.getBoolean("settings_ipv4", true)) }
     var persistChatHistory by remember { mutableStateOf(sharedPrefs.getBoolean("persist_chat_history", true)) }
+    var linkPreviewsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_link_previews", true)) }
     var stealthDisguise by remember { mutableStateOf(sharedPrefs.getBoolean("settings_stealth_disguise", false)) }
     var showDisguiseInstructionDialog by remember { mutableStateOf(false) }
     
@@ -838,6 +839,40 @@ fun SettingsTab(
                                         onCheckedChange = {
                                             persistChatHistory = it
                                             sharedPrefs.edit().putBoolean("persist_chat_history", it).apply()
+                                        },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = primaryColor,
+                                            checkedTrackColor = primaryColor.copy(alpha = 0.3f)
+                                        )
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                // Link Previews Toggle
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = Localizations.getString("link_previews", appLanguage),
+                                            fontWeight = FontWeight.Medium,
+                                            color = onSurfaceColor
+                                        )
+                                        Text(
+                                            text = Localizations.getString("link_previews_desc", appLanguage),
+                                            fontSize = 12.sp,
+                                            color = onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = linkPreviewsEnabled,
+                                        onCheckedChange = {
+                                            linkPreviewsEnabled = it
+                                            sharedPrefs.edit().putBoolean("settings_link_previews", it).apply()
                                         },
                                         colors = SwitchDefaults.colors(
                                             checkedThumbColor = primaryColor,

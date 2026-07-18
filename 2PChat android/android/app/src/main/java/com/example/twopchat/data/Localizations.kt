@@ -117,6 +117,8 @@ object Localizations {
         "language" to "Language",
         "app_language" to "App Language",
         "app_language_desc" to "Choose interface localization",
+        "link_previews" to "Link Previews",
+        "link_previews_desc" to "Fetch titles and snippets for web links",
         "premium_icons" to "Premium Launcher Icons",
         "select_icons_desc" to "Select from 4 bespoke alternative styles:",
 
@@ -264,6 +266,8 @@ object Localizations {
         "language" to "Язык",
         "app_language" to "Язык интерфейса",
         "app_language_desc" to "Выберите локализацию интерфейса",
+        "link_previews" to "Предпросмотр ссылок",
+        "link_previews_desc" to "Отображать заголовки и превью для ссылок в сообщениях",
         "premium_icons" to "Премиальные иконки запуска",
         "select_icons_desc" to "Выберите один из 4 уникальных стилей:",
 

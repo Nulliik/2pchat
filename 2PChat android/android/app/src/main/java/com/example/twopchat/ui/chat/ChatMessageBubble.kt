@@ -38,6 +38,10 @@ import androidx.compose.ui.unit.sp
 import com.example.twopchat.R
 import com.example.twopchat.theme.StealthBlack
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.TextLinkStyles
@@ -68,13 +72,20 @@ internal fun ChatMessageBubble(
 ) {
     val coroutineScope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
+    val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
     val myAvatarBitmap = remember(context) {
-        val sharedPrefs = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
         val uri = sharedPrefs.getString("profile_photo_uri", null)
         com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, uri)
     }
+    val linkPreviewsEnabled = remember(sharedPrefs) { sharedPrefs.getBoolean("settings_link_previews", true) }
     val isText = msg.attachmentType == null
     val isOnlyEmoji = isText && isSingleEmoji(msg.text)
+    val detectedUrl = remember(msg.text, isText) {
+        if (!isText) null else {
+            val matcher = URL_PATTERN.matcher(msg.text)
+            if (matcher.find()) matcher.group(1) else null
+        }
+    }
     val visibleState = remember(msg.id) {
         val isNew = msg.sentAtEpochMs > screenInitTime + 500L
         MutableTransitionState(if (isNew) false else true).apply {
@@ -279,16 +290,17 @@ internal fun ChatMessageBubble(
                                                     fontSize = 15.sp,
                                                     lineHeight = 20.sp
                                                 )
+                                                if (linkPreviewsEnabled && detectedUrl != null) {
+                                                    LinkPreviewCard(
+                                                        url = detectedUrl,
+                                                        isMe = msg.isMe,
+                                                        primaryColor = primaryColor,
+                                                        onSurfaceColor = onSurfaceColor,
+                                                        surfaceColor = surfaceColor
+                                                    )
+                                                }
                                             }
                                         }
-                                    } else {
-                                        LinkifiedText(
-                                            text = msg.text,
-                                            textColor = textColor,
-                                            linkColor = linkColor,
-                                            fontSize = 15.sp,
-                                            lineHeight = 20.sp
-                                        )
                                     }
                                 }
                                 "VIDEO" -> {
@@ -455,6 +467,15 @@ internal fun ChatMessageBubble(
                                             fontSize = 15.sp,
                                             lineHeight = 20.sp
                                         )
+                                        if (linkPreviewsEnabled && detectedUrl != null) {
+                                            LinkPreviewCard(
+                                                url = detectedUrl,
+                                                isMe = msg.isMe,
+                                                primaryColor = primaryColor,
+                                                onSurfaceColor = onSurfaceColor,
+                                                surfaceColor = surfaceColor
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -736,3 +757,82 @@ private fun isSingleEmoji(text: String): Boolean {
     
     return false
 }
+
+@Composable
+internal fun LinkPreviewCard(
+    url: String,
+    isMe: Boolean,
+    primaryColor: Color,
+    onSurfaceColor: Color,
+    surfaceColor: Color
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val metadataState = remember(url) { mutableStateOf<LinkPreviewMetadata?>(null) }
+
+    LaunchedEffect(url) {
+        metadataState.value = LinkPreviewFetcher.fetchPreview(url)
+    }
+
+    val previewData = metadataState.value ?: return
+
+    val cardBg = if (isMe) {
+        Color.White.copy(alpha = 0.15f)
+    } else {
+        onSurfaceColor.copy(alpha = 0.06f)
+    }
+
+    val titleColor = if (isMe) Color.White else onSurfaceColor
+    val descColor = if (isMe) Color.White.copy(alpha = 0.8f) else onSurfaceColor.copy(alpha = 0.7f)
+    val siteColor = if (isMe) Color.White.copy(alpha = 0.9f) else primaryColor
+
+    Spacer(modifier = Modifier.height(6.dp))
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(cardBg)
+            .clickable {
+                try {
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(previewData.url))
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            }
+            .padding(10.dp)
+    ) {
+        if (!previewData.siteName.isNullOrBlank()) {
+            Text(
+                text = "🌐  " + previewData.siteName,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = siteColor,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(3.dp))
+        }
+
+        if (!previewData.title.isNullOrBlank()) {
+            Text(
+                text = previewData.title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = titleColor,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+        }
+
+        if (!previewData.description.isNullOrBlank() && previewData.description != previewData.title) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = previewData.description,
+                fontSize = 11.sp,
+                color = descColor,
+                maxLines = 3,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                lineHeight = 15.sp
+            )
+        }
+    }
+}
+
