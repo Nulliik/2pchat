@@ -1373,7 +1373,12 @@ fun SettingsTab(
                         ) {
                             Text(text = lang, fontSize = 15.sp, color = onSurfaceColor)
                             if (lang == appLanguage) {
-                                Text(text = "✓", color = primaryColor, fontWeight = FontWeight.Bold)
+                                Icon(
+                                    painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_check_bold),
+                                    contentDescription = "Selected",
+                                    tint = primaryColor,
+                                    modifier = Modifier.size(28.dp)
+                                )
                             }
                         }
                     }
