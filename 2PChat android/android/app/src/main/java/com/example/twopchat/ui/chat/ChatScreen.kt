@@ -388,11 +388,14 @@ fun ChatScreen(
             // Mark all existing incoming messages as READ in database and send read receipts
             var hasUnread = false
             initialMessages.forEach { msg ->
-                if (!msg.isMe && msg.status != "READ") {
+                if (!msg.isMe && msg.status?.startsWith("READ") != true) {
                     hasUnread = true
                     val idx = initialMessages.indexOfFirst { it.id == msg.id }
                     if (idx != -1) {
-                        initialMessages[idx] = msg.copy(status = "READ")
+                        val current = initialMessages[idx]
+                        val oldStatus = current.status ?: ""
+                        val newStatus = MessageDeliveryStatus.merge(oldStatus, "READ")
+                        initialMessages[idx] = msg.copy(status = newStatus)
                     }
                     P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, msg.id)
                 }
@@ -429,7 +432,7 @@ fun ChatScreen(
             override fun onMessageReceived(sender: String, message: Message) {
                 if (sender == peerName) {
                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                    val rxMsg = message.copy(status = "READ")
+                    val rxMsg = message.copy(status = MessageDeliveryStatus.merge(message.status, "READ"))
                     if (peerName != "Saved Messages") {
                         P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, rxMsg.id)
                         coroutineScope.launch(Dispatchers.IO) {

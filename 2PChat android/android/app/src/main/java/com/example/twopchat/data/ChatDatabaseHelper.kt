@@ -420,10 +420,16 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val db = this.safeWritableDatabase
         db.beginTransaction()
         try {
-            val values = ContentValues().apply {
+            val valuesEdited = ContentValues().apply {
+                put(KEY_STATUS, "READ_edited")
+            }
+            db.update(TABLE_MESSAGES, valuesEdited, "$KEY_PEER_NAME = ? AND $KEY_IS_ME = 0 AND $KEY_STATUS LIKE ?", arrayOf(peerName, "%edited%"))
+
+            val valuesNormal = ContentValues().apply {
                 put(KEY_STATUS, "READ")
             }
-            db.update(TABLE_MESSAGES, values, "$KEY_PEER_NAME = ? AND $KEY_IS_ME = 0 AND $KEY_STATUS != ?", arrayOf(peerName, "READ"))
+            db.update(TABLE_MESSAGES, valuesNormal, "$KEY_PEER_NAME = ? AND $KEY_IS_ME = 0 AND $KEY_STATUS NOT LIKE ? AND ($KEY_STATUS IS NULL OR $KEY_STATUS NOT LIKE ?)", arrayOf(peerName, "%edited%", "READ%"))
+
             db.setTransactionSuccessful()
         } catch (e: Exception) {
             e.printStackTrace()
