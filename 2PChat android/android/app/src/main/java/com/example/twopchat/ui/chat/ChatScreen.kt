@@ -132,27 +132,41 @@ fun ChatScreen(
         }
     }
     val context = LocalContext.current
-    var pendingDownloadPath by remember { mutableStateOf<String?>(null) }
+    var pendingDownloadMsg by remember { mutableStateOf<Message?>(null) }
 
-    val galleryWritePermissionLauncher = rememberLauncherForActivityResult(
+    val storageWritePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
-        val path = pendingDownloadPath
-        if (isGranted && path != null) {
+        val msg = pendingDownloadMsg
+        if (isGranted && msg != null && msg.attachmentUri != null) {
             coroutineScope.launch(Dispatchers.IO) {
-                val uri = saveImageToPublicGallery(context, path)
+                val uri = if (msg.attachmentType == "IMAGE") {
+                    saveImageToPublicGallery(context, msg.attachmentUri)
+                } else {
+                    saveFileToPublicDownloads(context, msg.attachmentUri, msg.attachmentName ?: "file")
+                }
                 withContext(Dispatchers.Main) {
                     if (uri != null) {
-                        Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
+                        val successText = if (msg.attachmentType == "IMAGE") {
+                            if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery"
+                        } else {
+                            if (appLanguage == "Русский") "Файл сохранен в Загрузки" else "File saved to Downloads"
+                        }
+                        Toast.makeText(context, successText, Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image", Toast.LENGTH_SHORT).show()
+                        val failText = if (msg.attachmentType == "IMAGE") {
+                            if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image"
+                        } else {
+                            if (appLanguage == "Русский") "Не удалось сохранить файл" else "Failed to save file"
+                        }
+                        Toast.makeText(context, failText, Toast.LENGTH_SHORT).show()
                     }
                 }
             }
-        } else if (path != null) {
+        } else if (msg != null) {
             Toast.makeText(context, if (appLanguage == "Русский") "Разрешение на запись отклонено" else "Storage permission denied", Toast.LENGTH_SHORT).show()
         }
-        pendingDownloadPath = null
+        pendingDownloadMsg = null
     }
     val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
     var pinnedMsgId by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_id_${peerName}", null)) }
@@ -808,12 +822,14 @@ fun ChatScreen(
                 val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                 val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                 val initialStatus = if (endpoint != null) "SENT" else "PENDING"
+                val detectedType = VoiceMessageSupport.attachmentType(fileName, "")
+                val displayMsgText = if (detectedType == "IMAGE") "Sent an image" else if (detectedType == "VIDEO") "Sent a video" else fileName
                 val outMsg = Message(
                     id = newMessageId(),
-                    text = fileName,
+                    text = displayMsgText,
                     isMe = true,
                     timestamp = time,
-                    attachmentType = "FILE",
+                    attachmentType = detectedType,
                     attachmentUri = tempFile.absolutePath,
                     attachmentName = fileName,
                     status = initialStatus
@@ -1451,14 +1467,22 @@ remove("pinned_msg_id_${peerName}")
                             )
                         }
 
-                        // Save Image (Only if attachmentType is IMAGE)
-                        if (msg.attachmentType == "IMAGE" && msg.attachmentUri != null) {
+                        // Save Attachment (If attachmentUri != null, regardless of whether it is IMAGE, VIDEO, or FILE)
+                        if (msg.attachmentUri != null) {
+                            val isImage = msg.attachmentType == "IMAGE"
+                            val isVideo = msg.attachmentType == "VIDEO"
+                            val title = if (isImage) {
+                                if (appLanguage == "Русский") "Скачать изображение" else "Save Image"
+                            } else if (isVideo) {
+                                if (appLanguage == "Русский") "Скачать видео" else "Save Video"
+                            } else {
+                                if (appLanguage == "Русский") "Скачать файл" else "Save File"
+                            }
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
                                     .clickable {
-                                        val path = msg.attachmentUri
                                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
                                             ContextCompat.checkSelfPermission(
                                                 context,
@@ -1466,18 +1490,32 @@ remove("pinned_msg_id_${peerName}")
                                             ) == PackageManager.PERMISSION_GRANTED
                                         ) {
                                             coroutineScope.launch(Dispatchers.IO) {
-                                                val uri = saveImageToPublicGallery(context, path)
+                                                val uri = if (isImage) {
+                                                    saveImageToPublicGallery(context, msg.attachmentUri)
+                                                } else {
+                                                    saveFileToPublicDownloads(context, msg.attachmentUri, msg.attachmentName ?: "file")
+                                                }
                                                 withContext(Dispatchers.Main) {
                                                     if (uri != null) {
-                                                        Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
+                                                        val successText = if (isImage) {
+                                                            if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery"
+                                                        } else {
+                                                            if (appLanguage == "Русский") "Файл сохранен в Загрузки" else "File saved to Downloads"
+                                                        }
+                                                        Toast.makeText(context, successText, Toast.LENGTH_SHORT).show()
                                                     } else {
-                                                        Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image", Toast.LENGTH_SHORT).show()
+                                                        val failText = if (isImage) {
+                                                            if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image"
+                                                        } else {
+                                                            if (appLanguage == "Русский") "Не удалось сохранить файл" else "Failed to save file"
+                                                        }
+                                                        Toast.makeText(context, failText, Toast.LENGTH_SHORT).show()
                                                     }
                                                 }
                                             }
                                         } else {
-                                            pendingDownloadPath = path
-                                            galleryWritePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                                            pendingDownloadMsg = msg
+                                            storageWritePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                                         }
                                         selectedMessageForOptions = null
                                     }
@@ -1486,13 +1524,13 @@ remove("pinned_msg_id_${peerName}")
                             ) {
                                 Icon(
                                     painter = painterResource(id = R.drawable.ic_download),
-                                    contentDescription = "Save Image",
+                                    contentDescription = "Save Attachment",
                                     tint = onSurfaceColor,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(14.dp))
                                 Text(
-                                    text = if (appLanguage == "Русский") "Скачать изображение" else "Save Image",
+                                    text = title,
                                     fontSize = 15.sp,
                                     color = onSurfaceColor
                                 )
@@ -2390,4 +2428,58 @@ remove("pinned_msg_id_${peerName}")
             )
         }
     }
+}
+
+fun saveFileToPublicDownloads(context: android.content.Context, filePath: String, originalName: String): Uri? {
+    val srcFile = java.io.File(filePath)
+    if (!srcFile.exists()) return null
+
+    val fileName = originalName.ifBlank { srcFile.name }
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            val contentValues = android.content.ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + java.io.File.separator + "2PChat")
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+
+            val fileUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+            if (fileUri != null) {
+                resolver.openOutputStream(fileUri).use { outputStream ->
+                    if (outputStream != null) {
+                        java.io.FileInputStream(srcFile).use { inputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
+                    }
+                }
+                contentValues.clear()
+                contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(fileUri, contentValues, null, null)
+                return fileUri
+            }
+        } else {
+            val targetDir = java.io.File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "2PChat"
+            )
+            if (!targetDir.exists()) {
+                targetDir.mkdirs()
+            }
+            val destFile = java.io.File(targetDir, fileName)
+            java.io.FileInputStream(srcFile).use { inputStream ->
+                java.io.FileOutputStream(destFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                }
+            }
+            // Trigger MediaScanner
+            val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
+            mediaScanIntent.data = Uri.fromFile(destFile)
+            context.sendBroadcast(mediaScanIntent)
+            return Uri.fromFile(destFile)
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    return null
 }
