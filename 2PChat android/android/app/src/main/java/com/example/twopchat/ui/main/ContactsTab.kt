@@ -994,52 +994,37 @@ fun ContactsTab(
             }
 
             if (contactsToDisplay.isEmpty()) {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(32.dp))
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = onSurfaceColor.copy(alpha = 0.04f)),
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .border(1.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                    colors = CardDefaults.cardColors(containerColor = onSurfaceColor.copy(alpha = 0.015f)),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp, horizontal = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size(36.dp)
-                                .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
-                        ) {
-                            Icon(
-                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_shield_status),
-                                contentDescription = "Tip Icon",
-                                tint = primaryColor,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = if (appLanguage == "Русский") "СОВЕТ" else "TIP",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = primaryColor,
-                                letterSpacing = 1.sp
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = if (appLanguage == "Русский") {
-                                    "Иногда может потребоваться несколько попыток поиска"
-                                } else {
-                                    "Sometimes it may take several search attempts"
-                                },
-                                fontSize = 13.sp,
-                                color = onSurfaceColor.copy(alpha = 0.85f),
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
+                        Icon(
+                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_search),
+                            contentDescription = "Search Tip Icon",
+                            tint = onSurfaceColor.copy(alpha = 0.15f),
+                            modifier = Modifier.size(56.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = if (appLanguage == "Русский") {
+                                "Иногда может потребоваться несколько попыток поиска"
+                            } else {
+                                "Sometimes it may take several search attempts"
+                            },
+                            fontSize = 13.sp,
+                            color = onSurfaceColor.copy(alpha = 0.45f),
+                            textAlign = TextAlign.Center,
+                            lineHeight = 18.sp
+                        )
                     }
                 }
             }
