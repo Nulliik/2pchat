@@ -56,6 +56,12 @@ object P2PMessageRelay {
             ?.take(12)
             .orEmpty()
 
+    fun injectLocalDiscoveryCandidate(peerName: String, peerFingerprint: String, endpoint: String) {
+        localPeerCandidates
+            .computeIfAbsent(localPeerCandidateKey(peerName)) { java.util.concurrent.ConcurrentHashMap() }
+            .put(peerFingerprint, endpoint)
+    }
+
     fun listenerPort(context: Context): Int = P2PPreferences.listenerPort(context)
 
     fun refreshAnnouncement(context: Context) {

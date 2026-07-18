@@ -179,6 +179,10 @@ fun ContactsTab(
                             "Invalid invite: missing token or 32-byte fingerprint"
                         }
                     } else {
+                        val directIp = uri.getQueryParameter("ip")
+                        if (!directIp.isNullOrBlank()) {
+                            com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(parsedName, expectedFp, directIp)
+                        }
                         isResolvingInvite = true
                         resolveInviteStatus = if (appLanguage == "Русский") "Поиск собеседника..." else "Finding peer..."
                         coroutineScope.launch(Dispatchers.IO) {
