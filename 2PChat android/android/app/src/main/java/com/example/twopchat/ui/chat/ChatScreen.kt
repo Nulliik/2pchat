@@ -96,10 +96,28 @@ internal fun shouldCountIncomingMessage(
     newestMessageIsMine = false,
 )
 
+internal fun didAppendNewestMessage(
+    previousMessageCount: Int,
+    currentMessageCount: Int,
+    previousNewestMessageId: String?,
+    currentNewestMessageId: String?,
+): Boolean = currentMessageCount > previousMessageCount &&
+    currentNewestMessageId != null &&
+    currentNewestMessageId != previousNewestMessageId
+
 internal fun isMessageListAtBottom(
     totalItemCount: Int,
     lastVisibleItemIndex: Int,
 ): Boolean = totalItemCount <= 0 || lastVisibleItemIndex >= totalItemCount - 1
+
+internal fun initialChatScrollIndex(
+    messageCount: Int,
+    unreadMessageCount: Int,
+): Int {
+    if (messageCount <= 0) return -1
+    if (unreadMessageCount <= 0) return messageCount - 1
+    return (messageCount - unreadMessageCount).coerceIn(0, messageCount - 1)
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -142,8 +160,10 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val arrivalAnimationTracker = remember(peerName) { MessageArrivalAnimationTracker() }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
-    var hasScrolledToBottomOnInit by remember(peerName) { mutableStateOf(false) }
+    var hasAppliedInitialScroll by remember(peerName) { mutableStateOf(false) }
+    var isFastHistoryLoaded by remember(peerName) { mutableStateOf(false) }
     var previousMessageCount by remember(peerName) { mutableIntStateOf(0) }
+    var previousNewestMessageId by remember(peerName) { mutableStateOf<String?>(null) }
     var previousTypingState by remember(peerName) { mutableStateOf(false) }
     var newMessagesBelowCount by remember(peerName) { mutableIntStateOf(0) }
     val messageListAtBottom by remember {
@@ -331,14 +351,19 @@ fun ChatScreen(
     val chatViewModel: ChatScreenViewModel = viewModel(key = "chat:$peerName")
     val initialMessages = chatViewModel.messages
     var isHistoryLoading by chatViewModel.isHistoryLoading
+    val unreadMessagesOnOpen = remember(peerName, isActive) {
+        if (isActive) sharedPrefs.getInt("unread_count_$peerName", 0) else 0
+    }
 
     LaunchedEffect(peerName, isActive) {
         if (!isActive) return@LaunchedEffect
+        hasAppliedInitialScroll = false
+        isFastHistoryLoaded = false
+        newMessagesBelowCount = 0
         // Navigation keeps the keyed ViewModel alive after leaving a chat. Refresh
         // every time the entry becomes active so messages received on MainScreen
         // are loaded from the database instead of leaving a stale in-memory list.
         isHistoryLoading = initialMessages.isEmpty()
-        val currentSnapshot = initialMessages.toList()
         val localDefaults = when (peerName) {
             "Saved Messages" -> listOf(
                 Message(
@@ -352,6 +377,33 @@ fun ChatScreen(
             else -> emptyList()
         }
 
+        // Reading and decrypting a large SQLCipher history can take noticeable
+        // time. Fetch only the indexed recent unread rows first so every message
+        // received while the chat was inactive appears immediately.
+        val recentPersistedMessages = if (persistEnabled) {
+            withContext(Dispatchers.IO) {
+                db.getMessagesForPeerPaged(
+                    peerName = peerName,
+                    limit = fastHistoryMessageLimit(unreadMessagesOnOpen),
+                    offset = 0,
+                )
+            }
+        } else {
+            emptyList()
+        }
+        val fastSnapshot = mergeRecentHistoryMessages(
+            currentMessages = initialMessages.toList(),
+            recentPersistedMessages = recentPersistedMessages,
+        )
+        if (fastSnapshot != initialMessages.toList()) {
+            initialMessages.clear()
+            initialMessages.addAll(fastSnapshot)
+        }
+        isFastHistoryLoaded = true
+        if (fastSnapshot.isNotEmpty()) {
+            isHistoryLoading = false
+        }
+
         val list = withContext(Dispatchers.IO) {
             db.getMessagesForPeer(peerName)
         }
@@ -362,12 +414,16 @@ fun ChatScreen(
         }
         val mergedMessages = mergeHistorySnapshot(
             persistedMessages = list,
-            currentMessages = currentSnapshot,
+            // Capture after the database query. A live callback may have added a
+            // message while SQLCipher was reading and decrypting the history.
+            currentMessages = initialMessages.toList(),
             defaultMessages = localDefaults,
             persistHistory = persistEnabled,
         )
-        initialMessages.clear()
-        initialMessages.addAll(mergedMessages)
+        if (mergedMessages != initialMessages.toList()) {
+            initialMessages.clear()
+            initialMessages.addAll(mergedMessages)
+        }
         isHistoryLoading = false
     }
 
@@ -418,33 +474,13 @@ fun ChatScreen(
     var myTypingState by remember { mutableStateOf(false) }
     val isTyping = P2PMessageRelay.peerTypingStates[peerName] ?: false
 
-    LaunchedEffect(peerName, isHistoryLoading) {
-        if (isHistoryLoading) return@LaunchedEffect
+    LaunchedEffect(peerName, isActive) {
+        if (!isActive) return@LaunchedEffect
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
         if (peerName != "Saved Messages") {
             if (endpoint != null) {
                 P2PMessageRelay.shareAvatar(context, peerName, endpoint)
                 P2PMessageRelay.processOfflineQueue(context, peerName, endpoint)
-            }
-            // Mark all existing incoming messages as READ in database and send read receipts
-            var hasUnread = false
-            initialMessages.forEach { msg ->
-                if (!msg.isMe && msg.status?.startsWith("READ") != true) {
-                    hasUnread = true
-                    val idx = initialMessages.indexOfFirst { it.id == msg.id }
-                    if (idx != -1) {
-                        val current = initialMessages[idx]
-                        val oldStatus = current.status ?: ""
-                        val newStatus = MessageDeliveryStatus.merge(oldStatus, "READ")
-                        initialMessages[idx] = msg.copy(status = newStatus)
-                    }
-                    P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, msg.id)
-                }
-            }
-            if (hasUnread) {
-                withContext(Dispatchers.IO) {
-                    db.markMessagesAsRead(peerName)
-                }
             }
         }
     }
@@ -472,20 +508,17 @@ fun ChatScreen(
         object : P2PMessageRelay.MessageListener {
             override fun onMessageReceived(sender: String, message: Message) {
                 if (sender == peerName) {
-                    val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                    val rxMsg = message.copy(status = MessageDeliveryStatus.merge(message.status, "READ"))
-                    if (peerName != "Saved Messages") {
-                        P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, rxMsg.id)
-                        coroutineScope.launch(Dispatchers.IO) {
-                            db.updateMessageStatus(rxMsg.id, "READ")
-                        }
-                    }
+                    val rxMsg = message
                     val existingIndex = initialMessages.indexOfFirst { it.id == rxMsg.id }
                     if (existingIndex == -1) {
                         val layoutInfo = listState.layoutInfo
                         val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
                         if (shouldCountIncomingMessage(layoutInfo.totalItemsCount, lastVisibleItemIndex)) {
                             newMessagesBelowCount += 1
+                        }
+                        val unreadKey = "unread_count_$peerName"
+                        sharedPrefs.edit {
+                            putInt(unreadKey, sharedPrefs.getInt(unreadKey, 0) + 1)
                         }
                         arrivalAnimationTracker.mark(rxMsg.id)
                         initialMessages.add(rxMsg)
@@ -617,7 +650,6 @@ fun ChatScreen(
     DisposableEffect(peerName, isActive) {
         if (isActive) {
             P2PMessageRelay.activeChatPeerName = peerName
-            sharedPrefs.edit().putInt("unread_count_$peerName", 0).apply()
             P2PMessageRelay.registerMessageListener(messageListener)
         }
         onDispose {
@@ -926,26 +958,101 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(initialMessages.size, isTyping, isSearchMode) {
+    LaunchedEffect(peerName, isSearchMode, isFastHistoryLoaded, hasAppliedInitialScroll) {
+        if (
+            peerName == "Saved Messages" ||
+            isSearchMode ||
+            !isFastHistoryLoaded ||
+            !hasAppliedInitialScroll
+        ) {
+            return@LaunchedEffect
+        }
+
+        snapshotFlow {
+            val lastVisibleMessageIndex = listState.layoutInfo.visibleItemsInfo
+                .lastOrNull()
+                ?.index
+                ?.coerceAtMost(initialMessages.lastIndex)
+                ?: -1
+            if (lastVisibleMessageIndex < 0) {
+                emptyList()
+            } else {
+                initialMessages
+                    .take(lastVisibleMessageIndex + 1)
+                    .filter { message ->
+                        !message.isMe && message.status?.startsWith("READ") != true
+                    }
+                    .map { it.id }
+            }
+        }.collect { visibleUnreadIds ->
+            if (visibleUnreadIds.isEmpty()) return@collect
+
+            val visibleUnreadIdSet = visibleUnreadIds.toSet()
+            initialMessages.indices.forEach { index ->
+                val message = initialMessages[index]
+                if (message.id in visibleUnreadIdSet && !message.isMe) {
+                    initialMessages[index] = message.copy(
+                        status = MessageDeliveryStatus.merge(message.status, "READ")
+                    )
+                }
+            }
+
+            val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+            visibleUnreadIds.forEach { messageId ->
+                P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, messageId)
+            }
+            withContext(Dispatchers.IO) {
+                visibleUnreadIds.forEach { messageId ->
+                    db.updateMessageStatus(messageId, "READ")
+                }
+            }
+
+            val unreadKey = "unread_count_$peerName"
+            sharedPrefs.edit {
+                putInt(
+                    unreadKey,
+                    (sharedPrefs.getInt(unreadKey, 0) - visibleUnreadIds.size).coerceAtLeast(0),
+                )
+            }
+        }
+    }
+
+    LaunchedEffect(initialMessages.size, isTyping, isSearchMode, isFastHistoryLoaded) {
+        if (!isFastHistoryLoaded) return@LaunchedEffect
         val currentMessageCount = initialMessages.size
         val previousItemCount = previousMessageCount + if (previousTypingState) 1 else 0
         val currentItemCount = currentMessageCount + if (isTyping) 1 else 0
         val lastIndex = currentItemCount - 1
+        val currentNewestMessageId = initialMessages.lastOrNull()?.id
 
         if (!isSearchMode && lastIndex >= 0) {
-            if (!hasScrolledToBottomOnInit) {
-                listState.scrollToItem(lastIndex)
-                hasScrolledToBottomOnInit = true
-            } else if (currentItemCount > previousItemCount) {
+            if (!hasAppliedInitialScroll) {
+                val initialIndex = initialChatScrollIndex(
+                    messageCount = currentMessageCount,
+                    unreadMessageCount = unreadMessagesOnOpen,
+                )
+                if (initialIndex >= 0) {
+                    listState.scrollToItem(initialIndex)
+                }
+                hasAppliedInitialScroll = true
+            } else if (
+                didAppendNewestMessage(
+                    previousMessageCount = previousMessageCount,
+                    currentMessageCount = currentMessageCount,
+                    previousNewestMessageId = previousNewestMessageId,
+                    currentNewestMessageId = currentNewestMessageId,
+                ) || (isTyping && !previousTypingState)
+            ) {
                 val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-                val messageWasAdded = currentMessageCount > previousMessageCount
-                val newestMessageIsMine = messageWasAdded && initialMessages.lastOrNull()?.isMe == true
+                val newestMessageIsMine = currentNewestMessageId != previousNewestMessageId &&
+                    initialMessages.lastOrNull()?.isMe == true
                 if (shouldAutoScrollAfterAppend(previousItemCount, lastVisibleIndex, newestMessageIsMine)) {
                     listState.animateScrollToItem(lastIndex)
                 }
             }
         }
         previousMessageCount = currentMessageCount
+        previousNewestMessageId = currentNewestMessageId
         previousTypingState = isTyping
     }
 

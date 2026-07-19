@@ -16,10 +16,45 @@ class ChatScreenViewModel : ViewModel() {
 
 }
 
+internal fun fastHistoryMessageLimit(unreadMessageCount: Int): Int =
+    unreadMessageCount.coerceIn(1, 100)
+
+/**
+ * Applies a cheap recent-history lookup without disturbing the order of an
+ * already visible conversation. Existing rows are refreshed in place while
+ * missing rows are inserted chronologically. The timestamp-aware insertion
+ * also handles a live message arriving while the database query is running.
+ */
+internal fun mergeRecentHistoryMessages(
+    currentMessages: List<Message>,
+    recentPersistedMessages: List<Message>,
+): List<Message> {
+    if (recentPersistedMessages.isEmpty()) return currentMessages
+    return currentMessages.toMutableList().apply {
+        recentPersistedMessages.forEach { persistedMessage ->
+            val existingIndex = indexOfFirst { it.id == persistedMessage.id }
+            if (existingIndex >= 0) {
+                this[existingIndex] = persistedMessage
+            } else {
+                val insertionIndex = indexOfFirst { existingMessage ->
+                    persistedMessage.sentAtEpochMs > 0L &&
+                        existingMessage.sentAtEpochMs > persistedMessage.sentAtEpochMs
+                }
+                if (insertionIndex >= 0) {
+                    add(insertionIndex, persistedMessage)
+                } else {
+                    add(persistedMessage)
+                }
+            }
+        }
+    }
+}
+
 /**
  * Combines a fresh database snapshot with messages which may have arrived on the
  * main thread while the database query was running. Persisted rows are
- * authoritative; only IDs absent from the snapshot are retained from memory.
+ * authoritative except that an in-memory READ update cannot be reverted by an
+ * older query snapshot which still contains a pre-read delivery state.
  */
 internal fun mergeHistorySnapshot(
     persistedMessages: List<Message>,
@@ -33,7 +68,24 @@ internal fun mergeHistorySnapshot(
         defaultMessages + persistedMessages.filter { it.status == "PENDING" }
     }
     val merged = LinkedHashMap<String, Message>()
-    visiblePersisted.forEach { merged[it.id] = it }
+    val currentById = currentMessages.associateBy { it.id }
+    visiblePersisted.forEach { persistedMessage ->
+        val currentMessage = currentById[persistedMessage.id]
+        val currentStatus = currentMessage?.status
+        val mergedStatus = if (
+            currentStatus?.startsWith("READ") == true &&
+            persistedMessage.status?.startsWith("READ") != true
+        ) {
+            currentStatus
+        } else {
+            persistedMessage.status
+        }
+        merged[persistedMessage.id] = if (mergedStatus == persistedMessage.status) {
+            persistedMessage
+        } else {
+            persistedMessage.copy(status = mergedStatus)
+        }
+    }
     currentMessages.forEach { message ->
         if (message.id !in merged) merged[message.id] = message
     }
