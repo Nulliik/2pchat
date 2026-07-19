@@ -31,16 +31,50 @@ import com.chaquo.python.android.AndroidPlatform
 
 import android.content.ComponentName
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.database.ContentObserver
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import android.widget.Toast
+import androidx.compose.ui.platform.WindowRecomposerFactory
+import androidx.compose.ui.platform.WindowRecomposerPolicy
+import androidx.compose.ui.platform.createLifecycleAwareWindowRecomposer
+import androidx.compose.ui.InternalComposeUiApi
 import com.example.twopchat.theme.StealthBlack
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.ui.disguise.CurrencyRatesScreen
 
+@OptIn(InternalComposeUiApi::class)
 class MainActivity : ComponentActivity() {
     private var lastInteractionTime = System.currentTimeMillis()
     private var lastStopTime = System.currentTimeMillis()
     private val triggerLockCheckState = mutableStateOf(0)
+    private val reduceMotionState = mutableStateOf(false)
+    private val appMotionDurationScale = AppMotionDurationScale()
+    private lateinit var appPreferences: SharedPreferences
+    private val motionPreferenceListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { preferences, key ->
+            if (key == REDUCE_MOTION_SETTING) {
+                val reduceMotion = preferences.getBoolean(REDUCE_MOTION_SETTING, false)
+                reduceMotionState.value = reduceMotion
+                appMotionDurationScale.animationsEnabled = !reduceMotion
+            }
+        }
+    private val systemAnimationScaleObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            updateSystemAnimationScale()
+        }
+    }
+
+    private fun updateSystemAnimationScale() {
+        appMotionDurationScale.systemScaleFactor = Settings.Global.getFloat(
+            contentResolver,
+            Settings.Global.ANIMATOR_DURATION_SCALE,
+            1f,
+        )
+    }
 
     private fun applyScreenSecurity() {
         val sharedPrefsTemp = getSharedPreferences("2pchat_prefs", MODE_PRIVATE)
@@ -100,6 +134,24 @@ class MainActivity : ComponentActivity() {
         }
 
         val sharedPrefs = getSharedPreferences("2pchat_prefs", MODE_PRIVATE)
+        appPreferences = sharedPrefs
+        reduceMotionState.value = sharedPrefs.getBoolean(REDUCE_MOTION_SETTING, false)
+        appMotionDurationScale.animationsEnabled = !reduceMotionState.value
+        updateSystemAnimationScale()
+        contentResolver.registerContentObserver(
+            Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE),
+            false,
+            systemAnimationScaleObserver,
+        )
+        sharedPrefs.registerOnSharedPreferenceChangeListener(motionPreferenceListener)
+        val motionDurationScale = appMotionDurationScale
+        WindowRecomposerPolicy.setFactory(
+            WindowRecomposerFactory { view ->
+                view.createLifecycleAwareWindowRecomposer(
+                    coroutineContext = motionDurationScale,
+                )
+            }
+        )
 
         enableEdgeToEdge()
         
@@ -178,7 +230,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            _2PChatTheme(darkTheme = isDarkTheme, useCerulean = useCerulean, useAmoled = useAmoled) { 
+            _2PChatTheme(
+                darkTheme = isDarkTheme,
+                useCerulean = useCerulean,
+                useAmoled = useAmoled,
+                animationsEnabled = !reduceMotionState.value,
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -294,6 +351,14 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         triggerLockCheckState.value += 1
+    }
+
+    override fun onDestroy() {
+        if (::appPreferences.isInitialized) {
+            appPreferences.unregisterOnSharedPreferenceChangeListener(motionPreferenceListener)
+        }
+        contentResolver.unregisterContentObserver(systemAnimationScaleObserver)
+        super.onDestroy()
     }
 
     private fun setAppIconAlias(aliasName: String) {

@@ -250,8 +250,9 @@ fun OnboardingScreen(
 
 @Composable
 fun WelcomeStep(appLanguage: String, primaryColor: Color, onSurfaceColor: Color) {
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseScale by infiniteTransition.animateFloat(
+    val animationsEnabled = com.example.twopchat.LocalAppAnimationsEnabled.current
+    val infiniteTransition = if (animationsEnabled) rememberInfiniteTransition(label = "pulse") else null
+    val pulseScale = infiniteTransition?.animateFloat(
         initialValue = 0.95f,
         targetValue = 1.05f,
         animationSpec = infiniteRepeatable(
@@ -259,8 +260,8 @@ fun WelcomeStep(appLanguage: String, primaryColor: Color, onSurfaceColor: Color)
             repeatMode = RepeatMode.Reverse
         ),
         label = "scale"
-    )
-    val glowAlpha by infiniteTransition.animateFloat(
+    )?.value ?: 1.0f
+    val glowAlpha = infiniteTransition?.animateFloat(
         initialValue = 0.12f,
         targetValue = 0.28f,
         animationSpec = infiniteRepeatable(
@@ -268,7 +269,7 @@ fun WelcomeStep(appLanguage: String, primaryColor: Color, onSurfaceColor: Color)
             repeatMode = RepeatMode.Reverse
         ),
         label = "glow"
-    )
+    )?.value ?: 0.12f
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,

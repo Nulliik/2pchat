@@ -39,6 +39,39 @@ class ChatInteractionPolicyTest {
     }
 
     @Test
+    fun incomingMessageIsCountedWhileReadingOlderHistory() {
+        assertTrue(
+            shouldCountIncomingMessage(
+                previousItemCount = 40,
+                lastVisibleItemIndex = 12,
+            )
+        )
+    }
+
+    @Test
+    fun incomingMessageIsNotCountedAtBottomOrBeforeLayout() {
+        assertFalse(
+            shouldCountIncomingMessage(
+                previousItemCount = 40,
+                lastVisibleItemIndex = 39,
+            )
+        )
+        assertFalse(
+            shouldCountIncomingMessage(
+                previousItemCount = 40,
+                lastVisibleItemIndex = -1,
+            )
+        )
+    }
+
+    @Test
+    fun bottomDetectionRequiresNewestItemToBeVisible() {
+        assertTrue(isMessageListAtBottom(totalItemCount = 0, lastVisibleItemIndex = -1))
+        assertTrue(isMessageListAtBottom(totalItemCount = 40, lastVisibleItemIndex = 39))
+        assertFalse(isMessageListAtBottom(totalItemCount = 40, lastVisibleItemIndex = 38))
+    }
+
+    @Test
     fun arrivalAnimationIsConsumedOnceAndExpires() {
         val tracker = MessageArrivalAnimationTracker(lifetimeMs = 1_000L)
 

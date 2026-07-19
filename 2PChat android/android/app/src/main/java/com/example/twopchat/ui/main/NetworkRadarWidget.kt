@@ -47,8 +47,9 @@ fun NetworkRadarWidget(
     modifier: Modifier = Modifier
 ) {
     // Rotating scanning beam infinite animation
-    val infiniteTransition = rememberInfiniteTransition(label = "RadarSweep")
-    val sweepAngle by infiniteTransition.animateFloat(
+    val animationsEnabled = com.example.twopchat.LocalAppAnimationsEnabled.current
+    val infiniteTransition = if (animationsEnabled) rememberInfiniteTransition(label = "RadarSweep") else null
+    val sweepAngle = infiniteTransition?.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
@@ -56,10 +57,10 @@ fun NetworkRadarWidget(
             repeatMode = RepeatMode.Restart
         ),
         label = "SweepAngle"
-    )
+    )?.value ?: 0f
 
     // Pulsing halo animation for active nodes
-    val pulseScale by infiniteTransition.animateFloat(
+    val pulseScale = infiniteTransition?.animateFloat(
         initialValue = 0f,
         targetValue = 12f,
         animationSpec = infiniteRepeatable(
@@ -67,10 +68,10 @@ fun NetworkRadarWidget(
             repeatMode = RepeatMode.Reverse
         ),
         label = "PulseScale"
-    )
+    )?.value ?: 0f
 
     // Running packet transmission animation
-    val packetProgress by infiniteTransition.animateFloat(
+    val packetProgress = infiniteTransition?.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -78,7 +79,7 @@ fun NetworkRadarWidget(
             repeatMode = RepeatMode.Restart
         ),
         label = "PacketProgress"
-    )
+    )?.value ?: 0f
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val gridColor = primaryColor.copy(alpha = 0.15f)

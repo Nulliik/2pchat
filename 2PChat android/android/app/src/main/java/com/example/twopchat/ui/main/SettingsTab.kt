@@ -113,6 +113,7 @@ fun SettingsTab(
     var persistChatHistory by remember { mutableStateOf(sharedPrefs.getBoolean("persist_chat_history", true)) }
     var linkPreviewsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_link_previews", false)) }
     var hapticFeedbackEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_haptic_feedback", true)) }
+    var reduceMotion by remember { mutableStateOf(sharedPrefs.getBoolean(com.example.twopchat.REDUCE_MOTION_SETTING, false)) }
     var stealthDisguise by remember { mutableStateOf(sharedPrefs.getBoolean("settings_stealth_disguise", false)) }
     var showDisguiseInstructionDialog by remember { mutableStateOf(false) }
     
@@ -798,6 +799,45 @@ fun SettingsTab(
                                             }
                                         }
                                     }
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (appLanguage == "Русский") "Отключить анимации" else "Disable animations",
+                                            fontWeight = FontWeight.Medium,
+                                            color = onSurfaceColor
+                                        )
+                                        Text(
+                                            text = if (appLanguage == "Русский") {
+                                                "Мгновенные переходы и меньше нагрузки на процессор и видеочип"
+                                            } else {
+                                                "Instant transitions with lower CPU and GPU usage"
+                                            },
+                                            fontSize = 12.sp,
+                                            color = onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = reduceMotion,
+                                        onCheckedChange = {
+                                            reduceMotion = it
+                                            sharedPrefs.edit()
+                                                .putBoolean(com.example.twopchat.REDUCE_MOTION_SETTING, it)
+                                                .apply()
+                                        },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = primaryColor,
+                                            checkedTrackColor = primaryColor.copy(alpha = 0.3f)
+                                        )
+                                    )
                                 }
                             }
                         }

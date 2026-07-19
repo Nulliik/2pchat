@@ -87,6 +87,20 @@ internal fun shouldAutoScrollAfterAppend(
     return previousLastIndex - lastVisibleItemIndex <= 1
 }
 
+internal fun shouldCountIncomingMessage(
+    previousItemCount: Int,
+    lastVisibleItemIndex: Int,
+): Boolean = lastVisibleItemIndex >= 0 && !shouldAutoScrollAfterAppend(
+    previousItemCount = previousItemCount,
+    lastVisibleItemIndex = lastVisibleItemIndex,
+    newestMessageIsMine = false,
+)
+
+internal fun isMessageListAtBottom(
+    totalItemCount: Int,
+    lastVisibleItemIndex: Int,
+): Boolean = totalItemCount <= 0 || lastVisibleItemIndex >= totalItemCount - 1
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
@@ -131,6 +145,16 @@ fun ChatScreen(
     var hasScrolledToBottomOnInit by remember(peerName) { mutableStateOf(false) }
     var previousMessageCount by remember(peerName) { mutableIntStateOf(0) }
     var previousTypingState by remember(peerName) { mutableStateOf(false) }
+    var newMessagesBelowCount by remember(peerName) { mutableIntStateOf(0) }
+    val messageListAtBottom by remember {
+        derivedStateOf {
+            val layoutInfo = listState.layoutInfo
+            isMessageListAtBottom(
+                totalItemCount = layoutInfo.totalItemsCount,
+                lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1,
+            )
+        }
+    }
     val showScrollDownButton by remember {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
@@ -458,6 +482,11 @@ fun ChatScreen(
                     }
                     val existingIndex = initialMessages.indexOfFirst { it.id == rxMsg.id }
                     if (existingIndex == -1) {
+                        val layoutInfo = listState.layoutInfo
+                        val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                        if (shouldCountIncomingMessage(layoutInfo.totalItemsCount, lastVisibleItemIndex)) {
+                            newMessagesBelowCount += 1
+                        }
                         arrivalAnimationTracker.mark(rxMsg.id)
                         initialMessages.add(rxMsg)
                     } else {
@@ -891,6 +920,12 @@ fun ChatScreen(
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
+    LaunchedEffect(messageListAtBottom) {
+        if (messageListAtBottom) {
+            newMessagesBelowCount = 0
+        }
+    }
+
     LaunchedEffect(initialMessages.size, isTyping, isSearchMode) {
         val currentMessageCount = initialMessages.size
         val previousItemCount = previousMessageCount + if (previousTypingState) 1 else 0
@@ -1090,6 +1125,8 @@ remove("pinned_msg_id_${peerName}")
                 appLanguage = appLanguage,
                 arrivalAnimationTracker = arrivalAnimationTracker,
                 showScrollDownButton = showScrollDownButton,
+                newMessagesBelowCount = newMessagesBelowCount,
+                onScrollToBottom = { newMessagesBelowCount = 0 },
                 listState = listState,
                 primaryColor = primaryColor,
                 surfaceColor = surfaceColor,

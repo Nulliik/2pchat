@@ -153,19 +153,20 @@ fun ChatsTab(
     val heroScope = rememberCoroutineScope()
 
     // Pulsing animations
-    val infiniteTransition = rememberInfiniteTransition(label = "heroRing")
-    val ringAlpha by infiniteTransition.animateFloat(
+    val animationsEnabled = com.example.twopchat.LocalAppAnimationsEnabled.current
+    val infiniteTransition = if (animationsEnabled) rememberInfiniteTransition(label = "heroRing") else null
+    val ringAlpha = infiniteTransition?.animateFloat(
         initialValue = 0.2f, targetValue = 0.6f,
         animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "ringAlpha"
-    )
+    )?.value ?: 0.2f
 
-    val warningTransition = rememberInfiniteTransition(label = "warningPulse")
-    val warningAlpha by warningTransition.animateFloat(
+    val warningTransition = if (animationsEnabled) rememberInfiniteTransition(label = "warningPulse") else null
+    val warningAlpha = warningTransition?.animateFloat(
         initialValue = 0.3f, targetValue = 1.0f,
         animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Reverse),
         label = "warningAlpha"
-    )
+    )?.value ?: 1.0f
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -341,8 +342,8 @@ fun ChatsTab(
                             null  -> onSurfaceVariant
                         }
                         
-                        val pulseTransition = rememberInfiniteTransition(label = "pillPulse")
-                        val pulseScale by pulseTransition.animateFloat(
+                        val pulseTransition = if (animationsEnabled) rememberInfiniteTransition(label = "pillPulse") else null
+                        val pulseScale = pulseTransition?.animateFloat(
                             initialValue = 1.0f,
                             targetValue = 2.4f,
                             animationSpec = infiniteRepeatable(
@@ -350,8 +351,8 @@ fun ChatsTab(
                                 repeatMode = RepeatMode.Restart
                             ),
                             label = "pulseScale"
-                        )
-                        val pulseAlpha by pulseTransition.animateFloat(
+                        )?.value ?: 1.0f
+                        val pulseAlpha = pulseTransition?.animateFloat(
                             initialValue = 0.6f,
                             targetValue = 0.0f,
                             animationSpec = infiniteRepeatable(
@@ -359,7 +360,7 @@ fun ChatsTab(
                                 repeatMode = RepeatMode.Restart
                             ),
                             label = "pulseAlpha"
-                        )
+                        )?.value ?: 0.0f
 
                         // Slowly blink the dot if there is a warning/error (ok == false)
                         val dotAlpha = if (ok == false) warningAlpha else 1.0f

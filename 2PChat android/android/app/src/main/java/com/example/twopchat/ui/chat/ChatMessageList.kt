@@ -23,6 +23,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -61,6 +63,8 @@ internal fun ChatMessageList(
     appLanguage: String,
     arrivalAnimationTracker: MessageArrivalAnimationTracker,
     showScrollDownButton: Boolean,
+    newMessagesBelowCount: Int,
+    onScrollToBottom: () -> Unit,
     listState: LazyListState,
     primaryColor: Color,
     surfaceColor: Color,
@@ -177,32 +181,59 @@ internal fun ChatMessageList(
 
     // Scroll To Bottom Button
     androidx.compose.animation.AnimatedVisibility(
-        visible = showScrollDownButton,
+        visible = showScrollDownButton || newMessagesBelowCount > 0,
         enter = scaleIn(animationSpec = tween(200)) + fadeIn(animationSpec = tween(200)),
         exit = scaleOut(animationSpec = tween(200)) + fadeOut(animationSpec = tween(200)),
         modifier = Modifier
             .align(Alignment.BottomEnd)
             .padding(end = 16.dp, bottom = 16.dp)
     ) {
-        IconButton(
-            onClick = {
-                coroutineScope.launch {
-                    if (messages.isNotEmpty()) {
-                        listState.animateScrollToItem(messages.size - 1)
+        BadgedBox(
+            badge = {
+                if (newMessagesBelowCount > 0) {
+                    Badge(
+                        containerColor = primaryColor,
+                        contentColor = Color.White,
+                    ) {
+                        Text(
+                            text = if (newMessagesBelowCount > 99) "99+" else newMessagesBelowCount.toString(),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
                 }
             },
-            modifier = Modifier
-                .size(38.dp)
-                .background(Color(0xFF1E2226).copy(alpha = 0.76f), CircleShape)
-                .border(width = 0.5.dp, color = Color.White.copy(alpha = 0.08f), shape = CircleShape)
         ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_scroll_down),
-                contentDescription = "Scroll Down",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp)
-            )
+            IconButton(
+                onClick = {
+                    onScrollToBottom()
+                    coroutineScope.launch {
+                        val lastItemIndex = listState.layoutInfo.totalItemsCount - 1
+                        if (lastItemIndex >= 0) {
+                            listState.animateScrollToItem(lastItemIndex)
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .size(38.dp)
+                    .background(Color(0xFF1E2226).copy(alpha = 0.76f), CircleShape)
+                    .border(width = 0.5.dp, color = Color.White.copy(alpha = 0.08f), shape = CircleShape)
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_scroll_down),
+                    contentDescription = if (newMessagesBelowCount > 0) {
+                        if (appLanguage == "Русский") {
+                            "Вниз, новых сообщений: $newMessagesBelowCount"
+                        } else {
+                            "Scroll down, $newMessagesBelowCount new messages"
+                        }
+                    } else {
+                        if (appLanguage == "Русский") "Вниз" else "Scroll down"
+                    },
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }

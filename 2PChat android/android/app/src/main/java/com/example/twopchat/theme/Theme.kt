@@ -9,7 +9,9 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalContext
+import com.example.twopchat.LocalAppAnimationsEnabled
 
 private val DarkMintColorScheme = darkColorScheme(
     primary = MintGreen,
@@ -99,6 +101,7 @@ fun _2PChatTheme(
   useCerulean: Boolean = false,
   useAmoled: Boolean = false,
   dynamicColor: Boolean = false,
+  animationsEnabled: Boolean = true,
   content: @Composable () -> Unit,
 ) {
   val colorScheme =
@@ -119,5 +122,7 @@ fun _2PChatTheme(
       }
     }
 
-  MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+  CompositionLocalProvider(LocalAppAnimationsEnabled provides animationsEnabled) {
+    MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+  }
 }
