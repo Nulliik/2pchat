@@ -366,6 +366,7 @@ fun ChatScreen(
             attachmentName = recording.file.name,
             status = initialStatus,
         )
+        arrivalAnimationTracker.mark(outMsg.id)
         initialMessages.add(outMsg)
         if (persistEnabled || initialStatus == "PENDING") {
             persistDatabase { db.saveMessage(peerName, outMsg) }
@@ -675,6 +676,7 @@ fun ChatScreen(
                     attachmentName = fileName,
                     status = initialStatus
                 )
+                arrivalAnimationTracker.mark(outMsg.id)
                 initialMessages.add(outMsg)
                 if (persistEnabled || initialStatus == "PENDING") {
                     persistDatabase { db.saveMessage(peerName, outMsg) }
@@ -729,6 +731,7 @@ fun ChatScreen(
                     attachmentName = fileName,
                     status = initialStatus
                 )
+                arrivalAnimationTracker.mark(outMsg.id)
                 initialMessages.add(outMsg)
                 if (persistEnabled || initialStatus == "PENDING") {
                     persistDatabase { db.saveMessage(peerName, outMsg) }
@@ -799,6 +802,7 @@ fun ChatScreen(
                 attachmentName = file.name,
                 status = initialStatus
             )
+            arrivalAnimationTracker.mark(outMsg.id)
             initialMessages.add(outMsg)
             if (persistEnabled || initialStatus == "PENDING") {
                 persistDatabase { db.saveMessage(peerName, outMsg) }
@@ -854,6 +858,7 @@ fun ChatScreen(
                     attachmentName = fileName,
                     status = initialStatus
                 )
+                arrivalAnimationTracker.mark(outMsg.id)
                 initialMessages.add(outMsg)
                 if (persistEnabled || initialStatus == "PENDING") {
                     persistDatabase { db.saveMessage(peerName, outMsg) }
@@ -1248,6 +1253,7 @@ remove("pinned_msg_id_${peerName}")
                                         replyToName = replyTo?.let { if (it.isMe) (if (appLanguage == "Русский") "Вы" else "You") else peerName },
                                         status = initialStatus
                                     )
+                                    arrivalAnimationTracker.mark(outMsg.id)
                                     initialMessages.add(outMsg)
                                     triggerHaptic()
                                     if (persistEnabled || initialStatus == "PENDING") {
