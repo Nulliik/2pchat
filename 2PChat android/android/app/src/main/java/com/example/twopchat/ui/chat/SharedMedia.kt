@@ -4,6 +4,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.PlayArrow
 
 
 import android.content.Context
@@ -78,6 +79,7 @@ fun SharedMediaScreen(
     onToggleMute: (Boolean) -> Unit,
     onAvatarClick: (Bitmap) -> Unit,
     onImageClick: (List<String>, Int) -> Unit,
+    onVideoClick: (String) -> Unit,
     onBack: () -> Unit,
     onNavigateToMessage: (String) -> Unit
 ) {
@@ -92,10 +94,10 @@ fun SharedMediaScreen(
     }
 
     val mediaList = remember(messages) {
-        messages.filter { it.attachmentType == "IMAGE" && !it.attachmentUri.isNullOrBlank() }.reversed()
+        messages.filter { (it.attachmentType == "IMAGE" || it.attachmentType == "VIDEO") && !it.attachmentUri.isNullOrBlank() }.reversed()
     }
     val mediaUris = remember(mediaList) {
-        mediaList.map { it.attachmentUri!! }
+        mediaList.filter { it.attachmentType == "IMAGE" }.map { it.attachmentUri!! }
     }
     val filesList = remember(messages) {
         messages.filter { it.attachmentType == "FILE" && !it.attachmentUri.isNullOrBlank() }.reversed()
@@ -546,9 +548,13 @@ fun SharedMediaScreen(
                                                             selectedItems.add(item)
                                                         }
                                                     } else {
-                                                        val idx = mediaList.indexOf(item)
-                                                        if (idx != -1) {
-                                                            onImageClick(mediaUris, idx)
+                                                        if (item.attachmentType == "VIDEO") {
+                                                            onVideoClick(uri)
+                                                        } else {
+                                                            val idx = mediaUris.indexOf(uri)
+                                                            if (idx != -1) {
+                                                                onImageClick(mediaUris, idx)
+                                                            }
                                                         }
                                                     }
                                                 },
@@ -561,11 +567,17 @@ fun SharedMediaScreen(
                                                 }
                                             )
                                     ) {
-                                        val bitmap = rememberSampledImage(uri, 200, 200)
+                                        val isVideo = item.attachmentType == "VIDEO"
+                                        val bitmap = if (isVideo) {
+                                            rememberVideoThumbnail(uri)
+                                        } else {
+                                            rememberSampledImage(uri, 200, 200)
+                                        }
+
                                         if (bitmap != null) {
                                             Image(
                                                 bitmap = bitmap.asImageBitmap(),
-                                                contentDescription = "Shared image",
+                                                contentDescription = if (isVideo) "Shared video" else "Shared image",
                                                 modifier = Modifier.fillMaxSize(),
                                                 contentScale = ContentScale.Crop,
                                             )
@@ -575,10 +587,27 @@ fun SharedMediaScreen(
                                                 modifier = Modifier.fillMaxSize()
                                             ) {
                                                 Icon(
-                                                    painter = painterResource(id = R.drawable.ic_attach_gallery),
-                                                    contentDescription = "Image preview",
+                                                    painter = painterResource(id = if (isVideo) R.drawable.ic_attach_file else R.drawable.ic_attach_gallery),
+                                                    contentDescription = if (isVideo) "Video preview" else "Image preview",
                                                     tint = onSurfaceVariant.copy(alpha = 0.5f),
                                                     modifier = Modifier.size(24.dp)
+                                                )
+                                            }
+                                        }
+
+                                        if (isVideo) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.Center)
+                                                    .size(32.dp)
+                                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.PlayArrow,
+                                                    contentDescription = "Play Video",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(20.dp)
                                                 )
                                             }
                                         }

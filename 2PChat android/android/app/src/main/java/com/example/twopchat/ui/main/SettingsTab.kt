@@ -112,6 +112,7 @@ fun SettingsTab(
     var ipv4Routing by remember { mutableStateOf(sharedPrefs.getBoolean("settings_ipv4", true)) }
     var persistChatHistory by remember { mutableStateOf(sharedPrefs.getBoolean("persist_chat_history", true)) }
     var linkPreviewsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_link_previews", false)) }
+    var hapticFeedbackEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_haptic_feedback", true)) }
     var stealthDisguise by remember { mutableStateOf(sharedPrefs.getBoolean("settings_stealth_disguise", false)) }
     var showDisguiseInstructionDialog by remember { mutableStateOf(false) }
     
@@ -1297,6 +1298,29 @@ fun SettingsTab(
                                         onCheckedChange = {
                                             previewsEnabled = it
                                             sharedPrefs.edit().putBoolean("settings_previews", it).apply()
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                // Haptic Feedback Toggle
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(Localizations.getString("haptic_feedback", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                        Text(Localizations.getString("haptic_feedback_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = hapticFeedbackEnabled,
+                                        onCheckedChange = {
+                                            hapticFeedbackEnabled = it
+                                            sharedPrefs.edit().putBoolean("settings_haptic_feedback", it).apply()
                                         },
                                         colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
                                     )

@@ -182,6 +182,14 @@ fun ChatScreen(
         pendingDownloadMsg = null
     }
     val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
+    val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
+    fun triggerHaptic(type: androidx.compose.ui.hapticfeedback.HapticFeedbackType = androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) {
+        if (sharedPrefs.getBoolean("settings_haptic_feedback", true)) {
+            try {
+                hapticFeedback.performHapticFeedback(type)
+            } catch (_: Exception) {}
+        }
+    }
     var pinnedMsgId by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_id_${peerName}", null)) }
     var pinnedMsgText by remember(peerName) { mutableStateOf(SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
     var pinnedMsgSender by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_sender_${peerName}", null)) }
@@ -1241,6 +1249,7 @@ remove("pinned_msg_id_${peerName}")
                                         status = initialStatus
                                     )
                                     initialMessages.add(outMsg)
+                                    triggerHaptic()
                                     if (persistEnabled || initialStatus == "PENDING") {
                                         persistDatabase { db.saveMessage(peerName, outMsg) }
                                     }
@@ -1328,6 +1337,7 @@ remove("pinned_msg_id_${peerName}")
                                     modifier = Modifier
                                         .size(36.dp)
                                         .clickable {
+                                            triggerHaptic()
                                             val idx = initialMessages.indexOfFirst { it.id == msg.id }
                                             if (idx != -1) {
                                                 val current = initialMessages[idx]
@@ -2417,6 +2427,7 @@ remove("pinned_msg_id_${peerName}")
                         activeFullscreenImageIndex = index
                     }
                 },
+                onVideoClick = { activeFullscreenVideo = it },
                 onBack = { showProfileOverlay = false },
                 onNavigateToMessage = { messageId ->
                     showProfileOverlay = false
