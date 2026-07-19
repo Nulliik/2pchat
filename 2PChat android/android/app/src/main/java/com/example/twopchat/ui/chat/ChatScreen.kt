@@ -77,6 +77,16 @@ import java.util.Locale
 
 private fun newMessageId(): String = java.util.UUID.randomUUID().toString()
 
+internal fun shouldAutoScrollAfterAppend(
+    previousItemCount: Int,
+    lastVisibleItemIndex: Int,
+    newestMessageIsMine: Boolean,
+): Boolean {
+    if (newestMessageIsMine || previousItemCount <= 0) return true
+    val previousLastIndex = previousItemCount - 1
+    return previousLastIndex - lastVisibleItemIndex <= 1
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
@@ -115,10 +125,12 @@ fun ChatScreen(
             }
         }
     }
-    val screenInitTime = remember { System.currentTimeMillis() }
     val listState = rememberLazyListState()
+    val arrivalAnimationTracker = remember(peerName) { MessageArrivalAnimationTracker() }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var hasScrolledToBottomOnInit by remember(peerName) { mutableStateOf(false) }
+    var previousMessageCount by remember(peerName) { mutableIntStateOf(0) }
+    var previousTypingState by remember(peerName) { mutableStateOf(false) }
     val showScrollDownButton by remember {
         derivedStateOf {
             val layoutInfo = listState.layoutInfo
@@ -437,6 +449,7 @@ fun ChatScreen(
                     }
                     val existingIndex = initialMessages.indexOfFirst { it.id == rxMsg.id }
                     if (existingIndex == -1) {
+                        arrivalAnimationTracker.mark(rxMsg.id)
                         initialMessages.add(rxMsg)
                     } else {
                         initialMessages[existingIndex] = rxMsg
@@ -865,19 +878,27 @@ fun ChatScreen(
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
-    // Scroll to bottom when messages list size changes
-    LaunchedEffect(initialMessages.size, isTyping) {
-        if (initialMessages.isNotEmpty() || isTyping) {
-            val lastIndex = initialMessages.size - 1 + (if (isTyping) 1 else 0)
-            if (lastIndex >= 0) {
-                if (!hasScrolledToBottomOnInit) {
-                    listState.scrollToItem(lastIndex)
-                    hasScrolledToBottomOnInit = true
-                } else {
+    LaunchedEffect(initialMessages.size, isTyping, isSearchMode) {
+        val currentMessageCount = initialMessages.size
+        val previousItemCount = previousMessageCount + if (previousTypingState) 1 else 0
+        val currentItemCount = currentMessageCount + if (isTyping) 1 else 0
+        val lastIndex = currentItemCount - 1
+
+        if (!isSearchMode && lastIndex >= 0) {
+            if (!hasScrolledToBottomOnInit) {
+                listState.scrollToItem(lastIndex)
+                hasScrolledToBottomOnInit = true
+            } else if (currentItemCount > previousItemCount) {
+                val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+                val messageWasAdded = currentMessageCount > previousMessageCount
+                val newestMessageIsMine = messageWasAdded && initialMessages.lastOrNull()?.isMe == true
+                if (shouldAutoScrollAfterAppend(previousItemCount, lastVisibleIndex, newestMessageIsMine)) {
                     listState.animateScrollToItem(lastIndex)
                 }
             }
         }
+        previousMessageCount = currentMessageCount
+        previousTypingState = isTyping
     }
 
     Box(
@@ -1054,7 +1075,7 @@ remove("pinned_msg_id_${peerName}")
                 isTyping = isTyping,
                 peerName = peerName,
                 appLanguage = appLanguage,
-                screenInitTime = screenInitTime,
+                arrivalAnimationTracker = arrivalAnimationTracker,
                 showScrollDownButton = showScrollDownButton,
                 listState = listState,
                 primaryColor = primaryColor,

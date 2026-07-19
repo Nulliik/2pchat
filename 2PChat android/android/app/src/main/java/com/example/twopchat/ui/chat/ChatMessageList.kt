@@ -59,7 +59,7 @@ internal fun ChatMessageList(
     isTyping: Boolean,
     peerName: String,
     appLanguage: String,
-    screenInitTime: Long,
+    arrivalAnimationTracker: MessageArrivalAnimationTracker,
     showScrollDownButton: Boolean,
     listState: LazyListState,
     primaryColor: Color,
@@ -122,6 +122,9 @@ internal fun ChatMessageList(
             items = displayMessages,
             key = { _, msg -> msg.id }
         ) { index, msg ->
+            val animateOnAppearance = remember(msg.id) {
+                arrivalAnimationTracker.consume(msg.id)
+            }
             ChatMessageBubble(
                 index = index,
                 msg = msg,
@@ -131,7 +134,7 @@ internal fun ChatMessageList(
                 isTyping = isTyping,
                 peerName = peerName,
                 appLanguage = appLanguage,
-                screenInitTime = screenInitTime,
+                animateOnAppearance = animateOnAppearance,
                 listState = listState,
                 primaryColor = primaryColor,
                 surfaceColor = surfaceColor,

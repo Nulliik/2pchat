@@ -52,6 +52,25 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.style.TextDecoration
 import java.util.regex.Pattern
 
+internal class MessageArrivalAnimationTracker(
+    private val lifetimeMs: Long = 1_500L,
+) {
+    private val pending = mutableMapOf<String, Long>()
+
+    @Synchronized
+    fun mark(messageId: String, nowEpochMs: Long = System.currentTimeMillis()) {
+        pending.entries.removeAll { it.value < nowEpochMs }
+        pending[messageId] = nowEpochMs + lifetimeMs
+    }
+
+    @Synchronized
+    fun consume(messageId: String, nowEpochMs: Long = System.currentTimeMillis()): Boolean {
+        val expiresAt = pending.remove(messageId) ?: return false
+        pending.entries.removeAll { it.value < nowEpochMs }
+        return nowEpochMs <= expiresAt
+    }
+}
+
 @Composable
 internal fun ChatMessageBubble(
     index: Int,
@@ -62,7 +81,7 @@ internal fun ChatMessageBubble(
     isTyping: Boolean,
     peerName: String,
     appLanguage: String,
-    screenInitTime: Long,
+    animateOnAppearance: Boolean,
     listState: LazyListState,
     primaryColor: Color,
     surfaceColor: Color,
@@ -106,8 +125,7 @@ internal fun ChatMessageBubble(
         }
     }
     val visibleState = remember(msg.id) {
-        val isNew = msg.sentAtEpochMs > screenInitTime + 500L
-        MutableTransitionState(if (isNew) false else true).apply {
+        MutableTransitionState(!animateOnAppearance).apply {
             targetState = true
         }
     }
