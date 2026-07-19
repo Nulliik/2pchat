@@ -117,6 +117,7 @@ fun ChatScreen(
     }
     val screenInitTime = remember { System.currentTimeMillis() }
     val listState = rememberLazyListState()
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var hasScrolledToBottomOnInit by remember(peerName) { mutableStateOf(false) }
     val showScrollDownButton by remember {
         derivedStateOf {
@@ -1047,6 +1048,8 @@ remove("pinned_msg_id_${peerName}")
                     activeFullscreenImageIndex = index
                 },
                 onOpenVideo = { activeFullscreenVideo = it },
+                highlightedMessageId = highlightedMessageId,
+                onHighlightFinished = { highlightedMessageId = null },
             )
 
             ChatInputBar(
@@ -2370,7 +2373,17 @@ remove("pinned_msg_id_${peerName}")
                         activeFullscreenImageIndex = index
                     }
                 },
-                onBack = { showProfileOverlay = false }
+                onBack = { showProfileOverlay = false },
+                onNavigateToMessage = { messageId ->
+                    showProfileOverlay = false
+                    val idx = initialMessages.indexOfFirst { it.id == messageId }
+                    if (idx != -1) {
+                        coroutineScope.launch {
+                            listState.scrollToItem(idx)
+                            highlightedMessageId = messageId
+                        }
+                    }
+                }
             )
         }
 

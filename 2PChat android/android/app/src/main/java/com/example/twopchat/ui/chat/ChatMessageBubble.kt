@@ -72,8 +72,24 @@ internal fun ChatMessageBubble(
     onShowOptions: (Message) -> Unit,
     onOpenImages: (List<String>, Int) -> Unit,
     onOpenVideo: (String) -> Unit,
+    highlightedMessageId: String? = null,
+    onHighlightFinished: () -> Unit = {},
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val isHighlighted = msg.id == highlightedMessageId
+    var highlightAlpha by remember(msg.id, isHighlighted) { mutableStateOf(if (isHighlighted) 0.5f else 0.0f) }
+    if (isHighlighted && highlightAlpha > 0f) {
+        LaunchedEffect(msg.id) {
+            androidx.compose.animation.core.animate(
+                initialValue = 0.5f,
+                targetValue = 0f,
+                animationSpec = tween(1500)
+            ) { value, _ ->
+                highlightAlpha = value
+            }
+            onHighlightFinished()
+        }
+    }
     val context = androidx.compose.ui.platform.LocalContext.current
     val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
     val myAvatarBitmap = remember(context) {
@@ -144,7 +160,10 @@ internal fun ChatMessageBubble(
             }
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(if (highlightAlpha > 0f) primaryColor.copy(alpha = highlightAlpha * 0.4f) else Color.Transparent)
+                    .padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (isSelectMode) {

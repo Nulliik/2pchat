@@ -1,5 +1,11 @@
 package com.example.twopchat.ui.chat
 
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
+
+
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -72,10 +78,18 @@ fun SharedMediaScreen(
     onToggleMute: (Boolean) -> Unit,
     onAvatarClick: (Bitmap) -> Unit,
     onImageClick: (List<String>, Int) -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onNavigateToMessage: (String) -> Unit
 ) {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
+    var isSelectMode by remember { mutableStateOf(false) }
+    val selectedItems = remember { mutableStateListOf<Message>() }
+
+    LaunchedEffect(selectedTab) {
+        isSelectMode = false
+        selectedItems.clear()
+    }
 
     val mediaList = remember(messages) {
         messages.filter { it.attachmentType == "IMAGE" && !it.attachmentUri.isNullOrBlank() }.reversed()
@@ -89,7 +103,7 @@ fun SharedMediaScreen(
     val linksList = remember(messages) {
         messages.flatMap { msg ->
             linkRegex.findAll(msg.text).map { match ->
-                Pair(match.value, msg.sentAtEpochMs)
+                Pair(msg, match.value)
             }.toList()
         }.reversed()
     }
@@ -129,24 +143,66 @@ fun SharedMediaScreen(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier.background(onSurfaceColor.copy(alpha = 0.03f), shape = CircleShape)
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_back_arrow),
-                    contentDescription = "Back",
-                    tint = onSurfaceColor,
-                    modifier = Modifier.size(20.dp)
+            if (isSelectMode) {
+                IconButton(
+                    onClick = {
+                        isSelectMode = false
+                        selectedItems.clear()
+                    },
+                    modifier = Modifier.background(onSurfaceColor.copy(alpha = 0.03f), shape = CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Cancel selection",
+                        tint = onSurfaceColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = selectedItems.size.toString(),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                if (selectedItems.size == 1) {
+                    IconButton(
+                        onClick = {
+                            val selectedMessage = selectedItems.first()
+                            onNavigateToMessage(selectedMessage.id)
+                            isSelectMode = false
+                            selectedItems.clear()
+                        }
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_eye),
+                            contentDescription = "Go to message",
+                            tint = primaryColor,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            } else {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.background(onSurfaceColor.copy(alpha = 0.03f), shape = CircleShape)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_back_arrow),
+                        contentDescription = "Back",
+                        tint = onSurfaceColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = if (appLanguage == "Русский") "Профиль" else "Profile",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor
                 )
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text = if (appLanguage == "Русский") "Профиль" else "Profile",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = onSurfaceColor
-            )
         }
 
         LazyColumn(
@@ -473,18 +529,37 @@ fun SharedMediaScreen(
                             ) {
                                 rowItems.forEach { item ->
                                     val uri = item.attachmentUri!!
+                                    val isSelected = selectedItems.contains(item)
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
                                             .aspectRatio(1f)
                                             .background(onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
                                             .clip(RoundedCornerShape(12.dp))
-                                            .clickable {
-                                                val idx = mediaList.indexOf(item)
-                                                if (idx != -1) {
-                                                    onImageClick(mediaUris, idx)
+                                            .combinedClickable(
+                                                onClick = {
+                                                    if (isSelectMode) {
+                                                        if (isSelected) {
+                                                            selectedItems.remove(item)
+                                                            if (selectedItems.isEmpty()) isSelectMode = false
+                                                        } else {
+                                                            selectedItems.add(item)
+                                                        }
+                                                    } else {
+                                                        val idx = mediaList.indexOf(item)
+                                                        if (idx != -1) {
+                                                            onImageClick(mediaUris, idx)
+                                                        }
+                                                    }
+                                                },
+                                                onLongClick = {
+                                                    if (!isSelectMode) {
+                                                        isSelectMode = true
+                                                        selectedItems.clear()
+                                                        selectedItems.add(item)
+                                                    }
                                                 }
-                                            }
+                                            )
                                     ) {
                                         val bitmap = rememberSampledImage(uri, 200, 200)
                                         if (bitmap != null) {
@@ -505,6 +580,39 @@ fun SharedMediaScreen(
                                                     tint = onSurfaceVariant.copy(alpha = 0.5f),
                                                     modifier = Modifier.size(24.dp)
                                                 )
+                                            }
+                                        }
+                                        
+                                        if (isSelectMode) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(if (isSelected) Color.Black.copy(alpha = 0.3f) else Color.Transparent)
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.TopEnd)
+                                                    .padding(8.dp)
+                                                    .size(22.dp)
+                                                    .background(
+                                                        color = if (isSelected) primaryColor else Color.Black.copy(alpha = 0.35f),
+                                                        shape = CircleShape
+                                                    )
+                                                    .border(
+                                                        width = 1.5.dp,
+                                                        color = Color.White,
+                                                        shape = CircleShape
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = "Selected",
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -534,26 +642,50 @@ fun SharedMediaScreen(
                             val fileSize = if (exists) formatFileSize(file.length()) else "n/a"
                             val fileDate = formatDate(item.sentAtEpochMs, appLanguage)
 
+                            val isSelected = selectedItems.contains(item)
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = cardBg),
+                                colors = CardDefaults.cardColors(containerColor = if (isSelected) primaryColor.copy(alpha = 0.08f) else cardBg),
                                 shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp, vertical = 4.dp)
-                                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
-                                    .clickable {
-                                        if (exists) {
-                                            try {
-                                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                                    setDataAndType(Uri.fromFile(file), "*/*")
-                                                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                    .border(
+                                        width = if (isSelected) 1.5.dp else 0.5.dp,
+                                        color = if (isSelected) primaryColor else onSurfaceColor.copy(alpha = 0.08f),
+                                        shape = RoundedCornerShape(14.dp)
+                                    )
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .combinedClickable(
+                                        onClick = {
+                                            if (isSelectMode) {
+                                                if (isSelected) {
+                                                    selectedItems.remove(item)
+                                                    if (selectedItems.isEmpty()) isSelectMode = false
+                                                } else {
+                                                    selectedItems.add(item)
                                                 }
-                                                context.startActivity(intent)
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось открыть файл" else "Cannot open file", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                if (exists) {
+                                                    try {
+                                                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                            setDataAndType(Uri.fromFile(file), "*/*")
+                                                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                                        }
+                                                        context.startActivity(intent)
+                                                    } catch (e: Exception) {
+                                                        Toast.makeText(context, if (appLanguage == "Русский") "Не удалось открыть файл" else "Cannot open file", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        onLongClick = {
+                                            if (!isSelectMode) {
+                                                isSelectMode = true
+                                                selectedItems.clear()
+                                                selectedItems.add(item)
                                             }
                                         }
-                                    }
+                                    )
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -561,6 +693,32 @@ fun SharedMediaScreen(
                                         .padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    if (isSelectMode) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .background(
+                                                    color = if (isSelected) primaryColor else Color.Transparent,
+                                                    shape = CircleShape
+                                                )
+                                                .border(
+                                                    width = 1.5.dp,
+                                                    color = if (isSelected) primaryColor else onSurfaceVariant.copy(alpha = 0.5f),
+                                                    shape = CircleShape
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = "Selected",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                    }
                                     Icon(
                                         painter = painterResource(id = R.drawable.ic_attach_file),
                                         contentDescription = "File icon",
@@ -599,23 +757,47 @@ fun SharedMediaScreen(
                             )
                         }
                     } else {
-                        items(linksList) { (url, sentAtMs) ->
-                            val linkDate = formatDate(sentAtMs, appLanguage)
+                        items(linksList) { (msg, url) ->
+                            val linkDate = formatDate(msg.sentAtEpochMs, appLanguage)
+                            val isSelected = selectedItems.contains(msg)
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = cardBg),
+                                colors = CardDefaults.cardColors(containerColor = if (isSelected) primaryColor.copy(alpha = 0.08f) else cardBg),
                                 shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp, vertical = 4.dp)
-                                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
-                                    .clickable {
-                                        try {
-                                            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                            context.startActivity(browserIntent)
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, if (appLanguage == "Русский") "Не удалось открыть ссылку" else "Cannot open link", Toast.LENGTH_SHORT).show()
+                                    .border(
+                                        width = if (isSelected) 1.5.dp else 0.5.dp,
+                                        color = if (isSelected) primaryColor else onSurfaceColor.copy(alpha = 0.08f),
+                                        shape = RoundedCornerShape(14.dp)
+                                    )
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .combinedClickable(
+                                        onClick = {
+                                            if (isSelectMode) {
+                                                if (isSelected) {
+                                                    selectedItems.remove(msg)
+                                                    if (selectedItems.isEmpty()) isSelectMode = false
+                                                } else {
+                                                    selectedItems.add(msg)
+                                                }
+                                            } else {
+                                                try {
+                                                    val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                                    context.startActivity(browserIntent)
+                                                } catch (e: Exception) {
+                                                    Toast.makeText(context, if (appLanguage == "Русский") "Не удалось открыть ссылку" else "Cannot open link", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        },
+                                        onLongClick = {
+                                            if (!isSelectMode) {
+                                                isSelectMode = true
+                                                selectedItems.clear()
+                                                selectedItems.add(msg)
+                                            }
                                         }
-                                    }
+                                    )
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -623,6 +805,32 @@ fun SharedMediaScreen(
                                         .padding(14.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    if (isSelectMode) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .background(
+                                                    color = if (isSelected) primaryColor else Color.Transparent,
+                                                    shape = CircleShape
+                                                )
+                                                .border(
+                                                    width = 1.5.dp,
+                                                    color = if (isSelected) primaryColor else onSurfaceVariant.copy(alpha = 0.5f),
+                                                    shape = CircleShape
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = "Selected",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                    }
                                     Icon(
                                         painter = painterResource(id = R.drawable.ic_quick_link),
                                         contentDescription = "Link icon",
@@ -663,13 +871,38 @@ fun SharedMediaScreen(
                     } else {
                         items(voiceList) { item ->
                             val voiceDate = formatDate(item.sentAtEpochMs, appLanguage)
+                            val isSelected = selectedItems.contains(item)
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = cardBg),
+                                colors = CardDefaults.cardColors(containerColor = if (isSelected) primaryColor.copy(alpha = 0.08f) else cardBg),
                                 shape = RoundedCornerShape(14.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp, vertical = 4.dp)
-                                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                                    .border(
+                                        width = if (isSelected) 1.5.dp else 0.5.dp,
+                                        color = if (isSelected) primaryColor else onSurfaceColor.copy(alpha = 0.08f),
+                                        shape = RoundedCornerShape(14.dp)
+                                    )
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .combinedClickable(
+                                        onClick = {
+                                            if (isSelectMode) {
+                                                if (isSelected) {
+                                                    selectedItems.remove(item)
+                                                    if (selectedItems.isEmpty()) isSelectMode = false
+                                                } else {
+                                                    selectedItems.add(item)
+                                                }
+                                            }
+                                        },
+                                        onLongClick = {
+                                            if (!isSelectMode) {
+                                                isSelectMode = true
+                                                selectedItems.clear()
+                                                selectedItems.add(item)
+                                            }
+                                        }
+                                    )
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -680,6 +913,32 @@ fun SharedMediaScreen(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        if (isSelectMode) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(20.dp)
+                                                    .background(
+                                                        color = if (isSelected) primaryColor else Color.Transparent,
+                                                        shape = CircleShape
+                                                    )
+                                                    .border(
+                                                        width = 1.5.dp,
+                                                        color = if (isSelected) primaryColor else onSurfaceVariant.copy(alpha = 0.5f),
+                                                        shape = CircleShape
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = "Selected",
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                        }
                                         Icon(
                                             painter = painterResource(id = R.drawable.ic_voice_mic),
                                             contentDescription = "Voice icon",

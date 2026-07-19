@@ -70,6 +70,8 @@ internal fun ChatMessageList(
     onShowOptions: (Message) -> Unit,
     onOpenImages: (List<String>, Int) -> Unit,
     onOpenVideo: (String) -> Unit,
+    highlightedMessageId: String? = null,
+    onHighlightFinished: () -> Unit = {},
 ) {
     val coroutineScope = rememberCoroutineScope()
     // Messages List
@@ -139,6 +141,8 @@ internal fun ChatMessageList(
                 onShowOptions = onShowOptions,
                 onOpenImages = onOpenImages,
                 onOpenVideo = onOpenVideo,
+                highlightedMessageId = highlightedMessageId,
+                onHighlightFinished = onHighlightFinished,
             )
         }
 
