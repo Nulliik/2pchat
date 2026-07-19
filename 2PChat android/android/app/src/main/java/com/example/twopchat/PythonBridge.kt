@@ -64,17 +64,11 @@ object PythonBridge {
             if (!logDir.exists()) logDir.mkdirs()
             val timestamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS", java.util.Locale.getDefault()).format(java.util.Date())
             val sb = java.lang.StringBuilder()
-            sb.append("$timestamp [KOTLIN_INFO] Network Interfaces Diagnostics:\n")
+            sb.append("$timestamp [KOTLIN_INFO] Network Interfaces Summary:\n")
             val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
             while (interfaces.hasMoreElements()) {
                 val networkInterface = interfaces.nextElement()
                 sb.append("  Interface: ${networkInterface.name} (Up: ${networkInterface.isUp}, Loopback: ${networkInterface.isLoopback})\n")
-                val addresses = networkInterface.inetAddresses
-                while (addresses.hasMoreElements()) {
-                    val address = addresses.nextElement()
-                    val rawBytesHex = address.address.joinToString("") { "%02x".format(it) }
-                    sb.append("    Address: ${address.hostAddress} (Type: ${address.javaClass.simpleName}, Loopback: ${address.isLoopbackAddress}, RawBytes: $rawBytesHex)\n")
-                }
             }
             AppLog.append(context, sb.toString())
         } catch (e: Exception) {

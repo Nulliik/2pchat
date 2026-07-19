@@ -115,20 +115,6 @@ object SecurityUtils {
             return true
         }
 
-        // 3. Fallback to legacy plaintext match
-        if (MessageDigest.isEqual(
-                enteredPin.toByteArray(Charsets.UTF_8),
-                storedValue.toByteArray(Charsets.UTF_8)
-            )) {
-            // Upgrade to PBKDF2
-            try {
-                sharedPrefs.edit().putString(prefKey, hashPasscode(enteredPin)).apply()
-            } catch (e: Exception) {
-                // Ignore upgrade write errors on verify success
-            }
-            return true
-        }
-
         return false
     }
 }

@@ -72,9 +72,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run 2P Chat web backend and frontend with one command"
     )
-    parser.add_argument("--api-host", default="0.0.0.0")
+    parser.add_argument("--api-host", default="127.0.0.1")
     parser.add_argument("--api-port", type=int, default=8000)
-    parser.add_argument("--web-host", default="0.0.0.0")
+    parser.add_argument("--web-host", default="127.0.0.1")
     parser.add_argument("--web-port", type=int, default=5173)
     parser.add_argument(
         "--install",

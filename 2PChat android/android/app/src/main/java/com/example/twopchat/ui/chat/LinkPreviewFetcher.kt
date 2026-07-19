@@ -68,6 +68,22 @@ object LinkPreviewFetcher {
         var connection: HttpURLConnection? = null
         try {
             val urlObj = URL(targetUrl)
+            val protocol = urlObj.protocol?.lowercase(java.util.Locale.ROOT) ?: ""
+            if (protocol != "http" && protocol != "https") {
+                val fallbackHost = extractHost(targetUrl)
+                val fallback = LinkPreviewMetadata(url = targetUrl, siteName = fallbackHost)
+                cache[targetUrl] = fallback
+                return@withContext fallback
+            }
+
+            val host = urlObj.host.orEmpty()
+            if (isPrivateOrInternalHost(host)) {
+                val fallbackHost = extractHost(targetUrl)
+                val fallback = LinkPreviewMetadata(url = targetUrl, siteName = fallbackHost)
+                cache[targetUrl] = fallback
+                return@withContext fallback
+            }
+
             connection = urlObj.openConnection() as HttpURLConnection
             connection.connectTimeout = 3500
             connection.readTimeout = 3500
@@ -172,5 +188,22 @@ object LinkPreviewFetcher {
             .replace("&#39;", "'")
             .replace("&apos;", "'")
             .replace("&nbsp;", " ")
+    }
+
+    private fun isPrivateOrInternalHost(host: String): Boolean {
+        if (host.isBlank()) return true
+        val lower = host.lowercase(java.util.Locale.ROOT)
+        if (lower == "localhost" || lower.endsWith(".local") || lower.endsWith(".internal")) return true
+        return try {
+            val addresses = java.net.InetAddress.getAllByName(host)
+            addresses.any { addr ->
+                addr.isLoopbackAddress ||
+                addr.isAnyLocalAddress ||
+                addr.isLinkLocalAddress ||
+                addr.isSiteLocalAddress
+            }
+        } catch (_: Exception) {
+            true
+        }
     }
 }

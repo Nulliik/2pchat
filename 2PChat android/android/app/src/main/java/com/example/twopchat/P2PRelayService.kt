@@ -44,12 +44,16 @@ class P2PRelayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!Python.isStarted()) Python.start(AndroidPlatform(this))
-        PythonBridge.init(applicationContext)
-        if (intent?.action == ACTION_RESTART) {
-            P2PMessageRelay.restartServer(applicationContext)
-        } else {
-            P2PMessageRelay.startServer(applicationContext)
+        val appContext = applicationContext
+        val action = intent?.action
+        kotlin.concurrent.thread(start = true, name = "P2PRelayServiceInit") {
+            if (!Python.isStarted()) Python.start(AndroidPlatform(appContext))
+            PythonBridge.init(appContext)
+            if (action == ACTION_RESTART) {
+                P2PMessageRelay.restartServer(appContext)
+            } else {
+                P2PMessageRelay.startServer(appContext)
+            }
         }
         return START_STICKY
     }
