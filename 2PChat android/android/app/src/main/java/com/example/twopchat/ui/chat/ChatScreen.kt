@@ -534,6 +534,27 @@ fun ChatScreen(
                 }
             }
 
+            override fun onMessageDeleted(sender: String, msgId: String) {
+                if (sender == peerName) {
+                    val idx = initialMessages.indexOfFirst { it.id == msgId }
+                    if (idx != -1) {
+                        initialMessages.removeAt(idx)
+                    }
+                    if (msgId == pinnedMsgId) {
+                        sharedPrefs.edit {
+                            remove("pinned_msg_id_${peerName}")
+                            remove("pinned_msg_text_${peerName}")
+                            remove("pinned_msg_sender_${peerName}")
+                            remove("pinned_by_${peerName}")
+                        }
+                        pinnedMsgId = null
+                        pinnedMsgText = null
+                        pinnedMsgSender = null
+                        pinnedBy = null
+                    }
+                }
+            }
+
             override fun onForwardingStateChanged(sender: String, enabled: Boolean) {
                 if (sender == peerName) {
                     isForwardingRestricted = enabled
@@ -1108,6 +1129,7 @@ remove("pinned_msg_id_${peerName}")
                     selectedMessages.forEach { msg ->
                                     persistDatabase { db.deleteMessage(msg.id) }
                                     initialMessages.remove(msg)
+                                    P2PMessageRelay.sendDeleteMessage(context, peerName, msg.id)
                                     if (msg.id == pinnedMsgId) {
                                         sharedPrefs.edit {
                                             remove("pinned_msg_id_${peerName}")
@@ -1544,6 +1566,7 @@ remove("pinned_msg_id_${peerName}")
                                 .clickable {
                                     persistDatabase { db.deleteMessage(msg.id) }
                                     initialMessages.remove(msg)
+                                    P2PMessageRelay.sendDeleteMessage(context, peerName, msg.id)
                                     if (msg.id == pinnedMsgId) {
                                         sharedPrefs.edit {
 remove("pinned_msg_id_${peerName}")

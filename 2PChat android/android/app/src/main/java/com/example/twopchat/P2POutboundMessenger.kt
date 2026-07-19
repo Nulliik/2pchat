@@ -153,6 +153,21 @@ internal class P2POutboundMessenger(
         sendPersistedControl(context, peerName, endpoint, controlId, "edit_message", payload, deleteAfterSend = false)
     }
 
+    fun sendDeleteMessage(
+        context: Context,
+        peerName: String,
+        endpoint: String?,
+        messageId: String
+    ) {
+        val controlId = "delete:$messageId"
+        val payload = JSONObject().apply {
+            put("type", "delete_message")
+            put("message_id", messageId)
+            put("control_id", controlId)
+        }
+        sendPersistedControl(context, peerName, endpoint, controlId, "delete_message", payload, deleteAfterSend = true)
+    }
+
     fun processOfflineQueue(context: Context, peerName: String, endpoint: String) {
         if (endpoint.isBlank() || isPaused(context, peerName) || !processingOfflineQueues.add(peerName)) return
         scope.launch {
@@ -291,7 +306,7 @@ internal class P2POutboundMessenger(
                 fingerprint,
             )
             if (!success) break
-            if (control.type == "read_receipt") db.deletePendingControl(control.id)
+            if (control.type == "read_receipt" || control.type == "delete_message") db.deletePendingControl(control.id)
             // Edits remain until the receiver returns edit_ack.
         }
     }

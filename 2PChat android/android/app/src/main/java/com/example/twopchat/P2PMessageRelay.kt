@@ -132,6 +132,7 @@ object P2PMessageRelay {
         fun onMessagePinned(sender: String, msgId: String, text: String, isFromSender: Boolean) {}
         fun onMessageUnpinned(sender: String) {}
         fun onMessageEdited(sender: String, msgId: String, text: String) {}
+        fun onMessageDeleted(sender: String, msgId: String) {}
         fun onForwardingStateChanged(sender: String, enabled: Boolean) {}
     }
 
@@ -584,6 +585,17 @@ object P2PMessageRelay {
                                                     put("message_id", msgId)
                                                 },
                                             )
+                                        }
+                                    }
+                                    return
+                                }
+                                "delete_message" -> {
+                                    val msgId = json.optString("message_id")
+                                    if (msgId.isNotEmpty()) {
+                                        val db = ChatDatabaseHelper.getInstance(appContext)
+                                        db.deleteMessage(msgId)
+                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                            messageListeners.forEach { it.onMessageDeleted(sender, msgId) }
                                         }
                                     }
                                     return
@@ -1148,6 +1160,11 @@ object P2PMessageRelay {
 
     fun sendEditMessage(context: Context, peerName: String, endpoint: String?, messageId: String, newText: String) {
         outboundMessenger.sendEditMessage(context, peerName, endpoint, messageId, newText)
+    }
+
+    fun sendDeleteMessage(context: Context, peerName: String, messageId: String) {
+        val endpoint = peerEndpoints[peerName]
+        outboundMessenger.sendDeleteMessage(context, peerName, endpoint, messageId)
     }
 
     fun sendForwardingState(context: Context, peerName: String, enabled: Boolean) {

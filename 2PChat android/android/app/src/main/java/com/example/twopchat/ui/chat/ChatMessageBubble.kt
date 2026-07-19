@@ -83,7 +83,7 @@ internal fun ChatMessageBubble(
             androidx.compose.animation.core.animate(
                 initialValue = 0.5f,
                 targetValue = 0f,
-                animationSpec = tween(1500)
+                animationSpec = tween(2500)
             ) { value, _ ->
                 highlightAlpha = value
             }
