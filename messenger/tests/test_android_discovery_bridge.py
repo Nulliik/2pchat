@@ -185,6 +185,17 @@ def test_local_identity_info_uses_authenticated_identity_key(monkeypatch):
     }]
 
 
+def test_incoming_file_start_rate_is_bounded_per_authenticated_peer(monkeypatch):
+    bridge = _load_discovery_bridge()
+    monkeypatch.setattr(bridge, "MAX_INCOMING_FILE_STARTS_PER_WINDOW", 2)
+
+    assert bridge._allow_incoming_file_start("peer-a", now=10.0) is True
+    assert bridge._allow_incoming_file_start("peer-a", now=11.0) is True
+    assert bridge._allow_incoming_file_start("peer-a", now=12.0) is False
+    assert bridge._allow_incoming_file_start("peer-b", now=12.0) is True
+    assert bridge._allow_incoming_file_start("peer-a", now=71.0) is True
+
+
 def test_background_reconnect_sends_identity_before_session_callback(monkeypatch):
     bridge = _load_discovery_bridge()
     events = []

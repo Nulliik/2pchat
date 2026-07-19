@@ -96,7 +96,7 @@ internal fun ChatMessageBubble(
         val uri = sharedPrefs.getString("profile_photo_uri", null)
         com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, uri)
     }
-    val linkPreviewsEnabled = remember(sharedPrefs) { sharedPrefs.getBoolean("settings_link_previews", true) }
+    val linkPreviewsEnabled = remember(sharedPrefs) { sharedPrefs.getBoolean("settings_link_previews", false) }
     val isText = msg.attachmentType == null
     val isOnlyEmoji = isText && isSingleEmoji(msg.text)
     val detectedUrl = remember(msg.text, isText) {

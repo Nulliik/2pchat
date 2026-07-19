@@ -101,7 +101,7 @@ fun SettingsTab(
     var aboutMeText by remember { mutableStateOf(sharedPrefs.getString("about_me_profile", "") ?: "") }
     var showEditAboutMeDialog by remember { mutableStateOf(false) }
     var notificationsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_notifications", true)) }
-    var previewsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_previews", true)) }
+    var previewsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_previews", false)) }
     var blockScreenshots by remember { mutableStateOf(sharedPrefs.getBoolean("settings_screenshots", true)) }
     var passcodeLock by remember { mutableStateOf(sharedPrefs.getBoolean("settings_passcode", false)) }
     var wifiDiscovery by remember { mutableStateOf(sharedPrefs.getBoolean("settings_wifi", true)) }
@@ -111,7 +111,7 @@ fun SettingsTab(
     var yggdrasilRouting by remember { mutableStateOf(sharedPrefs.getBoolean("settings_yggdrasil", true)) }
     var ipv4Routing by remember { mutableStateOf(sharedPrefs.getBoolean("settings_ipv4", true)) }
     var persistChatHistory by remember { mutableStateOf(sharedPrefs.getBoolean("persist_chat_history", true)) }
-    var linkPreviewsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_link_previews", true)) }
+    var linkPreviewsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_link_previews", false)) }
     var stealthDisguise by remember { mutableStateOf(sharedPrefs.getBoolean("settings_stealth_disguise", false)) }
     var showDisguiseInstructionDialog by remember { mutableStateOf(false) }
     
@@ -1532,7 +1532,7 @@ fun SettingsTab(
                         } else {
                             if (pin1 == pin2) {
                                 sharedPrefs.edit()
-                                    .putString("passcode_value", com.example.twopchat.SecurityUtils.hashPasscode(pin1))
+                                    .putString("passcode_value", com.example.twopchat.SecurityUtils.protectPasscode(pin1))
                                     .putBoolean("settings_passcode", true)
                                     .apply()
                                 passcodeLock = true
@@ -1833,7 +1833,7 @@ fun SettingsTab(
                     onClick = {
                         if (!isDuressConfirming) {
                             if (duressPin1.length == 4) {
-                                if (com.example.twopchat.SecurityUtils.hashPasscode(duressPin1) == mainPinVal) {
+                                if (com.example.twopchat.SecurityUtils.verifyPasscode(duressPin1, mainPinVal)) {
                                     duressMatchesMainError = true
                                     duressPin1 = ""
                                 } else {
@@ -1843,7 +1843,7 @@ fun SettingsTab(
                         } else {
                             if (duressPin1 == duressPin2) {
                                 sharedPrefs.edit()
-                                    .putString("passcode_duress_value", com.example.twopchat.SecurityUtils.hashPasscode(duressPin1))
+                                    .putString("passcode_duress_value", com.example.twopchat.SecurityUtils.protectPasscode(duressPin1))
                                     .apply()
                                 showSetDuressDialog = false
 

@@ -62,6 +62,21 @@ object P2PMessageRelay {
             .put(peerFingerprint, endpoint)
     }
 
+    @Synchronized
+    internal fun rememberAuthenticatedPeerEndpoint(peerName: String, endpoints: String): Boolean {
+        val normalizedName = peerName.trim()
+        val normalizedEndpoints = endpoints.trim()
+        val endpointParts = normalizedEndpoints.split(',').map(String::trim).filter(String::isNotEmpty)
+        if (normalizedName.isEmpty() || normalizedName.length > 160 ||
+            normalizedEndpoints.length > 4_096 || endpointParts.isEmpty() || endpointParts.size > 12 ||
+            endpointParts.any { it.length > 512 || it.any { char -> char.isISOControl() } }) {
+            return false
+        }
+        if (normalizedName !in _peerEndpoints && _peerEndpoints.size >= MAX_TRACKED_PEER_ENDPOINTS) return false
+        _peerEndpoints[normalizedName] = endpointParts.joinToString(",")
+        return true
+    }
+
     fun listenerPort(context: Context): Int = P2PPreferences.listenerPort(context)
 
     fun refreshAnnouncement(context: Context) {
@@ -81,8 +96,9 @@ object P2PMessageRelay {
         }
     }
 
-    // Maps peer name to their resolved IP:Port endpoint
-    val peerEndpoints = mutableStateMapOf<String, String>()
+    private const val MAX_TRACKED_PEER_ENDPOINTS = 512
+    private val _peerEndpoints = mutableStateMapOf<String, String>()
+    val peerEndpoints: Map<String, String> get() = _peerEndpoints
     val peerConnectionTransports = mutableStateMapOf<String, String>()
     val peerSessionStates = mutableStateMapOf<String, Boolean>()
     val peerRttMs = mutableStateMapOf<String, Long>()
@@ -99,7 +115,7 @@ object P2PMessageRelay {
     private val maintenanceCoordinator = RelayMaintenanceCoordinator(
         scope = serviceScope,
         isRunning = { isRunning },
-        peerEndpoints = peerEndpoints,
+        peerEndpoints = _peerEndpoints,
         peerConnectionTransports = peerConnectionTransports,
         peerSessionStates = peerSessionStates,
         onConnectedPeerHeartbeat = { context, peerName ->
@@ -115,7 +131,7 @@ object P2PMessageRelay {
         log = ::log,
     )
     private val outboundMessenger by lazy {
-        P2POutboundMessenger(peerEndpoints, ::log) { peerName, messageId, status ->
+        P2POutboundMessenger(_peerEndpoints, ::log) { peerName, messageId, status ->
             messageListeners.forEach { it.onMessageStatusChanged(peerName, messageId, status) }
         }
     }
@@ -158,8 +174,8 @@ object P2PMessageRelay {
         }
     }
 
-    private fun parseIncomingAttachment(text: String): IncomingAttachment? {
-        return IncomingMessageParser.parseAttachment(text)
+    private fun parseIncomingAttachment(context: Context, text: String): IncomingAttachment? {
+        return IncomingMessageParser.parseAttachment(context, text)
     }
 
     fun setLocalDiscoveryEnabled(context: Context, enabled: Boolean) {
@@ -194,7 +210,7 @@ object P2PMessageRelay {
                 currentPrefs.getString(P2PPreferences.peerFingerprint(it), null) == peerFingerprint
             } ?: return@LocalPeerDiscovery
             currentPrefs.edit().putString(P2PPreferences.lastEndpoint(authenticatedName), endpoint).apply()
-            Handler(Looper.getMainLooper()).post { peerEndpoints[authenticatedName] = endpoint }
+            Handler(Looper.getMainLooper()).post { rememberAuthenticatedPeerEndpoint(authenticatedName, endpoint) }
             outboundMessenger.reconnect(context, authenticatedName)
         }.also { localPeerDiscovery = it }
         try {
@@ -298,7 +314,7 @@ object P2PMessageRelay {
             db.renamePeer(fromName, toName)
             refreshLastMessageFromHistory(context, db, toName)
         } catch (e: Exception) {
-            log(context, "Failed to migrate chat history from $fromName to $toName", "ERROR", e)
+            log(context, "Failed to migrate chat history between peer aliases", "ERROR", e)
         }
     }
 
@@ -346,7 +362,7 @@ object P2PMessageRelay {
                     if (peerName != persistedName && isPlaceholderPeerName(peerName)) {
                         moveChatState(context, peerName, persistedName)
                         Handler(Looper.getMainLooper()).post {
-                            peerEndpoints.remove(peerName)
+                            _peerEndpoints.remove(peerName)
                             peerSessionStates.remove(peerName)
                             peerConnectionTransports.remove(peerName)
                         }
@@ -362,14 +378,14 @@ object P2PMessageRelay {
                     fingerprintToPeerName[fingerprint] = peerName
                     moveChatState(context, knownName, peerName)
                     Handler(Looper.getMainLooper()).post {
-                        peerEndpoints.remove(knownName)
+                        _peerEndpoints.remove(knownName)
                     }
                     peerName
                 }
                 !isPlaceholderPeerName(knownName) && isPlaceholderPeerName(peerName) -> {
                     moveChatState(context, peerName, knownName)
                     Handler(Looper.getMainLooper()).post {
-                        peerEndpoints.remove(peerName)
+                        _peerEndpoints.remove(peerName)
                     }
                     knownName
                 }
@@ -401,7 +417,7 @@ object P2PMessageRelay {
                 val (canonicalName, fingerprint) = matches.single()
                 fingerprintToPeerName[fingerprint] = canonicalName
                 moveChatState(context, placeholder, canonicalName)
-                log(context, "Migrated stale placeholder chat $placeholder to $canonicalName")
+                log(context, "Migrated stale placeholder chat to an authenticated peer alias")
             }
         }
     }
@@ -443,7 +459,7 @@ object P2PMessageRelay {
         for (peerName in persistedChats) {
             persistedPrefs.getString("last_endpoint_$peerName", null)
                 ?.takeIf { it.isNotBlank() }
-                ?.let { peerEndpoints[peerName] = it }
+                ?.let { rememberAuthenticatedPeerEndpoint(peerName, it) }
         }
         val port = listenerPort(appContext)
         try {
@@ -467,7 +483,7 @@ object P2PMessageRelay {
                     log(appContext, "Incoming secure P2P message (${text.toByteArray().size} bytes)")
                     val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
                     if (sharedPrefs.getBoolean("blocked_peer_$sender", false)) {
-                        log(appContext, "Ignored message from blocked peer $sender")
+                        log(appContext, "Ignored message from a blocked peer")
                         return
                     }
                     try {
@@ -514,11 +530,11 @@ object P2PMessageRelay {
                                                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                                                     avatarCache.put(sender, bitmap)
                                                 }
-                                                log(appContext, "Successfully received and cached avatar in RAM for $sender")
+                                                log(appContext, "Received and cached an authenticated peer avatar")
                                                 
                                                 try {
                                                     avatarCache.savePersisted(appContext, sender, bitmap)
-                                                    log(appContext, "Saved encrypted avatar for $sender")
+                                                    log(appContext, "Saved an encrypted peer avatar")
                                                 } catch (saveEx: Exception) {
                                                     log(appContext, "Failed to save avatar file: ${saveEx.message}", "ERROR", saveEx)
                                                 }
@@ -694,7 +710,7 @@ object P2PMessageRelay {
                             }
                         }
                     }
-                        val incomingAttachment = parseIncomingAttachment(text)
+                        val incomingAttachment = parseIncomingAttachment(appContext, text)
                         val incomingMessage = if (incomingAttachment != null) {
                             Message(
                                     id = incomingAttachment.messageId.ifBlank { UUID.randomUUID().toString() },
@@ -731,7 +747,7 @@ object P2PMessageRelay {
                     // half-open sessions must never create visible Peer (...)
                     // chats or leave placeholder preference keys behind.
                     if (isPlaceholderPeerName(resolvedPeerName)) {
-                        log(appContext, "Authenticated unnamed session awaiting identity_info ($fingerprint)")
+                        log(appContext, "Authenticated unnamed session awaiting identity information")
                         return true
                     }
                     val identityPrefs = P2PPreferences.prefs(appContext)
@@ -774,14 +790,14 @@ object P2PMessageRelay {
                             }
                             apply()
                         }
-                    log(appContext, "Secure Double Ratchet session established with $resolvedPeerName ($fingerprint) at $endpoint")
+                    log(appContext, "Secure Double Ratchet session established")
                     Handler(Looper.getMainLooper()).post {
                         peerSessionStates[resolvedPeerName] = true
                         if (canonicalTransport != null) {
                             peerConnectionTransports[resolvedPeerName] = canonicalTransport
                         }
                         if (endpoint.isNotEmpty()) {
-                            peerEndpoints[resolvedPeerName] = endpoint
+                            rememberAuthenticatedPeerEndpoint(resolvedPeerName, endpoint)
                         }
                     }
 
@@ -811,7 +827,7 @@ object P2PMessageRelay {
 
                 override fun onSessionClosed(peerName: String, fingerprint: String) {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
-                    log(appContext, "Secure Double Ratchet session closed with $resolvedPeerName")
+                    log(appContext, "Secure Double Ratchet session closed")
                     Handler(Looper.getMainLooper()).post {
                         peerConnectionTransports.remove(resolvedPeerName)
                         peerSessionStates.remove(resolvedPeerName)
@@ -876,7 +892,7 @@ object P2PMessageRelay {
         localPeerDiscovery?.stop()
         localPeerDiscovery = null
         localPeerCandidates.clear()
-        peerEndpoints.clear()
+        _peerEndpoints.clear()
         avatarCache.clear()
         Handler(Looper.getMainLooper()).post {
             peerConnectionTransports.clear()
@@ -955,21 +971,21 @@ object P2PMessageRelay {
                             .getString("peer_fingerprint_$peerName", null)
 
                         if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
-                            log(context, "Blocked avatar share to $peerName while its identity change awaits confirmation", "ERROR")
+                            log(context, "Blocked avatar share while a peer identity change awaits confirmation", "ERROR")
                             return@thread
                         }
                         
-                        log(context, "Sending profile avatar to $peerName (length: ${payload.length})")
+                        log(context, "Sending profile avatar (length: ${payload.length})")
                         val success = PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
                         if (success) lastAvatarShareAt[shareKey] = System.currentTimeMillis()
-                        log(context, "Avatar send status to $peerName: $success")
+                        log(context, "Avatar send status: $success")
 
                     }
                 } else {
                     log(context, "profile_avatar.jpg does not exist, skipping avatar share.")
                 }
             } catch (e: Exception) {
-                log(context, "Failed to share avatar with $peerName", "ERROR", e)
+                log(context, "Failed to share avatar with a peer", "ERROR", e)
             } finally {
                 scaledBitmap?.takeIf { it !== sourceBitmap && !it.isRecycled }?.recycle()
                 sourceBitmap?.takeIf { !it.isRecycled }?.recycle()
@@ -1056,12 +1072,12 @@ object P2PMessageRelay {
             try {
                 PythonBridge.closePeerSession(peerName, expectedFingerprint)
             } catch (e: Exception) {
-                log(context, "Failed to close peer session for $peerName", "ERROR", e)
+                log(context, "Failed to close peer session", "ERROR", e)
             }
         }
         
         // Remove from memory caches
-        peerEndpoints.remove(peerName)
+        _peerEndpoints.remove(peerName)
         peerSessionStates.remove(peerName)
         peerTypingStates.remove(peerName)
         avatarCache.remove(peerName)
@@ -1069,7 +1085,7 @@ object P2PMessageRelay {
         try {
             avatarCache.deletePersisted(context, peerName)
         } catch (e: Exception) {
-            log(context, "Failed to delete persisted avatar for $peerName", "ERROR", e)
+            log(context, "Failed to delete persisted peer avatar", "ERROR", e)
         }
 
         // Clear messages database
@@ -1117,7 +1133,7 @@ object P2PMessageRelay {
             PythonBridge.rememberPeerName(accepted.acceptedFingerprint, peerName)
             val endpoint = accepted.endpoint.takeIf { it.isNotBlank() }
                 ?: prefs.getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
-            if (endpoint.isNotBlank()) peerEndpoints[peerName] = endpoint
+            if (endpoint.isNotBlank()) rememberAuthenticatedPeerEndpoint(peerName, endpoint)
             Handler(Looper.getMainLooper()).post {
                 peerSessionStates.remove(peerName)
                 peerConnectionTransports.remove(peerName)

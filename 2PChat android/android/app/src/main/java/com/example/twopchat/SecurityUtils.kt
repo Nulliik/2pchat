@@ -33,14 +33,8 @@ object SecurityUtils {
         }
     }
 
-    /**
-     * Compute legacy SHA-256 hash of a string (only for migration verification).
-     */
-    private fun hashLegacySha256(pin: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val hash = digest.digest(pin.toByteArray(Charsets.UTF_8))
-        return hash.joinToString("") { "%02x".format(it) }
-    }
+    /** Hash the PIN and wrap the verifier with a non-exportable Android Keystore key. */
+    fun protectPasscode(pin: String): String = SecureStorage.encrypt(hashPasscode(pin))
 
     /**
      * Helper to convert a hex string to a ByteArray.
@@ -79,43 +73,32 @@ object SecurityUtils {
         }
     }
 
-    /**
-     * Verify an entered passcode against a stored value (which could be PBKDF2, SHA-256, or legacy plaintext).
-     * If legacy SHA-256 or legacy plaintext is matched, it transparently upgrades it to PBKDF2 in SharedPreferences.
-     */
+    fun verifyPasscode(enteredPin: String, storedValue: String): Boolean {
+        if (storedValue.isEmpty()) return false
+        val verifier = try {
+            SecureStorage.decrypt(storedValue)
+        } catch (_: Exception) {
+            null
+        } ?: return false
+        return verifier.startsWith("pbkdf2_sha256$") && verifyPbkdf2(enteredPin, verifier)
+    }
+
+    /** Verify PBKDF2 and envelope legacy unencrypted PBKDF2 values after a successful unlock. */
     fun verifyAndMigratePasscode(
         enteredPin: String,
         storedValue: String,
         sharedPrefs: SharedPreferences,
         prefKey: String
     ): Boolean {
-        if (storedValue.isEmpty()) return false
-
-        // 1. Match modern PBKDF2 hash
-        if (storedValue.startsWith("pbkdf2_sha256$")) {
-            return verifyPbkdf2(enteredPin, storedValue)
-        }
-
-        // 2. Fallback to legacy SHA-256 match
-        val legacyHashedInput = try {
-            hashLegacySha256(enteredPin)
-        } catch (e: Exception) {
-            ""
-        }
-        if (legacyHashedInput.isNotEmpty() && MessageDigest.isEqual(
-                legacyHashedInput.toByteArray(Charsets.US_ASCII),
-                storedValue.toByteArray(Charsets.US_ASCII)
-            )) {
-            // Upgrade to PBKDF2
+        if (!verifyPasscode(enteredPin, storedValue)) return false
+        if (!SecureStorage.isEncrypted(storedValue)) {
             try {
-                sharedPrefs.edit().putString(prefKey, hashPasscode(enteredPin)).apply()
-            } catch (e: Exception) {
-                // Ignore upgrade write errors on verify success
+                sharedPrefs.edit().putString(prefKey, SecureStorage.encrypt(storedValue)).apply()
+            } catch (_: Exception) {
+                // Verification remains valid if a best-effort migration write fails.
             }
-            return true
         }
-
-        return false
+        return true
     }
 }
 

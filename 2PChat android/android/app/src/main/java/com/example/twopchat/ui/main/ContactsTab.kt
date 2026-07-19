@@ -203,7 +203,7 @@ fun ContactsTab(
                                             .putString("discovery_code_$parsedName", token)
                                             .apply()
                                     }
-                                    com.example.twopchat.P2PMessageRelay.peerEndpoints[parsedName] = endpointStr
+                                    com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(parsedName, endpointStr)
                                     resolveInviteStatus = ""
                                     onItemClick(Chat(parsedName))
                                 } else {
@@ -629,7 +629,7 @@ fun ContactsTab(
                                                                 sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
                                                                 sharedPrefs.edit().putString("transport_$guestName", "DIRECT P2P").apply()
                                                             }
-                                                            com.example.twopchat.P2PMessageRelay.peerEndpoints[guestName] = endpointStr
+                                                            com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(guestName, endpointStr)
                                                             resolveInviteStatus = ""
                                                             inviteLinkState = ""
                                                             onItemClick(Chat(guestName))
@@ -903,7 +903,7 @@ fun ContactsTab(
                                     // filed under Peer(<fingerprint-prefix>) before identity_info arrives.
                                     PythonBridge.rememberPeerName(contact.fingerprint, peerKey)
                                     if (contact.endpoints.isNotBlank() && contact.endpoints != "Unknown") {
-                                        P2PMessageRelay.peerEndpoints[peerKey] = contact.endpoints
+                                        P2PMessageRelay.rememberAuthenticatedPeerEndpoint(peerKey, contact.endpoints)
                                     }
                                     onItemClick(Chat(peerKey))
                                 }

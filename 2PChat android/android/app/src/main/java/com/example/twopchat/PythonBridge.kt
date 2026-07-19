@@ -14,13 +14,16 @@ object PythonBridge {
     private val announcesInFlight = mutableSetOf<String>()
     private const val TAG = "PythonBridge"
     private var appContext: Context? = null
+    @Volatile
     var isInitialized = false
         private set
 
     fun init(context: Context) {
         if (isInitialized) return
-        try {
-            appContext = context.applicationContext
+        synchronized(this) {
+            if (isInitialized) return
+            try {
+                appContext = context.applicationContext
             
             // Clear runtime state to ensure we start clean and don't announce stale IPs from previous crashes.
             val sharedPrefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
@@ -46,12 +49,10 @@ object PythonBridge {
             // Try loading core modules to verify (they will now read the environment variable correctly during import)
             val identity = py.getModule("messenger.core.identity")
             Log.i(TAG, "Python core modules loaded successfully. Config dir: ${configDir.absolutePath}")
-            isInitialized = true
-            
-            // Log network interfaces immediately to app.log for diagnostics
-            logAllNetworkInterfaces(context)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize Python core", e)
+                isInitialized = true
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize Python core", e)
+            }
         }
     }
 
@@ -116,7 +117,7 @@ object PythonBridge {
                 null
             }
             val pyResults = if (directResults != null && directResults.asList().isNotEmpty()) {
-                Log.i(TAG, "Resolved '$expectedLiveName' through a direct discovery candidate")
+                Log.i(TAG, "Resolved requested peer through a direct discovery candidate")
                 directResults
             } else {
                 bridge.callAttr(
@@ -308,7 +309,7 @@ object PythonBridge {
             val now = android.os.SystemClock.elapsedRealtime()
             val lastAt = lastAnnounceAt[announceKey]
             if (announceKey in announcesInFlight || (!force && lastAt != null && now - lastAt < MIN_ANNOUNCE_INTERVAL_MS)) {
-                Log.i(TAG, "Skipping duplicate tracker announce for '$nickname' at $addresses")
+                Log.i(TAG, "Skipping duplicate tracker announce")
                 return lastAnnounceResult[announceKey] ?: false
             }
             announcesInFlight.add(announceKey)

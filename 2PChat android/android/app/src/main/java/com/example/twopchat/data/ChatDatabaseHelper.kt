@@ -24,7 +24,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        private const val DATABASE_VERSION = 8
+        private const val DATABASE_VERSION = 9
         private const val TABLE_MESSAGES = "messages"
         private const val TABLE_PENDING_CONTROLS = "pending_controls"
         
@@ -125,6 +125,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 + KEY_REACTIONS + " TEXT,"
                 + KEY_SENT_AT_MS + " INTEGER NOT NULL DEFAULT 0" + ")")
         db.execSQL(createTable)
+        createMessagePeerIndex(db)
         createPendingControlsTable(db)
     }
 
@@ -209,6 +210,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         }
         if (oldVersion < 8) {
             createPendingControlsTable(db)
+        }
+        if (oldVersion < 9) {
+            createMessagePeerIndex(db)
         }
     }
 
@@ -663,6 +667,13 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS pending_controls_peer_created " +
                 "ON $TABLE_PENDING_CONTROLS($KEY_PEER_NAME, $KEY_CREATED_AT_MS)"
+        )
+    }
+
+    private fun createMessagePeerIndex(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS messages_peer_sent " +
+                "ON $TABLE_MESSAGES($KEY_PEER_NAME, $KEY_SENT_AT_MS)"
         )
     }
 

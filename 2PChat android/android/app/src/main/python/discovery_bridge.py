@@ -29,15 +29,28 @@ logger = setup_logger("discovery_bridge")
 def print(*args, **kwargs):
     sep = kwargs.get('sep', ' ')
     msg = sep.join(str(arg) for arg in args)
+    known_names = set(globals().get("peer_fingerprint_to_name", {}).values())
+    local_name = globals().get("local_identity_nickname", "")
+    if local_name:
+        known_names.add(local_name)
+    for name in sorted((str(value) for value in known_names if value), key=len, reverse=True):
+        alias = hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
+        msg = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", f"<peer:{alias}>", msg)
     logger.info(msg)
 
 active_sessions = {}
 peer_operation_locks = {}
 peer_fingerprint_to_name = {}
 incoming_files = {}
+incoming_file_starts = {}
 MOBILE_ACK_TIMEOUT = 3.0
 MOBILE_MAX_RETRIES = 1
 MAX_INCOMING_FILES = 16
+MAX_INCOMING_FILES_PER_PEER = 4
+MAX_INCOMING_FILE_BYTES = 100 * 1024 * 1024
+MAX_INCOMING_FILE_CHUNKS = 2048
+INCOMING_FILE_RATE_WINDOW_SECONDS = 60
+MAX_INCOMING_FILE_STARTS_PER_WINDOW = 8
 INCOMING_FILE_TTL_SECONDS = 120
 MAX_ENCRYPTED_CHUNK_SIZE = 1024 * 1024
 MAX_CONCURRENT_HANDSHAKES = 10
@@ -193,6 +206,24 @@ def _prune_incoming_files(now: float | None = None):
     for file_id, state in list(incoming_files.items()):
         if state.get("updated_at", 0) < cutoff:
             _discard_incoming_file(file_id)
+
+
+def _allow_incoming_file_start(peer_fingerprint: str, now: float | None = None) -> bool:
+    current = now if now is not None else time.monotonic()
+    cutoff = current - INCOMING_FILE_RATE_WINDOW_SECONDS
+    for peer, peer_starts in list(incoming_file_starts.items()):
+        recent = [stamp for stamp in peer_starts if stamp >= cutoff]
+        if recent:
+            incoming_file_starts[peer] = recent
+        else:
+            incoming_file_starts.pop(peer, None)
+    starts = [stamp for stamp in incoming_file_starts.get(peer_fingerprint, ()) if stamp >= cutoff]
+    if len(starts) >= MAX_INCOMING_FILE_STARTS_PER_WINDOW:
+        incoming_file_starts[peer_fingerprint] = starts
+        return False
+    starts.append(current)
+    incoming_file_starts[peer_fingerprint] = starts
+    return True
 
 
 def _discard_incoming_file(key):
@@ -1360,11 +1391,20 @@ async def _read_loop(session, peer_name, fp):
                 if mtype == "file_meta":
                     file_size = int(msg.get("file_size", -1))
                     num_chunks = int(msg.get("num_chunks", 0))
-                    if file_size < 0:
+                    if file_size < 0 or file_size > MAX_INCOMING_FILE_BYTES:
                         print(f"Rejected file transfer: invalid size {file_size}")
                         continue
-                    if num_chunks < 0 or (file_size > 0 and num_chunks == 0):
+                    if num_chunks < 0 or num_chunks > MAX_INCOMING_FILE_CHUNKS or (file_size > 0 and num_chunks == 0):
                         print(f"Rejected file transfer: invalid chunk count {num_chunks}")
+                        continue
+                    peer_transfer_count = sum(
+                        1 for key in incoming_files if isinstance(key, tuple) and key[0] == fp
+                    )
+                    if peer_transfer_count >= MAX_INCOMING_FILES_PER_PEER:
+                        print("Rejected file transfer: peer concurrency limit reached")
+                        continue
+                    if not _allow_incoming_file_start(fp, now):
+                        print("Rejected file transfer: peer rate limit reached")
                         continue
                     if state:
                         _discard_incoming_file(transfer_key)
@@ -1411,6 +1451,11 @@ async def _read_loop(session, peer_name, fp):
                     except Exception as decrypt_err:
                         _discard_incoming_file(transfer_key)
                         print(f"Rejected unauthenticated file chunk: {decrypt_err}")
+                        continue
+                    declared_size = int(state["meta"]["file_size"])
+                    if state["written"] + len(plaintext) > declared_size or state["written"] + len(plaintext) > MAX_INCOMING_FILE_BYTES:
+                        _discard_incoming_file(transfer_key)
+                        print("Rejected file transfer exceeding declared size")
                         continue
                     state["handle"].write(plaintext)
                     state["digest"].update(plaintext)
@@ -1505,7 +1550,7 @@ async def _read_loop(session, peer_name, fp):
                                 except Exception as cb_err:
                                     print("Error invoking message listener callback for file:", cb_err)
                         except Exception as decrypt_err:
-                            print(f"Failed to decrypt incoming file {file_name}: {decrypt_err}")
+                            print(f"Failed to decrypt an incoming file: {decrypt_err}")
                             traceback.print_exc()
                             _discard_incoming_file(transfer_key)
     except Exception as e:
@@ -1806,7 +1851,7 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
         from datetime import datetime, timezone
         from pathlib import Path
         
-        print(f"Starting chunked encryption for file: {file_path}")
+        print("Starting chunked encryption for an outgoing file")
         (
             chunk_iterator,
             file_key,
@@ -1831,7 +1876,7 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
         if message_id:
             meta["message_id"] = str(message_id)[:128]
         
-        print(f"Sending file_meta envelope for file_id {meta['file_id']} ({meta['file_name']}, {file_size} bytes)")
+        print(f"Sending file metadata envelope ({file_size} bytes)")
         try:
             await session.send_reliable(meta)
         except (ConnectionError, OSError) as send_err:
@@ -1854,7 +1899,7 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
             }
             await session.send_reliable(payload)
             
-        print(f"File {file_path} successfully transmitted to {peer_name}!")
+        print(f"File successfully transmitted to {peer_name}")
         return True
     except asyncio.CancelledError:
         await _invalidate_session(session)
@@ -1873,6 +1918,7 @@ def _clear_account_runtime_state():
     active_sessions.clear()
     peer_operation_locks.clear()
     peer_fingerprint_to_name.clear()
+    incoming_file_starts.clear()
     for transfer_key in list(incoming_files):
         _discard_incoming_file(transfer_key)
     message_listener_callback = None

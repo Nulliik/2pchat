@@ -9,7 +9,7 @@ import androidx.compose.runtime.setValue
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
-import java.util.concurrent.ConcurrentHashMap
+import java.io.ByteArrayOutputStream
 import java.util.regex.Pattern
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,28 +23,40 @@ data class LinkPreviewMetadata(
 )
 
 object LinkPreviewFetcher {
-    private val cache = ConcurrentHashMap<String, LinkPreviewMetadata>()
-    private val imageCache = ConcurrentHashMap<String, android.graphics.Bitmap>()
+    private const val MAX_REDIRECTS = 5
+    private const val MAX_HTML_CHARS = 262_144
+    private const val MAX_IMAGE_BYTES = 5 * 1024 * 1024
+    private const val MAX_IMAGE_DIMENSION = 512
+    private val cache = object : android.util.LruCache<String, LinkPreviewMetadata>(128) {}
+    private val imageCache = object : android.util.LruCache<String, android.graphics.Bitmap>(
+        (Runtime.getRuntime().maxMemory() / 16L).coerceIn(2L * 1024L * 1024L, 16L * 1024L * 1024L).toInt()
+    ) {
+        override fun sizeOf(key: String, value: android.graphics.Bitmap): Int = value.byteCount
+    }
+
+    private val META_TAG_PATTERN = Pattern.compile("<meta\\s+([^>]+)>", Pattern.CASE_INSENSITIVE)
+    private val META_CONTENT_PATTERN = Pattern.compile(
+        """content\s*=\s*["']([^"']+)["']""",
+        Pattern.CASE_INSENSITIVE
+    )
 
     fun getImageFromCache(url: String): android.graphics.Bitmap? = imageCache[url]
     fun putImageToCache(url: String, bitmap: android.graphics.Bitmap) {
-        imageCache[url] = bitmap
+        imageCache.put(url, bitmap)
     }
 
     private fun extractMetaContent(html: String, nameOrProperty: String): String? {
-        val metaMatcher = Pattern.compile("<meta\\s+([^>]+)>", Pattern.CASE_INSENSITIVE).matcher(html)
+        val targetAttributePattern = Pattern.compile(
+            """(?:name|property)\s*=\s*["']${Pattern.quote(nameOrProperty)}["']""",
+            Pattern.CASE_INSENSITIVE
+        )
+        val metaMatcher = META_TAG_PATTERN.matcher(html)
         while (metaMatcher.find()) {
             val attributes = metaMatcher.group(1) ?: continue
-            val hasTargetAttr = Pattern.compile(
-                """(?:name|property)\s*=\s*["']${Pattern.quote(nameOrProperty)}["']""",
-                Pattern.CASE_INSENSITIVE
-            ).matcher(attributes).find()
+            val hasTargetAttr = targetAttributePattern.matcher(attributes).find()
             
             if (hasTargetAttr) {
-                val contentMatcher = Pattern.compile(
-                    """content\s*=\s*["']([^"']+)["']""",
-                    Pattern.CASE_INSENSITIVE
-                ).matcher(attributes)
+                val contentMatcher = META_CONTENT_PATTERN.matcher(attributes)
                 if (contentMatcher.find()) {
                     return contentMatcher.group(1)
                 }
@@ -74,13 +86,13 @@ object LinkPreviewFetcher {
         var responseCode = 0
 
         try {
-            while (redirectCount < 5) {
+            while (redirectCount <= MAX_REDIRECTS) {
                 val urlObj = URL(currentUrl)
                 val protocol = urlObj.protocol?.lowercase(java.util.Locale.ROOT) ?: ""
                 if (protocol != "http" && protocol != "https") {
                     val fallbackHost = extractHost(targetUrl)
                     val fallback = LinkPreviewMetadata(url = targetUrl, siteName = fallbackHost)
-                    cache[targetUrl] = fallback
+                    cache.put(targetUrl, fallback)
                     return@withContext fallback
                 }
 
@@ -88,7 +100,7 @@ object LinkPreviewFetcher {
                 if (isPrivateOrInternalHost(host)) {
                     val fallbackHost = extractHost(targetUrl)
                     val fallback = LinkPreviewMetadata(url = targetUrl, siteName = fallbackHost)
-                    cache[targetUrl] = fallback
+                    cache.put(targetUrl, fallback)
                     return@withContext fallback
                 }
 
@@ -110,6 +122,7 @@ object LinkPreviewFetcher {
                         }
                         redirectCount++
                         connection.disconnect()
+                        if (redirectCount > MAX_REDIRECTS) break
                         continue
                     }
                 }
@@ -122,7 +135,7 @@ object LinkPreviewFetcher {
                 android.util.Log.e("LinkPreview", "Failed response code $responseCode for $currentUrl")
                 val fallbackHost = extractHost(targetUrl)
                 val fallback = LinkPreviewMetadata(url = targetUrl, siteName = fallbackHost)
-                cache[targetUrl] = fallback
+                cache.put(targetUrl, fallback)
                 return@withContext fallback
             }
 
@@ -131,7 +144,7 @@ object LinkPreviewFetcher {
                 android.util.Log.e("LinkPreview", "Non-HTML content type: $contentType for $currentUrl")
                 val fallbackHost = extractHost(targetUrl)
                 val fallback = LinkPreviewMetadata(url = targetUrl, siteName = fallbackHost)
-                cache[targetUrl] = fallback
+                cache.put(targetUrl, fallback)
                 return@withContext fallback
             }
 
@@ -143,7 +156,7 @@ object LinkPreviewFetcher {
             while (reader.read(charBuffer).also { charsRead = it } != -1) {
                 htmlBuilder.append(charBuffer, 0, charsRead)
                 totalChars += charsRead
-                if (totalChars >= 262144) { // limit to 256KB
+                if (totalChars >= MAX_HTML_CHARS) {
                     break
                 }
             }
@@ -169,10 +182,11 @@ object LinkPreviewFetcher {
 
             if (!imageUrl.isNullOrBlank() && !imageUrl.startsWith("http://", ignoreCase = true) && !imageUrl.startsWith("https://", ignoreCase = true)) {
                 try {
-                    val baseUri = URI(targetUrl)
+                    val baseUri = URI(currentUrl)
                     imageUrl = baseUri.resolve(imageUrl).toString()
                 } catch (_: Exception) {}
             }
+            if (!imageUrl.isNullOrBlank() && !isSafeHttpUrl(imageUrl)) imageUrl = null
 
             val result = LinkPreviewMetadata(
                 url = targetUrl,
@@ -181,13 +195,13 @@ object LinkPreviewFetcher {
                 imageUrl = imageUrl,
                 siteName = siteName,
             )
-            cache[targetUrl] = result
+            cache.put(targetUrl, result)
             result
         } catch (e: Exception) {
             android.util.Log.e("LinkPreview", "Error fetching preview for $targetUrl", e)
             val fallbackHost = extractHost(targetUrl)
             val fallback = LinkPreviewMetadata(url = targetUrl, siteName = fallbackHost)
-            cache[targetUrl] = fallback
+            cache.put(targetUrl, fallback)
             fallback
         } finally {
             try {
@@ -217,7 +231,17 @@ object LinkPreviewFetcher {
             .replace("&nbsp;", " ")
     }
 
-    private fun isPrivateOrInternalHost(host: String): Boolean {
+    internal fun isSafeHttpUrl(rawUrl: String): Boolean {
+        return try {
+            val url = URL(rawUrl)
+            val protocol = url.protocol.lowercase(java.util.Locale.ROOT)
+            (protocol == "http" || protocol == "https") && !isPrivateOrInternalHost(url.host.orEmpty())
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    internal fun isPrivateOrInternalHost(host: String): Boolean {
         if (host.isBlank()) return true
         val lower = host.lowercase(java.util.Locale.ROOT)
         if (lower == "localhost" || lower.endsWith(".local") || lower.endsWith(".internal")) return true
@@ -227,10 +251,75 @@ object LinkPreviewFetcher {
                 addr.isLoopbackAddress ||
                 addr.isAnyLocalAddress ||
                 addr.isLinkLocalAddress ||
-                addr.isSiteLocalAddress
+                addr.isSiteLocalAddress ||
+                addr.isMulticastAddress ||
+                (addr.address.size == 16 && (addr.address[0].toInt() and 0xFE) == 0xFC)
             }
         } catch (_: Exception) {
-            false
+            true
+        }
+    }
+
+    suspend fun fetchImage(rawUrl: String): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
+        var currentUrl = rawUrl
+        var redirects = 0
+        var connection: HttpURLConnection? = null
+        try {
+            while (redirects <= MAX_REDIRECTS) {
+                if (!isSafeHttpUrl(currentUrl)) return@withContext null
+                connection = URL(currentUrl).openConnection() as HttpURLConnection
+                connection.connectTimeout = 6_000
+                connection.readTimeout = 6_000
+                connection.instanceFollowRedirects = false
+                connection.setRequestProperty("User-Agent", "2PChat Link Preview")
+                val responseCode = connection.responseCode
+                if (responseCode in 300..399) {
+                    val location = connection.getHeaderField("Location") ?: return@withContext null
+                    currentUrl = URI(currentUrl).resolve(location).toString()
+                    connection.disconnect()
+                    redirects++
+                    continue
+                }
+                if (responseCode !in 200..299) return@withContext null
+                if (!connection.contentType.orEmpty().startsWith("image/", ignoreCase = true)) return@withContext null
+                if (connection.contentLengthLong > MAX_IMAGE_BYTES) return@withContext null
+
+                val output = ByteArrayOutputStream()
+                connection.inputStream.use { input ->
+                    val buffer = ByteArray(8_192)
+                    var total = 0
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        if (total > MAX_IMAGE_BYTES) return@withContext null
+                        output.write(buffer, 0, count)
+                    }
+                }
+                val bytes = output.toByteArray()
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
+                var sampleSize = 1
+                while (bounds.outWidth / sampleSize > MAX_IMAGE_DIMENSION ||
+                    bounds.outHeight / sampleSize > MAX_IMAGE_DIMENSION) {
+                    sampleSize *= 2
+                }
+                android.graphics.BitmapFactory.decodeByteArray(
+                    bytes,
+                    0,
+                    bytes.size,
+                    android.graphics.BitmapFactory.Options().apply { inSampleSize = sampleSize },
+                )
+            }
+            null
+        } catch (_: OutOfMemoryError) {
+            imageCache.evictAll()
+            null
+        } catch (_: Exception) {
+            null
+        } finally {
+            connection?.disconnect()
         }
     }
 }
@@ -241,19 +330,10 @@ fun rememberNetworkImage(url: String?): android.graphics.Bitmap? {
     var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(LinkPreviewFetcher.getImageFromCache(url)) }
     if (bitmap == null) {
         LaunchedEffect(url) {
-            withContext(Dispatchers.IO) {
-                try {
-                    val conn = URL(url).openConnection() as HttpURLConnection
-                    conn.connectTimeout = 6000
-                    conn.readTimeout = 6000
-                    conn.inputStream.use { stream ->
-                        val decoded = android.graphics.BitmapFactory.decodeStream(stream)
-                        if (decoded != null) {
-                            LinkPreviewFetcher.putImageToCache(url, decoded)
-                            bitmap = decoded
-                        }
-                    }
-                } catch (_: Exception) {}
+            val decoded = LinkPreviewFetcher.fetchImage(url)
+            if (decoded != null) {
+                LinkPreviewFetcher.putImageToCache(url, decoded)
+                bitmap = decoded
             }
         }
     }
