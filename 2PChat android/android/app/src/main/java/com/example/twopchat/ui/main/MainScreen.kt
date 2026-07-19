@@ -215,7 +215,7 @@ fun MainScreen(
                         onSurfaceVariant = onSurfaceVariant,
                         onStatusPillClick = { node ->
                             selectedRadarNode = node
-                            showRadarView = true
+                            showRadarView = false
                             showLogsDialog = true
                         }
                     )

@@ -275,7 +275,7 @@ fun NetworkDiagnosticsDialog(
             activePeers = snapshot.activePeers
         }
         
-        val refreshDiagnostics = {
+        val refreshDiagnostics: () -> Unit = {
             diagnosticsScope.launch {
                 applySnapshot(withContext(Dispatchers.IO) { readDiagnosticsSnapshot(context) })
             }
@@ -357,10 +357,88 @@ fun NetworkDiagnosticsDialog(
             }
         }
 
-        androidx.compose.ui.window.Dialog(
-            onDismissRequest = { onDismissRequest() },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
-        ) {
+        if (selectedRadarNode != null && !showRadarView) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = {
+                    onSelectedRadarNodeChange(null)
+                    onDismissRequest()
+                },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth(0.92f)
+                        .fillMaxHeight(0.75f)
+                        .padding(vertical = 12.dp)
+                        .border(0.5.dp, primaryColor.copy(alpha = 0.15f), RoundedCornerShape(24.dp))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(18.dp)
+                    ) {
+                        // Header Row (Title + Close Button)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (appLanguage == "Русский") selectedRadarNode.labelRu else selectedRadarNode.labelEn,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                                color = onSurfaceColor
+                            )
+                            IconButton(
+                                onClick = {
+                                    onSelectedRadarNodeChange(null)
+                                    onDismissRequest()
+                                },
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .background(onSurfaceColor.copy(alpha = 0.05f), shape = CircleShape)
+                            ) {
+                                Text("✕", fontSize = 13.sp, color = onSurfaceVariant, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Node Details List
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            NodeDetailContent(
+                                node = selectedRadarNode,
+                                context = context,
+                                appLanguage = appLanguage,
+                                primaryColor = primaryColor,
+                                surfaceColor = surfaceColor,
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                surfaceVariant = surfaceVariant,
+                                sharedPrefs = sharedPrefs,
+                                upnpDetails = upnpDetails,
+                                trackerDiagnostics = trackerDiagnostics,
+                                trackerPings = trackerPings,
+                                yggDiagnostics = yggDiagnostics,
+                                activePeers = activePeers,
+                                refreshDiagnostics = refreshDiagnostics
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { onDismissRequest() },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+            ) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = surfaceColor),
                 shape = RoundedCornerShape(24.dp),
@@ -860,266 +938,24 @@ fun NetworkDiagnosticsDialog(
                                         modifier = Modifier
                                             .weight(1f)
                                             .verticalScroll(rememberScrollState()),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        when (node) {
-                                            RadarNode.SELF -> {
-                                                val localIps = PythonBridge.getLocalAddresses()
-                                                DetailRow(if (appLanguage == "Русский") "Мой Fingerprint:" else "My Fingerprint:", PythonBridge.getLocalFingerprint(), primaryColor)
-                                                DetailRow(if (appLanguage == "Русский") "Порт P2P Сервера:" else "P2P Server Port:", "${P2PMessageRelay.listenerPort(context)} (listening)", Color(0xFF4CAF50))
-                                                DetailRow(if (appLanguage == "Русский") "Локальные IP адреса:" else "Local IP Addresses:", localIps.joinToString("\n"), primaryColor)
-                                            }
-                                            RadarNode.ROUTER -> {
-                                                val mapped = upnpDetails["mapped"] == "true"
-                                                val extIp = upnpDetails["external_ip"] ?: "n/a"
-                                                val intIp = upnpDetails["local_ip"] ?: "n/a"
-                                                val port = upnpDetails["port"] ?: "n/a"
-                                                val service = upnpDetails["service_type"] ?: "n/a"
-                                                val controlUrl = upnpDetails["control_url"] ?: "n/a"
-                                                val errorMsg = upnpDetails["error"] ?: "n/a"
-                                                
-                                                DetailRow(if (appLanguage == "Русский") "Статус проброса:" else "UPnP Mapped Status:", if (mapped) "CONNECTED / OK" else "FAILED / OFFLINE", if (mapped) Color(0xFF4CAF50) else Color.Red)
-                                                DetailRow(if (appLanguage == "Русский") "Внешний IP адрес:" else "Router External IP:", extIp, primaryColor)
-                                                DetailRow(if (appLanguage == "Русский") "Внутренний IP адрес:" else "Client Internal IP:", intIp, primaryColor)
-                                                DetailRow(if (appLanguage == "Русский") "Проброшенный порт:" else "Mapped Port:", port, primaryColor)
-                                                DetailRow(if (appLanguage == "Русский") "Тип шлюза / Service:" else "Gateway Service:", service, primaryColor)
-                                                DetailRow(if (appLanguage == "Русский") "Адрес управления (SOAP):" else "Control SOAP URL:", controlUrl, onSurfaceVariant)
-                                                if (!mapped) {
-                                                    DetailRow(if (appLanguage == "Русский") "Код ошибки:" else "Error message:", errorMsg, Color.Red)
-                                                }
-                                                
-                                                Spacer(modifier = Modifier.height(8.dp))
-                                                
-                                                var upnpReopening by remember { mutableStateOf(false) }
-                                                val coroutineScope = rememberCoroutineScope()
-                                                
-                                                Button(
-                                                    onClick = {
-                                                        upnpReopening = true
-                                                        coroutineScope.launch {
-                                                            val success = PythonBridge.triggerUpnpReopen()
-                                                            kotlinx.coroutines.delay(2000)
-                                                            refreshDiagnostics()
-                                                            upnpReopening = false
-                                                            Toast.makeText(context, if (success) "UPnP reopen triggered!" else "Failed to trigger UPnP reopen", Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    },
-                                                    enabled = !upnpReopening,
-                                                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                                                    shape = RoundedCornerShape(10.dp),
-                                                    modifier = Modifier.fillMaxWidth()
-                                                ) {
-                                                    if (upnpReopening) {
-                                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-                                                    } else {
-                                                        Text(if (appLanguage == "Русский") "Переоткрыть порт" else "Re-open Port", color = Color.White)
-                                                    }
-                                                }
-                                            }
-                                            RadarNode.TRACKERS -> {
-                                                trackerDiagnostics.forEach { (name, status) ->
-                                                    val ping = trackerPings[name]
-                                                    val announceRtt = Regex("announce_rtt=(\\d+)ms").find(status)?.groupValues?.get(1)?.toLongOrNull()
-                                                    val announceOk = status.contains("announce=OK", ignoreCase = true)
-                                                    val pingText = if (announceRtt != null && announceOk) {
-                                                        "RTT ${announceRtt}ms"
-                                                    } else if (announceRtt != null) {
-                                                        if (appLanguage == "Русский") "ошибка через ${announceRtt}ms" else "failed after ${announceRtt}ms"
-                                                    } else if (ping == null) {
-                                                        if (appLanguage == "Русский") "опрос..." else "probing..."
-                                                    } else if (ping == -2L) {
-                                                        if (appLanguage == "Русский") "Yggdrasil выкл." else "Yggdrasil off"
-                                                    } else if (ping == -3L) {
-                                                        "IPv6 literal"
-                                                    } else if (ping < 0) {
-                                                        if (appLanguage == "Русский") "DNS недоступен" else "DNS unavailable"
-                                                    } else if (ping == 0L) {
-                                                        "DNS <1ms"
-                                                    } else {
-                                                        "DNS ${ping}ms"
-                                                    }
-                                                    val skipped = status.contains("SKIPPED", ignoreCase = true)
-                                                    val statusColor = when {
-                                                        skipped || ping == -2L -> onSurfaceVariant
-                                                        announceOk -> Color(0xFF4CAF50)
-                                                        else -> Color.Red
-                                                    }
-                                                    Card(
-                                                        colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.3f)),
-                                                        modifier = Modifier.fillMaxWidth().border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
-                                                    ) {
-                                                        Column(modifier = Modifier.padding(10.dp)) {
-                                                            Row(
-                                                                modifier = Modifier.fillMaxWidth(),
-                                                                horizontalArrangement = Arrangement.SpaceBetween
-                                                            ) {
-                                                                Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = onSurfaceColor)
-                                                                Text(pingText, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = statusColor)
-                                                            }
-                                                            Spacer(modifier = Modifier.height(4.dp))
-                                                            Text(
-                                                                text = status,
-                                                                fontSize = 11.sp,
-                                                                fontFamily = FontFamily.Monospace,
-                                                                color = onSurfaceVariant
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            RadarNode.YGGDRASIL -> {
-                                                val state = yggDiagnostics["state"] ?: "disabled"
-                                                val peers = yggDiagnostics["peers"] ?: "0"
-                                                val routes = yggDiagnostics["routes"] ?: "0"
-                                                val treeNodes = yggDiagnostics["tree_nodes"] ?: "0"
-                                                val address = PythonBridge.getYggdrasilAddress()
-                                                
-                                                DetailRow(if (appLanguage == "Русский") "Статус Go-демона:" else "Daemon Status:", state.uppercase(), if (state == "connected") Color(0xFF4CAF50) else Color.Red)
-                                                DetailRow(if (appLanguage == "Русский") "Адрес IPv6 Yggdrasil:" else "Yggdrasil IPv6:", if (address.isNotEmpty()) address else "n/a", primaryColor)
-                                                DetailRow(if (appLanguage == "Русский") "Количество пиров (mesh):" else "Mesh Peers Count:", peers, primaryColor)
-                                                DetailRow(if (appLanguage == "Русский") "Количество маршрутов:" else "Routing table size:", routes, primaryColor)
-                                                DetailRow(if (appLanguage == "Русский") "Узлов в дереве (DHT):" else "DHT tree nodes count:", treeNodes, primaryColor)
-                                                
-                                                val yggPeersJsonStr = sharedPrefs.getString("yggdrasil_runtime_peers_json", "") ?: ""
-                                                if (yggPeersJsonStr.isNotEmpty() && yggPeersJsonStr != "null") {
-                                                    Spacer(modifier = Modifier.height(8.dp))
-                                                    Text(if (appLanguage == "Русский") "ПУБЛИЧНЫЕ ПИРЫ:" else "PUBLIC MESH PEERS:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = primaryColor)
-                                                    
-                                                    val peersList = remember(yggPeersJsonStr) {
-                                                        val list = mutableListOf<Map<String, String>>()
-                                                        try {
-                                                            val arr = JSONArray(yggPeersJsonStr)
-                                                            for (i in 0 until arr.length()) {
-                                                                val obj = arr.getJSONObject(i)
-                                                                // The embedded Go API uses capitalized admin
-                                                                // field names (URI, Up, RXBytes...). The previous
-                                                                // lowercase-only parser therefore displayed every
-                                                                // real public peer as "unknown".
-                                                                fun firstString(vararg keys: String): String = keys
-                                                                    .asSequence()
-                                                                    .map { obj.optString(it, "").trim() }
-                                                                    .firstOrNull { it.isNotEmpty() && it != "null" }
-                                                                    .orEmpty()
-                                                                fun firstLong(vararg keys: String): Long = keys
-                                                                    .asSequence()
-                                                                    .filter { obj.has(it) }
-                                                                    .map { obj.optLong(it, 0L) }
-
-                                                                    .firstOrNull() ?: 0L
-
-                                                                val uri = firstString("URI", "uri", "endpoint", "address")
-                                                                val remote = firstString("Remote", "remote", "Address")
-                                                                val key = firstString("Key", "key")
-                                                                val up = if (obj.has("Up")) obj.optBoolean("Up") else obj.optBoolean("up", true)
-                                                                val inbound = if (obj.has("Inbound")) obj.optBoolean("Inbound") else obj.optBoolean("inbound", false)
-                                                                val uptime = firstLong("Uptime", "uptime")
-                                                                val uptimeSeconds = if (uptime > 86_400_000_000L) uptime / 1_000_000_000L else uptime
-                                                                val uptimeText = if (uptimeSeconds > 0) {
-                                                                    "${uptimeSeconds / 3600}h ${(uptimeSeconds % 3600) / 60}m ${uptimeSeconds % 60}s"
-                                                                } else if (up) "connected" else "offline"
-                                                                val tx = firstLong("TXBytes", "bytes_sent", "tx")
-                                                                val rx = firstLong("RXBytes", "bytes_recv", "rx")
-                                                                val latency = firstLong("Latency", "latency")
-                                                                val cost = firstLong("Cost", "cost")
-                                                                val lastError = firstString("LastError", "last_error", "error")
-                                                                list.add(mapOf(
-                                                                    "address" to (uri.ifEmpty { remote.ifEmpty { key.take(16).ifEmpty { "peer #${i + 1}" } } }),
-                                                                    "remote" to remote,
-                                                                    "key" to key,
-                                                                    "state" to (if (up) "ONLINE" else "OFFLINE"),
-                                                                    "direction" to (if (inbound) "INBOUND" else "OUTBOUND"),
-                                                                    "uptime" to uptimeText,
-                                                                    "traffic" to "TX: ${tx / 1024} KB / RX: ${rx / 1024} KB",
-                                                                    "route" to "Cost: $cost · Latency: ${latency / 1_000_000} ms",
-                                                                    "error" to lastError
-                                                                ))
-                                                            }
-                                                        } catch (e: Exception) {
-                                                            e.printStackTrace()
-                                                        }
-                                                        list
-                                                    }
-                                                    
-                                                    peersList.forEach { peerMap ->
-                                                        Card(
-                                                            colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.3f)),
-                                                            modifier = Modifier.fillMaxWidth().border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
-                                                        ) {
-                                                            Column(modifier = Modifier.padding(10.dp)) {
-                                                                Text(peerMap["address"] ?: "", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = onSurfaceColor)
-                                                                if (!peerMap["remote"].isNullOrEmpty()) {
-                                                                    Text("Remote: ${peerMap["remote"]}", fontSize = 11.sp, color = onSurfaceVariant)
-                                                                }
-                                                                if (!peerMap["key"].isNullOrEmpty()) {
-                                                                    Text("Key: ${peerMap["key"]}", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = onSurfaceVariant)
-                                                                }
-                                                                Row(
-                                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                                ) {
-                                                                    Text("${peerMap["state"]} · ${peerMap["direction"]}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (peerMap["state"] == "ONLINE") Color(0xFF4CAF50) else Color.Red)
-                                                                    Text("Uptime: ${peerMap["uptime"]}", fontSize = 11.sp, color = onSurfaceVariant)
-                                                                }
-                                                                Row(
-                                                                    modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
-                                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                                ) {
-                                                                    Text(peerMap["traffic"] ?: "", fontSize = 11.sp, color = onSurfaceVariant)
-                                                                    Text(peerMap["route"] ?: "", fontSize = 11.sp, color = onSurfaceVariant)
-                                                                }
-                                                                if (!peerMap["error"].isNullOrEmpty()) {
-                                                                    Text("Error: ${peerMap["error"]}", fontSize = 10.sp, color = Color.Red, modifier = Modifier.padding(top = 3.dp))
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            RadarNode.PEERS -> {
-                                                if (activePeers.isEmpty()) {
-                                                    Text(
-                                                        text = if (appLanguage == "Русский") "Нет активных сессий Double Ratchet" else "No active Double Ratchet sessions established",
-                                                        color = onSurfaceVariant,
-                                                        fontSize = 13.sp
-                                                    )
-                                                } else {
-                                                    activePeers.forEach { name ->
-                                                        val endpoint = P2PMessageRelay.peerEndpoints[name] ?: "resolving..."
-                                                        val transport = connectionTransportLabel(
-                                                            rawTransport = P2PMessageRelay.peerConnectionTransports[name],
-                                                            endpoint = P2PMessageRelay.peerEndpoints[name],
-                                                            appLanguage = appLanguage,
-                                                        )
-                                                        val isEstablished = name in activePeers
-                                                        Card(
-                                                            colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.3f)),
-                                                            modifier = Modifier.fillMaxWidth().border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
-                                                        ) {
-                                                            Row(
-                                                                modifier = Modifier.fillMaxWidth().padding(10.dp),
-                                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                                verticalAlignment = Alignment.CenterVertically
-                                                            ) {
-                                                                Column(modifier = Modifier.weight(1f)) {
-                                                                    Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = onSurfaceColor)
-                                                                    Text("EP: $endpoint", fontSize = 11.sp, color = onSurfaceVariant)
-                                                                    Text("Transport: $transport", fontSize = 11.sp, color = primaryColor)
-                                                                }
-                                                                Text(
-                                                                    text = if (isEstablished) "ONLINE" else "WAITING",
-                                                                    fontWeight = FontWeight.Bold,
-                                                                    fontSize = 11.sp,
-                                                                    color = if (isEstablished) Color(0xFF4CAF50) else Color(0xFFFFC107),
-                                                                    maxLines = 1,
-                                                                    softWrap = false,
-                                                                    modifier = Modifier.widthIn(min = 58.dp),
-                                                                )
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        NodeDetailContent(
+                                            node = node,
+                                            context = context,
+                                            appLanguage = appLanguage,
+                                            primaryColor = primaryColor,
+                                            surfaceColor = surfaceColor,
+                                            onSurfaceColor = onSurfaceColor,
+                                            onSurfaceVariant = onSurfaceVariant,
+                                            surfaceVariant = surfaceVariant,
+                                            sharedPrefs = sharedPrefs,
+                                            upnpDetails = upnpDetails,
+                                            trackerDiagnostics = trackerDiagnostics,
+                                            trackerPings = trackerPings,
+                                            yggDiagnostics = yggDiagnostics,
+                                            activePeers = activePeers,
+                                            refreshDiagnostics = refreshDiagnostics
+                                        )
                                     }
                                 }
                             }
@@ -1130,3 +966,278 @@ fun NetworkDiagnosticsDialog(
         }
     }
 }
+}
+
+@Composable
+private fun NodeDetailContent(
+    node: RadarNode,
+    context: android.content.Context,
+    appLanguage: String,
+    primaryColor: Color,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
+    onSurfaceVariant: Color,
+    surfaceVariant: Color,
+    sharedPrefs: android.content.SharedPreferences,
+    upnpDetails: Map<String, String>,
+    trackerDiagnostics: Map<String, String>,
+    trackerPings: Map<String, Long>,
+    yggDiagnostics: Map<String, String>,
+    activePeers: List<String>,
+    refreshDiagnostics: () -> Unit,
+) {
+    when (node) {
+        RadarNode.SELF -> {
+            val localIps = PythonBridge.getLocalAddresses()
+            DetailRow(if (appLanguage == "Русский") "Мой Fingerprint:" else "My Fingerprint:", PythonBridge.getLocalFingerprint(), primaryColor)
+            DetailRow(if (appLanguage == "Русский") "Порт P2P Сервера:" else "P2P Server Port:", "${P2PMessageRelay.listenerPort(context)} (listening)", Color(0xFF4CAF50))
+            DetailRow(if (appLanguage == "Русский") "Локальные IP адреса:" else "Local IP Addresses:", localIps.joinToString("\n"), primaryColor)
+        }
+        RadarNode.ROUTER -> {
+            val mapped = upnpDetails["mapped"] == "true"
+            val extIp = upnpDetails["external_ip"] ?: "n/a"
+            val intIp = upnpDetails["local_ip"] ?: "n/a"
+            val port = upnpDetails["port"] ?: "n/a"
+            val service = upnpDetails["service_type"] ?: "n/a"
+            val controlUrl = upnpDetails["control_url"] ?: "n/a"
+            val errorMsg = upnpDetails["error"] ?: "n/a"
+            
+            DetailRow(if (appLanguage == "Русский") "Статус проброса:" else "UPnP Mapped Status:", if (mapped) "CONNECTED / OK" else "FAILED / OFFLINE", if (mapped) Color(0xFF4CAF50) else Color.Red)
+            DetailRow(if (appLanguage == "Русский") "Внешний IP адрес:" else "Router External IP:", extIp, primaryColor)
+            DetailRow(if (appLanguage == "Русский") "Внутренний IP адрес:" else "Client Internal IP:", intIp, primaryColor)
+            DetailRow(if (appLanguage == "Русский") "Проброшенный порт:" else "Mapped Port:", port, primaryColor)
+            DetailRow(if (appLanguage == "Русский") "Тип шлюза / Service:" else "Gateway Service:", service, primaryColor)
+            DetailRow(if (appLanguage == "Русский") "Адрес управления (SOAP):" else "Control SOAP URL:", controlUrl, onSurfaceVariant)
+            if (!mapped) {
+                DetailRow(if (appLanguage == "Русский") "Код ошибки:" else "Error message:", errorMsg, Color.Red)
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            var upnpReopening by remember { mutableStateOf(false) }
+            val coroutineScope = rememberCoroutineScope()
+            
+            Button(
+                onClick = {
+                    upnpReopening = true
+                    coroutineScope.launch {
+                        val success = PythonBridge.triggerUpnpReopen()
+                        kotlinx.coroutines.delay(2000)
+                        refreshDiagnostics()
+                        upnpReopening = false
+                        Toast.makeText(context, if (success) "UPnP reopen triggered!" else "Failed to trigger UPnP reopen", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                enabled = !upnpReopening,
+                colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (upnpReopening) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                } else {
+                    Text(if (appLanguage == "Русский") "Переоткрыть порт" else "Re-open Port", color = Color.White)
+                }
+            }
+        }
+        RadarNode.TRACKERS -> {
+            trackerDiagnostics.forEach { (name, status) ->
+                val ping = trackerPings[name]
+                val announceRtt = Regex("announce_rtt=(\\d+)ms").find(status)?.groupValues?.get(1)?.toLongOrNull()
+                val announceOk = status.contains("announce=OK", ignoreCase = true)
+                val pingText = if (announceRtt != null && announceOk) {
+                    "RTT ${announceRtt}ms"
+                } else if (announceRtt != null) {
+                    if (appLanguage == "Русский") "ошибка через ${announceRtt}ms" else "failed after ${announceRtt}ms"
+                } else if (ping == null) {
+                    if (appLanguage == "Русский") "опрос..." else "probing..."
+                } else if (ping == -2L) {
+                    if (appLanguage == "Русский") "Yggdrasil выкл." else "Yggdrasil off"
+                } else if (ping == -3L) {
+                    "IPv6 literal"
+                } else if (ping < 0) {
+                    if (appLanguage == "Русский") "DNS недоступен" else "DNS unavailable"
+                } else if (ping == 0L) {
+                    "DNS <1ms"
+                } else {
+                    "DNS ${ping}ms"
+                }
+                val skipped = status.contains("SKIPPED", ignoreCase = true)
+                val statusColor = when {
+                    skipped || ping == -2L -> onSurfaceVariant
+                    announceOk -> Color(0xFF4CAF50)
+                    else -> Color.Red
+                }
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.3f)),
+                    modifier = Modifier.fillMaxWidth().border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = onSurfaceColor)
+                            Text(pingText, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = statusColor)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = status,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+        RadarNode.YGGDRASIL -> {
+            val state = yggDiagnostics["state"] ?: "disabled"
+            val peers = yggDiagnostics["peers"] ?: "0"
+            val routes = yggDiagnostics["routes"] ?: "0"
+            val treeNodes = yggDiagnostics["tree_nodes"] ?: "0"
+            val address = PythonBridge.getYggdrasilAddress()
+            
+            DetailRow(if (appLanguage == "Русский") "Статус Go-демона:" else "Daemon Status:", state.uppercase(), if (state == "connected") Color(0xFF4CAF50) else Color.Red)
+            DetailRow(if (appLanguage == "Русский") "Адрес IPv6 Yggdrasil:" else "Yggdrasil IPv6:", if (address.isNotEmpty()) address else "n/a", primaryColor)
+            DetailRow(if (appLanguage == "Русский") "Количество пиров (mesh):" else "Mesh Peers Count:", peers, primaryColor)
+            DetailRow(if (appLanguage == "Русский") "Количество маршрутов:" else "Routing table size:", routes, primaryColor)
+            DetailRow(if (appLanguage == "Русский") "Узлов в дереве (DHT):" else "DHT tree nodes count:", treeNodes, primaryColor)
+            
+            val yggPeersJsonStr = sharedPrefs.getString("yggdrasil_runtime_peers_json", "") ?: ""
+            if (yggPeersJsonStr.isNotEmpty() && yggPeersJsonStr != "null") {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(if (appLanguage == "Русский") "ПУБЛИЧНЫЕ ПИРЫ:" else "PUBLIC MESH PEERS:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = primaryColor)
+                
+                val peersList = remember(yggPeersJsonStr) {
+                    val list = mutableListOf<Map<String, String>>()
+                    try {
+                        val arr = JSONArray(yggPeersJsonStr)
+                        for (i in 0 until arr.length()) {
+                            val obj = arr.getJSONObject(i)
+                            fun firstString(vararg keys: String): String = keys
+                                .asSequence()
+                                .map { obj.optString(it, "").trim() }
+                                .firstOrNull { it.isNotEmpty() && it != "null" }
+                                .orEmpty()
+                            fun firstLong(vararg keys: String): Long = keys
+                                .asSequence()
+                                .filter { obj.has(it) }
+                                .map { obj.optLong(it, 0L) }
+                                .firstOrNull() ?: 0L
+
+                            val uri = firstString("URI", "uri", "endpoint", "address")
+                            val remote = firstString("Remote", "remote", "Address")
+                            val key = firstString("Key", "key")
+                            val up = if (obj.has("Up")) obj.optBoolean("Up") else obj.optBoolean("up", true)
+                            val inbound = if (obj.has("Inbound")) obj.optBoolean("Inbound") else obj.optBoolean("inbound", false)
+                            val uptime = firstLong("Uptime", "uptime")
+                            val uptimeSeconds = if (uptime > 86_400_000_000L) uptime / 1_000_000_000L else uptime
+                            val uptimeText = if (uptimeSeconds > 0) {
+                                "${uptimeSeconds / 3600}h ${(uptimeSeconds % 3600) / 60}m ${uptimeSeconds % 60}s"
+                            } else if (up) "connected" else "offline"
+                            val tx = firstLong("TXBytes", "bytes_sent", "tx")
+                            val rx = firstLong("RXBytes", "bytes_recv", "rx")
+                            val latency = firstLong("Latency", "latency")
+                            val cost = firstLong("Cost", "cost")
+                            val lastError = firstString("LastError", "last_error", "error")
+                            list.add(mapOf(
+                                "address" to (uri.ifEmpty { remote.ifEmpty { key.take(16).ifEmpty { "peer #${i + 1}" } } }),
+                                "remote" to remote,
+                                "key" to key,
+                                "state" to (if (up) "ONLINE" else "OFFLINE"),
+                                "direction" to (if (inbound) "INBOUND" else "OUTBOUND"),
+                                "uptime" to uptimeText,
+                                "traffic" to "TX: ${tx / 1024} KB / RX: ${rx / 1024} KB",
+                                "route" to "Cost: $cost · Latency: ${latency / 1_000_000} ms",
+                                "error" to lastError
+                            ))
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                    list
+                }
+                
+                peersList.forEach { peerMap ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth().border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(peerMap["address"] ?: "", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = onSurfaceColor)
+                            if (!peerMap["remote"].isNullOrEmpty()) {
+                                Text("Remote: ${peerMap["remote"]}", fontSize = 11.sp, color = onSurfaceVariant)
+                            }
+                            if (!peerMap["key"].isNullOrEmpty()) {
+                                Text("Key: ${peerMap["key"]}", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = onSurfaceVariant)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("${peerMap["state"]} · ${peerMap["direction"]}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (peerMap["state"] == "ONLINE") Color(0xFF4CAF50) else Color.Red)
+                                Text("Uptime: ${peerMap["uptime"]}", fontSize = 11.sp, color = onSurfaceVariant)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(peerMap["traffic"] ?: "", fontSize = 11.sp, color = onSurfaceVariant)
+                                Text(peerMap["route"] ?: "", fontSize = 11.sp, color = onSurfaceVariant)
+                            }
+                            if (!peerMap["error"].isNullOrEmpty()) {
+                                Text("Error: ${peerMap["error"]}", fontSize = 10.sp, color = Color.Red, modifier = Modifier.padding(top = 3.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        RadarNode.PEERS -> {
+            if (activePeers.isEmpty()) {
+                Text(
+                    text = if (appLanguage == "Русский") "Нет активных сессий Double Ratchet" else "No active Double Ratchet sessions established",
+                    color = onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            } else {
+                activePeers.forEach { name ->
+                    val endpoint = P2PMessageRelay.peerEndpoints[name] ?: "resolving..."
+                    val transport = connectionTransportLabel(
+                        rawTransport = P2PMessageRelay.peerConnectionTransports[name],
+                        endpoint = P2PMessageRelay.peerEndpoints[name],
+                        appLanguage = appLanguage,
+                    )
+                    val isEstablished = name in activePeers
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.3f)),
+                        modifier = Modifier.fillMaxWidth().border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = onSurfaceColor)
+                                Text("EP: $endpoint", fontSize = 11.sp, color = onSurfaceVariant)
+                                Text("Transport: $transport", fontSize = 11.sp, color = primaryColor)
+                            }
+                            Text(
+                                text = if (isEstablished) "ONLINE" else "WAITING",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp,
+                                color = if (isEstablished) Color(0xFF4CAF50) else Color(0xFFFFC107),
+                                maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.widthIn(min = 58.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
