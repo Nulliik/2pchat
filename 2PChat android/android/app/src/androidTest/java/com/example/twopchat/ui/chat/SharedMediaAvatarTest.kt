@@ -48,7 +48,9 @@ class SharedMediaAvatarTest {
                 onToggleMute = {},
                 onAvatarClick = { opened = it === avatar },
                 onImageClick = { _, _ -> },
+                onVideoClick = {},
                 onBack = {},
+                onNavigateToMessage = {}
             )
         }
 
