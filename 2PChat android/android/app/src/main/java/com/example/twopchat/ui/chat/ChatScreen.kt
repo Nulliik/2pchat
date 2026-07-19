@@ -2406,6 +2406,7 @@ remove("pinned_msg_id_${peerName}")
                         activeFullscreenImageIndex = index
                     }
                 },
+                onVideoClick = { activeFullscreenVideo = it },
                 onBack = { showProfileOverlay = false },
                 onNavigateToMessage = { messageId ->
                     showProfileOverlay = false
