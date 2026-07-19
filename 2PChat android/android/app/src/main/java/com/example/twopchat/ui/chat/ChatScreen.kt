@@ -1316,6 +1316,7 @@ remove("pinned_msg_id_${peerName}")
                                     modifier = Modifier
                                         .size(36.dp)
                                         .clickable {
+                                            triggerHaptic()
                                             val idx = initialMessages.indexOfFirst { it.id == msg.id }
                                             if (idx != -1) {
                                                 val current = initialMessages[idx]

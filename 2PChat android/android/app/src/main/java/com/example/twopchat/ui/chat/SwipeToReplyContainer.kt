@@ -29,17 +29,24 @@ fun SwipeToReplyContainer(
     val offsetX = remember { androidx.compose.animation.core.Animatable(0f) }
     val threshold = 120f
     val limit = 200f
+    val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
+    var hasTriggeredHapticForSwipe by remember { mutableStateOf(false) }
+
     Box(
         modifier = modifier.fillMaxWidth().pointerInput(Unit) {
             detectHorizontalDragGestures(
                 onDragStart = {},
                 onDragEnd = {
+                    hasTriggeredHapticForSwipe = false
                     if (abs(offsetX.value) > threshold) onReply()
                     coroutineScope.launch {
                         offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioNoBouncy))
                     }
                 },
                 onDragCancel = {
+                    hasTriggeredHapticForSwipe = false
                     coroutineScope.launch {
                         offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioNoBouncy))
                     }
@@ -48,6 +55,18 @@ fun SwipeToReplyContainer(
                     change.consume()
                     val newOffset = (offsetX.value + dragAmount).coerceIn(-limit, limit)
                     coroutineScope.launch { offsetX.snapTo(newOffset) }
+                    
+                    val crossed = abs(newOffset) >= threshold
+                    if (crossed && !hasTriggeredHapticForSwipe) {
+                        if (sharedPrefs.getBoolean("settings_haptic_feedback", true)) {
+                            try {
+                                hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            } catch (_: Exception) {}
+                        }
+                        hasTriggeredHapticForSwipe = true
+                    } else if (!crossed && hasTriggeredHapticForSwipe) {
+                        hasTriggeredHapticForSwipe = false
+                    }
                 },
             )
         },
