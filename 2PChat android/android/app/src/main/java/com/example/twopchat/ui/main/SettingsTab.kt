@@ -1302,6 +1302,29 @@ fun SettingsTab(
                                         colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
                                     )
                                 }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                // Haptic Feedback Toggle
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(Localizations.getString("haptic_feedback", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                        Text(Localizations.getString("haptic_feedback_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = hapticFeedbackEnabled,
+                                        onCheckedChange = {
+                                            hapticFeedbackEnabled = it
+                                            sharedPrefs.edit().putBoolean("settings_haptic_feedback", it).apply()
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                    )
+                                }
                             }
                         }
                         
