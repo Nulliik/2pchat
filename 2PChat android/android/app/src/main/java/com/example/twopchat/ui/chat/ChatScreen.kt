@@ -362,14 +362,9 @@ fun ChatScreen(
                     coroutineScope.launch {
                         val index = initialMessages.indexOfFirst { it.id == outMsg.id }
                         if (index != -1) initialMessages[index] = outMsg.copy(status = "PENDING")
-                        errorReasonYggdrasilDisabled = !sharedPrefs.getBoolean("settings_yggdrasil", true)
-                        showConnectionErrorDialog = true
                     }
                 }
             }
-        } else if (peerName != "Saved Messages") {
-            errorReasonYggdrasilDisabled = !sharedPrefs.getBoolean("settings_yggdrasil", true)
-            showConnectionErrorDialog = true
         }
     }
 
@@ -650,16 +645,9 @@ fun ChatScreen(
                                 if (idx != -1) {
                                     initialMessages[idx] = outMsg.copy(status = "PENDING")
                                 }
-                                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
-                                errorReasonYggdrasilDisabled = !isYggEnabled
-                                showConnectionErrorDialog = true
                             }
                         }
                     }
-                } else if (peerName != "Saved Messages") {
-                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
-                    errorReasonYggdrasilDisabled = !isYggEnabled
-                    showConnectionErrorDialog = true
                 }
             }
         }
@@ -711,16 +699,9 @@ fun ChatScreen(
                                 if (idx != -1) {
                                     initialMessages[idx] = outMsg.copy(status = "PENDING")
                                 }
-                                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
-                                errorReasonYggdrasilDisabled = !isYggEnabled
-                                showConnectionErrorDialog = true
                             }
                         }
                     }
-                } else if (peerName != "Saved Messages") {
-                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
-                    errorReasonYggdrasilDisabled = !isYggEnabled
-                    showConnectionErrorDialog = true
                 }
             }
         }
@@ -788,16 +769,9 @@ fun ChatScreen(
                             if (idx != -1) {
                                 initialMessages[idx] = outMsg.copy(status = "PENDING")
                             }
-                            val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
-                            errorReasonYggdrasilDisabled = !isYggEnabled
-                            showConnectionErrorDialog = true
                         }
                     }
                 }
-            } else if (peerName != "Saved Messages") {
-                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
-                errorReasonYggdrasilDisabled = !isYggEnabled
-                showConnectionErrorDialog = true
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -850,16 +824,9 @@ fun ChatScreen(
                                 if (idx != -1) {
                                     initialMessages[idx] = outMsg.copy(status = "PENDING")
                                 }
-                                val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
-                                errorReasonYggdrasilDisabled = !isYggEnabled
-                                showConnectionErrorDialog = true
                             }
                         }
                     }
-                } else if (peerName != "Saved Messages") {
-                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
-                    errorReasonYggdrasilDisabled = !isYggEnabled
-                    showConnectionErrorDialog = true
                 }
             }
         }
@@ -1260,22 +1227,19 @@ remove("pinned_msg_id_${peerName}")
                                     }
 
                                     // Send over real TCP socket if endpoint is resolved
-                                    if (endpoint != null && peerName != "Saved Messages") {
-                                        P2PMessageRelay.sendMessage(context, endpoint, username, payload) { success ->
-                                            if (!success) {
-                                                persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                                                coroutineScope.launch {
-                                                    val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                                                    if (idx != -1) {
-                                                        initialMessages[idx] = outMsg.copy(status = "PENDING")
-                                                    }
-                                                    val isYggEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
-                                                    errorReasonYggdrasilDisabled = !isYggEnabled
-                                                    showConnectionErrorDialog = true
-                                                }
-                                            }
-                                        }
-                                    }
+                                                                         if (endpoint != null && peerName != "Saved Messages") {
+                                         P2PMessageRelay.sendMessage(context, endpoint, username, payload) { success ->
+                                             if (!success) {
+                                                 persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
+                                                 coroutineScope.launch {
+                                                     val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                                                     if (idx != -1) {
+                                                         initialMessages[idx] = outMsg.copy(status = "PENDING")
+                                                     }
+                                                 }
+                                             }
+                                         }
+                                     }
                                 }
                             }
                 },
