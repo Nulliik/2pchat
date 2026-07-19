@@ -2,6 +2,7 @@ package com.example.twopchat.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Spring
@@ -145,11 +146,17 @@ internal fun ChatMessageBubble(
 
     androidx.compose.animation.AnimatedVisibility(
         visibleState = visibleState,
-        enter = fadeIn(animationSpec = tween(220)) + slideInVertically(
-            initialOffsetY = { it / 5 },
+        enter = fadeIn(animationSpec = tween(200)) + scaleIn(
+            initialScale = 0.85f,
             animationSpec = spring(
-                dampingRatio = Spring.DampingRatioNoBouncy,
-                stiffness = Spring.StiffnessMedium
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessLow
+            )
+        ) + slideInVertically(
+            initialOffsetY = { it / 3 },
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessLow
             )
         ),
         modifier = Modifier.fillMaxWidth()

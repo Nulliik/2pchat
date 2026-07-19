@@ -62,8 +62,8 @@ internal fun ChatHeader(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(surfaceColor)
-                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f))
+                .background(surfaceColor.copy(alpha = 0.78f))
+                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f))
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -112,8 +112,8 @@ internal fun ChatHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(surfaceColor)
-            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f))
+            .background(surfaceColor.copy(alpha = 0.78f))
+            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f))
             .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
