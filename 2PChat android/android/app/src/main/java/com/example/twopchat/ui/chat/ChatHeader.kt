@@ -145,7 +145,7 @@ internal fun ChatHeader(
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(43.dp)
                     .background(primaryColor.copy(alpha = 0.12f), CircleShape),
             ) {
                 val avatar = P2PMessageRelay.peerAvatars[peerName]
@@ -155,9 +155,9 @@ internal fun ChatHeader(
                         painterResource(R.drawable.ic_saved_messages),
                         "Saved Messages",
                         tint = primaryColor,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(22.dp),
                     )
-                    else -> Text(initials, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    else -> Text(initials, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
             }
             if (!savedMessages && isOnline) {
