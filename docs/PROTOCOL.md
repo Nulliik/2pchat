@@ -130,7 +130,7 @@ The shared input key material is:
 dh1 || dh2 || dh3
 ```
 
-Then HKDF-SHA256 derives 96 bytes with:
+Then HKDF-SHA256 derives 128 bytes with:
 
 - `salt = b""`
 - `info = b"X3DH-INIT"`
