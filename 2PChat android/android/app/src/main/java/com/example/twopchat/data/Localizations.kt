@@ -18,6 +18,22 @@ object Localizations {
         "crypto_active" to "🔒 END-TO-END CRYPTO ACTIVE",
         "welcome_aboard" to "Welcome aboard, %s",
         "finalize_desc" to "Your 2PChat setup is complete. Direct peer connections are fully secured. Messengers require no remote account or database.",
+        
+        // 5-Step Micro-Learning Onboarding
+        "step1_title" to "Zero Central Servers",
+        "step1_desc" to "2PChat has no cloud servers or databases storing your messages. All messages are transmitted directly between peers or over the Yggdrasil mesh network.",
+        "step2_title" to "Keys & Data Safety",
+        "step2_desc" to "Your cryptographic keys are generated directly on your device. Never delete app data without backing up, as lost keys mean lost access to chats.",
+        "step3_title" to "Privacy & Protection",
+        "step3_desc" to "Configure screenshot blocking, passcode lock, and duress PIN in Settings for max security. History is kept strictly encrypted.",
+        "step4_title" to "Create Profile",
+        "step4_desc" to "Choose your local display name and avatar. No registration or phone number required.",
+        "step5_title" to "Yggdrasil Mesh & Setup",
+        "step5_desc" to "Your cryptographic identity is initialized. Next, activate the Yggdrasil mesh VPN to enable global peer reachability.",
+        "enable_yggdrasil_prompt_title" to "Enable Yggdrasil Mesh VPN",
+        "enable_yggdrasil_prompt_desc" to "To establish connection over the encrypted P2P mesh network, Android requires system VPN confirmation. Click below to restart and activate Yggdrasil VPN.",
+        "enable_vpn_btn" to "Activate Yggdrasil VPN",
+        "skip_for_now" to "Skip for now",
 
         // Tabs
         "tab_chats" to "Chats",
@@ -169,6 +185,22 @@ object Localizations {
         "crypto_active" to "🔒 END-TO-END ШИФРОВАНИЕ АКТИВНО",
         "welcome_aboard" to "Добро пожаловать, %s",
         "finalize_desc" to "Настройка мессенджера завершена. Прямые P2P-соединения защищены. Мессенджеру не нужны учетные записи или серверы.",
+
+        // 5-Step Micro-Learning Onboarding
+        "step1_title" to "Полное отсутствие серверов",
+        "step1_desc" to "В 2PChat нет центральных серверов и облачных баз данных. Все сообщения передаются напрямую между устройствами или через оверлейную сеть Yggdrasil.",
+        "step2_title" to "Ключи и сохранность данных",
+        "step2_desc" to "Криптографические ключи создаются прямо на вашем устройстве. Сохраняйте доступ к устройству: потеря данных означает утрату доступа к переписке.",
+        "step3_title" to "Приватность и безопасность",
+        "step3_desc" to "В настройках можно включить защиту от скриншотов, PIN-код и Duress PIN для экстремальной защиты. Вся история защищена шифрованием.",
+        "step4_title" to "Создание профиля",
+        "step4_desc" to "Выберите локальное имя и фото. Никаких номеров телефонов или регистраций не требуется.",
+        "step5_title" to "Сеть Yggdrasil и готовность",
+        "step5_desc" to "Ваша криптографическая личность инициализирована. Включите mesh-VPN Yggdrasil для глобальной P2P-связи.",
+        "enable_yggdrasil_prompt_title" to "Включение mesh-VPN Yggdrasil",
+        "enable_yggdrasil_prompt_desc" to "Для связи через защищённую сеть Yggdrasil Android запрашивает системное подтверждение VPN. Нажмите кнопку ниже, чтобы перезапустить и активировать соединение.",
+        "enable_vpn_btn" to "Включить Yggdrasil VPN",
+        "skip_for_now" to "Пропустить",
 
         // Tabs
         "tab_chats" to "Чаты",

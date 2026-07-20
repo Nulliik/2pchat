@@ -1,5 +1,6 @@
 package com.example.twopchat.ui.onboarding
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -48,6 +49,7 @@ fun OnboardingScreen(
     var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
     var profileBitmap by remember { mutableStateOf<Bitmap?>(loadBitmapFromUri(context, profilePhotoUri)) }
     var pendingCropUri by remember { mutableStateOf<Uri?>(null) }
+    var showYggdrasilDialog by remember { mutableStateOf(false) }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -89,6 +91,91 @@ fun OnboardingScreen(
         return
     }
 
+    // Yggdrasil Activation Prompt Dialog (Step 5 trigger)
+    if (showYggdrasilDialog) {
+        AlertDialog(
+            onDismissRequest = { showYggdrasilDialog = false },
+            title = {
+                Text(
+                    text = Localizations.getString("enable_yggdrasil_prompt_title", appLanguage),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = onSurfaceColor
+                )
+            },
+            text = {
+                Text(
+                    text = Localizations.getString("enable_yggdrasil_prompt_desc", appLanguage),
+                    fontSize = 14.sp,
+                    color = onSurfaceColor.copy(alpha = 0.8f)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showYggdrasilDialog = false
+                        // Toggle Yggdrasil OFF -> ON to force Android OS VpnService permission prompt
+                        try {
+                            val stopIntent = Intent(context, com.example.twopchat.yggdrasil.PacketTunnelProvider::class.java).apply {
+                                action = com.example.twopchat.yggdrasil.PacketTunnelProvider.ACTION_STOP
+                            }
+                            context.stopService(stopIntent)
+                        } catch (_: Exception) {}
+
+                        val vpnPrepareIntent = android.net.VpnService.prepare(context)
+                        if (vpnPrepareIntent != null) {
+                            try {
+                                vpnPrepareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(vpnPrepareIntent)
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        } else {
+                            val startIntent = Intent(context, com.example.twopchat.yggdrasil.PacketTunnelProvider::class.java).apply {
+                                action = com.example.twopchat.yggdrasil.PacketTunnelProvider.ACTION_START
+                            }
+                            try {
+                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                    context.startForegroundService(startIntent)
+                                } else {
+                                    context.startService(startIntent)
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                        onComplete()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = primaryColor,
+                        contentColor = if (primaryColor == MintGreen) StealthBlack else Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = Localizations.getString("enable_vpn_btn", appLanguage),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showYggdrasilDialog = false
+                        onComplete()
+                    }
+                ) {
+                    Text(
+                        text = Localizations.getString("skip_for_now", appLanguage),
+                        color = onSurfaceColor.copy(alpha = 0.6f)
+                    )
+                }
+            },
+            containerColor = surfaceColor,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -98,7 +185,7 @@ fun OnboardingScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // Step Indicators
+        // Step Indicators (5 Steps)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -106,7 +193,7 @@ fun OnboardingScreen(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            for (i in 1..4) {
+            for (i in 1..5) {
                 val isSelected = i == currentStep
                 val indicatorWidth by animateDpAsState(
                     targetValue = if (isSelected) 24.dp else 8.dp,
@@ -124,11 +211,11 @@ fun OnboardingScreen(
                         .clip(CircleShape)
                         .background(indicatorColor)
                 )
-                if (i < 4) Spacer(modifier = Modifier.width(6.dp))
+                if (i < 5) Spacer(modifier = Modifier.width(6.dp))
             }
         }
 
-        // Main Animated Content Box (scrollable to prevent keyboard overlap)
+        // Main Animated Content Box
         Column(
             modifier = Modifier
                 .weight(1f)
@@ -158,7 +245,9 @@ fun OnboardingScreen(
                 ) { step ->
                     when (step) {
                         1 -> WelcomeStep(appLanguage, primaryColor, onSurfaceColor)
-                        2 -> RegisterStep(
+                        2 -> KeySafetyStep(appLanguage, primaryColor, onSurfaceColor)
+                        3 -> PrivacyStep(appLanguage, primaryColor, onSurfaceColor)
+                        4 -> RegisterStep(
                             nickname = nickname,
                             onNicknameChange = { nickname = it },
                             profileBitmap = profileBitmap,
@@ -168,8 +257,7 @@ fun OnboardingScreen(
                             surfaceColor = surfaceColor,
                             onSurfaceColor = onSurfaceColor
                         )
-                        3 -> VerifyStep(fingerprint, appLanguage, primaryColor, surfaceColor, onSurfaceColor)
-                        4 -> FinalizeStep(nickname, profileBitmap, appLanguage, primaryColor, onSurfaceColor)
+                        5 -> FinalizeStep(nickname, profileBitmap, fingerprint, appLanguage, primaryColor, surfaceColor, onSurfaceColor)
                     }
                 }
             }
@@ -200,11 +288,10 @@ fun OnboardingScreen(
 
             Button(
                 onClick = {
-                    if (currentStep < 4) {
-                        if (currentStep == 2) {
+                    if (currentStep < 5) {
+                        if (currentStep == 4) {
                             val normalizedNickname = normalizeProfileName(nickname)
                             if (normalizedNickname.isEmpty()) {
-                                // Validation: nickname required
                                 return@Button
                             }
                             nickname = normalizedNickname
@@ -220,7 +307,7 @@ fun OnboardingScreen(
                         sharedPrefs.edit()
                             .putString("username_profile", normalizedNickname)
                             .apply()
-                        onComplete()
+                        showYggdrasilDialog = true
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
@@ -230,15 +317,15 @@ fun OnboardingScreen(
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .height(56.dp)
-                    .width(160.dp) // Increased width to fit Russian 'Продолжить' without wrapping
+                    .width(160.dp)
             ) {
                 Text(
-                    text = if (currentStep == 4) {
+                    text = if (currentStep == 5) {
                         Localizations.getString("enter", appLanguage)
                     } else {
                         Localizations.getString("continue", appLanguage)
                     },
-                    fontSize = 14.sp, // Clean premium font sizing
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     softWrap = false
@@ -488,24 +575,111 @@ fun VerifyStep(
 }
 
 @Composable
+fun KeySafetyStep(appLanguage: String, primaryColor: Color, onSurfaceColor: Color) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(120.dp)
+                .clip(CircleShape)
+                .background(primaryColor.copy(alpha = 0.12f))
+                .border(1.5.dp, primaryColor, CircleShape)
+        ) {
+            Text(
+                text = "🔑",
+                fontSize = 48.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text(
+            text = Localizations.getString("step2_title", appLanguage),
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = onSurfaceColor,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = Localizations.getString("step2_desc", appLanguage),
+            fontSize = 15.sp,
+            color = onSurfaceColor.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center,
+            lineHeight = 22.sp,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+    }
+}
+
+@Composable
+fun PrivacyStep(appLanguage: String, primaryColor: Color, onSurfaceColor: Color) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(120.dp)
+                .clip(CircleShape)
+                .background(primaryColor.copy(alpha = 0.12f))
+                .border(1.5.dp, primaryColor, CircleShape)
+        ) {
+            Text(
+                text = "🛡️",
+                fontSize = 48.sp
+            )
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Text(
+            text = Localizations.getString("step3_title", appLanguage),
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = onSurfaceColor,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(
+            text = Localizations.getString("step3_desc", appLanguage),
+            fontSize = 15.sp,
+            color = onSurfaceColor.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center,
+            lineHeight = 22.sp,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+    }
+}
+
+@Composable
 fun FinalizeStep(
     nickname: String,
     profileBitmap: Bitmap?,
+    fingerprint: String,
     appLanguage: String,
     primaryColor: Color,
+    surfaceColor: Color,
     onSurfaceColor: Color
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Selected Profile picture displaying at success page
         if (profileBitmap != null) {
             Image(
                 bitmap = profileBitmap.asImageBitmap(),
                 contentDescription = "Profile Photo",
                 modifier = Modifier
-                    .size(110.dp)
+                    .size(96.dp)
                     .clip(CircleShape)
                     .border(2.dp, primaryColor, CircleShape)
             )
@@ -513,39 +687,70 @@ fun FinalizeStep(
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(110.dp)
+                    .size(96.dp)
                     .clip(CircleShape)
                     .background(primaryColor.copy(alpha = 0.1f))
                     .border(2.dp, primaryColor, CircleShape)
             ) {
                 Text(
-                    text = "✓",
-                    fontSize = 44.sp,
-                    fontWeight = FontWeight.Light,
-                    color = primaryColor
+                    text = "🌐",
+                    fontSize = 40.sp
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         Text(
-            text = String.format(Localizations.getString("welcome_aboard", appLanguage), nickname),
-            fontSize = 24.sp,
+            text = String.format(Localizations.getString("welcome_aboard", appLanguage), nickname.ifEmpty { "User" }),
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             color = onSurfaceColor,
             textAlign = TextAlign.Center
         )
         
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = Localizations.getString("finalize_desc", appLanguage),
+            text = Localizations.getString("step5_desc", appLanguage),
             fontSize = 14.sp,
             color = onSurfaceColor.copy(alpha = 0.6f),
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 24.dp)
+            modifier = Modifier.padding(horizontal = 16.dp)
         )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, primaryColor.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                .padding(4.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = fingerprint,
+                    fontSize = 13.sp,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    fontWeight = FontWeight.SemiBold,
+                    color = primaryColor,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = Localizations.getString("crypto_active", appLanguage),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor.copy(alpha = 0.5f)
+                )
+            }
+        }
     }
 }
 
