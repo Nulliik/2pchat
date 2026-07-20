@@ -524,53 +524,12 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             null,
             "rowid ASC"
         )
-        
+        // Delegate to the shared readMessageFromCursor() helper so any new
+        // columns (reactions, sentAtEpochMs, etc.) are handled automatically
+        // without requiring updates in multiple places (WARN-06).
         cursor.use {
-            if (it.moveToFirst()) {
-                val indexText = it.getColumnIndex(KEY_MESSAGE_TEXT)
-                val indexIsMe = it.getColumnIndex(KEY_IS_ME)
-                val indexTimestamp = it.getColumnIndex(KEY_TIMESTAMP)
-                val indexAttachType = it.getColumnIndex(KEY_ATTACHMENT_TYPE)
-                val indexAttachUri = it.getColumnIndex(KEY_ATTACHMENT_URI)
-                val indexAttachName = it.getColumnIndex(KEY_ATTACHMENT_NAME)
-                val indexReplyToId = it.getColumnIndex(KEY_REPLY_TO_ID)
-                val indexReplyToText = it.getColumnIndex(KEY_REPLY_TO_TEXT)
-                val indexReplyToName = it.getColumnIndex(KEY_REPLY_TO_NAME)
-                val indexStatus = it.getColumnIndex(KEY_STATUS)
-                val indexId = it.getColumnIndex(KEY_ID)
-                val indexSentAtMs = it.getColumnIndex(KEY_SENT_AT_MS)
-                
-                do {
-                    val text = if (indexText != -1) dec(it.getString(indexText)) else ""
-                    val isMe = if (indexIsMe != -1) it.getInt(indexIsMe) == 1 else false
-                    val timestamp = if (indexTimestamp != -1) it.getString(indexTimestamp) else ""
-                    val attachType = if (indexAttachType != -1) it.getString(indexAttachType) else null
-                    val attachUri = if (indexAttachUri != -1) decNullable(it.getString(indexAttachUri)) else null
-                    val attachName = if (indexAttachName != -1) decNullable(it.getString(indexAttachName)) else null
-                    val replyToId = if (indexReplyToId != -1) it.getString(indexReplyToId) else null
-                    val replyToText = if (indexReplyToText != -1) decNullable(it.getString(indexReplyToText)) else null
-                    val replyToName = if (indexReplyToName != -1) decNullable(it.getString(indexReplyToName)) else null
-                    val status = if (indexStatus != -1) it.getString(indexStatus) else null
-                    val id = if (indexId != -1) it.getString(indexId) else java.util.UUID.randomUUID().toString()
-                    val sentAtEpochMs = if (indexSentAtMs != -1) it.getLong(indexSentAtMs) else 0L
-                    
-                    messages.add(
-                        Message(
-                            id = id,
-                            text = text,
-                            isMe = isMe,
-                            timestamp = timestamp,
-                            attachmentType = attachType,
-                            attachmentUri = attachUri,
-                            attachmentName = attachName,
-                            replyToId = replyToId,
-                            replyToText = replyToText,
-                            replyToName = replyToName,
-                            status = status,
-                            sentAtEpochMs = sentAtEpochMs
-                        )
-                    )
-                } while (it.moveToNext())
+            while (it.moveToNext()) {
+                messages.add(readMessageFromCursor(it))
             }
         }
         return messages

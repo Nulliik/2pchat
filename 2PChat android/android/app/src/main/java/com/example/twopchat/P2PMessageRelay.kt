@@ -158,6 +158,15 @@ object P2PMessageRelay {
         get() = activeChatPeer.get()
         set(value) { activeChatPeer.set(value) }
 
+    /**
+     * Clears [activeChatPeerName] only when it still equals [peerName].
+     * Uses compare-and-set so a disposing screen cannot overwrite the name
+     * already set by the next chat screen during a fast peer switch.
+     */
+    fun clearActiveChatPeerName(peerName: String) {
+        activeChatPeer.compareAndSet(peerName, null)
+    }
+
     fun registerMessageListener(listener: MessageListener) {
         messageListeners.add(listener)
     }
@@ -778,6 +787,12 @@ object P2PMessageRelay {
                             "Rejected session for $resolvedPeerName while an identity change awaits confirmation",
                             "ERROR",
                         )
+                        // Clear stale UI state so the peer no longer appears connected.
+                        Handler(Looper.getMainLooper()).post {
+                            peerSessionStates.remove(resolvedPeerName)
+                            peerConnectionTransports.remove(resolvedPeerName)
+                            peerRttMs.remove(resolvedPeerName)
+                        }
                         return false
                     }
                     PythonBridge.rememberPeerName(fingerprint, resolvedPeerName)

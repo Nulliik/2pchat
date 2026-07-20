@@ -365,6 +365,12 @@ fun ChatScreen(
         hasAppliedInitialScroll = false
         isFastHistoryLoaded = false
         newMessagesBelowCount = 0
+        // BUG-04: Scroll existing cached messages to the bottom immediately on
+        // re-entry so the list doesn't show a stale mid-conversation position
+        // while the database reload is in progress.
+        if (initialMessages.isNotEmpty() && unreadMessagesOnOpen <= 0) {
+            listState.scrollToItem(initialMessages.lastIndex)
+        }
         // Navigation keeps the keyed ViewModel alive after leaving a chat. Refresh
         // every time the entry becomes active so messages received on MainScreen
         // are loaded from the database instead of leaving a stale in-memory list.
@@ -658,9 +664,9 @@ fun ChatScreen(
             P2PMessageRelay.registerMessageListener(messageListener)
         }
         onDispose {
-            if (P2PMessageRelay.activeChatPeerName == peerName) {
-                P2PMessageRelay.activeChatPeerName = null
-            }
+            // Use atomic CAS to avoid clearing the name that was already set
+            // by the next chat screen during a fast peer switch (BUG-03).
+            P2PMessageRelay.clearActiveChatPeerName(peerName)
             if (isActive) {
                 P2PMessageRelay.unregisterMessageListener(messageListener)
             }
@@ -692,15 +698,18 @@ fun ChatScreen(
                 attachmentsDir.mkdirs()
             }
             val file = java.io.File(attachmentsDir, "sent_file_${System.currentTimeMillis()}_$originalName")
-            val outputStream = java.io.FileOutputStream(file)
-            val buffer = ByteArray(4 * 1024)
-            var read: Int
-            while (inputStream.read(buffer).also { read = it } != -1) {
-                outputStream.write(buffer, 0, read)
+            // Use .use{} on both streams — guarantees close() even if an exception
+            // is thrown during the copy, preventing file descriptor leaks (WARN-05).
+            inputStream.use { input ->
+                java.io.FileOutputStream(file).use { output ->
+                    val buffer = ByteArray(4 * 1024)
+                    var read: Int
+                    while (input.read(buffer).also { read = it } != -1) {
+                        output.write(buffer, 0, read)
+                    }
+                    output.flush()
+                }
             }
-            outputStream.flush()
-            outputStream.close()
-            inputStream.close()
             file
         } catch (e: Exception) {
             e.printStackTrace()

@@ -185,17 +185,30 @@ internal class P2POutboundMessenger(
                         log(context, "Paused offline queue for $peerName after an identity change", "ERROR", null)
                         break
                     }
-                    val payload = if (message.replyToId != null) JSONObject().apply {
+                val payload = if (message.replyToId != null) JSONObject().apply {
                         put("type", "reply")
                         put("text", message.text)
                         put("reply_to_id", message.replyToId)
                         put("reply_to_text", message.replyToText)
                         put("reply_to_name", message.replyToName)
                     }.toString() else message.text
-                    val success = if (message.attachmentType != null && !message.attachmentUri.isNullOrBlank()) {
-                        val attachment = File(message.attachmentUri)
-                        attachment.exists() && PythonBridge.sendP2pFile(
-                            peerName, endpoint, attachment.absolutePath, fingerprint, message.id
+                    val hasAttachment = message.attachmentType != null && !message.attachmentUri.isNullOrBlank()
+                    val attachmentFile = if (hasAttachment) File(message.attachmentUri.orEmpty()) else null
+
+                    // If the attachment file was deleted (e.g. OS cleared the temp cache)
+                    // mark the message as FAILED and skip it — do NOT stop the queue.
+                    if (attachmentFile != null && !attachmentFile.exists()) {
+                        log(context, "Pending attachment file missing for ${message.id}, marking FAILED and skipping.", "ERROR", null)
+                        db.updateMessageStatus(message.id, "FAILED")
+                        Handler(Looper.getMainLooper()).post {
+                            onMessageStatusChanged(peerName, message.id, "FAILED")
+                        }
+                        continue
+                    }
+
+                    val success = if (attachmentFile != null) {
+                        PythonBridge.sendP2pFile(
+                            peerName, endpoint, attachmentFile.absolutePath, fingerprint, message.id
                         )
                     } else {
                         PythonBridge.sendP2pMessage(peerName, endpoint, payload, fingerprint)
@@ -208,6 +221,7 @@ internal class P2POutboundMessenger(
                     Handler(Looper.getMainLooper()).post {
                         onMessageStatusChanged(peerName, message.id, "SENT")
                     }
+
                 }
                 if (!isPaused(context, peerName)) {
                     processPendingControls(context, db, peerName, endpoint, fingerprint)
