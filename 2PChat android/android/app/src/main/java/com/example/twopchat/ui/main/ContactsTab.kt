@@ -439,16 +439,6 @@ fun ContactsTab(
                     Text(if (appLanguage == "Русский") "Копировать" else "Copy", color = primaryColor)
                 }
             }
-            Text(
-                text = if (appLanguage == "Русский") {
-                    "Отправьте этот адрес собеседнику. Код и SHA-1 приложение обработает само."
-                } else {
-                    "Send this address to your contact. The app handles the code and SHA-1 automatically."
-                },
-                fontSize = 11.sp,
-                color = onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-            )
         }
 
         if (searchQuery.trim().startsWith("2pchat://connect")) {
@@ -796,28 +786,6 @@ fun ContactsTab(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Peer Directory Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = Localizations.getString("secure_directory", appLanguage),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = onSurfaceColor
-            )
-            val count = if (searchQuery.isNotBlank()) searchResults.size else filteredContacts.size
-            Text(
-                text = String.format(Localizations.getString("peers_count", appLanguage), count),
-                fontSize = 12.sp,
-                color = onSurfaceVariant
-            )
-        }
-
         if (isSearching) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = surfaceColor),
@@ -837,9 +805,6 @@ fun ContactsTab(
                 }
             }
         } else {
-            if (searchSummary.isNotEmpty()) {
-                Text(searchSummary, fontSize = 12.sp, color = onSurfaceVariant, modifier = Modifier.padding(vertical = 6.dp))
-            }
             val contactsToDisplay = if (searchQuery.isNotBlank()) {
                 searchResults
             } else {
@@ -850,17 +815,25 @@ fun ContactsTab(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(150.dp),
+                        .height(160.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (appLanguage == "Русский") "Пользователь не найден или не подтвердил имя при live-проверке" else "User not found or did not confirm their name during live verification",
+                        text = if (appLanguage == "Русский") {
+                            "Пользователь не найден\n\nПопробуйте позже или убедитесь,\nчто собеседник находится в сети."
+                        } else {
+                            "User not found\n\nTry again later or make sure\nyour peer is online."
+                        },
                         color = onSurfaceVariant,
                         fontSize = 14.sp,
+                        lineHeight = 20.sp,
                         textAlign = TextAlign.Center
                     )
                 }
             } else {
+                if (searchSummary.isNotEmpty()) {
+                    Text(searchSummary, fontSize = 12.sp, color = onSurfaceVariant, modifier = Modifier.padding(vertical = 6.dp))
+                }
                 // Contact Directory List
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
