@@ -492,7 +492,7 @@ fun SettingsTab(
                             SettingsRow(
                                 title = Localizations.getString("help_reference", appLanguage),
                                 subtitle = Localizations.getString("help_reference_desc", appLanguage),
-                                iconRes = com.example.twopchat.R.drawable.ic_shield_status,
+                                iconRes = com.example.twopchat.R.drawable.ic_help_question,
                                 iconColor = Color(0xFFAB47BC),
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant,
