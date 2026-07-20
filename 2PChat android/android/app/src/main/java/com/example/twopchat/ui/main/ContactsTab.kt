@@ -804,36 +804,32 @@ fun ContactsTab(
                     }
                 }
             }
+        val contactsToDisplay = if (searchQuery.isNotBlank()) searchResults else filteredContacts
+
+        if (isSearching) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp, color = primaryColor)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(if (appLanguage == "Русский") "Ищем пользователя" else "Searching for user", fontWeight = FontWeight.Bold, color = onSurfaceColor)
+                        Text(searchProgress, fontSize = 12.sp, color = onSurfaceVariant)
+                        Text(if (appLanguage == "Русский") "Результат появится даже для offline endpoint-а, но будет отмечен как непроверенный." else "Offline endpoints remain visible, but are marked unverified.", fontSize = 10.sp, color = onSurfaceVariant.copy(alpha = 0.75f))
+                    }
+                }
+            }
         } else {
-            val contactsToDisplay = if (searchQuery.isNotBlank()) {
-                searchResults
-            } else {
-                filteredContacts
+            if (searchSummary.isNotEmpty() && searchQuery.isBlank()) {
+                Text(searchSummary, fontSize = 12.sp, color = onSurfaceVariant, modifier = Modifier.padding(vertical = 6.dp))
             }
 
-            if (searchQuery.isNotBlank() && contactsToDisplay.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = if (appLanguage == "Русский") {
-                            "Пользователь не найден\n\nПопробуйте позже или убедитесь,\nчто собеседник находится в сети."
-                        } else {
-                            "User not found\n\nTry again later or make sure\nyour peer is online."
-                        },
-                        color = onSurfaceVariant,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            } else {
-                if (searchSummary.isNotEmpty()) {
-                    Text(searchSummary, fontSize = 12.sp, color = onSurfaceVariant, modifier = Modifier.padding(vertical = 6.dp))
-                }
+            if (contactsToDisplay.isNotEmpty()) {
                 // Contact Directory List
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -967,9 +963,9 @@ fun ContactsTab(
             }
 
             if (contactsToDisplay.isEmpty()) {
-                Spacer(modifier = Modifier.height(32.dp))
+                Spacer(modifier = Modifier.height(24.dp))
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = onSurfaceColor.copy(alpha = 0.015f)),
+                    colors = CardDefaults.cardColors(containerColor = onSurfaceColor.copy(alpha = 0.025f)),
                     shape = RoundedCornerShape(18.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -988,21 +984,30 @@ fun ContactsTab(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = if (appLanguage == "Русский") {
-                                "Иногда может потребоваться несколько попыток поиска"
+                            text = if (searchQuery.isNotBlank()) {
+                                if (appLanguage == "Русский") {
+                                    "Пользователь не найден\n\nПопробуйте позже или убедитесь,\nчто собеседник находится в сети."
+                                } else {
+                                    "User not found\n\nTry again later or make sure\nyour peer is online."
+                                }
                             } else {
-                                "Sometimes it may take several search attempts"
+                                if (appLanguage == "Русский") {
+                                    "Иногда может потребоваться несколько попыток поиска"
+                                } else {
+                                    "Sometimes it may take several search attempts"
+                                }
                             },
                             fontSize = 13.sp,
-                            color = onSurfaceColor.copy(alpha = 0.45f),
+                            color = onSurfaceColor.copy(alpha = 0.55f),
                             textAlign = TextAlign.Center,
-                            lineHeight = 18.sp
+                            lineHeight = 19.sp
                         )
                     }
                 }
             }
         }
     }
+}
 }
 
 // ================= Settings Tab Screen =================
