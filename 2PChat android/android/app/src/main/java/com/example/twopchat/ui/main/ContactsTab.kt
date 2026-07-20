@@ -786,24 +786,6 @@ fun ContactsTab(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (isSearching) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = surfaceColor),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-            ) {
-                Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp, color = primaryColor)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(if (appLanguage == "Русский") "Ищем пользователя" else "Searching for user", fontWeight = FontWeight.Bold, color = onSurfaceColor)
-                        Text(searchProgress, fontSize = 12.sp, color = onSurfaceVariant)
-                        Text(if (appLanguage == "Русский") "Результат появится даже для offline endpoint-а, но будет отмечен как непроверенный." else "Offline endpoints remain visible, but are marked unverified.", fontSize = 10.sp, color = onSurfaceVariant.copy(alpha = 0.75f))
-                    }
-                }
-            }
         val contactsToDisplay = if (searchQuery.isNotBlank()) searchResults else filteredContacts
 
         if (isSearching) {
@@ -1007,7 +989,6 @@ fun ContactsTab(
             }
         }
     }
-}
 }
 
 // ================= Settings Tab Screen =================
