@@ -157,7 +157,12 @@ fun ChatScreen(
             }
         }
     }
-    val listState = rememberLazyListState()
+    val listState = rememberLazyListState(
+        // Start at a very high index so the list opens at the bottom without
+        // any visible scroll animation. The LazyColumn clamps this to the
+        // actual last item on first layout, giving instant bottom positioning.
+        initialFirstVisibleItemIndex = Int.MAX_VALUE
+    )
     val arrivalAnimationTracker = remember(peerName) { MessageArrivalAnimationTracker() }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var hasAppliedInitialScroll by remember(peerName) { mutableStateOf(false) }
@@ -1027,11 +1032,14 @@ fun ChatScreen(
 
         if (!isSearchMode && lastIndex >= 0) {
             if (!hasAppliedInitialScroll) {
+                // Only explicitly scroll when we need to show unread messages.
+                // If no unreads, the list already opened at the bottom via
+                // initialFirstVisibleItemIndex = Int.MAX_VALUE, so no jump.
                 val initialIndex = initialChatScrollIndex(
                     messageCount = currentMessageCount,
                     unreadMessageCount = unreadMessagesOnOpen,
                 )
-                if (initialIndex >= 0) {
+                if (unreadMessagesOnOpen > 0 && initialIndex >= 0) {
                     listState.scrollToItem(initialIndex)
                 }
                 hasAppliedInitialScroll = true
