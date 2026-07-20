@@ -17,7 +17,7 @@ class ChatScreenViewModel : ViewModel() {
 }
 
 internal fun fastHistoryMessageLimit(unreadMessageCount: Int): Int =
-    unreadMessageCount.coerceIn(1, 100)
+    maxOf(40, unreadMessageCount).coerceAtMost(100)
 
 /**
  * Applies a cheap recent-history lookup without disturbing the order of an

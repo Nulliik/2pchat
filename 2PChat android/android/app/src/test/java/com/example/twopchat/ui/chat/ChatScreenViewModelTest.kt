@@ -50,8 +50,8 @@ class ChatScreenViewModelTest {
 
     @Test
     fun fastHistoryLimitUsesUnreadCountAndIsBounded() {
-        assertEquals(1, fastHistoryMessageLimit(0))
-        assertEquals(5, fastHistoryMessageLimit(5))
+        assertEquals(40, fastHistoryMessageLimit(0))
+        assertEquals(40, fastHistoryMessageLimit(5))
         assertEquals(100, fastHistoryMessageLimit(500))
     }
 
