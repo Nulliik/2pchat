@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.util.UUID
 
 /** Canonical keys for relay state which is intentionally small key/value metadata. */
 object P2PPreferences {
@@ -73,6 +74,43 @@ object P2PPreferences {
     fun unreadCount(peerName: String) = "unread_count_$peerName"
     fun transport(peerName: String) = "transport_$peerName"
     fun verifiedPeer(peerName: String) = "verified_peer_$peerName"
+    fun pinnedMessageId(peerName: String) = "pinned_msg_id_$peerName"
+    fun pinnedMessageText(peerName: String) = "pinned_msg_text_$peerName"
+    fun pinnedMessageSender(peerName: String) = "pinned_msg_sender_$peerName"
+    fun pinnedBy(peerName: String) = "pinned_by_$peerName"
+    fun pinnedStateVersion(peerName: String) = "pinned_state_version_$peerName"
+    fun pinnedStateActor(peerName: String) = "pinned_state_actor_$peerName"
+
+    private const val PINNED_STATE_LOCAL_ACTOR = "pinned_state_local_actor"
+
+    @Synchronized
+    internal fun nextLocalPinnedStateVersion(
+        context: Context,
+        peerName: String,
+    ): PinnedMessageStateVersion {
+        val prefs = prefs(context)
+        val actor = prefs.getString(PINNED_STATE_LOCAL_ACTOR, null)
+            ?.takeIf { it.isNotBlank() }
+            ?: UUID.randomUUID().toString()
+        val current = currentPinnedStateVersion(prefs, peerName)
+        val next = nextPinnedMessageStateVersion(current, actor)
+        check(
+            prefs.edit()
+                .putString(PINNED_STATE_LOCAL_ACTOR, actor)
+                .putLong(pinnedStateVersion(peerName), next.counter)
+                .putString(pinnedStateActor(peerName), next.actor)
+                .commit()
+        ) { "Unable to persist pinned-message version" }
+        return next
+    }
+
+    internal fun currentPinnedStateVersion(
+        prefs: SharedPreferences,
+        peerName: String,
+    ): PinnedMessageStateVersion = PinnedMessageStateVersion(
+        counter = prefs.getLong(pinnedStateVersion(peerName), 0L),
+        actor = prefs.getString(pinnedStateActor(peerName), "").orEmpty(),
+    )
 
     fun isPeerVerified(context: Context, peerName: String): Boolean =
         prefs(context).getBoolean(verifiedPeer(peerName), false)

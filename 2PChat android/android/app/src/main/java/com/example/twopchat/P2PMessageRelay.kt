@@ -175,6 +175,18 @@ object P2PMessageRelay {
         messageListeners.remove(listener)
     }
 
+    private fun sendPinnedStateAck(context: Context, peerName: String, controlId: String) {
+        if (controlId.isBlank()) return
+        outboundMessenger.sendControlMessage(
+            context,
+            peerName,
+            JSONObject().apply {
+                put("type", "pin_state_ack")
+                put("control_id", controlId)
+            },
+        )
+    }
+
     private fun showNotification(context: Context, sender: String, text: String) {
         try {
             notificationService.show(context, sender, text)
@@ -557,18 +569,101 @@ object P2PMessageRelay {
 
                                 }
                                 "pin_message" -> {
-
                                     val msgId = json.optString("msg_id")
                                     val text = json.optString("text")
                                     val isFromSender = json.optBoolean("is_from_sender", false)
-                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                        messageListeners.forEach { it.onMessagePinned(sender, msgId, text, isFromSender) }
+                                    if (msgId.isNotBlank()) {
+                                        val prefs = P2PPreferences.prefs(appContext)
+                                        val currentVersion = P2PPreferences.currentPinnedStateVersion(prefs, sender)
+                                        val advertisedVersion = PinnedMessageStateVersion(
+                                            counter = json.optLong("pin_version", 0L),
+                                            actor = json.optString("pin_actor"),
+                                        )
+                                        val incomingVersion = if (
+                                            advertisedVersion.counter > 0L && advertisedVersion.actor.isNotBlank()
+                                        ) {
+                                            advertisedVersion
+                                        } else {
+                                            nextPinnedMessageStateVersion(currentVersion, "legacy:$sender")
+                                        }
+                                        var stateHandled = true
+                                        if (shouldApplyPinnedMessageState(currentVersion, incomingVersion)) {
+                                            val storedText = ChatDatabaseHelper.getInstance(appContext)
+                                                .findMessageForReaction(sender, msgId, "")
+                                                ?.text
+                                                ?: text
+                                            stateHandled = prefs.edit()
+                                                .putString(P2PPreferences.pinnedMessageId(sender), msgId)
+                                                .putString(
+                                                    P2PPreferences.pinnedMessageText(sender),
+                                                    SecureStorage.encrypt(storedText),
+                                                )
+                                                .putString(
+                                                    P2PPreferences.pinnedMessageSender(sender),
+                                                    if (isFromSender) sender else "You",
+                                                )
+                                                .putString(P2PPreferences.pinnedBy(sender), sender)
+                                                .putLong(
+                                                    P2PPreferences.pinnedStateVersion(sender),
+                                                    incomingVersion.counter,
+                                                )
+                                                .putString(
+                                                    P2PPreferences.pinnedStateActor(sender),
+                                                    incomingVersion.actor,
+                                                )
+                                                .commit()
+                                            if (stateHandled) {
+                                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                    messageListeners.forEach {
+                                                        it.onMessagePinned(sender, msgId, storedText, isFromSender)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if (stateHandled) {
+                                            sendPinnedStateAck(appContext, sender, json.optString("control_id"))
+                                        }
                                     }
                                     return
                                 }
                                 "unpin_message" -> {
-                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                                        messageListeners.forEach { it.onMessageUnpinned(sender) }
+                                    val prefs = P2PPreferences.prefs(appContext)
+                                    val currentVersion = P2PPreferences.currentPinnedStateVersion(prefs, sender)
+                                    val advertisedVersion = PinnedMessageStateVersion(
+                                        counter = json.optLong("pin_version", 0L),
+                                        actor = json.optString("pin_actor"),
+                                    )
+                                    val incomingVersion = if (
+                                        advertisedVersion.counter > 0L && advertisedVersion.actor.isNotBlank()
+                                    ) {
+                                        advertisedVersion
+                                    } else {
+                                        nextPinnedMessageStateVersion(currentVersion, "legacy:$sender")
+                                    }
+                                    var stateHandled = true
+                                    if (shouldApplyPinnedMessageState(currentVersion, incomingVersion)) {
+                                        stateHandled = prefs.edit()
+                                            .remove(P2PPreferences.pinnedMessageId(sender))
+                                            .remove(P2PPreferences.pinnedMessageText(sender))
+                                            .remove(P2PPreferences.pinnedMessageSender(sender))
+                                            .remove(P2PPreferences.pinnedBy(sender))
+                                            .putLong(
+                                                P2PPreferences.pinnedStateVersion(sender),
+                                                incomingVersion.counter,
+                                            )
+                                            .putString(
+                                                P2PPreferences.pinnedStateActor(sender),
+                                                incomingVersion.actor,
+                                            )
+                                            .commit()
+                                        if (stateHandled) {
+                                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                messageListeners.forEach { it.onMessageUnpinned(sender) }
+                                            }
+                                        }
+                                    }
+                                    if (stateHandled) {
+                                        sendPinnedStateAck(appContext, sender, json.optString("control_id"))
                                     }
                                     return
                                 }
@@ -596,6 +691,15 @@ object P2PMessageRelay {
                                     if (msgId.isNotEmpty() && text.isNotEmpty()) {
                                         val db = ChatDatabaseHelper.getInstance(appContext)
                                         db.updateMessageText(msgId, text)
+                                        val prefs = P2PPreferences.prefs(appContext)
+                                        if (prefs.getString(P2PPreferences.pinnedMessageId(sender), null) == msgId) {
+                                            prefs.edit()
+                                                .putString(
+                                                    P2PPreferences.pinnedMessageText(sender),
+                                                    SecureStorage.encrypt(text),
+                                                )
+                                                .apply()
+                                        }
                                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                                             messageListeners.forEach { it.onMessageEdited(sender, msgId, text) }
                                         }
@@ -619,6 +723,15 @@ object P2PMessageRelay {
                                     if (msgId.isNotEmpty()) {
                                         val db = ChatDatabaseHelper.getInstance(appContext)
                                         db.deleteMessage(msgId)
+                                        val prefs = P2PPreferences.prefs(appContext)
+                                        if (prefs.getString(P2PPreferences.pinnedMessageId(sender), null) == msgId) {
+                                            prefs.edit()
+                                                .remove(P2PPreferences.pinnedMessageId(sender))
+                                                .remove(P2PPreferences.pinnedMessageText(sender))
+                                                .remove(P2PPreferences.pinnedMessageSender(sender))
+                                                .remove(P2PPreferences.pinnedBy(sender))
+                                                .apply()
+                                        }
                                         android.os.Handler(android.os.Looper.getMainLooper()).post {
                                             messageListeners.forEach { it.onMessageDeleted(sender, msgId) }
                                         }
@@ -645,6 +758,10 @@ object P2PMessageRelay {
                                     return
                                 }
                                 "edit_ack" -> {
+                                    outboundMessenger.acknowledgeControl(appContext, json.optString("control_id"))
+                                    return
+                                }
+                                "pin_state_ack" -> {
                                     outboundMessenger.acknowledgeControl(appContext, json.optString("control_id"))
                                     return
                                 }
@@ -1036,17 +1153,35 @@ object P2PMessageRelay {
     }
 
     fun sendPinMessage(context: Context, peerName: String, msgId: String, text: String, isFromSender: Boolean, onResult: (Boolean) -> Unit = {}) {
-        outboundMessenger.sendControlMessage(context, peerName, JSONObject().apply {
+        if (peerName == "Saved Messages") {
+            onResult(true)
+            return
+        }
+        val version = P2PPreferences.nextLocalPinnedStateVersion(context.applicationContext, peerName)
+        val controlId = "pinned-state:${version.actor}:${version.counter}"
+        outboundMessenger.sendPinnedState(context, peerName, JSONObject().apply {
             put("type", "pin_message")
             put("msg_id", msgId)
             put("text", text)
             put("is_from_sender", isFromSender)
+            put("pin_version", version.counter)
+            put("pin_actor", version.actor)
+            put("control_id", controlId)
         }, onResult)
     }
 
     fun sendUnpinMessage(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
-        outboundMessenger.sendControlMessage(context, peerName, JSONObject().apply {
+        if (peerName == "Saved Messages") {
+            onResult(true)
+            return
+        }
+        val version = P2PPreferences.nextLocalPinnedStateVersion(context.applicationContext, peerName)
+        val controlId = "pinned-state:${version.actor}:${version.counter}"
+        outboundMessenger.sendPinnedState(context, peerName, JSONObject().apply {
             put("type", "unpin_message")
+            put("pin_version", version.counter)
+            put("pin_actor", version.actor)
+            put("control_id", controlId)
         }, onResult)
     }
 
@@ -1067,6 +1202,12 @@ object P2PMessageRelay {
                 remove("fingerprint_mismatch_$peerName")
                 remove("pending_peer_fingerprint_$peerName")
                 remove("pending_peer_endpoint_$peerName")
+                remove(P2PPreferences.pinnedMessageId(peerName))
+                remove(P2PPreferences.pinnedMessageText(peerName))
+                remove(P2PPreferences.pinnedMessageSender(peerName))
+                remove(P2PPreferences.pinnedBy(peerName))
+                remove(P2PPreferences.pinnedStateVersion(peerName))
+                remove(P2PPreferences.pinnedStateActor(peerName))
             }
         } else {
             sharedPrefs.edit {
@@ -1079,6 +1220,12 @@ object P2PMessageRelay {
                 remove("fingerprint_mismatch_$peerName")
                 remove("pending_peer_fingerprint_$peerName")
                 remove("pending_peer_endpoint_$peerName")
+                remove(P2PPreferences.pinnedMessageId(peerName))
+                remove(P2PPreferences.pinnedMessageText(peerName))
+                remove(P2PPreferences.pinnedMessageSender(peerName))
+                remove(P2PPreferences.pinnedBy(peerName))
+                remove(P2PPreferences.pinnedStateVersion(peerName))
+                remove(P2PPreferences.pinnedStateActor(peerName))
             }
         }
         

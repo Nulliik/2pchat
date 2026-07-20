@@ -591,6 +591,16 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         )
     }
 
+    fun deletePendingControlsForPeerByTypes(peerName: String, types: Set<String>) {
+        if (types.isEmpty()) return
+        val placeholders = types.joinToString(",") { "?" }
+        safeWritableDatabase.delete(
+            TABLE_PENDING_CONTROLS,
+            "$KEY_PEER_NAME = ? AND $KEY_CONTROL_TYPE IN ($placeholders)",
+            arrayOf(peerName, *types.toTypedArray()),
+        )
+    }
+
     fun renamePeer(oldPeerName: String, newPeerName: String) {
         if (oldPeerName == newPeerName) return
         val db = this.safeWritableDatabase
