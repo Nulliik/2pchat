@@ -159,6 +159,10 @@ object Localizations {
         "copy_text" to "📋 Copy text",
         "reply_msg" to "💬 Reply message",
         "close" to "Close",
+        "you_disabled_forwarding" to "You disabled forwarding in this chat",
+        "you_enabled_forwarding" to "You enabled forwarding in this chat",
+        "peer_disabled_forwarding" to "%s disabled forwarding in this chat",
+        "peer_enabled_forwarding" to "%s enabled forwarding in this chat",
         
         // Verification System
         "verify_peer" to "Verify Peer Identity",
@@ -337,6 +341,10 @@ object Localizations {
         "reply_msg" to "💬 Ответить на сообщение",
         "delete_msg" to "🗑️ Удалить сообщение (из RAM)",
         "close" to "Закрыть",
+        "you_disabled_forwarding" to "Вы запретили пересылку из этого чата",
+        "you_enabled_forwarding" to "Вы разрешили пересылку из этого чата",
+        "peer_disabled_forwarding" to "Собеседник запретил пересылку из этого чата",
+        "peer_enabled_forwarding" to "Собеседник разрешил пересылку из этого чата",
         
         // Verification System
         "verify_peer" to "Верификация собеседника",

@@ -246,6 +246,15 @@ fun ChatScreen(
     var isMuted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("mute_notifications_${peerName}", false)) }
     var isBlocked by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("blocked_peer_${peerName}", false)) }
     var isForwardingRestricted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("restrict_forwarding_${peerName}", false)) }
+    var forwardingNotificationPill by remember(peerName) { mutableStateOf<String?>(null) }
+    
+    // Auto-hide forwarding notification pill after 3.5s
+    LaunchedEffect(forwardingNotificationPill) {
+        if (forwardingNotificationPill != null) {
+            kotlinx.coroutines.delay(3500)
+            forwardingNotificationPill = null
+        }
+    }
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
     var activeFingerprint by remember(peerName) {
         mutableStateOf(sharedPrefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty())
@@ -653,6 +662,11 @@ fun ChatScreen(
             override fun onForwardingStateChanged(sender: String, enabled: Boolean) {
                 if (sender == peerName) {
                     isForwardingRestricted = enabled
+                    forwardingNotificationPill = if (enabled) {
+                        Localizations.getString("peer_disabled_forwarding", appLanguage)
+                    } else {
+                        Localizations.getString("peer_enabled_forwarding", appLanguage)
+                    }
                 }
             }
         }
@@ -1090,6 +1104,11 @@ fun ChatScreen(
                 isForwardingRestricted = isForwardingRestricted,
                 onToggleForwardingRestriction = { restricted ->
                     isForwardingRestricted = restricted
+                    forwardingNotificationPill = if (restricted) {
+                        Localizations.getString("you_disabled_forwarding", appLanguage)
+                    } else {
+                        Localizations.getString("you_enabled_forwarding", appLanguage)
+                    }
                     sharedPrefs.edit().putBoolean("restrict_forwarding_$peerName", restricted).apply()
                     P2PMessageRelay.sendForwardingState(context, peerName, restricted)
                 },
@@ -1267,6 +1286,33 @@ remove("pinned_msg_id_${peerName}")
                 highlightedMessageId = highlightedMessageId,
                 onHighlightFinished = { highlightedMessageId = null },
             )
+
+            // Translucent Floating Notification Pill for Forwarding Toggles
+            AnimatedVisibility(
+                visible = forwardingNotificationPill != null,
+                enter = fadeIn(animationSpec = tween(250)) + slideInVertically(animationSpec = tween(250)) { it / 2 },
+                exit = fadeOut(animationSpec = tween(250)) + slideOutVertically(animationSpec = tween(250)) { it / 2 },
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(bottom = 6.dp)
+            ) {
+                if (forwardingNotificationPill != null) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.65f),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    ) {
+                        Text(
+                            text = forwardingNotificationPill!!,
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                        )
+                    }
+                }
+            }
 
             ChatInputBar(
                 showAttachments = showAttachments,
