@@ -68,7 +68,7 @@ internal class RelayMaintenanceCoordinator(
                 } catch (error: Exception) {
                     log(appContext, "Error maintaining saved peer sessions", "ERROR", error)
                 }
-                delay(5_000)
+                delay(30_000)
             }
         }
 
@@ -112,7 +112,7 @@ internal class RelayMaintenanceCoordinator(
                 } catch (error: Exception) {
                     log(appContext, "Error in periodic announce", "ERROR", error)
                 }
-                delay(10_000)
+                delay(60_000)
             }
         }
     }

@@ -334,13 +334,14 @@ open class PacketTunnelProvider: VpnService() {
             if (Thread.currentThread().isInterrupted) {
                 break@updates
             }
-            if (sleep()) return
+            val isStable = publicPeerPoolPruned.get()
+            if (sleep(isStable)) return
         }
     }
 
-    private fun sleep(): Boolean {
+    private fun sleep(isStable: Boolean = false): Boolean {
         try {
-            Thread.sleep(1000)
+            Thread.sleep(if (isStable) 3000L else 1000L)
         } catch (e: InterruptedException) {
             return true
         }

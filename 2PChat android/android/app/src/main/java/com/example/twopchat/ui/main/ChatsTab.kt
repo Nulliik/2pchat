@@ -180,7 +180,7 @@ fun ChatsTab(
                 val yggAddr = PythonBridge.getYggdrasilAddress()
                 heroYggOk = yggAddr.isNotBlank() && yggAddr != "N/A" && yggAddr != "unavailable"
             }
-            kotlinx.coroutines.delay(4000)
+            kotlinx.coroutines.delay(15000)
         }
     }
 
