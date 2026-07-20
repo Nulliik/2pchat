@@ -139,6 +139,16 @@ object Localizations {
         "haptic_feedback_desc" to "Vibrate on key actions and message events",
         "premium_icons" to "Premium Launcher Icons",
         "select_icons_desc" to "Select from 4 bespoke alternative styles:",
+        "help_reference" to "Help & Reference",
+        "help_reference_desc" to "Terms, network guide, and privacy explanation",
+        "help_yggdrasil_title" to "What is Yggdrasil Mesh?",
+        "help_yggdrasil_desc" to "Yggdrasil is an encrypted IPv6 overlay mesh network. It automatically routes packets peer-to-peer without relying on central ISPs or cloud servers, allowing peers to reach each other globally even behind NAT.",
+        "help_e2ee_title" to "Double Ratchet E2EE",
+        "help_e2ee_desc" to "Every conversation uses Double Ratchet end-to-end encryption. Message keys rotate after every sentence, guaranteeing Forward Secrecy & Post-Compromise Security.",
+        "help_privacy_title" to "Zero Footprint Privacy",
+        "help_privacy_desc" to "2PChat operates without accounts, central databases, or remote telemetry. Your keys, history, and preferences stay strictly on your local device.",
+        "help_duress_title" to "Duress PIN & Emergency Wipe",
+        "help_duress_desc" to "Setting a Duress PIN lets you instantly wipe local database files and cryptographic identity directly from the lock screen under emergency conditions.",
 
         // Chat Screen
         "secure_badge" to "SECURE",
@@ -306,6 +316,16 @@ object Localizations {
         "haptic_feedback_desc" to "Вибрация при действиях и отправке сообщений",
         "premium_icons" to "Премиальные иконки запуска",
         "select_icons_desc" to "Выберите один из 4 уникальных стилей:",
+        "help_reference" to "Справка и справочник",
+        "help_reference_desc" to "Термины, руководство по сети и приватности",
+        "help_yggdrasil_title" to "Что такое сеть Yggdrasil?",
+        "help_yggdrasil_desc" to "Yggdrasil — это зашифрованная оверлейная mesh-сеть IPv6. Она автоматически маршрутизирует пакеты напрямую между устройствами без центральных провайдеров или серверов, позволяя связываться по всему миру даже за NAT.",
+        "help_e2ee_title" to "Шифрование Double Ratchet",
+        "help_e2ee_desc" to "Каждый диалог использует протокол Double Ratchet E2EE. Ключи сообщений обновляются после каждой фразы, гарантируя прямой и будущий секрет (Forward Secrecy).",
+        "help_privacy_title" to "Полное отсутствие следов",
+        "help_privacy_desc" to "2PChat работает без аккаунтов, облачных баз данных или телеметрии. Ваши ключи, история и настройки остаются исключительно на вашем устройстве.",
+        "help_duress_title" to "Duress PIN и аварийный сброс",
+        "help_duress_desc" to "Установка экстренного PIN-кода (Duress PIN) позволяет мгновенно стереть локальную базу данных и ключи прямо с экрана блокировки в экстренной ситуации.",
 
         // Chat Screen
         "secure_badge" to "ЗАЩИЩЕНО",

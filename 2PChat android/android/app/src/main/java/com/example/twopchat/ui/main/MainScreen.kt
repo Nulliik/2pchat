@@ -113,6 +113,45 @@ fun MainScreen(
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
+    // Trigger system VPN activation prompt if onboarding was just completed
+    LaunchedEffect(Unit) {
+        val promptAlreadyShown = sharedPrefs.getBoolean("yggdrasil_prompt_shown", false)
+        if (!promptAlreadyShown) {
+            sharedPrefs.edit().putBoolean("yggdrasil_prompt_shown", true).apply()
+            
+            // Re-toggle service to force Android system VPN connection request dialog
+            try {
+                val stopIntent = Intent(context, PacketTunnelProvider::class.java).apply {
+                    action = PacketTunnelProvider.ACTION_STOP
+                }
+                context.stopService(stopIntent)
+            } catch (_: Exception) {}
+
+            val vpnPrepareIntent = VpnService.prepare(context)
+            if (vpnPrepareIntent != null) {
+                try {
+                    vpnPrepareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(vpnPrepareIntent)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            } else {
+                val startIntent = Intent(context, PacketTunnelProvider::class.java).apply {
+                    action = PacketTunnelProvider.ACTION_START
+                }
+                try {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                        context.startForegroundService(startIntent)
+                    } else {
+                        context.startService(startIntent)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
     var activePeers by remember { mutableStateOf<List<String>>(emptyList()) }
     LaunchedEffect(Unit) {
         while (true) {

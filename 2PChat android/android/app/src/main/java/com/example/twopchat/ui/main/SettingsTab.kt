@@ -485,6 +485,20 @@ fun SettingsTab(
                                 primaryColor = primaryColor,
                                 onClick = { showLanguageDialog = true }
                             )
+
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                            // Category: Help & Reference / Справка
+                            SettingsRow(
+                                title = Localizations.getString("help_reference", appLanguage),
+                                subtitle = Localizations.getString("help_reference_desc", appLanguage),
+                                iconRes = com.example.twopchat.R.drawable.ic_shield_status,
+                                iconColor = Color(0xFFAB47BC),
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                onClick = { activeSubPage = "help_reference" }
+                            )
                         }
                     }
 
@@ -1390,6 +1404,96 @@ fun SettingsTab(
                         }
                         
                         Spacer(modifier = Modifier.height(40.dp))
+                    }
+                }
+            }
+            "help_reference" -> {
+                SubPageLayout(
+                    title = Localizations.getString("help_reference", appLanguage),
+                    appLanguage = appLanguage,
+                    onBackClick = { activeSubPage = null },
+                    surfaceColor = surfaceColor,
+                    onSurfaceColor = onSurfaceColor
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 20.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Text(
+                                    text = Localizations.getString("help_yggdrasil_title", appLanguage),
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryColor
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = Localizations.getString("help_yggdrasil_desc", appLanguage),
+                                    fontSize = 13.sp,
+                                    color = onSurfaceColor.copy(alpha = 0.8f),
+                                    lineHeight = 20.sp
+                                )
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp), color = onSurfaceColor.copy(alpha = 0.08f))
+
+                                Text(
+                                    text = Localizations.getString("help_e2ee_title", appLanguage),
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryColor
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = Localizations.getString("help_e2ee_desc", appLanguage),
+                                    fontSize = 13.sp,
+                                    color = onSurfaceColor.copy(alpha = 0.8f),
+                                    lineHeight = 20.sp
+                                )
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp), color = onSurfaceColor.copy(alpha = 0.08f))
+
+                                Text(
+                                    text = Localizations.getString("help_privacy_title", appLanguage),
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryColor
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = Localizations.getString("help_privacy_desc", appLanguage),
+                                    fontSize = 13.sp,
+                                    color = onSurfaceColor.copy(alpha = 0.8f),
+                                    lineHeight = 20.sp
+                                )
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp), color = onSurfaceColor.copy(alpha = 0.08f))
+
+                                Text(
+                                    text = Localizations.getString("help_duress_title", appLanguage),
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryColor
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = Localizations.getString("help_duress_desc", appLanguage),
+                                    fontSize = 13.sp,
+                                    color = onSurfaceColor.copy(alpha = 0.8f),
+                                    lineHeight = 20.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(30.dp))
                     }
                 }
             }
