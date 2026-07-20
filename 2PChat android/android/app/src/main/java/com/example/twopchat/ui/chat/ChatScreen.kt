@@ -110,13 +110,14 @@ internal fun isMessageListAtBottom(
     lastVisibleItemIndex: Int,
 ): Boolean = totalItemCount <= 0 || lastVisibleItemIndex >= totalItemCount - 1
 
-internal fun initialChatScrollIndex(
-    messageCount: Int,
-    unreadMessageCount: Int,
+internal fun historyReplacementScrollIndex(
+    messages: List<Message>,
+    anchorMessageId: String?,
+    wasAtBottom: Boolean,
 ): Int {
-    if (messageCount <= 0) return -1
-    if (unreadMessageCount <= 0) return messageCount - 1
-    return (messageCount - unreadMessageCount).coerceIn(0, messageCount - 1)
+    if (messages.isEmpty()) return -1
+    if (wasAtBottom || anchorMessageId == null) return messages.lastIndex
+    return messages.indexOfFirst { it.id == anchorMessageId }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -157,12 +158,9 @@ fun ChatScreen(
             }
         }
     }
-    val listState = rememberLazyListState(
-        // Start at a very high index so the list opens at the bottom without
-        // any visible scroll animation. The LazyColumn clamps this to the
-        // actual last item on first layout, giving instant bottom positioning.
-        initialFirstVisibleItemIndex = Int.MAX_VALUE
-    )
+    val listState = rememberLazyListState()
+    var isSearchMode by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     val arrivalAnimationTracker = remember(peerName) { MessageArrivalAnimationTracker() }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var hasAppliedInitialScroll by remember(peerName) { mutableStateOf(false) }
@@ -374,10 +372,10 @@ fun ChatScreen(
         hasAppliedInitialScroll = false
         isFastHistoryLoaded = false
         newMessagesBelowCount = 0
-        // BUG-04: Scroll existing cached messages to the bottom immediately on
-        // re-entry so the list doesn't show a stale mid-conversation position
-        // while the database reload is in progress.
-        if (initialMessages.isNotEmpty() && unreadMessagesOnOpen <= 0) {
+        // A chat always opens at its latest message. In particular, do not
+        // reuse an index from the short, fast history snapshot: that same
+        // index points into the middle once the complete history is installed.
+        if (initialMessages.isNotEmpty()) {
             listState.scrollToItem(initialMessages.lastIndex)
         }
         // Navigation keeps the keyed ViewModel alive after leaving a chat. Refresh
@@ -441,8 +439,42 @@ fun ChatScreen(
             persistHistory = persistEnabled,
         )
         if (mergedMessages != initialMessages.toList()) {
+            val layoutInfoBeforeReplacement = listState.layoutInfo
+            val visibleItemsBeforeReplacement = layoutInfoBeforeReplacement.visibleItemsInfo
+            val firstVisibleMessage = visibleItemsBeforeReplacement
+                .firstOrNull { it.index in initialMessages.indices }
+            val anchorMessageId = firstVisibleMessage
+                ?.index
+                ?.let { initialMessages[it].id }
+            val anchorOffset = if (firstVisibleMessage?.index == listState.firstVisibleItemIndex) {
+                listState.firstVisibleItemScrollOffset
+            } else {
+                0
+            }
+            val wasAtBottomBeforeReplacement = visibleItemsBeforeReplacement
+                .lastOrNull()
+                ?.index
+                ?.let { it >= initialMessages.lastIndex }
+                // No layout yet means that initial bottom positioning is still
+                // pending. Keep targeting the bottom after the list grows.
+                ?: true
+
             initialMessages.clear()
             initialMessages.addAll(mergedMessages)
+
+            if (hasAppliedInitialScroll && !isSearchMode) {
+                val restoredIndex = historyReplacementScrollIndex(
+                    messages = mergedMessages,
+                    anchorMessageId = anchorMessageId,
+                    wasAtBottom = wasAtBottomBeforeReplacement,
+                )
+                if (restoredIndex >= 0) {
+                    listState.scrollToItem(
+                        restoredIndex,
+                        if (wasAtBottomBeforeReplacement) 0 else anchorOffset,
+                    )
+                }
+            }
         }
         isHistoryLoading = false
     }
@@ -970,9 +1002,6 @@ fun ChatScreen(
     }
 
 
-    var isSearchMode by rememberSaveable { mutableStateOf(false) }
-    var searchQuery by rememberSaveable { mutableStateOf("") }
-
     val primaryColor = MaterialTheme.colorScheme.primary
     val backgroundColor = MaterialTheme.colorScheme.background
     val surfaceColor = MaterialTheme.colorScheme.surface
@@ -1055,16 +1084,7 @@ fun ChatScreen(
 
         if (!isSearchMode && lastIndex >= 0) {
             if (!hasAppliedInitialScroll) {
-                // Only explicitly scroll when we need to show unread messages.
-                // If no unreads, the list already opened at the bottom via
-                // initialFirstVisibleItemIndex = Int.MAX_VALUE, so no jump.
-                val initialIndex = initialChatScrollIndex(
-                    messageCount = currentMessageCount,
-                    unreadMessageCount = unreadMessagesOnOpen,
-                )
-                if (unreadMessagesOnOpen > 0 && initialIndex >= 0) {
-                    listState.scrollToItem(initialIndex)
-                }
+                listState.scrollToItem(lastIndex)
                 hasAppliedInitialScroll = true
             } else if (
                 didAppendNewestMessage(

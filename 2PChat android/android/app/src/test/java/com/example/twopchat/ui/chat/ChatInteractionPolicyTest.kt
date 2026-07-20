@@ -93,15 +93,43 @@ class ChatInteractionPolicyTest {
     }
 
     @Test
-    fun initialScrollTargetsFirstUnreadMessage() {
-        assertEquals(35, initialChatScrollIndex(messageCount = 40, unreadMessageCount = 5))
-        assertEquals(0, initialChatScrollIndex(messageCount = 5, unreadMessageCount = 10))
+    fun fullHistoryReplacementKeepsBottomPinned() {
+        val messages = (1..100).map { index ->
+            Message(index.toString(), "message $index", false, "12:00")
+        }
+
+        assertEquals(
+            99,
+            historyReplacementScrollIndex(
+                messages = messages,
+                anchorMessageId = "40",
+                wasAtBottom = true,
+            ),
+        )
     }
 
     @Test
-    fun initialScrollTargetsLatestMessageWhenEverythingIsRead() {
-        assertEquals(39, initialChatScrollIndex(messageCount = 40, unreadMessageCount = 0))
-        assertEquals(-1, initialChatScrollIndex(messageCount = 0, unreadMessageCount = 0))
+    fun fullHistoryReplacementKeepsVisibleMessageAnchored() {
+        val messages = (1..100).map { index ->
+            Message(index.toString(), "message $index", false, "12:00")
+        }
+
+        assertEquals(
+            39,
+            historyReplacementScrollIndex(
+                messages = messages,
+                anchorMessageId = "40",
+                wasAtBottom = false,
+            ),
+        )
+        assertEquals(
+            -1,
+            historyReplacementScrollIndex(
+                messages = emptyList(),
+                anchorMessageId = null,
+                wasAtBottom = true,
+            ),
+        )
     }
 
     @Test
