@@ -473,9 +473,12 @@ fun ChatsTab(
 
         // Chats Header
         Text(
-            text = Localizations.getString("active_handshakes", appLanguage),
-            fontSize = 18.sp, fontWeight = FontWeight.Bold, color = onSurfaceColor,
-            modifier = Modifier.padding(bottom = 12.dp)
+            text = Localizations.getString("active_handshakes", appLanguage).uppercase(),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = onSurfaceVariant,
+            letterSpacing = 1.2.sp,
+            modifier = Modifier.padding(top = 4.dp, bottom = 6.dp)
         )
 
         // Peers List
