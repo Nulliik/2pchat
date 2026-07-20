@@ -19,6 +19,7 @@ internal class P2POutboundMessenger(
 ) {
     private val processingOfflineQueues = ConcurrentHashMap.newKeySet<String>()
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val pinnedStateScope = CoroutineScope(Dispatchers.IO.limitedParallelism(1))
 
     private fun isPaused(context: Context, peerName: String): Boolean =
         peerName != "Direct Peer" && P2PPreferences.isPeerIdentityChangePending(context, peerName)
@@ -168,6 +169,28 @@ internal class P2POutboundMessenger(
         sendPersistedControl(context, peerName, endpoint, controlId, "delete_message", payload, deleteAfterSend = true)
     }
 
+    fun sendPinnedState(
+        context: Context,
+        peerName: String,
+        payload: JSONObject,
+        onResult: (Boolean) -> Unit = {},
+    ) {
+        val controlId = payload.optString("control_id")
+        if (controlId.isBlank()) return postResult(onResult, false)
+        sendPersistedControl(
+            context = context,
+            peerName = peerName,
+            endpoint = peerEndpoints[peerName],
+            controlId = controlId,
+            type = payload.optString("type"),
+            payload = payload,
+            deleteAfterSend = false,
+            onResult = onResult,
+            operationScope = pinnedStateScope,
+            replaceControlTypes = setOf("pin_message", "unpin_message"),
+        )
+    }
+
     fun processOfflineQueue(context: Context, peerName: String, endpoint: String) {
         if (endpoint.isBlank() || isPaused(context, peerName) || !processingOfflineQueues.add(peerName)) return
         scope.launch {
@@ -267,15 +290,21 @@ internal class P2POutboundMessenger(
         type: String,
         payload: JSONObject,
         deleteAfterSend: Boolean,
+        onResult: (Boolean) -> Unit = {},
+        operationScope: CoroutineScope = scope,
+        replaceControlTypes: Set<String> = emptySet(),
     ) {
         val appContext = context.applicationContext
         // Security-sensitive controls must not be queued for automatic delivery to
         // a replacement identity which has not been accepted yet.
-        if (isPaused(appContext, peerName)) return
-        scope.launch {
+        if (isPaused(appContext, peerName)) return postResult(onResult, false)
+        operationScope.launch {
             val db = ChatDatabaseHelper.getInstance(appContext)
             try {
-                if (isPaused(appContext, peerName)) return@launch
+                if (isPaused(appContext, peerName)) return@launch postResult(onResult, false)
+                if (replaceControlTypes.isNotEmpty()) {
+                    db.deletePendingControlsForPeerByTypes(peerName, replaceControlTypes)
+                }
                 db.enqueuePendingControl(
                     PendingControl(controlId, peerName, type, payload.toString())
                 )
@@ -284,7 +313,7 @@ internal class P2POutboundMessenger(
                     ?: P2PPreferences.prefs(appContext)
                         .getString(P2PPreferences.lastEndpoint(peerName), null)
                         ?.takeIf { it.isNotBlank() }
-                    ?: return@launch
+                    ?: return@launch postResult(onResult, false)
                 val fingerprint = P2PPreferences.prefs(appContext)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
                 val sent = PythonBridge.sendP2pMessage(
@@ -294,8 +323,10 @@ internal class P2POutboundMessenger(
                     fingerprint,
                 )
                 if (sent && deleteAfterSend) db.deletePendingControl(controlId)
+                postResult(onResult, sent)
             } catch (error: Exception) {
                 log(appContext, "Failed to queue/send $type control", "ERROR", error)
+                postResult(onResult, false)
             }
         }
     }

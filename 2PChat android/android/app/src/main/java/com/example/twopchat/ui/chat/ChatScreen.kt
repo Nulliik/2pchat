@@ -114,10 +114,24 @@ internal fun historyReplacementScrollIndex(
     messages: List<Message>,
     anchorMessageId: String?,
     wasAtBottom: Boolean,
+    initialUnreadAnchorMessageId: String? = null,
 ): Int {
     if (messages.isEmpty()) return -1
+    if (anchorMessageId == null && initialUnreadAnchorMessageId != null) {
+        val unreadAnchorIndex = messages.indexOfFirst { it.id == initialUnreadAnchorMessageId }
+        if (unreadAnchorIndex >= 0) return unreadAnchorIndex
+    }
     if (wasAtBottom || anchorMessageId == null) return messages.lastIndex
     return messages.indexOfFirst { it.id == anchorMessageId }
+}
+
+internal fun initialChatScrollIndex(
+    messageCount: Int,
+    unreadMessageCount: Int,
+): Int {
+    if (messageCount <= 0) return -1
+    if (unreadMessageCount <= 0) return messageCount - 1
+    return (messageCount - unreadMessageCount).coerceIn(0, messageCount - 1)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -237,10 +251,10 @@ fun ChatScreen(
             } catch (_: Exception) {}
         }
     }
-    var pinnedMsgId by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_id_${peerName}", null)) }
-    var pinnedMsgText by remember(peerName) { mutableStateOf(SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
-    var pinnedMsgSender by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_msg_sender_${peerName}", null)) }
-    var pinnedBy by remember(peerName) { mutableStateOf(sharedPrefs.getString("pinned_by_${peerName}", null)) }
+    var pinnedMsgId by remember(peerName, isActive) { mutableStateOf(sharedPrefs.getString("pinned_msg_id_${peerName}", null)) }
+    var pinnedMsgText by remember(peerName, isActive) { mutableStateOf(SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
+    var pinnedMsgSender by remember(peerName, isActive) { mutableStateOf(sharedPrefs.getString("pinned_msg_sender_${peerName}", null)) }
+    var pinnedBy by remember(peerName, isActive) { mutableStateOf(sharedPrefs.getString("pinned_by_${peerName}", null)) }
     var isMuted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("mute_notifications_${peerName}", false)) }
     var isBlocked by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("blocked_peer_${peerName}", false)) }
     var isForwardingRestricted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("restrict_forwarding_${peerName}", false)) }
@@ -372,10 +386,10 @@ fun ChatScreen(
         hasAppliedInitialScroll = false
         isFastHistoryLoaded = false
         newMessagesBelowCount = 0
-        // A chat always opens at its latest message. In particular, do not
-        // reuse an index from the short, fast history snapshot: that same
-        // index points into the middle once the complete history is installed.
-        if (initialMessages.isNotEmpty()) {
+        // Re-entry may reuse a cached ViewModel. Move a fully read chat to its
+        // latest message immediately, but leave unread chats for the unread
+        // anchor applied after the fast history snapshot is loaded.
+        if (initialMessages.isNotEmpty() && unreadMessagesOnOpen <= 0) {
             listState.scrollToItem(initialMessages.lastIndex)
         }
         // Navigation keeps the keyed ViewModel alive after leaving a chat. Refresh
@@ -416,6 +430,16 @@ fun ChatScreen(
         if (fastSnapshot != initialMessages.toList()) {
             initialMessages.clear()
             initialMessages.addAll(fastSnapshot)
+        }
+        val initialUnreadAnchorMessageId = if (unreadMessagesOnOpen > 0) {
+            fastSnapshot.getOrNull(
+                initialChatScrollIndex(
+                    messageCount = fastSnapshot.size,
+                    unreadMessageCount = unreadMessagesOnOpen,
+                )
+            )?.id
+        } else {
+            null
         }
         isFastHistoryLoaded = true
         if (fastSnapshot.isNotEmpty()) {
@@ -467,6 +491,7 @@ fun ChatScreen(
                     messages = mergedMessages,
                     anchorMessageId = anchorMessageId,
                     wasAtBottom = wasAtBottomBeforeReplacement,
+                    initialUnreadAnchorMessageId = initialUnreadAnchorMessageId,
                 )
                 if (restoredIndex >= 0) {
                     listState.scrollToItem(
@@ -666,6 +691,12 @@ fun ChatScreen(
                         val oldStatus = current.status ?: ""
                         val newStatus = if (oldStatus.contains("edited")) oldStatus else if (oldStatus.isEmpty()) "edited" else "${oldStatus}_edited"
                         initialMessages[idx] = current.copy(text = text, status = newStatus)
+                    }
+                    if (msgId == pinnedMsgId) {
+                        sharedPrefs.edit {
+                            putString("pinned_msg_text_${peerName}", SecureStorage.encrypt(text))
+                        }
+                        pinnedMsgText = text
                     }
                 }
             }
@@ -1084,7 +1115,13 @@ fun ChatScreen(
 
         if (!isSearchMode && lastIndex >= 0) {
             if (!hasAppliedInitialScroll) {
-                listState.scrollToItem(lastIndex)
+                val initialIndex = initialChatScrollIndex(
+                    messageCount = currentMessageCount,
+                    unreadMessageCount = unreadMessagesOnOpen,
+                )
+                if (initialIndex >= 0) {
+                    listState.scrollToItem(initialIndex)
+                }
                 hasAppliedInitialScroll = true
             } else if (
                 didAppendNewestMessage(
@@ -1454,6 +1491,15 @@ remove("pinned_msg_id_${peerName}")
                                                 val oldStatus = currentEditing.status ?: ""
                                                 val newStatus = if (oldStatus.contains("edited")) oldStatus else if (oldStatus.isEmpty()) "edited" else "${oldStatus}_edited"
                                                 initialMessages[idx] = currentEditing.copy(text = userText, status = newStatus)
+                                            }
+                                            if (currentEditing.id == pinnedMsgId) {
+                                                sharedPrefs.edit {
+                                                    putString(
+                                                        "pinned_msg_text_${peerName}",
+                                                        SecureStorage.encrypt(userText),
+                                                    )
+                                                }
+                                                pinnedMsgText = userText
                                             }
                                             val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                                             if (peerName != "Saved Messages") {
