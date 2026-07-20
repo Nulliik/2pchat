@@ -343,6 +343,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     fun getMessagesForPeerPaged(peerName: String, limit: Int, offset: Int): List<Message> {
         val messages = mutableListOf<Message>()
         val db = this.safeReadableDatabase
+        val limitClause = if (offset > 0) "$offset, $limit" else "$limit"
         val cursor = db.query(
             TABLE_MESSAGES,
             null,
@@ -351,7 +352,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             null,
             null,
             "rowid DESC",
-            "$limit OFFSET $offset"
+            limitClause
         )
         cursor.use {
             if (it.moveToFirst()) {
