@@ -82,7 +82,7 @@ fun MainScreen(
         localFingerprint = withContext(Dispatchers.IO) { PythonBridge.getLocalFingerprint() }
     }
     val context = LocalContext.current
-    val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
+    val sharedPrefs = remember { com.example.twopchat.P2PPreferences.prefs(context) }
     var activeIconAlias by remember { mutableStateOf(sharedPrefs.getString("active_icon_alias", "MainActivityAliasDefault") ?: "MainActivityAliasDefault") }
 
     var mainActiveChatsSet by remember {

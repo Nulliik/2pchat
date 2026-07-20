@@ -2,10 +2,13 @@ package com.example.twopchat
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
 /** Canonical keys for relay state which is intentionally small key/value metadata. */
 object P2PPreferences {
     const val FILE_NAME = "2pchat_prefs"
+    private const val ENCRYPTED_FILE_NAME = "2pchat_secure_prefs"
     const val ACTIVE_CHATS = "active_chats"
     const val LISTENER_PORT = "listener_port"
     const val WIFI_DISCOVERY = "settings_wifi"
@@ -13,8 +16,49 @@ object P2PPreferences {
     const val MIN_LISTENER_PORT = 1024
     const val MAX_LISTENER_PORT = 65535
 
-    fun prefs(context: Context): SharedPreferences =
-        context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+    @Volatile
+    private var cachedPrefs: SharedPreferences? = null
+
+    @Suppress("DEPRECATION")
+    fun prefs(context: Context): SharedPreferences {
+        cachedPrefs?.let { return it }
+        return synchronized(this) {
+            cachedPrefs?.let { return it }
+            val appContext = context.applicationContext
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            val encrypted = EncryptedSharedPreferences.create(
+                appContext,
+                ENCRYPTED_FILE_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+            migrateLegacyPreferences(appContext, encrypted)
+            cachedPrefs = encrypted
+            encrypted
+        }
+    }
+
+    private fun migrateLegacyPreferences(context: Context, target: SharedPreferences) {
+        val legacy = context.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+        if (legacy.all.isEmpty()) return
+        val editor = target.edit()
+        for ((key, value) in legacy.all) {
+            if (target.contains(key)) continue
+            when (value) {
+                is String -> editor.putString(key, value)
+                is Set<*> -> editor.putStringSet(key, value.filterIsInstance<String>().toSet())
+                is Int -> editor.putInt(key, value)
+                is Long -> editor.putLong(key, value)
+                is Float -> editor.putFloat(key, value)
+                is Boolean -> editor.putBoolean(key, value)
+            }
+        }
+        check(editor.commit()) { "Unable to migrate preferences into encrypted storage" }
+        check(legacy.edit().clear().commit()) { "Unable to remove legacy plaintext preferences" }
+    }
 
     fun listenerPort(context: Context): Int =
         prefs(context).getInt(LISTENER_PORT, DEFAULT_LISTENER_PORT)

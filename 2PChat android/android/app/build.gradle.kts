@@ -137,6 +137,7 @@ dependencies {
   // Yggdrasil dependencies
   implementation(files("libs/yggdrasil.aar"))
   implementation("androidx.preference:preference-ktx:1.2.1")
+  implementation("androidx.security:security-crypto:1.1.0")
   implementation("net.zetetic:sqlcipher-android:4.6.1")
   implementation("androidx.sqlite:sqlite:2.3.1")
 

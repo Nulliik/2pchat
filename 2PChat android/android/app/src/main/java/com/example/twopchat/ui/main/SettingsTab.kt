@@ -80,7 +80,7 @@ fun SettingsTab(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
-    val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
+    val sharedPrefs = remember { com.example.twopchat.P2PPreferences.prefs(context) }
     
     // Profile photo states
     var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
@@ -444,6 +444,19 @@ fun SettingsTab(
                                 onClick = { activeSubPage = "security" }
                             )
                             
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                            SettingsRow(
+                                title = if (appLanguage == "Русский") "Трекеры и обнаружение" else "Trackers & Discovery",
+                                subtitle = if (appLanguage == "Русский") "Типы, announce и пользовательские трекеры" else "Types, announces and custom trackers",
+                                iconRes = com.example.twopchat.R.drawable.ic_menu_search,
+                                iconColor = Color(0xFF29B6F6),
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                onClick = { activeSubPage = "trackers" }
+                            )
+
                             HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
                             
                             // Category: Notifications / Уведомления
@@ -928,6 +941,14 @@ fun SettingsTab(
                     }
                 }
             }
+            "trackers" -> TrackerSettingsPage(
+                appLanguage = appLanguage,
+                onBackClick = { activeSubPage = null },
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+            )
             "security" -> {
                 Column(
                     modifier = Modifier

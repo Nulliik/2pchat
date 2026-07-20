@@ -20,8 +20,9 @@ Discovery is intentionally separate from the message/session protocol.
 - Frame header versioning: none; the frame length is always 4-byte big-endian.
 - Current handshake version: `3`.
 - Legacy handshake version: `2`.
-- Current encrypted packet version byte: `2` for Double Ratchet packets.
-- Legacy encrypted packet version byte: `1`.
+- Current encrypted packet version byte: `4` for Double Ratchet packets.
+- Standalone legacy-helper packet version byte: `2`; unauthenticated-header
+  version `1` is rejected.
 
 ## Framing
 
@@ -134,18 +135,19 @@ Then HKDF-SHA256 derives 96 bytes with:
 - `salt = b""`
 - `info = b"X3DH-INIT"`
 
-Those 96 bytes are split into:
+Those 128 bytes are split into:
 
 1. initial root key
 2. initiator send chain / responder receive chain
 3. initiator receive chain / responder send chain
+4. a dedicated header-encryption key shared by both directions
 
-## Current Encrypted Packet Format: Version 3
+## Current Encrypted Packet Format: Version 4
 
 After the v3 bootstrap, application messages are wrapped in a Double Ratchet
 packet:
 
-1. `version` - 1 byte, currently `0x03`
+1. `version` - 1 byte, currently `0x04`
 2. `flags` - 1 byte
 3. `header`
 4. `ciphertext`
@@ -158,9 +160,10 @@ Current header layout:
 1. `dh_pub` - 32 bytes X25519 ratchet public key
 2. `message_index` - 4-byte unsigned big-endian index inside the current send chain
 
-If `flags & 0x01 != 0`, the header is encrypted with a header key derived from
-the current root key. In the current Python implementation, header obfuscation
-exists but is disabled by default.
+If `flags & 0x01 != 0`, the header is encrypted with the dedicated header key
+derived during bootstrap. Header protection is enabled by default. Keeping this
+key separate from the changing root key also lets the receiver decrypt the
+header which announces the peer's next DH-ratchet key.
 
 ### Ciphertext
 
@@ -175,7 +178,7 @@ each chain key is advanced after use.
 
 `packet_tag` authenticates the complete version, flags, header, and ciphertext.
 Its key is domain-separated from the SecretBox key with
-`HMAC-SHA256(message_key, "p2p-chat-packet-auth-v3")`. A receiver performs all
+`HMAC-SHA256(message_key, "p2p-chat-packet-auth-v4")`. A receiver performs all
 ratchet operations on a temporary state and commits that state only after both
 the packet HMAC and SecretBox authentication succeed.
 
@@ -211,17 +214,18 @@ Where `HANDSHAKE_CONTEXT` is ASCII:
 p2p-chat-handshake-v1
 ```
 
-## Legacy Compatibility: Packet Version 1
+## Standalone Helper Packet Version 2
 
-Legacy encrypted packets use:
+The standalone `crypto.encrypt_message` helper uses:
 
-1. `version` - 1 byte, `0x01`
+1. `version` - 1 byte, `0x02`
 2. `counter` - 8-byte unsigned big-endian
 3. `ephemeral_pub` - 32 bytes X25519 ephemeral public key
 4. `ciphertext` - NaCl `SecretBox` output
+5. `packet_tag` - 32-byte HMAC-SHA256 over all preceding fields
 
-This is still supported when talking to a legacy initiator or when explicitly
-forcing protocol version 2.
+The old version `0x01` did not authenticate its counter and ephemeral-key
+header. It is rejected to prevent counter tampering and replay-window poisoning.
 
 ## Application Message Encoding
 

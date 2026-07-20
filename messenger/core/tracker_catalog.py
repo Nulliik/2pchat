@@ -39,21 +39,21 @@ BASE_TRACKERS: tuple[TrackerSpec, ...] = (
         announce_url="http://tracker.opentrackr.org:1337/announce",
         discovery_scheme="http-tracker",
         protocol="http",
-        notes="validated 2026-07-03",
+        notes="unencrypted; use only when enabled by the user",
     ),
     TrackerSpec(
         name="Dler HTTP",
         announce_url="http://tracker2.dler.org:80/announce",
         discovery_scheme="http-tracker",
         protocol="http",
-        notes="validated 2026-07-03",
+        notes="unencrypted; use only when enabled by the user",
     ),
     TrackerSpec(
         name="Qu.Ax HTTP",
         announce_url="http://tracker.qu.ax:6969/announce",
         discovery_scheme="http-tracker",
         protocol="http",
-        notes="validated 2026-07-03",
+        notes="unencrypted; use only when enabled by the user",
     ),
     TrackerSpec(
         name="Yemekyedim HTTPS",
@@ -74,7 +74,7 @@ BASE_TRACKERS: tuple[TrackerSpec, ...] = (
         announce_url="http://[200:1e2f:e608:eb3a:2bf:1e62:87ba:e2f7]/announce",
         discovery_scheme="http-tracker",
         protocol="http",
-        notes="public Yggdrasil-only tracker from services list, verified 2026-07-09",
+        notes="unencrypted Yggdrasil-only tracker; user opt-in",
     ),
     TrackerSpec(
         name="Yggdrasil-only UDP",

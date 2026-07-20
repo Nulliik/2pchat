@@ -30,39 +30,60 @@ export function App() {
   const [message, setMessage] = useState('')
   const wsRef = useRef<WebSocket | null>(null)
 
-  const wsUrl = useMemo(() => {
+  const apiBase = useMemo(() => {
+    const protocol = window.location.protocol === 'https:' ? 'https' : 'http'
+    const host = window.location.hostname || '127.0.0.1'
+    return `${protocol}://${host}:8000`
+  }, [])
+
+  const wsBase = useMemo(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
     const host = window.location.hostname || '127.0.0.1'
     return `${protocol}://${host}:8000/ws/chat`
   }, [])
 
   useEffect(() => {
-    const ws = new WebSocket(wsUrl)
-    wsRef.current = ws
+    let ws: WebSocket | null = null
+    let cancelled = false
 
-    ws.onmessage = (evt) => {
-      const payload = JSON.parse(evt.data) as ChatEvent
-      if (payload.type === 'state') {
-        setOnline(Boolean(payload.online))
-        setSettings((current) => ({ ...current, ...(payload.settings as Settings) }))
-        return
-      }
-      if (payload.type === 'settings') {
-        setSettings((current) => ({ ...current, ...(payload.settings as Settings) }))
-        return
-      }
-      if (payload.type === 'status') {
-        setOnline(payload.state === 'online')
-      }
-      if (payload.type === 'message') {
-        const author = String(payload.author || 'unknown')
-        const body = String(payload.body || '')
-        setLog((current) => [...current, `${author}: ${body}`])
+    const connectWebSocket = async () => {
+      const response = await fetch(`${apiBase}/api/session`)
+      if (!response.ok) throw new Error('Unable to create local web session')
+      const { token } = (await response.json()) as { token: string }
+      if (cancelled) return
+      ws = new WebSocket(`${wsBase}?token=${encodeURIComponent(token)}`)
+      wsRef.current = ws
+
+      ws.onmessage = (evt) => {
+        const payload = JSON.parse(evt.data) as ChatEvent
+        if (payload.type === 'state') {
+          setOnline(Boolean(payload.online))
+          setSettings((current) => ({ ...current, ...(payload.settings as Settings) }))
+          return
+        }
+        if (payload.type === 'settings') {
+          setSettings((current) => ({ ...current, ...(payload.settings as Settings) }))
+          return
+        }
+        if (payload.type === 'status') {
+          setOnline(payload.state === 'online')
+        }
+        if (payload.type === 'message') {
+          const author = String(payload.author || 'unknown')
+          const body = String(payload.body || '')
+          setLog((current) => [...current, `${author}: ${body}`])
+        }
       }
     }
+    void connectWebSocket().catch((error: unknown) => {
+      if (!cancelled) setLog((current) => [...current, `Connection error: ${String(error)}`])
+    })
 
-    return () => ws.close()
-  }, [wsUrl])
+    return () => {
+      cancelled = true
+      ws?.close()
+    }
+  }, [apiBase, wsBase])
 
   const send = (event: ChatEvent) => {
     const payload = JSON.stringify(event)

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, Iterator, Optional, Tuple
 
 from nacl.bindings import crypto_scalarmult
+from nacl.exceptions import CryptoError
 from nacl.public import PrivateKey, PublicKey
 from nacl.secret import SecretBox
 from nacl.signing import SigningKey, VerifyKey
@@ -21,12 +22,12 @@ from nacl.utils import random as nacl_random
 
 
 HASH_LEN = hashlib.sha256().digest_size
-PACKET_VERSION = 3
+PACKET_VERSION = 4
 HEADER_FLAG_OBFUSCATED = 0x01
 PLAIN_HEADER_LEN = 32 + 4  # dh public + message index
 OBFUSCATED_HEADER_LEN = SecretBox.NONCE_SIZE + PLAIN_HEADER_LEN + SecretBox.MACBYTES
 SIGNED_PREKEY_CONTEXT = b"p2p-chat-signed-prekey-v1"
-PACKET_AUTH_CONTEXT = b"p2p-chat-packet-auth-v3"
+PACKET_AUTH_CONTEXT = b"p2p-chat-packet-auth-v4"
 PACKET_TAG_LEN = 32
 
 
@@ -108,6 +109,7 @@ class SessionState:
     root_key: bytes
     send_chain_key: bytes
     recv_chain_key: bytes
+    header_key: bytes
     dh_send_key: PrivateKey
     dh_recv_key_pub: Optional[PublicKey]
     identity_local: IdentityKeyPair
@@ -117,7 +119,7 @@ class SessionState:
     previous_recv_idx: int = 0
     skipped_message_keys: Dict[Tuple[bytes, int], bytes] = field(default_factory=dict)
     max_skip: int = 2000
-    obfuscate_header: bool = False
+    obfuscate_header: bool = True
     pending_send_ratchet: bool = False
 
     def ratchet_step(self, new_remote_dh_pub: PublicKey) -> None:
@@ -177,9 +179,9 @@ class SessionState:
         return self.skipped_message_keys.get((bytes(dh_pub), index))
 
 
-def _derive_three_keys(material: bytes) -> Tuple[bytes, bytes, bytes]:
-    derived = hkdf_sha256(material, salt=b"", info=b"X3DH-INIT", length=96)
-    return derived[:32], derived[32:64], derived[64:96]
+def _derive_session_keys(material: bytes) -> Tuple[bytes, bytes, bytes, bytes]:
+    derived = hkdf_sha256(material, salt=b"", info=b"X3DH-INIT", length=128)
+    return derived[:32], derived[32:64], derived[64:96], derived[96:128]
 
 
 def safety_number(
@@ -225,12 +227,13 @@ def initialize_session_from_prekey(
         dh4 = dh(local_ephemeral.private, remote_prekey.one_time_prekey_pub)
         material += dh4
 
-    root_key, send_chain_key, recv_chain_key = _derive_three_keys(material)
+    root_key, send_chain_key, recv_chain_key, header_key = _derive_session_keys(material)
 
     return SessionState(
         root_key=root_key,
         send_chain_key=send_chain_key,
         recv_chain_key=recv_chain_key,
+        header_key=header_key,
         dh_send_key=local_ephemeral.private,
         dh_recv_key_pub=remote_prekey.signed_prekey_pub,
         identity_local=local_identity,
@@ -254,12 +257,13 @@ def respond_to_prekey_init(
         dh4 = dh(local_one_time_prekey, initiator_ephemeral_pub)
         material += dh4
 
-    root_key, recv_chain_key, send_chain_key = _derive_three_keys(material)
+    root_key, recv_chain_key, send_chain_key, header_key = _derive_session_keys(material)
 
     return SessionState(
         root_key=root_key,
         send_chain_key=send_chain_key,
         recv_chain_key=recv_chain_key,
+        header_key=header_key,
         dh_send_key=signed_prekey,
         dh_recv_key_pub=initiator_ephemeral_pub,
         identity_local=local_identity,
@@ -284,8 +288,7 @@ def encrypt_message(session: SessionState, plaintext: bytes) -> bytes:
     flags = 0
     if session.obfuscate_header:
         flags |= HEADER_FLAG_OBFUSCATED
-        header_key = hmac_sha256(session.root_key, b"HeaderKey")
-        header_box = SecretBox(header_key)
+        header_box = SecretBox(session.header_key)
         header = header_box.encrypt(header_plain, nacl_random(SecretBox.NONCE_SIZE))
     else:
         header = header_plain
@@ -330,9 +333,11 @@ def _decrypt_message_candidate(session: SessionState, packet: bytes) -> bytes:
         header_end = offset + OBFUSCATED_HEADER_LEN
         if len(packet) < header_end:
             raise ValueError("packet too short")
-        header_key = hmac_sha256(session.root_key, b"HeaderKey")
-        header_box = SecretBox(header_key)
-        header_plain = header_box.decrypt(packet[offset:header_end])
+        header_box = SecretBox(session.header_key)
+        try:
+            header_plain = header_box.decrypt(packet[offset:header_end])
+        except CryptoError as exc:
+            raise ValueError("header authentication failed") from exc
     else:
         header_end = offset + PLAIN_HEADER_LEN
         header_plain = packet[offset:header_end]

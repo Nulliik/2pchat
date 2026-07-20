@@ -92,8 +92,8 @@ def test_header_obfuscation_hides_dh_key():
     )
     eph = IdentityKeyPair.generate()
     alice_session = initialize_session_from_prekey(alice, bundle, eph)
-    # Force obfuscation flag to verify it is present and plaintext header is hidden
-    alice_session.obfuscate_header = True
+    # Header protection is the protocol default.
+    assert alice_session.obfuscate_header is True
     packet = encrypt_message(alice_session, b"secret")
 
     # version + flags
@@ -112,6 +112,26 @@ def test_header_obfuscation_hides_dh_key():
         initiator_ephemeral_pub=eph.public,
     )
     assert decrypt_message(bob_session, packet) == b"secret"
+
+
+def test_header_obfuscation_survives_a_dh_ratchet_reply():
+    alice = IdentityKeyPair.generate()
+    bob = IdentityKeyPair.generate()
+    signed_prekey = PrivateKey.generate()
+    bundle = PreKeyBundle(
+        identity_pub=bob.public,
+        identity_verify_pub=bob.signing.verify_key,
+        signed_prekey_pub=signed_prekey.public_key,
+        signed_prekey_sig=_sign_prekey(bob.signing, signed_prekey.public_key),
+    )
+    eph = IdentityKeyPair.generate()
+    alice_session = initialize_session_from_prekey(alice, bundle, eph)
+    bob_session = respond_to_prekey_init(bob, signed_prekey, None, alice.public, eph.public)
+
+    assert decrypt_message(bob_session, encrypt_message(alice_session, b"hello")) == b"hello"
+    reply = encrypt_message(bob_session, b"reply after ratchet")
+    assert reply[1] & HEADER_FLAG_OBFUSCATED
+    assert decrypt_message(alice_session, reply) == b"reply after ratchet"
 
 
 def test_forged_header_does_not_mutate_ratchet_state():

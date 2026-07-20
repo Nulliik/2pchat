@@ -56,6 +56,65 @@ def test_meshtastic_style_encrypt_decrypt():
         raise AssertionError("replay not detected")
 
 
+def test_replay_window_accepts_out_of_order_packets_once():
+    alice_pub, alice_priv = crypto.generate_identity_keypair()
+    bob_pub, bob_priv = crypto.generate_identity_keypair()
+    alice_state = crypto.PeerState()
+    bob_state = crypto.PeerState()
+    bob_prekey_priv = PrivateKey.generate()
+
+    packets = [
+        crypto.encrypt_message(
+            alice_priv,
+            bob_pub,
+            alice_state,
+            body,
+            their_prekey_pub=bob_prekey_priv.public_key,
+        )
+        for body in (b"one", b"two", b"three")
+    ]
+
+    assert crypto.decrypt_message(
+        bob_priv, alice_pub, bob_state, packets[2], my_prekey_priv=bob_prekey_priv
+    ) == b"three"
+    assert crypto.decrypt_message(
+        bob_priv, alice_pub, bob_state, packets[0], my_prekey_priv=bob_prekey_priv
+    ) == b"one"
+    assert crypto.decrypt_message(
+        bob_priv, alice_pub, bob_state, packets[1], my_prekey_priv=bob_prekey_priv
+    ) == b"two"
+    with pytest.raises(ValueError, match="replay"):
+        crypto.decrypt_message(
+            bob_priv, alice_pub, bob_state, packets[0], my_prekey_priv=bob_prekey_priv
+        )
+
+
+def test_forged_high_counter_does_not_advance_replay_window():
+    alice_pub, alice_priv = crypto.generate_identity_keypair()
+    bob_pub, bob_priv = crypto.generate_identity_keypair()
+    alice_state = crypto.PeerState()
+    bob_state = crypto.PeerState()
+    bob_prekey_priv = PrivateKey.generate()
+    packet = crypto.encrypt_message(
+        alice_priv,
+        bob_pub,
+        alice_state,
+        b"valid",
+        their_prekey_pub=bob_prekey_priv.public_key,
+    )
+    forged = bytearray(packet)
+    forged[1:9] = (10_000).to_bytes(8, "big")
+
+    with pytest.raises(Exception):
+        crypto.decrypt_message(
+            bob_priv, alice_pub, bob_state, bytes(forged), my_prekey_priv=bob_prekey_priv
+        )
+    assert bob_state.recv_highest_counter == -1
+    assert crypto.decrypt_message(
+        bob_priv, alice_pub, bob_state, packet, my_prekey_priv=bob_prekey_priv
+    ) == b"valid"
+
+
 def test_prekey_required_for_encrypt_and_decrypt():
     alice_pub, alice_priv = crypto.generate_identity_keypair()
     bob_pub, bob_priv = crypto.generate_identity_keypair()

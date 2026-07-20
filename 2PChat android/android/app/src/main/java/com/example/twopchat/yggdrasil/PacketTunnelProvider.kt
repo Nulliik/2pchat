@@ -419,7 +419,7 @@ open class PacketTunnelProvider: VpnService() {
         peersJson: String = ""
     ) {
         try {
-            val sharedPrefs = applicationContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+            val sharedPrefs = com.example.twopchat.P2PPreferences.prefs(applicationContext)
             val editor = sharedPrefs.edit()
                 .putString(PREF_YGG_RUNTIME_IP, address)
                 .putString(PREF_YGG_RUNTIME_STATE, state)

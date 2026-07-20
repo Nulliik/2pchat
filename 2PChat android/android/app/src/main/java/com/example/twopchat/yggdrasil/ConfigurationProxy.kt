@@ -13,7 +13,6 @@ import com.example.twopchat.SecureStorage
 // Теперь это обычный класс — каждый экземпляр владеет своим файлом/json и не конкурирует с другими.
 class ConfigurationProxy(applicationContext: Context) {
     private companion object {
-        private const val PREFS = "2pchat_prefs"
         private const val PREF_POOL_SEEDED = "yggdrasil_public_pool_seeded_v1"
         private const val PREF_POOL_PRUNED = "yggdrasil_public_pool_pruned_v1"
         private const val MAX_RETAINED_PUBLIC_PEERS = 6
@@ -35,7 +34,7 @@ class ConfigurationProxy(applicationContext: Context) {
     }
     private var json: JSONObject
     private val file: File
-    private val preferences = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val preferences = com.example.twopchat.P2PPreferences.prefs(applicationContext)
 
     init {
         file = File(applicationContext.filesDir, "yggdrasil.conf")

@@ -12,11 +12,12 @@ import base64
 import os
 import socket
 import struct
+import urllib.parse
 from pathlib import Path
 from datetime import datetime, timezone
 
 from messenger.core.discovery_manager import get_discovery_provider
-from messenger.core.tracker_catalog import get_tracker_by_name
+from messenger.core.tracker_catalog import BASE_TRACKERS, TrackerSpec, get_tracker_by_name
 from messenger.core.discovery_base import PeerEndpoint
 from messenger.core.session import Session
 from messenger.core.identity import load_or_create_identity, load_or_create_signing_identity, TrustStore, fingerprint
@@ -122,14 +123,147 @@ listener_port = 50001
 ipv4_enabled = True
 CLEARNET_TRACKERS = (
     "OpenTrackr HTTP",
+    "Dler HTTP",
+    "Qu.Ax HTTP",
+    "Yemekyedim HTTPS",
+    "Nyacat HTTPS",
     "Torrent.eu.org UDP",
     "Open Stealth UDP",
+    "Exodus UDP",
 )
 YGG_TRACKERS = (
     "Yggdrasil-only HTTP",
     "Yggdrasil-only UDP",
 )
 MAINLINE_DHT = "Mainline DHT (BEP 5)"
+TRACKER_PROTOCOLS = frozenset({"http", "https", "udp"})
+MAX_CUSTOM_TRACKERS = 32
+_tracker_config_lock = threading.RLock()
+_enabled_tracker_protocols = set(TRACKER_PROTOCOLS)
+_disabled_builtin_trackers = set()
+_custom_trackers = {}
+_dht_enabled = True
+_announce_enabled = True
+
+
+def _tracker_spec_from_custom(item):
+    if not isinstance(item, dict):
+        raise ValueError("custom tracker entry must be an object")
+    tracker_id = str(item.get("id", "")).strip()
+    name = str(item.get("name", "")).strip()
+    url = str(item.get("url", "")).strip()
+    enabled = item.get("enabled", True)
+    if not tracker_id or len(tracker_id) > 80 or not re.fullmatch(r"[A-Za-z0-9_-]+", tracker_id):
+        raise ValueError("custom tracker id is invalid")
+    if not name or len(name) > 60 or any(ord(char) < 32 for char in name):
+        raise ValueError("custom tracker name is invalid")
+    if not isinstance(enabled, bool):
+        raise ValueError("custom tracker enabled flag must be boolean")
+
+    parsed = urllib.parse.urlparse(url)
+    protocol = parsed.scheme.lower()
+    if protocol not in TRACKER_PROTOCOLS or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("custom tracker must use http, https, or udp with a valid host")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("custom tracker port is invalid") from exc
+    if protocol == "udp" and port is None:
+        raise ValueError("custom UDP tracker must specify a port")
+    discovery_scheme = "udp-tracker" if protocol == "udp" else "http-tracker"
+    key = f"custom:{tracker_id}"
+    return key, TrackerSpec(
+        name=f"Custom: {name}",
+        announce_url=url,
+        discovery_scheme=discovery_scheme,
+        protocol=protocol,
+        notes="user supplied",
+    ), enabled
+
+
+def configure_trackers(config_json: str) -> bool:
+    """Atomically apply validated tracker settings supplied by the Android UI."""
+    try:
+        config = json.loads(config_json)
+        if not isinstance(config, dict):
+            raise ValueError("tracker configuration must be an object")
+        protocols = config.get("enabled_protocols", list(TRACKER_PROTOCOLS))
+        if not isinstance(protocols, list):
+            raise ValueError("enabled_protocols must be a list")
+        protocol_set = {str(value).lower() for value in protocols}
+        if not protocol_set.issubset(TRACKER_PROTOCOLS):
+            raise ValueError("unsupported tracker protocol")
+        disabled = config.get("disabled_builtin_trackers", [])
+        if not isinstance(disabled, list):
+            raise ValueError("disabled_builtin_trackers must be a list")
+        builtin_names = {spec.name for spec in BASE_TRACKERS}
+        disabled_set = {str(value) for value in disabled}
+        if not disabled_set.issubset(builtin_names):
+            raise ValueError("unknown disabled built-in tracker")
+        custom_items = config.get("custom_trackers", [])
+        if not isinstance(custom_items, list) or len(custom_items) > MAX_CUSTOM_TRACKERS:
+            raise ValueError("too many custom trackers")
+        custom = {}
+        for item in custom_items:
+            key, spec, enabled = _tracker_spec_from_custom(item)
+            if key in custom:
+                raise ValueError("duplicate custom tracker id")
+            custom[key] = (spec, enabled)
+        dht_enabled = config.get("dht_enabled", True)
+        announce_enabled = config.get("announce_enabled", True)
+        if not isinstance(dht_enabled, bool) or not isinstance(announce_enabled, bool):
+            raise ValueError("DHT and announce flags must be boolean")
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        print(f"Rejected tracker configuration: {exc}")
+        return False
+
+    global _enabled_tracker_protocols, _disabled_builtin_trackers
+    global _custom_trackers, _dht_enabled, _announce_enabled
+    with _tracker_config_lock:
+        _enabled_tracker_protocols = protocol_set
+        _disabled_builtin_trackers = disabled_set
+        _custom_trackers = custom
+        _dht_enabled = dht_enabled
+        _announce_enabled = announce_enabled
+    return True
+
+
+def _configured_tracker(name: str):
+    with _tracker_config_lock:
+        custom = _custom_trackers.get(name)
+    if custom is not None:
+        return custom[0]
+    return get_tracker_by_name(name)
+
+
+def _filter_enabled_trackers(names):
+    result = []
+    with _tracker_config_lock:
+        protocols = set(_enabled_tracker_protocols)
+        disabled = set(_disabled_builtin_trackers)
+        custom = dict(_custom_trackers)
+    for name in names:
+        if not name:
+            continue
+        if name in result or name in disabled:
+            continue
+        custom_item = custom.get(name)
+        if custom_item is not None:
+            spec, enabled = custom_item
+            if not enabled:
+                continue
+        else:
+            try:
+                spec = get_tracker_by_name(name)
+            except ValueError:
+                # Preserve testability for injected tracker presets.
+                spec = _configured_tracker(name)
+        protocol = getattr(spec, "protocol", None)
+        if protocol is None:
+            protocol = urllib.parse.urlparse(spec.announce_url).scheme.lower()
+        if protocol in protocols:
+            result.append(name)
+    return result
 
 
 def _session_for_peer(peer_name: str, expected_fingerprint: str | None = None):
@@ -290,19 +424,20 @@ def _has_ipv6_endpoint(endpoints: list[PeerEndpoint]) -> bool:
 
 
 def _resolve_tracker_names(primary_tracker: str | None = None) -> list[str]:
-    names = []
-    requested = (primary_tracker, *CLEARNET_TRACKERS, *YGG_TRACKERS)
-    for tracker_name in requested:
-        if tracker_name and tracker_name not in names:
-            names.append(tracker_name)
-    return names
+    with _tracker_config_lock:
+        custom_names = tuple(_custom_trackers)
+    return _filter_enabled_trackers(
+        (primary_tracker, *CLEARNET_TRACKERS, *YGG_TRACKERS, *custom_names)
+    )
 
 
 def _announce_tracker_names(endpoints: list[PeerEndpoint]) -> list[str]:
     names = list(CLEARNET_TRACKERS)
     if _has_ipv6_endpoint(endpoints):
         names.extend(YGG_TRACKERS)
-    return names
+    with _tracker_config_lock:
+        names.extend(_custom_trackers)
+    return _filter_enabled_trackers(names)
 
 
 def _set_tracker_diagnostic(tracker_name: str, operation: str, status: str) -> None:
@@ -615,7 +750,7 @@ def verify_live_endpoints(
 def resolve_peers(
     nickname: str,
     shared_code: str,
-    tracker_name: str = "OpenTrackr HTTP",
+    tracker_name: str = "Yemekyedim HTTPS",
     expected_live_name: str | None = None,
     expected_live_fingerprint: str | None = None,
 ):
@@ -632,7 +767,7 @@ def resolve_peers(
     async def _query_async(t_name):
         started = time.monotonic()
         try:
-            tracker = get_tracker_by_name(t_name)
+            tracker = _configured_tracker(t_name)
             provider = get_discovery_provider(
                 tracker.discovery_scheme,
                 tracker_url=tracker.announce_url,
@@ -661,6 +796,9 @@ def resolve_peers(
             return []
 
     async def _query_dht():
+        if not _dht_enabled:
+            _set_tracker_diagnostic(MAINLINE_DHT, "resolve", "DISABLED BY USER")
+            return []
         started = time.monotonic()
         try:
             provider = get_discovery_provider(
@@ -839,7 +977,7 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
 
     async def _query(tracker_name: str):
         try:
-            tracker = get_tracker_by_name(tracker_name)
+            tracker = _configured_tracker(tracker_name)
             provider = get_discovery_provider(
                 tracker.discovery_scheme,
                 tracker_url=tracker.announce_url,
@@ -852,6 +990,8 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
             return []
 
     async def _query_dht():
+        if not _dht_enabled:
+            return []
         try:
             provider = get_discovery_provider(
                 "mainline-dht", peer_port=listener_port, transport="direct"
@@ -862,7 +1002,7 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
             return []
 
     batches = await asyncio.gather(
-        *[_query(name) for name in _resolve_tracker_names("OpenTrackr HTTP")],
+        *[_query(name) for name in _resolve_tracker_names("Yemekyedim HTTPS")],
         _query_dht(),
         return_exceptions=True,
     )
@@ -895,6 +1035,12 @@ def announce_peer_endpoints(
     """
     import urllib.error
     global local_identity_nickname, local_identity_fingerprint, local_yggdrasil_available, local_announced_ips
+
+    if not _announce_enabled:
+        for tracker_name in _resolve_tracker_names():
+            _set_tracker_diagnostic(tracker_name, "announce", "DISABLED BY USER")
+        _set_tracker_diagnostic(MAINLINE_DHT, "announce", "DISABLED BY USER")
+        return True
 
     try:
         addresses = json.loads(endpoints_json)
@@ -930,7 +1076,7 @@ def announce_peer_endpoints(
 
         async def _announce_tracker(tracker_name: str):
             started = time.monotonic()
-            tracker = get_tracker_by_name(tracker_name)
+            tracker = _configured_tracker(tracker_name)
             provider = get_discovery_provider(
                 tracker.discovery_scheme,
                 tracker_url=tracker.announce_url,
@@ -966,6 +1112,9 @@ def announce_peer_endpoints(
             tracker_names = _announce_tracker_names(endpoints)
 
             async def _announce_dht():
+                if not _dht_enabled:
+                    _set_tracker_diagnostic(MAINLINE_DHT, "announce", "DISABLED BY USER")
+                    return 0
                 dht_started = time.monotonic()
                 try:
                     dht = get_discovery_provider(
@@ -1059,7 +1208,7 @@ def announce_peer_endpoints(
             pass
 
 
-def announce_peer(nickname: str, fingerprint: str, host: str, port: int, tracker_name: str = "OpenTrackr HTTP"):
+def announce_peer(nickname: str, fingerprint: str, host: str, port: int, tracker_name: str = "Yemekyedim HTTPS"):
     """
     Synchronous wrapper to announce this peer on a tracker under both nickname and fingerprint.
     """

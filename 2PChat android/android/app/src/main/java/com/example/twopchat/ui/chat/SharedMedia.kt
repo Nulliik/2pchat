@@ -375,11 +375,11 @@ fun SharedMediaScreen(
 
                         // Personal Search Address Row
                         val fingerprint = remember(peerName) {
-                            val sp = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                            val sp = com.example.twopchat.P2PPreferences.prefs(context)
                             sp.getString("peer_fingerprint_$peerName", "") ?: ""
                         }
                         val stableCode = remember(peerName, fingerprint) {
-                            val sp = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                            val sp = com.example.twopchat.P2PPreferences.prefs(context)
                             val savedCode = sp.getString("discovery_code_$peerName", null)
                             if (!savedCode.isNullOrBlank()) {
                                 savedCode
@@ -414,7 +414,7 @@ fun SharedMediaScreen(
                         )
 
                         val peerAboutMe = remember(peerName) {
-                            val sp = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                            val sp = com.example.twopchat.P2PPreferences.prefs(context)
                             sp.getString("peer_about_me_$peerName", "") ?: ""
                         }
                         if (peerAboutMe.isNotEmpty()) {

@@ -74,7 +74,7 @@ object SecureStorage {
 
     @Synchronized
     fun getOrGenerateDbPassphrase(context: android.content.Context): String {
-        val sharedPrefs = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+        val sharedPrefs = P2PPreferences.prefs(context)
         val enc = sharedPrefs.getString("db_passphrase_enc", null)
         if (enc != null) {
             val dec = decrypt(enc)

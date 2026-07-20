@@ -35,7 +35,7 @@ object AccountLifecycle {
         ChatDatabaseHelper.closeAllConnections()
         PythonBridge.clearAccountCaches()
 
-        if (!context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        if (!P2PPreferences.prefs(context)
                 .edit().clear().commit()
         ) {
             Log.e(TAG, "Failed to synchronously clear account preferences")

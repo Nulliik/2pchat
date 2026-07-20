@@ -29,7 +29,7 @@ internal class RelayMaintenanceCoordinator(
         sessionJob = scope.launch {
             while (isActive && isRunning()) {
                 try {
-                    val prefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                    val prefs = P2PPreferences.prefs(appContext)
                     val chats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
                         .filterNot { it == "Saved Messages" || isPlaceholderPeerName(it) }
                     val activeFingerprints = PythonBridge.getActivePeerFingerprints().toSet()
@@ -79,7 +79,7 @@ internal class RelayMaintenanceCoordinator(
             var lastAnnounceTime = 0L
             while (isActive && isRunning()) {
                 try {
-                    val prefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                    val prefs = P2PPreferences.prefs(appContext)
                     val username = prefs.getString("username_profile", "").orEmpty()
                     val fingerprint = PythonBridge.getLocalFingerprint()
                     if (username.isNotBlank() && fingerprint !in setOf("Loading...", "Not Initialized", "Error")) {

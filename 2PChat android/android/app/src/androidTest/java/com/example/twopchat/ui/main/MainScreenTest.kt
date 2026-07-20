@@ -17,7 +17,7 @@ class MainScreenTest {
   @Before
   fun setup() {
     val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
-    val sharedPrefs = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+    val sharedPrefs = com.example.twopchat.P2PPreferences.prefs(context)
     sharedPrefs.edit()
       .clear()
       .putStringSet("active_chats", setOf("Eleanor Vance", "Liam O'Connor", "Sarah Chen"))

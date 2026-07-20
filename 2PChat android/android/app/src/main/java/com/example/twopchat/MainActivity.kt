@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun applyScreenSecurity() {
-        val sharedPrefsTemp = getSharedPreferences("2pchat_prefs", MODE_PRIVATE)
+        val sharedPrefsTemp = P2PPreferences.prefs(this)
         val blockScreenshots = sharedPrefsTemp.getBoolean("settings_screenshots", true)
         if (blockScreenshots) {
             window.setFlags(
@@ -119,7 +119,7 @@ class MainActivity : ComponentActivity() {
         )
 
         // Start Yggdrasil VPN service automatically if enabled and prepared
-        val yggPrefs = getSharedPreferences("2pchat_prefs", MODE_PRIVATE)
+        val yggPrefs = P2PPreferences.prefs(this)
         if (yggPrefs.getBoolean("settings_yggdrasil", true)) {
             if (android.net.VpnService.prepare(applicationContext) == null) {
                 val yggIntent = Intent(applicationContext, com.example.twopchat.yggdrasil.PacketTunnelProvider::class.java).apply {
@@ -133,7 +133,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val sharedPrefs = getSharedPreferences("2pchat_prefs", MODE_PRIVATE)
+        val sharedPrefs = P2PPreferences.prefs(this)
         appPreferences = sharedPrefs
         reduceMotionState.value = sharedPrefs.getBoolean(REDUCE_MOTION_SETTING, false)
         appMotionDurationScale.animationsEnabled = !reduceMotionState.value
@@ -527,7 +527,7 @@ fun PasscodeUnlockScreen(
                                             if (inputPin.length < 4) {
                                                 inputPin += digit
                                                 if (inputPin.length == 4) {
-                                                    val sharedPrefs = context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+                                                    val sharedPrefs = P2PPreferences.prefs(context)
                                                     
                                                     if (SecurityUtils.verifyAndMigratePasscode(inputPin, correctPasscode, sharedPrefs, "passcode_value")) {
                                                         failedAttempts = 0

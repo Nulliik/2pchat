@@ -111,7 +111,7 @@ internal fun ChatMessageBubble(
         }
     }
     val context = androidx.compose.ui.platform.LocalContext.current
-    val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
+    val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
     val myAvatarBitmap = remember(context) {
         val uri = sharedPrefs.getString("profile_photo_uri", null)
         com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, uri)

@@ -139,7 +139,7 @@ fun ContactsTab(
     var isResolvingInvite by remember { mutableStateOf(false) }
     var resolveInviteStatus by remember { mutableStateOf("") }
     
-    val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
+    val sharedPrefs = remember { com.example.twopchat.P2PPreferences.prefs(context) }
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
     val discoveryCode = remember { PythonBridge.getOrCreateDiscoveryCode() }
     val contactAddress = remember(username, discoveryCode) { "$username#$discoveryCode" }

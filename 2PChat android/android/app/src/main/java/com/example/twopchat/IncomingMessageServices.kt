@@ -99,7 +99,7 @@ internal class MessageNotificationService {
     }
 
     fun show(context: Context, sender: String, text: String) {
-        val settings = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val settings = P2PPreferences.prefs(context)
         if (!settings.getBoolean("settings_notifications", true)) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {

@@ -41,7 +41,7 @@ fun OnboardingScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
+    val sharedPrefs = remember { com.example.twopchat.P2PPreferences.prefs(context) }
     
     var currentStep by remember { mutableStateOf(1) }
     var nickname by remember { mutableStateOf("") }

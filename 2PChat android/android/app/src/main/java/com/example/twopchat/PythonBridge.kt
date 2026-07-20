@@ -26,7 +26,7 @@ object PythonBridge {
                 appContext = context.applicationContext
             
             // Clear runtime state to ensure we start clean and don't announce stale IPs from previous crashes.
-            val sharedPrefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+            val sharedPrefs = P2PPreferences.prefs(context)
             sharedPrefs.edit()
                 .putString("yggdrasil_runtime_ip", "")
                 .putString("yggdrasil_runtime_state", "Disabled")
@@ -48,6 +48,13 @@ object PythonBridge {
             
             // Try loading core modules to verify (they will now read the environment variable correctly during import)
             val identity = py.getModule("messenger.core.identity")
+            val discoveryBridge = py.getModule("discovery_bridge")
+            check(
+                discoveryBridge.callAttr(
+                    "configure_trackers",
+                    TrackerPreferences.configJson(context),
+                ).toBoolean()
+            ) { "Stored tracker configuration was rejected" }
             Log.i(TAG, "Python core modules loaded successfully. Config dir: ${configDir.absolutePath}")
                 isInitialized = true
             } catch (e: Exception) {
@@ -102,6 +109,7 @@ object PythonBridge {
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
+            if (!applyTrackerConfiguration(bridge)) return emptyList()
             val directEndpoints = (
                 P2PMessageRelay.localDiscoveryEndpoints(expectedLiveName) +
                     connectedYggdrasilPeerEndpoints()
@@ -121,7 +129,7 @@ object PythonBridge {
                 directResults
             } else {
                 bridge.callAttr(
-                    "resolve_peers", query, sharedCode, "OpenTrackr HTTP",
+                    "resolve_peers", query, sharedCode, "Yemekyedim HTTPS",
                     expectedLiveName, expectedFingerprint
                 )
             }
@@ -154,7 +162,7 @@ object PythonBridge {
     /** Stable, human-shareable discovery code. It is never the user's fingerprint. */
     fun getOrCreateDiscoveryCode(): String {
         val context = appContext ?: return ""
-        val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val prefs = P2PPreferences.prefs(context)
         prefs.getString("discovery_code_v1", null)?.takeIf { it.isNotBlank() }?.let { return it }
 
         val alphabet = "23456789bcdfghjkmnpqrstvwxyz"
@@ -204,7 +212,7 @@ object PythonBridge {
         try {
             val context = appContext
             if (context != null) {
-                val sharedPrefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                val sharedPrefs = P2PPreferences.prefs(context)
                 val yggIp = sharedPrefs.getString("yggdrasil_runtime_ip", "")?.trim().orEmpty()
                 if (yggIp.isNotEmpty()) {
                     result.add(yggIp)
@@ -245,7 +253,7 @@ object PythonBridge {
      */
     fun getYggdrasilAddress(): String = try {
         val context = appContext ?: return ""
-        context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        P2PPreferences.prefs(context)
             .getString("yggdrasil_runtime_ip", "")
             ?.trim()
             .orEmpty()
@@ -257,7 +265,7 @@ object PythonBridge {
     /** Snapshot reported by the embedded node, not inferred from ordinary IPv6. */
     fun getYggdrasilNetworkDiagnostics(): Map<String, String> = try {
         val context = appContext ?: return emptyMap()
-        val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val prefs = P2PPreferences.prefs(context)
         linkedMapOf(
             "state" to prefs.getString("yggdrasil_runtime_state", "disabled").orEmpty(),
             "peers" to prefs.getInt("yggdrasil_runtime_peers", 0).toString(),
@@ -277,9 +285,11 @@ object PythonBridge {
         rendezvousCode: String? = null,
     ): Boolean {
         if (!isInitialized) return false
+        val context = appContext ?: return false
+        val trackerConfig = TrackerPreferences.configJson(context)
         val discoveryCode = rendezvousCode?.trim()?.takeIf { it.isNotEmpty() }
             ?: getOrCreateDiscoveryCode()
-        val prefs = appContext?.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val prefs = appContext?.let(P2PPreferences::prefs)
         val ipv4Enabled = prefs
                 ?.getBoolean("settings_ipv4", true) ?: true
         val ipv4Addresses = if (ipv4Enabled) {
@@ -304,7 +314,7 @@ object PythonBridge {
         // Endpoint changes are meaningful announces. In particular, do not
         // let an early IPv4/empty announce suppress a later Yggdrasil one.
         val endpointKey = addresses.joinToString(",")
-        val announceKey = "$nickname\u0000$fingerprint\u0000$discoveryCode\u0000$port\u0000$endpointKey"
+        val announceKey = "$nickname\u0000$fingerprint\u0000$discoveryCode\u0000$port\u0000$endpointKey\u0000$trackerConfig"
         synchronized(announceLock) {
             val now = android.os.SystemClock.elapsedRealtime()
             val lastAt = lastAnnounceAt[announceKey]
@@ -317,6 +327,7 @@ object PythonBridge {
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
+            if (!applyTrackerConfiguration(bridge, trackerConfig)) return false
 
             Log.i(
                 TAG,
@@ -352,6 +363,7 @@ object PythonBridge {
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
+            if (!applyTrackerConfiguration(bridge)) return emptyMap()
             val rawJson = bridge.callAttr("get_tracker_diagnostics_json").toString()
             val json = JSONObject(rawJson)
             val result = linkedMapOf<String, String>()
@@ -369,6 +381,36 @@ object PythonBridge {
         } catch (e: Exception) {
             Log.e(TAG, "Error getting tracker diagnostics", e)
             emptyMap()
+        }
+    }
+
+    /** Applies encrypted user tracker preferences to the embedded discovery runtime. */
+    fun applyTrackerConfiguration(): Boolean {
+        if (!isInitialized) return false
+        return try {
+            val bridge = Python.getInstance().getModule("discovery_bridge")
+            applyTrackerConfiguration(bridge).also { applied ->
+                if (applied) clearAnnounceCache()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying tracker configuration", e)
+            false
+        }
+    }
+
+    private fun applyTrackerConfiguration(
+        bridge: com.chaquo.python.PyObject,
+        configJson: String? = null,
+    ): Boolean {
+        val context = appContext ?: return false
+        val payload = configJson ?: TrackerPreferences.configJson(context)
+        return bridge.callAttr("configure_trackers", payload).toBoolean()
+    }
+
+    private fun clearAnnounceCache() {
+        synchronized(announceLock) {
+            lastAnnounceAt.clear()
+            lastAnnounceResult.clear()
         }
     }
 
@@ -512,7 +554,7 @@ object PythonBridge {
 
     private fun connectedYggdrasilPeerEndpoints(): List<String> {
         val context = appContext ?: return emptyList()
-        val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val prefs = P2PPreferences.prefs(context)
         if (!prefs.getBoolean("settings_yggdrasil", true) ||
             prefs.getString("yggdrasil_runtime_state", "disabled") != "connected"
         ) {

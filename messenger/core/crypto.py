@@ -35,6 +35,9 @@ from messenger.utils.logger import setup_logger
 
 
 HKDF_HASH_LEN = sha256().digest_size
+MESSAGE_PACKET_VERSION = 2
+MESSAGE_PACKET_TAG_SIZE = sha256().digest_size
+MESSAGE_PACKET_AUTH_CONTEXT = b"2pchat-message-packet-v2"
 
 logger = setup_logger("messenger.crypto", logging.INFO)
 
@@ -253,18 +256,41 @@ def derive_session_key(
 class PeerState:
     """Maintain per-peer counters for replay protection."""
 
+    REPLAY_WINDOW_SIZE = 64
+
     def __init__(self) -> None:
         self.send_counter: int = 0
         self.recv_highest_counter: int = -1
+        self.recv_counter_bitmap: int = 0
 
     def next_send_counter(self) -> int:
         self.send_counter += 1
         return self.send_counter
 
-    def record_received_counter(self, counter: int) -> None:
-        if counter <= self.recv_highest_counter:
+    def validate_received_counter(self, counter: int) -> None:
+        if counter < 0:
+            raise ValueError("invalid message counter")
+        if counter > self.recv_highest_counter:
+            return
+        distance = self.recv_highest_counter - counter
+        if distance >= self.REPLAY_WINDOW_SIZE:
+            raise ValueError("message counter is outside replay window")
+        if self.recv_counter_bitmap & (1 << distance):
             raise ValueError("replay detected")
-        self.recv_highest_counter = counter
+
+    def record_received_counter(self, counter: int) -> None:
+        self.validate_received_counter(counter)
+        if counter > self.recv_highest_counter:
+            shift = counter - self.recv_highest_counter
+            if shift >= self.REPLAY_WINDOW_SIZE:
+                self.recv_counter_bitmap = 1
+            else:
+                mask = (1 << self.REPLAY_WINDOW_SIZE) - 1
+                self.recv_counter_bitmap = ((self.recv_counter_bitmap << shift) | 1) & mask
+            self.recv_highest_counter = counter
+            return
+        distance = self.recv_highest_counter - counter
+        self.recv_counter_bitmap |= 1 << distance
 
 
 # --- File encryption helpers (Telegram-style per-file key/nonce) ---
@@ -538,14 +564,16 @@ def encrypt_message(
     ciphertext_bytes = box.encrypt(plaintext, nonce)
 
     counter = peer_state.next_send_counter()
-    packet = b"".join(
+    prefix = b"".join(
         [
-            bytes([1]),  # version
+            bytes([MESSAGE_PACKET_VERSION]),
             counter.to_bytes(8, "big"),
             bytes(ephemeral_pub),
             ciphertext_bytes,
         ]
     )
+    auth_key = hmac.new(session_key, MESSAGE_PACKET_AUTH_CONTEXT, sha256).digest()
+    packet = prefix + hmac.new(auth_key, prefix, sha256).digest()
     logger.debug(
         "Encrypt: counter=%s plaintext=%sB cipher=%sB packet=%sB",
         counter,
@@ -590,22 +618,26 @@ def decrypt_message(
 ) -> bytes:
     """Decrypt a packet produced by :func:`encrypt_message`."""
 
-    min_len = 1 + 8 + 32
+    min_len = 1 + 8 + 32 + SecretBox.NONCE_SIZE + SecretBox.MACBYTES + MESSAGE_PACKET_TAG_SIZE
     if len(packet) < min_len:
         raise ValueError("packet too short")
 
     version = packet[0]
-    if version != 1:
+    if version != MESSAGE_PACKET_VERSION:
         raise ValueError("unsupported version")
 
     counter = int.from_bytes(packet[1:9], "big")
     ephemeral_pub_bytes = packet[9:41]
-    ciphertext_bytes = packet[41:]
+    ciphertext_bytes = packet[41:-MESSAGE_PACKET_TAG_SIZE]
+    supplied_tag = packet[-MESSAGE_PACKET_TAG_SIZE:]
 
     if not ciphertext_bytes:
         raise ValueError("ciphertext missing")
 
-    peer_state.record_received_counter(counter)
+    # Reject known replays before doing expensive public-key work, but only
+    # mutate the window after authentication succeeds. A forged high counter
+    # must not be able to lock out later valid messages.
+    peer_state.validate_received_counter(counter)
     ephemeral_pub = PublicKey(ephemeral_pub_bytes)
 
     session_key = _derive_session_key_for_decrypt(
@@ -615,8 +647,13 @@ def decrypt_message(
         channel_key,
         my_prekey_priv=my_prekey_priv,
     )
+    auth_key = hmac.new(session_key, MESSAGE_PACKET_AUTH_CONTEXT, sha256).digest()
+    expected_tag = hmac.new(auth_key, packet[:-MESSAGE_PACKET_TAG_SIZE], sha256).digest()
+    if not hmac.compare_digest(supplied_tag, expected_tag):
+        raise ValueError("packet authentication failed")
     box = SecretBox(session_key)
     plaintext = box.decrypt(ciphertext_bytes)
+    peer_state.record_received_counter(counter)
     logger.debug(
         "Decrypt: counter=%s cipher=%sB packet=%sB plaintext=%sB",
         counter,

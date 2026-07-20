@@ -33,7 +33,7 @@ fun MainNavigation(
     onIconChanged: (String) -> Unit
 ) {
   val context = LocalContext.current
-  val sharedPrefs = remember { context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE) }
+  val sharedPrefs = remember { P2PPreferences.prefs(context) }
   val coroutineScope = rememberCoroutineScope()
   var isOnboardingCompleted by remember { mutableStateOf(sharedPrefs.getBoolean("onboarding_completed", false)) }
   var accountDeletionInProgress by remember { mutableStateOf(false) }

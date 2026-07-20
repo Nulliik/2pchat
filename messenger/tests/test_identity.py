@@ -17,6 +17,20 @@ class _FakeKeystore:
         return value[::-1]
 
 
+def test_posix_local_text_uses_secretbox(monkeypatch):
+    key = b"k" * 32
+    monkeypatch.setattr(identity, "_platform_local_protection_available", lambda: False)
+    monkeypatch.setattr(identity, "_load_or_create_local_storage_key", lambda: key)
+
+    stored = identity._protect_local_text("private message")
+    plaintext, needs_migration = identity._unprotect_local_text(stored)
+
+    assert stored.startswith("local-secretbox-v1:")
+    assert "private message" not in stored
+    assert plaintext == "private message"
+    assert needs_migration is False
+
+
 def test_identity_is_encrypted_and_plaintext_is_migrated(monkeypatch, tmp_path):
     monkeypatch.setattr(identity, "_android_keystore", lambda: _FakeKeystore)
     path = tmp_path / "identity.key"
@@ -127,6 +141,16 @@ def test_mark_verified(tmp_path, monkeypatch):
     assert store.label_for(fp) == "friend"
 
 
+def test_corrupt_trust_store_is_never_silently_reset(tmp_path):
+    path = tmp_path / "trust.json"
+    path.write_text("{not-json", encoding="utf-8")
+
+    with pytest.raises(identity.TrustStoreCorruptError):
+        identity.TrustStore(str(path))
+
+    assert path.read_text(encoding="utf-8") == "{not-json"
+
+
 def test_outbox_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setenv(identity.CONFIG_ENV, str(tmp_path))
     outbox = identity.Outbox(str(tmp_path / "queue.json"))
@@ -135,9 +159,28 @@ def test_outbox_roundtrip(tmp_path, monkeypatch):
     assert msg in list(outbox.pending())
     assert msg["nickname"] == "Neo"
     assert msg["peer_fp"] == "peer"
+    stored = (tmp_path / "queue.json").read_text(encoding="utf-8")
+    assert stored.startswith(("local-secretbox-v1:", "windows-dpapi-v1:"))
+    assert '"body":"hi"' not in stored
+
+    reloaded = identity.Outbox(str(tmp_path / "queue.json"))
+    assert list(reloaded.pending()) == [msg]
 
     outbox.mark_sent(msg["id"])
     assert list(outbox.pending()) == []
+
+
+def test_outbox_migrates_legacy_plaintext(tmp_path, monkeypatch):
+    monkeypatch.setenv(identity.CONFIG_ENV, str(tmp_path))
+    path = tmp_path / "queue.json"
+    path.write_text('[{"id":"1","type":"chat","body":"legacy"}]', encoding="utf-8")
+
+    outbox = identity.Outbox(str(path))
+
+    assert list(outbox.pending())[0]["body"] == "legacy"
+    assert path.read_text(encoding="utf-8").startswith(
+        ("local-secretbox-v1:", "windows-dpapi-v1:")
+    )
 
 
 class _DummySession:

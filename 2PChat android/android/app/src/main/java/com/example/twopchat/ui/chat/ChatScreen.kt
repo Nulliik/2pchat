@@ -230,7 +230,7 @@ fun ChatScreen(
         }
         pendingDownloadMsg = null
     }
-    val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
+    val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
     val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
     fun triggerHaptic(type: androidx.compose.ui.hapticfeedback.HapticFeedbackType = androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) {
         if (sharedPrefs.getBoolean("settings_haptic_feedback", true)) {

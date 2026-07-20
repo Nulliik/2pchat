@@ -40,6 +40,8 @@ def _backend_cmd(host: str, port: int) -> list[str]:
         host,
         "--port",
         str(port),
+        "--ws-max-size",
+        str(1024 * 1024),
     ]
 
 

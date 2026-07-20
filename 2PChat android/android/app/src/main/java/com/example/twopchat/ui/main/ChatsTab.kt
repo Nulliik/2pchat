@@ -78,7 +78,7 @@ fun ChatsTab(
 ) {
     val context = LocalContext.current
     
-    val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
+    val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
     var activeChatsSet by remember {
         mutableStateOf(sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet())
     }

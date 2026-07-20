@@ -354,3 +354,69 @@ def test_rejected_same_name_identity_is_closed_before_chat_delivery():
     assert session.closed is True
     assert delivered == []
     assert session.peer_fingerprint not in bridge.active_sessions
+
+
+def test_tracker_configuration_filters_protocols_presets_and_custom_trackers():
+    bridge = _load_discovery_bridge()
+
+    assert bridge.configure_trackers(json.dumps({
+        "enabled_protocols": ["https"],
+        "disabled_builtin_trackers": ["Nyacat HTTPS"],
+        "custom_trackers": [
+            {
+                "id": "secure-one",
+                "name": "Secure custom",
+                "url": "https://tracker.example/announce",
+                "enabled": True,
+            },
+            {
+                "id": "plain-one",
+                "name": "Plain custom",
+                "url": "http://tracker.example/announce",
+                "enabled": True,
+            },
+        ],
+        "dht_enabled": False,
+        "announce_enabled": True,
+    })) is True
+
+    assert bridge._resolve_tracker_names("OpenTrackr HTTP") == [
+        "Yemekyedim HTTPS",
+        "custom:secure-one",
+    ]
+
+
+def test_invalid_tracker_configuration_does_not_replace_active_settings():
+    bridge = _load_discovery_bridge()
+    assert bridge.configure_trackers(json.dumps({"enabled_protocols": ["udp"]})) is True
+
+    assert bridge.configure_trackers(json.dumps({
+        "enabled_protocols": ["https"],
+        "custom_trackers": [{
+            "id": "bad",
+            "name": "Bad tracker",
+            "url": "https://user:password@tracker.example/announce",
+        }],
+    })) is False
+
+    names = bridge._resolve_tracker_names("Yemekyedim HTTPS")
+    assert "Torrent.eu.org UDP" in names
+    assert "Yemekyedim HTTPS" not in names
+
+
+def test_disabled_announce_performs_no_network_work(monkeypatch):
+    bridge = _load_discovery_bridge()
+    assert bridge.configure_trackers(json.dumps({"announce_enabled": False})) is True
+    monkeypatch.setattr(
+        bridge,
+        "get_discovery_provider",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("network access is disabled")),
+    )
+
+    assert bridge.announce_peer_endpoints(
+        "alice",
+        "fingerprint",
+        '["192.0.2.10"]',
+        50001,
+        "shared-code",
+    ) is True

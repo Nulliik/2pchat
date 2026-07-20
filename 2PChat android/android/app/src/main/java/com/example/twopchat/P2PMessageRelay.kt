@@ -82,7 +82,7 @@ object P2PMessageRelay {
     fun refreshAnnouncement(context: Context) {
         val appContext = context.applicationContext
         thread(start = true, name = "ManualTrackerAnnounce") {
-            val prefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+            val prefs = P2PPreferences.prefs(appContext)
             val username = prefs.getString("username_profile", "").orEmpty()
             val fingerprint = PythonBridge.getLocalFingerprint()
             if (username.isNotBlank() && fingerprint.length >= 40) {
@@ -266,7 +266,7 @@ object P2PMessageRelay {
         toName: String
     ) {
         if (fromName == toName) return
-        val sharedPrefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val sharedPrefs = P2PPreferences.prefs(context)
         val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
         val updatedChats = activeSet.toMutableSet()
         val hadVisibleChat = updatedChats.remove(fromName)
@@ -332,7 +332,7 @@ object P2PMessageRelay {
         db: ChatDatabaseHelper,
         peerName: String
     ) {
-        val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val prefs = P2PPreferences.prefs(context)
         if (!prefs.getBoolean("persist_chat_history", true)) return
         val latest = db.getLastMessageForPeer(peerName) ?: return
         val preview = if (latest.isMe) "You: ${latest.text}" else latest.text
@@ -353,7 +353,7 @@ object P2PMessageRelay {
         synchronized(identityLock) {
             val knownName = fingerprintToPeerName[fingerprint]
             val persistedName = if (knownName.isNullOrBlank() && isPlaceholderPeerName(peerName)) {
-                context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                P2PPreferences.prefs(context)
                     .all.entries
                     .firstOrNull { (key, value) ->
                         key.startsWith("peer_fingerprint_") &&
@@ -407,7 +407,7 @@ object P2PMessageRelay {
     }
 
     private fun migratePersistedPlaceholderChats(context: Context) {
-        val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val prefs = P2PPreferences.prefs(context)
         val placeholders = prefs.getStringSet("active_chats", emptySet()).orEmpty()
             .filter(::isPlaceholderPeerName)
         if (placeholders.isEmpty()) return
@@ -457,7 +457,7 @@ object P2PMessageRelay {
         val appContext = context.applicationContext
         loadPersistedAvatars(appContext)
         migratePersistedPlaceholderChats(appContext)
-        val persistedPrefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val persistedPrefs = P2PPreferences.prefs(appContext)
         val persistedChats = persistedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
         if (persistedPrefs.getBoolean("persist_chat_history", true)) {
             val db = ChatDatabaseHelper.getInstance(appContext)
@@ -473,7 +473,7 @@ object P2PMessageRelay {
         val port = listenerPort(appContext)
         try {
             log(appContext, "Starting Python P2P Relays on port $port...")
-            val ipv4Enabled = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+            val ipv4Enabled = P2PPreferences.prefs(appContext)
                 .getBoolean("settings_ipv4", true)
             PythonBridge.setIpv4Enabled(ipv4Enabled)
             val localName = persistedPrefs.getString("username_profile", "").orEmpty()
@@ -490,7 +490,7 @@ object P2PMessageRelay {
             PythonBridge.registerMessageListener(object : PythonBridge.PyMessageListener {
                 override fun onMessageReceived(sender: String, text: String) {
                     log(appContext, "Incoming secure P2P message (${text.toByteArray().size} bytes)")
-                    val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE)
+                    val sharedPrefs = P2PPreferences.prefs(appContext)
                     if (sharedPrefs.getBoolean("blocked_peer_$sender", false)) {
                         log(appContext, "Ignored message from a blocked peer")
                         return
@@ -650,7 +650,7 @@ object P2PMessageRelay {
                                 }
                                 "forwarding_state" -> {
                                     val enabled = json.optBoolean("enabled", false)
-                                    val sp = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                                    val sp = P2PPreferences.prefs(appContext)
                                     sp.edit().putBoolean("restrict_forwarding_$sender", enabled).apply()
                                     android.os.Handler(android.os.Looper.getMainLooper()).post {
                                         messageListeners.forEach { it.onForwardingStateChanged(sender, enabled) }
@@ -796,7 +796,7 @@ object P2PMessageRelay {
                         return false
                     }
                     PythonBridge.rememberPeerName(fingerprint, resolvedPeerName)
-                    appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                    P2PPreferences.prefs(appContext)
                         .edit().apply {
                             putString("peer_fingerprint_$resolvedPeerName", fingerprint)
                             putString("peer_about_me_$resolvedPeerName", aboutMe)
@@ -816,7 +816,7 @@ object P2PMessageRelay {
                         }
                     }
 
-                    val sharedPrefs = appContext.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                    val sharedPrefs = P2PPreferences.prefs(appContext)
                     if (canonicalTransport != null) {
                         sharedPrefs.edit()
                             .putString(P2PPreferences.transport(resolvedPeerName), canonicalTransport)
@@ -943,7 +943,7 @@ object P2PMessageRelay {
     }
 
     fun shareAvatar(context: Context, peerName: String, endpoint: String) {
-        val prefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val prefs = P2PPreferences.prefs(context)
         val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
         val shareKey = fingerprint ?: peerName
         val now = System.currentTimeMillis()
@@ -982,7 +982,7 @@ object P2PMessageRelay {
                             put("avatar_base64", b64)
                         }
                         val payload = json.toString()
-                        val expectedFingerprint = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+                        val expectedFingerprint = P2PPreferences.prefs(context)
                             .getString("peer_fingerprint_$peerName", null)
 
                         if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
@@ -1051,7 +1051,7 @@ object P2PMessageRelay {
     }
 
     fun deleteChat(context: Context, peerName: String) {
-        val sharedPrefs = context.getSharedPreferences("2pchat_prefs", Context.MODE_PRIVATE)
+        val sharedPrefs = P2PPreferences.prefs(context)
         val expectedFingerprint = sharedPrefs.getString("peer_fingerprint_$peerName", null)
         val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
         val newSet = activeSet.toMutableSet()

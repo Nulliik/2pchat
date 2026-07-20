@@ -31,7 +31,7 @@ fun SwipeToReplyContainer(
     val limit = 200f
     val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
     val context = androidx.compose.ui.platform.LocalContext.current
-    val sharedPrefs = remember(context) { context.getSharedPreferences("2pchat_prefs", android.content.Context.MODE_PRIVATE) }
+    val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
     var hasTriggeredHapticForSwipe by remember { mutableStateOf(false) }
 
     Box(

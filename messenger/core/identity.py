@@ -11,7 +11,9 @@ from uuid import uuid4
 
 from nacl.encoding import Base64Encoder
 from nacl.public import PrivateKey, PublicKey
+from nacl.secret import SecretBox
 from nacl.signing import SigningKey, VerifyKey
+from nacl.utils import random as nacl_random
 
 CONFIG_ENV = "P2PCHAT_CONFIG_DIR"
 DEFAULT_DIRNAME = ".2pchat"
@@ -19,11 +21,22 @@ IDENTITY_FILENAME = "identity.key"
 SIGNING_FILENAME = "identity_signing.key"
 TRUST_FILENAME = "trust.json"
 QUEUE_FILENAME = "outbox.json"
+LOCAL_STORAGE_KEY_FILENAME = "local_storage.key"
 
 
 _TRUST_LOCK = threading.Lock()
+_LOCAL_KEY_LOCK = threading.Lock()
 _KEYSTORE_PREFIX = "android-keystore-v1:"
 _DPAPI_PREFIX = "windows-dpapi-v1:"
+_LOCAL_SECRETBOX_PREFIX = "local-secretbox-v1:"
+
+
+class TrustStoreCorruptError(RuntimeError):
+    """Raised when persisted trust data cannot be loaded without losing pins."""
+
+
+class OutboxCorruptError(RuntimeError):
+    """Raised when an encrypted outbox cannot be loaded safely."""
 
 
 def _android_keystore():
@@ -68,7 +81,15 @@ def _read_identity(target: Path) -> tuple[str, bool]:
 
 def _protect_local_text(plaintext: str) -> str:
     """Use the platform credential boundary where one is available."""
-    return _protect_identity(plaintext)
+    if _platform_local_protection_available():
+        return _protect_identity(plaintext)
+    box = SecretBox(_load_or_create_local_storage_key())
+    encrypted = box.encrypt(plaintext.encode("utf-8"))
+    return _LOCAL_SECRETBOX_PREFIX + base64.b64encode(encrypted).decode("ascii")
+
+
+def _platform_local_protection_available() -> bool:
+    return _android_keystore() is not None or os.name == "nt"
 
 
 def _unprotect_local_text(stored: str) -> tuple[str, bool]:
@@ -77,6 +98,10 @@ def _unprotect_local_text(stored: str) -> tuple[str, bool]:
 
 
 def _read_protected_text(stored: str) -> tuple[str, bool]:
+    if stored.startswith(_LOCAL_SECRETBOX_PREFIX):
+        blob = base64.b64decode(stored[len(_LOCAL_SECRETBOX_PREFIX):], validate=True)
+        plaintext = SecretBox(_load_or_create_local_storage_key()).decrypt(blob)
+        return plaintext.decode("utf-8"), False
     if stored.startswith(_KEYSTORE_PREFIX):
         keystore = _android_keystore()
         if keystore is None:
@@ -88,7 +113,32 @@ def _read_protected_text(stored: str) -> tuple[str, bool]:
         import win32crypt
         blob = base64.b64decode(stored[len(_DPAPI_PREFIX):], validate=True)
         return win32crypt.CryptUnprotectData(blob, None, None, None, 0)[1].decode("utf-8"), False
-    return stored, _android_keystore() is not None or os.name == "nt"
+    # Any legacy plaintext local payload should be migrated, including on
+    # POSIX desktops where older versions relied only on mode 0600.
+    return stored, True
+
+
+def _load_or_create_local_storage_key() -> bytes:
+    target = _config_dir() / LOCAL_STORAGE_KEY_FILENAME
+    with _LOCAL_KEY_LOCK:
+        if target.exists():
+            key = base64.b64decode(target.read_text(encoding="ascii").strip(), validate=True)
+            if len(key) != SecretBox.KEY_SIZE:
+                raise RuntimeError("invalid local storage key")
+            return key
+
+        key = nacl_random(SecretBox.KEY_SIZE)
+        temporary = target.with_name(f".{target.name}.{uuid4().hex}.tmp")
+        try:
+            temporary.write_text(base64.b64encode(key).decode("ascii"), encoding="ascii")
+            try:
+                temporary.chmod(0o600)
+            except OSError:
+                pass
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return key
 
 
 def _write_identity(target: Path, encoded: str) -> None:
@@ -211,8 +261,12 @@ class TrustStore:
         if not self.path.exists():
             return
         try:
-            raw = json.loads(self.path.read_text())
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                raise ValueError("trust store root must be an object")
             for fp, meta in raw.items():
+                if not isinstance(fp, str) or not isinstance(meta, dict):
+                    raise ValueError("invalid trust store record")
                 self.records[fp] = PeerRecord(
                     fingerprint=fp,
                     label=meta.get("label"),
@@ -220,20 +274,33 @@ class TrustStore:
                     last_seen=meta.get("last_seen", 0.0),
                     state=meta.get("state", "known"),
                 )
-        except Exception:
-            # Corrupted store; start fresh but preserve file for debugging
+        except Exception as exc:
             self.records = {}
+            raise TrustStoreCorruptError(
+                f"Refusing to discard unreadable trust store: {self.path}"
+            ) from exc
 
     def _persist(self) -> None:
         with _TRUST_LOCK:
-            try:
-                on_disk = json.loads(self.path.read_text())
-            except Exception:
+            if self.path.exists():
+                try:
+                    on_disk = json.loads(self.path.read_text(encoding="utf-8"))
+                    if not isinstance(on_disk, dict):
+                        raise ValueError("trust store root must be an object")
+                except Exception as exc:
+                    raise TrustStoreCorruptError(
+                        f"Refusing to overwrite unreadable trust store: {self.path}"
+                    ) from exc
+            else:
                 on_disk = {}
 
             # Merge any peers already recorded on disk to avoid losing state
             # when multiple sessions persist around the same time.
             for fp, meta in on_disk.items():
+                if not isinstance(fp, str) or not isinstance(meta, dict):
+                    raise TrustStoreCorruptError(
+                        f"Refusing to merge invalid trust record from: {self.path}"
+                    )
                 if fp not in self.records:
                     self.records[fp] = PeerRecord(
                         fingerprint=fp,
@@ -252,7 +319,17 @@ class TrustStore:
                 }
                 for fp, rec in self.records.items()
             }
-            self.path.write_text(json.dumps(payload, indent=2))
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.path.with_name(f".{self.path.name}.{uuid4().hex}.tmp")
+            try:
+                temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                try:
+                    temporary.chmod(0o600)
+                except OSError:
+                    pass
+                os.replace(temporary, self.path)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     def _label_conflict_warning(self, peer_fp: str, label: Optional[str]) -> Optional[str]:
         if not label:
@@ -346,12 +423,16 @@ class Outbox:
         try:
             raw, needs_migration = _unprotect_local_text(self.path.read_text(encoding="utf-8"))
             data = json.loads(raw)
-            if isinstance(data, list):
-                self._messages = [m for m in data if isinstance(m, dict)]
-                if needs_migration:
-                    self._persist()
-        except Exception:
+            if not isinstance(data, list) or any(not isinstance(m, dict) for m in data):
+                raise ValueError("outbox root must be a list of objects")
+            self._messages = data
+            if needs_migration:
+                self._persist()
+        except Exception as exc:
             self._messages = []
+            raise OutboxCorruptError(
+                f"Refusing to discard unreadable outbox: {self.path}"
+            ) from exc
 
     def _persist(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
