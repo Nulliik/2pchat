@@ -165,6 +165,7 @@ fun ChatScreen(
     var previousMessageCount by remember(peerName) { mutableIntStateOf(0) }
     var previousNewestMessageId by remember(peerName) { mutableStateOf<String?>(null) }
     var previousTypingState by remember(peerName) { mutableStateOf(false) }
+    var previousHistoryLoadingState by remember(peerName) { mutableStateOf(true) }
     var newMessagesBelowCount by remember(peerName) { mutableIntStateOf(0) }
     val messageListAtBottom by remember {
         derivedStateOf {
@@ -1017,7 +1018,7 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(initialMessages.size, isTyping, isSearchMode, isFastHistoryLoaded) {
+    LaunchedEffect(initialMessages.size, isTyping, isSearchMode, isFastHistoryLoaded, isHistoryLoading) {
         if (!isFastHistoryLoaded) return@LaunchedEffect
         val currentMessageCount = initialMessages.size
         val previousItemCount = previousMessageCount + if (previousTypingState) 1 else 0
@@ -1026,7 +1027,8 @@ fun ChatScreen(
         val currentNewestMessageId = initialMessages.lastOrNull()?.id
 
         if (!isSearchMode && lastIndex >= 0) {
-            if (!hasAppliedInitialScroll) {
+            val justFinishedFullHistory = previousHistoryLoadingState && !isHistoryLoading
+            if (!hasAppliedInitialScroll || justFinishedFullHistory) {
                 val initialIndex = initialChatScrollIndex(
                     messageCount = currentMessageCount,
                     unreadMessageCount = unreadMessagesOnOpen,
@@ -1054,6 +1056,7 @@ fun ChatScreen(
         previousMessageCount = currentMessageCount
         previousNewestMessageId = currentNewestMessageId
         previousTypingState = isTyping
+        previousHistoryLoadingState = isHistoryLoading
     }
 
     Box(
