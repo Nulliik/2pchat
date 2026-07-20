@@ -126,6 +126,41 @@ internal fun ChatMessageList(
             items = displayMessages,
             key = { _, msg -> msg.id }
         ) { index, msg ->
+            val showDateHeader = remember(index, displayMessages) {
+                if (index == 0) {
+                    msg.sentAtEpochMs > 0L
+                } else {
+                    val prevMsg = displayMessages[index - 1]
+                    MessageTimestampFormatter.isDifferentDay(prevMsg.sentAtEpochMs, msg.sentAtEpochMs)
+                }
+            }
+            val dateHeaderText = remember(msg.sentAtEpochMs, appLanguage) {
+                MessageTimestampFormatter.formatDateHeader(msg.sentAtEpochMs, appLanguage)
+            }
+
+            if (showDateHeader && dateHeaderText.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    ) {
+                        Text(
+                            text = dateHeaderText,
+                            color = Color.White.copy(alpha = 0.92f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
+
             val animateOnAppearance = remember(msg.id) {
                 arrivalAnimationTracker.consume(msg.id)
             }

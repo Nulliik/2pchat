@@ -52,6 +52,37 @@ object MessageTimestampFormatter {
         }
     }
 
+    fun formatDateHeader(
+        epochMs: Long,
+        language: String,
+        nowEpochMs: Long = System.currentTimeMillis(),
+        timeZone: TimeZone = TimeZone.getDefault(),
+    ): String {
+        if (epochMs <= 0L) return ""
+        val locale = if (language == "Русский") Locale.forLanguageTag("ru") else Locale.ENGLISH
+        val sent = Calendar.getInstance(timeZone).apply { timeInMillis = epochMs }
+        val today = Calendar.getInstance(timeZone).apply { timeInMillis = nowEpochMs }
+        val yesterday = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
+
+        return when {
+            isSameDate(sent, today) -> if (language == "Русский") "Сегодня" else "Today"
+            isSameDate(sent, yesterday) -> if (language == "Русский") "Вчера" else "Yesterday"
+            sent.get(Calendar.YEAR) == today.get(Calendar.YEAR) -> formatDate("d MMMM", locale, timeZone, sent)
+            else -> formatDate("d MMMM yyyy", locale, timeZone, sent)
+        }
+    }
+
+    fun isDifferentDay(
+        firstEpochMs: Long,
+        secondEpochMs: Long,
+        timeZone: TimeZone = TimeZone.getDefault(),
+    ): Boolean {
+        if (firstEpochMs <= 0L || secondEpochMs <= 0L) return false
+        val cal1 = Calendar.getInstance(timeZone).apply { timeInMillis = firstEpochMs }
+        val cal2 = Calendar.getInstance(timeZone).apply { timeInMillis = secondEpochMs }
+        return !isSameDate(cal1, cal2)
+    }
+
     private fun isSameDate(left: Calendar, right: Calendar): Boolean =
         left.get(Calendar.ERA) == right.get(Calendar.ERA) &&
             left.get(Calendar.YEAR) == right.get(Calendar.YEAR) &&
