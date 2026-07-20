@@ -112,18 +112,25 @@ internal fun ChatHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(surfaceColor.copy(alpha = 0.78f))
-            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f))
-            .padding(horizontal = 12.dp, vertical = 12.dp),
+            .background(surfaceColor.copy(alpha = 0.62f))
+            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(
             onClick = onBack,
-            modifier = Modifier.background(onSurfaceColor.copy(alpha = 0.03f), CircleShape),
+            modifier = Modifier
+                .size(36.dp)
+                .background(onSurfaceColor.copy(alpha = 0.04f), CircleShape),
         ) {
-            Icon(painterResource(R.drawable.ic_back_arrow), "Back", tint = onSurfaceColor, modifier = Modifier.size(20.dp))
+            Icon(
+                painterResource(R.drawable.ic_back_arrow),
+                "Back",
+                tint = onSurfaceColor,
+                modifier = Modifier.size(18.dp),
+            )
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(8.dp))
         val savedMessages = peerName == "Saved Messages"
         val displayName = if (savedMessages) Localizations.getString("saved_messages_title", appLanguage) else peerName
         val initials = when {
@@ -131,26 +138,39 @@ internal fun ChatHeader(
             peerName.contains(" ") -> peerName.split(" ").joinToString("") { it.take(1) }
             else -> peerName.take(2).uppercase()
         }
+        val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
         Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(44.dp)
-                .background(primaryColor.copy(alpha = 0.1f), CircleShape)
-                .clickable(enabled = !savedMessages, onClick = onShowProfile),
+            modifier = Modifier.clickable(enabled = !savedMessages, onClick = onShowProfile)
         ) {
-            val avatar = P2PMessageRelay.peerAvatars[peerName]
-            when {
-                avatar != null -> Image(avatar.asImageBitmap(), "Avatar", Modifier.fillMaxSize().clip(CircleShape))
-                savedMessages -> Icon(
-                    painterResource(R.drawable.ic_saved_messages),
-                    "Saved Messages",
-                    tint = primaryColor,
-                    modifier = Modifier.size(22.dp),
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(38.dp)
+                    .background(primaryColor.copy(alpha = 0.12f), CircleShape),
+            ) {
+                val avatar = P2PMessageRelay.peerAvatars[peerName]
+                when {
+                    avatar != null -> Image(avatar.asImageBitmap(), "Avatar", Modifier.fillMaxSize().clip(CircleShape))
+                    savedMessages -> Icon(
+                        painterResource(R.drawable.ic_saved_messages),
+                        "Saved Messages",
+                        tint = primaryColor,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    else -> Text(initials, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            }
+            if (!savedMessages && isOnline) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .background(primaryColor, CircleShape)
+                        .border(1.5.dp, surfaceColor, CircleShape)
+                        .align(Alignment.BottomEnd)
                 )
-                else -> Text(initials, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(10.dp))
         val isMismatch = com.example.twopchat.P2PPreferences.prefs(context)
             .getBoolean("fingerprint_mismatch_$peerName", false)
         val shieldColor = when {
@@ -159,14 +179,22 @@ internal fun ChatHeader(
             else -> Color(0xFFFFC107)
         }
         Column(
-            modifier = Modifier.weight(1f).clickable(enabled = !savedMessages, onClick = onShowProfile),
+            modifier = Modifier
+                .weight(1f)
+                .clickable(enabled = !savedMessages, onClick = onShowProfile),
         ) {
-            Text(displayName, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = onSurfaceColor)
+            Text(
+                displayName,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = onSurfaceColor,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
-                if (!savedMessages) {
-                    Box(Modifier.size(6.dp).background(if (isOnline) primaryColor else onSurfaceVariant.copy(alpha = 0.4f), CircleShape))
-                    Spacer(Modifier.width(5.dp))
+                if (!savedMessages && !isOnline) {
+                    Box(Modifier.size(5.dp).background(onSurfaceVariant.copy(alpha = 0.4f), CircleShape))
+                    Spacer(Modifier.width(4.dp))
                 }
                 val status = when {
                     savedMessages -> Localizations.getString("local_storage", appLanguage)
@@ -181,7 +209,13 @@ internal fun ChatHeader(
                         if (appLanguage == "Русский") "В сети • $transport$rtt" else "Online • $transport$rtt"
                     }
                 }
-                Text(status, fontSize = 11.sp, color = onSurfaceVariant)
+                Text(
+                    status,
+                    fontSize = 11.sp,
+                    color = if (isOnline) primaryColor.copy(alpha = 0.9f) else onSurfaceVariant.copy(alpha = 0.75f),
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
             }
         }
         if (!savedMessages) {
@@ -195,19 +229,19 @@ internal fun ChatHeader(
                         ).show()
                     } else onVerify()
                 },
-                modifier = Modifier.size(28.dp),
+                modifier = Modifier.size(34.dp),
             ) {
-                Icon(painterResource(R.drawable.ic_shield_status), "Verify", tint = shieldColor, modifier = Modifier.size(18.dp))
+                Icon(painterResource(R.drawable.ic_shield_status), "Verify", tint = shieldColor, modifier = Modifier.size(17.dp))
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(2.dp))
         }
-        IconButton(onClick = { onSearchModeChange(true) }, modifier = Modifier.size(28.dp)) {
-            Icon(painterResource(R.drawable.ic_menu_search), "Search", tint = onSurfaceColor, modifier = Modifier.size(20.dp))
+        IconButton(onClick = { onSearchModeChange(true) }, modifier = Modifier.size(34.dp)) {
+            Icon(painterResource(R.drawable.ic_menu_search), "Search", tint = onSurfaceColor.copy(alpha = 0.85f), modifier = Modifier.size(19.dp))
         }
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.width(2.dp))
         Box {
-            IconButton(onClick = { showMenu = true }, modifier = Modifier.size(28.dp)) {
-                Text("⋮", fontSize = 18.sp, color = onSurfaceColor, fontWeight = FontWeight.Bold)
+            IconButton(onClick = { showMenu = true }, modifier = Modifier.size(34.dp)) {
+                Text("⋮", fontSize = 18.sp, color = onSurfaceColor.copy(alpha = 0.85f), fontWeight = FontWeight.Bold)
             }
             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, modifier = Modifier.background(surfaceColor)) {
                 if (!savedMessages) {

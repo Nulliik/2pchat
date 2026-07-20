@@ -60,9 +60,9 @@ internal fun ChatInputBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(surfaceColor.copy(alpha = 0.78f))
-            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .background(surfaceColor.copy(alpha = 0.65f))
+            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
         AnimatedVisibility(
             visible = showAttachments,
@@ -289,33 +289,51 @@ private fun ComposerRow(
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         IconButton(
             onClick = onToggleAttachments,
-            modifier = Modifier.size(44.dp).background(onSurfaceColor.copy(alpha = 0.03f), CircleShape),
+            modifier = Modifier
+                .size(42.dp)
+                .background(primaryColor.copy(alpha = 0.12f), CircleShape),
         ) {
             if (showAttachments || isRecordingVoice) {
                 Text("×", fontSize = 22.sp, color = primaryColor, fontWeight = FontWeight.Bold)
             } else {
-                Icon(painterResource(R.drawable.ic_attach_paperclip), "Attach", tint = primaryColor, modifier = Modifier.size(20.dp))
+                Icon(
+                    painterResource(R.drawable.ic_attach_paperclip),
+                    "Attach",
+                    tint = primaryColor,
+                    modifier = Modifier.size(19.dp),
+                )
             }
         }
-        Spacer(Modifier.width(10.dp))
-        val inputBg = if (surfaceColor.luminance() < 0.5f) Color(0xFF0F1012) else Color(0xFFE4E7EC)
+        Spacer(Modifier.width(8.dp))
+        val isDark = surfaceColor.luminance() < 0.5f
+        val inputBg = if (isDark) Color(0xFF14161A).copy(alpha = 0.9f) else Color(0xFFEFEFEF).copy(alpha = 0.9f)
         if (isRecordingVoice) {
             Row(
-                modifier = Modifier.weight(1f).height(48.dp).background(inputBg, RoundedCornerShape(22.dp))
-                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(22.dp)).padding(horizontal = 16.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(46.dp)
+                    .background(inputBg, RoundedCornerShape(23.dp))
+                    .border(0.5.dp, primaryColor.copy(alpha = 0.25f), RoundedCornerShape(23.dp))
+                    .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(Modifier.size(9.dp).background(Color.Red, CircleShape))
-                Spacer(Modifier.width(10.dp))
-                Text(VoiceMessageSupport.formatDuration(recordingElapsedMs), color = onSurfaceColor, fontWeight = FontWeight.SemiBold)
+                Box(Modifier.size(8.dp).background(Color.Red, CircleShape))
+                Spacer(Modifier.width(8.dp))
+                Text(VoiceMessageSupport.formatDuration(recordingElapsedMs), color = onSurfaceColor, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 Spacer(Modifier.weight(1f))
-                Text(if (appLanguage == "Русский") "Нажмите × для отмены" else "Tap × to cancel", color = onSurfaceVariant, fontSize = 11.sp)
+                Text(if (appLanguage == "Русский") "Нажмите × для отмены" else "Tap × to cancel", color = onSurfaceVariant.copy(alpha = 0.7f), fontSize = 11.sp)
             }
         } else {
             TextField(
                 value = inputText,
                 onValueChange = onInputTextChange,
-                placeholder = { Text(Localizations.getString("write_placeholder", appLanguage), color = onSurfaceVariant.copy(alpha = 0.6f)) },
+                placeholder = {
+                    Text(
+                        Localizations.getString("write_placeholder", appLanguage),
+                        color = onSurfaceVariant.copy(alpha = 0.5f),
+                        fontSize = 14.sp
+                    )
+                },
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = inputBg,
                     unfocusedContainerColor = inputBg,
@@ -324,19 +342,23 @@ private fun ComposerRow(
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                 ),
-                shape = RoundedCornerShape(22.dp),
-                maxLines = 3,
-                modifier = Modifier.weight(1f).border(
-                    0.5.dp,
-                    onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.05f),
-                    RoundedCornerShape(22.dp),
-                ),
+                shape = RoundedCornerShape(23.dp),
+                maxLines = 4,
+                modifier = Modifier
+                    .weight(1f)
+                    .border(
+                        0.5.dp,
+                        if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.08f),
+                        RoundedCornerShape(23.dp),
+                    ),
             )
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(8.dp))
         IconButton(
             onClick = onActionClick,
-            modifier = Modifier.size(44.dp).background(primaryColor, CircleShape),
+            modifier = Modifier
+                .size(42.dp)
+                .background(primaryColor, CircleShape),
         ) {
             Icon(
                 painterResource(
@@ -349,7 +371,7 @@ private fun ComposerRow(
                 ),
                 contentDescription = "Send message",
                 tint = if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(17.dp),
             )
         }
     }
