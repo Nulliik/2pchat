@@ -298,31 +298,48 @@ fun ContactsTab(
             .padding(horizontal = 20.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Search Header Row with Quick Action Buttons
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            TextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = {
-                    Text(
-                        text = if (appLanguage == "Русский") "Имя#код или ссылка 2PChat" else "Name#code or 2PChat link",
-                        color = onSurfaceVariant.copy(alpha = 0.5f),
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                trailingIcon = {
+        // Full-Width Search Input Field
+        TextField(
+            value = searchQuery,
+            onValueChange = { 
+                searchQuery = it 
+                if (it.isBlank()) {
+                    // Reset live search results when cleared
+                }
+            },
+            leadingIcon = {
+                Icon(
+                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_search),
+                    contentDescription = "Search Icon",
+                    tint = primaryColor,
+                    modifier = Modifier.size(20.dp)
+                )
+            },
+            placeholder = {
+                Text(
+                    text = if (appLanguage == "Русский") "Имя#код или ссылка 2PChat" else "Name#code or 2PChat link",
+                    color = onSurfaceVariant.copy(alpha = 0.5f),
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Text(
+                            text = "✕",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onSurfaceVariant
+                        )
+                    }
+                } else {
                     IconButton(onClick = {
                         val pasted = readTextFromClipboard(context).trim()
                         if (pasted.startsWith("2pchat://connect") || pasted.contains('#')) {
                             searchQuery = pasted
+                            performSearch(pasted)
                         } else {
                             Toast.makeText(
                                 context,
@@ -333,102 +350,147 @@ fun ContactsTab(
                     }) {
                         Icon(
                             painter = painterResource(id = com.example.twopchat.R.drawable.ic_copy_key),
-                            contentDescription = if (appLanguage == "Русский") "Вставить ссылку приглашения" else "Paste invite link",
+                            contentDescription = if (appLanguage == "Русский") "Вставить из буфера" else "Paste from clipboard",
                             tint = primaryColor,
                             modifier = Modifier.size(18.dp)
                         )
                     }
-                },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = surfaceColor,
-                    unfocusedContainerColor = surfaceColor,
-                    focusedTextColor = onSurfaceColor,
-                    unfocusedTextColor = onSurfaceColor,
-                    focusedIndicatorColor = primaryColor,
-                    unfocusedIndicatorColor = Color.Transparent
-                ),
-                shape = RoundedCornerShape(14.dp),
-                singleLine = true,
+                }
+            },
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = surfaceColor,
+                unfocusedContainerColor = surfaceColor,
+                focusedTextColor = onSurfaceColor,
+                unfocusedTextColor = onSurfaceColor,
+                focusedIndicatorColor = primaryColor,
+                unfocusedIndicatorColor = Color.Transparent
+            ),
+            shape = RoundedCornerShape(16.dp),
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp, bottom = 8.dp)
+                .height(50.dp)
+                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+        )
+
+        // Quick Tools Row (Invite Link / QR Code / Direct Search)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Tool 1: Link Settings
+            Surface(
+                color = if (showInvitePanel) primaryColor.copy(alpha = 0.16f) else surfaceColor.copy(alpha = 0.7f),
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .weight(1f)
-                    .height(48.dp)
-                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
-            )
-            
-            // Link Settings Panel Toggle Button
-            IconButton(
-                onClick = {
-                    showInvitePanel = !showInvitePanel
-                    if (showInvitePanel) showQrPanel = false
-                },
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        if (showInvitePanel) primaryColor.copy(alpha = 0.18f) else surfaceColor,
-                        shape = RoundedCornerShape(14.dp)
-                    )
+                    .height(38.dp)
+                    .clickable {
+                        showInvitePanel = !showInvitePanel
+                        if (showInvitePanel) showQrPanel = false
+                    }
                     .border(
                         if (showInvitePanel) 1.5.dp else 0.5.dp,
                         if (showInvitePanel) primaryColor else onSurfaceColor.copy(alpha = 0.08f),
-                        RoundedCornerShape(14.dp)
+                        RoundedCornerShape(12.dp)
                     )
             ) {
-                Icon(
-                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_quick_link),
-                    contentDescription = "Invite Link Settings",
-                    tint = primaryColor,
-                    modifier = Modifier.size(20.dp)
-                )
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_quick_link),
+                        contentDescription = "Invite Link",
+                        tint = primaryColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (appLanguage == "Русский") "Ссылка" else "Link",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = onSurfaceColor
+                    )
+                }
             }
 
-            // QR Code Connection Panel Toggle Button
-            IconButton(
-                onClick = {
-                    showQrPanel = !showQrPanel
-                    if (showQrPanel) showInvitePanel = false
-                },
+            // Tool 2: QR Scanner
+            Surface(
+                color = if (showQrPanel) primaryColor.copy(alpha = 0.16f) else surfaceColor.copy(alpha = 0.7f),
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        if (showQrPanel) primaryColor.copy(alpha = 0.18f) else surfaceColor,
-                        shape = RoundedCornerShape(14.dp)
-                    )
+                    .weight(1f)
+                    .height(38.dp)
+                    .clickable {
+                        showQrPanel = !showQrPanel
+                        if (showQrPanel) showInvitePanel = false
+                    }
                     .border(
                         if (showQrPanel) 1.5.dp else 0.5.dp,
                         if (showQrPanel) primaryColor else onSurfaceColor.copy(alpha = 0.08f),
-                        RoundedCornerShape(14.dp)
+                        RoundedCornerShape(12.dp)
                     )
             ) {
-                Icon(
-                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_qr_code),
-                    contentDescription = "QR Code Connection",
-                    tint = primaryColor,
-                    modifier = Modifier.size(20.dp)
-                )
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_qr_code),
+                        contentDescription = "QR Code",
+                        tint = primaryColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (appLanguage == "Русский") "QR-код" else "QR Code",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = onSurfaceColor
+                    )
+                }
             }
-            
-            // Search Execute Button
+
+            // Tool 3: Search Action Button
             val isSearchActive = searchQuery.isNotBlank()
-            IconButton(
-                onClick = { performSearch(searchQuery) },
+            Surface(
+                color = if (isSearchActive) primaryColor else primaryColor.copy(alpha = 0.16f),
+                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        if (isSearchActive) primaryColor else primaryColor.copy(alpha = 0.18f),
-                        shape = RoundedCornerShape(14.dp)
-                    )
+                    .weight(1.1f)
+                    .height(38.dp)
+                    .clickable { performSearch(searchQuery) }
                     .border(
-                        if (isSearchActive) 1.dp else 1.5.dp,
+                        1.dp,
                         primaryColor,
-                        RoundedCornerShape(14.dp)
+                        RoundedCornerShape(12.dp)
                     )
             ) {
-                Icon(
-                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_search),
-                    contentDescription = "Search",
-                    tint = if (isSearchActive) (if (primaryColor == MintGreen) StealthBlack else Color.White) else primaryColor,
-                    modifier = Modifier.size(20.dp)
-                )
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_search),
+                        contentDescription = "Search",
+                        tint = if (isSearchActive) (if (primaryColor == MintGreen) StealthBlack else Color.White) else primaryColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (appLanguage == "Русский") "Найти" else "Search",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSearchActive) (if (primaryColor == MintGreen) StealthBlack else Color.White) else primaryColor
+                    )
+                }
             }
         }
 
