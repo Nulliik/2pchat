@@ -302,7 +302,7 @@ object PythonBridge {
         val yggRoutes = prefs?.getInt("yggdrasil_runtime_routes", 0) ?: 0
         // An address exists before the overlay is actually routable. Do not
         // publish it until the node reports a connected state and routes.
-        val yggdrasilAddress = if (yggEnabled && yggState == "connected" && yggRoutes >= 2) {
+        val yggdrasilAddress = if (yggEnabled && (yggState.equals("CONNECTED", ignoreCase = true) || yggState.equals("ENABLED", ignoreCase = true))) {
             getYggdrasilAddress()
         } else {
             ""
@@ -556,7 +556,8 @@ object PythonBridge {
         val context = appContext ?: return emptyList()
         val prefs = P2PPreferences.prefs(context)
         if (!prefs.getBoolean("settings_yggdrasil", true) ||
-            prefs.getString("yggdrasil_runtime_state", "disabled") != "connected"
+            (!prefs.getString("yggdrasil_runtime_state", "disabled").equals("CONNECTED", ignoreCase = true) &&
+             !prefs.getString("yggdrasil_runtime_state", "disabled").equals("ENABLED", ignoreCase = true))
         ) {
             return emptyList()
         }
