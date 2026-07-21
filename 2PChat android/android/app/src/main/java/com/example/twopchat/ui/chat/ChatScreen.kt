@@ -134,6 +134,20 @@ internal fun initialChatScrollIndex(
     return (messageCount - unreadMessageCount).coerceIn(0, messageCount - 1)
 }
 
+internal fun shouldLoadOlderHistory(
+    hasAppliedInitialScroll: Boolean,
+    firstVisibleItemIndex: Int,
+    hasMoreHistory: Boolean,
+    isLoadingOlderHistory: Boolean,
+    isSearchMode: Boolean,
+    showProfileOverlay: Boolean,
+): Boolean = hasAppliedInitialScroll &&
+    firstVisibleItemIndex <= 2 &&
+    hasMoreHistory &&
+    !isLoadingOlderHistory &&
+    !isSearchMode &&
+    !showProfileOverlay
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
@@ -503,14 +517,30 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(peerName, isActive, persistEnabled, isFastHistoryLoaded) {
-        if (!isActive || !persistEnabled || !isFastHistoryLoaded) return@LaunchedEffect
+    LaunchedEffect(
+        peerName,
+        isActive,
+        persistEnabled,
+        isFastHistoryLoaded,
+        hasAppliedInitialScroll,
+    ) {
+        if (
+            !isActive ||
+            !persistEnabled ||
+            !isFastHistoryLoaded ||
+            !hasAppliedInitialScroll
+        ) {
+            return@LaunchedEffect
+        }
         snapshotFlow {
-            listState.firstVisibleItemIndex <= 2 &&
-                hasMoreHistory &&
-                !isLoadingOlderHistory &&
-                !isSearchMode &&
-                !showProfileOverlay
+            shouldLoadOlderHistory(
+                hasAppliedInitialScroll = hasAppliedInitialScroll,
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                hasMoreHistory = hasMoreHistory,
+                isLoadingOlderHistory = isLoadingOlderHistory,
+                isSearchMode = isSearchMode,
+                showProfileOverlay = showProfileOverlay,
+            )
         }.collect { shouldLoadOlder ->
             if (shouldLoadOlder) loadOlderHistoryPage()
         }

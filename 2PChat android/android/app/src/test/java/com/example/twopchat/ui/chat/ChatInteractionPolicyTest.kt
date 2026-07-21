@@ -105,6 +105,30 @@ class ChatInteractionPolicyTest {
     }
 
     @Test
+    fun olderHistoryDoesNotLoadBeforeInitialScrollIsApplied() {
+        assertFalse(
+            shouldLoadOlderHistory(
+                hasAppliedInitialScroll = false,
+                firstVisibleItemIndex = 0,
+                hasMoreHistory = true,
+                isLoadingOlderHistory = false,
+                isSearchMode = false,
+                showProfileOverlay = false,
+            )
+        )
+        assertTrue(
+            shouldLoadOlderHistory(
+                hasAppliedInitialScroll = true,
+                firstVisibleItemIndex = 0,
+                hasMoreHistory = true,
+                isLoadingOlderHistory = false,
+                isSearchMode = false,
+                showProfileOverlay = false,
+            )
+        )
+    }
+
+    @Test
     fun fullHistoryReplacementKeepsBottomPinned() {
         val messages = (1..100).map { index ->
             Message(index.toString(), "message $index", false, "12:00")
