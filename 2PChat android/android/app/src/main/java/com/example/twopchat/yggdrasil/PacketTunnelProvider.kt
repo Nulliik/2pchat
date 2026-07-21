@@ -36,6 +36,7 @@ open class PacketTunnelProvider: VpnService() {
         const val ACTION_TOGGLE = "com.example.twopchat.yggdrasil.PacketTunnelProvider.TOGGLE"
         const val ACTION_CONNECT = "com.example.twopchat.yggdrasil.PacketTunnelProvider.CONNECT"
         const val ACTION_REGENERATE_KEYS = "com.example.twopchat.yggdrasil.PacketTunnelProvider.REGENERATE_KEYS"
+        const val ACTION_RELOAD_PEERS = "com.example.twopchat.yggdrasil.PacketTunnelProvider.RELOAD_PEERS"
     }
 
     private var yggdrasil = Yggdrasil()
@@ -104,6 +105,21 @@ open class PacketTunnelProvider: VpnService() {
                     start()
                 }
                 START_STICKY
+            }
+            ACTION_RELOAD_PEERS -> {
+                Log.i(TAG, "Applying updated Yggdrasil peer configuration...")
+                val restart = started.get() || enabled
+                if (started.get()) {
+                    stop(stopService = false)
+                }
+                config.applyPeerPreferences()
+                if (restart) {
+                    start()
+                    START_STICKY
+                } else {
+                    stopSelf()
+                    START_NOT_STICKY
+                }
             }
             ACTION_TOGGLE -> {
                 Log.d(TAG, "Toggling...")

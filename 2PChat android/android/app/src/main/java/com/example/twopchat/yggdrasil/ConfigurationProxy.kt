@@ -12,7 +12,7 @@ import com.example.twopchat.SecureStorage
 // БАГ 1 ИСПРАВЛЕН: Был object (singleton с race condition).
 // Теперь это обычный класс — каждый экземпляр владеет своим файлом/json и не конкурирует с другими.
 class ConfigurationProxy(applicationContext: Context) {
-    private companion object {
+    internal companion object {
         private const val PREF_POOL_SEEDED = "yggdrasil_public_pool_seeded_v1"
         private const val PREF_POOL_PRUNED = "yggdrasil_public_pool_pruned_v1"
         private const val MAX_RETAINED_PUBLIC_PEERS = 6
@@ -34,7 +34,8 @@ class ConfigurationProxy(applicationContext: Context) {
     }
     private var json: JSONObject
     private val file: File
-    private val preferences = com.example.twopchat.P2PPreferences.prefs(applicationContext)
+    private val appContext = applicationContext.applicationContext
+    private val preferences = com.example.twopchat.P2PPreferences.prefs(appContext)
 
     init {
         file = File(applicationContext.filesDir, "yggdrasil.conf")
@@ -132,6 +133,32 @@ class ConfigurationProxy(applicationContext: Context) {
             if (!preferences.getBoolean(PREF_POOL_SEEDED, false)) {
                 preferences.edit().putBoolean(PREF_POOL_SEEDED, true).apply()
             }
+
+            val configuredAfterSeed = peerUris(json)
+            val customUris = YggdrasilPeerPreferences.customPeers(appContext)
+                .mapTo(mutableSetOf()) { it.uri.lowercase() }
+            val storedPublicPeers = if (YggdrasilPeerPreferences.hasStoredPublicPeers(appContext)) {
+                YggdrasilPeerPreferences.publicPeers(appContext)
+            } else {
+                configuredAfterSeed.filterNot { it.lowercase() in customUris }
+            }
+            if (!YggdrasilPeerPreferences.hasStoredPublicPeers(appContext) && storedPublicPeers.isNotEmpty()) {
+                YggdrasilPeerPreferences.replacePublicPeers(appContext, storedPublicPeers)
+            }
+            json.put(
+                "Peers",
+                JSONArray(YggdrasilPeerPreferences.effectivePeerUris(appContext, storedPublicPeers)),
+            )
+        }
+    }
+
+    fun applyPeerPreferences() {
+        updateJSON { config ->
+            val publicPeers = YggdrasilPeerPreferences.publicPeers(appContext)
+            config.put(
+                "Peers",
+                JSONArray(YggdrasilPeerPreferences.effectivePeerUris(appContext, publicPeers)),
+            )
         }
     }
 
@@ -139,6 +166,8 @@ class ConfigurationProxy(applicationContext: Context) {
     fun retainBestLivePeers(peersJson: String): Boolean {
         if (preferences.getBoolean(PREF_POOL_PRUNED, false)) return false
         return try {
+            val customUris = YggdrasilPeerPreferences.customPeers(appContext)
+                .mapTo(mutableSetOf()) { it.uri.lowercase() }
             val live = JSONArray(peersJson)
                 .let { array -> (0 until array.length()).mapNotNull(array::optJSONObject) }
                 .filter { peer -> peer.optBoolean("Up", false) && peer.optString("URI").isNotBlank() }
@@ -146,9 +175,16 @@ class ConfigurationProxy(applicationContext: Context) {
                     .thenBy { it.optLong("Latency", Long.MAX_VALUE) })
                 .map { it.getString("URI") }
                 .distinct()
+                .filterNot { it.lowercase() in customUris }
                 .take(MAX_RETAINED_PUBLIC_PEERS)
             if (live.isEmpty()) return false
-            updateJSON { it.put("Peers", JSONArray(live)) }
+            YggdrasilPeerPreferences.replacePublicPeers(appContext, live)
+            updateJSON {
+                it.put(
+                    "Peers",
+                    JSONArray(YggdrasilPeerPreferences.effectivePeerUris(appContext, live)),
+                )
+            }
             preferences.edit().putBoolean(PREF_POOL_PRUNED, true).apply()
             true
         } catch (_: Exception) {
@@ -163,6 +199,13 @@ class ConfigurationProxy(applicationContext: Context) {
         }
     } catch (_: Exception) {
         DEFAULT_PUBLIC_PEERS
+    }
+
+    private fun peerUris(config: JSONObject): List<String> {
+        val peers = config.optJSONArray("Peers") ?: return emptyList()
+        return (0 until peers.length())
+            .mapNotNull { index -> peers.optString(index).trim().takeIf(String::isNotEmpty) }
+            .distinctBy(String::lowercase)
     }
 
     // БАГ 7 ИСПРАВЛЕН: getJSON() больше НЕ вызывает fix() каждый раз → нет лишних записей на диск

@@ -458,6 +458,23 @@ fun SettingsTab(
                             )
 
                             HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                            SettingsRow(
+                                title = if (appLanguage == "Русский") "Пиры Yggdrasil" else "Yggdrasil Peers",
+                                subtitle = if (appLanguage == "Русский") {
+                                    "Публичные и пользовательские пиры, включение и сортировка"
+                                } else {
+                                    "Public and custom peers, toggles and sorting"
+                                },
+                                iconRes = com.example.twopchat.R.drawable.ic_quick_link,
+                                iconColor = Color(0xFF7E57C2),
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                onClick = { activeSubPage = "yggdrasil_peers" }
+                            )
+
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
                             
                             // Category: Notifications / Уведомления
                             SettingsRow(
@@ -963,6 +980,14 @@ fun SettingsTab(
                 onSurfaceColor = onSurfaceColor,
                 onSurfaceVariant = onSurfaceVariant,
             )
+            "yggdrasil_peers" -> YggdrasilPeerSettingsPage(
+                appLanguage = appLanguage,
+                onBackClick = { activeSubPage = null },
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+            )
             "security" -> {
                 Column(
                     modifier = Modifier
@@ -1293,6 +1318,15 @@ fun SettingsTab(
                                             }
                                         },
                                         colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                    )
+                                }
+
+                                TextButton(
+                                    onClick = { activeSubPage = "yggdrasil_peers" },
+                                    modifier = Modifier.align(Alignment.End),
+                                ) {
+                                    Text(
+                                        if (appLanguage == "Русский") "Настроить пиры Yggdrasil" else "Configure Yggdrasil peers"
                                     )
                                 }
 
