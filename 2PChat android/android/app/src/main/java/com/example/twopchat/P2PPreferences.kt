@@ -26,19 +26,24 @@ object P2PPreferences {
         return synchronized(this) {
             cachedPrefs?.let { return it }
             val appContext = context.applicationContext
-            val masterKey = MasterKey.Builder(appContext)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            val encrypted = EncryptedSharedPreferences.create(
-                appContext,
-                ENCRYPTED_FILE_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-            )
-            migrateLegacyPreferences(appContext, encrypted)
-            cachedPrefs = encrypted
-            encrypted
+            val preferences = try {
+                val masterKey = MasterKey.Builder(appContext)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+                EncryptedSharedPreferences.create(
+                    appContext,
+                    ENCRYPTED_FILE_NAME,
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("P2PPreferences", "Failed to initialize EncryptedSharedPreferences, falling back to standard SharedPreferences", e)
+                appContext.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+            }
+            migrateLegacyPreferences(appContext, preferences)
+            cachedPrefs = preferences
+            preferences
         }
     }
 
