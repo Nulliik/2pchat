@@ -601,7 +601,7 @@ async def _verify_live_endpoint(
         )
         await session.send_reliable({"type": "identity_probe"})
         while True:
-            message = await asyncio.wait_for(session.receive_message(), timeout=7.0)
+            message = await asyncio.wait_for(session.receive_message(), timeout=3.0)
             if message.get("type") != "identity_info":
                 continue
             announced_name = str(message.get("nickname", ""))

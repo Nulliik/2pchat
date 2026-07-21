@@ -167,37 +167,35 @@ fun ContactsTab(
                 try {
                     val uri = android.net.Uri.parse(trimmed)
                     val parsedName = uri.getQueryParameter("name") ?: "Invited Peer"
-                    val token = uri.getQueryParameter("token") ?: ""
+                    val token = uri.getQueryParameter("token") ?: uri.getQueryParameter("code") ?: ""
                     val expectedFp = (uri.getQueryParameter("fp")?.trim().orEmpty()).replace(" ", "+")
-                    val validFingerprint = try {
-                        val decoded = android.util.Base64.decode(expectedFp, android.util.Base64.NO_WRAP)
-                        decoded.size == 32 && android.util.Base64.encodeToString(decoded, android.util.Base64.NO_WRAP) == expectedFp
-                    } catch (_: IllegalArgumentException) {
-                        false
-                    }
+                    val directIp = uri.getQueryParameter("ip")
+                    val yggIp = uri.getQueryParameter("ygg")
 
-                    if (token.isEmpty() || !validFingerprint) {
+                    if (token.isEmpty()) {
                         resolveInviteStatus = if (appLanguage == "Русский") {
-                            "Некорректная ссылка: отсутствует token или 32-байтный fingerprint"
+                            "Некорректная ссылка/QR: отсутствует код подключения"
                         } else {
-                            "Invalid invite: missing token or 32-byte fingerprint"
+                            "Invalid link/QR: missing connection code"
                         }
                     } else {
-                        val directIp = uri.getQueryParameter("ip")
                         if (!directIp.isNullOrBlank()) {
-                            com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(parsedName, expectedFp, directIp)
+                            val formattedIp = if (directIp.contains(":")) directIp else "$directIp:50001"
+                            com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(parsedName, expectedFp, formattedIp)
+                        }
+                        if (!yggIp.isNullOrBlank()) {
+                            val formattedYgg = if (yggIp.contains(":")) yggIp else "[$yggIp]:50001"
+                            com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(parsedName, expectedFp, formattedYgg)
                         }
                         isResolvingInvite = true
-                        resolveInviteStatus = if (appLanguage == "Русский") "Поиск собеседника..." else "Finding peer..."
+                        resolveInviteStatus = if (appLanguage == "Русский") "Мгновенное подключение к собеседнику..." else "Connecting to peer..."
                         coroutineScope.launch(Dispatchers.IO) {
-                            val peers = PythonBridge.searchPeers(token, parsedName, expectedFp)
-                            val verified = peers.firstOrNull()?.get("verified")?.toString()?.equals("true", ignoreCase = true) == true
-                            val ownershipVerified = peers.firstOrNull()?.get("ownership_verified")?.toString()?.equals("true", ignoreCase = true) == true
+                            val peers = PythonBridge.searchPeers(token, parsedName, expectedFp.ifEmpty { null })
                             val endpoints = if (peers.isNotEmpty()) peers[0]["endpoints"] as? List<*> else null
                             val endpointStr = if (endpoints != null && endpoints.isNotEmpty()) endpoints.joinToString(",") { it.toString() } else ""
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                 isResolvingInvite = false
-                                if (endpointStr.isNotEmpty() && verified && ownershipVerified) {
+                                if (endpointStr.isNotEmpty()) {
                                     val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                                     if (!activeSet.contains(parsedName)) {
                                         sharedPrefs.edit()
@@ -211,13 +209,13 @@ fun ContactsTab(
                                     resolveInviteStatus = ""
                                     onItemClick(Chat(parsedName))
                                 } else {
-                                    resolveInviteStatus = if (appLanguage == "Русский") "Собеседник не найден. Попробуйте позже." else "Peer not found. They may be offline."
+                                    resolveInviteStatus = if (appLanguage == "Русский") "Собеседник не найден. Попробуйте снова." else "Peer not found. Please try again."
                                 }
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    Toast.makeText(context, "Invalid link", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Invalid link/QR", Toast.LENGTH_SHORT).show()
                 }
             } else {
                 val address = parsePeerSearchAddress(trimmed)
@@ -804,11 +802,29 @@ fun ContactsTab(
 
         // QR Code Connection Panel
         if (showQrPanel) {
-            val qrBitmap = remember(contactAddress) {
+            val localIp = remember { PythonBridge.getLocalIpAddress(false) }
+            val yggIp = remember { PythonBridge.getYggdrasilAddress() }
+            val qrPayload = remember(username, discoveryCode, fingerprint, localIp, yggIp) {
+                val builder = StringBuilder("2pchat://connect?")
+                    .append("name=").append(android.net.Uri.encode(username))
+                    .append("&code=").append(android.net.Uri.encode(discoveryCode))
+                if (fingerprint.isNotBlank() && fingerprint != "Loading..." && fingerprint != "Not Initialized") {
+                    builder.append("&fp=").append(android.net.Uri.encode(fingerprint))
+                }
+                if (localIp.isNotBlank() && localIp != "127.0.0.1") {
+                    builder.append("&ip=").append(android.net.Uri.encode(localIp))
+                }
+                if (yggIp.isNotBlank()) {
+                    builder.append("&ygg=").append(android.net.Uri.encode(yggIp))
+                }
+                builder.toString()
+            }
+
+            val qrBitmap = remember(qrPayload) {
                 try {
                     val size = 512
                     val writer = com.google.zxing.qrcode.QRCodeWriter()
-                    val bitMatrix = writer.encode(contactAddress, com.google.zxing.BarcodeFormat.QR_CODE, size, size)
+                    val bitMatrix = writer.encode(qrPayload, com.google.zxing.BarcodeFormat.QR_CODE, size, size)
                     val bmp = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
                     for (x in 0 until size) {
                         for (y in 0 until size) {
