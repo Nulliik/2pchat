@@ -152,83 +152,12 @@ fun MainScreen(
         }
     }
 
-    var activePeers by remember { mutableStateOf<List<String>>(emptyList()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            if (PythonBridge.isInitialized) {
-                activePeers = PythonBridge.getActivePeers()
-            }
-            kotlinx.coroutines.delay(2500)
-        }
-    }
-
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(backgroundColor)
             .safeDrawingPadding()
     ) {
-        // App Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "2PChat",
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Black,
-                color = primaryColor,
-                letterSpacing = (-0.5).sp
-            )
-
-            // P2P Active Status Chip
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .background(surfaceColor, shape = RoundedCornerShape(12.dp))
-                    .border(
-                        0.5.dp, 
-                        if (activePeers.isNotEmpty()) Color(0xFF4CAF50).copy(alpha = 0.5f) else primaryColor.copy(alpha = 0.3f), 
-                        RoundedCornerShape(12.dp)
-                    )
-                    .clickable(enabled = activePeers.isNotEmpty()) {
-                        Toast.makeText(
-                            context,
-                            (if (appLanguage == "Русский") "Активные сессии: " else "Active sessions: ") + activePeers.joinToString(", "),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .background(if (activePeers.isNotEmpty()) Color(0xFF4CAF50) else onSurfaceColor.copy(alpha = 0.3f), shape = CircleShape)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = if (activePeers.isNotEmpty()) {
-                        if (activePeers.size == 1) {
-                            activePeers.first()
-                        } else {
-                            "${activePeers.size} " + (if (appLanguage == "Русский") "актив." else "active")
-                        }
-                    } else {
-                        if (appLanguage == "Русский") "нет сессий" else "no sessions"
-                    },
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (activePeers.isNotEmpty()) Color(0xFF4CAF50) else onSurfaceColor.copy(alpha = 0.5f),
-                    letterSpacing = 0.5.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 85.dp)
-                )
-            }
-        }
 
         // Tab Content Area
         Box(
