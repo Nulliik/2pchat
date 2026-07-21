@@ -948,7 +948,7 @@ fun ContactsTab(
         }
 
         if (showCameraScannerDialog) {
-            CameraQrScannerDialog(
+            CameraQrScannerOverlay(
                 appLanguage = appLanguage,
                 primaryColor = primaryColor,
                 onDismiss = { showCameraScannerDialog = false },
@@ -1188,128 +1188,131 @@ fun ContactsTab(
 }
 
 @Composable
-private fun CameraQrScannerDialog(
+private fun CameraQrScannerOverlay(
     appLanguage: String,
     primaryColor: Color,
     onDismiss: () -> Unit,
     onQrScanned: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var hasScanned by remember { mutableStateOf(false) }
 
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+    androidx.activity.compose.BackHandler(onBack = onDismiss)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-        ) {
-            androidx.compose.ui.viewinterop.AndroidView(
-                factory = { ctx ->
-                    val previewView = androidx.camera.view.PreviewView(ctx)
-                    val cameraProviderFuture = androidx.camera.lifecycle.ProcessCameraProvider.getInstance(ctx)
-                    cameraProviderFuture.addListener({
-                        val cameraProvider = cameraProviderFuture.get()
-                        val preview = androidx.camera.core.Preview.Builder().build().also {
-                            it.setSurfaceProvider(previewView.surfaceProvider)
-                        }
-                        val imageAnalysis = androidx.camera.core.ImageAnalysis.Builder()
-                            .setBackpressureStrategy(androidx.camera.core.ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+        androidx.compose.ui.viewinterop.AndroidView(
+            factory = { ctx ->
+                val previewView = androidx.camera.view.PreviewView(ctx).apply {
+                    scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_CENTER
+                }
+                val cameraProviderFuture = androidx.camera.lifecycle.ProcessCameraProvider.getInstance(ctx)
+                cameraProviderFuture.addListener({
+                    val cameraProvider = cameraProviderFuture.get()
+                    val preview = androidx.camera.core.Preview.Builder().build().also {
+                        it.setSurfaceProvider(previewView.surfaceProvider)
+                    }
+                    val imageAnalysis = androidx.camera.core.ImageAnalysis.Builder()
+                        .setBackpressureStrategy(androidx.camera.core.ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+
+                    val barcodeScanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient(
+                        com.google.mlkit.vision.barcode.BarcodeScannerOptions.Builder()
+                            .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
                             .build()
+                    )
 
-                        val reader = com.google.zxing.MultiFormatReader().apply {
-                            val hints = mapOf(
-                                com.google.zxing.DecodeHintType.POSSIBLE_FORMATS to listOf(com.google.zxing.BarcodeFormat.QR_CODE)
+                    imageAnalysis.setAnalyzer(java.util.concurrent.Executors.newSingleThreadExecutor()) { imageProxy ->
+                        val mediaImage = imageProxy.image
+                        if (mediaImage != null && !hasScanned) {
+                            val inputImage = com.google.mlkit.vision.common.InputImage.fromMediaImage(
+                                mediaImage,
+                                imageProxy.imageInfo.rotationDegrees
                             )
-                            setHints(hints)
-                        }
-
-                        imageAnalysis.setAnalyzer(java.util.concurrent.Executors.newSingleThreadExecutor()) { imageProxy ->
-                            if (!hasScanned) {
-                                val buffer = imageProxy.planes[0].buffer
-                                val data = ByteArray(buffer.remaining())
-                                buffer.get(data)
-                                val width = imageProxy.width
-                                val height = imageProxy.height
-                                val source = com.google.zxing.PlanarYUVLuminanceSource(
-                                    data, width, height, 0, 0, width, height, false
-                                )
-                                val binaryBmp = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
-                                try {
-                                    val result = reader.decodeWithState(binaryBmp)
-                                    val text = result.text.orEmpty()
-                                    if (text.isNotBlank()) {
-                                        hasScanned = true
-                                        (ctx as? android.app.Activity)?.runOnUiThread {
-                                            onQrScanned(text)
+                            barcodeScanner.process(inputImage)
+                                .addOnSuccessListener { barcodes ->
+                                    for (barcode in barcodes) {
+                                        val rawValue = barcode.rawValue ?: continue
+                                        if (rawValue.isNotBlank() && !hasScanned) {
+                                            hasScanned = true
+                                            (ctx as? android.app.Activity)?.runOnUiThread {
+                                                onQrScanned(rawValue)
+                                            }
+                                            break
                                         }
                                     }
-                                } catch (_: Exception) {
-                                } finally {
-                                    reader.reset()
                                 }
-                            }
+                                .addOnCompleteListener {
+                                    imageProxy.close()
+                                }
+                        } else {
                             imageProxy.close()
                         }
+                    }
 
-                        val cameraSelector = androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA
-                        try {
-                            cameraProvider.unbindAll()
-                            cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalysis)
-                        } catch (e: Exception) {
-                            android.util.Log.e("CameraQrScanner", "Use case binding failed", e)
-                        }
-                    }, ContextCompat.getMainExecutor(ctx))
-                    previewView
-                },
-                modifier = Modifier.fillMaxSize()
+                    val cameraSelector = androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA
+                    try {
+                        cameraProvider.unbindAll()
+                        cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalysis)
+                    } catch (e: Exception) {
+                        android.util.Log.e("CameraQrScanner", "Camera bind failed", e)
+                    }
+                }, ContextCompat.getMainExecutor(ctx))
+                previewView
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Overlay UI
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (appLanguage == "Русский") "Сканирование QR-кода" else "Scan QR Code",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(270.dp)
+                    .border(3.dp, primaryColor, RoundedCornerShape(24.dp))
             )
 
-            // Scanning Overlay UI
-            Column(
+            Text(
+                text = if (appLanguage == "Русский") "Наведите камеру на QR-код собеседника" else "Point camera at peer's QR code",
+                color = Color.White.copy(alpha = 0.9f),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (appLanguage == "Русский") "Сканирование QR-кода" else "Scan QR Code",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(260.dp)
-                        .border(3.dp, primaryColor, RoundedCornerShape(24.dp))
-                )
-
-                Text(
-                    text = if (appLanguage == "Русский") "Наведите камеру на QR-код собеседника" else "Point camera at peer's QR code",
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(bottom = 32.dp)
-                )
-            }
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            )
         }
     }
 }
