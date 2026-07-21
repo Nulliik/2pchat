@@ -2128,17 +2128,9 @@ fun SettingsRow(
                 text = value,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
-                color = primaryColor,
-                modifier = Modifier.padding(end = 8.dp)
+                color = primaryColor
             )
         }
-        
-        Icon(
-            painter = painterResource(id = com.example.twopchat.R.drawable.ic_forward),
-            contentDescription = null,
-            tint = onSurfaceVariant.copy(alpha = 0.3f),
-            modifier = Modifier.size(12.dp)
-        )
     }
 }
 
