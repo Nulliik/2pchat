@@ -13,6 +13,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -201,13 +203,27 @@ fun PeerRow(
     val isLight = surfaceColor.luminance() > 0.5f
     val borderAlpha = if (isLight) 0.08f else 0.04f
 
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1.0f,
+        animationSpec = androidx.compose.animation.core.tween(120, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        label = "peerRowScale"
+    )
+
     Card(
         colors = CardDefaults.cardColors(containerColor = surfaceColor),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 2.dp else 0.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
             .combinedClickable(
+                interactionSource = interactionSource,
+                indication = ripple(),
                 onClick = onClick,
                 onLongClick = onLongClick
             )

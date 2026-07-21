@@ -670,32 +670,47 @@ fun FinalizeStep(
     surfaceColor: Color,
     onSurfaceColor: Color
 ) {
+    var animateIn by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { animateIn = true }
+    val avatarScale by animateFloatAsState(
+        targetValue = if (animateIn) 1.0f else 0.5f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "finalizeScale"
+    )
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        if (profileBitmap != null) {
-            Image(
-                bitmap = profileBitmap.asImageBitmap(),
-                contentDescription = "Profile Photo",
-                modifier = Modifier
-                    .size(96.dp)
-                    .clip(CircleShape)
-                    .border(2.dp, primaryColor, CircleShape)
-            )
-        } else {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(96.dp)
-                    .clip(CircleShape)
-                    .background(primaryColor.copy(alpha = 0.1f))
-                    .border(2.dp, primaryColor, CircleShape)
-            ) {
-                Text(
-                    text = "🌐",
-                    fontSize = 40.sp
+        Box(
+            modifier = Modifier.graphicsLayer {
+                scaleX = avatarScale
+                scaleY = avatarScale
+            }
+        ) {
+            if (profileBitmap != null) {
+                Image(
+                    bitmap = profileBitmap.asImageBitmap(),
+                    contentDescription = "Profile Photo",
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(CircleShape)
+                        .border(2.dp, primaryColor, CircleShape)
                 )
+            } else {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(CircleShape)
+                        .background(primaryColor.copy(alpha = 0.1f))
+                        .border(2.dp, primaryColor, CircleShape)
+                ) {
+                    Text(
+                        text = "🌐",
+                        fontSize = 40.sp
+                    )
+                }
             }
         }
 

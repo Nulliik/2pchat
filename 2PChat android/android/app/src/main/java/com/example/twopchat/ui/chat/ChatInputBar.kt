@@ -1,10 +1,15 @@
 package com.example.twopchat.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -66,8 +71,8 @@ internal fun ChatInputBar(
     ) {
         AnimatedVisibility(
             visible = showAttachments,
-            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            enter = expandVertically(expandFrom = Alignment.Bottom, animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) + fadeIn(animationSpec = tween(150)),
+            exit = shrinkVertically(shrinkTowards = Alignment.Bottom, animationSpec = tween(160)) + fadeOut(animationSpec = tween(120)),
         ) {
             AttachmentPanel(
                 primaryColor = primaryColor,

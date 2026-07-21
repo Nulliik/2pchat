@@ -1246,7 +1246,11 @@ fun ChatScreen(
             }
 
             // Pinned Message Bar
-            if (pinnedMsgId != null && pinnedMsgText != null) {
+            AnimatedVisibility(
+                visible = pinnedMsgId != null && pinnedMsgText != null,
+                enter = expandVertically(animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(160)),
+                exit = shrinkVertically(animationSpec = tween(180, easing = FastOutLinearInEasing)) + fadeOut(animationSpec = tween(140))
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1294,7 +1298,7 @@ fun ChatScreen(
                     IconButton(
                         onClick = {
                             sharedPrefs.edit {
-remove("pinned_msg_id_${peerName}")
+                                remove("pinned_msg_id_${peerName}")
                                 remove("pinned_msg_text_${peerName}")
                                 remove("pinned_msg_sender_${peerName}")
                                 remove("pinned_by_${peerName}")
