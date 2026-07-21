@@ -1569,7 +1569,7 @@ fun ChatScreen(
                                         audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                     }
                                 } else {
-                                    val userText = inputText.trim()
+                                    val userText = inputText.trim().take(4096)
                                     inputText = ""
                                     showAttachments = false
                                     val currentEditing = editingMessage
