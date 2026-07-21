@@ -302,7 +302,7 @@ fun ContactsTab(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 12.dp),
+                .padding(vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -311,8 +311,11 @@ fun ContactsTab(
                 onValueChange = { searchQuery = it },
                 placeholder = {
                     Text(
-                        if (appLanguage == "Русский") "Имя#код или ссылка 2PChat" else "Name#code or 2PChat link",
-                        color = onSurfaceVariant.copy(alpha = 0.5f)
+                        text = if (appLanguage == "Русский") "Имя#код или ссылка 2PChat" else "Name#code or 2PChat link",
+                        color = onSurfaceVariant.copy(alpha = 0.5f),
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 },
                 trailingIcon = {
@@ -348,6 +351,7 @@ fun ContactsTab(
                 singleLine = true,
                 modifier = Modifier
                     .weight(1f)
+                    .height(48.dp)
                     .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
             )
             
@@ -358,15 +362,22 @@ fun ContactsTab(
                     if (showInvitePanel) showQrPanel = false
                 },
                 modifier = Modifier
-                    .size(52.dp)
-                    .background(if (showInvitePanel) primaryColor else surfaceColor, shape = RoundedCornerShape(14.dp))
-                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                    .size(48.dp)
+                    .background(
+                        if (showInvitePanel) primaryColor.copy(alpha = 0.18f) else surfaceColor,
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                    .border(
+                        if (showInvitePanel) 1.5.dp else 0.5.dp,
+                        if (showInvitePanel) primaryColor else onSurfaceColor.copy(alpha = 0.08f),
+                        RoundedCornerShape(14.dp)
+                    )
             ) {
                 Icon(
                     painter = painterResource(id = com.example.twopchat.R.drawable.ic_quick_link),
                     contentDescription = "Invite Link Settings",
-                    tint = if (showInvitePanel) StealthBlack else primaryColor,
-                    modifier = Modifier.size(22.dp)
+                    tint = primaryColor,
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
@@ -377,66 +388,105 @@ fun ContactsTab(
                     if (showQrPanel) showInvitePanel = false
                 },
                 modifier = Modifier
-                    .size(52.dp)
-                    .background(if (showQrPanel) primaryColor else surfaceColor, shape = RoundedCornerShape(14.dp))
-                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
+                    .size(48.dp)
+                    .background(
+                        if (showQrPanel) primaryColor.copy(alpha = 0.18f) else surfaceColor,
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                    .border(
+                        if (showQrPanel) 1.5.dp else 0.5.dp,
+                        if (showQrPanel) primaryColor else onSurfaceColor.copy(alpha = 0.08f),
+                        RoundedCornerShape(14.dp)
+                    )
             ) {
                 Icon(
                     painter = painterResource(id = com.example.twopchat.R.drawable.ic_qr_code),
                     contentDescription = "QR Code Connection",
-                    tint = if (showQrPanel) StealthBlack else primaryColor,
-                    modifier = Modifier.size(22.dp)
+                    tint = primaryColor,
+                    modifier = Modifier.size(20.dp)
                 )
             }
             
             // Search Execute Button
+            val isSearchActive = searchQuery.isNotBlank()
             IconButton(
                 onClick = { performSearch(searchQuery) },
                 modifier = Modifier
-                    .size(52.dp)
-                    .background(primaryColor, shape = RoundedCornerShape(14.dp))
+                    .size(48.dp)
+                    .background(
+                        if (isSearchActive) primaryColor else primaryColor.copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                    .border(
+                        if (isSearchActive) 1.dp else 1.5.dp,
+                        primaryColor,
+                        RoundedCornerShape(14.dp)
+                    )
             ) {
                 Icon(
                     painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_search),
                     contentDescription = "Search",
-                    tint = if (primaryColor == MintGreen) StealthBlack else Color.White,
-                    modifier = Modifier.size(22.dp)
+                    tint = if (isSearchActive) (if (primaryColor == MintGreen) StealthBlack else Color.White) else primaryColor,
+                    modifier = Modifier.size(20.dp)
                 )
             }
         }
 
         if (discoveryCode.isNotEmpty()) {
-            Row(
+            Card(
+                colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.6f)),
+                shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+                    .padding(vertical = 6.dp)
+                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = if (appLanguage == "Русский") "Ваш адрес для поиска" else "Your search address",
-                        fontSize = 11.sp,
-                        color = onSurfaceVariant,
-                    )
-                    Text(
-                        text = contactAddress,
-                        fontSize = 13.sp,
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        color = onSurfaceColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                TextButton(onClick = {
-                    copyTextToClipboard(context, "2PChat contact", contactAddress)
-                    Toast.makeText(
-                        context,
-                        if (appLanguage == "Русский") "Адрес скопирован" else "Address copied",
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                }) {
-                    Text(if (appLanguage == "Русский") "Копировать" else "Copy", color = primaryColor)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Ваш адрес для поиска" else "Your search address",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = contactAddress,
+                            fontSize = 13.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                            color = primaryColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Surface(
+                        color = primaryColor.copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .clickable {
+                                copyTextToClipboard(context, "2PChat contact", contactAddress)
+                                Toast.makeText(
+                                    context,
+                                    if (appLanguage == "Русский") "Адрес скопирован" else "Address copied",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                            .border(0.5.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                    ) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Копировать" else "Copy",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryColor,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
                 }
             }
         }
@@ -945,44 +995,64 @@ fun ContactsTab(
             }
 
             if (contactsToDisplay.isEmpty()) {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = onSurfaceColor.copy(alpha = 0.025f)),
-                    shape = RoundedCornerShape(18.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(0.5.dp, onSurfaceColor.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 32.dp, horizontal = 24.dp),
+                            .padding(vertical = 28.dp, horizontal = 24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Icon(
-                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_search),
-                            contentDescription = "Search Tip Icon",
-                            tint = onSurfaceColor.copy(alpha = 0.15f),
-                            modifier = Modifier.size(56.dp)
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(52.dp)
+                                .background(primaryColor.copy(alpha = 0.12f), shape = CircleShape)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_search),
+                                contentDescription = "Search Tip Icon",
+                                tint = primaryColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = if (searchQuery.isNotBlank()) {
+                                if (appLanguage == "Русский") "Пользователь не найден" else "User not found"
+                            } else {
+                                if (appLanguage == "Русский") "Поиск пиров в сети 2PChat" else "P2P Network Search"
+                            },
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onSurfaceColor
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = if (searchQuery.isNotBlank()) {
                                 if (appLanguage == "Русский") {
-                                    "Пользователь не найден\n\nПопробуйте позже или убедитесь,\nчто собеседник находится в сети."
+                                    "Проверьте правильность написания имени#кода и убедитесь, что собеседник находится в сети."
                                 } else {
-                                    "User not found\n\nTry again later or make sure\nyour peer is online."
+                                    "Check the name#code format and make sure your peer is online."
                                 }
                             } else {
                                 if (appLanguage == "Русский") {
-                                    "Иногда может потребоваться несколько попыток поиска"
+                                    "Введите имя собеседника с хэш-кодом (например, user#1234) или вставьте P2P-ссылку приглашения."
                                 } else {
-                                    "Sometimes it may take several search attempts"
+                                    "Enter user name with hash code (e.g. user#1234) or paste P2P invite link."
                                 }
                             },
-                            fontSize = 13.sp,
-                            color = onSurfaceColor.copy(alpha = 0.55f),
+                            fontSize = 12.sp,
+                            color = onSurfaceVariant,
                             textAlign = TextAlign.Center,
-                            lineHeight = 19.sp
+                            lineHeight = 18.sp
                         )
                     }
                 }
