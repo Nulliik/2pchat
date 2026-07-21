@@ -20,6 +20,7 @@ internal class RelayMaintenanceCoordinator(
     private val log: (Context, String, String, Throwable?) -> Unit,
 ) {
     private val lastReconnectAttemptAt = ConcurrentHashMap<String, Long>()
+    private val reconnectDelayMs = ConcurrentHashMap<String, Long>()
     private var sessionJob: Job? = null
     private var announceJob: Job? = null
 
@@ -38,6 +39,7 @@ internal class RelayMaintenanceCoordinator(
                             val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
                             if (!fingerprint.isNullOrBlank() && fingerprint in activeFingerprints) {
                                 peerSessionStates[peerName] = true
+                                reconnectDelayMs.remove(fingerprint)
                                 canonicalConnectionTransport(
                                     rawTransport = prefs.getString(P2PPreferences.transport(peerName), null),
                                     endpoint = peerEndpoints[peerName]
@@ -56,12 +58,17 @@ internal class RelayMaintenanceCoordinator(
                         if (P2PPreferences.isPeerIdentityChangePending(appContext, peerName)) continue
                         val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
                             ?.takeIf { it.isNotBlank() } ?: continue
-                        if (fingerprint in activeFingerprints) continue
+                        if (fingerprint in activeFingerprints) {
+                            reconnectDelayMs.remove(fingerprint)
+                            continue
+                        }
                         val endpoint = peerEndpoints[peerName]
                             ?: prefs.getString("last_endpoint_$peerName", null)?.takeIf { it.isNotBlank() }
                             ?: continue
-                        if (now - (lastReconnectAttemptAt[fingerprint] ?: 0L) < 15_000L) continue
+                        val currentDelay = reconnectDelayMs[fingerprint] ?: 15_000L
+                        if (now - (lastReconnectAttemptAt[fingerprint] ?: 0L) < currentDelay) continue
                         lastReconnectAttemptAt[fingerprint] = now
+                        reconnectDelayMs[fingerprint] = (currentDelay * 2).coerceAtMost(300_000L)
                         log(appContext, "Background reconnection for $peerName at '$endpoint'", "INFO", null)
                         PythonBridge.reconnectPeerSession(peerName, endpoint, fingerprint)
                     }
@@ -84,9 +91,10 @@ internal class RelayMaintenanceCoordinator(
                     val fingerprint = PythonBridge.getLocalFingerprint()
                     if (username.isNotBlank() && fingerprint !in setOf("Loading...", "Not Initialized", "Error")) {
                         val diagnostics = PythonBridge.getYggdrasilNetworkDiagnostics()
+                        val yggState = diagnostics["state"].orEmpty()
                         val yggReady = prefs.getBoolean("settings_yggdrasil", true) &&
-                            diagnostics["state"] == "connected" &&
-                            (diagnostics["routes"]?.toIntOrNull() ?: 0) >= 2
+                            (yggState.equals("connected", ignoreCase = true) || yggState.equals("enabled", ignoreCase = true)) &&
+                            (diagnostics["routes"]?.toIntOrNull() ?: 0) >= 1
                         val addresses = buildList {
                             if (prefs.getBoolean("settings_ipv4", true)) {
                                 addAll(PythonBridge.getLocalAddresses().filter { !it.contains(':') })
@@ -123,5 +131,6 @@ internal class RelayMaintenanceCoordinator(
         sessionJob = null
         announceJob = null
         lastReconnectAttemptAt.clear()
+        reconnectDelayMs.clear()
     }
 }
