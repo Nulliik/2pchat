@@ -11,10 +11,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -47,6 +45,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.twopchat.PythonBridge
 import com.example.twopchat.Chat
 import com.example.twopchat.P2PMessageRelay
@@ -77,42 +76,16 @@ fun ChatsTab(
     onStatusPillClick: (RadarNode) -> Unit
 ) {
     val context = LocalContext.current
-    
+    val chatsViewModel: ChatsViewModel = viewModel(factory = ChatsViewModel.factory(context))
     val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
-    var activeChatsSet by remember {
-        mutableStateOf(sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet())
-    }
-    var chatListRevision by remember { mutableIntStateOf(0) }
-    var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
+    var activeChatsSet by chatsViewModel.activeChatsSet
+    var chatListRevision by chatsViewModel.chatListRevision
+    var profilePhotoUri by chatsViewModel.profilePhotoUri
     val profileBitmap = remember(profilePhotoUri) {
         com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)
     }
-    var currentUsername by remember { mutableStateOf(sharedPrefs.getString("username_profile", "Anonymous") ?: "Anonymous") }
+    var currentUsername by chatsViewModel.currentUsername
     var activeMenuPeer by remember { mutableStateOf<PeerItem?>(null) }
-    
-    androidx.compose.runtime.DisposableEffect(sharedPrefs) {
-        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "active_chats") {
-                activeChatsSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-            }
-            if (key == "active_chats" || key?.startsWith("last_msg_") == true || key?.startsWith("draft_msg_") == true || key?.startsWith("transport_") == true || key?.startsWith("last_endpoint_") == true || key?.startsWith("unread_count_") == true) {
-                // The chat set itself usually stays equal when a message
-                // arrives. Keep a separate revision so Compose refreshes the
-                // preview and unread badge on the main screen.
-                chatListRevision++
-            }
-            if (key == "profile_photo_uri") {
-                profilePhotoUri = sharedPrefs.getString("profile_photo_uri", null)
-            }
-            if (key == "username_profile") {
-                currentUsername = sharedPrefs.getString("username_profile", "Anonymous") ?: "Anonymous"
-            }
-        }
-        sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
-        onDispose {
-            sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener)
-        }
-    }
 
     // Read relay SnapshotState maps during composition so route changes are
     // visible immediately even when SharedPreferences hasn't changed.
@@ -153,11 +126,11 @@ fun ChatsTab(
     )
 
     // Hero Card live state
-    var heroActivePeers by remember { mutableStateOf(0) }
-    var heroUpnpOk by remember { mutableStateOf<Boolean?>(null) }
-    var heroTrackersOk by remember { mutableStateOf<Boolean?>(null) }
-    var heroYggOk by remember { mutableStateOf<Boolean?>(null) }
-    var isRefreshingAll by remember { mutableStateOf(false) }
+    var heroActivePeers by chatsViewModel.heroActivePeers
+    var heroUpnpOk by chatsViewModel.heroUpnpOk
+    var heroTrackersOk by chatsViewModel.heroTrackersOk
+    var heroYggOk by chatsViewModel.heroYggOk
+    var isRefreshingAll by chatsViewModel.isRefreshingAll
     val heroScope = rememberCoroutineScope()
 
     // Pulsing animations
@@ -176,28 +149,22 @@ fun ChatsTab(
         label = "warningAlpha"
     )?.value ?: 1.0f
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            if (PythonBridge.isInitialized) {
-                heroActivePeers = PythonBridge.getActivePeers().distinct().size
-                heroUpnpOk = PythonBridge.isUpnpMapped()
-                val trackers = PythonBridge.getTrackerDiagnostics()
-                heroTrackersOk = trackers.isNotEmpty() && trackers.values.any {
-                    it.contains("announce=ok", ignoreCase = true)
-                }
-                val yggAddr = PythonBridge.getYggdrasilAddress()
-                heroYggOk = yggAddr.isNotBlank() && yggAddr != "N/A" && yggAddr != "unavailable"
-            }
-            kotlinx.coroutines.delay(15000)
-        }
+    val activeHandshakesLabel = remember(appLanguage) {
+        Localizations.getString("active_handshakes", appLanguage).uppercase()
+    }
+    val savedMessagesName = remember(appLanguage) {
+        Localizations.getString("saved_messages_title", appLanguage)
+    }
+    val savedMessagesDesc = remember(appLanguage) {
+        Localizations.getString("saved_messages_desc", appLanguage)
     }
 
-    Column(
+    LazyColumn(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-            .verticalScroll(rememberScrollState())
+            .fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp),
     ) {
+        item(key = "hero") {
         // ─── Hero Identity Card ────────────────────────────────────
         Card(
             colors = CardDefaults.cardColors(containerColor = Color.Transparent),
@@ -475,52 +442,61 @@ fun ChatsTab(
                 }
             }
         }
+        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        item(key = "hero_spacer") {
+            Spacer(modifier = Modifier.height(8.dp))
+        }
 
 
         // Chats Header
-        Text(
-            text = Localizations.getString("active_handshakes", appLanguage).uppercase(),
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            color = onSurfaceVariant,
-            letterSpacing = 1.2.sp,
-            modifier = Modifier.padding(top = 4.dp, bottom = 6.dp)
-        )
+        item(key = "chats_header") {
+            Text(
+                text = activeHandshakesLabel,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = onSurfaceVariant,
+                letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(top = 4.dp, bottom = 6.dp)
+            )
+        }
 
         // Peers List
-        Column(
-            modifier = Modifier.animateContentSize(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            val savedMessagesName = Localizations.getString("saved_messages_title", appLanguage)
-            val savedMessagesDesc = Localizations.getString("saved_messages_desc", appLanguage)
-            PeerRow(
-                peer = PeerItem(
-                    name = savedMessagesName, lastMsg = savedMessagesDesc,
-                    transport = "LOCAL RAM", isDirect = true, initials = "🔖"
-                ),
-                appLanguage = appLanguage, primaryColor = primaryColor, surfaceColor = surfaceColor,
-                onSurfaceColor = onSurfaceColor, onSurfaceVariant = onSurfaceVariant,
-                onClick = { onItemClick(Chat("Saved Messages")) }
-            )
-            peers.forEach { peer ->
+        item(key = "saved_messages") {
+            Box(modifier = Modifier.padding(bottom = 10.dp)) {
                 PeerRow(
-                    peer = peer,
-                    appLanguage = appLanguage,
-                    primaryColor = primaryColor,
-                    surfaceColor = surfaceColor,
-                    onSurfaceColor = onSurfaceColor,
-                    onSurfaceVariant = onSurfaceVariant,
-                    onClick = { onItemClick(Chat(peer.name)) },
-                    onLongClick = {
-                        activeMenuPeer = peer
-                    }
+                    peer = PeerItem(
+                        name = savedMessagesName, lastMsg = savedMessagesDesc,
+                        transport = "LOCAL RAM", isDirect = true, initials = "🔖"
+                    ),
+                    appLanguage = appLanguage, primaryColor = primaryColor, surfaceColor = surfaceColor,
+                    onSurfaceColor = onSurfaceColor, onSurfaceVariant = onSurfaceVariant,
+                    onClick = { onItemClick(Chat("Saved Messages")) }
                 )
             }
+        }
+        items(
+            items = peers,
+            key = { peer -> peer.name },
+        ) { peer ->
+            Box(modifier = Modifier.padding(bottom = 10.dp)) {
+                PeerRow(
+                        peer = peer,
+                        appLanguage = appLanguage,
+                        primaryColor = primaryColor,
+                        surfaceColor = surfaceColor,
+                        onSurfaceColor = onSurfaceColor,
+                        onSurfaceVariant = onSurfaceVariant,
+                        onClick = { onItemClick(Chat(peer.name)) },
+                        onLongClick = {
+                            activeMenuPeer = peer
+                        }
+                    )
+            }
+        }
 
-            if (peers.isEmpty()) {
+        if (peers.isEmpty()) {
+            item(key = "empty_chats") {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.5f)),
                     shape = RoundedCornerShape(18.dp),
@@ -568,7 +544,12 @@ fun ChatsTab(
             }
         }
 
-        if (activeMenuPeer != null) {
+        item(key = "bottom_spacer") {
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+
+    if (activeMenuPeer != null) {
             val peer = activeMenuPeer!!
             val isPinned = peer.isPinned
             val isMuted = sharedPrefs.getBoolean("mute_notifications_${peer.name}", false)
@@ -772,9 +753,6 @@ fun ChatsTab(
                     }
                 }
             }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 

@@ -1,5 +1,6 @@
 package com.example.twopchat.ui.chat
 
+import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -60,6 +61,7 @@ internal fun ChatMessageList(
     isSelectMode: Boolean,
     isTyping: Boolean,
     peerName: String,
+    myAvatarBitmap: Bitmap?,
     appLanguage: String,
     arrivalAnimationTracker: MessageArrivalAnimationTracker,
     showScrollDownButton: Boolean,
@@ -126,12 +128,17 @@ internal fun ChatMessageList(
             items = displayMessages,
             key = { _, msg -> msg.id }
         ) { index, msg ->
-            val showDateHeader = remember(index, displayMessages) {
-                if (index == 0) {
+            val previousMessage = displayMessages.getOrNull(index - 1)
+            val showDateHeader = remember(
+                msg.id,
+                msg.sentAtEpochMs,
+                previousMessage?.id,
+                previousMessage?.sentAtEpochMs,
+            ) {
+                if (previousMessage == null) {
                     msg.sentAtEpochMs > 0L
                 } else {
-                    val prevMsg = displayMessages[index - 1]
-                    MessageTimestampFormatter.isDifferentDay(prevMsg.sentAtEpochMs, msg.sentAtEpochMs)
+                    MessageTimestampFormatter.isDifferentDay(previousMessage.sentAtEpochMs, msg.sentAtEpochMs)
                 }
             }
             val dateHeaderText = remember(msg.sentAtEpochMs, appLanguage) {
@@ -172,6 +179,7 @@ internal fun ChatMessageList(
                 isSelectMode = isSelectMode,
                 isTyping = isTyping,
                 peerName = peerName,
+                myAvatarBitmap = myAvatarBitmap,
                 appLanguage = appLanguage,
                 animateOnAppearance = animateOnAppearance,
                 listState = listState,

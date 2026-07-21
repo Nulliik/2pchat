@@ -243,6 +243,12 @@ fun ChatScreen(
         pendingDownloadMsg = null
     }
     val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
+    var profilePhotoUri by remember {
+        mutableStateOf(sharedPrefs.getString("profile_photo_uri", null))
+    }
+    val myAvatarBitmap = remember(context, profilePhotoUri) {
+        com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)
+    }
     val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
     fun triggerHaptic(type: androidx.compose.ui.hapticfeedback.HapticFeedbackType = androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) {
         if (sharedPrefs.getBoolean("settings_haptic_feedback", true)) {
@@ -288,7 +294,9 @@ fun ChatScreen(
         val pendingFingerprintKey = P2PPreferences.pendingPeerFingerprint(peerName)
         val forwardingKey = "restrict_forwarding_${peerName}"
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
-            if (key == verificationKey) {
+            if (key == "profile_photo_uri") {
+                profilePhotoUri = prefs.getString(key, null)
+            } else if (key == verificationKey) {
                 isVerified = prefs.getBoolean(verificationKey, false)
             } else if (key == fingerprintKey) {
                 activeFingerprint = prefs.getString(fingerprintKey, null).orEmpty()
@@ -377,6 +385,9 @@ fun ChatScreen(
     val chatViewModel: ChatScreenViewModel = viewModel(key = "chat:$peerName")
     val initialMessages = chatViewModel.messages
     var isHistoryLoading by chatViewModel.isHistoryLoading
+    var loadedPersistedMessageCount by chatViewModel.loadedPersistedMessageCount
+    var hasMoreHistory by chatViewModel.hasMoreHistory
+    var isLoadingOlderHistory by chatViewModel.isLoadingOlderHistory
     val unreadMessagesOnOpen = remember(peerName, isActive) {
         if (isActive) sharedPrefs.getInt("unread_count_$peerName", 0) else 0
     }
@@ -385,6 +396,7 @@ fun ChatScreen(
         if (!isActive) return@LaunchedEffect
         hasAppliedInitialScroll = false
         isFastHistoryLoaded = false
+        isLoadingOlderHistory = false
         newMessagesBelowCount = 0
         // Re-entry may reuse a cached ViewModel. Move a fully read chat to its
         // latest message immediately, but leave unread chats for the unread
@@ -412,108 +424,110 @@ fun ChatScreen(
         // Reading and decrypting a large SQLCipher history can take noticeable
         // time. Fetch only the indexed recent unread rows first so every message
         // received while the chat was inactive appears immediately.
+        val fastHistoryLimit = fastHistoryMessageLimit(unreadMessagesOnOpen)
         val recentPersistedMessages = if (persistEnabled) {
             withContext(Dispatchers.IO) {
                 db.getMessagesForPeerPaged(
                     peerName = peerName,
-                    limit = fastHistoryMessageLimit(unreadMessagesOnOpen),
+                    limit = fastHistoryLimit,
                     offset = 0,
                 )
             }
         } else {
             emptyList()
         }
-        val fastSnapshot = mergeRecentHistoryMessages(
+        var fastSnapshot = mergeRecentHistoryMessages(
             currentMessages = initialMessages.toList(),
             recentPersistedMessages = recentPersistedMessages,
-        ).map { msg ->
+        )
+        if (fastSnapshot.isEmpty()) fastSnapshot = localDefaults
+        fastSnapshot = fastSnapshot.map { msg ->
             if (msg.id == "saved-messages-welcome") {
                 msg.copy(text = Localizations.getString("saved_messages_welcome", appLanguage))
             } else {
                 msg
             }
         }
+        loadedPersistedMessageCount = recentPersistedMessages.size
+        hasMoreHistory = persistEnabled && recentPersistedMessages.size >= fastHistoryLimit
         if (fastSnapshot != initialMessages.toList()) {
             initialMessages.clear()
             initialMessages.addAll(fastSnapshot)
         }
-        val initialUnreadAnchorMessageId = if (unreadMessagesOnOpen > 0) {
-            fastSnapshot.getOrNull(
-                initialChatScrollIndex(
-                    messageCount = fastSnapshot.size,
-                    unreadMessageCount = unreadMessagesOnOpen,
-                )
-            )?.id
-        } else {
-            null
-        }
-        isFastHistoryLoaded = true
-        if (fastSnapshot.isNotEmpty()) {
-            isHistoryLoading = false
-        }
-
-        val list = withContext(Dispatchers.IO) {
-            db.getMessagesForPeer(peerName)
-        }
-        if (persistEnabled && list.isEmpty() && localDefaults.isNotEmpty()) {
+        if (persistEnabled && recentPersistedMessages.isEmpty() && localDefaults.isNotEmpty()) {
             withContext(Dispatchers.IO) {
                 localDefaults.forEach { db.saveMessage(peerName, it) }
             }
+            loadedPersistedMessageCount = localDefaults.size
+            hasMoreHistory = false
         }
-        val mergedMessages = mergeHistorySnapshot(
-            persistedMessages = list,
-            // Capture after the database query. A live callback may have added a
-            // message while SQLCipher was reading and decrypting the history.
-            currentMessages = initialMessages.toList(),
-            defaultMessages = localDefaults,
-            persistHistory = persistEnabled,
-        ).map { msg ->
-            if (msg.id == "saved-messages-welcome") {
-                msg.copy(text = Localizations.getString("saved_messages_welcome", appLanguage))
-            } else {
-                msg
-            }
-        }
-        if (mergedMessages != initialMessages.toList()) {
-            val layoutInfoBeforeReplacement = listState.layoutInfo
-            val visibleItemsBeforeReplacement = layoutInfoBeforeReplacement.visibleItemsInfo
-            val firstVisibleMessage = visibleItemsBeforeReplacement
-                .firstOrNull { it.index in initialMessages.indices }
-            val anchorMessageId = firstVisibleMessage
-                ?.index
-                ?.let { initialMessages[it].id }
-            val anchorOffset = if (firstVisibleMessage?.index == listState.firstVisibleItemIndex) {
-                listState.firstVisibleItemScrollOffset
-            } else {
-                0
-            }
-            val wasAtBottomBeforeReplacement = visibleItemsBeforeReplacement
-                .lastOrNull()
-                ?.index
-                ?.let { it >= initialMessages.lastIndex }
-                // No layout yet means that initial bottom positioning is still
-                // pending. Keep targeting the bottom after the list grows.
-                ?: true
-
-            initialMessages.clear()
-            initialMessages.addAll(mergedMessages)
-
-            if (hasAppliedInitialScroll && !isSearchMode) {
-                val restoredIndex = historyReplacementScrollIndex(
-                    messages = mergedMessages,
-                    anchorMessageId = anchorMessageId,
-                    wasAtBottom = wasAtBottomBeforeReplacement,
-                    initialUnreadAnchorMessageId = initialUnreadAnchorMessageId,
-                )
-                if (restoredIndex >= 0) {
-                    listState.scrollToItem(
-                        restoredIndex,
-                        if (wasAtBottomBeforeReplacement) 0 else anchorOffset,
-                    )
-                }
-            }
-        }
+        isFastHistoryLoaded = true
         isHistoryLoading = false
+    }
+
+    suspend fun loadOlderHistoryPage(preserveScrollPosition: Boolean = true): Boolean {
+        if (!persistEnabled || !hasMoreHistory || isLoadingOlderHistory) return false
+        isLoadingOlderHistory = true
+        return try {
+            val currentMessages = initialMessages.toList()
+            val firstVisibleIndex = listState.firstVisibleItemIndex
+            val firstVisibleOffset = listState.firstVisibleItemScrollOffset
+            val olderPage = withContext(Dispatchers.IO) {
+                db.getMessagesForPeerPaged(
+                    peerName = peerName,
+                    limit = HISTORY_PAGE_SIZE,
+                    offset = loadedPersistedMessageCount,
+                )
+            }
+            loadedPersistedMessageCount += olderPage.size
+            hasMoreHistory = olderPage.size >= HISTORY_PAGE_SIZE
+            if (olderPage.isEmpty()) {
+                false
+            } else {
+                val mergedMessages = mergeOlderHistoryPage(currentMessages, olderPage)
+                val addedMessageCount = mergedMessages.size - currentMessages.size
+                if (mergedMessages != currentMessages) {
+                    initialMessages.clear()
+                    initialMessages.addAll(mergedMessages)
+                    if (preserveScrollPosition && addedMessageCount > 0) {
+                        listState.scrollToItem(
+                            (firstVisibleIndex + addedMessageCount).coerceAtMost(mergedMessages.lastIndex),
+                            firstVisibleOffset,
+                        )
+                    }
+                }
+                true
+            }
+        } finally {
+            isLoadingOlderHistory = false
+        }
+    }
+
+    LaunchedEffect(peerName, isActive, persistEnabled, isFastHistoryLoaded) {
+        if (!isActive || !persistEnabled || !isFastHistoryLoaded) return@LaunchedEffect
+        snapshotFlow {
+            listState.firstVisibleItemIndex <= 2 &&
+                hasMoreHistory &&
+                !isLoadingOlderHistory &&
+                !isSearchMode &&
+                !showProfileOverlay
+        }.collect { shouldLoadOlder ->
+            if (shouldLoadOlder) loadOlderHistoryPage()
+        }
+    }
+
+    // Search and Shared Media historically cover the complete conversation.
+    // Preserve that behavior, but defer the expensive full read until the user
+    // explicitly opens one of those views instead of doing it on every chat open.
+    LaunchedEffect(isSearchMode, showProfileOverlay, isFastHistoryLoaded) {
+        if ((!isSearchMode && !showProfileOverlay) || !isFastHistoryLoaded) return@LaunchedEffect
+        while (hasMoreHistory) {
+            if (isLoadingOlderHistory) {
+                delay(25)
+            } else if (!loadOlderHistoryPage(preserveScrollPosition = false)) {
+                break
+            }
+        }
     }
 
     fun sendVoiceRecording(recording: VoiceRecording) {
@@ -1368,6 +1382,7 @@ fun ChatScreen(
                 isSelectMode = isSelectMode,
                 isTyping = isTyping,
                 peerName = peerName,
+                myAvatarBitmap = myAvatarBitmap,
                 appLanguage = appLanguage,
                 arrivalAnimationTracker = arrivalAnimationTracker,
                 showScrollDownButton = showScrollDownButton,

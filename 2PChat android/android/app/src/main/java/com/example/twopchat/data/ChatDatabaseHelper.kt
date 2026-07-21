@@ -422,24 +422,23 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     }
 
     fun markMessagesAsRead(peerName: String) {
-        val db = this.safeWritableDatabase
-        db.beginTransaction()
         try {
-            val valuesEdited = ContentValues().apply {
-                put(KEY_STATUS, "READ_edited")
-            }
-            db.update(TABLE_MESSAGES, valuesEdited, "$KEY_PEER_NAME = ? AND $KEY_IS_ME = 0 AND $KEY_STATUS LIKE ?", arrayOf(peerName, "%edited%"))
-
-            val valuesNormal = ContentValues().apply {
-                put(KEY_STATUS, "READ")
-            }
-            db.update(TABLE_MESSAGES, valuesNormal, "$KEY_PEER_NAME = ? AND $KEY_IS_ME = 0 AND $KEY_STATUS NOT LIKE ? AND ($KEY_STATUS IS NULL OR $KEY_STATUS NOT LIKE ?)", arrayOf(peerName, "%edited%", "READ%"))
-
-            db.setTransactionSuccessful()
+            val db = this.safeWritableDatabase
+            db.execSQL(
+                """
+                UPDATE $TABLE_MESSAGES
+                SET $KEY_STATUS = CASE
+                    WHEN $KEY_STATUS LIKE '%edited%' THEN 'READ_edited'
+                    ELSE 'READ'
+                END
+                WHERE $KEY_PEER_NAME = ?
+                  AND $KEY_IS_ME = 0
+                  AND ($KEY_STATUS IS NULL OR $KEY_STATUS NOT LIKE 'READ%')
+                """.trimIndent(),
+                arrayOf(peerName),
+            )
         } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
-            db.endTransaction()
+            Log.e(TAG, "Failed to mark messages as read for $peerName", e)
         }
     }
 

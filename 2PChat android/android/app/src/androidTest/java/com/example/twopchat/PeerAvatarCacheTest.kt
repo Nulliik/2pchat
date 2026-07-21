@@ -36,4 +36,20 @@ class PeerAvatarCacheTest {
         assertTrue(directory.listFiles().orEmpty().isEmpty())
         bitmap.recycle()
     }
+
+    @Test
+    fun largeAvatarIsDownscaledInMemoryWithoutChangingAspectRatio() {
+        val cache = PeerAvatarCache(maxCachedDimensionPx = 128)
+        val bitmap = Bitmap.createBitmap(512, 256, Bitmap.Config.ARGB_8888)
+
+        cache.put("Alice", bitmap)
+
+        val cached = cache.avatars.getValue("Alice")
+        assertEquals(128, cached.width)
+        assertEquals(64, cached.height)
+        assertFalse(cached === bitmap)
+
+        cached.recycle()
+        bitmap.recycle()
+    }
 }

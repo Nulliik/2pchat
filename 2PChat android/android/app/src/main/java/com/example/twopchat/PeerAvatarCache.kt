@@ -16,17 +16,19 @@ import kotlin.concurrent.thread
 
 internal class PeerAvatarCache(
     private val maxBytes: Long = 16L * 1024L * 1024L,
+    private val maxCachedDimensionPx: Int = 128,
 ) {
     val avatars = mutableStateMapOf<String, Bitmap>()
     private val order = ArrayDeque<String>()
     private var sizeBytes = 0L
 
     fun put(peerName: String, bitmap: Bitmap) {
+        val cachedBitmap = bitmap.scaledForCache(maxCachedDimensionPx)
         avatars.remove(peerName)?.let { sizeBytes -= it.allocationByteCount.toLong() }
         order.remove(peerName)
-        avatars[peerName] = bitmap
+        avatars[peerName] = cachedBitmap
         order.addLast(peerName)
-        sizeBytes += bitmap.allocationByteCount.toLong()
+        sizeBytes += cachedBitmap.allocationByteCount.toLong()
         while (sizeBytes > maxBytes && order.size > 1) {
             val oldestPeer = order.removeFirst()
             avatars.remove(oldestPeer)?.let { sizeBytes -= it.allocationByteCount.toLong() }
@@ -118,6 +120,18 @@ internal class PeerAvatarCache(
             .digest(peerName.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
         return File(directory, "$digest$ENCRYPTED_EXTENSION")
+    }
+
+    private fun Bitmap.scaledForCache(maxDimensionPx: Int): Bitmap {
+        require(maxDimensionPx > 0) { "Cached avatar dimension must be positive" }
+        if (width <= maxDimensionPx && height <= maxDimensionPx) return this
+        val scale = minOf(
+            maxDimensionPx.toFloat() / width.toFloat(),
+            maxDimensionPx.toFloat() / height.toFloat(),
+        )
+        val targetWidth = (width * scale).toInt().coerceAtLeast(1)
+        val targetHeight = (height * scale).toInt().coerceAtLeast(1)
+        return Bitmap.createScaledBitmap(this, targetWidth, targetHeight, true)
     }
 
     private companion object {

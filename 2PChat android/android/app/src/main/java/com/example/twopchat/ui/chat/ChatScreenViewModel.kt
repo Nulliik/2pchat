@@ -1,6 +1,7 @@
 package com.example.twopchat.ui.chat
 
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 
@@ -8,6 +9,9 @@ import androidx.lifecycle.ViewModel
 class ChatScreenViewModel : ViewModel() {
     val messages = mutableStateListOf<Message>()
     val isHistoryLoading = mutableStateOf(true)
+    val loadedPersistedMessageCount = mutableIntStateOf(0)
+    val hasMoreHistory = mutableStateOf(true)
+    val isLoadingOlderHistory = mutableStateOf(false)
     val inputText = mutableStateOf("")
     val replyingToMessage = mutableStateOf<Message?>(null)
     val editingMessage = mutableStateOf<Message?>(null)
@@ -18,6 +22,8 @@ class ChatScreenViewModel : ViewModel() {
 
 internal fun fastHistoryMessageLimit(unreadMessageCount: Int): Int =
     maxOf(40, unreadMessageCount).coerceAtMost(100)
+
+internal const val HISTORY_PAGE_SIZE = 100
 
 /**
  * Applies a cheap recent-history lookup without disturbing the order of an
@@ -90,4 +96,56 @@ internal fun mergeHistorySnapshot(
         if (message.id !in merged) merged[message.id] = message
     }
     return merged.values.toList()
+}
+
+/**
+ * Merges an older database page without disturbing pages already retained by the
+ * ViewModel. An overlap can be larger than one row after leaving and reopening
+ * a chat, because the ViewModel may still own previously loaded pages.
+ */
+internal fun mergeOlderHistoryPage(
+    currentMessages: List<Message>,
+    olderPersistedMessages: List<Message>,
+): List<Message> {
+    if (olderPersistedMessages.isEmpty()) return currentMessages
+    val currentIds = currentMessages.asSequence().map { it.id }.toHashSet()
+    if (olderPersistedMessages.none { it.id in currentIds }) {
+        return olderPersistedMessages + currentMessages
+    }
+
+    val merged = currentMessages.toMutableList()
+    olderPersistedMessages.forEachIndexed { pageIndex, persistedMessage ->
+        val existingIndex = merged.indexOfFirst { it.id == persistedMessage.id }
+        if (existingIndex >= 0) {
+            val currentStatus = merged[existingIndex].status
+            merged[existingIndex] = if (
+                currentStatus?.startsWith("READ") == true &&
+                persistedMessage.status?.startsWith("READ") != true
+            ) {
+                persistedMessage.copy(status = currentStatus)
+            } else {
+                persistedMessage
+            }
+        } else {
+            val nextAnchorId = olderPersistedMessages
+                .asSequence()
+                .drop(pageIndex + 1)
+                .map { it.id }
+                .firstOrNull { candidateId -> merged.any { it.id == candidateId } }
+            if (nextAnchorId != null) {
+                merged.add(merged.indexOfFirst { it.id == nextAnchorId }, persistedMessage)
+            } else {
+                val previousAnchorId = olderPersistedMessages
+                    .asSequence()
+                    .take(pageIndex)
+                    .map { it.id }
+                    .lastOrNull { candidateId -> merged.any { it.id == candidateId } }
+                val insertionIndex = previousAnchorId
+                    ?.let { anchorId -> merged.indexOfFirst { it.id == anchorId } + 1 }
+                    ?: 0
+                merged.add(insertionIndex, persistedMessage)
+            }
+        }
+    }
+    return merged
 }

@@ -99,4 +99,37 @@ class ChatScreenViewModelTest {
 
         assertEquals("READ", merged.single().status)
     }
+
+    @Test
+    fun olderHistoryPageIsPrependedAndOverlappingBoundaryIsDeduplicated() {
+        val current = listOf(
+            Message("3", "current", false, "12:03"),
+            Message("4", "latest", false, "12:04"),
+        )
+        val olderPage = listOf(
+            Message("1", "oldest", false, "12:01"),
+            Message("2", "older", false, "12:02"),
+            Message("3", "stored", false, "12:03"),
+        )
+
+        val merged = mergeOlderHistoryPage(current, olderPage)
+
+        assertEquals(listOf("1", "2", "3", "4"), merged.map { it.id })
+        assertEquals("stored", merged[2].text)
+    }
+
+    @Test
+    fun olderHistoryPageDoesNotReorderPagesRetainedAcrossReentry() {
+        val retained = (1..10).map { index ->
+            Message(index.toString(), "message $index", false, "12:$index")
+        }
+        val overlappingPage = (4..8).map { index ->
+            Message(index.toString(), "stored $index", false, "12:$index")
+        }
+
+        val merged = mergeOlderHistoryPage(retained, overlappingPage)
+
+        assertEquals((1..10).map(Int::toString), merged.map { it.id })
+        assertEquals("stored 6", merged[5].text)
+    }
 }

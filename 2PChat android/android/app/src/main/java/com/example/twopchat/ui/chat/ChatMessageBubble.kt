@@ -1,5 +1,6 @@
 package com.example.twopchat.ui.chat
 
+import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
@@ -81,6 +82,7 @@ internal fun ChatMessageBubble(
     isSelectMode: Boolean,
     isTyping: Boolean,
     peerName: String,
+    myAvatarBitmap: Bitmap?,
     appLanguage: String,
     animateOnAppearance: Boolean,
     listState: LazyListState,
@@ -112,10 +114,6 @@ internal fun ChatMessageBubble(
     }
     val context = androidx.compose.ui.platform.LocalContext.current
     val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
-    val myAvatarBitmap = remember(context) {
-        val uri = sharedPrefs.getString("profile_photo_uri", null)
-        com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, uri)
-    }
     val linkPreviewsEnabled = remember(sharedPrefs) { sharedPrefs.getBoolean("settings_link_previews", false) }
     val isText = msg.attachmentType == null
     val isOnlyEmoji = isText && isSingleEmoji(msg.text)
