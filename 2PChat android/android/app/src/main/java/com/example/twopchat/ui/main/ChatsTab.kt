@@ -187,7 +187,7 @@ fun ChatsTab(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
             .verticalScroll(rememberScrollState())
     ) {
         // ─── Hero Identity Card ────────────────────────────────────
@@ -510,6 +510,53 @@ fun ChatsTab(
                         activeMenuPeer = peer
                     }
                 )
+            }
+
+            if (peers.isEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp, bottom = 8.dp)
+                        .border(0.5.dp, onSurfaceColor.copy(alpha = 0.06f), RoundedCornerShape(18.dp))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp).fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(primaryColor.copy(alpha = 0.12f), shape = CircleShape)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_saved_messages),
+                                contentDescription = "No Peers",
+                                tint = primaryColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = if (appLanguage == "Русский") "Пока нет активных чатов" else "No active chats yet",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onSurfaceColor
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (appLanguage == "Русский") 
+                                "Скопируйте ссылку на свой профиль выше или добавьте контакт во вкладке «Поиск»" 
+                            else 
+                                "Copy your profile link above or add contacts from the Search tab",
+                            fontSize = 12.sp,
+                            color = onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
             }
         }
 

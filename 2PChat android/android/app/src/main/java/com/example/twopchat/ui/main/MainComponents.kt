@@ -395,14 +395,15 @@ fun PeerRow(
                 Box(
                     modifier = Modifier
                         .background(badgeBg, shape = RoundedCornerShape(8.dp))
+                        .border(0.5.dp, badgeFg.copy(alpha = 0.22f), RoundedCornerShape(8.dp))
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text(
                         text = localizedTransport,
-                        fontSize = 9.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = badgeFg,
-                        letterSpacing = 0.5.sp
+                        letterSpacing = 0.6.sp
                     )
                 }
             }

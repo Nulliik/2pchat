@@ -596,24 +596,37 @@ fun KeySafetyStep(appLanguage: String, primaryColor: Color, onSurfaceColor: Colo
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        Text(
-            text = Localizations.getString("step2_title", appLanguage),
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            color = onSurfaceColor,
-            textAlign = TextAlign.Center
-        )
+        Card(
+            colors = CardDefaults.cardColors(containerColor = primaryColor.copy(alpha = 0.06f)),
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp)
+                .border(0.5.dp, primaryColor.copy(alpha = 0.2f), RoundedCornerShape(20.dp))
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp).fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = Localizations.getString("step2_title", appLanguage),
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor,
+                    textAlign = TextAlign.Center
+                )
 
-        Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-        Text(
-            text = Localizations.getString("step2_desc", appLanguage),
-            fontSize = 15.sp,
-            color = onSurfaceColor.copy(alpha = 0.7f),
-            textAlign = TextAlign.Center,
-            lineHeight = 22.sp,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
+                Text(
+                    text = Localizations.getString("step2_desc", appLanguage),
+                    fontSize = 14.sp,
+                    color = onSurfaceColor.copy(alpha = 0.8f),
+                    textAlign = TextAlign.Center,
+                    lineHeight = 21.sp
+                )
+            }
+        }
     }
 }
 
