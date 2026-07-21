@@ -776,16 +776,23 @@ object P2PMessageRelay {
                                 }
                                 "file_progress" -> {
                                     val msgId = json.optString("message_id")
+                                    val fileName = json.optString("file_name")
                                     val bytesTransferred = json.optLong("bytes_transferred")
                                     val totalBytes = json.optLong("total_bytes")
                                     val speedKbps = json.optDouble("speed_kbps", 0.0)
+                                    val info = FileProgressInfo(
+                                        bytesTransferred = bytesTransferred,
+                                        totalBytes = totalBytes,
+                                        speedKbps = speedKbps
+                                    )
                                     android.os.Handler(android.os.Looper.getMainLooper()).post {
                                         if (msgId.isNotEmpty()) {
-                                            fileProgressStates["$sender:$msgId"] = FileProgressInfo(
-                                                bytesTransferred = bytesTransferred,
-                                                totalBytes = totalBytes,
-                                                speedKbps = speedKbps
-                                            )
+                                            fileProgressStates["$sender:$msgId"] = info
+                                            fileProgressStates[msgId] = info
+                                        }
+                                        if (fileName.isNotEmpty()) {
+                                            fileProgressStates["$sender:$fileName"] = info
+                                            fileProgressStates[fileName] = info
                                         }
                                         messageListeners.forEach {
                                             it.onFileProgress(sender, msgId, bytesTransferred, totalBytes, speedKbps)
