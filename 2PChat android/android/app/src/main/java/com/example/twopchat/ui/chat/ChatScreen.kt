@@ -563,6 +563,13 @@ fun ChatScreen(
     var myTypingState by remember { mutableStateOf(false) }
     val isTyping = P2PMessageRelay.peerTypingStates[peerName] ?: false
 
+    LaunchedEffect(peerName) {
+        val savedDraft = sharedPrefs.getString(P2PPreferences.draftMessage(peerName), null)
+        if (!savedDraft.isNullOrEmpty() && inputText.isEmpty()) {
+            inputText = savedDraft
+        }
+    }
+
     LaunchedEffect(peerName, isActive) {
         if (!isActive) return@LaunchedEffect
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
@@ -575,6 +582,18 @@ fun ChatScreen(
     }
 
     LaunchedEffect(inputText) {
+        val draftKey = P2PPreferences.draftMessage(peerName)
+        val currentDraft = sharedPrefs.getString(draftKey, null)
+        if (inputText.isNotEmpty()) {
+            if (currentDraft != inputText) {
+                sharedPrefs.edit().putString(draftKey, inputText).apply()
+            }
+        } else {
+            if (currentDraft != null) {
+                sharedPrefs.edit().remove(draftKey).apply()
+            }
+        }
+
         if (peerName == "Saved Messages") return@LaunchedEffect
         val endpoint = P2PMessageRelay.peerEndpoints[peerName] ?: return@LaunchedEffect
         val isCurrentlyTyping = inputText.isNotEmpty()
@@ -626,6 +645,17 @@ fun ChatScreen(
                             status = MessageDeliveryStatus.merge(current.status, status)
                         )
                     }
+                }
+            }
+
+            override fun onFileProgress(sender: String, msgId: String, bytesTransferred: Long, totalBytes: Long, speedKbps: Double) {
+                if (sender == peerName || msgId.isNotEmpty()) {
+                    val key = if (sender.isNotEmpty()) "$sender:$msgId" else msgId
+                    P2PMessageRelay.fileProgressStates[key] = P2PMessageRelay.FileProgressInfo(
+                        bytesTransferred = bytesTransferred,
+                        totalBytes = totalBytes,
+                        speedKbps = speedKbps
+                    )
                 }
             }
 

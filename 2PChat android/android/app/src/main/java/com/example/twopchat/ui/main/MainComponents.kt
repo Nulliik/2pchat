@@ -37,6 +37,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -144,7 +147,8 @@ data class PeerItem(
     val initials: String,
     val unreadCount: Int = 0,
     val isPinned: Boolean = false,
-    val isBlocked: Boolean = false
+    val isBlocked: Boolean = false,
+    val hasDraft: Boolean = false
 )
 
 data class ContactItem(
@@ -298,14 +302,36 @@ fun PeerRow(
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = peer.lastMsg,
-                        fontSize = 12.sp,
-                        color = if (peer.unreadCount > 0) onSurfaceColor else onSurfaceVariant,
-                        fontWeight = if (peer.unreadCount > 0) FontWeight.Bold else FontWeight.Normal,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    if (peer.hasDraft) {
+                        val draftPrefix = if (appLanguage == "Русский") "Черновик: " else "Draft: "
+                        val draftContent = peer.lastMsg.removePrefix(draftPrefix)
+                        Text(
+                            text = buildAnnotatedString {
+                                withStyle(
+                                    style = SpanStyle(
+                                        color = Color(0xFFE53935),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                ) {
+                                    append(draftPrefix)
+                                }
+                                append(draftContent)
+                            },
+                            fontSize = 12.sp,
+                            color = onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else {
+                        Text(
+                            text = peer.lastMsg,
+                            fontSize = 12.sp,
+                            color = if (peer.unreadCount > 0) onSurfaceColor else onSurfaceVariant,
+                            fontWeight = if (peer.unreadCount > 0) FontWeight.Bold else FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
             

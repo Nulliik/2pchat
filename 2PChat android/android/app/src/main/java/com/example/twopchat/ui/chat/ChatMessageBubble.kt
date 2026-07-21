@@ -412,36 +412,65 @@ internal fun ChatMessageBubble(
                                     }
                                 }
                                 "FILE" -> {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier
-                                                .size(40.dp)
-                                                .background(if (msg.isMe) Color.White.copy(alpha = 0.2f) else primaryColor.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp))
-                                        ) {
-                                            Icon(
-                                                painter = painterResource(id = R.drawable.ic_attach_file),
-                                                contentDescription = "Document",
-                                                tint = if (msg.isMe) {
-                                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
-                                                } else primaryColor,
-                                                modifier = Modifier.size(22.dp)
-                                            )
+                                    val progressInfo = com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:${msg.id}"]
+                                        ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[":${msg.id}"]
+                                        ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[msg.id]
+                                    
+                                    val isTransferring = progressInfo != null && progressInfo.bytesTransferred < progressInfo.totalBytes && progressInfo.totalBytes > 0
+
+                                    Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                contentAlignment = Alignment.Center,
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .background(if (msg.isMe) Color.White.copy(alpha = 0.2f) else primaryColor.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp))
+                                            ) {
+                                                Icon(
+                                                    painter = painterResource(id = R.drawable.ic_attach_file),
+                                                    contentDescription = "Document",
+                                                    tint = if (msg.isMe) {
+                                                        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+                                                    } else primaryColor,
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text(
+                                                    text = msg.attachmentName ?: "Document.pdf",
+                                                    color = textColor,
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1,
+                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                )
+                                                val subtext = if (isTransferring && progressInfo != null) {
+                                                    val pct = (progressInfo.bytesTransferred * 100 / progressInfo.totalBytes).toInt()
+                                                    val speedStr = if (progressInfo.speedKbps >= 1024) {
+                                                        String.format(java.util.Locale.US, "%.1f MB/s", progressInfo.speedKbps / 1024.0)
+                                                    } else {
+                                                        "${progressInfo.speedKbps.toInt()} KB/s"
+                                                    }
+                                                    "$pct% • $speedStr"
+                                                } else {
+                                                    "Encrypted Document"
+                                                }
+                                                Text(
+                                                    text = subtext,
+                                                    color = if (isTransferring) (if (msg.isMe) Color.White else primaryColor) else textColor.copy(alpha = 0.7f),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = if (isTransferring) FontWeight.Bold else FontWeight.Normal
+                                                )
+                                            }
                                         }
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column {
-                                            Text(
-                                                text = msg.attachmentName ?: "Document.pdf",
-                                                color = textColor,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                maxLines = 1,
-                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = "Encrypted Document",
-                                                color = textColor.copy(alpha = 0.7f),
-                                                fontSize = 11.sp
+                                        if (isTransferring && progressInfo != null) {
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            androidx.compose.material3.LinearProgressIndicator(
+                                                progress = { (progressInfo.bytesTransferred.toFloat() / progressInfo.totalBytes.toFloat()).coerceIn(0f, 1f) },
+                                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                                color = if (msg.isMe) Color.White else primaryColor,
+                                                trackColor = textColor.copy(alpha = 0.2f)
                                             )
                                         }
                                     }

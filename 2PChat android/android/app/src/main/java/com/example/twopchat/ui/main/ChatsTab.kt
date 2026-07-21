@@ -95,7 +95,7 @@ fun ChatsTab(
             if (key == "active_chats") {
                 activeChatsSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
             }
-            if (key == "active_chats" || key?.startsWith("last_msg_") == true || key?.startsWith("transport_") == true || key?.startsWith("last_endpoint_") == true || key?.startsWith("unread_count_") == true) {
+            if (key == "active_chats" || key?.startsWith("last_msg_") == true || key?.startsWith("draft_msg_") == true || key?.startsWith("transport_") == true || key?.startsWith("last_endpoint_") == true || key?.startsWith("unread_count_") == true) {
                 // The chat set itself usually stays equal when a message
                 // arrives. Keep a separate revision so Compose refreshes the
                 // preview and unread badge on the main screen.
@@ -118,9 +118,16 @@ fun ChatsTab(
     // visible immediately even when SharedPreferences hasn't changed.
     val peerNames = remember(activeChatsSet, chatListRevision) { activeChatsSet.toList() }
     val peers = peerNames.map { name ->
-            val lastMsg = com.example.twopchat.SecureStorage.decrypt(
-                sharedPrefs.getString("last_msg_$name", null)
-            ) ?: "No messages yet"
+            val draft = sharedPrefs.getString(com.example.twopchat.P2PPreferences.draftMessage(name), null)?.takeIf { it.isNotBlank() }
+            val hasDraft = draft != null
+            val draftPrefix = if (appLanguage == "Русский") "Черновик: " else "Draft: "
+            val lastMsg = if (hasDraft) {
+                "$draftPrefix$draft"
+            } else {
+                com.example.twopchat.SecureStorage.decrypt(
+                    sharedPrefs.getString("last_msg_$name", null)
+                ) ?: "No messages yet"
+            }
             val transport = canonicalConnectionTransport(
                 rawTransport = P2PMessageRelay.peerConnectionTransports[name]
                     ?: sharedPrefs.getString("transport_$name", null),
@@ -137,7 +144,8 @@ fun ChatsTab(
                 initials = if (name.length >= 2) name.substring(0, 2).uppercase() else name.uppercase(),
                 unreadCount = sharedPrefs.getInt("unread_count_$name", 0),
                 isPinned = isPinned,
-                isBlocked = isBlocked
+                isBlocked = isBlocked,
+                hasDraft = hasDraft
             )
     }.sortedWith(
         compareByDescending<PeerItem> { it.isPinned }

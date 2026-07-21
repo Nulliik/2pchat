@@ -136,6 +136,14 @@ object P2PMessageRelay {
         }
     }
 
+    data class FileProgressInfo(
+        val bytesTransferred: Long,
+        val totalBytes: Long,
+        val speedKbps: Double
+    )
+
+    val fileProgressStates = mutableStateMapOf<String, FileProgressInfo>()
+
     interface MessageListener {
         fun onMessageReceived(sender: String, text: String) {}
         fun onMessageReceived(sender: String, message: Message) {
@@ -150,6 +158,7 @@ object P2PMessageRelay {
         fun onMessageEdited(sender: String, msgId: String, text: String) {}
         fun onMessageDeleted(sender: String, msgId: String) {}
         fun onForwardingStateChanged(sender: String, enabled: Boolean) {}
+        fun onFileProgress(sender: String, msgId: String, bytesTransferred: Long, totalBytes: Long, speedKbps: Double) {}
     }
 
     private val messageListeners = java.util.concurrent.CopyOnWriteArrayList<MessageListener>()
@@ -763,6 +772,25 @@ object P2PMessageRelay {
                                 }
                                 "pin_state_ack" -> {
                                     outboundMessenger.acknowledgeControl(appContext, json.optString("control_id"))
+                                    return
+                                }
+                                "file_progress" -> {
+                                    val msgId = json.optString("message_id")
+                                    val bytesTransferred = json.optLong("bytes_transferred")
+                                    val totalBytes = json.optLong("total_bytes")
+                                    val speedKbps = json.optDouble("speed_kbps", 0.0)
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        if (msgId.isNotEmpty()) {
+                                            fileProgressStates["$sender:$msgId"] = FileProgressInfo(
+                                                bytesTransferred = bytesTransferred,
+                                                totalBytes = totalBytes,
+                                                speedKbps = speedKbps
+                                            )
+                                        }
+                                        messageListeners.forEach {
+                                            it.onFileProgress(sender, msgId, bytesTransferred, totalBytes, speedKbps)
+                                        }
+                                    }
                                     return
                                 }
                                 "forwarding_state" -> {

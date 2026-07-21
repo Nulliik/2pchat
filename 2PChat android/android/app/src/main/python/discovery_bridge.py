@@ -1612,6 +1612,24 @@ async def _read_loop(session, peer_name, fp):
                     state["next_index"] += 1
                     state["updated_at"] = now
 
+                    if "start_time" not in state:
+                        state["start_time"] = time.time()
+                    elapsed = max(0.001, time.time() - state["start_time"])
+                    speed_kbps = (state["written"] / 1024) / elapsed
+                    if message_listener_callback and state.get("meta"):
+                        progress_notification = {
+                            "type": "file_progress",
+                            "message_id": str(state["meta"].get("message_id", "")),
+                            "file_name": str(state["meta"].get("file_name", "")),
+                            "bytes_transferred": state["written"],
+                            "total_bytes": declared_size,
+                            "speed_kbps": round(speed_kbps, 1)
+                        }
+                        try:
+                            message_listener_callback.onMessageReceived(peer_name, json.dumps(progress_notification))
+                        except Exception:
+                            pass
+
                 meta = state.get("meta") if state else None
                 if meta and state["next_index"] == int(meta.get("num_chunks", 0)):
                         file_name = f"file-{file_id_str}"
@@ -2039,6 +2057,9 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
                 raise
         
         print("Sending file chunks...")
+        import time
+        start_time = time.time()
+        bytes_sent = 0
         for chunk_index, encrypted_chunk in chunk_iterator:
             payload = {
                 "type": "file_chunk",
@@ -2047,6 +2068,22 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
                 "payload": base64.b64encode(encrypted_chunk).decode(),
             }
             await session.send_reliable(payload)
+            bytes_sent += len(encrypted_chunk)
+            elapsed = max(0.001, time.time() - start_time)
+            speed_kbps = (bytes_sent / 1024) / elapsed
+            if message_listener_callback and message_id:
+                progress_notification = {
+                    "type": "file_progress",
+                    "message_id": str(message_id),
+                    "file_name": Path(file_path).name,
+                    "bytes_transferred": bytes_sent,
+                    "total_bytes": file_size,
+                    "speed_kbps": round(speed_kbps, 1)
+                }
+                try:
+                    message_listener_callback.onMessageReceived(peer_name, json.dumps(progress_notification))
+                except Exception:
+                    pass
             
         print(f"File successfully transmitted to {peer_name}")
         return True
