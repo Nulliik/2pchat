@@ -40,7 +40,7 @@ fun SwipeToReplyContainer(
                 onDragStart = {},
                 onDragEnd = {
                     hasTriggeredHapticForSwipe = false
-                    if (abs(offsetX.value) > threshold) onReply()
+                    if (offsetX.value < -threshold) onReply()
                     coroutineScope.launch {
                         offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioNoBouncy))
                     }
@@ -53,10 +53,10 @@ fun SwipeToReplyContainer(
                 },
                 onHorizontalDrag = { change, dragAmount ->
                     change.consume()
-                    val newOffset = (offsetX.value + dragAmount).coerceIn(-limit, limit)
+                    val newOffset = (offsetX.value + dragAmount).coerceIn(-limit, 0f)
                     coroutineScope.launch { offsetX.snapTo(newOffset) }
                     
-                    val crossed = abs(newOffset) >= threshold
+                    val crossed = newOffset <= -threshold
                     if (crossed && !hasTriggeredHapticForSwipe) {
                         if (sharedPrefs.getBoolean("settings_haptic_feedback", true)) {
                             try {
@@ -71,13 +71,13 @@ fun SwipeToReplyContainer(
             )
         },
     ) {
-        if (offsetX.value != 0f) {
-            val alignment = if (offsetX.value > 0) Alignment.CenterStart else Alignment.CenterEnd
-            val iconAlpha = (abs(offsetX.value) / threshold).coerceIn(0f, 1f)
-            val iconScale = (abs(offsetX.value) / threshold).coerceIn(0.5f, 1f)
+        if (offsetX.value < 0f) {
+            val progress = (-offsetX.value / threshold).coerceIn(0f, 1f)
+            val iconAlpha = progress
+            val iconScale = (progress * 0.5f + 0.5f).coerceIn(0.5f, 1f)
             Box(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                contentAlignment = alignment,
+                contentAlignment = Alignment.CenterEnd,
             ) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_reply),
