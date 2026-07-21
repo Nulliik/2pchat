@@ -26,9 +26,14 @@ fun SwipeToReplyContainer(
     content: @Composable () -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val deadzonePx = with(density) { 18.dp.toPx() }
+    val thresholdPx = with(density) { 75.dp.toPx() }
+    val maxLimitPx = with(density) { 110.dp.toPx() }
+
     val offsetX = remember { androidx.compose.animation.core.Animatable(0f) }
-    val threshold = 120f
-    val limit = 200f
+    var totalDragPx by remember { mutableFloatStateOf(0f) }
+
     val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
@@ -37,26 +42,37 @@ fun SwipeToReplyContainer(
     Box(
         modifier = modifier.fillMaxWidth().pointerInput(Unit) {
             detectHorizontalDragGestures(
-                onDragStart = {},
+                onDragStart = {
+                    totalDragPx = 0f
+                    hasTriggeredHapticForSwipe = false
+                },
                 onDragEnd = {
                     hasTriggeredHapticForSwipe = false
-                    if (offsetX.value < -threshold) onReply()
+                    if (offsetX.value < -thresholdPx) onReply()
                     coroutineScope.launch {
-                        offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioNoBouncy))
+                        offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
                     }
+                    totalDragPx = 0f
                 },
                 onDragCancel = {
                     hasTriggeredHapticForSwipe = false
                     coroutineScope.launch {
-                        offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioNoBouncy))
+                        offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
                     }
+                    totalDragPx = 0f
                 },
                 onHorizontalDrag = { change, dragAmount ->
                     change.consume()
-                    val newOffset = (offsetX.value + dragAmount).coerceIn(-limit, 0f)
+                    totalDragPx += dragAmount
+                    val effectiveDrag = if (totalDragPx < -deadzonePx) {
+                        (totalDragPx + deadzonePx) * 0.45f
+                    } else {
+                        0f
+                    }
+                    val newOffset = effectiveDrag.coerceIn(-maxLimitPx, 0f)
                     coroutineScope.launch { offsetX.snapTo(newOffset) }
-                    
-                    val crossed = newOffset <= -threshold
+
+                    val crossed = newOffset <= -thresholdPx
                     if (crossed && !hasTriggeredHapticForSwipe) {
                         if (sharedPrefs.getBoolean("settings_haptic_feedback", true)) {
                             try {
@@ -72,11 +88,11 @@ fun SwipeToReplyContainer(
         },
     ) {
         if (offsetX.value < 0f) {
-            val progress = (-offsetX.value / threshold).coerceIn(0f, 1f)
+            val progress = (-offsetX.value / thresholdPx).coerceIn(0f, 1f)
             val iconAlpha = progress
-            val iconScale = (progress * 0.5f + 0.5f).coerceIn(0.5f, 1f)
+            val iconScale = (progress * 0.4f + 0.6f).coerceIn(0.6f, 1f)
             Box(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxSize().padding(end = 16.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) {
                 Icon(
