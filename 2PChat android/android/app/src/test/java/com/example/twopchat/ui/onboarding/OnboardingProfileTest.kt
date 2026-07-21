@@ -6,7 +6,7 @@ import org.junit.Test
 class OnboardingProfileTest {
     @Test
     fun `normalizes surrounding and repeated whitespace`() {
-        assertEquals("Bob Smith", normalizeProfileName("  Bob\t  Smith  "))
+        assertEquals("Bob_Smith", normalizeProfileName("  Bob\t  Smith  "))
     }
 
     @Test

@@ -69,7 +69,7 @@ internal fun parsePeerSearchAddress(value: String): PeerSearchAddress? {
     val separator = trimmed.lastIndexOf('#')
     if (separator <= 0 || separator == trimmed.lastIndex) return null
 
-    val nickname = trimmed.substring(0, separator).trim()
+    val nickname = trimmed.substring(0, separator).trim().replace(Regex("\\s+"), "_")
     val discoveryCode = trimmed.substring(separator + 1).trim()
     if (nickname.isEmpty() || discoveryCode.isEmpty()) return null
     return PeerSearchAddress(nickname, discoveryCode)
@@ -143,7 +143,8 @@ fun ContactsTab(
     var resolveInviteStatus by remember { mutableStateOf("") }
     
     val sharedPrefs = remember { com.example.twopchat.P2PPreferences.prefs(context) }
-    val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
+    val rawUsername = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
+    val username = remember(rawUsername) { rawUsername.trim().replace(Regex("\\s+"), "_") }
     val discoveryCode = remember { PythonBridge.getOrCreateDiscoveryCode() }
     val contactAddress = remember(username, discoveryCode) { "$username#$discoveryCode" }
     var fingerprint by remember { mutableStateOf("Loading...") }
