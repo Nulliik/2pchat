@@ -426,7 +426,13 @@ fun ChatScreen(
         val fastSnapshot = mergeRecentHistoryMessages(
             currentMessages = initialMessages.toList(),
             recentPersistedMessages = recentPersistedMessages,
-        )
+        ).map { msg ->
+            if (msg.id == "saved-messages-welcome") {
+                msg.copy(text = Localizations.getString("saved_messages_welcome", appLanguage))
+            } else {
+                msg
+            }
+        }
         if (fastSnapshot != initialMessages.toList()) {
             initialMessages.clear()
             initialMessages.addAll(fastSnapshot)
@@ -461,7 +467,13 @@ fun ChatScreen(
             currentMessages = initialMessages.toList(),
             defaultMessages = localDefaults,
             persistHistory = persistEnabled,
-        )
+        ).map { msg ->
+            if (msg.id == "saved-messages-welcome") {
+                msg.copy(text = Localizations.getString("saved_messages_welcome", appLanguage))
+            } else {
+                msg
+            }
+        }
         if (mergedMessages != initialMessages.toList()) {
             val layoutInfoBeforeReplacement = listState.layoutInfo
             val visibleItemsBeforeReplacement = layoutInfoBeforeReplacement.visibleItemsInfo
