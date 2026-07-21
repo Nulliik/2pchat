@@ -307,7 +307,7 @@ fun ContactsTab(
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 10.dp, bottom = 8.dp)
+                .padding(top = 12.dp, bottom = 12.dp)
                 .height(48.dp)
                 .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
         ) {
@@ -403,7 +403,7 @@ fun ContactsTab(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 10.dp),
+                .padding(bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Tool 1: Link Settings
@@ -412,7 +412,7 @@ fun ContactsTab(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .weight(1f)
-                    .height(38.dp)
+                    .height(40.dp)
                     .clickable {
                         showInvitePanel = !showInvitePanel
                         if (showInvitePanel) showQrPanel = false
@@ -450,7 +450,7 @@ fun ContactsTab(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .weight(1f)
-                    .height(38.dp)
+                    .height(40.dp)
                     .clickable {
                         showQrPanel = !showQrPanel
                         if (showQrPanel) showInvitePanel = false
@@ -489,7 +489,7 @@ fun ContactsTab(
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier
                     .weight(1.1f)
-                    .height(38.dp)
+                    .height(40.dp)
                     .clickable { performSearch(searchQuery) }
                     .border(
                         1.dp,
@@ -525,7 +525,7 @@ fun ContactsTab(
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 6.dp)
+                    .padding(bottom = 12.dp)
                     .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
             ) {
                 Row(
@@ -1082,7 +1082,6 @@ fun ContactsTab(
             }
 
             if (contactsToDisplay.isEmpty()) {
-                Spacer(modifier = Modifier.height(16.dp))
                 Card(
                     colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.5f)),
                     shape = RoundedCornerShape(20.dp),
