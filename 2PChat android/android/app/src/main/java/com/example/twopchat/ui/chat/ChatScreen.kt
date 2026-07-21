@@ -260,10 +260,10 @@ fun ChatScreen(
     var isForwardingRestricted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("restrict_forwarding_${peerName}", false)) }
     var forwardingNotificationPill by remember(peerName) { mutableStateOf<String?>(null) }
     
-    // Auto-hide forwarding notification pill after 30s
+    // Auto-hide forwarding notification pill after 15s
     LaunchedEffect(forwardingNotificationPill) {
         if (forwardingNotificationPill != null) {
-            kotlinx.coroutines.delay(30000)
+            kotlinx.coroutines.delay(15000)
             forwardingNotificationPill = null
         }
     }
