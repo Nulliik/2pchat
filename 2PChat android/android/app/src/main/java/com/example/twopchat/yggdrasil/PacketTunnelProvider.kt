@@ -332,19 +332,13 @@ open class PacketTunnelProvider: VpnService() {
 
             // The first start uses the embedded offline public-peer snapshot.
             // After it has had time to establish links, retain only the best
-            // live links and restart once so the excess dial attempts stop.
+            // live links for future starts without tearing down active TUN sockets.
             if (
                 !publicPeerPoolPruned.get() &&
-                curTime - probeStartedAt >= 25_000 &&
-                config.retainBestLivePeers(yggdrasil.peersJSON)
+                curTime - probeStartedAt >= 25_000
             ) {
+                config.retainBestLivePeers(yggdrasil.peersJSON)
                 publicPeerPoolPruned.set(true)
-                thread(name = "Yggdrasil-pruned-restart") {
-                    stop(stopService = false)
-                    yggdrasil = Yggdrasil()
-                    start()
-                }
-                return
             }
 
             if (Thread.currentThread().isInterrupted) {

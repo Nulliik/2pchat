@@ -303,7 +303,14 @@ async def _register_authenticated_session(session, peer_fp: str, *, initiator: b
         local_fp = fingerprint(load_or_create_identity().public_key)
     session._bridge_initiator = initiator
     existing = active_sessions.get(peer_fp)
-    if not existing or not getattr(existing, "is_online", False):
+    existing_online = (
+        existing is not None
+        and getattr(existing, "is_online", False)
+        and hasattr(existing, "writer")
+        and existing.writer is not None
+        and not existing.writer.is_closing()
+    )
+    if not existing_online:
         active_sessions[peer_fp] = session
         return session
 

@@ -104,19 +104,22 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Initialize Chaquopy Python
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(this))
+        // Initialize Chaquopy Python & PythonBridge asynchronously to avoid UI main thread ANR
+        val appContext = applicationContext
+        kotlin.concurrent.thread(name = "PythonCore-Init") {
+            try {
+                if (!Python.isStarted()) {
+                    Python.start(AndroidPlatform(appContext))
+                }
+                PythonBridge.init(appContext)
+                androidx.core.content.ContextCompat.startForegroundService(
+                    appContext,
+                    Intent(appContext, P2PRelayService::class.java),
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "Error initializing Python core in background", e)
+            }
         }
-        
-        // Initialize PythonBridge
-        PythonBridge.init(applicationContext)
-        
-        // The foreground service, rather than this Activity, owns the P2P listener.
-        androidx.core.content.ContextCompat.startForegroundService(
-            this,
-            Intent(this, P2PRelayService::class.java),
-        )
 
         // Start Yggdrasil VPN service automatically if enabled and prepared
         val yggPrefs = P2PPreferences.prefs(this)
