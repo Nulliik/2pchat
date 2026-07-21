@@ -20,6 +20,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.*
@@ -299,55 +302,92 @@ fun ContactsTab(
             .verticalScroll(rememberScrollState())
     ) {
         // Full-Width Search Input Field
-        TextField(
-            value = searchQuery,
-            onValueChange = { 
-                searchQuery = it 
-                if (it.isBlank()) {
-                    // Reset live search results when cleared
-                }
-            },
-            leadingIcon = {
+        Surface(
+            color = surfaceColor,
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 10.dp, bottom = 8.dp)
+                .height(48.dp)
+                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Icon(
                     painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_search),
                     contentDescription = "Search Icon",
                     tint = primaryColor,
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(18.dp)
                 )
-            },
-            placeholder = {
-                Text(
-                    text = if (appLanguage == "Русский") "Имя#код или ссылка 2PChat" else "Name#code or 2PChat link",
-                    color = onSurfaceVariant.copy(alpha = 0.5f),
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            trailingIcon = {
+                
+                Spacer(modifier = Modifier.width(10.dp))
+                
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (searchQuery.isEmpty()) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Имя#код или ссылка 2PChat" else "Name#code or 2PChat link",
+                            color = onSurfaceVariant.copy(alpha = 0.5f),
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        singleLine = true,
+                        cursorBrush = SolidColor(primaryColor),
+                        textStyle = TextStyle(
+                            color = onSurfaceColor,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
                 if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clickable { searchQuery = "" },
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text(
                             text = "✕",
-                            fontSize = 16.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = onSurfaceVariant
                         )
                     }
                 } else {
-                    IconButton(onClick = {
-                        val pasted = readTextFromClipboard(context).trim()
-                        if (pasted.startsWith("2pchat://connect") || pasted.contains('#')) {
-                            searchQuery = pasted
-                            performSearch(pasted)
-                        } else {
-                            Toast.makeText(
-                                context,
-                                if (appLanguage == "Русский") "В буфере нет адреса контакта" else "Clipboard doesn't contain a contact address",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clickable {
+                                val pasted = readTextFromClipboard(context).trim()
+                                if (pasted.startsWith("2pchat://connect") || pasted.contains('#')) {
+                                    searchQuery = pasted
+                                    performSearch(pasted)
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        if (appLanguage == "Русский") "В буфере нет адреса контакта" else "Clipboard doesn't contain a contact address",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
                         Icon(
                             painter = painterResource(id = com.example.twopchat.R.drawable.ic_copy_key),
                             contentDescription = if (appLanguage == "Русский") "Вставить из буфера" else "Paste from clipboard",
@@ -356,23 +396,8 @@ fun ContactsTab(
                         )
                     }
                 }
-            },
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = surfaceColor,
-                unfocusedContainerColor = surfaceColor,
-                focusedTextColor = onSurfaceColor,
-                unfocusedTextColor = onSurfaceColor,
-                focusedIndicatorColor = primaryColor,
-                unfocusedIndicatorColor = Color.Transparent
-            ),
-            shape = RoundedCornerShape(16.dp),
-            singleLine = true,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp, bottom = 8.dp)
-                .height(50.dp)
-                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
-        )
+            }
+        }
 
         // Quick Tools Row (Invite Link / QR Code / Direct Search)
         Row(
