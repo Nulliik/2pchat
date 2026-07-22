@@ -655,15 +655,15 @@ internal fun ChatMessageBubble(
                                     val isPending = msg.status?.startsWith("PENDING") == true
                                     
                                     val statusColor = if (isOnlyEmoji) {
-                                        if (isRead) primaryColor else onSurfaceVariant.copy(alpha = 0.4f)
+                                        onSurfaceVariant.copy(alpha = 0.5f)
                                     } else if (msg.isMe) {
                                         if (primaryColor == com.example.twopchat.theme.MintGreen) {
-                                            if (isRead) StealthBlack else StealthBlack.copy(alpha = 0.4f)
+                                            StealthBlack.copy(alpha = 0.45f)
                                         } else {
-                                            if (isRead) Color.White else Color.White.copy(alpha = 0.5f)
+                                            Color.White.copy(alpha = 0.55f)
                                         }
                                     } else {
-                                        if (isRead) primaryColor else onSurfaceVariant.copy(alpha = 0.4f)
+                                        onSurfaceVariant.copy(alpha = 0.5f)
                                     }
                                     
                                     if (isPending) {
