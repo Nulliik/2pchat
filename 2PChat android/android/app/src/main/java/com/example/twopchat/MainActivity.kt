@@ -259,11 +259,8 @@ class MainActivity : ComponentActivity() {
                     ) { targetScreen ->
                         when (targetScreen) {
                             "splash" -> {
-                                Image(
-                                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.splash_background),
-                                    contentDescription = "Splash Screen",
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                com.example.twopchat.ui.main.AnimatedSplashScreen(
+                                    primaryColor = MaterialTheme.colorScheme.primary
                                 )
                             }
                             "disguise" -> {
