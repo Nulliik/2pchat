@@ -1,11 +1,12 @@
 import asyncio
 import base64
 import contextlib
+import inspect
 import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 
 from nacl.exceptions import BadSignatureError
 from nacl.public import PrivateKey, PublicKey
@@ -36,6 +37,7 @@ MAX_FRAME_SIZE = 16 * 1024 * 1024
 MAX_HANDSHAKE_SIZE = 16 * 1024
 DEFAULT_HANDSHAKE_TIMEOUT = 10.0
 DEFAULT_MESSAGE_QUEUE_SIZE = 256
+DEFAULT_FILE_CHUNK_WINDOW = 4
 
 logger = setup_logger("messenger.session", logging.INFO)
 X3DH_HANDSHAKE_CONTEXT = b"p2p-chat-x3dh-handshake-v1"
@@ -440,57 +442,171 @@ class Session:
         return "id=None"
 
     async def _send_payload(self, message: Dict[str, Any]) -> None:
+        plaintext = protocol.encode_message(message)
+        await self._send_plaintext(
+            plaintext,
+            message_type=str(message.get("type")),
+            message_ref=self._message_ref(message),
+        )
+
+    async def _send_plaintext(
+        self,
+        plaintext: bytes,
+        *,
+        message_type: str,
+        message_ref: str,
+    ) -> None:
         if not self.their_pub:
             raise RuntimeError("Session not established")
         if not self._online:
             raise ConnectionError("Session is no longer online")
         async with self._send_lock:
-            plaintext = protocol.encode_message(message)
             ciphertext = encrypt_message_v3(self._dr_state, plaintext)
             logger.debug(
                 "Send message type=%s %s plain=%sB cipher=%sB",
-                message.get("type"),
-                self._message_ref(message),
+                message_type,
+                message_ref,
                 len(plaintext),
                 len(ciphertext),
             )
             try:
                 await _write_frame(self.writer, ciphertext)
-            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, OSError) as write_err:
+            except (
+                ConnectionAbortedError,
+                ConnectionResetError,
+                BrokenPipeError,
+                OSError,
+            ) as write_err:
                 self._online = False
-                raise ConnectionError(f"Socket write failed, session marked offline: {write_err}") from write_err
+                raise ConnectionError(
+                    f"Socket write failed, session marked offline: {write_err}"
+                ) from write_err
+
+    async def _send_reliable_payload(
+        self,
+        msg_id: str,
+        send_once: Callable[[], Any],
+    ) -> str:
+        loop = asyncio.get_running_loop()
+        ack_future = loop.create_future()
+        if msg_id in self._pending_acks:
+            raise ValueError(f"reliable message {msg_id} is already pending")
+        self._pending_acks[msg_id] = ack_future
+        try:
+            delay = self.ack_timeout
+            for attempt in range(self.max_retries + 1):
+                await send_once()
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(ack_future), timeout=self.ack_timeout
+                    )
+                    break
+                except asyncio.TimeoutError:
+                    if attempt < self.max_retries:
+                        await asyncio.sleep(delay)
+                        delay *= self.backoff_factor
+
+            if not ack_future.done():
+                raise TimeoutError(f"ACK for message {msg_id} not received")
+
+            await ack_future
+            logger.debug("ACK received for message %s", msg_id)
+            return msg_id
+        finally:
+            if self._pending_acks.get(msg_id) is ack_future:
+                self._pending_acks.pop(msg_id, None)
+            if not ack_future.done():
+                ack_future.cancel()
 
     async def send_reliable(self, message: Dict[str, Any]) -> str:
-        """Send a message and wait for an ACK with retries."""
+        """Send a structured message and wait for an ACK with retries."""
 
         if "id" not in message:
             message["id"] = str(self._message_counter)
             self._message_counter += 1
-        msg_id = message["id"]
+        elif not isinstance(message["id"], str):
+            message["id"] = str(message["id"])
+        msg_id = str(message["id"])
+        return await self._send_reliable_payload(
+            msg_id,
+            lambda: self._send_payload(message),
+        )
 
-        loop = asyncio.get_running_loop()
-        ack_future = loop.create_future()
-        self._pending_acks[msg_id] = ack_future
+    async def send_file_chunk(
+        self,
+        file_id: bytes,
+        chunk_index: int,
+        payload: bytes,
+    ) -> str:
+        """Send one binary file chunk and wait for its derived ACK ID."""
 
-        delay = self.ack_timeout
-        for attempt in range(self.max_retries + 1):
-            await self._send_payload(message)
-            try:
-                await asyncio.wait_for(asyncio.shield(ack_future), timeout=self.ack_timeout)
-                break
-            except asyncio.TimeoutError:
-                if attempt < self.max_retries:
-                    await asyncio.sleep(delay)
-                    delay *= self.backoff_factor
+        plaintext = protocol.encode_file_chunk(file_id, chunk_index, payload)
+        msg_id = protocol.file_chunk_ack_id(file_id, chunk_index)
+        return await self._send_reliable_payload(
+            msg_id,
+            lambda: self._send_plaintext(
+                plaintext,
+                message_type="file_chunk",
+                message_ref=f"id={msg_id}",
+            ),
+        )
 
-        if not ack_future.done():
-            self._pending_acks.pop(msg_id, None)
-            raise TimeoutError(f"ACK for message {msg_id} not received")
+    async def send_file_chunks(
+        self,
+        file_id: bytes,
+        chunks: Iterable[Tuple[int, bytes]],
+        *,
+        window_size: int = DEFAULT_FILE_CHUNK_WINDOW,
+        on_ack: Optional[Callable[[int, int], Any]] = None,
+    ) -> int:
+        """Send chunks through a bounded window while ACKs arrive independently."""
 
-        await ack_future
-        logger.debug("ACK received for message %s", msg_id)
-        self._pending_acks.pop(msg_id, None)
-        return msg_id
+        if window_size <= 0:
+            raise ValueError("window_size must be positive")
+
+        pending: set[asyncio.Task] = set()
+        acknowledged = 0
+
+        async def _send_one(chunk_index: int, payload: bytes) -> Tuple[int, int]:
+            await self.send_file_chunk(file_id, chunk_index, payload)
+            return chunk_index, len(payload)
+
+        async def _collect(done: set[asyncio.Task]) -> None:
+            nonlocal acknowledged
+            results = await asyncio.gather(*done, return_exceptions=True)
+            first_error: Optional[BaseException] = None
+            for result in results:
+                if isinstance(result, BaseException):
+                    if first_error is None:
+                        first_error = result
+                    continue
+                chunk_index, payload_size = result
+                acknowledged += 1
+                if on_ack is not None:
+                    result = on_ack(chunk_index, payload_size)
+                    if inspect.isawaitable(result):
+                        await result
+            if first_error is not None:
+                raise first_error
+
+        try:
+            for chunk_index, payload in chunks:
+                pending.add(asyncio.create_task(_send_one(chunk_index, payload)))
+                if len(pending) >= window_size:
+                    done, pending = await asyncio.wait(
+                        pending, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    await _collect(done)
+            if pending:
+                done, pending = await asyncio.wait(pending)
+                await _collect(done)
+        except BaseException:
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+            raise
+        return acknowledged
 
     async def send_chat(self, body: str, nickname: Optional[str] = None) -> str:
         message = {

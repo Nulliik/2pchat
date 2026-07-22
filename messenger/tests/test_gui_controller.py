@@ -36,6 +36,22 @@ class FakeSession:
         self.sent.append(payload)
         return payload.get("id", "")
 
+    async def send_file_chunks(self, file_id, chunks, *, window_size=4, on_ack=None):
+        count = 0
+        for chunk_index, payload in chunks:
+            self.sent.append(
+                {
+                    "type": "file_chunk",
+                    "file_id": file_id,
+                    "chunk_index": chunk_index,
+                    "payload": payload,
+                }
+            )
+            count += 1
+            if on_ack:
+                on_ack(chunk_index, len(payload))
+        return count
+
     async def receive_message(self):
         return await self.recv_queue.get()
 
@@ -183,6 +199,8 @@ async def test_controller_receives_file(tmp_path):
         "file_name": file_path.name,
         "file_size": file_size,
         "num_chunks": num_chunks,
+        "chunk_size": 8,
+        "chunk_format": "binary-v1",
         "file_hash": base64.b64encode(file_hash).decode(),
         "file_key": base64.b64encode(file_key).decode(),
         "file_nonce_prefix": base64.b64encode(file_nonce_prefix).decode(),
@@ -201,7 +219,7 @@ async def test_controller_receives_file(tmp_path):
                 "type": "file_chunk",
                 "file_id": meta["file_id"],
                 "chunk_index": idx,
-                "payload": base64.b64encode(payload).decode(),
+                "payload": payload,
             }
             asyncio.run_coroutine_threadsafe(
                 controller.session.recv_queue.put(msg), controller.loop

@@ -32,6 +32,7 @@ from nacl.secret import SecretBox
 from nacl.utils import random as nacl_random
 
 from messenger.utils.logger import setup_logger
+from .protocol import DEFAULT_FILE_CHUNK_SIZE
 
 
 HKDF_HASH_LEN = sha256().digest_size
@@ -298,7 +299,7 @@ class PeerState:
 
 def encrypt_file_in_chunks(
     file_path: str,
-    chunk_size: int = 65536,
+    chunk_size: int = DEFAULT_FILE_CHUNK_SIZE,
 ) -> Tuple[Iterator[Tuple[int, bytes]], bytes, bytes, int, int, bytes]:
     """Encrypt a file in chunks using a fresh symmetric key.
 
@@ -439,7 +440,7 @@ def send_encrypted_file(
     *,
     their_prekey_pub: PublicKey,
     channel_key: bytes | None = None,
-    chunk_size: int = 65536,
+    chunk_size: int = DEFAULT_FILE_CHUNK_SIZE,
     file_name: str | None = None,
 ) -> Tuple[bytes, Iterator[Tuple[int, bytes]], dict]:
     """Prepare encrypted file transfer metadata and chunk iterator.

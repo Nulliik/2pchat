@@ -15,6 +15,7 @@ except Exception:  # noqa: BLE001
     uvloop = None
 
 from messenger.core.crypto import decrypt_file_chunks
+from messenger.core import protocol
 from messenger.core.discovery_base import PeerEndpoint
 from messenger.core.discovery_manager import get_discovery_provider
 from messenger.core.discovery_naming import generate_discovery_key, generate_discovery_name
@@ -92,9 +93,12 @@ class FileReceiver:
             return False, None
 
         if mtype == "file_meta":
+            try:
+                protocol.validate_file_metadata(message)
+            except ValueError as exc:
+                return True, f"Rejected unsupported file transfer: {exc}"
             file_id = self._decode_file_id(message["file_id"])
-            state = self._incoming.setdefault(file_id, {"meta": None, "chunks": {}})
-            state["meta"] = message
+            self._incoming[file_id] = {"meta": message, "chunks": {}}
             name = message.get("file_name") or f"file-{message['file_id']}"
             size = message.get("file_size", "?")
             info = (
@@ -104,14 +108,16 @@ class FileReceiver:
 
         file_id = self._decode_file_id(message["file_id"])
         chunk_index = int(message.get("chunk_index", 0))
-        payload = base64.b64decode(message.get("payload", ""))
+        payload = message.get("payload", b"")
+        if not isinstance(payload, bytes):
+            return True, "Rejected non-binary file chunk payload"
 
-        state = self._incoming.setdefault(file_id, {"meta": None, "chunks": {}})
+        state = self._incoming.get(file_id)
+        if not state:
+            return True, "Rejected file chunk received before metadata"
         state["chunks"][chunk_index] = payload
 
-        meta = state.get("meta")
-        if not meta:
-            return True, None
+        meta = state["meta"]
 
         expected_chunks = int(meta.get("num_chunks", 0))
         if len(state["chunks"]) < expected_chunks:

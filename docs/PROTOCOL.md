@@ -302,6 +302,9 @@ Contains file metadata plus encrypted file material references:
 - `file_name`
 - `file_size`
 - `num_chunks`
+- `chunk_size` (currently 262144 bytes)
+- `chunk_format` (`binary-v1`)
+- `ack_window` (currently 4)
 - `file_hash`
 - `file_key`
 - `file_nonce_prefix`
@@ -309,21 +312,40 @@ Contains file metadata plus encrypted file material references:
 
 Binary values are Base64 strings.
 
+Both `chunk_format: binary-v1` and a positive `chunk_size` no greater than
+262144 are mandatory. Metadata without them is rejected before delivery to the
+application.
+
 ### `file_chunk`
 
-```json
-{
-  "type": "file_chunk",
-  "file_id": "<base64>",
-  "chunk_index": 0,
-  "payload": "<base64 encrypted chunk>"
-}
-```
+File chunks use a compact binary plaintext before the existing Double Ratchet
+session encryption. Multi-byte integers are unsigned and big-endian:
+
+| Field | Size |
+| --- | ---: |
+| frame type (`0x02`) | 1 byte |
+| raw `file_id` | 12 bytes |
+| chunk index | 4 bytes |
+| encrypted payload length | 4 bytes |
+| encrypted payload | declared length |
+
+The fixed header is 21 bytes. The encrypted chunk is sent directly, without
+Base64 or a JSON/CBOR wrapper. The default plaintext chunk size is 256 KiB;
+SecretBox adds its nonce and authentication overhead before this framing.
+
+For compatibility at the application boundary, decoded chunks are exposed as
+`file_chunk` message dictionaries with Base64 `file_id` and a byte-string
+`payload`. JSON/CBOR `file_chunk` messages and Base64 chunk payloads are rejected;
+all peers participating in file transfer must support `binary-v1`.
 
 ## Reliability Rules
 
 - Outgoing reliable messages receive an `id` if one is not already present.
 - The sender waits for an `ack` carrying `ack_id == message.id`.
+- A binary chunk's reliable ID is derived from its 12-byte `file_id` and chunk
+  index, so no message ID field is needed in the binary header.
+- File senders keep up to 4 chunk ACKs in flight. TCP/session write ordering is
+  retained while ACK waiting is concurrent.
 - Default retry settings:
   - ACK timeout: 5 seconds
   - max retries: 3

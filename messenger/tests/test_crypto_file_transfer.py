@@ -4,6 +4,7 @@ import pytest
 from nacl.public import PrivateKey
 
 from messenger.core.crypto import (
+    DEFAULT_FILE_CHUNK_SIZE,
     PeerState,
     decrypt_file_chunks,
     generate_identity_keypair,
@@ -88,7 +89,7 @@ def test_chunk_tamper_detection(tmp_path: Path, keypairs):
 
 def test_file_encryption_does_not_use_read_bytes(tmp_path: Path, monkeypatch):
     path = tmp_path / "streamed.bin"
-    path.write_bytes(b"x" * (2 * 65536 + 7))
+    path.write_bytes(b"x" * (2 * DEFAULT_FILE_CHUNK_SIZE + 7))
 
     def fail_read_bytes(_self):
         raise AssertionError("whole-file buffering is forbidden")
@@ -96,7 +97,7 @@ def test_file_encryption_does_not_use_read_bytes(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(Path, "read_bytes", fail_read_bytes)
     chunks, key, nonce, size, count, digest = encrypt_file_in_chunks(str(path))
 
-    assert size == 2 * 65536 + 7
+    assert size == 2 * DEFAULT_FILE_CHUNK_SIZE + 7
     assert count == 3
     assert len(list(chunks)) == count
     assert len(key) == 32

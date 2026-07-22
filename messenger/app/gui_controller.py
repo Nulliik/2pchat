@@ -20,7 +20,11 @@ from typing import Any, Callable, Coroutine, Dict, Optional
 
 from nacl.public import PrivateKey
 
-from messenger.core.crypto import decrypt_file_chunks, encrypt_file_in_chunks
+from messenger.core.crypto import (
+    DEFAULT_FILE_CHUNK_SIZE,
+    decrypt_file_chunks,
+    encrypt_file_in_chunks,
+)
 from messenger.core.discovery_base import PeerEndpoint
 from messenger.core.discovery_manager import get_discovery_provider
 from messenger.core.identity import (
@@ -32,7 +36,8 @@ from messenger.core.identity import (
     fingerprint,
     load_or_create_identity,
 )
-from messenger.core.session import Session
+from messenger.core import protocol
+from messenger.core.session import DEFAULT_FILE_CHUNK_WINDOW, Session
 from messenger.core.transport_manager import connect as transport_connect
 from messenger.core.transport_manager import listen as transport_listen
 from messenger.core.verify import build_identity_qr_payload, compute_sas
@@ -1175,6 +1180,9 @@ class ChatController:
                 "file_name": Path(file_path).name,
                 "file_size": file_size,
                 "num_chunks": num_chunks,
+                "chunk_size": DEFAULT_FILE_CHUNK_SIZE,
+                "chunk_format": "binary-v1",
+                "ack_window": DEFAULT_FILE_CHUNK_WINDOW,
                 "file_hash": base64.b64encode(file_hash).decode(),
                 "file_key": base64.b64encode(file_key).decode(),
                 "file_nonce_prefix": base64.b64encode(file_nonce_prefix).decode(),
@@ -1183,14 +1191,11 @@ class ChatController:
 
             await self.session.send_reliable(meta)
 
-            for chunk_index, encrypted_chunk in chunk_iterator:
-                payload = {
-                    "type": "file_chunk",
-                    "file_id": base64.b64encode(file_id).decode(),
-                    "chunk_index": chunk_index,
-                    "payload": base64.b64encode(encrypted_chunk).decode(),
-                }
-                await self.session.send_reliable(payload)
+            await self.session.send_file_chunks(
+                file_id,
+                chunk_iterator,
+                window_size=DEFAULT_FILE_CHUNK_WINDOW,
+            )
 
             mime, _ = mimetypes.guess_type(file_path)
             self._notify_message(
@@ -1348,6 +1353,11 @@ class ChatController:
             return False
 
         if mtype == "file_meta":
+            try:
+                protocol.validate_file_metadata(message)
+            except ValueError as exc:
+                self._notify_status(f"Rejected unsupported file transfer: {exc}")
+                return True
             file_id = self._decode_file_id(message["file_id"])
             self._incoming_files[file_id] = {"meta": message, "chunks": {}}
             self._notify_message(
@@ -1365,15 +1375,15 @@ class ChatController:
         file_id = self._decode_file_id(message["file_id"])
         state = self._incoming_files.get(file_id)
         if not state:
-            state = {"meta": None, "chunks": {}}
-            self._incoming_files[file_id] = state
-        state["chunks"][int(message.get("chunk_index", 0))] = base64.b64decode(
-            message["payload"]
-        )
-
-        meta = state.get("meta")
-        if not meta:
+            self._notify_status("Rejected file chunk received before metadata")
             return True
+        chunk_payload = message["payload"]
+        if not isinstance(chunk_payload, bytes):
+            self._notify_status("Rejected non-binary file chunk payload")
+            return True
+        state["chunks"][int(message.get("chunk_index", 0))] = chunk_payload
+
+        meta = state["meta"]
 
         expected = int(meta.get("num_chunks", 0))
         if len(state["chunks"]) < expected:

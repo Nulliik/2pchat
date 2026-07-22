@@ -30,6 +30,8 @@ def test_cli_file_receiver_saves_file(tmp_path):
         "file_name": "sample.bin",
         "file_size": file_size,
         "num_chunks": num_chunks,
+        "chunk_size": 256,
+        "chunk_format": "binary-v1",
         "file_hash": base64.b64encode(file_hash).decode(),
         "file_key": base64.b64encode(file_key).decode(),
         "file_nonce_prefix": base64.b64encode(file_nonce_prefix).decode(),
@@ -47,7 +49,7 @@ def test_cli_file_receiver_saves_file(tmp_path):
                 "type": "file_chunk",
                 "file_id": file_id_b64,
                 "chunk_index": idx,
-                "payload": base64.b64encode(chunk).decode(),
+                "payload": chunk,
             }
         )
         last_info = info or last_info
@@ -57,3 +59,21 @@ def test_cli_file_receiver_saves_file(tmp_path):
     assert saved_path.read_bytes() == data
     assert processed is True
     assert last_info is None or "Saved file" in last_info
+
+
+def test_cli_file_receiver_rejects_legacy_transfer(tmp_path):
+    receiver = FileReceiver(tmp_path)
+    file_id_b64 = base64.b64encode(os.urandom(12)).decode()
+
+    processed, info = receiver.handle(
+        {
+            "type": "file_meta",
+            "file_id": file_id_b64,
+            "file_name": "legacy.bin",
+            "file_size": 1,
+            "num_chunks": 1,
+        }
+    )
+
+    assert processed is True
+    assert "Rejected unsupported file transfer" in (info or "")

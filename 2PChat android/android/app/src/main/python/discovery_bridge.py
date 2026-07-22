@@ -19,9 +19,22 @@ from datetime import datetime, timezone
 from messenger.core.discovery_manager import get_discovery_provider
 from messenger.core.tracker_catalog import BASE_TRACKERS, TrackerSpec, get_tracker_by_name
 from messenger.core.discovery_base import PeerEndpoint
-from messenger.core.session import Session
-from messenger.core.identity import load_or_create_identity, load_or_create_signing_identity, TrustStore, fingerprint
-from messenger.core.transport_manager import listen as transport_listen, connect as transport_connect
+from messenger.core.session import DEFAULT_FILE_CHUNK_WINDOW, Session
+from messenger.core.crypto import DEFAULT_FILE_CHUNK_SIZE
+from messenger.core.protocol import (
+    FILE_CHUNK_FORMAT,
+    MAX_FILE_CHUNK_PAYLOAD_SIZE,
+)
+from messenger.core.identity import (
+    TrustStore,
+    fingerprint,
+    load_or_create_identity,
+    load_or_create_signing_identity,
+)
+from messenger.core.transport_manager import (
+    connect as transport_connect,
+    listen as transport_listen,
+)
 from messenger.utils.logger import setup_logger
 
 # Configure logging for the bridge
@@ -53,7 +66,7 @@ MAX_INCOMING_FILE_CHUNKS = 2048
 INCOMING_FILE_RATE_WINDOW_SECONDS = 60
 MAX_INCOMING_FILE_STARTS_PER_WINDOW = 8
 INCOMING_FILE_TTL_SECONDS = 120
-MAX_ENCRYPTED_CHUNK_SIZE = 1024 * 1024
+MAX_ENCRYPTED_CHUNK_SIZE = MAX_FILE_CHUNK_PAYLOAD_SIZE
 MAX_CONCURRENT_HANDSHAKES = 10
 tracker_diagnostics = {}
 public_address_observations = set()
@@ -1547,6 +1560,14 @@ async def _read_loop(session, peer_name, fp):
                 if mtype == "file_meta":
                     file_size = int(msg.get("file_size", -1))
                     num_chunks = int(msg.get("num_chunks", 0))
+                    chunk_size = msg.get("chunk_size")
+                    if (
+                        msg.get("chunk_format") != FILE_CHUNK_FORMAT
+                        or type(chunk_size) is not int
+                        or not 0 < chunk_size <= DEFAULT_FILE_CHUNK_SIZE
+                    ):
+                        print("Rejected unsupported file chunk format")
+                        continue
                     if file_size < 0 or file_size > MAX_INCOMING_FILE_BYTES:
                         print(f"Rejected file transfer: invalid size {file_size}")
                         continue
@@ -1594,10 +1615,9 @@ async def _read_loop(session, peer_name, fp):
                     if chunk_index != state["next_index"] or chunk_index >= expected_chunks:
                         print(f"Rejected invalid file chunk index {chunk_index}")
                         continue
-                    try:
-                        payload = base64.b64decode(str(msg.get("payload", "")).encode(), validate=True)
-                    except Exception:
-                        print("Rejected file chunk with invalid payload encoding")
+                    payload = msg.get("payload", b"")
+                    if not isinstance(payload, bytes):
+                        print("Rejected file chunk with invalid payload type")
                         continue
                     if len(payload) > MAX_ENCRYPTED_CHUNK_SIZE:
                         print(f"Rejected oversized encrypted file chunk ({len(payload)} bytes)")
@@ -2020,11 +2040,7 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
 
         # Encrypt and send the file
         from messenger.core.crypto import encrypt_file_in_chunks
-        import base64
-        import os
-        from datetime import datetime, timezone
-        from pathlib import Path
-        
+
         print("Starting chunked encryption for an outgoing file")
         (
             chunk_iterator,
@@ -2034,7 +2050,7 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
             num_chunks,
             file_hash,
         ) = encrypt_file_in_chunks(file_path)
-        
+
         file_id = os.urandom(12)
         meta = {
             "type": "file_meta",
@@ -2042,6 +2058,9 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
             "file_name": Path(file_path).name,
             "file_size": file_size,
             "num_chunks": num_chunks,
+            "chunk_size": DEFAULT_FILE_CHUNK_SIZE,
+            "chunk_format": "binary-v1",
+            "ack_window": DEFAULT_FILE_CHUNK_WINDOW,
             "file_hash": base64.b64encode(file_hash).decode(),
             "file_key": base64.b64encode(file_key).decode(),
             "file_nonce_prefix": base64.b64encode(file_nonce_prefix).decode(),
@@ -2049,15 +2068,20 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
         }
         if message_id:
             meta["message_id"] = str(message_id)[:128]
-        
+
         print(f"Sending file metadata envelope ({file_size} bytes)")
         try:
             await session.send_reliable(meta)
         except (ConnectionError, OSError) as send_err:
             if was_cached:
-                print(f"Cached session to {peer_name} failed on file meta write: {send_err}. Retrying with a new connection...")
+                print(
+                    f"Cached session to {peer_name} failed on file meta write: "
+                    f"{send_err}. Retrying with a new connection..."
+                )
                 await _invalidate_session(session)
-                session = await _establish_session_async(peer_name, endpoint, expected_fingerprint)
+                session = await _establish_session_async(
+                    peer_name, endpoint, expected_fingerprint
+                )
                 was_cached = False
                 await session.send_reliable(meta)
             else:
@@ -2067,15 +2091,10 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
         import time
         start_time = time.time()
         bytes_sent = 0
-        for chunk_index, encrypted_chunk in chunk_iterator:
-            payload = {
-                "type": "file_chunk",
-                "file_id": base64.b64encode(file_id).decode(),
-                "chunk_index": chunk_index,
-                "payload": base64.b64encode(encrypted_chunk).decode(),
-            }
-            await session.send_reliable(payload)
-            bytes_sent += len(encrypted_chunk)
+
+        def _chunk_acked(_chunk_index, encrypted_size):
+            nonlocal bytes_sent
+            bytes_sent += encrypted_size
             elapsed = max(0.001, time.time() - start_time)
             speed_kbps = (bytes_sent / 1024) / elapsed
             if message_listener_callback and message_id:
@@ -2088,10 +2107,19 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
                     "speed_kbps": round(speed_kbps, 1)
                 }
                 try:
-                    message_listener_callback.onMessageReceived(peer_name, json.dumps(progress_notification))
+                    message_listener_callback.onMessageReceived(
+                        peer_name, json.dumps(progress_notification)
+                    )
                 except Exception:
                     pass
-            
+
+        await session.send_file_chunks(
+            file_id,
+            chunk_iterator,
+            window_size=DEFAULT_FILE_CHUNK_WINDOW,
+            on_ack=_chunk_acked,
+        )
+
         print(f"File successfully transmitted to {peer_name}")
         return True
     except asyncio.CancelledError:
