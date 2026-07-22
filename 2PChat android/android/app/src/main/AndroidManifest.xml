@@ -145,6 +145,16 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".NotificationActionReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.twopchat.ACTION_NOTIFICATION_REPLY" />
+                <action android:name="com.example.twopchat.ACTION_NOTIFICATION_MARK_READ" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

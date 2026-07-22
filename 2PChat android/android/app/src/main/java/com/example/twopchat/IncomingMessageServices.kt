@@ -96,17 +96,58 @@ internal class MessageNotificationService {
             prefs.edit().putInt(key, next).putInt(NEXT_ID_KEY, following).commit()
             return next
         }
+
+        @Synchronized
+        fun addMessageToHistory(context: Context, sender: String, text: String): List<String> {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val senderDigest = MessageDigest.getInstance("SHA-256")
+                .digest(sender.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            val historyKey = "history_${senderDigest.take(32)}"
+            val existingStr = prefs.getString(historyKey, "") ?: ""
+            val list = if (existingStr.isNotBlank()) existingStr.split("|||").toMutableList() else mutableListOf()
+            list.add(text)
+            if (list.size > 10) list.removeAt(0)
+            prefs.edit().putString(historyKey, list.joinToString("|||")).commit()
+            return list
+        }
+
+        @Synchronized
+        fun clearHistory(context: Context, sender: String) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val senderDigest = MessageDigest.getInstance("SHA-256")
+                .digest(sender.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+            val historyKey = "history_${senderDigest.take(32)}"
+            prefs.edit().remove(historyKey).commit()
+        }
     }
 
     fun show(context: Context, sender: String, text: String) {
         val settings = P2PPreferences.prefs(context)
         if (!settings.getBoolean("settings_notifications", true)) return
+
+        // 5. Per-Peer Mute Check
+        val mutedPeers = settings.getStringSet("muted_peers", emptySet()) ?: emptySet()
+        val isMuted = mutedPeers.contains(sender)
+        if (isMuted) return // Suppress notifications for muted contacts
+
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        // 4. Heads-Up High Importance Channel
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "P2P Messages", NotificationManager.IMPORTANCE_DEFAULT)
-            )
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "P2P Messages",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Incoming P2P encrypted chat notifications"
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 150, 100, 150)
+            }
+            manager.createNotificationChannel(channel)
         }
+
         val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         } ?: Intent()
@@ -117,23 +158,87 @@ internal class MessageNotificationService {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val showPreview = settings.getBoolean("settings_previews", false)
+
+        val isRu = settings.getString("settings_language", "English") == "Русский"
+        val showPreview = settings.getBoolean("settings_previews", true)
         val displayText = if (showPreview) {
             IncomingMessageParser.parseNotificationText(text)
-        } else if (settings.getString("settings_language", "English") == "Русский") {
+        } else if (isRu) {
             "Новое сообщение"
         } else {
             "New message"
         }
+
+        // Add to history list for MessagingStyle
+        val historyList = addMessageToHistory(context, sender, displayText)
+
+        // 2. MessagingStyle Conversation Threading
+        val userPerson = androidx.core.app.Person.Builder().setName(if (isRu) "Вы" else "You").build()
+        val senderPerson = androidx.core.app.Person.Builder().setName(sender).build()
+        val messagingStyle = NotificationCompat.MessagingStyle(userPerson)
+            .setConversationTitle(sender)
+
+        historyList.forEach { item ->
+            messagingStyle.addMessage(item, System.currentTimeMillis(), senderPerson)
+        }
+
+        // 1. Direct Reply RemoteInput Action
+        val remoteInput = androidx.core.app.RemoteInput.Builder(NotificationActionReceiver.KEY_TEXT_REPLY)
+            .setLabel(if (isRu) "Ответить" else "Reply")
+            .build()
+
+        val replyIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = NotificationActionReceiver.ACTION_REPLY
+            putExtra(NotificationActionReceiver.EXTRA_SENDER, sender)
+            putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, id)
+        }
+        val replyPendingIntent = PendingIntent.getBroadcast(
+            context,
+            id * 10 + 1,
+            replyIntent,
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val replyAction = NotificationCompat.Action.Builder(
+            R.drawable.ic_send_airplane,
+            if (isRu) "Ответить" else "Reply",
+            replyPendingIntent
+        ).addRemoteInput(remoteInput).build()
+
+        // 3. Mark as Read Action
+        val readIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = NotificationActionReceiver.ACTION_MARK_READ
+            putExtra(NotificationActionReceiver.EXTRA_SENDER, sender)
+            putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, id)
+        }
+        val readPendingIntent = PendingIntent.getBroadcast(
+            context,
+            id * 10 + 2,
+            readIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val readAction = NotificationCompat.Action.Builder(
+            R.drawable.ic_check,
+            if (isRu) "Прочитано" else "Mark as Read",
+            readPendingIntent
+        ).build()
+
+        // Build Notification
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setContentTitle(sender)
-            .setContentText(displayText)
             .setSmallIcon(R.drawable.ic_logo_default_fg)
+            .setStyle(messagingStyle)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .addAction(replyAction)
+            .addAction(readAction)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setVibrate(longArrayOf(0, 150, 100, 150))
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .build()
+
         manager.notify(id, notification)
     }
 }

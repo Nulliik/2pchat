@@ -408,6 +408,7 @@ fun ChatScreen(
 
     LaunchedEffect(peerName, isActive) {
         if (!isActive) return@LaunchedEffect
+        com.example.twopchat.MessageNotificationService.clearHistory(context, peerName)
         hasAppliedInitialScroll = false
         isFastHistoryLoaded = false
         isLoadingOlderHistory = false
