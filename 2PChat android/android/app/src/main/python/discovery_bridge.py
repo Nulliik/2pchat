@@ -502,6 +502,14 @@ def _discover_public_ipv4_stun(timeout: float = 2.5) -> str | None:
     return None
 
 
+def discover_public_ipv4() -> str:
+    """Refresh and return the externally observed IPv4 used in contact QR codes."""
+    address = _discover_public_ipv4_stun()
+    if address:
+        public_address_observations.add(address)
+    return address or ""
+
+
 def _same_nickname(left: str, right: str) -> bool:
     """Match display names without making case or repeated spaces significant."""
     return " ".join(left.strip().casefold().split()) == " ".join(right.strip().casefold().split())
@@ -714,23 +722,15 @@ def verify_live_endpoints(
             }]
 
     async def _first_verified():
-        tasks = [
-            asyncio.create_task(
-                _verify_live_endpoint(endpoint, expected_live_name, expected_live_fingerprint)
+        # Preserve the QR route order: LAN IPv4, public IPv4, then IPv6.
+        # Do not start the next socket/handshake until the previous route fails.
+        for endpoint in candidates:
+            result = await _verify_live_endpoint(
+                endpoint, expected_live_name, expected_live_fingerprint
             )
-            for endpoint in candidates
-        ]
-        try:
-            for completed in asyncio.as_completed(tasks):
-                result = await completed
-                if isinstance(result, dict) and result.get("verified"):
-                    return result
-            return None
-        finally:
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            if isinstance(result, dict) and result.get("verified"):
+                return result
+        return None
 
     verify_loop = asyncio.new_event_loop()
     try:

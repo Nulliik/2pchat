@@ -5,6 +5,7 @@ package com.example.twopchat
 
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlinx.coroutines.CoroutineScope
@@ -44,22 +45,29 @@ object P2PMessageRelay {
     private val avatarCache = PeerAvatarCache()
     private val notificationService = MessageNotificationService()
     @Volatile private var localPeerDiscovery: LocalPeerDiscovery? = null
-    private val localPeerCandidates = ConcurrentHashMap<String, ConcurrentHashMap<String, String>>()
+    private data class LocalPeerCandidate(val fingerprint: String, val endpoint: String)
+
+    private val localPeerCandidates =
+        ConcurrentHashMap<String, CopyOnWriteArrayList<LocalPeerCandidate>>()
 
     private fun localPeerCandidateKey(peerName: String): String =
         peerName.trim().lowercase(Locale.ROOT)
 
     internal fun localDiscoveryEndpoints(peerName: String): List<String> =
         localPeerCandidates[localPeerCandidateKey(peerName)]
-            ?.values
+            ?.map(LocalPeerCandidate::endpoint)
             ?.distinct()
             ?.take(12)
             .orEmpty()
 
     fun injectLocalDiscoveryCandidate(peerName: String, peerFingerprint: String, endpoint: String) {
-        localPeerCandidates
-            .computeIfAbsent(localPeerCandidateKey(peerName)) { java.util.concurrent.ConcurrentHashMap() }
-            .put(peerFingerprint, endpoint)
+        val candidates = localPeerCandidates.computeIfAbsent(localPeerCandidateKey(peerName)) {
+            CopyOnWriteArrayList()
+        }
+        val candidate = LocalPeerCandidate(peerFingerprint, endpoint)
+        candidates.remove(candidate)
+        candidates.add(candidate)
+        while (candidates.size > 12) candidates.removeAt(0)
     }
 
     @Synchronized
@@ -229,9 +237,7 @@ object P2PMessageRelay {
             // NSD metadata is only a route candidate. It is deliberately not
             // trusted here: search performs the encrypted identity probe before
             // exposing a new contact to the user.
-            localPeerCandidates
-                .computeIfAbsent(localPeerCandidateKey(peerName)) { ConcurrentHashMap() }
-                .put(peerFingerprint, endpoint)
+            injectLocalDiscoveryCandidate(peerName, peerFingerprint, endpoint)
             val currentPrefs = P2PPreferences.prefs(context)
             val knownName = currentPrefs.all.entries.firstOrNull { (key, value) ->
                 key.startsWith("peer_fingerprint_") && value == peerFingerprint

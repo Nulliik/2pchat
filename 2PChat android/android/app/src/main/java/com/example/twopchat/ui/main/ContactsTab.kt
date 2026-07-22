@@ -55,6 +55,7 @@ import com.example.twopchat.PythonBridge
 import com.example.twopchat.Chat
 import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.canonicalNickname
+import com.example.twopchat.selectExternalIpv4
 import com.example.twopchat.validatedSearchNickname
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
@@ -103,6 +104,33 @@ internal fun formatInviteEndpoint(value: String?, defaultPort: Int = 50001): Str
     if (Regex("^[0-9.]+$").matches(raw)) return "$raw:$defaultPort"
     if (Regex("^[0-9A-Fa-f:]+$").matches(raw) && raw.contains(':')) return "[$raw]:$defaultPort"
     return null
+}
+
+internal fun buildContactQrPayload(
+    nickname: String,
+    discoveryCode: String,
+    fingerprint: String,
+    localIpv4: String,
+    publicIpv4: String,
+    ipv6: String,
+    listenerPort: Int,
+): String {
+    val builder = StringBuilder("2pchat://connect?")
+        .append("name=").append(android.net.Uri.encode(nickname))
+        .append("&code=").append(android.net.Uri.encode(discoveryCode))
+    if (fingerprint.isNotBlank() && fingerprint !in setOf("Loading...", "Not Initialized", "Error")) {
+        builder.append("&fp=").append(android.net.Uri.encode(fingerprint))
+    }
+    formatInviteEndpoint(localIpv4, listenerPort)?.let {
+        builder.append("&ip=").append(android.net.Uri.encode(it))
+    }
+    formatInviteEndpoint(publicIpv4, listenerPort)
+        ?.takeIf { publicIpv4 != localIpv4 }
+        ?.let { builder.append("&public_ip=").append(android.net.Uri.encode(it)) }
+    formatInviteEndpoint(ipv6, listenerPort)?.let {
+        builder.append("&ygg=").append(android.net.Uri.encode(it))
+    }
+    return builder.toString()
 }
 
 internal fun isConnectablePeerSearchResult(
@@ -200,6 +228,7 @@ fun ContactsTab(
     var inviteLinkState by remember { mutableStateOf("") }
     var showInvitePanel by remember { mutableStateOf(false) }
     var showQrPanel by remember { mutableStateOf(false) }
+    var qrPublicIpv4 by remember { mutableStateOf("") }
     var showCameraScannerDialog by remember { mutableStateOf(false) }
     var isResolvingInvite by remember { mutableStateOf(false) }
     var resolveInviteStatus by remember { mutableStateOf("") }
@@ -230,6 +259,20 @@ fun ContactsTab(
         }
         fingerprint = withContext(Dispatchers.IO) { PythonBridge.getLocalFingerprint() }
     }
+    LaunchedEffect(showQrPanel) {
+        if (!showQrPanel) return@LaunchedEffect
+        while (!PythonBridge.isInitialized) kotlinx.coroutines.delay(100)
+        qrPublicIpv4 = withContext(Dispatchers.IO) {
+            val localIpv4 = PythonBridge.getLocalIpAddress(false)
+            val observed = PythonBridge.getObservedPublicAddresses()
+            selectExternalIpv4(localIpv4, observed).ifEmpty {
+                selectExternalIpv4(
+                    localIpv4,
+                    observed + PythonBridge.discoverPublicIpv4Address(),
+                )
+            }
+        }
+    }
 
     // Search results must come from an authenticated live peer.  The former
     // hard-coded demo directory made fictional users look searchable/online.
@@ -246,6 +289,7 @@ fun ContactsTab(
                     val token = uri.getQueryParameter("token") ?: uri.getQueryParameter("code")
                     val expectedFp = (uri.getQueryParameter("fp")?.trim().orEmpty()).replace(" ", "+")
                     val directIp = uri.getQueryParameter("ip")
+                    val publicIp = uri.getQueryParameter("public_ip")
                     val yggIp = uri.getQueryParameter("ygg")
                     val request = invitePeerSearchRequest(parsedName, token, expectedFp)
 
@@ -256,12 +300,10 @@ fun ContactsTab(
                             "Invalid link/QR: missing connection code"
                         }
                     } else {
-                        formatInviteEndpoint(directIp)?.let { endpoint ->
-                            com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(
-                                request.expectedLiveName, request.expectedFingerprint.orEmpty(), endpoint,
-                            )
-                        }
-                        formatInviteEndpoint(yggIp)?.let { endpoint ->
+                        listOf(directIp, publicIp, yggIp)
+                            .mapNotNull(::formatInviteEndpoint)
+                            .distinct()
+                            .forEach { endpoint ->
                             com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(
                                 request.expectedLiveName, request.expectedFingerprint.orEmpty(), endpoint,
                             )
@@ -891,20 +933,19 @@ fun ContactsTab(
         if (showQrPanel) {
             val localIp = remember { PythonBridge.getLocalIpAddress(false) }
             val yggIp = remember { PythonBridge.getYggdrasilAddress() }
-            val qrPayload = remember(username, discoveryCode, fingerprint, localIp, yggIp) {
-                val builder = StringBuilder("2pchat://connect?")
-                    .append("name=").append(android.net.Uri.encode(username))
-                    .append("&code=").append(android.net.Uri.encode(discoveryCode))
-                if (fingerprint.isNotBlank() && fingerprint != "Loading..." && fingerprint != "Not Initialized") {
-                    builder.append("&fp=").append(android.net.Uri.encode(fingerprint))
-                }
-                if (localIp.isNotBlank() && localIp != "127.0.0.1") {
-                    builder.append("&ip=").append(android.net.Uri.encode(localIp))
-                }
-                if (yggIp.isNotBlank()) {
-                    builder.append("&ygg=").append(android.net.Uri.encode(yggIp))
-                }
-                builder.toString()
+            val listenerPort = remember { P2PMessageRelay.listenerPort(context) }
+            val qrPayload = remember(
+                username, discoveryCode, fingerprint, localIp, qrPublicIpv4, yggIp, listenerPort,
+            ) {
+                buildContactQrPayload(
+                    nickname = username,
+                    discoveryCode = discoveryCode,
+                    fingerprint = fingerprint,
+                    localIpv4 = localIp.takeUnless { it == "127.0.0.1" }.orEmpty(),
+                    publicIpv4 = qrPublicIpv4,
+                    ipv6 = yggIp,
+                    listenerPort = listenerPort,
+                )
             }
 
             val qrBitmap = remember(qrPayload) {

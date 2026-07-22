@@ -6,6 +6,42 @@ import com.chaquo.python.Python
 import org.json.JSONArray
 import org.json.JSONObject
 
+private fun numericIpv4Octets(endpointOrHost: String): List<Int>? {
+    val host = endpointOrHost.substringBeforeLast(':', endpointOrHost).trim('[', ']')
+    val octets = host.split('.').mapNotNull(String::toIntOrNull)
+    return octets.takeIf { parts -> parts.size == 4 && parts.all { it in 0..255 } }
+}
+
+private fun isLocalIpv4(endpoint: String): Boolean {
+    val octets = numericIpv4Octets(endpoint) ?: return false
+    return octets[0] == 10 ||
+        (octets[0] == 172 && octets[1] in 16..31) ||
+        (octets[0] == 192 && octets[1] == 168) ||
+        (octets[0] == 169 && octets[1] == 254) ||
+        octets[0] == 127
+}
+
+private fun isUsableExternalIpv4(value: String): Boolean {
+    val octets = numericIpv4Octets(value) ?: return false
+    return !isLocalIpv4(value) && octets[0] != 0 && octets[0] < 224
+}
+
+/** Stable route order for QR probes: LAN IPv4, public IPv4, then IPv6. */
+internal fun orderedDirectEndpoints(endpoints: List<String>): List<String> =
+    endpoints.distinct().sortedBy { endpoint ->
+        when {
+            isLocalIpv4(endpoint) -> 0
+            numericIpv4Octets(endpoint) != null -> 1
+            endpoint.substringBeforeLast(':', endpoint).trim('[', ']').contains(':') -> 2
+            else -> 3
+        }
+    }.take(12)
+
+internal fun selectExternalIpv4(localIpv4: String, observedAddresses: List<String>): String =
+    observedAddresses.firstOrNull { candidate ->
+        candidate != localIpv4 && isUsableExternalIpv4(candidate)
+    }.orEmpty()
+
 object PythonBridge {
     private const val MIN_ANNOUNCE_INTERVAL_MS = 60_000L
     private val announceLock = Any()
@@ -110,10 +146,10 @@ object PythonBridge {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
             if (!applyTrackerConfiguration(bridge)) return emptyList()
-            val directEndpoints = (
+            val directEndpoints = orderedDirectEndpoints(
                 P2PMessageRelay.localDiscoveryEndpoints(expectedLiveName) +
                     connectedYggdrasilPeerEndpoints()
-                ).distinct()
+            )
             val directResults = if (directEndpoints.isNotEmpty()) {
                 bridge.callAttr(
                     "verify_live_endpoints",
@@ -427,6 +463,17 @@ object PythonBridge {
         } catch (e: Exception) {
             Log.e(TAG, "Error reading observed public addresses", e)
             emptyList()
+        }
+    }
+
+    fun discoverPublicIpv4Address(): String {
+        if (!isInitialized) return ""
+        return try {
+            Python.getInstance().getModule("discovery_bridge")
+                .callAttr("discover_public_ipv4").toString().trim()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error discovering public IPv4 address", e)
+            ""
         }
     }
 

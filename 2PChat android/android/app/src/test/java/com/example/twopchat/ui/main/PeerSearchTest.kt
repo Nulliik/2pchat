@@ -5,6 +5,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.example.twopchat.orderedDirectEndpoints
+import com.example.twopchat.selectExternalIpv4
 
 class PeerSearchTest {
     @Test
@@ -82,6 +84,33 @@ class PeerSearchTest {
         assertEquals("[200:db8::10]:50001", formatInviteEndpoint("200:db8::10"))
         assertEquals("[200:db8::10]:4242", formatInviteEndpoint("[200:db8::10]:4242"))
         assertNull(formatInviteEndpoint("tracker.example"))
+    }
+
+    @Test
+    fun `orders QR routes as local IPv4 then external IPv4 then IPv6`() {
+        assertEquals(
+            listOf(
+                "192.168.1.20:50001",
+                "203.0.113.20:50001",
+                "[200:db8::20]:50001",
+            ),
+            orderedDirectEndpoints(listOf(
+                "[200:db8::20]:50001",
+                "203.0.113.20:50001",
+                "192.168.1.20:50001",
+            )),
+        )
+    }
+
+    @Test
+    fun `selects a distinct usable external IPv4 for QR`() {
+        assertEquals(
+            "203.0.113.20",
+            selectExternalIpv4(
+                "192.168.1.20",
+                listOf("200:db8::20", "192.168.1.20", "203.0.113.20"),
+            ),
+        )
     }
 
     @Test

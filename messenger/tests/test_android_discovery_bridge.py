@@ -143,36 +143,50 @@ def test_qr_and_classic_name_code_round_trip_through_tracker(monkeypatch):
     assert result[0]["verified"] is True
 
 
-def test_direct_yggdrasil_neighbour_returns_before_slow_candidates(monkeypatch):
+def test_qr_candidates_are_verified_sequentially_in_the_supplied_order(monkeypatch):
     bridge = _load_discovery_bridge()
-    slow_cancelled = asyncio.Event()
+    attempted = []
 
     async def fake_verify(endpoint, nickname, expected_fingerprint=None):
         assert nickname == "bob"
         assert expected_fingerprint is None
-        if endpoint == "[200::2]:50001":
+        attempted.append(endpoint)
+        if endpoint == "[200::3]:50001":
             return {
                 "nickname": "Bob",
                 "fingerprint": "peer-fingerprint",
                 "endpoint": endpoint,
                 "verified": True,
             }
-        try:
-            await asyncio.sleep(30)
-        except asyncio.CancelledError:
-            slow_cancelled.set()
-            raise
+        return {"endpoint": endpoint, "verified": False}
 
     monkeypatch.setattr(bridge, "_verify_live_endpoint", fake_verify)
 
     result = bridge.verify_live_endpoints(
-        json.dumps(["[200::1]:50001", "[200::2]:50001"]),
+        json.dumps([
+            "192.168.1.20:50001",
+            "198.51.100.20:50001",
+            "[200::3]:50001",
+            "[200::4]:50001",
+        ]),
         "bob",
     )
 
-    assert result[0]["endpoints"] == ["[200::2]:50001"]
+    assert attempted == [
+        "192.168.1.20:50001",
+        "198.51.100.20:50001",
+        "[200::3]:50001",
+    ]
+    assert result[0]["endpoints"] == ["[200::3]:50001"]
     assert result[0]["verification_reason"] == "authenticated direct discovery peer"
-    assert slow_cancelled.is_set()
+
+
+def test_public_ipv4_discovery_is_exposed_for_qr(monkeypatch):
+    bridge = _load_discovery_bridge()
+    monkeypatch.setattr(bridge, "_discover_public_ipv4_stun", lambda: "203.0.113.20")
+
+    assert bridge.discover_public_ipv4() == "203.0.113.20"
+    assert json.loads(bridge.get_public_addresses_json()) == ["203.0.113.20"]
 
 
 def test_direct_yggdrasil_search_reuses_authenticated_active_session(monkeypatch):
