@@ -77,6 +77,11 @@ internal object IncomingMessageParser {
 }
 
 internal class MessageNotificationService {
+    private data class NotificationHistory(
+        val messages: List<String>,
+        val messageIds: List<String>,
+    )
+
     companion object {
         private const val CHANNEL_ID = "p2p_chat_messages"
         private const val PREFS_NAME = "2pchat_notification_ids"
@@ -98,18 +103,39 @@ internal class MessageNotificationService {
         }
 
         @Synchronized
-        fun addMessageToHistory(context: Context, sender: String, text: String): List<String> {
+        private fun addMessageToHistory(
+            context: Context,
+            sender: String,
+            text: String,
+            messageId: String,
+        ): NotificationHistory {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val senderDigest = MessageDigest.getInstance("SHA-256")
                 .digest(sender.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it) }
             val historyKey = "history_${senderDigest.take(32)}"
+            val messageIdsKey = "message_ids_${senderDigest.take(32)}"
             val existingStr = prefs.getString(historyKey, "") ?: ""
             val list = if (existingStr.isNotBlank()) existingStr.split("|||").toMutableList() else mutableListOf()
             list.add(text)
             if (list.size > 10) list.removeAt(0)
-            prefs.edit().putString(historyKey, list.joinToString("|||")).commit()
-            return list
+
+            val existingIds = prefs.getString(messageIdsKey, "").orEmpty()
+            val messageIds = if (existingIds.isNotBlank()) {
+                existingIds.split("|||").filter(String::isNotBlank).toMutableList()
+            } else {
+                mutableListOf()
+            }
+            if (messageId.isNotBlank() && messageId !in messageIds) messageIds.add(messageId)
+            // Keep the PendingIntent comfortably below Android's Binder limit even if
+            // notifications remain untouched for a long time.
+            while (messageIds.size > 1_000) messageIds.removeAt(0)
+
+            prefs.edit()
+                .putString(historyKey, list.joinToString("|||"))
+                .putString(messageIdsKey, messageIds.joinToString("|||"))
+                .commit()
+            return NotificationHistory(list, messageIds)
         }
 
         @Synchronized
@@ -119,7 +145,8 @@ internal class MessageNotificationService {
                 .digest(sender.toByteArray(Charsets.UTF_8))
                 .joinToString("") { "%02x".format(it) }
             val historyKey = "history_${senderDigest.take(32)}"
-            prefs.edit().remove(historyKey).commit()
+            val messageIdsKey = "message_ids_${senderDigest.take(32)}"
+            prefs.edit().remove(historyKey).remove(messageIdsKey).commit()
         }
 
         fun getPeerAvatarIcon(context: Context, sender: String): androidx.core.graphics.drawable.IconCompat {
@@ -184,7 +211,7 @@ internal class MessageNotificationService {
         }
     }
 
-    fun show(context: Context, sender: String, text: String) {
+    fun show(context: Context, sender: String, text: String, messageId: String) {
         val settings = P2PPreferences.prefs(context)
         if (!settings.getBoolean("settings_notifications", true)) return
 
@@ -231,7 +258,7 @@ internal class MessageNotificationService {
         }
 
         // Add to history list for MessagingStyle
-        val historyList = addMessageToHistory(context, sender, displayText)
+        val history = addMessageToHistory(context, sender, displayText, messageId)
 
         // 2. MessagingStyle Conversation Threading with Avatar Icon
         val avatarIcon = getPeerAvatarIcon(context, sender)
@@ -243,7 +270,7 @@ internal class MessageNotificationService {
         val messagingStyle = NotificationCompat.MessagingStyle(userPerson)
             .setConversationTitle(sender)
 
-        historyList.forEach { item ->
+        history.messages.forEach { item ->
             messagingStyle.addMessage(item, System.currentTimeMillis(), senderPerson)
         }
 
@@ -256,6 +283,10 @@ internal class MessageNotificationService {
             action = NotificationActionReceiver.ACTION_REPLY
             putExtra(NotificationActionReceiver.EXTRA_SENDER, sender)
             putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, id)
+            putStringArrayListExtra(
+                NotificationActionReceiver.EXTRA_MESSAGE_IDS,
+                ArrayList(history.messageIds),
+            )
         }
         val replyPendingIntent = PendingIntent.getBroadcast(
             context,
@@ -268,13 +299,21 @@ internal class MessageNotificationService {
             R.drawable.ic_send_airplane,
             if (isRu) "Ответить" else "Reply",
             replyPendingIntent
-        ).addRemoteInput(remoteInput).build()
+        ).addRemoteInput(remoteInput)
+            .setAllowGeneratedReplies(true)
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+            .setShowsUserInterface(false)
+            .build()
 
         // 3. Mark as Read Action
         val readIntent = Intent(context, NotificationActionReceiver::class.java).apply {
             action = NotificationActionReceiver.ACTION_MARK_READ
             putExtra(NotificationActionReceiver.EXTRA_SENDER, sender)
             putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, id)
+            putStringArrayListExtra(
+                NotificationActionReceiver.EXTRA_MESSAGE_IDS,
+                ArrayList(history.messageIds),
+            )
         }
         val readPendingIntent = PendingIntent.getBroadcast(
             context,
@@ -287,7 +326,9 @@ internal class MessageNotificationService {
             R.drawable.ic_check,
             if (isRu) "Прочитано" else "Mark as Read",
             readPendingIntent
-        ).build()
+        ).setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+            .setShowsUserInterface(false)
+            .build()
 
         // Build Notification
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)

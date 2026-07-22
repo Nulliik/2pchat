@@ -121,6 +121,30 @@ internal class P2POutboundMessenger(
         sendPersistedControl(context, peerName, endpoint, controlId, "read_receipt", payload, deleteAfterSend = true)
     }
 
+    /** Persist a receipt before a short-lived component (such as a receiver) returns. */
+    fun enqueueReadReceipt(context: Context, peerName: String, messageId: String): Boolean {
+        if (messageId.isBlank() || isPaused(context, peerName)) return false
+        val controlId = "read:$messageId"
+        return try {
+            ChatDatabaseHelper.getInstance(context.applicationContext).enqueuePendingControl(
+                PendingControl(
+                    id = controlId,
+                    peerName = peerName,
+                    type = "read_receipt",
+                    payload = JSONObject().apply {
+                        put("type", "read_receipt")
+                        put("message_id", messageId)
+                        put("control_id", controlId)
+                    }.toString(),
+                )
+            )
+            true
+        } catch (error: Exception) {
+            log(context, "Failed to queue read receipt", "ERROR", error)
+            false
+        }
+    }
+
     fun sendReaction(
         context: Context,
         peerName: String,
@@ -210,11 +234,16 @@ internal class P2POutboundMessenger(
                     }
                 val payload = if (message.replyToId != null) JSONObject().apply {
                         put("type", "reply")
+                        put("message_id", message.id)
                         put("text", message.text)
                         put("reply_to_id", message.replyToId)
                         put("reply_to_text", message.replyToText)
                         put("reply_to_name", message.replyToName)
-                    }.toString() else message.text
+                    }.toString() else JSONObject().apply {
+                        put("type", "text")
+                        put("message_id", message.id)
+                        put("text", message.text)
+                    }.toString()
                     val hasAttachment = message.attachmentType != null && !message.attachmentUri.isNullOrBlank()
                     val attachmentFile = if (hasAttachment) File(message.attachmentUri.orEmpty()) else null
 

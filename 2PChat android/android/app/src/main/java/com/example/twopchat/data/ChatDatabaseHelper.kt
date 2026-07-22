@@ -421,25 +421,44 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         return null
     }
 
-    fun markMessagesAsRead(peerName: String) {
+    fun markMessagesAsRead(peerName: String): List<String> {
+        val messageIds = mutableListOf<String>()
         try {
             val db = this.safeWritableDatabase
-            db.execSQL(
-                """
-                UPDATE $TABLE_MESSAGES
-                SET $KEY_STATUS = CASE
-                    WHEN $KEY_STATUS LIKE '%edited%' THEN 'READ_edited'
-                    ELSE 'READ'
-                END
-                WHERE $KEY_PEER_NAME = ?
-                  AND $KEY_IS_ME = 0
-                  AND ($KEY_STATUS IS NULL OR $KEY_STATUS NOT LIKE 'READ%')
-                """.trimIndent(),
-                arrayOf(peerName),
-            )
+            db.beginTransaction()
+            try {
+                val where = "$KEY_PEER_NAME = ? AND $KEY_IS_ME = 0 " +
+                    "AND ($KEY_STATUS IS NULL OR $KEY_STATUS NOT LIKE 'READ%')"
+                db.query(
+                    TABLE_MESSAGES,
+                    arrayOf(KEY_ID),
+                    where,
+                    arrayOf(peerName),
+                    null,
+                    null,
+                    "rowid ASC",
+                ).use { cursor ->
+                    while (cursor.moveToNext()) messageIds += cursor.getString(0)
+                }
+                db.execSQL(
+                    """
+                    UPDATE $TABLE_MESSAGES
+                    SET $KEY_STATUS = CASE
+                        WHEN $KEY_STATUS LIKE '%edited%' THEN 'READ_edited'
+                        ELSE 'READ'
+                    END
+                    WHERE $where
+                    """.trimIndent(),
+                    arrayOf(peerName),
+                )
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to mark messages as read for $peerName", e)
         }
+        return messageIds
     }
 
     fun clearMessagesForPeer(peerName: String) {

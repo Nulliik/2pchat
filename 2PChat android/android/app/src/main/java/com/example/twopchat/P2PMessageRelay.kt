@@ -204,9 +204,9 @@ object P2PMessageRelay {
         )
     }
 
-    private fun showNotification(context: Context, sender: String, text: String) {
+    private fun showNotification(context: Context, sender: String, message: Message, text: String) {
         try {
-            notificationService.show(context, sender, text)
+            notificationService.show(context, sender, text, message.id)
         } catch (e: Exception) {
             log(context, "Failed to show message notification: ${e.message}", "ERROR", e)
         }
@@ -278,7 +278,7 @@ object P2PMessageRelay {
             if (activeChatPeer.get() != sender) {
                 val unreadKey = P2PPreferences.unreadCount(sender)
                 prefs.edit { putInt(unreadKey, prefs.getInt(unreadKey, 0) + 1) }
-                showNotification(context, sender, notificationText)
+                showNotification(context, sender, message, notificationText)
             }
         }
     }
@@ -1372,6 +1372,9 @@ object P2PMessageRelay {
     fun sendReadReceipt(context: Context, peerName: String, endpoint: String?, messageId: String) {
         outboundMessenger.sendReadReceipt(context, peerName, endpoint, messageId)
     }
+
+    fun enqueueReadReceipt(context: Context, peerName: String, messageId: String): Boolean =
+        outboundMessenger.enqueueReadReceipt(context, peerName, messageId)
 
     fun sendReaction(context: Context, peerName: String, endpoint: String, messageId: String, messageText: String, emoji: String) {
         outboundMessenger.sendReaction(context, peerName, endpoint, messageId, messageText, emoji)

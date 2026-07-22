@@ -271,16 +271,12 @@ fun FullscreenImageViewer(
                         contentDescription = "Fullscreen Image",
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer(
-                                scaleX = scale,
-                                scaleY = scale,
-                                translationX = if (scale > 1f) offset.x else 0f,
-                                translationY = if (scale > 1f) offset.y else 0f
-                            )
                             .transformable(
                                 state = transformState,
                                 // At 1x the pager owns one-finger horizontal drags. Pinch still
-                                // starts zoom, and once zoomed the image owns panning.
+                                // starts zoom, and once zoomed the image owns panning. Keep the
+                                // gesture detector outside the scaled graphics layer so pointer
+                                // deltas stay in screen pixels at every zoom level.
                                 canPan = { scale > 1f },
                             )
                             .pointerInput(Unit) {
@@ -298,6 +294,12 @@ fun FullscreenImageViewer(
                                     }
                                 )
                             }
+                            .graphicsLayer(
+                                scaleX = scale,
+                                scaleY = scale,
+                                translationX = if (scale > 1f) offset.x else 0f,
+                                translationY = if (scale > 1f) offset.y else 0f
+                            )
                     )
                 } else {
                     CircularProgressIndicator(color = Color.White)
