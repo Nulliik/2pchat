@@ -16,6 +16,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,6 +68,24 @@ fun AnimatedSplashScreen(
         ),
         label = "breathScale"
     )
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val logoBitmap = remember(context) {
+        try {
+            val drawable = androidx.core.content.ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
+            drawable?.let {
+                val w = if (it.intrinsicWidth > 0) it.intrinsicWidth else 256
+                val h = if (it.intrinsicHeight > 0) it.intrinsicHeight else 256
+                val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bmp)
+                it.setBounds(0, 0, canvas.width, canvas.height)
+                it.draw(canvas)
+                bmp.asImageBitmap()
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -120,13 +139,15 @@ fun AnimatedSplashScreen(
                             shape = RoundedCornerShape(32.dp)
                         )
                 ) {
-                    Image(
-                        painter = painterResource(id = R.mipmap.ic_launcher),
-                        contentDescription = "2PChat Logo",
-                        modifier = Modifier
-                            .size(105.dp)
-                            .clip(RoundedCornerShape(26.dp))
-                    )
+                    if (logoBitmap != null) {
+                        Image(
+                            bitmap = logoBitmap,
+                            contentDescription = "2PChat Logo",
+                            modifier = Modifier
+                                .size(105.dp)
+                                .clip(RoundedCornerShape(26.dp))
+                        )
+                    }
                 }
             }
 
