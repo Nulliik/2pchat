@@ -16,6 +16,14 @@ class PeerSearchTest {
     }
 
     @Test
+    fun `normalizes multi-word searchable nickname`() {
+        assertEquals(
+            PeerSearchAddress("Alice_Smith", "abcd-2345"),
+            parsePeerSearchAddress("Alice   Smith#abcd-2345"),
+        )
+    }
+
+    @Test
     fun `uses the last separator so nickname may contain hash`() {
         assertEquals(
             PeerSearchAddress("Alice#mobile", "abcd-2345"),
@@ -28,6 +36,64 @@ class PeerSearchTest {
         assertNull(parsePeerSearchAddress("Alice"))
         assertNull(parsePeerSearchAddress("#abcd-2345"))
         assertNull(parsePeerSearchAddress("Alice#"))
+    }
+
+    @Test
+    fun `accepts 32 code points and rejects an overlong search name`() {
+        val maxName = "a".repeat(31) + "😀"
+        assertEquals(
+            PeerSearchAddress(maxName, "code"),
+            parsePeerSearchAddress("$maxName#code"),
+        )
+        assertNull(parsePeerSearchAddress("${maxName}x#code"))
+    }
+
+    @Test
+    fun `QR request searches tracker by nickname and shares the QR code`() {
+        assertEquals(
+            PeerSearchRequest(
+                lookupNickname = "Alice_Smith",
+                sharedCode = "abcd-2345",
+                expectedLiveName = "Alice_Smith",
+                expectedFingerprint = "fingerprint",
+            ),
+            invitePeerSearchRequest(" Alice Smith ", " abcd-2345 ", "fingerprint"),
+        )
+    }
+
+    @Test
+    fun `classic and QR paths use the same tracker namespace`() {
+        val classic = classicPeerSearchRequest("Alice Smith#abcd-2345")
+        val qr = invitePeerSearchRequest("Alice Smith", "abcd-2345", null)
+
+        assertEquals(classic, qr)
+    }
+
+    @Test
+    fun `QR request requires both nickname and connection code`() {
+        assertNull(invitePeerSearchRequest(null, "code", null))
+        assertNull(invitePeerSearchRequest("Alice", " ", null))
+    }
+
+    @Test
+    fun `formats direct IPv4 and Yggdrasil QR candidates`() {
+        assertEquals("192.0.2.10:50001", formatInviteEndpoint("192.0.2.10"))
+        assertEquals("192.0.2.10:4242", formatInviteEndpoint("192.0.2.10:4242"))
+        assertEquals("[200:db8::10]:50001", formatInviteEndpoint("200:db8::10"))
+        assertEquals("[200:db8::10]:4242", formatInviteEndpoint("[200:db8::10]:4242"))
+        assertNull(formatInviteEndpoint("tracker.example"))
+    }
+
+    @Test
+    fun `QR only connects to a live verified tracker result`() {
+        val live = mapOf<String, Any>("verified" to "True", "ownership_verified" to "False")
+        val owned = mapOf<String, Any>("verified" to "True", "ownership_verified" to "True")
+        val stale = mapOf<String, Any>("verified" to "False", "ownership_verified" to "True")
+
+        assertTrue(isConnectablePeerSearchResult(live, expectedFingerprint = null))
+        assertFalse(isConnectablePeerSearchResult(live, expectedFingerprint = "expected"))
+        assertTrue(isConnectablePeerSearchResult(owned, expectedFingerprint = "expected"))
+        assertFalse(isConnectablePeerSearchResult(stale, expectedFingerprint = null))
     }
 
     @Test

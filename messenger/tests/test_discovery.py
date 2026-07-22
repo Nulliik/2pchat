@@ -6,6 +6,8 @@ import pytest
 from messenger.core.discovery_base import PeerEndpoint
 from messenger.core.discovery_mainline_dht import InMemoryBep5Backend, MainlineDHTDiscovery
 from messenger.core.discovery_manager import get_discovery_provider
+from messenger.core.discovery_tracker_http import HttpTrackerDiscovery
+from messenger.core.discovery_tracker_udp import UdpTrackerDiscovery
 
 
 @pytest.mark.asyncio
@@ -81,6 +83,15 @@ def test_mainline_discovery_normalization_rejects_empty_values():
         MainlineDHTDiscovery.normalize_nickname("   ")
     with pytest.raises(ValueError):
         MainlineDHTDiscovery.derive_lookup_namespace("alice", "   ")
+
+
+def test_tracker_and_dht_namespaces_match_for_multiword_and_special_names():
+    nickname = "Anne-Marie #2 🦊"
+    shared_code = "abcd-2345"
+    expected = MainlineDHTDiscovery.derive_lookup_namespace(nickname, shared_code)
+
+    assert HttpTrackerDiscovery.derive_info_hash(nickname, shared_code) == expected
+    assert UdpTrackerDiscovery.derive_info_hash(nickname, shared_code) == expected
 
 
 @pytest.mark.asyncio

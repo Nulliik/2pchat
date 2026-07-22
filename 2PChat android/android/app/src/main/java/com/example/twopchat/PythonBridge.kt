@@ -285,6 +285,7 @@ object PythonBridge {
         rendezvousCode: String? = null,
     ): Boolean {
         if (!isInitialized) return false
+        val canonicalName = validatedSearchNickname(nickname) ?: return false
         val context = appContext ?: return false
         val trackerConfig = TrackerPreferences.configJson(context)
         val discoveryCode = rendezvousCode?.trim()?.takeIf { it.isNotEmpty() }
@@ -314,7 +315,7 @@ object PythonBridge {
         // Endpoint changes are meaningful announces. In particular, do not
         // let an early IPv4/empty announce suppress a later Yggdrasil one.
         val endpointKey = addresses.joinToString(",")
-        val announceKey = "$nickname\u0000$fingerprint\u0000$discoveryCode\u0000$port\u0000$endpointKey\u0000$trackerConfig"
+        val announceKey = "$canonicalName\u0000$fingerprint\u0000$discoveryCode\u0000$port\u0000$endpointKey\u0000$trackerConfig"
         synchronized(announceLock) {
             val now = android.os.SystemClock.elapsedRealtime()
             val lastAt = lastAnnounceAt[announceKey]
@@ -335,7 +336,7 @@ object PythonBridge {
             )
             val endpointsJson = JSONArray(addresses).toString()
             val success = bridge.callAttr(
-                "announce_peer_endpoints", nickname, fingerprint, endpointsJson, port, discoveryCode
+                "announce_peer_endpoints", canonicalName, fingerprint, endpointsJson, port, discoveryCode
             )
             success.toBoolean().also { result ->
                 synchronized(announceLock) {
@@ -439,10 +440,11 @@ object PythonBridge {
     }
 
     fun configureLocalIdentity(nickname: String, fingerprint: String, aboutMe: String = ""): Boolean {
-        if (!isInitialized || nickname.isBlank() || fingerprint.isBlank()) return false
+        val canonicalName = validatedSearchNickname(nickname) ?: return false
+        if (!isInitialized || fingerprint.isBlank()) return false
         return try {
             Python.getInstance().getModule("discovery_bridge")
-                .callAttr("configure_local_identity", nickname, fingerprint, aboutMe)
+                .callAttr("configure_local_identity", canonicalName, fingerprint, aboutMe)
                 .toBoolean()
         } catch (e: Exception) {
             Log.e(TAG, "Error configuring local P2P identity", e)

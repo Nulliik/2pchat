@@ -54,6 +54,8 @@ import android.content.pm.PackageManager
 import com.example.twopchat.PythonBridge
 import com.example.twopchat.Chat
 import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.canonicalNickname
+import com.example.twopchat.validatedSearchNickname
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
@@ -70,15 +72,68 @@ internal data class PeerSearchAddress(
     val discoveryCode: String,
 )
 
+internal data class PeerSearchRequest(
+    val lookupNickname: String,
+    val sharedCode: String,
+    val expectedLiveName: String,
+    val expectedFingerprint: String?,
+)
+
+internal fun invitePeerSearchRequest(
+    name: String?,
+    code: String?,
+    fingerprint: String?,
+): PeerSearchRequest? {
+    val nickname = name?.let(::validatedSearchNickname) ?: return null
+    val sharedCode = code?.trim().orEmpty()
+    if (sharedCode.isEmpty()) return null
+    return PeerSearchRequest(
+        lookupNickname = nickname,
+        sharedCode = sharedCode,
+        expectedLiveName = nickname,
+        expectedFingerprint = fingerprint?.trim()?.takeIf(String::isNotEmpty),
+    )
+}
+
+internal fun formatInviteEndpoint(value: String?, defaultPort: Int = 50001): String? {
+    val raw = value?.trim().orEmpty()
+    if (raw.isEmpty()) return null
+    if (Regex("^\\[[0-9A-Fa-f:]+]:\\d{1,5}$").matches(raw)) return raw
+    if (Regex("^[0-9.]+:\\d{1,5}$").matches(raw)) return raw
+    if (Regex("^[0-9.]+$").matches(raw)) return "$raw:$defaultPort"
+    if (Regex("^[0-9A-Fa-f:]+$").matches(raw) && raw.contains(':')) return "[$raw]:$defaultPort"
+    return null
+}
+
+internal fun isConnectablePeerSearchResult(
+    peer: Map<String, Any>,
+    expectedFingerprint: String?,
+): Boolean {
+    val verified = peer["verified"]?.toString()?.equals("true", ignoreCase = true) == true
+    val ownershipVerified = peer["ownership_verified"]?.toString()
+        ?.equals("true", ignoreCase = true) == true
+    return verified && (expectedFingerprint == null || ownershipVerified)
+}
+
 internal fun parsePeerSearchAddress(value: String): PeerSearchAddress? {
     val trimmed = value.trim()
     val separator = trimmed.lastIndexOf('#')
     if (separator <= 0 || separator == trimmed.lastIndex) return null
 
-    val nickname = trimmed.substring(0, separator).trim().replace(Regex("\\s+"), "_")
+    val nickname = validatedSearchNickname(trimmed.substring(0, separator)) ?: return null
     val discoveryCode = trimmed.substring(separator + 1).trim()
     if (nickname.isEmpty() || discoveryCode.isEmpty()) return null
     return PeerSearchAddress(nickname, discoveryCode)
+}
+
+internal fun classicPeerSearchRequest(value: String): PeerSearchRequest? {
+    val address = parsePeerSearchAddress(value) ?: return null
+    return PeerSearchRequest(
+        lookupNickname = address.nickname,
+        sharedCode = address.discoveryCode,
+        expectedLiveName = address.nickname,
+        expectedFingerprint = null,
+    )
 }
 
 internal fun contactFromPeerSearchResult(
@@ -165,7 +220,7 @@ fun ContactsTab(
     
     val sharedPrefs = remember { com.example.twopchat.P2PPreferences.prefs(context) }
     val rawUsername = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
-    val username = remember(rawUsername) { rawUsername.trim().replace(Regex("\\s+"), "_") }
+    val username = remember(rawUsername) { canonicalNickname(rawUsername) }
     val discoveryCode = remember { PythonBridge.getOrCreateDiscoveryCode() }
     val contactAddress = remember(username, discoveryCode) { "$username#$discoveryCode" }
     var fingerprint by remember { mutableStateOf("Loading...") }
@@ -187,48 +242,59 @@ fun ContactsTab(
             if (trimmed.startsWith("2pchat://connect")) {
                 try {
                     val uri = android.net.Uri.parse(trimmed)
-                    val parsedName = uri.getQueryParameter("name") ?: "Invited Peer"
-                    val token = uri.getQueryParameter("token") ?: uri.getQueryParameter("code") ?: ""
+                    val parsedName = uri.getQueryParameter("name")
+                    val token = uri.getQueryParameter("token") ?: uri.getQueryParameter("code")
                     val expectedFp = (uri.getQueryParameter("fp")?.trim().orEmpty()).replace(" ", "+")
                     val directIp = uri.getQueryParameter("ip")
                     val yggIp = uri.getQueryParameter("ygg")
+                    val request = invitePeerSearchRequest(parsedName, token, expectedFp)
 
-                    if (token.isEmpty()) {
+                    if (request == null) {
                         resolveInviteStatus = if (appLanguage == "Русский") {
                             "Некорректная ссылка/QR: отсутствует код подключения"
                         } else {
                             "Invalid link/QR: missing connection code"
                         }
                     } else {
-                        if (!directIp.isNullOrBlank()) {
-                            val formattedIp = if (directIp.contains(":")) directIp else "$directIp:50001"
-                            com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(parsedName, expectedFp, formattedIp)
+                        formatInviteEndpoint(directIp)?.let { endpoint ->
+                            com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(
+                                request.expectedLiveName, request.expectedFingerprint.orEmpty(), endpoint,
+                            )
                         }
-                        if (!yggIp.isNullOrBlank()) {
-                            val formattedYgg = if (yggIp.contains(":")) yggIp else "[$yggIp]:50001"
-                            com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(parsedName, expectedFp, formattedYgg)
+                        formatInviteEndpoint(yggIp)?.let { endpoint ->
+                            com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(
+                                request.expectedLiveName, request.expectedFingerprint.orEmpty(), endpoint,
+                            )
                         }
                         isResolvingInvite = true
                         resolveInviteStatus = if (appLanguage == "Русский") "Мгновенное подключение к собеседнику..." else "Connecting to peer..."
                         coroutineScope.launch(Dispatchers.IO) {
-                            val peers = PythonBridge.searchPeers(token, parsedName, expectedFp.ifEmpty { null })
-                            val endpoints = if (peers.isNotEmpty()) peers[0]["endpoints"] as? List<*> else null
+                            val peers = PythonBridge.searchPeers(
+                                query = request.lookupNickname,
+                                expectedLiveName = request.expectedLiveName,
+                                expectedFingerprint = request.expectedFingerprint,
+                                sharedCode = request.sharedCode,
+                            )
+                            val resolvedPeer = peers.firstOrNull {
+                                isConnectablePeerSearchResult(it, request.expectedFingerprint)
+                            }
+                            val endpoints = resolvedPeer?.get("endpoints") as? List<*>
                             val endpointStr = if (endpoints != null && endpoints.isNotEmpty()) endpoints.joinToString(",") { it.toString() } else ""
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                                 isResolvingInvite = false
                                 if (endpointStr.isNotEmpty()) {
                                     val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-                                    if (!activeSet.contains(parsedName)) {
+                                    if (!activeSet.contains(request.expectedLiveName)) {
                                         sharedPrefs.edit()
-                                            .putStringSet("active_chats", activeSet + parsedName)
-                                            .putString("transport_$parsedName", "DIRECT P2P")
-                                            .putString("peer_fingerprint_$parsedName", expectedFp)
-                                            .putString("discovery_code_$parsedName", token)
+                                            .putStringSet("active_chats", activeSet + request.expectedLiveName)
+                                            .putString("transport_${request.expectedLiveName}", "DIRECT P2P")
+                                            .putString("peer_fingerprint_${request.expectedLiveName}", request.expectedFingerprint.orEmpty())
+                                            .putString("discovery_code_${request.expectedLiveName}", request.sharedCode)
                                             .apply()
                                     }
-                                    com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(parsedName, endpointStr)
+                                    com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(request.expectedLiveName, endpointStr)
                                     resolveInviteStatus = ""
-                                    onItemClick(Chat(parsedName))
+                                    onItemClick(Chat(request.expectedLiveName))
                                 } else {
                                     resolveInviteStatus = if (appLanguage == "Русский") "Собеседник не найден. Попробуйте снова." else "Peer not found. Please try again."
                                 }
@@ -239,8 +305,8 @@ fun ContactsTab(
                     Toast.makeText(context, "Invalid link/QR", Toast.LENGTH_SHORT).show()
                 }
             } else {
-                val address = parsePeerSearchAddress(trimmed)
-                if (address == null) {
+                val request = classicPeerSearchRequest(trimmed)
+                if (request == null) {
                     searchSummary = if (appLanguage == "Русский") {
                         "Введите полный адрес в формате Имя#код. Поиск только по нику отключён."
                     } else {
@@ -277,9 +343,9 @@ fun ContactsTab(
                         }
 
                         val results = PythonBridge.searchPeers(
-                            address.nickname,
-                            expectedLiveName = address.nickname,
-                            sharedCode = address.discoveryCode,
+                            query = request.lookupNickname,
+                            expectedLiveName = request.expectedLiveName,
+                            sharedCode = request.sharedCode,
                         )
                         progressJob.cancel()
 

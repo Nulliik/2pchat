@@ -78,6 +78,71 @@ def test_android_initial_announce_starts_bep5_without_waiting_for_trackers(monke
     assert events.index("dht-start") < events.index("tracker-end")
 
 
+def test_qr_and_classic_name_code_round_trip_through_tracker(monkeypatch):
+    bridge = _load_discovery_bridge()
+    calls = []
+
+    class FakeTrackerProvider:
+        observed_addresses = ()
+
+        async def announce(self, nickname, shared_code, **kwargs):
+            calls.append(("announce", nickname, shared_code))
+            return SimpleNamespace()
+
+        async def resolve(self, nickname, shared_code):
+            calls.append(("resolve", nickname, shared_code))
+            return [SimpleNamespace(
+                nickname=nickname,
+                identity_fingerprint="peer-fingerprint",
+                endpoints=(SimpleNamespace(host="198.51.100.20", port=50001),),
+            )]
+
+    async def fake_verify(endpoint, nickname, expected_fingerprint=None):
+        assert endpoint == "198.51.100.20:50001"
+        assert nickname == "Anne_Marie#2"
+        assert expected_fingerprint is None
+        return {
+            "nickname": nickname,
+            "fingerprint": "peer-fingerprint",
+            "endpoint": endpoint,
+            "verified": True,
+        }
+
+    monkeypatch.setattr(bridge, "CLEARNET_TRACKERS", ("Test tracker",))
+    monkeypatch.setattr(bridge, "YGG_TRACKERS", ())
+    monkeypatch.setattr(bridge, "_dht_enabled", False)
+    monkeypatch.setattr(
+        bridge,
+        "get_tracker_by_name",
+        lambda _name: SimpleNamespace(
+            discovery_scheme="http-tracker",
+            announce_url="https://tracker.invalid/announce",
+            protocol="https",
+        ),
+    )
+    monkeypatch.setattr(bridge, "get_discovery_provider", lambda *_args, **_kwargs: FakeTrackerProvider())
+    monkeypatch.setattr(bridge, "_discover_public_ipv4_stun", lambda: None)
+    monkeypatch.setattr(bridge, "_verify_live_endpoint", fake_verify)
+
+    assert bridge.announce_peer_endpoints(
+        "Anne_Marie#2",
+        "short-fingerprint",
+        '["192.0.2.10"]',
+        50001,
+        "abcd-2345",
+    ) is True
+    result = bridge.resolve_peers(
+        "Anne_Marie#2",
+        "abcd-2345",
+        "Test tracker",
+        "Anne_Marie#2",
+    )
+
+    assert ("announce", "Anne_Marie#2", "abcd-2345") in calls
+    assert ("resolve", "Anne_Marie#2", "abcd-2345") in calls
+    assert result[0]["verified"] is True
+
+
 def test_direct_yggdrasil_neighbour_returns_before_slow_candidates(monkeypatch):
     bridge = _load_discovery_bridge()
     slow_cancelled = asyncio.Event()
