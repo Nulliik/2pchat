@@ -1303,123 +1303,249 @@ private fun CameraQrScannerOverlay(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var hasScanned by remember { mutableStateOf(false) }
+    var isTorchEnabled by remember { mutableStateOf(false) }
+    var cameraControl by remember { mutableStateOf<androidx.camera.core.CameraControl?>(null) }
 
-    androidx.activity.compose.BackHandler(onBack = onDismiss)
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-        androidx.compose.ui.viewinterop.AndroidView(
-            factory = { ctx ->
-                val previewView = androidx.camera.view.PreviewView(ctx).apply {
-                    scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_CENTER
-                }
-                val cameraProviderFuture = androidx.camera.lifecycle.ProcessCameraProvider.getInstance(ctx)
-                cameraProviderFuture.addListener({
-                    val cameraProvider = cameraProviderFuture.get()
-                    val preview = androidx.camera.core.Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
-                    }
-                    val imageAnalysis = androidx.camera.core.ImageAnalysis.Builder()
-                        .setBackpressureStrategy(androidx.camera.core.ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-
-                    val barcodeScanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient(
-                        com.google.mlkit.vision.barcode.BarcodeScannerOptions.Builder()
-                            .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
-                            .build()
-                    )
-
-                    imageAnalysis.setAnalyzer(java.util.concurrent.Executors.newSingleThreadExecutor()) { imageProxy ->
-                        val mediaImage = imageProxy.image
-                        if (mediaImage != null && !hasScanned) {
-                            val inputImage = com.google.mlkit.vision.common.InputImage.fromMediaImage(
-                                mediaImage,
-                                imageProxy.imageInfo.rotationDegrees
-                            )
-                            barcodeScanner.process(inputImage)
-                                .addOnSuccessListener { barcodes ->
-                                    for (barcode in barcodes) {
-                                        val rawValue = barcode.rawValue ?: continue
-                                        if (rawValue.isNotBlank() && !hasScanned) {
-                                            hasScanned = true
-                                            (ctx as? android.app.Activity)?.runOnUiThread {
-                                                onQrScanned(rawValue)
-                                            }
-                                            break
-                                        }
-                                    }
-                                }
-                                .addOnCompleteListener {
-                                    imageProxy.close()
-                                }
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        if (uri != null && !hasScanned) {
+            try {
+                val inputImage = com.google.mlkit.vision.common.InputImage.fromFilePath(context, uri)
+                val scanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient()
+                scanner.process(inputImage)
+                    .addOnSuccessListener { barcodes ->
+                        val qrText = barcodes.firstOrNull { it.rawValue?.isNotBlank() == true }?.rawValue
+                        if (!qrText.isNullOrBlank() && !hasScanned) {
+                            hasScanned = true
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            onQrScanned(qrText)
                         } else {
-                            imageProxy.close()
+                            Toast.makeText(
+                                context,
+                                if (appLanguage == "Русский") "QR-код не найден на фото" else "No QR code found in photo",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }
-
-                    val cameraSelector = androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA
-                    try {
-                        cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalysis)
-                    } catch (e: Exception) {
-                        android.util.Log.e("CameraQrScanner", "Camera bind failed", e)
+                    .addOnFailureListener { e ->
+                        Toast.makeText(context, e.message ?: "Failed to read image", Toast.LENGTH_SHORT).show()
                     }
-                }, ContextCompat.getMainExecutor(ctx))
-                previewView
-            },
-            modifier = Modifier.fillMaxSize()
+            } catch (e: Exception) {
+                Toast.makeText(context, e.message ?: "Failed to load image", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        val infiniteTransition = rememberInfiniteTransition(label = "laserAnimation")
+        val laserOffsetY by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 245f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 2000, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "laserPos"
         )
 
-        // Overlay UI
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+                .background(Color.Black)
         ) {
-            Row(
+            androidx.compose.ui.viewinterop.AndroidView(
+                factory = { ctx ->
+                    val previewView = androidx.camera.view.PreviewView(ctx).apply {
+                        scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_CENTER
+                    }
+                    val cameraProviderFuture = androidx.camera.lifecycle.ProcessCameraProvider.getInstance(ctx)
+                    cameraProviderFuture.addListener({
+                        val cameraProvider = cameraProviderFuture.get()
+                        val preview = androidx.camera.core.Preview.Builder().build().also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
+                        }
+                        val imageAnalysis = androidx.camera.core.ImageAnalysis.Builder()
+                            .setBackpressureStrategy(androidx.camera.core.ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .build()
+
+                        val barcodeScanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient(
+                            com.google.mlkit.vision.barcode.BarcodeScannerOptions.Builder()
+                                .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
+                                .build()
+                        )
+
+                        imageAnalysis.setAnalyzer(java.util.concurrent.Executors.newSingleThreadExecutor()) { imageProxy ->
+                            val mediaImage = imageProxy.image
+                            if (mediaImage != null && !hasScanned) {
+                                val inputImage = com.google.mlkit.vision.common.InputImage.fromMediaImage(
+                                    mediaImage,
+                                    imageProxy.imageInfo.rotationDegrees
+                                )
+                                barcodeScanner.process(inputImage)
+                                    .addOnSuccessListener { barcodes ->
+                                        for (barcode in barcodes) {
+                                            val rawValue = barcode.rawValue ?: continue
+                                            if (rawValue.isNotBlank() && !hasScanned) {
+                                                hasScanned = true
+                                                (ctx as? android.app.Activity)?.runOnUiThread {
+                                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                                    onQrScanned(rawValue)
+                                                }
+                                                break
+                                            }
+                                        }
+                                    }
+                                    .addOnCompleteListener {
+                                        imageProxy.close()
+                                    }
+                            } else {
+                                imageProxy.close()
+                            }
+                        }
+
+                        val cameraSelector = androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA
+                        try {
+                            cameraProvider.unbindAll()
+                            val camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalysis)
+                            cameraControl = camera.cameraControl
+                        } catch (e: Exception) {
+                            android.util.Log.e("CameraQrScanner", "Camera bind failed", e)
+                        }
+                    }, ContextCompat.getMainExecutor(ctx))
+                    previewView
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // Scanning Overlay UI
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = if (appLanguage == "Русский") "Сканирование QR-кода" else "Scan QR Code",
-                    color = Color.White,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                // Top Header Row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                    Text(
+                        text = if (appLanguage == "Русский") "Сканирование QR-кода" else "Scan QR Code",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                    }
+                }
+
+                // Central Laser Frame Box
+                Box(
+                    modifier = Modifier
+                        .size(260.dp)
+                        .border(3.dp, primaryColor, RoundedCornerShape(24.dp)),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    // Animated Scanning Laser Beam
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.9f)
+                            .height(3.dp)
+                            .offset(y = laserOffsetY.dp)
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(
+                                        Color.Transparent,
+                                        primaryColor,
+                                        Color.White,
+                                        primaryColor,
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                    )
+                }
+
+                // Bottom Instruction & Control Buttons
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                ) {
+                    Text(
+                        text = if (appLanguage == "Русский") "Наведите камеру на QR-код собеседника" else "Point camera at peer's QR code",
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(28.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Torch Button
+                        IconButton(
+                            onClick = {
+                                isTorchEnabled = !isTorchEnabled
+                                cameraControl?.enableTorch(isTorchEnabled)
+                            },
+                            modifier = Modifier
+                                .size(56.dp)
+                                .background(
+                                    if (isTorchEnabled) primaryColor else Color.Black.copy(alpha = 0.65f),
+                                    CircleShape
+                                )
+                        ) {
+                            Icon(
+                                painter = painterResource(
+                                    id = if (isTorchEnabled) com.example.twopchat.R.drawable.ic_torch_on else com.example.twopchat.R.drawable.ic_torch_off
+                                ),
+                                contentDescription = "Torch",
+                                tint = if (isTorchEnabled) StealthBlack else Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        // Gallery Picker Button
+                        IconButton(
+                            onClick = { galleryLauncher.launch("image/*") },
+                            modifier = Modifier
+                                .size(56.dp)
+                                .background(Color.Black.copy(alpha = 0.65f), CircleShape)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_gallery),
+                                contentDescription = "Gallery",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
                 }
             }
-
-            Box(
-                modifier = Modifier
-                    .size(270.dp)
-                    .border(3.dp, primaryColor, RoundedCornerShape(24.dp))
-            )
-
-            Text(
-                text = if (appLanguage == "Русский") "Наведите камеру на QR-код собеседника" else "Point camera at peer's QR code",
-                color = Color.White.copy(alpha = 0.9f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier
-                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            )
         }
     }
 }
