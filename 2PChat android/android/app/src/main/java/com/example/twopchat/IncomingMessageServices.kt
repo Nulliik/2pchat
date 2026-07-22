@@ -121,6 +121,67 @@ internal class MessageNotificationService {
             val historyKey = "history_${senderDigest.take(32)}"
             prefs.edit().remove(historyKey).commit()
         }
+
+        fun getPeerAvatarIcon(context: Context, sender: String): androidx.core.graphics.drawable.IconCompat {
+            // 1. Try RAM cache
+            val cached = P2PMessageRelay.peerAvatars[sender]
+            if (cached != null) {
+                return androidx.core.graphics.drawable.IconCompat.createWithBitmap(cached)
+            }
+
+            // 2. Try encrypted avatar storage on disk
+            try {
+                val avatarDir = File(context.filesDir, "avatars")
+                if (avatarDir.exists()) {
+                    val files = avatarDir.listFiles().orEmpty()
+                    for (file in files) {
+                        if (file.name.endsWith(".avatar")) {
+                            val bytes = file.readBytes()
+                            val clear = SecureStorage.decryptBytes(bytes)
+                            if (clear.size > 2) {
+                                val nameLen = clear[0].toInt() and 0xFF
+                                val name = String(clear, 2, nameLen, Charsets.UTF_8)
+                                if (name == sender) {
+                                    val imgBytes = clear.copyOfRange(2 + nameLen, clear.size)
+                                    val bmp = android.graphics.BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.size)
+                                    if (bmp != null) {
+                                        P2PMessageRelay.peerAvatars[sender] = bmp
+                                        return androidx.core.graphics.drawable.IconCompat.createWithBitmap(bmp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+
+            // 3. Fallback: Draw a crisp circular avatar bitmap with sender's initial letter & brand color
+            val sizePx = 144
+            val bitmap = android.graphics.Bitmap.createBitmap(sizePx, sizePx, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bitmap)
+
+            val hash = sender.hashCode()
+            val hue = (Math.abs(hash) % 360).toFloat()
+            val bgColor = android.graphics.Color.HSVToColor(floatArrayOf(hue, 0.65f, 0.85f))
+
+            val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color = bgColor
+                style = android.graphics.Paint.Style.FILL
+            }
+            canvas.drawCircle(sizePx / 2f, sizePx / 2f, sizePx / 2f, paint)
+
+            val initial = sender.trim().take(1).uppercase()
+            val textPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                color = android.graphics.Color.WHITE
+                textSize = sizePx * 0.52f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+                textAlign = android.graphics.Paint.Align.CENTER
+            }
+            val textY = (sizePx / 2f) - ((textPaint.descent() + textPaint.ascent()) / 2f)
+            canvas.drawText(initial, sizePx / 2f, textY, textPaint)
+
+            return androidx.core.graphics.drawable.IconCompat.createWithBitmap(bitmap)
+        }
     }
 
     fun show(context: Context, sender: String, text: String) {
@@ -172,9 +233,13 @@ internal class MessageNotificationService {
         // Add to history list for MessagingStyle
         val historyList = addMessageToHistory(context, sender, displayText)
 
-        // 2. MessagingStyle Conversation Threading
+        // 2. MessagingStyle Conversation Threading with Avatar Icon
+        val avatarIcon = getPeerAvatarIcon(context, sender)
         val userPerson = androidx.core.app.Person.Builder().setName(if (isRu) "Вы" else "You").build()
-        val senderPerson = androidx.core.app.Person.Builder().setName(sender).build()
+        val senderPerson = androidx.core.app.Person.Builder()
+            .setName(sender)
+            .setIcon(avatarIcon)
+            .build()
         val messagingStyle = NotificationCompat.MessagingStyle(userPerson)
             .setConversationTitle(sender)
 
