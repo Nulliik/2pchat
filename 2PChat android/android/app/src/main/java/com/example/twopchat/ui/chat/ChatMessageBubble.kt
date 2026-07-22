@@ -673,29 +673,18 @@ internal fun ChatMessageBubble(
                                             fontSize = 9.sp
                                         )
                                     } else if (isRead) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy((-5).dp)
-                                        ) {
-                                            Icon(
-                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_check),
-                                                contentDescription = "Read",
-                                                tint = statusColor,
-                                                modifier = Modifier.size(13.dp)
-                                            )
-                                            Icon(
-                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_check),
-                                                contentDescription = null,
-                                                tint = statusColor,
-                                                modifier = Modifier.size(13.dp)
-                                            )
-                                        }
+                                        Icon(
+                                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_double_check),
+                                            contentDescription = "Read",
+                                            tint = statusColor,
+                                            modifier = Modifier.height(11.dp).width(16.dp)
+                                        )
                                     } else {
                                         Icon(
-                                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_check),
+                                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_single_check),
                                             contentDescription = "Sent",
                                             tint = statusColor,
-                                            modifier = Modifier.size(13.dp)
+                                            modifier = Modifier.height(11.dp).width(12.dp)
                                         )
                                     }
                                 }
