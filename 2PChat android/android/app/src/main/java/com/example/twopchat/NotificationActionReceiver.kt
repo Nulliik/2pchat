@@ -59,19 +59,34 @@ class NotificationActionReceiver : BroadcastReceiver() {
                         }
                     }
 
-                    // 3. Clear notification history for sender and cancel notification
-                    MessageNotificationService.clearHistory(context, sender)
+                    // 3. Mark messages as read in DB & reset unread count badge
+                    markPeerAsRead(context, sender)
                     if (notifId != 0) {
                         manager.cancel(notifId)
                     }
                 }
             }
             ACTION_MARK_READ -> {
-                MessageNotificationService.clearHistory(context, sender)
+                markPeerAsRead(context, sender)
                 if (notifId != 0) {
                     manager.cancel(notifId)
                 }
             }
+        }
+    }
+
+    private fun markPeerAsRead(context: Context, sender: String) {
+        try {
+            // 1. Reset unread badge count in preferences to 0
+            P2PPreferences.prefs(context).edit().putInt("unread_count_$sender", 0).apply()
+
+            // 2. Mark messages as read in database
+            ChatDatabaseHelper.getInstance(context).markMessagesAsRead(sender)
+
+            // 3. Clear notification history for sender
+            MessageNotificationService.clearHistory(context, sender)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }
