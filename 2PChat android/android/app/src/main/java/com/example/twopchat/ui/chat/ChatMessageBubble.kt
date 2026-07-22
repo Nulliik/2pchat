@@ -654,11 +654,6 @@ internal fun ChatMessageBubble(
                                     val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                                     val isPending = msg.status?.startsWith("PENDING") == true
                                     
-                                    val statusText = when {
-                                        isPending -> "🕒"
-                                        isRead -> "✓✓"
-                                        else -> "✓"
-                                    }
                                     val statusColor = if (isOnlyEmoji) {
                                         if (isRead) primaryColor else onSurfaceVariant.copy(alpha = 0.4f)
                                     } else if (msg.isMe) {
@@ -671,12 +666,38 @@ internal fun ChatMessageBubble(
                                         if (isRead) primaryColor else onSurfaceVariant.copy(alpha = 0.4f)
                                     }
                                     
-                                    Text(
-                                        text = statusText,
-                                        color = statusColor,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    if (isPending) {
+                                        Text(
+                                            text = "🕒",
+                                            color = statusColor,
+                                            fontSize = 9.sp
+                                        )
+                                    } else if (isRead) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy((-5).dp)
+                                        ) {
+                                            Icon(
+                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_check),
+                                                contentDescription = "Read",
+                                                tint = statusColor,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                            Icon(
+                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_check),
+                                                contentDescription = null,
+                                                tint = statusColor,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                        }
+                                    } else {
+                                        Icon(
+                                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_check),
+                                            contentDescription = "Sent",
+                                            tint = statusColor,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                    }
                                 }
                                 if (msg.reactions.isNotEmpty()) {
                                     Spacer(modifier = Modifier.width(6.dp))
