@@ -9,6 +9,14 @@ import com.example.twopchat.SecureStorage
 import android.util.Log
 import com.example.twopchat.ui.chat.MessageDeliveryStatus
 
+data class StoredAttachmentRecord(
+    val messageId: String,
+    val attachmentType: String?,
+    val uri: String,
+    val attachmentName: String?,
+    val status: String?,
+)
+
 class ChatDatabaseHelper private constructor(private val context: Context) : 
     SQLiteOpenHelper(
         context, 
@@ -269,7 +277,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             put(KEY_REACTIONS, serializeReactions(msg.reactions))
             put(KEY_SENT_AT_MS, msg.sentAtEpochMs)
         }
-        db.insert(TABLE_MESSAGES, null, values)
+        db.insertWithOnConflict(TABLE_MESSAGES, null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
     private fun readMessageFromCursor(cursor: android.database.Cursor): Message {
@@ -338,6 +346,67 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             }
         }
         return messages
+    }
+
+    fun getStoredAttachments(): List<StoredAttachmentRecord> {
+        val records = mutableListOf<StoredAttachmentRecord>()
+        safeReadableDatabase.query(
+            TABLE_MESSAGES,
+            arrayOf(
+                KEY_ID,
+                KEY_ATTACHMENT_TYPE,
+                KEY_ATTACHMENT_URI,
+                KEY_ATTACHMENT_NAME,
+                KEY_STATUS,
+            ),
+            "$KEY_ATTACHMENT_URI IS NOT NULL",
+            null,
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val uri = decNullable(cursor.getString(2)).orEmpty()
+                if (uri.isNotBlank()) {
+                    records += StoredAttachmentRecord(
+                        messageId = cursor.getString(0),
+                        attachmentType = cursor.getString(1),
+                        uri = uri,
+                        attachmentName = decNullable(cursor.getString(3)),
+                        status = cursor.getString(4),
+                    )
+                }
+            }
+        }
+        return records
+    }
+
+    fun clearAttachmentUris(messageIds: Collection<String>): Int {
+        if (messageIds.isEmpty()) return 0
+        val db = safeWritableDatabase
+        var updated = 0
+        db.beginTransaction()
+        try {
+            messageIds.distinct().chunked(400).forEach { ids ->
+                val placeholders = ids.joinToString(",") { "?" }
+                updated += db.update(
+                    TABLE_MESSAGES,
+                    ContentValues().apply { putNull(KEY_ATTACHMENT_URI) },
+                    "$KEY_ID IN ($placeholders)",
+                    ids.toTypedArray(),
+                )
+                db.update(
+                    TABLE_MESSAGES,
+                    ContentValues().apply { put(KEY_STATUS, "CANCELLED") },
+                    "$KEY_ID IN ($placeholders) AND $KEY_STATUS = ?",
+                    (ids + "PENDING").toTypedArray(),
+                )
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        return updated
     }
 
     fun getMessagesForPeerPaged(peerName: String, limit: Int, offset: Int): List<Message> {

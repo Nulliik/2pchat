@@ -54,6 +54,9 @@ def print(*args, **kwargs):
 
 active_sessions = {}
 session_probe_failures = {}
+outgoing_file_futures = {}
+cancelled_outgoing_message_ids = set()
+_outgoing_file_lock = threading.Lock()
 peer_operation_locks = {}
 peer_fingerprint_to_name = {}
 incoming_files = {}
@@ -70,6 +73,8 @@ MAX_INCOMING_FILE_STARTS_PER_WINDOW = 8
 INCOMING_FILE_TTL_SECONDS = 120
 MAX_ENCRYPTED_CHUNK_SIZE = MAX_FILE_CHUNK_PAYLOAD_SIZE
 MAX_CONCURRENT_HANDSHAKES = 10
+MAX_FILE_PREVIEW_BASE64_CHARS = 96 * 1024
+MAX_FILE_PREVIEW_BYTES = 64 * 1024
 tracker_diagnostics = {}
 public_address_observations = set()
 local_identity_nickname = ""
@@ -400,6 +405,17 @@ def _discard_incoming_file(key):
             Path(path).unlink(missing_ok=True)
         except OSError:
             pass
+
+
+def _validated_file_preview_base64(value) -> str:
+    preview = value if isinstance(value, str) else ""
+    if not preview or len(preview) > MAX_FILE_PREVIEW_BASE64_CHARS:
+        return ""
+    try:
+        decoded = base64.b64decode(preview, validate=True)
+    except Exception:
+        return ""
+    return preview if 0 < len(decoded) <= MAX_FILE_PREVIEW_BYTES else ""
 
 
 def set_ipv4_enabled(enabled: bool):
@@ -1537,6 +1553,33 @@ async def _read_loop(session, peer_name, fp):
                         message_listener_callback.onMessageReceived(peer_name, body)
                     except Exception as cb_err:
                         print("Error invoking message listener callback:", cb_err)
+            elif mtype == "file_cancel":
+                message_id = str(msg.get("message_id", ""))[:128]
+                cancelled_name = ""
+                cancelled = False
+                for candidate_key, candidate_state in list(incoming_files.items()):
+                    if not isinstance(candidate_key, tuple) or candidate_key[0] != fp:
+                        continue
+                    candidate_meta = candidate_state.get("meta", {})
+                    if str(candidate_meta.get("message_id", "")) != message_id:
+                        continue
+                    cancelled_name = str(candidate_meta.get("file_name", ""))
+                    _discard_incoming_file(candidate_key)
+                    cancelled = True
+                if message_listener_callback and message_id and cancelled:
+                    cancellation_notification = {
+                        "type": "file_cancelled",
+                        "message_id": message_id,
+                        "file_name": cancelled_name,
+                        "cancelled": cancelled,
+                    }
+                    try:
+                        message_listener_callback.onMessageReceived(
+                            peer_name, json.dumps(cancellation_notification)
+                        )
+                    except Exception:
+                        pass
+                continue
             elif mtype in {"file_meta", "file_chunk"}:
                 import base64
                 import os
@@ -1607,6 +1650,30 @@ async def _read_loop(session, peer_name, fp):
                             "next_index": 0, "written": 0, "updated_at": now,
                         }
                         incoming_files[transfer_key] = state
+                        transfer_message_id = str(
+                            msg.get("message_id", "") or file_id_str
+                        )[:128]
+                        preview_base64 = _validated_file_preview_base64(
+                            msg.get("preview_base64")
+                        )
+                        guessed_mime, _ = mimetypes.guess_type(
+                            str(msg.get("file_name", ""))
+                        )
+                        if message_listener_callback:
+                            offer_notification = {
+                                "type": "file_offer",
+                                "message_id": transfer_message_id,
+                                "file_name": str(msg.get("file_name", "")),
+                                "mime": guessed_mime or "application/octet-stream",
+                                "size": file_size,
+                                "preview_base64": preview_base64,
+                            }
+                            try:
+                                message_listener_callback.onMessageReceived(
+                                    peer_name, json.dumps(offer_notification)
+                                )
+                            except Exception:
+                                pass
                     except Exception as meta_err:
                         print(f"Rejected invalid file metadata: {meta_err}")
                         continue
@@ -1735,7 +1802,7 @@ async def _read_loop(session, peer_name, fp):
                                 
                             file_notification = {
                                 "type": "file",
-                                "message_id": str(meta.get("message_id", "")),
+                                "message_id": str(meta.get("message_id", "") or file_id_str),
                                 "file_name": file_name,
                                 "file_path": str(target),
                                 "mime": mime,
@@ -1760,6 +1827,30 @@ async def _read_loop(session, peer_name, fp):
     except Exception as e:
         print(f"Session with {peer_name} read loop error:", e)
     finally:
+        interrupted_transfers = []
+        for transfer_key, transfer_state in list(incoming_files.items()):
+            if not isinstance(transfer_key, tuple) or transfer_key[0] != fp:
+                continue
+            meta = transfer_state.get("meta", {})
+            interrupted_transfers.append({
+                "message_id": str(
+                    meta.get("message_id", "") or transfer_key[1]
+                )[:128],
+                "file_name": str(meta.get("file_name", "")),
+            })
+            _discard_incoming_file(transfer_key)
+        if message_listener_callback:
+            for interrupted in interrupted_transfers:
+                try:
+                    message_listener_callback.onMessageReceived(
+                        peer_name,
+                        json.dumps({
+                            "type": "file_failed",
+                            **interrupted,
+                        }),
+                    )
+                except Exception:
+                    pass
         # A stale read loop must never delete a newer replacement session.
         if active_sessions.get(fp) is session:
             del active_sessions[fp]
@@ -2006,7 +2097,15 @@ async def _send_message_unlocked(peer_name: str, endpoint: str, body: str, expec
         return False
 
 
-def send_p2p_file(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="", caption="") -> bool:
+def send_p2p_file(
+    peer_name: str,
+    endpoint: str,
+    file_path: str,
+    expected_fingerprint=None,
+    message_id="",
+    caption="",
+    preview_base64="",
+) -> bool:
     """
     Synchronous entry point called from Kotlin to send an encrypted file/photo via Double Ratchet.
     """
@@ -2019,24 +2118,72 @@ def send_p2p_file(peer_name: str, endpoint: str, file_path: str, expected_finger
         if not loop:
             return False
             
+    normalized_message_id = str(message_id)[:128]
+    with _outgoing_file_lock:
+        if normalized_message_id and normalized_message_id in cancelled_outgoing_message_ids:
+            cancelled_outgoing_message_ids.discard(normalized_message_id)
+            return False
+
     future = asyncio.run_coroutine_threadsafe(
-        _send_file_async(peer_name, endpoint, file_path, expected_fingerprint, message_id, caption),
+        _send_file_async(
+            peer_name,
+            endpoint,
+            file_path,
+            expected_fingerprint,
+            normalized_message_id,
+            caption,
+            preview_base64,
+        ),
         loop
     )
+    if normalized_message_id:
+        with _outgoing_file_lock:
+            outgoing_file_futures[normalized_message_id] = future
+            if normalized_message_id in cancelled_outgoing_message_ids:
+                future.cancel()
     try:
-        return future.result(timeout=60) # Allow up to 1 minute for larger files
+        return future.result(timeout=15 * 60)
     except Exception as e:
         future.cancel()
         print(f"Failed to send file to {peer_name} via python bridge:", e)
-        traceback.print_exc()
         return False
+    finally:
+        if normalized_message_id:
+            with _outgoing_file_lock:
+                if outgoing_file_futures.get(normalized_message_id) is future:
+                    outgoing_file_futures.pop(normalized_message_id, None)
+                cancelled_outgoing_message_ids.discard(normalized_message_id)
 
-async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="", caption="") -> bool:
+async def _send_file_async(
+    peer_name: str,
+    endpoint: str,
+    file_path: str,
+    expected_fingerprint=None,
+    message_id="",
+    caption="",
+    preview_base64="",
+) -> bool:
     async with _operation_lock(peer_name, expected_fingerprint):
-        return await _send_file_unlocked(peer_name, endpoint, file_path, expected_fingerprint, message_id, caption)
+        return await _send_file_unlocked(
+            peer_name,
+            endpoint,
+            file_path,
+            expected_fingerprint,
+            message_id,
+            caption,
+            preview_base64,
+        )
 
 
-async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="", caption="") -> bool:
+async def _send_file_unlocked(
+    peer_name: str,
+    endpoint: str,
+    file_path: str,
+    expected_fingerprint=None,
+    message_id="",
+    caption="",
+    preview_base64="",
+) -> bool:
     session = _session_for_peer(peer_name, expected_fingerprint)
     was_cached = session is not None and session.is_online
     try:
@@ -2085,6 +2232,9 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
         if caption:
             meta["caption"] = str(caption)
             meta["text"] = str(caption)
+        validated_preview = _validated_file_preview_base64(preview_base64)
+        if validated_preview:
+            meta["preview_base64"] = validated_preview
 
         print(f"Sending file metadata envelope ({file_size} bytes)")
         try:
@@ -2140,13 +2290,46 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
         print(f"File successfully transmitted to {peer_name}")
         return True
     except asyncio.CancelledError:
-        await _invalidate_session(session)
+        print(f"File transfer to {peer_name} was cancelled")
         raise
     except Exception as e:
         await _invalidate_session(session)
         print(f"Error in _send_file_async to {peer_name}:", e)
         traceback.print_exc()
         return False
+
+
+async def _send_file_cancel_async(peer_name: str, message_id: str, expected_fingerprint=None) -> bool:
+    async with _operation_lock(peer_name, expected_fingerprint):
+        session = _session_for_peer(peer_name, expected_fingerprint)
+        if not session or not session.is_online:
+            return False
+        try:
+            await session.send_reliable({
+                "type": "file_cancel",
+                "message_id": str(message_id)[:128],
+                "timestamp": int(datetime.now(timezone.utc).timestamp()),
+            })
+            return True
+        except Exception as error:
+            print(f"Failed to notify {peer_name} about file cancellation: {error}")
+            return False
+
+
+def cancel_p2p_file(peer_name: str, message_id: str, expected_fingerprint=None) -> bool:
+    normalized_message_id = str(message_id)[:128]
+    if not normalized_message_id or not loop or not loop.is_running():
+        return False
+    with _outgoing_file_lock:
+        cancelled_outgoing_message_ids.add(normalized_message_id)
+        future = outgoing_file_futures.pop(normalized_message_id, None)
+        if future is not None:
+            future.cancel()
+    asyncio.run_coroutine_threadsafe(
+        _send_file_cancel_async(peer_name, normalized_message_id, expected_fingerprint),
+        loop,
+    )
+    return True
 
 def _clear_account_runtime_state():
     global message_listener_callback, session_listener_callback
@@ -2155,6 +2338,11 @@ def _clear_account_runtime_state():
 
     active_sessions.clear()
     session_probe_failures.clear()
+    with _outgoing_file_lock:
+        for future in outgoing_file_futures.values():
+            future.cancel()
+        outgoing_file_futures.clear()
+        cancelled_outgoing_message_ids.clear()
     peer_operation_locks.clear()
     peer_fingerprint_to_name.clear()
     incoming_file_starts.clear()

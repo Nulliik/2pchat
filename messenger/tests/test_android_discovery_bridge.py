@@ -1,6 +1,9 @@
 import importlib.util
 import asyncio
+import base64
+import hashlib
 import json
+import os
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -273,6 +276,146 @@ def test_incoming_file_start_rate_is_bounded_per_authenticated_peer(monkeypatch)
     assert bridge._allow_incoming_file_start("peer-a", now=12.0) is False
     assert bridge._allow_incoming_file_start("peer-b", now=12.0) is True
     assert bridge._allow_incoming_file_start("peer-a", now=71.0) is True
+
+
+def test_file_preview_validation_rejects_invalid_and_oversized_payloads():
+    bridge = _load_discovery_bridge()
+    preview = base64.b64encode(b"small-jpeg-preview").decode()
+
+    assert bridge._validated_file_preview_base64(preview) == preview
+    assert bridge._validated_file_preview_base64("not-base64!") == ""
+    assert bridge._validated_file_preview_base64(
+        base64.b64encode(b"x" * (bridge.MAX_FILE_PREVIEW_BYTES + 1)).decode()
+    ) == ""
+
+
+def test_file_metadata_offers_preview_before_chunks_and_cancel_removes_temp_file(
+    monkeypatch,
+    tmp_path,
+):
+    bridge = _load_discovery_bridge()
+    from nacl.secret import SecretBox
+
+    preview = base64.b64encode(b"preview").decode()
+    message_id = "video-message-id"
+    meta = {
+        "type": "file_meta",
+        "file_id": base64.b64encode(os.urandom(12)).decode(),
+        "file_name": "clip.mp4",
+        "file_size": 1024,
+        "num_chunks": 1,
+        "chunk_size": bridge.DEFAULT_FILE_CHUNK_SIZE,
+        "chunk_format": "binary-v1",
+        "ack_window": bridge.DEFAULT_FILE_CHUNK_WINDOW,
+        "file_hash": base64.b64encode(hashlib.sha256(b"payload").digest()).decode(),
+        "file_key": base64.b64encode(os.urandom(SecretBox.KEY_SIZE)).decode(),
+        "file_nonce_prefix": base64.b64encode(os.urandom(16)).decode(),
+        "message_id": message_id,
+        "preview_base64": preview,
+    }
+
+    class FakeSession:
+        peer_fingerprint = "peer-fingerprint"
+        is_online = True
+
+        def __init__(self):
+            self.messages = iter([
+                meta,
+                {"type": "file_cancel", "message_id": message_id},
+                {"type": "status", "state": "offline", "reason": "test complete"},
+            ])
+
+        async def receive_message(self):
+            return next(self.messages)
+
+    class Listener:
+        def __init__(self):
+            self.messages = []
+
+        def onMessageReceived(self, sender, body):
+            self.messages.append((sender, json.loads(body)))
+
+    listener = Listener()
+    bridge.message_listener_callback = listener
+    bridge.session_listener_callback = None
+    bridge.incoming_files.clear()
+    monkeypatch.setenv("P2PCHAT_CONFIG_DIR", str(tmp_path))
+
+    asyncio.run(
+        bridge._read_loop(FakeSession(), "alice", "peer-fingerprint")
+    )
+
+    assert [body["type"] for _, body in listener.messages] == [
+        "file_offer",
+        "file_cancelled",
+    ]
+    assert listener.messages[0][1]["preview_base64"] == preview
+    assert listener.messages[0][1]["message_id"] == message_id
+    assert listener.messages[1][1]["cancelled"] is True
+    assert bridge.incoming_files == {}
+    assert list(tmp_path.glob("*.part")) == []
+
+
+def test_interrupted_file_offer_is_marked_failed_and_temp_file_is_removed(
+    monkeypatch,
+    tmp_path,
+):
+    bridge = _load_discovery_bridge()
+    from nacl.secret import SecretBox
+
+    message_id = "interrupted-video"
+    meta = {
+        "type": "file_meta",
+        "file_id": base64.b64encode(os.urandom(12)).decode(),
+        "file_name": "interrupted.mp4",
+        "file_size": 4096,
+        "num_chunks": 1,
+        "chunk_size": bridge.DEFAULT_FILE_CHUNK_SIZE,
+        "chunk_format": "binary-v1",
+        "ack_window": bridge.DEFAULT_FILE_CHUNK_WINDOW,
+        "file_hash": base64.b64encode(hashlib.sha256(b"payload").digest()).decode(),
+        "file_key": base64.b64encode(os.urandom(SecretBox.KEY_SIZE)).decode(),
+        "file_nonce_prefix": base64.b64encode(os.urandom(16)).decode(),
+        "message_id": message_id,
+    }
+
+    class FakeSession:
+        peer_fingerprint = "peer-fingerprint"
+        is_online = True
+
+        def __init__(self):
+            self.messages = iter([
+                meta,
+                {"type": "status", "state": "offline", "reason": "network lost"},
+            ])
+
+        async def receive_message(self):
+            return next(self.messages)
+
+    class Listener:
+        def __init__(self):
+            self.messages = []
+
+        def onMessageReceived(self, _sender, body):
+            self.messages.append(json.loads(body))
+
+    listener = Listener()
+    bridge.message_listener_callback = listener
+    bridge.session_listener_callback = None
+    bridge.incoming_files.clear()
+    monkeypatch.setenv("P2PCHAT_CONFIG_DIR", str(tmp_path))
+
+    asyncio.run(
+        bridge._read_loop(FakeSession(), "alice", "peer-fingerprint")
+    )
+
+    assert [message["type"] for message in listener.messages] == [
+        "file_offer",
+        "file_failed",
+    ]
+    assert listener.messages[-1]["message_id"] == message_id
+    assert bridge.incoming_files == {}
+    assert list(tmp_path.glob("*.part")) == []
 
 
 def test_background_reconnect_sends_identity_before_session_callback(monkeypatch):

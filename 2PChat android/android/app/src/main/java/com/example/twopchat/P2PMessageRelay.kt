@@ -208,17 +208,59 @@ object P2PMessageRelay {
     }
     private val outboundMessenger by lazy {
         P2POutboundMessenger(_peerEndpoints, ::log) { peerName, messageId, status ->
-            messageListeners.forEach { it.onMessageStatusChanged(peerName, messageId, status) }
+            Handler(Looper.getMainLooper()).post {
+                if (status == "CANCELLED") {
+                    val key = "$peerName:$messageId"
+                    val current = fileProgressStates[key] ?: fileProgressStates[messageId]
+                    val cancelled = (current ?: FileProgressInfo(0L, 0L, 0.0)).copy(
+                        state = FileTransferState.CANCELLED,
+                        speedKbps = 0.0,
+                    )
+                    fileProgressStates[key] = cancelled
+                    fileProgressStates[messageId] = cancelled
+                }
+                messageListeners.forEach {
+                    it.onMessageStatusChanged(peerName, messageId, status)
+                }
+            }
         }
+    }
+
+    private fun decodeFileTransferPreview(encoded: String): Bitmap? {
+        if (encoded.isBlank() || encoded.length > 96 * 1024) return null
+        return try {
+            val bytes = Base64.decode(encoded, Base64.DEFAULT)
+            if (bytes.isEmpty() || bytes.size > 64 * 1024) return null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (bounds.outWidth !in 1..512 || bounds.outHeight !in 1..512 ||
+                bounds.outWidth.toLong() * bounds.outHeight.toLong() > 262_144L
+            ) {
+                return null
+            }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    enum class FileTransferState {
+        TRANSFERRING,
+        COMPLETED,
+        CANCELLED,
+        FAILED,
     }
 
     data class FileProgressInfo(
         val bytesTransferred: Long,
         val totalBytes: Long,
-        val speedKbps: Double
+        val speedKbps: Double,
+        val state: FileTransferState = FileTransferState.TRANSFERRING,
     )
 
     val fileProgressStates = mutableStateMapOf<String, FileProgressInfo>()
+    val fileTransferPreviews = mutableStateMapOf<String, Bitmap>()
+    private val incomingFileOffers = ConcurrentHashMap.newKeySet<String>()
 
     interface MessageListener {
         fun onMessageReceived(sender: String, text: String) {}
@@ -329,6 +371,7 @@ object P2PMessageRelay {
         sender: String,
         message: Message,
         notificationText: String = message.text,
+        countAsNew: Boolean = true,
     ) {
         val prefs = P2PPreferences.prefs(context)
         val activeSet = prefs.getStringSet(P2PPreferences.ACTIVE_CHATS, emptySet()).orEmpty()
@@ -343,7 +386,7 @@ object P2PMessageRelay {
         }
         Handler(Looper.getMainLooper()).post {
             messageListeners.forEach { it.onMessageReceived(sender, message) }
-            if (activeChatPeer.get() != sender) {
+            if (countAsNew && activeChatPeer.get() != sender) {
                 val unreadKey = P2PPreferences.unreadCount(sender)
                 prefs.edit { putInt(unreadKey, prefs.getInt(unreadKey, 0) + 1) }
                 showNotification(context, sender, message, notificationText)
@@ -596,6 +639,107 @@ object P2PMessageRelay {
                         if (trimmed.startsWith("{")) {
                             val json = org.json.JSONObject(trimmed)
                             when (json.optString("type")) {
+                                "file_offer" -> {
+                                    val messageId = json.optString("message_id").take(128)
+                                    val fileName = File(json.optString("file_name", "file"))
+                                        .name.take(120).ifBlank { "file" }
+                                    val mime = json.optString("mime")
+                                    val totalBytes = json.optLong("size").coerceAtLeast(0L)
+                                    if (messageId.isBlank() || totalBytes > 100L * 1024L * 1024L) return
+                                    val attachmentType = VoiceMessageSupport.attachmentType(fileName, mime)
+                                    val offerKey = "$sender:$messageId"
+                                    val isNewOffer = incomingFileOffers.add(offerKey)
+                                    val preview = decodeFileTransferPreview(
+                                        json.optString("preview_base64"),
+                                    )
+                                    val offerMessage = Message(
+                                        id = messageId,
+                                        text = VoiceMessageSupport.displayMessage(attachmentType, fileName),
+                                        isMe = false,
+                                        timestamp = SimpleDateFormat(
+                                            "HH:mm",
+                                            Locale.getDefault(),
+                                        ).format(Date()),
+                                        attachmentType = attachmentType,
+                                        attachmentUri = null,
+                                        attachmentName = fileName,
+                                        status = "RECEIVING",
+                                    )
+                                    Handler(Looper.getMainLooper()).post {
+                                        val info = FileProgressInfo(
+                                            bytesTransferred = 0L,
+                                            totalBytes = totalBytes,
+                                            speedKbps = 0.0,
+                                        )
+                                        fileProgressStates[offerKey] = info
+                                        fileProgressStates[messageId] = info
+                                        if (preview != null) {
+                                            fileTransferPreviews[offerKey] = preview
+                                            fileTransferPreviews[messageId] = preview
+                                        }
+                                    }
+                                    persistAndDispatchIncoming(
+                                        appContext,
+                                        sender,
+                                        offerMessage,
+                                        notificationText = if (
+                                            P2PPreferences.prefs(appContext)
+                                                .getString("settings_language", "English") == "Русский"
+                                        ) {
+                                            "Началось получение файла: $fileName"
+                                        } else {
+                                            "Receiving file: $fileName"
+                                        },
+                                        countAsNew = isNewOffer,
+                                    )
+                                    return
+                                }
+                                "file_cancelled" -> {
+                                    val messageId = json.optString("message_id").take(128)
+                                    if (messageId.isBlank()) return
+                                    val key = "$sender:$messageId"
+                                    incomingFileOffers.remove(key)
+                                    ChatDatabaseHelper.getInstance(appContext)
+                                        .updateMessageStatus(messageId, "CANCELLED")
+                                    Handler(Looper.getMainLooper()).post {
+                                        val current = fileProgressStates[key]
+                                            ?: fileProgressStates[messageId]
+                                            ?: FileProgressInfo(0L, 0L, 0.0)
+                                        val cancelled = current.copy(
+                                            state = FileTransferState.CANCELLED,
+                                            speedKbps = 0.0,
+                                        )
+                                        fileProgressStates[key] = cancelled
+                                        fileProgressStates[messageId] = cancelled
+                                        messageListeners.forEach {
+                                            it.onMessageStatusChanged(sender, messageId, "CANCELLED")
+                                        }
+                                    }
+                                    return
+                                }
+                                "file_failed" -> {
+                                    val messageId = json.optString("message_id").take(128)
+                                    if (messageId.isBlank()) return
+                                    val key = "$sender:$messageId"
+                                    incomingFileOffers.remove(key)
+                                    ChatDatabaseHelper.getInstance(appContext)
+                                        .updateMessageStatus(messageId, "FAILED")
+                                    Handler(Looper.getMainLooper()).post {
+                                        val current = fileProgressStates[key]
+                                            ?: fileProgressStates[messageId]
+                                            ?: FileProgressInfo(0L, 0L, 0.0)
+                                        val failed = current.copy(
+                                            state = FileTransferState.FAILED,
+                                            speedKbps = 0.0,
+                                        )
+                                        fileProgressStates[key] = failed
+                                        fileProgressStates[messageId] = failed
+                                        messageListeners.forEach {
+                                            it.onMessageStatusChanged(sender, messageId, "FAILED")
+                                        }
+                                    }
+                                    return
+                                }
                                 "verification_request" -> {
                                     android.os.Handler(android.os.Looper.getMainLooper()).post {
                                         messageListeners.forEach { it.onVerificationRequest(sender) }
@@ -855,14 +999,25 @@ object P2PMessageRelay {
                                     val bytesTransferred = json.optLong("bytes_transferred")
                                     val totalBytes = json.optLong("total_bytes")
                                     val speedKbps = json.optDouble("speed_kbps", 0.0)
+                                    val key = "$sender:$msgId"
                                     val info = FileProgressInfo(
                                         bytesTransferred = bytesTransferred,
                                         totalBytes = totalBytes,
-                                        speedKbps = speedKbps
+                                        speedKbps = speedKbps,
+                                        state = if (totalBytes > 0L && bytesTransferred >= totalBytes) {
+                                            FileTransferState.COMPLETED
+                                        } else {
+                                            FileTransferState.TRANSFERRING
+                                        },
                                     )
                                     android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        val existing = fileProgressStates[key]
+                                            ?: fileProgressStates[msgId]
+                                        if (existing?.state == FileTransferState.CANCELLED) {
+                                            return@post
+                                        }
                                         if (msgId.isNotEmpty()) {
-                                            fileProgressStates["$sender:$msgId"] = info
+                                            fileProgressStates[key] = info
                                             fileProgressStates[msgId] = info
                                         }
                                         if (fileName.isNotEmpty()) {
@@ -967,7 +1122,39 @@ object P2PMessageRelay {
                                     status = "SENT"
                                 )
                         }
-                        persistAndDispatchIncoming(appContext, sender, incomingMessage)
+                        val completedOffer = incomingAttachment?.let {
+                            incomingFileOffers.remove("$sender:${it.messageId}")
+                        } == true
+                        if (incomingAttachment != null) {
+                            Handler(Looper.getMainLooper()).post {
+                                val key = "$sender:${incomingMessage.id}"
+                                val current = fileProgressStates[key]
+                                    ?: fileProgressStates[incomingMessage.id]
+                                if (current?.state != FileTransferState.CANCELLED) {
+                                    val completed = (current ?: FileProgressInfo(
+                                        bytesTransferred = 0L,
+                                        totalBytes = 0L,
+                                        speedKbps = 0.0,
+                                    )).copy(
+                                        bytesTransferred = current?.totalBytes ?: 0L,
+                                        state = FileTransferState.COMPLETED,
+                                        speedKbps = 0.0,
+                                    )
+                                    fileProgressStates[key] = completed
+                                    fileProgressStates[incomingMessage.id] = completed
+                                }
+                                fileTransferPreviews.remove(key)?.recycle()
+                                fileTransferPreviews.remove(incomingMessage.id)
+                                    ?.takeIf { !it.isRecycled }
+                                    ?.recycle()
+                            }
+                        }
+                        persistAndDispatchIncoming(
+                            appContext,
+                            sender,
+                            incomingMessage,
+                            countAsNew = !completedOffer,
+                        )
                     } catch (ex: Exception) {
                         log(appContext, "Failed to persist incoming message to SharedPreferences/SQLite", "ERROR", ex)
                     }
@@ -1355,15 +1542,77 @@ object P2PMessageRelay {
     /**
      * Send an encrypted file to a specific peer and endpoint.
      */
-    fun sendFile(context: Context, peerName: String, endpoint: String, filePath: String, messageId: String = "", caption: String = "", onResult: (Boolean) -> Unit = {}) {
-        outboundMessenger.sendFile(context, peerName, endpoint, filePath, messageId, caption, onResult)
+    fun sendFile(
+        context: Context,
+        peerName: String,
+        endpoint: String,
+        filePath: String,
+        messageId: String = "",
+        caption: String = "",
+        onResult: (Boolean) -> Unit = {},
+    ) {
+        if (messageId.isNotBlank()) {
+            val size = File(filePath).length().coerceAtLeast(0L)
+            Handler(Looper.getMainLooper()).post {
+                val info = FileProgressInfo(0L, size, 0.0)
+                fileProgressStates["$peerName:$messageId"] = info
+                fileProgressStates[messageId] = info
+            }
+        }
+        outboundMessenger.sendFile(context, peerName, endpoint, filePath, messageId, caption) { success ->
+            if (messageId.isNotBlank()) {
+                Handler(Looper.getMainLooper()).post {
+                    val key = "$peerName:$messageId"
+                    val current = fileProgressStates[key] ?: fileProgressStates[messageId]
+                    if (current?.state != FileTransferState.CANCELLED) {
+                        val state = if (success) {
+                            FileTransferState.COMPLETED
+                        } else {
+                            FileTransferState.FAILED
+                        }
+                        val finalInfo = (current ?: FileProgressInfo(
+                            0L,
+                            File(filePath).length().coerceAtLeast(0L),
+                            0.0,
+                        )).copy(
+                            bytesTransferred = if (success) {
+                                current?.totalBytes ?: File(filePath).length().coerceAtLeast(0L)
+                            } else {
+                                current?.bytesTransferred ?: 0L
+                            },
+                            speedKbps = 0.0,
+                            state = state,
+                        )
+                        fileProgressStates[key] = finalInfo
+                        fileProgressStates[messageId] = finalInfo
+                    }
+                }
+            }
+            onResult(success)
+        }
     }
 
     @Suppress("unused")
     fun sendFile(context: Context, endpoint: String, filePath: String, messageId: String = "", caption: String = "", onResult: (Boolean) -> Unit = {}) {
         val peerName = peerEndpoints.entries.firstOrNull { it.value == endpoint }?.key ?: "Direct Peer"
-        outboundMessenger.sendFile(context, peerName, endpoint, filePath, messageId, caption, onResult)
+        sendFile(context, peerName, endpoint, filePath, messageId, caption, onResult)
     }
+
+    fun cancelFileTransfer(context: Context, peerName: String, messageId: String): Boolean {
+        val cancelled = outboundMessenger.cancelFile(
+            context.applicationContext,
+            peerName,
+            messageId,
+        )
+        if (cancelled) {
+            ChatDatabaseHelper.getInstance(context.applicationContext)
+                .updateMessageStatus(messageId, "CANCELLED")
+        }
+        return cancelled
+    }
+
+    fun isFileTransferActive(messageId: String): Boolean =
+        outboundMessenger.isFileTransferActive(messageId)
 
     fun reconnectSession(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
         outboundMessenger.reconnect(context, peerName, onResult)

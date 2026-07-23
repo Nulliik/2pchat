@@ -52,6 +52,11 @@ import java.util.Locale
 
 private val linkRegex = Regex("""(https?://[^\s]+)""")
 
+private fun Message.hasAvailableAttachment(): Boolean {
+    val path = attachmentUri
+    return !path.isNullOrBlank() && ("://" in path || File(path).isFile)
+}
+
 private fun formatFileSize(bytes: Long): String {
     if (bytes <= 0) return "0 B"
     val units = arrayOf("B", "KB", "MB", "GB")
@@ -94,13 +99,18 @@ fun SharedMediaScreen(
     }
 
     val mediaList = remember(messages) {
-        messages.filter { (it.attachmentType == "IMAGE" || it.attachmentType == "VIDEO") && !it.attachmentUri.isNullOrBlank() }.reversed()
+        messages.filter {
+            (it.attachmentType == "IMAGE" || it.attachmentType == "VIDEO") &&
+                it.hasAvailableAttachment()
+        }.reversed()
     }
     val mediaUris = remember(mediaList) {
         mediaList.filter { it.attachmentType == "IMAGE" }.map { it.attachmentUri!! }
     }
     val filesList = remember(messages) {
-        messages.filter { it.attachmentType == "FILE" && !it.attachmentUri.isNullOrBlank() }.reversed()
+        messages.filter {
+            it.attachmentType == "FILE" && it.hasAvailableAttachment()
+        }.reversed()
     }
     val linksList = remember(messages) {
         messages.flatMap { msg ->
@@ -110,7 +120,9 @@ fun SharedMediaScreen(
         }.reversed()
     }
     val voiceList = remember(messages) {
-        messages.filter { it.attachmentType == "VOICE" && !it.attachmentUri.isNullOrBlank() }.reversed()
+        messages.filter {
+            it.attachmentType == "VOICE" && it.hasAvailableAttachment()
+        }.reversed()
     }
 
     val tabs = listOf(

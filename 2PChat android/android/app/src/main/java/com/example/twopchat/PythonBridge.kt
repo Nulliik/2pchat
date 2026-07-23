@@ -575,15 +575,44 @@ object PythonBridge {
         }
     }
 
-    fun sendP2pFile(peerName: String, endpoint: String, filePath: String, expectedFingerprint: String? = null, messageId: String = "", caption: String = ""): Boolean {
+    fun sendP2pFile(
+        peerName: String,
+        endpoint: String,
+        filePath: String,
+        expectedFingerprint: String? = null,
+        messageId: String = "",
+        caption: String = "",
+        previewBase64: String = "",
+    ): Boolean {
         if (!isInitialized) return false
         return try {
             val py = Python.getInstance()
             val bridge = py.getModule("discovery_bridge")
-            val success = bridge.callAttr("send_p2p_file", peerName, endpoint, filePath, expectedFingerprint, messageId, caption)
+            val success = bridge.callAttr(
+                "send_p2p_file",
+                peerName,
+                endpoint,
+                filePath,
+                expectedFingerprint,
+                messageId,
+                caption,
+                previewBase64,
+            )
             success.toBoolean()
         } catch (e: Exception) {
             Log.e(TAG, "Error sending P2P file via Python", e)
+            false
+        }
+    }
+
+    fun cancelP2pFile(peerName: String, messageId: String, expectedFingerprint: String? = null): Boolean {
+        if (!isInitialized || messageId.isBlank()) return false
+        return try {
+            Python.getInstance().getModule("discovery_bridge")
+                .callAttr("cancel_p2p_file", peerName, messageId, expectedFingerprint)
+                .toBoolean()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error cancelling P2P file via Python", e)
             false
         }
     }

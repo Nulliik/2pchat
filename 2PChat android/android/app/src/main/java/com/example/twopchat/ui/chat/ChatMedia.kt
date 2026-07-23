@@ -91,6 +91,7 @@ object AttachmentImageCache {
     }
 
     fun get(key: String): Bitmap? = cache.get(key)
+    fun clear() = cache.evictAll()
     fun put(key: String, bitmap: Bitmap) {
         cache.put(key, bitmap)
     }

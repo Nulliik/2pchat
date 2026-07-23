@@ -76,6 +76,7 @@ internal fun ChatMessageList(
     onShowOptions: (Message) -> Unit,
     onOpenImages: (List<String>, Int) -> Unit,
     onOpenVideo: (String) -> Unit,
+    onCancelFileTransfer: (Message) -> Unit,
     highlightedMessageId: String? = null,
     onHighlightFinished: () -> Unit = {},
 ) {
@@ -191,6 +192,7 @@ internal fun ChatMessageList(
                 onShowOptions = onShowOptions,
                 onOpenImages = onOpenImages,
                 onOpenVideo = onOpenVideo,
+                onCancelFileTransfer = onCancelFileTransfer,
                 highlightedMessageId = highlightedMessageId,
                 onHighlightFinished = onHighlightFinished,
             )

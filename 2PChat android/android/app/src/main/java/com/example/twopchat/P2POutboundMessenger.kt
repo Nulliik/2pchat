@@ -18,6 +18,8 @@ internal class P2POutboundMessenger(
     private val onMessageStatusChanged: (String, String, String) -> Unit,
 ) {
     private val processingOfflineQueues = ConcurrentHashMap.newKeySet<String>()
+    private val cancelledFileTransfers = ConcurrentHashMap.newKeySet<String>()
+    private val activeFileTransfers = ConcurrentHashMap.newKeySet<String>()
     private val scope = CoroutineScope(Dispatchers.IO)
     private val pinnedStateScope = CoroutineScope(Dispatchers.IO.limitedParallelism(1))
 
@@ -71,21 +73,64 @@ internal class P2POutboundMessenger(
             log(context, "Blocked file to $peerName while its identity change awaits confirmation", "ERROR", null)
             return postResult(onResult, false)
         }
+        if (messageId.isNotBlank()) activeFileTransfers.add(messageId)
         scope.launch {
             try {
-                if (isPaused(context, peerName)) return@launch postResult(onResult, false)
+                if (isPaused(context, peerName)) {
+                    activeFileTransfers.remove(messageId)
+                    return@launch postResult(onResult, false)
+                }
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
                 log(context, "Sending secure file via Python transport to $peerName", "INFO", null)
-                val success = PythonBridge.sendP2pFile(peerName, endpoint, filePath, fingerprint, messageId, caption)
+                val previewBase64 = FileTransferPreview.createVideoPreviewBase64(filePath)
+                val success = PythonBridge.sendP2pFile(
+                    peerName,
+                    endpoint,
+                    filePath,
+                    fingerprint,
+                    messageId,
+                    caption,
+                    previewBase64,
+                )
+                val cancelled = messageId.isNotBlank() && cancelledFileTransfers.remove(messageId)
+                activeFileTransfers.remove(messageId)
+                if (cancelled) {
+                    onMessageStatusChanged(peerName, messageId, "CANCELLED")
+                    log(context, "File transfer to $peerName was cancelled", "INFO", null)
+                    return@launch postResult(onResult, true)
+                }
                 log(context, "Sending file status to $peerName: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
                 postResult(onResult, success)
             } catch (error: Exception) {
+                activeFileTransfers.remove(messageId)
+                val cancelled = messageId.isNotBlank() && cancelledFileTransfers.remove(messageId)
+                if (cancelled) {
+                    onMessageStatusChanged(peerName, messageId, "CANCELLED")
+                    return@launch postResult(onResult, true)
+                }
                 log(context, "Failed to send secure file", "ERROR", error)
                 postResult(onResult, false)
             }
         }
     }
+
+    fun cancelFile(context: Context, peerName: String, messageId: String): Boolean {
+        if (messageId.isBlank()) return false
+        if (messageId !in activeFileTransfers) return false
+        cancelledFileTransfers.add(messageId)
+        activeFileTransfers.remove(messageId)
+        onMessageStatusChanged(peerName, messageId, "CANCELLED")
+        val fingerprint = P2PPreferences.prefs(context)
+            .getString(P2PPreferences.peerFingerprint(peerName), null)
+        scope.launch {
+            PythonBridge.cancelP2pFile(peerName, messageId, fingerprint)
+        }
+        return true
+    }
+
+    fun isFileTransferActive(messageId: String): Boolean =
+        messageId.isNotBlank() && messageId in activeFileTransfers
 
     fun reconnect(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
         if (isPaused(context, peerName)) return postResult(onResult, false)

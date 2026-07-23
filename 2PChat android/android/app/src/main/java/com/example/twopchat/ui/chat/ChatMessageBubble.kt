@@ -29,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -73,6 +74,11 @@ internal class MessageArrivalAnimationTracker(
     }
 }
 
+private fun isAttachmentAvailable(uri: String?): Boolean {
+    if (uri.isNullOrBlank()) return false
+    return "://" in uri || java.io.File(uri).isFile
+}
+
 @Composable
 internal fun ChatMessageBubble(
     index: Int,
@@ -94,6 +100,7 @@ internal fun ChatMessageBubble(
     onShowOptions: (Message) -> Unit,
     onOpenImages: (List<String>, Int) -> Unit,
     onOpenVideo: (String) -> Unit,
+    onCancelFileTransfer: (Message) -> Unit,
     highlightedMessageId: String? = null,
     onHighlightFinished: () -> Unit = {},
 ) {
@@ -306,10 +313,20 @@ internal fun ChatMessageBubble(
                             when (msg.attachmentType) {
                                 "IMAGE" -> {
                                     val bitmap = rememberSampledImage(msg.attachmentUri)
+                                    val attachmentAvailable = isAttachmentAvailable(msg.attachmentUri)
                                     val progressInfo = com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:${msg.id}"]
                                         ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[msg.id]
                                         ?: msg.attachmentName?.let { com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[it] }
-                                    val isTransferring = progressInfo != null && progressInfo.bytesTransferred < progressInfo.totalBytes && progressInfo.totalBytes > 0
+                                    val isTransferring = progressInfo?.state ==
+                                        com.example.twopchat.P2PMessageRelay.FileTransferState.TRANSFERRING
+                                    val isCancelled = progressInfo?.state ==
+                                        com.example.twopchat.P2PMessageRelay.FileTransferState.CANCELLED ||
+                                        msg.status.equals("CANCELLED", ignoreCase = true)
+                                    val hasFailed = progressInfo?.state ==
+                                        com.example.twopchat.P2PMessageRelay.FileTransferState.FAILED ||
+                                        msg.status.equals("FAILED", ignoreCase = true)
+                                    val isRemoved = !isTransferring && !isCancelled && !hasFailed &&
+                                        !attachmentAvailable
 
                                     val isDefaultText = msg.text.isBlank() ||
                                             msg.text.startsWith("Sent an image") ||
@@ -319,19 +336,31 @@ internal fun ChatMessageBubble(
 
                                     val hasCaption = !isDefaultText
 
-                                    if (bitmap != null || isTransferring) {
+                                    if (bitmap != null || isTransferring || isRemoved || isCancelled || hasFailed) {
                                         Column(
                                             modifier = Modifier.widthIn(max = 280.dp)
                                         ) {
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
+                                                    .then(
+                                                        if (bitmap == null) {
+                                                            Modifier.height(140.dp)
+                                                        } else {
+                                                            Modifier
+                                                        },
+                                                    )
                                                     .heightIn(max = 320.dp)
                                                     .clip(
                                                         if (hasCaption) RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
                                                         else bubbleShape
                                                     )
-                                                    .clickable {
+                                                    .clickable(
+                                                        enabled = !isTransferring &&
+                                                            !isCancelled &&
+                                                            !hasFailed &&
+                                                            attachmentAvailable,
+                                                    ) {
                                                         val allImages = messages.filter { it.attachmentType == "IMAGE" && !it.attachmentUri.isNullOrBlank() }.map { it.attachmentUri!! }
                                                         val clickedUri = msg.attachmentUri
                                                         val clickedIndex = if (clickedUri != null) allImages.indexOf(clickedUri) else -1
@@ -367,7 +396,9 @@ internal fun ChatMessageBubble(
                                                 }
 
                                                 if (isTransferring && progressInfo != null) {
-                                                    val pct = (progressInfo.bytesTransferred * 100 / progressInfo.totalBytes).toInt()
+                                                    val pct = if (progressInfo.totalBytes > 0L) {
+                                                        (progressInfo.bytesTransferred * 100 / progressInfo.totalBytes).toInt()
+                                                    } else 0
                                                     val speedStr = if (progressInfo.speedKbps >= 1024) {
                                                         String.format(java.util.Locale.US, "%.1f MB/s", progressInfo.speedKbps / 1024.0)
                                                     } else {
@@ -389,12 +420,55 @@ internal fun ChatMessageBubble(
                                                             )
                                                             Spacer(modifier = Modifier.height(6.dp))
                                                             androidx.compose.material3.LinearProgressIndicator(
-                                                                progress = { (progressInfo.bytesTransferred.toFloat() / progressInfo.totalBytes.toFloat()).coerceIn(0f, 1f) },
+                                                                progress = {
+                                                                    if (progressInfo.totalBytes > 0L) {
+                                                                        (progressInfo.bytesTransferred.toFloat() / progressInfo.totalBytes.toFloat()).coerceIn(0f, 1f)
+                                                                    } else 0f
+                                                                },
                                                                 modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
                                                                 color = Color.White,
                                                                 trackColor = Color.White.copy(alpha = 0.3f)
                                                             )
                                                         }
+                                                    }
+                                                    if (msg.isMe) {
+                                                        Text(
+                                                            text = "×",
+                                                            color = Color.White,
+                                                            fontSize = 24.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier
+                                                                .align(Alignment.TopEnd)
+                                                                .background(
+                                                                    Color.Black.copy(alpha = 0.55f),
+                                                                    CircleShape,
+                                                                )
+                                                                .clickable {
+                                                                    onCancelFileTransfer(msg)
+                                                                }
+                                                                .padding(horizontal = 9.dp, vertical = 3.dp),
+                                                        )
+                                                    }
+                                                }
+                                                if (isRemoved || isCancelled || hasFailed) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .background(Color.Black.copy(alpha = 0.18f)),
+                                                        contentAlignment = Alignment.Center,
+                                                    ) {
+                                                        Text(
+                                                            text = if (isCancelled) {
+                                                                if (appLanguage == "Русский") "Передача отменена" else "Transfer cancelled"
+                                                            } else if (hasFailed) {
+                                                                if (appLanguage == "Русский") "Ошибка передачи" else "Transfer failed"
+                                                            } else {
+                                                                if (appLanguage == "Русский") "Файл удалён" else "File removed"
+                                                            },
+                                                            color = textColor.copy(alpha = 0.75f),
+                                                            fontSize = 13.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                        )
                                                     }
                                                 }
 
@@ -498,11 +572,24 @@ internal fun ChatMessageBubble(
                                     }
                                 }
                                 "VIDEO" -> {
-                                    val thumbnail = rememberVideoThumbnail(msg.attachmentUri)
+                                    val completedThumbnail = rememberVideoThumbnail(msg.attachmentUri)
                                     val progressInfo = com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:${msg.id}"]
                                         ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[msg.id]
                                         ?: msg.attachmentName?.let { com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[it] }
-                                    val isTransferring = progressInfo != null && progressInfo.bytesTransferred < progressInfo.totalBytes && progressInfo.totalBytes > 0
+                                    val transferPreview = com.example.twopchat.P2PMessageRelay.fileTransferPreviews["$peerName:${msg.id}"]
+                                        ?: com.example.twopchat.P2PMessageRelay.fileTransferPreviews[msg.id]
+                                    val thumbnail = completedThumbnail ?: transferPreview
+                                    val attachmentAvailable = isAttachmentAvailable(msg.attachmentUri)
+                                    val isTransferring = progressInfo?.state ==
+                                        com.example.twopchat.P2PMessageRelay.FileTransferState.TRANSFERRING
+                                    val isCancelled = progressInfo?.state ==
+                                        com.example.twopchat.P2PMessageRelay.FileTransferState.CANCELLED ||
+                                        msg.status.equals("CANCELLED", ignoreCase = true)
+                                    val hasFailed = progressInfo?.state ==
+                                        com.example.twopchat.P2PMessageRelay.FileTransferState.FAILED ||
+                                        msg.status.equals("FAILED", ignoreCase = true)
+                                    val isRemoved = !isTransferring && !isCancelled && !hasFailed &&
+                                        !attachmentAvailable
 
                                     val isDefaultText = msg.text.isBlank() ||
                                             msg.text.startsWith("Sent a video") ||
@@ -523,7 +610,12 @@ internal fun ChatMessageBubble(
                                                     if (hasCaption) RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
                                                     else bubbleShape
                                                 )
-                                                .clickable {
+                                                .clickable(
+                                                    enabled = !isTransferring &&
+                                                        !isCancelled &&
+                                                        !hasFailed &&
+                                                        attachmentAvailable,
+                                                ) {
                                                     msg.attachmentUri?.let(onOpenVideo)
                                                 }
                                         ) {
@@ -532,7 +624,15 @@ internal fun ChatMessageBubble(
                                                     bitmap = thumbnail.asImageBitmap(),
                                                     contentDescription = "Video attachment",
                                                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                                    modifier = Modifier.fillMaxSize()
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .then(
+                                                            if (transferPreview != null && completedThumbnail == null) {
+                                                                Modifier.blur(10.dp)
+                                                            } else {
+                                                                Modifier
+                                                            },
+                                                        )
                                                 )
                                             } else {
                                                 Box(
@@ -549,21 +649,25 @@ internal fun ChatMessageBubble(
                                                     )
                                                 }
                                             }
-                                            Box(
-                                                contentAlignment = Alignment.Center,
-                                                modifier = Modifier
-                                                    .size(48.dp)
-                                                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                            ) {
-                                                Icon(
-                                                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_voice_play),
-                                                    contentDescription = "Play",
-                                                    tint = Color.White,
-                                                    modifier = Modifier.size(24.dp).padding(start = 2.dp)
-                                                )
+                                            if (!isTransferring && !isCancelled && !hasFailed && !isRemoved) {
+                                                Box(
+                                                    contentAlignment = Alignment.Center,
+                                                    modifier = Modifier
+                                                        .size(48.dp)
+                                                        .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                                                ) {
+                                                    Icon(
+                                                        painter = painterResource(id = R.drawable.ic_voice_play),
+                                                        contentDescription = "Play",
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(24.dp).padding(start = 2.dp)
+                                                    )
+                                                }
                                             }
                                             if (isTransferring && progressInfo != null) {
-                                                val pct = (progressInfo.bytesTransferred * 100 / progressInfo.totalBytes).toInt()
+                                                val pct = if (progressInfo.totalBytes > 0L) {
+                                                    (progressInfo.bytesTransferred * 100 / progressInfo.totalBytes).toInt()
+                                                } else 0
                                                 val speedStr = if (progressInfo.speedKbps >= 1024) {
                                                     String.format(java.util.Locale.US, "%.1f MB/s", progressInfo.speedKbps / 1024.0)
                                                 } else {
@@ -585,12 +689,55 @@ internal fun ChatMessageBubble(
                                                         )
                                                         Spacer(modifier = Modifier.height(6.dp))
                                                         androidx.compose.material3.LinearProgressIndicator(
-                                                            progress = { (progressInfo.bytesTransferred.toFloat() / progressInfo.totalBytes.toFloat()).coerceIn(0f, 1f) },
+                                                            progress = {
+                                                                if (progressInfo.totalBytes > 0L) {
+                                                                    (progressInfo.bytesTransferred.toFloat() / progressInfo.totalBytes.toFloat()).coerceIn(0f, 1f)
+                                                                } else 0f
+                                                            },
                                                             modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
                                                             color = Color.White,
                                                             trackColor = Color.White.copy(alpha = 0.3f)
                                                         )
                                                     }
+                                                }
+                                                if (msg.isMe) {
+                                                    Text(
+                                                        text = "×",
+                                                        color = Color.White,
+                                                        fontSize = 24.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier
+                                                            .align(Alignment.TopEnd)
+                                                            .padding(8.dp)
+                                                            .background(
+                                                                Color.Black.copy(alpha = 0.6f),
+                                                                CircleShape,
+                                                            )
+                                                            .clickable {
+                                                                onCancelFileTransfer(msg)
+                                                            }
+                                                            .padding(horizontal = 9.dp, vertical = 3.dp),
+                                                    )
+                                                }
+                                            } else if (isCancelled || hasFailed || isRemoved) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .background(Color.Black.copy(alpha = 0.55f)),
+                                                    contentAlignment = Alignment.Center,
+                                                ) {
+                                                    Text(
+                                                        text = if (isCancelled) {
+                                                            if (appLanguage == "Русский") "Передача отменена" else "Transfer cancelled"
+                                                        } else if (hasFailed) {
+                                                            if (appLanguage == "Русский") "Ошибка передачи" else "Transfer failed"
+                                                        } else {
+                                                            if (appLanguage == "Русский") "Файл удалён" else "File removed"
+                                                        },
+                                                        color = Color.White,
+                                                        fontSize = 13.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                    )
                                                 }
                                             }
 
@@ -693,11 +840,19 @@ internal fun ChatMessageBubble(
                                     }
                                 }
                                 "FILE" -> {
+                                    val attachmentAvailable = isAttachmentAvailable(msg.attachmentUri)
                                     val progressInfo = com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:${msg.id}"]
                                         ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[msg.id]
                                         ?: msg.attachmentName?.let { com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[it] }
                                     
-                                    val isTransferring = progressInfo != null && progressInfo.bytesTransferred < progressInfo.totalBytes && progressInfo.totalBytes > 0
+                                    val isTransferring = progressInfo?.state ==
+                                        com.example.twopchat.P2PMessageRelay.FileTransferState.TRANSFERRING
+                                    val isCancelled = progressInfo?.state ==
+                                        com.example.twopchat.P2PMessageRelay.FileTransferState.CANCELLED ||
+                                        msg.status.equals("CANCELLED", ignoreCase = true)
+                                    val hasFailed = progressInfo?.state ==
+                                        com.example.twopchat.P2PMessageRelay.FileTransferState.FAILED ||
+                                        msg.status.equals("FAILED", ignoreCase = true)
 
                                     Column {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -727,13 +882,21 @@ internal fun ChatMessageBubble(
                                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                                 )
                                                 val subtext = if (isTransferring && progressInfo != null) {
-                                                    val pct = (progressInfo.bytesTransferred * 100 / progressInfo.totalBytes).toInt()
+                                                    val pct = if (progressInfo.totalBytes > 0L) {
+                                                        (progressInfo.bytesTransferred * 100 / progressInfo.totalBytes).toInt()
+                                                    } else 0
                                                     val speedStr = if (progressInfo.speedKbps >= 1024) {
                                                         String.format(java.util.Locale.US, "%.1f MB/s", progressInfo.speedKbps / 1024.0)
                                                     } else {
                                                         "${progressInfo.speedKbps.toInt()} KB/s"
                                                     }
                                                     "$pct% • $speedStr"
+                                                } else if (isCancelled) {
+                                                    if (appLanguage == "Русский") "Передача отменена" else "Transfer cancelled"
+                                                } else if (hasFailed) {
+                                                    if (appLanguage == "Русский") "Ошибка передачи" else "Transfer failed"
+                                                } else if (!attachmentAvailable) {
+                                                    if (appLanguage == "Русский") "Файл удалён" else "File removed"
                                                 } else {
                                                     "Encrypted Document"
                                                 }
@@ -747,22 +910,55 @@ internal fun ChatMessageBubble(
                                         }
                                         if (isTransferring && progressInfo != null) {
                                             Spacer(modifier = Modifier.height(6.dp))
-                                            androidx.compose.material3.LinearProgressIndicator(
-                                                progress = { (progressInfo.bytesTransferred.toFloat() / progressInfo.totalBytes.toFloat()).coerceIn(0f, 1f) },
-                                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                                                color = if (msg.isMe) Color.White else primaryColor,
-                                                trackColor = textColor.copy(alpha = 0.2f)
-                                            )
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                androidx.compose.material3.LinearProgressIndicator(
+                                                    progress = {
+                                                        if (progressInfo.totalBytes > 0L) {
+                                                            (progressInfo.bytesTransferred.toFloat() / progressInfo.totalBytes.toFloat()).coerceIn(0f, 1f)
+                                                        } else 0f
+                                                    },
+                                                    modifier = Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                                    color = if (msg.isMe) Color.White else primaryColor,
+                                                    trackColor = textColor.copy(alpha = 0.2f)
+                                                )
+                                                if (msg.isMe) {
+                                                    Spacer(modifier = Modifier.width(8.dp))
+                                                    Text(
+                                                        text = if (appLanguage == "Русский") "Отменить" else "Cancel",
+                                                        color = if (msg.isMe) Color.White else primaryColor,
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.clickable {
+                                                            onCancelFileTransfer(msg)
+                                                        },
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
                                 "VOICE" -> {
-                                    VoiceMessagePlayer(
-                                        filePath = msg.attachmentUri,
-                                        isMine = msg.isMe,
-                                        primaryColor = primaryColor,
-                                        contentColor = textColor,
-                                    )
+                                    if (isAttachmentAvailable(msg.attachmentUri)) {
+                                        VoiceMessagePlayer(
+                                            filePath = msg.attachmentUri,
+                                            isMine = msg.isMe,
+                                            primaryColor = primaryColor,
+                                            contentColor = textColor,
+                                        )
+                                    } else {
+                                        Text(
+                                            text = if (appLanguage == "Русский") {
+                                                "Голосовой файл удалён"
+                                            } else {
+                                                "Voice file removed"
+                                            },
+                                            color = textColor.copy(alpha = 0.7f),
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium,
+                                        )
+                                    }
                                 }
                                 "LOCATION" -> {
                                     Column {

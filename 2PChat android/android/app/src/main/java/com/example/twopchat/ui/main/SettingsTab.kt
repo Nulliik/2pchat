@@ -45,8 +45,12 @@ import com.example.twopchat.Chat
 import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.P2PPreferences
 import com.example.twopchat.P2PRelayService
+import com.example.twopchat.AttachmentCategory
+import com.example.twopchat.AttachmentCategoryUsage
+import com.example.twopchat.AttachmentStorageManager
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
+import com.example.twopchat.ui.chat.AttachmentImageCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -87,6 +91,14 @@ private fun formatStorageSize(bytes: Long): String {
     val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, 3)
     return "%.1f %s".format(bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
 }
+
+private data class StorageSnapshot(
+    val cacheBytes: Long,
+    val avatarsBytes: Long,
+    val logsBytes: Long,
+    val databaseBytes: Long,
+    val mediaUsage: Map<AttachmentCategory, AttachmentCategoryUsage>,
+)
 
 @Composable
 fun SettingsTab(
@@ -1495,39 +1507,61 @@ fun SettingsTab(
                 }
             }
             "storage" -> {
+                val storageScope = rememberCoroutineScope()
                 var cacheBytes by remember { mutableLongStateOf(0L) }
                 var avatarsBytes by remember { mutableLongStateOf(0L) }
                 var logsBytes by remember { mutableLongStateOf(0L) }
                 var dbBytes by remember { mutableLongStateOf(0L) }
+                var mediaUsage by remember {
+                    mutableStateOf(
+                        AttachmentCategory.entries.associateWith {
+                            AttachmentCategoryUsage()
+                        },
+                    )
+                }
                 var isCalculating by remember { mutableStateOf(true) }
+                var isClearingMedia by remember { mutableStateOf(false) }
                 var showClearConfirmDialog by remember { mutableStateOf(false) }
+                var showMediaCleanupDialog by remember { mutableStateOf(false) }
+                var selectedMediaCategories by remember {
+                    mutableStateOf(emptySet<AttachmentCategory>())
+                }
 
                 fun refreshStorageSizes() {
                     isCalculating = true
-                    kotlin.concurrent.thread {
-                        try {
-                            val cacheDir = context.cacheDir
-                            val downloadsDir = java.io.File(context.filesDir, "config/downloads")
-                            val cSize = calculateDirSize(cacheDir) + calculateDirSize(downloadsDir)
+                    storageScope.launch {
+                        val sizes = runCatching {
+                            withContext(Dispatchers.IO) {
+                                val cacheDir = context.cacheDir
+                                val downloadsDir = java.io.File(context.filesDir, "config/downloads")
+                                val attachmentsDir = java.io.File(context.filesDir, "attachments")
+                                val cSize = calculateDirSize(cacheDir) +
+                                    calculateDirSize(downloadsDir) +
+                                    calculateDirSize(attachmentsDir)
 
-                            val avatarsDir = java.io.File(context.filesDir, "avatars")
-                            val aSize = calculateDirSize(avatarsDir)
+                                val avatarsDir = java.io.File(context.filesDir, "avatars")
+                                val aSize = calculateDirSize(avatarsDir)
 
-                            val logFile = java.io.File(java.io.File(context.filesDir, "config"), "app.log")
-                            val lSize = if (logFile.exists()) logFile.length() else 0L
+                                val logFile = java.io.File(
+                                    java.io.File(context.filesDir, "config"),
+                                    "app.log",
+                                )
+                                val lSize = if (logFile.exists()) logFile.length() else 0L
 
-                            val dbDir = context.getDatabasePath("twopchat.db").parentFile
-                            val dSize = calculateDirSize(dbDir)
-
-                            cacheBytes = cSize
-                            avatarsBytes = aSize
-                            logsBytes = lSize
-                            dbBytes = dSize
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        } finally {
-                            isCalculating = false
+                                val dbDir = context.getDatabasePath("twopchat.db").parentFile
+                                val dSize = calculateDirSize(dbDir)
+                                val usage = AttachmentStorageManager.calculateUsage(context)
+                                StorageSnapshot(cSize, aSize, lSize, dSize, usage)
+                            }
+                        }.getOrNull()
+                        if (sizes != null) {
+                            cacheBytes = sizes.cacheBytes
+                            avatarsBytes = sizes.avatarsBytes
+                            logsBytes = sizes.logsBytes
+                            dbBytes = sizes.databaseBytes
+                            mediaUsage = sizes.mediaUsage
                         }
+                        isCalculating = false
                     }
                 }
 
@@ -1562,27 +1596,58 @@ fun SettingsTab(
                             Button(
                                 onClick = {
                                     showClearConfirmDialog = false
-                                    kotlin.concurrent.thread {
+                                    isClearingMedia = true
+                                    storageScope.launch {
                                         try {
-                                            deleteDirContents(context.cacheDir, keepDir = true)
-                                            deleteDirContents(java.io.File(context.filesDir, "config/downloads"), keepDir = true)
-                                            deleteDirContents(java.io.File(context.filesDir, "avatars"), keepDir = true)
-                                            P2PMessageRelay.peerAvatars.clear()
-                                            val logFile = java.io.File(java.io.File(context.filesDir, "config"), "app.log")
-                                            if (logFile.exists()) {
-                                                logFile.writeText("")
+                                            withContext(Dispatchers.IO) {
+                                                AttachmentStorageManager.clear(
+                                                    context,
+                                                    AttachmentCategory.entries.toSet(),
+                                                )
+                                                deleteDirContents(context.cacheDir, keepDir = true)
+                                                deleteDirContents(
+                                                    java.io.File(context.filesDir, "config/downloads"),
+                                                    keepDir = true,
+                                                )
+                                                deleteDirContents(
+                                                    java.io.File(context.filesDir, "avatars"),
+                                                    keepDir = true,
+                                                )
+                                                val logFile = java.io.File(
+                                                    java.io.File(context.filesDir, "config"),
+                                                    "app.log",
+                                                )
+                                                if (logFile.exists()) {
+                                                    logFile.writeText("")
+                                                }
                                             }
+                                            P2PMessageRelay.peerAvatars.clear()
+                                            AttachmentImageCache.clear()
+                                            Toast.makeText(
+                                                context,
+                                                if (appLanguage == "Русский") {
+                                                    "Память успешно очищена"
+                                                } else {
+                                                    "Storage cleared successfully"
+                                                },
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
                                         } catch (e: Exception) {
                                             e.printStackTrace()
+                                            Toast.makeText(
+                                                context,
+                                                if (appLanguage == "Русский") {
+                                                    "Не удалось очистить память"
+                                                } else {
+                                                    "Could not clear storage"
+                                                },
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
                                         } finally {
+                                            isClearingMedia = false
                                             refreshStorageSizes()
                                         }
                                     }
-                                    Toast.makeText(
-                                        context,
-                                        if (appLanguage == "Русский") "Память успешно очищена" else "Storage cleared successfully",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
                                 },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = dangerRed,
@@ -1606,6 +1671,177 @@ fun SettingsTab(
                         },
                         containerColor = surfaceColor,
                         shape = RoundedCornerShape(20.dp)
+                    )
+                }
+
+                if (showMediaCleanupDialog) {
+                    val categoryLabels = mapOf(
+                        AttachmentCategory.VIDEO to (
+                            if (appLanguage == "Русский") "Видео" else "Videos"
+                        ),
+                        AttachmentCategory.IMAGE to (
+                            if (appLanguage == "Русский") "Изображения" else "Images"
+                        ),
+                        AttachmentCategory.FILE to (
+                            if (appLanguage == "Русский") "Документы и файлы" else "Documents & files"
+                        ),
+                        AttachmentCategory.VOICE to (
+                            if (appLanguage == "Русский") "Голосовые сообщения" else "Voice messages"
+                        ),
+                    )
+                    AlertDialog(
+                        onDismissRequest = {
+                            if (!isClearingMedia) showMediaCleanupDialog = false
+                        },
+                        title = {
+                            Text(
+                                text = if (appLanguage == "Русский") {
+                                    "Удалить медиа по типу"
+                                } else {
+                                    "Delete media by type"
+                                },
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = onSurfaceColor,
+                            )
+                        },
+                        text = {
+                            Column {
+                                Text(
+                                    text = if (appLanguage == "Русский") {
+                                        "Файлы будут удалены с устройства, но сообщения, подписи и даты останутся в чатах."
+                                    } else {
+                                        "Files will be removed from this device, while messages, captions, and dates remain in chats."
+                                    },
+                                    color = onSurfaceVariant,
+                                    fontSize = 13.sp,
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                AttachmentCategory.entries.forEach { category ->
+                                    val usage = mediaUsage[category] ?: AttachmentCategoryUsage()
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable(enabled = !isClearingMedia) {
+                                                selectedMediaCategories =
+                                                    if (category in selectedMediaCategories) {
+                                                        selectedMediaCategories - category
+                                                    } else {
+                                                        selectedMediaCategories + category
+                                                    }
+                                            }
+                                            .padding(vertical = 5.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Checkbox(
+                                            checked = category in selectedMediaCategories,
+                                            onCheckedChange = { checked ->
+                                                selectedMediaCategories = if (checked) {
+                                                    selectedMediaCategories + category
+                                                } else {
+                                                    selectedMediaCategories - category
+                                                }
+                                            },
+                                            enabled = !isClearingMedia,
+                                            colors = CheckboxDefaults.colors(
+                                                checkedColor = primaryColor,
+                                            ),
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = categoryLabels.getValue(category),
+                                                color = onSurfaceColor,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Medium,
+                                            )
+                                            Text(
+                                                text = "${usage.fileCount} • ${formatStorageSize(usage.bytes)}",
+                                                color = onSurfaceVariant,
+                                                fontSize = 11.sp,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    val categories = selectedMediaCategories
+                                    isClearingMedia = true
+                                    storageScope.launch {
+                                        try {
+                                            val result = withContext(Dispatchers.IO) {
+                                                AttachmentStorageManager.clear(context, categories)
+                                            }
+                                            AttachmentImageCache.clear()
+                                            showMediaCleanupDialog = false
+                                            selectedMediaCategories = emptySet()
+                                            val message = if (appLanguage == "Русский") {
+                                                buildString {
+                                                    append("Удалено: ${result.deletedFiles}")
+                                                    if (result.skippedActiveTransfers > 0) {
+                                                        append(". Активные передачи пропущены")
+                                                    }
+                                                }
+                                            } else {
+                                                buildString {
+                                                    append("Deleted: ${result.deletedFiles}")
+                                                    if (result.skippedActiveTransfers > 0) {
+                                                        append(". Active transfers were skipped")
+                                                    }
+                                                }
+                                            }
+                                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                        } catch (error: Exception) {
+                                            error.printStackTrace()
+                                            Toast.makeText(
+                                                context,
+                                                if (appLanguage == "Русский") {
+                                                    "Не удалось удалить выбранные файлы"
+                                                } else {
+                                                    "Could not delete selected files"
+                                                },
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        } finally {
+                                            isClearingMedia = false
+                                            refreshStorageSizes()
+                                        }
+                                    }
+                                },
+                                enabled = selectedMediaCategories.isNotEmpty() && !isClearingMedia,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFE53935),
+                                    contentColor = Color.White,
+                                ),
+                            ) {
+                                if (isClearingMedia) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color.White,
+                                    )
+                                } else {
+                                    Text(
+                                        if (appLanguage == "Русский") "Удалить" else "Delete",
+                                    )
+                                }
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = { showMediaCleanupDialog = false },
+                                enabled = !isClearingMedia,
+                            ) {
+                                Text(
+                                    if (appLanguage == "Русский") "Отмена" else "Cancel",
+                                    color = primaryColor,
+                                )
+                            }
+                        },
+                        containerColor = surfaceColor,
+                        shape = RoundedCornerShape(20.dp),
                     )
                 }
 
@@ -1723,6 +1959,94 @@ fun SettingsTab(
 
                         Spacer(modifier = Modifier.height(20.dp))
 
+                        Text(
+                            text = if (appLanguage == "Русский") {
+                                "Локальные медиафайлы"
+                            } else {
+                                "Local media files"
+                            },
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onSurfaceColor,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    0.5.dp,
+                                    onSurfaceColor.copy(alpha = 0.04f),
+                                    RoundedCornerShape(16.dp),
+                                ),
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                val categoryLabels = mapOf(
+                                    AttachmentCategory.VIDEO to (
+                                        if (appLanguage == "Русский") "Видео" else "Videos"
+                                    ),
+                                    AttachmentCategory.IMAGE to (
+                                        if (appLanguage == "Русский") "Изображения" else "Images"
+                                    ),
+                                    AttachmentCategory.FILE to (
+                                        if (appLanguage == "Русский") "Документы и файлы" else "Documents & files"
+                                    ),
+                                    AttachmentCategory.VOICE to (
+                                        if (appLanguage == "Русский") "Голосовые сообщения" else "Voice messages"
+                                    ),
+                                )
+                                AttachmentCategory.entries.forEachIndexed { index, category ->
+                                    val usage = mediaUsage[category] ?: AttachmentCategoryUsage()
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            categoryLabels.getValue(category),
+                                            color = onSurfaceColor,
+                                            fontSize = 14.sp,
+                                        )
+                                        Text(
+                                            if (isCalculating) {
+                                                "..."
+                                            } else {
+                                                "${usage.fileCount} • ${formatStorageSize(usage.bytes)}"
+                                            },
+                                            color = onSurfaceVariant,
+                                            fontSize = 12.sp,
+                                        )
+                                    }
+                                    if (index != AttachmentCategory.entries.lastIndex) {
+                                        Spacer(modifier = Modifier.height(9.dp))
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(14.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        selectedMediaCategories = emptySet()
+                                        showMediaCleanupDialog = true
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = !isCalculating && !isClearingMedia,
+                                    shape = RoundedCornerShape(12.dp),
+                                ) {
+                                    Text(
+                                        text = if (appLanguage == "Русский") {
+                                            "Выбрать типы для удаления"
+                                        } else {
+                                            "Choose media types to delete"
+                                        },
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = primaryColor,
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
                         // Action: Clear Storage Button Card
                         val dangerRed = Color(0xFFFF5252)
                         Card(
@@ -1741,7 +2065,7 @@ fun SettingsTab(
                                     ),
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.fillMaxWidth(),
-                                    enabled = !isCalculating
+                                    enabled = !isCalculating && !isClearingMedia
                                 ) {
                                     Icon(
                                         painter = painterResource(id = com.example.twopchat.R.drawable.ic_database_storage),

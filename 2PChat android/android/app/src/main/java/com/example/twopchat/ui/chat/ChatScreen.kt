@@ -408,6 +408,17 @@ fun ChatScreen(
 
     LaunchedEffect(peerName, isActive) {
         if (!isActive) return@LaunchedEffect
+        initialMessages.indices.forEach { index ->
+            val message = initialMessages[index]
+            val attachmentPath = message.attachmentUri
+            if (
+                !attachmentPath.isNullOrBlank() &&
+                "://" !in attachmentPath &&
+                !File(attachmentPath).isFile
+            ) {
+                initialMessages[index] = message.copy(attachmentUri = null)
+            }
+        }
         com.example.twopchat.MessageNotificationService.clearHistory(context, peerName)
         hasAppliedInitialScroll = false
         isFastHistoryLoaded = false
@@ -1408,6 +1419,13 @@ fun ChatScreen(
                     activeFullscreenImageIndex = index
                 },
                 onOpenVideo = { activeFullscreenVideo = it },
+                onCancelFileTransfer = { message ->
+                    P2PMessageRelay.cancelFileTransfer(
+                        context,
+                        peerName,
+                        message.id,
+                    )
+                },
                 highlightedMessageId = highlightedMessageId,
                 onHighlightFinished = { highlightedMessageId = null },
             )
