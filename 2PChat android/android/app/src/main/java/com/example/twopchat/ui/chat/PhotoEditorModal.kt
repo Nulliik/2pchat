@@ -70,6 +70,30 @@ enum class AspectRatioOption(val labelRu: String, val labelEn: String, val ratio
 
 private enum class DragHandle { NONE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, CENTER }
 
+private fun calculateImageBounds(containerW: Float, containerH: Float, imgW: Float, imgH: Float): Rect {
+    if (containerW <= 0f || containerH <= 0f || imgW <= 0f || imgH <= 0f) return Rect(0f, 0f, containerW, containerH)
+    val containerRatio = containerW / containerH
+    val imgRatio = imgW / imgH
+
+    val displayW: Float
+    val displayH: Float
+    val displayLeft: Float
+    val displayTop: Float
+
+    if (imgRatio > containerRatio) {
+        displayW = containerW
+        displayH = containerW / imgRatio
+        displayLeft = 0f
+        displayTop = (containerH - displayH) / 2f
+    } else {
+        displayH = containerH
+        displayW = containerH * imgRatio
+        displayLeft = (containerW - displayW) / 2f
+        displayTop = 0f
+    }
+    return Rect(displayLeft, displayTop, displayLeft + displayW, displayTop + displayH)
+}
+
 @Composable
 fun PhotoEditorModal(
     imageUri: Uri?,
@@ -427,12 +451,17 @@ fun PhotoEditorModal(
                                 .pointerInput(Unit) {
                                     detectDragGestures(
                                         onDragStart = { pos ->
-                                            val w = containerSize.width.toFloat()
-                                            val h = containerSize.height.toFloat()
-                                            val rectLeft = cropLeft * w
-                                            val rectTop = cropTop * h
-                                            val rectRight = cropRight * w
-                                            val rectBottom = cropBottom * h
+                                            val containerW = containerSize.width.toFloat()
+                                            val containerH = containerSize.height.toFloat()
+                                            val imgW = transformedBitmap.width.toFloat()
+                                            val imgH = transformedBitmap.height.toFloat()
+
+                                            val imgBounds = calculateImageBounds(containerW, containerH, imgW, imgH)
+
+                                            val rectLeft = imgBounds.left + cropLeft * imgBounds.width
+                                            val rectTop = imgBounds.top + cropTop * imgBounds.height
+                                            val rectRight = imgBounds.left + cropRight * imgBounds.width
+                                            val rectBottom = imgBounds.top + cropBottom * imgBounds.height
 
                                             val hitRadius = 120f
                                             val distTL = (pos - Offset(rectLeft, rectTop)).getDistance()
@@ -451,13 +480,17 @@ fun PhotoEditorModal(
                                         },
                                         onDrag = { change, dragAmount ->
                                             change.consume()
-                                            val w = containerSize.width.toFloat()
-                                            val h = containerSize.height.toFloat()
-                                            if (w <= 0f || h <= 0f) return@detectDragGestures
+                                            val containerW = containerSize.width.toFloat()
+                                            val containerH = containerSize.height.toFloat()
+                                            val imgW = transformedBitmap.width.toFloat()
+                                            val imgH = transformedBitmap.height.toFloat()
+                                            val imgBounds = calculateImageBounds(containerW, containerH, imgW, imgH)
 
-                                            val deltaX = dragAmount.x / w
-                                            val deltaY = dragAmount.y / h
-                                            val minSize = 0.15f
+                                            if (imgBounds.width <= 0f || imgBounds.height <= 0f) return@detectDragGestures
+
+                                            val deltaX = dragAmount.x / imgBounds.width
+                                            val deltaY = dragAmount.y / imgBounds.height
+                                            val minSize = 0.1f
 
                                             when (activeHandle) {
                                                 DragHandle.TOP_LEFT -> {
@@ -494,20 +527,23 @@ fun PhotoEditorModal(
                                     )
                                 }
                         ) {
-                            val w = size.width
-                            val h = size.height
+                            val containerW = size.width
+                            val containerH = size.height
+                            val imgW = transformedBitmap.width.toFloat()
+                            val imgH = transformedBitmap.height.toFloat()
+                            val imgBounds = calculateImageBounds(containerW, containerH, imgW, imgH)
 
-                            val leftPx = cropLeft * w
-                            val topPx = cropTop * h
-                            val rightPx = cropRight * w
-                            val bottomPx = cropBottom * h
+                            val leftPx = imgBounds.left + cropLeft * imgBounds.width
+                            val topPx = imgBounds.top + cropTop * imgBounds.height
+                            val rightPx = imgBounds.left + cropRight * imgBounds.width
+                            val bottomPx = imgBounds.top + cropBottom * imgBounds.height
 
                             // Dimmed background outside crop box
                             val dimColor = Color.Black.copy(alpha = 0.55f)
-                            drawRect(color = dimColor, topLeft = Offset(0f, 0f), size = Size(w, topPx))
-                            drawRect(color = dimColor, topLeft = Offset(0f, bottomPx), size = Size(w, h - bottomPx))
+                            drawRect(color = dimColor, topLeft = Offset(0f, 0f), size = Size(containerW, topPx))
+                            drawRect(color = dimColor, topLeft = Offset(0f, bottomPx), size = Size(containerW, containerH - bottomPx))
                             drawRect(color = dimColor, topLeft = Offset(0f, topPx), size = Size(leftPx, bottomPx - topPx))
-                            drawRect(color = dimColor, topLeft = Offset(rightPx, topPx), size = Size(w - rightPx, bottomPx - topPx))
+                            drawRect(color = dimColor, topLeft = Offset(rightPx, topPx), size = Size(containerW - rightPx, bottomPx - topPx))
 
                             // Thin white bounding box
                             drawRect(
@@ -646,10 +682,17 @@ fun PhotoEditorModal(
                                     val canvas = android.graphics.Canvas(finalBmp)
                                     canvas.drawBitmap(workingBmp, 0f, 0f, null)
 
-                                    // Draw paths onto final bitmap (scaled from view container to bitmap size)
+                                    // Draw paths onto final bitmap (scaled from image display bounds to bitmap size)
                                     if (drawnPaths.isNotEmpty() && containerSize.width > 0 && containerSize.height > 0) {
-                                        val scaleX = workingBmp.width.toFloat() / containerSize.width.toFloat()
-                                        val scaleY = workingBmp.height.toFloat() / containerSize.height.toFloat()
+                                        val imgBounds = calculateImageBounds(
+                                            containerSize.width.toFloat(),
+                                            containerSize.height.toFloat(),
+                                            transformedBitmap.width.toFloat(),
+                                            transformedBitmap.height.toFloat()
+                                        )
+
+                                        val scaleX = transformedBitmap.width.toFloat() / imgBounds.width.coerceAtLeast(1f)
+                                        val scaleY = transformedBitmap.height.toFloat() / imgBounds.height.coerceAtLeast(1f)
 
                                         val paint = Paint().apply {
                                             isAntiAlias = true
@@ -663,9 +706,13 @@ fun PhotoEditorModal(
                                             paint.strokeWidth = pathData.strokeWidth * scaleX
                                             if (pathData.points.size > 1) {
                                                 val path = android.graphics.Path()
-                                                path.moveTo(pathData.points.first().x * scaleX, pathData.points.first().y * scaleY)
+                                                val startX = (pathData.points.first().x - imgBounds.left) * scaleX
+                                                val startY = (pathData.points.first().y - imgBounds.top) * scaleY
+                                                path.moveTo(startX, startY)
                                                 for (i in 1 until pathData.points.size) {
-                                                    path.lineTo(pathData.points[i].x * scaleX, pathData.points[i].y * scaleY)
+                                                    val ptX = (pathData.points[i].x - imgBounds.left) * scaleX
+                                                    val ptY = (pathData.points[i].y - imgBounds.top) * scaleY
+                                                    path.lineTo(ptX, ptY)
                                                 }
                                                 canvas.drawPath(path, paint)
                                             }
