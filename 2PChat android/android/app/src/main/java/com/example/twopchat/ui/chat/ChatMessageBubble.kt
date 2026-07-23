@@ -240,10 +240,10 @@ internal fun ChatMessageBubble(
                                 }
                             )
                             // Subtle border for incoming bubbles
-                            .then(if (!msg.isMe && !isOnlyEmoji && msg.attachmentType != "IMAGE") Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.08f), bubbleShape) else Modifier)
+                            .then(if (!msg.isMe && !isOnlyEmoji && msg.attachmentType != "IMAGE" && msg.attachmentType != "VIDEO") Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.08f), bubbleShape) else Modifier)
                             .padding(
-                                horizontal = if (isOnlyEmoji || msg.attachmentType == "IMAGE") 0.dp else 16.dp,
-                                vertical = if (isOnlyEmoji || msg.attachmentType == "IMAGE") 0.dp else 11.dp
+                                horizontal = if (isOnlyEmoji || msg.attachmentType == "IMAGE" || msg.attachmentType == "VIDEO") 0.dp else 16.dp,
+                                vertical = if (isOnlyEmoji || msg.attachmentType == "IMAGE" || msg.attachmentType == "VIDEO") 0.dp else 11.dp
                             )
                             .widthIn(max = 280.dp)
                     ) {
@@ -504,13 +504,25 @@ internal fun ChatMessageBubble(
                                         ?: msg.attachmentName?.let { com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[it] }
                                     val isTransferring = progressInfo != null && progressInfo.bytesTransferred < progressInfo.totalBytes && progressInfo.totalBytes > 0
 
-                                    Column {
+                                    val isDefaultText = msg.text.isBlank() ||
+                                            msg.text.startsWith("Sent a video") ||
+                                            msg.text.equals("Видеозапись", ignoreCase = true) ||
+                                            msg.text.equals("Отправлено видео", ignoreCase = true)
+
+                                    val hasCaption = !isDefaultText
+
+                                    Column(
+                                        modifier = Modifier.widthIn(max = 280.dp)
+                                    ) {
                                         Box(
                                             contentAlignment = Alignment.Center,
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .height(180.dp)
-                                                .clip(RoundedCornerShape(8.dp))
+                                                .height(200.dp)
+                                                .clip(
+                                                    if (hasCaption) RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
+                                                    else bubbleShape
+                                                )
                                                 .clickable {
                                                     msg.attachmentUri?.let(onOpenVideo)
                                                 }
@@ -530,7 +542,7 @@ internal fun ChatMessageBubble(
                                                     contentAlignment = Alignment.Center
                                                 ) {
                                                     Icon(
-                                                        painter = painterResource(id = R.drawable.ic_attach_file),
+                                                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_file),
                                                         contentDescription = "Video",
                                                         tint = textColor.copy(alpha = 0.5f),
                                                         modifier = Modifier.size(40.dp)
@@ -544,7 +556,7 @@ internal fun ChatMessageBubble(
                                                     .background(Color.Black.copy(alpha = 0.5f), CircleShape)
                                             ) {
                                                 Icon(
-                                                    painter = painterResource(id = R.drawable.ic_voice_play),
+                                                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_voice_play),
                                                     contentDescription = "Play",
                                                     tint = Color.White,
                                                     modifier = Modifier.size(24.dp).padding(start = 2.dp)
@@ -581,16 +593,102 @@ internal fun ChatMessageBubble(
                                                     }
                                                 }
                                             }
+
+                                            // If NO caption, floating timestamp pill in bottom-right corner over the video
+                                            if (!hasCaption) {
+                                                val hasIncomingAfter = if (index < messages.size - 1) {
+                                                    messages.subList(index + 1, messages.size).any { !it.isMe }
+                                                } else false
+                                                val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
+                                                val isPending = msg.status?.startsWith("PENDING") == true
+
+                                                Row(
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .padding(6.dp)
+                                                        .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = MessageTimestampFormatter.format(msg, appLanguage),
+                                                        fontSize = 10.sp,
+                                                        color = Color.White.copy(alpha = 0.95f),
+                                                        fontWeight = FontWeight.Medium
+                                                    )
+                                                    if (msg.isMe) {
+                                                        if (isPending) {
+                                                            androidx.compose.material3.CircularProgressIndicator(
+                                                                modifier = Modifier.size(10.dp),
+                                                                color = Color.White.copy(alpha = 0.8f),
+                                                                strokeWidth = 1.2.dp
+                                                            )
+                                                        } else {
+                                                            Icon(
+                                                                painter = painterResource(id = if (isRead) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
+                                                                contentDescription = if (isRead) "Read" else "Sent",
+                                                                tint = if (isRead) Color(0xFF64B5F6) else Color.White.copy(alpha = 0.95f),
+                                                                modifier = Modifier.size(13.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
-                                        if (!msg.text.startsWith("Sent a video")) {
-                                            Spacer(modifier = Modifier.height(6.dp))
-                                            LinkifiedText(
-                                                text = msg.text,
-                                                textColor = textColor,
-                                                linkColor = linkColor,
-                                                fontSize = 15.sp,
-                                                lineHeight = 20.sp
-                                            )
+
+                                        // If HAS caption, render clean caption container at bottom of card
+                                        if (hasCaption) {
+                                            val hasIncomingAfter = if (index < messages.size - 1) {
+                                                messages.subList(index + 1, messages.size).any { !it.isMe }
+                                            } else false
+                                            val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
+                                            val isPending = msg.status?.startsWith("PENDING") == true
+
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
+                                            ) {
+                                                LinkifiedText(
+                                                    text = msg.text,
+                                                    textColor = textColor,
+                                                    linkColor = linkColor,
+                                                    fontSize = 15.sp,
+                                                    lineHeight = 20.sp
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Row(
+                                                    modifier = Modifier.align(Alignment.End),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = MessageTimestampFormatter.format(msg, appLanguage),
+                                                        fontSize = 10.sp,
+                                                        color = textColor.copy(alpha = 0.75f),
+                                                        fontWeight = FontWeight.Medium
+                                                    )
+                                                    if (msg.isMe) {
+                                                        if (isPending) {
+                                                            androidx.compose.material3.CircularProgressIndicator(
+                                                                modifier = Modifier.size(10.dp),
+                                                                color = textColor.copy(alpha = 0.6f),
+                                                                strokeWidth = 1.2.dp
+                                                            )
+                                                        } else {
+                                                            Icon(
+                                                                painter = painterResource(id = if (isRead) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
+                                                                contentDescription = if (isRead) "Read" else "Sent",
+                                                                tint = if (isRead) {
+                                                                    if (msg.isMe && primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color(0xFF64B5F6)
+                                                                } else textColor.copy(alpha = 0.75f),
+                                                                modifier = Modifier.size(13.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -738,7 +836,7 @@ internal fun ChatMessageBubble(
                                     }
                                 }
                             }
-                            if (msg.attachmentType != "IMAGE") {
+                            if (msg.attachmentType != "IMAGE" && msg.attachmentType != "VIDEO") {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,

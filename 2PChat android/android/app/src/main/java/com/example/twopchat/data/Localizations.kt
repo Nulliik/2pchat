@@ -152,7 +152,7 @@ object Localizations {
 
         // Chat Screen
         "secure_badge" to "SECURE",
-        "write_placeholder" to "Write secured message...",
+        "write_placeholder" to "Message...",
         "send" to "Send",
         "typing" to "Typing...",
         "msg_options" to "Message Options",
@@ -333,7 +333,7 @@ object Localizations {
 
         // Chat Screen
         "secure_badge" to "ЗАЩИЩЕНО",
-        "write_placeholder" to "Написать защищенное сообщение...",
+        "write_placeholder" to "Сообщение...",
         "send" to "Отправить",
         "typing" to "Печатает...",
         "msg_options" to "Опции сообщения",

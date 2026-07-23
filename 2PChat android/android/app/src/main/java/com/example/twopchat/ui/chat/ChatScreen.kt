@@ -883,6 +883,7 @@ fun ChatScreen(
 
     var editingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var editingPhotoPath by remember { mutableStateOf<String?>(null) }
+    var editingVideoPath by remember { mutableStateOf<String?>(null) }
 
     // Picker Launchers
     val galleryLauncher = rememberLauncherForActivityResult(
@@ -917,37 +918,7 @@ fun ChatScreen(
             }
             val tempFile = saveUriToTempFile(context, it, fileName)
             if (tempFile != null) {
-                val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                val initialStatus = if (endpoint != null) "SENT" else "PENDING"
-                val outMsg = Message(
-                    id = newMessageId(),
-                    text = "Sent a video",
-                    isMe = true,
-                    timestamp = time,
-                    attachmentType = "VIDEO",
-                    attachmentUri = tempFile.absolutePath,
-                    attachmentName = fileName,
-                    status = initialStatus
-                )
-                arrivalAnimationTracker.mark(outMsg.id)
-                initialMessages.add(outMsg)
-                if (persistEnabled || initialStatus == "PENDING") {
-                    persistDatabase { db.saveMessage(peerName, outMsg) }
-                }
-                if (endpoint != null && peerName != "Saved Messages") {
-                    P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath, outMsg.id) { success ->
-                        if (!success) {
-                            persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                            coroutineScope.launch {
-                                val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                                if (idx != -1) {
-                                    initialMessages[idx] = outMsg.copy(status = "PENDING")
-                                }
-                            }
-                        }
-                    }
-                }
+                editingVideoPath = tempFile.absolutePath
             }
         }
     }
@@ -1079,6 +1050,58 @@ fun ChatScreen(
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
+
+    if (editingVideoPath != null) {
+        VideoEditorModal(
+            videoPath = editingVideoPath!!,
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = onSurfaceVariant,
+            onDismiss = {
+                editingVideoPath = null
+            },
+            onSendVideo = { vPath, caption ->
+                editingVideoPath = null
+                val file = File(vPath)
+                if (file.exists()) {
+                    val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                    val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+                    val initialStatus = if (endpoint != null) "SENT" else "PENDING"
+                    val msgText = caption.ifBlank { if (appLanguage == "Русский") "Видеозапись" else "Sent a video" }
+                    val outMsg = Message(
+                        id = newMessageId(),
+                        text = msgText,
+                        isMe = true,
+                        timestamp = time,
+                        attachmentType = "VIDEO",
+                        attachmentUri = file.absolutePath,
+                        attachmentName = file.name,
+                        status = initialStatus
+                    )
+                    arrivalAnimationTracker.mark(outMsg.id)
+                    initialMessages.add(outMsg)
+                    if (persistEnabled || initialStatus == "PENDING") {
+                        persistDatabase { db.saveMessage(peerName, outMsg) }
+                    }
+                    if (endpoint != null && peerName != "Saved Messages") {
+                        P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, caption.trim()) { success ->
+                            if (!success) {
+                                persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
+                                coroutineScope.launch {
+                                    val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                                    if (idx != -1) {
+                                        initialMessages[idx] = outMsg.copy(status = "PENDING")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        )
+    }
 
     LaunchedEffect(messageListAtBottom) {
         if (messageListAtBottom) {
