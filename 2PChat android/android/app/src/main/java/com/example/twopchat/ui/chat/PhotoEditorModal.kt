@@ -28,7 +28,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
@@ -58,10 +61,13 @@ data class DrawPathData(
 
 enum class AspectRatioOption(val labelRu: String, val labelEn: String, val ratio: Float?) {
     ORIGINAL("Оригинал", "Original", null),
+    FREEFORM("Свободно", "Freeform", -1f),
     SQUARE("1:1", "1:1", 1.0f),
     FOUR_THREE("4:3", "4:3", 4f / 3f),
     SIXTEEN_NINE("16:9", "16:9", 16f / 9f)
 }
+
+private enum class DragHandle { NONE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
 
 @Composable
 fun PhotoEditorModal(
@@ -109,6 +115,13 @@ fun PhotoEditorModal(
     var strokeColor by remember { mutableStateOf(Color(0xFF4CAF50)) } // Mint green default
     var strokeWidthPx by remember { mutableFloatStateOf(10f) }
 
+    // Freeform crop rectangle normalized fractions [0f..1f]
+    var cropLeft by remember { mutableFloatStateOf(0.05f) }
+    var cropTop by remember { mutableFloatStateOf(0.05f) }
+    var cropRight by remember { mutableFloatStateOf(0.95f) }
+    var cropBottom by remember { mutableFloatStateOf(0.95f) }
+    var activeHandle by remember { mutableStateOf(DragHandle.NONE) }
+
     val drawnPaths = remember { mutableStateListOf<DrawPathData>() }
     var currentPathPoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
     var captionText by remember { mutableStateOf("") }
@@ -125,7 +138,7 @@ fun PhotoEditorModal(
         Color(0xFF9C27B0)  // Purple
     )
 
-    // Current transformed preview bitmap
+    // Current transformed preview bitmap (rotation & preset ratio crop)
     val transformedBitmap = remember(originalBitmap, rotationDegrees, selectedAspectRatio) {
         var bmp = originalBitmap
 
@@ -135,9 +148,9 @@ fun PhotoEditorModal(
             bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
         }
 
-        // Apply aspect ratio crop if selected
+        // Apply preset aspect ratio crop if selected (except FREEFORM which uses custom handles)
         val targetRatio = selectedAspectRatio.ratio
-        if (targetRatio != null) {
+        if (targetRatio != null && targetRatio > 0f) {
             val srcW = bmp.width
             val srcH = bmp.height
             val currentRatio = srcW.toFloat() / srcH.toFloat()
@@ -206,7 +219,9 @@ fun PhotoEditorModal(
                         }
 
                         // Toggle Drawing Mode
-                        IconButton(onClick = { isDrawingMode = !isDrawingMode }) {
+                        IconButton(onClick = {
+                            isDrawingMode = !isDrawingMode
+                        }) {
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = "Draw",
@@ -214,7 +229,7 @@ fun PhotoEditorModal(
                             )
                         }
 
-                        // Undo Drawing (removes last drawn path)
+                        // Undo Drawing
                         IconButton(
                             onClick = { if (drawnPaths.isNotEmpty()) drawnPaths.removeAt(drawnPaths.size - 1) },
                             enabled = drawnPaths.isNotEmpty()
@@ -226,7 +241,7 @@ fun PhotoEditorModal(
                             )
                         }
 
-                        // Clear Drawing (clears all)
+                        // Clear Drawing
                         IconButton(
                             onClick = { drawnPaths.clear() },
                             enabled = drawnPaths.isNotEmpty()
@@ -240,11 +255,11 @@ fun PhotoEditorModal(
                     }
                 }
 
-                // Aspect Ratio Selector Chips
+                // Aspect Ratio & Freeform Crop Chips
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -252,7 +267,15 @@ fun PhotoEditorModal(
                         val isSelected = selectedAspectRatio == option
                         FilterChip(
                             selected = isSelected,
-                            onClick = { selectedAspectRatio = option },
+                            onClick = {
+                                selectedAspectRatio = option
+                                if (option == AspectRatioOption.FREEFORM) {
+                                    cropLeft = 0.05f
+                                    cropTop = 0.05f
+                                    cropRight = 0.95f
+                                    cropBottom = 0.95f
+                                }
+                            },
                             label = {
                                 Text(
                                     text = if (appLanguage == "Русский") option.labelRu else option.labelEn,
@@ -266,12 +289,12 @@ fun PhotoEditorModal(
                                 containerColor = Color.White.copy(alpha = 0.1f),
                                 labelColor = Color.White.copy(alpha = 0.8f)
                             ),
-                            modifier = Modifier.padding(horizontal = 4.dp)
+                            modifier = Modifier.padding(horizontal = 3.dp)
                         )
                     }
                 }
 
-                // Image Preview + Interactive Drawing Canvas Container
+                // Image Preview + Drawing + Freeform Crop Overlay Container
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -288,6 +311,125 @@ fun PhotoEditorModal(
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize()
                     )
+
+                    // Freeform Crop Overlay with 4 Corner L-Brackets (when FREEFORM is selected)
+                    if (selectedAspectRatio == AspectRatioOption.FREEFORM) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pointerInput(Unit) {
+                                    detectDragGestures(
+                                        onDragStart = { pos ->
+                                            val w = containerSize.width.toFloat()
+                                            val h = containerSize.height.toFloat()
+                                            val rectLeft = cropLeft * w
+                                            val rectTop = cropTop * h
+                                            val rectRight = cropRight * w
+                                            val rectBottom = cropBottom * h
+
+                                            val hitRadius = 60f
+                                            val distTL = (pos - Offset(rectLeft, rectTop)).getDistance()
+                                            val distTR = (pos - Offset(rectRight, rectTop)).getDistance()
+                                            val distBL = (pos - Offset(rectLeft, rectBottom)).getDistance()
+                                            val distBR = (pos - Offset(rectRight, rectBottom)).getDistance()
+
+                                            activeHandle = when {
+                                                distTL < hitRadius -> DragHandle.TOP_LEFT
+                                                distTR < hitRadius -> DragHandle.TOP_RIGHT
+                                                distBL < hitRadius -> DragHandle.BOTTOM_LEFT
+                                                distBR < hitRadius -> DragHandle.BOTTOM_RIGHT
+                                                else -> DragHandle.NONE
+                                            }
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            val w = containerSize.width.toFloat()
+                                            val h = containerSize.height.toFloat()
+                                            if (w <= 0f || h <= 0f) return@detectDragGestures
+
+                                            val deltaX = dragAmount.x / w
+                                            val deltaY = dragAmount.y / h
+                                            val minSize = 0.15f
+
+                                            when (activeHandle) {
+                                                DragHandle.TOP_LEFT -> {
+                                                    cropLeft = (cropLeft + deltaX).coerceIn(0f, cropRight - minSize)
+                                                    cropTop = (cropTop + deltaY).coerceIn(0f, cropBottom - minSize)
+                                                }
+                                                DragHandle.TOP_RIGHT -> {
+                                                    cropRight = (cropRight + deltaX).coerceIn(cropLeft + minSize, 1f)
+                                                    cropTop = (cropTop + deltaY).coerceIn(0f, cropBottom - minSize)
+                                                }
+                                                DragHandle.BOTTOM_LEFT -> {
+                                                    cropLeft = (cropLeft + deltaX).coerceIn(0f, cropRight - minSize)
+                                                    cropBottom = (cropBottom + deltaY).coerceIn(cropTop + minSize, 1f)
+                                                }
+                                                DragHandle.BOTTOM_RIGHT -> {
+                                                    cropRight = (cropRight + deltaX).coerceIn(cropLeft + minSize, 1f)
+                                                    cropBottom = (cropBottom + deltaY).coerceIn(cropTop + minSize, 1f)
+                                                }
+                                                DragHandle.NONE -> {}
+                                            }
+                                        },
+                                        onDragEnd = { activeHandle = DragHandle.NONE },
+                                        onDragCancel = { activeHandle = DragHandle.NONE }
+                                    )
+                                }
+                        ) {
+                            val w = size.width
+                            val h = size.height
+
+                            val leftPx = cropLeft * w
+                            val topPx = cropTop * h
+                            val rightPx = cropRight * w
+                            val bottomPx = cropBottom * h
+
+                            // Dimmed background outside crop box
+                            val dimColor = Color.Black.copy(alpha = 0.55f)
+                            drawRect(color = dimColor, topLeft = Offset(0f, 0f), size = Size(w, topPx))
+                            drawRect(color = dimColor, topLeft = Offset(0f, bottomPx), size = Size(w, h - bottomPx))
+                            drawRect(color = dimColor, topLeft = Offset(0f, topPx), size = Size(leftPx, bottomPx - topPx))
+                            drawRect(color = dimColor, topLeft = Offset(rightPx, topPx), size = Size(w - rightPx, bottomPx - topPx))
+
+                            // Thin white bounding box
+                            drawRect(
+                                color = Color.White.copy(alpha = 0.8f),
+                                topLeft = Offset(leftPx, topPx),
+                                size = Size(rightPx - leftPx, bottomPx - topPx),
+                                style = Stroke(width = 2f)
+                            )
+
+                            // 3x3 Grid Lines inside crop box
+                            val boxW = rightPx - leftPx
+                            val boxH = bottomPx - topPx
+                            val gridColor = Color.White.copy(alpha = 0.25f)
+                            drawLine(gridColor, Offset(leftPx + boxW / 3f, topPx), Offset(leftPx + boxW / 3f, bottomPx), strokeWidth = 1f)
+                            drawLine(gridColor, Offset(leftPx + 2f * boxW / 3f, topPx), Offset(leftPx + 2f * boxW / 3f, bottomPx), strokeWidth = 1f)
+                            drawLine(gridColor, Offset(leftPx, topPx + boxH / 3f), Offset(rightPx, topPx + boxH / 3f), strokeWidth = 1f)
+                            drawLine(gridColor, Offset(leftPx, topPx + 2f * boxH / 3f), Offset(rightPx, topPx + 2f * boxH / 3f), strokeWidth = 1f)
+
+                            // 4 Corner L-Brackets (thick white handles matching user screenshot)
+                            val cornerLen = 28.dp.toPx()
+                            val cornerStroke = 4.dp.toPx()
+                            val cornerColor = Color.White
+
+                            // Top-Left corner L
+                            drawLine(cornerColor, Offset(leftPx - cornerStroke / 2f, topPx), Offset(leftPx + cornerLen, topPx), strokeWidth = cornerStroke, cap = StrokeCap.Square)
+                            drawLine(cornerColor, Offset(leftPx, topPx - cornerStroke / 2f), Offset(leftPx, topPx + cornerLen), strokeWidth = cornerStroke, cap = StrokeCap.Square)
+
+                            // Top-Right corner L
+                            drawLine(cornerColor, Offset(rightPx + cornerStroke / 2f, topPx), Offset(rightPx - cornerLen, topPx), strokeWidth = cornerStroke, cap = StrokeCap.Square)
+                            drawLine(cornerColor, Offset(rightPx, topPx - cornerStroke / 2f), Offset(rightPx, topPx + cornerLen), strokeWidth = cornerStroke, cap = StrokeCap.Square)
+
+                            // Bottom-Left corner L
+                            drawLine(cornerColor, Offset(leftPx - cornerStroke / 2f, bottomPx), Offset(leftPx + cornerLen, bottomPx), strokeWidth = cornerStroke, cap = StrokeCap.Square)
+                            drawLine(cornerColor, Offset(leftPx, bottomPx + cornerStroke / 2f), Offset(leftPx, bottomPx - cornerLen), strokeWidth = cornerStroke, cap = StrokeCap.Square)
+
+                            // Bottom-Right corner L
+                            drawLine(cornerColor, Offset(rightPx + cornerStroke / 2f, bottomPx), Offset(rightPx - cornerLen, bottomPx), strokeWidth = cornerStroke, cap = StrokeCap.Square)
+                            drawLine(cornerColor, Offset(rightPx, bottomPx + cornerStroke / 2f), Offset(rightPx, bottomPx - cornerLen), strokeWidth = cornerStroke, cap = StrokeCap.Square)
+                        }
+                    }
 
                     // Drawing Overlay Canvas
                     Canvas(
@@ -324,7 +466,7 @@ fun PhotoEditorModal(
                         // Render confirmed paths
                         for (pathData in drawnPaths) {
                             if (pathData.points.size > 1) {
-                                val composePath = androidx.compose.ui.graphics.Path().apply {
+                                val composePath = Path().apply {
                                     moveTo(pathData.points.first().x, pathData.points.first().y)
                                     for (i in 1 until pathData.points.size) {
                                         lineTo(pathData.points[i].x, pathData.points[i].y)
@@ -344,7 +486,7 @@ fun PhotoEditorModal(
 
                         // Render active in-flight drag path
                         if (currentPathPoints.size > 1) {
-                            val activePath = androidx.compose.ui.graphics.Path().apply {
+                            val activePath = Path().apply {
                                 moveTo(currentPathPoints.first().x, currentPathPoints.first().y)
                                 for (i in 1 until currentPathPoints.size) {
                                     lineTo(currentPathPoints[i].x, currentPathPoints[i].y)
@@ -437,19 +579,32 @@ fun PhotoEditorModal(
                         Button(
                             onClick = {
                                 try {
+                                    var workingBmp = transformedBitmap
+
+                                    // Apply Freeform Crop if FREEFORM option is active
+                                    if (selectedAspectRatio == AspectRatioOption.FREEFORM) {
+                                        val srcW = workingBmp.width
+                                        val srcH = workingBmp.height
+                                        val startX = (cropLeft * srcW).toInt().coerceIn(0, srcW - 1)
+                                        val startY = (cropTop * srcH).toInt().coerceIn(0, srcH - 1)
+                                        val cropW = ((cropRight - cropLeft) * srcW).toInt().coerceIn(1, srcW - startX)
+                                        val cropH = ((cropBottom - cropTop) * srcH).toInt().coerceIn(1, srcH - startY)
+                                        workingBmp = Bitmap.createBitmap(workingBmp, startX, startY, cropW, cropH)
+                                    }
+
                                     // Composite final bitmap (transformed image + drawn paths)
                                     val finalBmp = Bitmap.createBitmap(
-                                        transformedBitmap.width,
-                                        transformedBitmap.height,
+                                        workingBmp.width,
+                                        workingBmp.height,
                                         Bitmap.Config.ARGB_8888
                                     )
                                     val canvas = android.graphics.Canvas(finalBmp)
-                                    canvas.drawBitmap(transformedBitmap, 0f, 0f, null)
+                                    canvas.drawBitmap(workingBmp, 0f, 0f, null)
 
                                     // Draw paths onto final bitmap (scaled from view container to bitmap size)
                                     if (drawnPaths.isNotEmpty() && containerSize.width > 0 && containerSize.height > 0) {
-                                        val scaleX = transformedBitmap.width.toFloat() / containerSize.width.toFloat()
-                                        val scaleY = transformedBitmap.height.toFloat() / containerSize.height.toFloat()
+                                        val scaleX = workingBmp.width.toFloat() / containerSize.width.toFloat()
+                                        val scaleY = workingBmp.height.toFloat() / containerSize.height.toFloat()
 
                                         val paint = Paint().apply {
                                             isAntiAlias = true
