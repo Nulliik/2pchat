@@ -14,9 +14,9 @@ internal class RelayMaintenanceCoordinator(
     private val scope: CoroutineScope,
     private val isRunning: () -> Boolean,
     private val peerEndpoints: Map<String, String>,
-    private val peerConnectionTransports: MutableMap<String, String>,
-    private val peerSessionStates: MutableMap<String, Boolean>,
-    private val onConnectedPeerHeartbeat: (Context, String) -> Unit,
+    private val presenceVersion: (String) -> Long,
+    private val onPeerObservedOnline: (Context, String, String?, Long) -> Unit,
+    private val onPeerObservedOffline: (String, Long) -> Unit,
     private val log: (Context, String, String, Throwable?) -> Unit,
 ) {
     private val lastReconnectAttemptAt = ConcurrentHashMap<String, Long>()
@@ -33,22 +33,32 @@ internal class RelayMaintenanceCoordinator(
                     val prefs = P2PPreferences.prefs(appContext)
                     val chats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
                         .filterNot { it == "Saved Messages" || isPlaceholderPeerName(it) }
+                    // Capture this before the blocking Python heartbeat probe.
+                    // Any callback received while it is running makes the
+                    // corresponding result stale.
+                    val presenceVersions = chats.associateWith(presenceVersion)
                     val activeFingerprints = PythonBridge.getActivePeerFingerprints().toSet()
                     Handler(Looper.getMainLooper()).post {
                         for (peerName in chats) {
                             val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
                             if (!fingerprint.isNullOrBlank() && fingerprint in activeFingerprints) {
-                                peerSessionStates[peerName] = true
                                 reconnectDelayMs.remove(fingerprint)
-                                canonicalConnectionTransport(
+                                val transport = canonicalConnectionTransport(
                                     rawTransport = prefs.getString(P2PPreferences.transport(peerName), null),
                                     endpoint = peerEndpoints[peerName]
                                         ?: prefs.getString(P2PPreferences.lastEndpoint(peerName), null),
-                                )?.let { peerConnectionTransports[peerName] = it }
-                                onConnectedPeerHeartbeat(appContext, peerName)
+                                )
+                                onPeerObservedOnline(
+                                    appContext,
+                                    peerName,
+                                    transport,
+                                    presenceVersions.getValue(peerName),
+                                )
                             } else {
-                                peerSessionStates.remove(peerName)
-                                peerConnectionTransports.remove(peerName)
+                                onPeerObservedOffline(
+                                    peerName,
+                                    presenceVersions.getValue(peerName),
+                                )
                             }
                         }
                     }

@@ -53,12 +53,14 @@ def print(*args, **kwargs):
     logger.info(msg)
 
 active_sessions = {}
+session_probe_failures = {}
 peer_operation_locks = {}
 peer_fingerprint_to_name = {}
 incoming_files = {}
 incoming_file_starts = {}
 MOBILE_ACK_TIMEOUT = 3.0
 MOBILE_MAX_RETRIES = 1
+MAX_CONSECUTIVE_SESSION_PROBE_FAILURES = 2
 MAX_INCOMING_FILES = 16
 MAX_INCOMING_FILES_PER_PEER = 4
 MAX_INCOMING_FILE_BYTES = 100 * 1024 * 1024
@@ -325,6 +327,7 @@ async def _register_authenticated_session(session, peer_fp: str, *, initiator: b
     )
     if not existing_online:
         active_sessions[peer_fp] = session
+        session_probe_failures.pop(peer_fp, None)
         return session
 
     prefer_initiator = local_fp < peer_fp
@@ -335,6 +338,7 @@ async def _register_authenticated_session(session, peer_fp: str, *, initiator: b
         return existing
 
     active_sessions[peer_fp] = session
+    session_probe_failures.pop(peer_fp, None)
     await existing.close()
     return session
 
@@ -1753,6 +1757,7 @@ async def _read_loop(session, peer_name, fp):
         # A stale read loop must never delete a newer replacement session.
         if active_sessions.get(fp) is session:
             del active_sessions[fp]
+            session_probe_failures.pop(fp, None)
         has_replacement = any(
             candidate is not session
             and candidate.is_online
@@ -1895,6 +1900,7 @@ async def _invalidate_session(session) -> None:
     fp = getattr(session, "peer_fingerprint", None)
     if fp and active_sessions.get(fp) is session:
         active_sessions.pop(fp, None)
+        session_probe_failures.pop(fp, None)
     try:
         await session.close()
     except Exception:
@@ -1968,6 +1974,7 @@ async def _send_message_unlocked(peer_name: str, endpoint: str, body: str, expec
                     pass
                 if session.peer_fingerprint:
                     active_sessions.pop(session.peer_fingerprint, None)
+                    session_probe_failures.pop(session.peer_fingerprint, None)
             session = await _establish_session_async(peer_name, endpoint, expected_fingerprint)
             was_cached = False
 
@@ -2035,6 +2042,7 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
                     pass
                 if session.peer_fingerprint:
                     active_sessions.pop(session.peer_fingerprint, None)
+                    session_probe_failures.pop(session.peer_fingerprint, None)
             session = await _establish_session_async(peer_name, endpoint, expected_fingerprint)
             was_cached = False
 
@@ -2137,6 +2145,7 @@ def _clear_account_runtime_state():
     global local_yggdrasil_available
 
     active_sessions.clear()
+    session_probe_failures.clear()
     peer_operation_locks.clear()
     peer_fingerprint_to_name.clear()
     incoming_file_starts.clear()
@@ -2227,6 +2236,7 @@ def close_peer_session(peer_name: str, expected_fingerprint=None) -> bool:
             pass
         if session.peer_fingerprint:
             active_sessions.pop(session.peer_fingerprint, None)
+            session_probe_failures.pop(session.peer_fingerprint, None)
         return True
     return False
 
@@ -2261,6 +2271,7 @@ async def _probe_active_peer_fingerprints() -> list[str]:
             # Every reliable frame is acknowledged by the authenticated remote
             # session before it reaches the application read loop.
             await session.send_reliable({"type": "heartbeat"})
+            session_probe_failures.pop(peer_fingerprint, None)
             return peer_fingerprint
         except asyncio.CancelledError:
             # Reader failure cancels pending ACK futures and marks the session
@@ -2270,7 +2281,30 @@ async def _probe_active_peer_fingerprints() -> list[str]:
                 await _invalidate_session(session)
                 return None
             raise
-        except Exception:
+        except Exception as probe_error:
+            # A delayed ACK is not proof that the TCP session died. Android may
+            # suspend either app briefly while it is backgrounded, and treating
+            # one timeout as a disconnect made presence flip offline/online on
+            # every maintenance cycle. Reader EOF or a failed socket write
+            # still marks ``is_online`` false and is handled immediately.
+            if not session.is_online:
+                await _invalidate_session(session)
+                return None
+
+            previous_session, previous_failures = session_probe_failures.get(
+                peer_fingerprint, (None, 0)
+            )
+            failures = previous_failures + 1 if previous_session is session else 1
+            if failures < MAX_CONSECUTIVE_SESSION_PROBE_FAILURES:
+                session_probe_failures[peer_fingerprint] = (session, failures)
+                print(
+                    f"Transient heartbeat failure for {peer_fingerprint[:8]} "
+                    f"({failures}/{MAX_CONSECUTIVE_SESSION_PROBE_FAILURES}): "
+                    f"{probe_error}"
+                )
+                return peer_fingerprint
+
+            session_probe_failures.pop(peer_fingerprint, None)
             await _invalidate_session(session)
             return None
 
@@ -2332,6 +2366,7 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
             pass
         if session.peer_fingerprint:
             active_sessions.pop(session.peer_fingerprint, None)
+            session_probe_failures.pop(session.peer_fingerprint, None)
 
     # Establish new session by dialing in the background
     async def _reconnect_async():

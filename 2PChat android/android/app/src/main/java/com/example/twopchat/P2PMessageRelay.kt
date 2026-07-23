@@ -110,6 +110,8 @@ object P2PMessageRelay {
     val peerConnectionTransports = mutableStateMapOf<String, String>()
     val peerSessionStates = mutableStateMapOf<String, Boolean>()
     val peerRttMs = mutableStateMapOf<String, Long>()
+    private const val OFFLINE_UI_GRACE_MS = 2_500L
+    private val peerPresenceVersions = PeerPresenceVersionTracker()
     private val fingerprintToPeerName = ConcurrentHashMap<String, String>()
     private val avatarSharesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val lastAvatarShareAt = ConcurrentHashMap<String, Long>()
@@ -124,20 +126,86 @@ object P2PMessageRelay {
         scope = serviceScope,
         isRunning = { isRunning },
         peerEndpoints = _peerEndpoints,
-        peerConnectionTransports = peerConnectionTransports,
-        peerSessionStates = peerSessionStates,
-        onConnectedPeerHeartbeat = { context, peerName ->
-            outboundMessenger.sendControlMessage(
+        presenceVersion = peerPresenceVersions::current,
+        onPeerObservedOnline = { context, peerName, transport, observedVersion ->
+            publishPeerOnlineIfCurrent(
                 context = context,
                 peerName = peerName,
-                payload = JSONObject().apply {
-                    put("type", "ping")
-                    put("sent_at_ms", System.currentTimeMillis())
-                },
+                transport = transport,
+                expectedVersion = observedVersion,
             )
         },
+        onPeerObservedOffline = ::schedulePeerOfflineIfCurrent,
         log = ::log,
     )
+
+    private fun publishPeerOnline(
+        peerName: String,
+        transport: String?,
+        endpoint: String = "",
+    ) {
+        val version = peerPresenceVersions.advance(peerName)
+        Handler(Looper.getMainLooper()).post {
+            if (peerPresenceVersions.current(peerName) != version) return@post
+            peerSessionStates[peerName] = true
+            if (transport != null) peerConnectionTransports[peerName] = transport
+            if (endpoint.isNotEmpty()) rememberAuthenticatedPeerEndpoint(peerName, endpoint)
+        }
+    }
+
+    private fun publishPeerOnlineIfCurrent(
+        context: Context,
+        peerName: String,
+        transport: String?,
+        expectedVersion: Long,
+    ) {
+        val version = peerPresenceVersions.advanceIfCurrent(peerName, expectedVersion) ?: return
+        if (peerPresenceVersions.current(peerName) != version) return
+        peerSessionStates[peerName] = true
+        if (transport != null) peerConnectionTransports[peerName] = transport
+        sendConnectedPeerHeartbeat(context, peerName)
+    }
+
+    private fun sendConnectedPeerHeartbeat(context: Context, peerName: String) {
+        outboundMessenger.sendControlMessage(
+            context = context,
+            peerName = peerName,
+            payload = JSONObject().apply {
+                put("type", "ping")
+                put("sent_at_ms", System.currentTimeMillis())
+            },
+        )
+    }
+
+    private fun clearPeerPresenceImmediately(peerName: String) {
+        val version = peerPresenceVersions.advance(peerName)
+        Handler(Looper.getMainLooper()).post {
+            if (peerPresenceVersions.current(peerName) != version) return@post
+            peerConnectionTransports.remove(peerName)
+            peerSessionStates.remove(peerName)
+            peerRttMs.remove(peerName)
+        }
+    }
+
+    private fun schedulePeerOffline(peerName: String) {
+        val version = peerPresenceVersions.advance(peerName)
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (peerPresenceVersions.current(peerName) != version) return@postDelayed
+            peerConnectionTransports.remove(peerName)
+            peerSessionStates.remove(peerName)
+            peerRttMs.remove(peerName)
+        }, OFFLINE_UI_GRACE_MS)
+    }
+
+    private fun schedulePeerOfflineIfCurrent(peerName: String, expectedVersion: Long) {
+        val version = peerPresenceVersions.advanceIfCurrent(peerName, expectedVersion) ?: return
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (peerPresenceVersions.current(peerName) != version) return@postDelayed
+            peerConnectionTransports.remove(peerName)
+            peerSessionStates.remove(peerName)
+            peerRttMs.remove(peerName)
+        }, OFFLINE_UI_GRACE_MS)
+    }
     private val outboundMessenger by lazy {
         P2POutboundMessenger(_peerEndpoints, ::log) { peerName, messageId, status ->
             messageListeners.forEach { it.onMessageStatusChanged(peerName, messageId, status) }
@@ -399,6 +467,7 @@ object P2PMessageRelay {
                         moveChatState(context, peerName, persistedName)
                         Handler(Looper.getMainLooper()).post {
                             _peerEndpoints.remove(peerName)
+                            peerPresenceVersions.remove(peerName)
                             peerSessionStates.remove(peerName)
                             peerConnectionTransports.remove(peerName)
                         }
@@ -927,11 +996,7 @@ object P2PMessageRelay {
                             fingerprint,
                             endpoint,
                         )
-                        Handler(Looper.getMainLooper()).post {
-                            peerSessionStates.remove(resolvedPeerName)
-                            peerConnectionTransports.remove(resolvedPeerName)
-                            peerRttMs.remove(resolvedPeerName)
-                        }
+                        clearPeerPresenceImmediately(resolvedPeerName)
                         log(
                             appContext,
                             "Rejected fingerprint change for $resolvedPeerName: expected $persistedFingerprint, received $fingerprint",
@@ -946,11 +1011,7 @@ object P2PMessageRelay {
                             "ERROR",
                         )
                         // Clear stale UI state so the peer no longer appears connected.
-                        Handler(Looper.getMainLooper()).post {
-                            peerSessionStates.remove(resolvedPeerName)
-                            peerConnectionTransports.remove(resolvedPeerName)
-                            peerRttMs.remove(resolvedPeerName)
-                        }
+                        clearPeerPresenceImmediately(resolvedPeerName)
                         return false
                     }
                     PythonBridge.rememberPeerName(fingerprint, resolvedPeerName)
@@ -964,15 +1025,11 @@ object P2PMessageRelay {
                             apply()
                         }
                     log(appContext, "Secure Double Ratchet session established")
-                    Handler(Looper.getMainLooper()).post {
-                        peerSessionStates[resolvedPeerName] = true
-                        if (canonicalTransport != null) {
-                            peerConnectionTransports[resolvedPeerName] = canonicalTransport
-                        }
-                        if (endpoint.isNotEmpty()) {
-                            rememberAuthenticatedPeerEndpoint(resolvedPeerName, endpoint)
-                        }
-                    }
+                    publishPeerOnline(
+                        peerName = resolvedPeerName,
+                        transport = canonicalTransport,
+                        endpoint = endpoint,
+                    )
 
                     val sharedPrefs = P2PPreferences.prefs(appContext)
                     if (canonicalTransport != null) {
@@ -1001,11 +1058,7 @@ object P2PMessageRelay {
                 override fun onSessionClosed(peerName: String, fingerprint: String) {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
                     log(appContext, "Secure Double Ratchet session closed")
-                    Handler(Looper.getMainLooper()).post {
-                        peerConnectionTransports.remove(resolvedPeerName)
-                        peerSessionStates.remove(resolvedPeerName)
-                        peerRttMs.remove(resolvedPeerName)
-                    }
+                    schedulePeerOffline(resolvedPeerName)
                 }
             })
             
@@ -1067,6 +1120,7 @@ object P2PMessageRelay {
         localPeerCandidates.clear()
         _peerEndpoints.clear()
         avatarCache.clear()
+        peerPresenceVersions.clear()
         Handler(Looper.getMainLooper()).post {
             peerConnectionTransports.clear()
             peerSessionStates.clear()
@@ -1282,6 +1336,7 @@ object P2PMessageRelay {
         // Remove from memory caches
         _peerEndpoints.remove(peerName)
         peerSessionStates.remove(peerName)
+        peerPresenceVersions.remove(peerName)
         peerTypingStates.remove(peerName)
         avatarCache.remove(peerName)
         
@@ -1337,11 +1392,7 @@ object P2PMessageRelay {
             val endpoint = accepted.endpoint.takeIf { it.isNotBlank() }
                 ?: prefs.getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
             if (endpoint.isNotBlank()) rememberAuthenticatedPeerEndpoint(peerName, endpoint)
-            Handler(Looper.getMainLooper()).post {
-                peerSessionStates.remove(peerName)
-                peerConnectionTransports.remove(peerName)
-                peerRttMs.remove(peerName)
-            }
+            clearPeerPresenceImmediately(peerName)
             val success = endpoint.isNotBlank() &&
                 PythonBridge.reconnectPeerSession(peerName, endpoint, accepted.acceptedFingerprint)
             Handler(Looper.getMainLooper()).post { onResult(success) }

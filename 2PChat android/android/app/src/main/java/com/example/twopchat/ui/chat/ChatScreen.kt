@@ -2160,7 +2160,9 @@ remove("pinned_msg_id_${peerName}")
                                     }
                                     val avatarBitmap = P2PMessageRelay.peerAvatars[chatName]
                                     val endpoint = P2PMessageRelay.peerEndpoints[chatName]
-                                    val isOnline = endpoint != null || chatName == "Saved Messages"
+                                    val isOnline =
+                                        P2PMessageRelay.peerSessionStates[chatName] == true ||
+                                            chatName == "Saved Messages"
                                     
                                     Row(
                                         modifier = Modifier

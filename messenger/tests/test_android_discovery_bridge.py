@@ -435,6 +435,75 @@ def test_rejected_same_name_identity_is_closed_before_chat_delivery():
     assert session.peer_fingerprint not in bridge.active_sessions
 
 
+def test_single_heartbeat_timeout_does_not_drop_live_session(monkeypatch):
+    bridge = _load_discovery_bridge()
+
+    class FakeSession:
+        is_online = True
+        peer_fingerprint = "peer-fingerprint"
+
+        def __init__(self):
+            self.calls = 0
+            self.closed = False
+
+        async def send_reliable(self, _payload):
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("emulated background scheduling delay")
+
+        async def close(self):
+            self.closed = True
+            self.is_online = False
+
+    async def scenario():
+        session = FakeSession()
+        bridge.active_sessions["peer-fingerprint"] = session
+
+        first = await bridge._probe_active_peer_fingerprints()
+        second = await bridge._probe_active_peer_fingerprints()
+
+        assert first == ["peer-fingerprint"]
+        assert second == ["peer-fingerprint"]
+        assert bridge.active_sessions["peer-fingerprint"] is session
+        assert session.closed is False
+        assert bridge.session_probe_failures == {}
+
+    asyncio.run(scenario())
+
+
+def test_repeated_heartbeat_timeouts_drop_half_open_session():
+    bridge = _load_discovery_bridge()
+
+    class FakeSession:
+        is_online = True
+        peer_fingerprint = "peer-fingerprint"
+
+        def __init__(self):
+            self.closed = False
+
+        async def send_reliable(self, _payload):
+            raise TimeoutError("emulated half-open connection")
+
+        async def close(self):
+            self.closed = True
+            self.is_online = False
+
+    async def scenario():
+        session = FakeSession()
+        bridge.active_sessions["peer-fingerprint"] = session
+
+        first = await bridge._probe_active_peer_fingerprints()
+        second = await bridge._probe_active_peer_fingerprints()
+
+        assert first == ["peer-fingerprint"]
+        assert second == []
+        assert "peer-fingerprint" not in bridge.active_sessions
+        assert session.closed is True
+        assert bridge.session_probe_failures == {}
+
+    asyncio.run(scenario())
+
+
 def test_tracker_configuration_filters_protocols_presets_and_custom_trackers():
     bridge = _load_discovery_bridge()
 
