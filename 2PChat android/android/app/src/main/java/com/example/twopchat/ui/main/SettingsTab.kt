@@ -523,7 +523,7 @@ fun SettingsTab(
                             // Category: Data & Storage / Данные и память
                             SettingsRow(
                                 title = if (appLanguage == "Русский") "Данные и память" else "Data & Storage",
-                                subtitle = if (appLanguage == "Русский") "Использование памяти, кэш, автозагрузка" else "Storage usage, cache, auto-download",
+                                subtitle = if (appLanguage == "Русский") "Использование памяти и очистка кэша" else "Storage usage & cache cleanup",
                                 iconRes = com.example.twopchat.R.drawable.ic_database_storage,
                                 iconColor = Color(0xFF66BB6A),
                                 onSurfaceColor = onSurfaceColor,
@@ -1758,48 +1758,6 @@ fun SettingsTab(
                                         text = if (appLanguage == "Русский") "Очистить кэш и память" else "Clear Storage & Cache",
                                         fontWeight = FontWeight.Bold,
                                         color = dangerRed
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(20.dp))
-
-                        // Data Preferences Card
-                        Text(
-                            text = if (appLanguage == "Русский") "Настройки данных" else "Data Settings",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = onSurfaceColor,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                // Toggle: Auto-download Media
-                                var autoDownloadMedia by remember { mutableStateOf(sharedPrefs.getBoolean("settings_auto_download_media", true)) }
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(if (appLanguage == "Русский") "Автозагрузка медиа" else "Auto-download Media", fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                                        Text(if (appLanguage == "Русский") "Автоматически скачивать фото и файлы" else "Automatically download photos and files", fontSize = 12.sp, color = onSurfaceVariant)
-                                    }
-                                    Spacer(modifier = Modifier.width(16.dp))
-                                    Switch(
-                                        checked = autoDownloadMedia,
-                                        onCheckedChange = {
-                                            autoDownloadMedia = it
-                                            sharedPrefs.edit().putBoolean("settings_auto_download_media", it).apply()
-                                        },
-                                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
                                     )
                                 }
                             }
