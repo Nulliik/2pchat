@@ -79,6 +79,7 @@ internal fun ChatMessageList(
     onCancelFileTransfer: (Message) -> Unit,
     highlightedMessageId: String? = null,
     onHighlightFinished: () -> Unit = {},
+    onJumpToMessage: ((Message) -> Unit)? = null,
 ) {
     val coroutineScope = rememberCoroutineScope()
     // Messages List
@@ -99,32 +100,7 @@ internal fun ChatMessageList(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
         ) {
-        if (isSearchMode && searchQuery.isNotEmpty()) {
-            item {
-                val count = messages.count { msg ->
-                    msg.text.contains(searchQuery, ignoreCase = true) ||
-                    (msg.attachmentName?.contains(searchQuery, ignoreCase = true) == true)
-                }
-                Text(
-                    text = if (appLanguage == "Русский") "Найдено сообщений: $count" else "Messages found: $count",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(primaryColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    fontSize = 12.sp,
-                    color = primaryColor,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
-        val displayMessages = if (isSearchMode && searchQuery.isNotEmpty()) {
-            messages.filter { msg ->
-                msg.text.contains(searchQuery, ignoreCase = true) ||
-                (msg.attachmentName?.contains(searchQuery, ignoreCase = true) == true)
-            }
-        } else {
-            messages.toList()
-        }
+        val displayMessages = messages.toList()
         itemsIndexed(
             items = displayMessages,
             key = { _, msg -> msg.id }
@@ -172,30 +148,59 @@ internal fun ChatMessageList(
             val animateOnAppearance = remember(msg.id) {
                 arrivalAnimationTracker.consume(msg.id)
             }
-            ChatMessageBubble(
-                index = index,
-                msg = msg,
-                messages = messages,
-                selectedMessages = selectedMessages,
-                isSelectMode = isSelectMode,
-                isTyping = isTyping,
-                peerName = peerName,
-                myAvatarBitmap = myAvatarBitmap,
-                appLanguage = appLanguage,
-                animateOnAppearance = animateOnAppearance,
-                listState = listState,
-                primaryColor = primaryColor,
-                surfaceColor = surfaceColor,
-                onSurfaceColor = onSurfaceColor,
-                onSurfaceVariant = onSurfaceVariant,
-                onReply = onReply,
-                onShowOptions = onShowOptions,
-                onOpenImages = onOpenImages,
-                onOpenVideo = onOpenVideo,
-                onCancelFileTransfer = onCancelFileTransfer,
-                highlightedMessageId = highlightedMessageId,
-                onHighlightFinished = onHighlightFinished,
-            )
+            if (isSearchMode && searchQuery.isNotEmpty() && onJumpToMessage != null) {
+                Box(modifier = Modifier.fillMaxWidth().clickable { onJumpToMessage(msg) }) {
+                    ChatMessageBubble(
+                        index = index,
+                        msg = msg,
+                        messages = messages,
+                        selectedMessages = selectedMessages,
+                        isSelectMode = isSelectMode,
+                        isTyping = isTyping,
+                        peerName = peerName,
+                        myAvatarBitmap = myAvatarBitmap,
+                        appLanguage = appLanguage,
+                        animateOnAppearance = animateOnAppearance,
+                        listState = listState,
+                        primaryColor = primaryColor,
+                        surfaceColor = surfaceColor,
+                        onSurfaceColor = onSurfaceColor,
+                        onSurfaceVariant = onSurfaceVariant,
+                        onReply = onReply,
+                        onShowOptions = onShowOptions,
+                        onOpenImages = onOpenImages,
+                        onOpenVideo = onOpenVideo,
+                        onCancelFileTransfer = onCancelFileTransfer,
+                        highlightedMessageId = highlightedMessageId,
+                        onHighlightFinished = onHighlightFinished,
+                    )
+                }
+            } else {
+                ChatMessageBubble(
+                    index = index,
+                    msg = msg,
+                    messages = messages,
+                    selectedMessages = selectedMessages,
+                    isSelectMode = isSelectMode,
+                    isTyping = isTyping,
+                    peerName = peerName,
+                    myAvatarBitmap = myAvatarBitmap,
+                    appLanguage = appLanguage,
+                    animateOnAppearance = animateOnAppearance,
+                    listState = listState,
+                    primaryColor = primaryColor,
+                    surfaceColor = surfaceColor,
+                    onSurfaceColor = onSurfaceColor,
+                    onSurfaceVariant = onSurfaceVariant,
+                    onReply = onReply,
+                    onShowOptions = onShowOptions,
+                    onOpenImages = onOpenImages,
+                    onOpenVideo = onOpenVideo,
+                    onCancelFileTransfer = onCancelFileTransfer,
+                    highlightedMessageId = highlightedMessageId,
+                    onHighlightFinished = onHighlightFinished,
+                )
+            }
         }
 
         if (isTyping) {

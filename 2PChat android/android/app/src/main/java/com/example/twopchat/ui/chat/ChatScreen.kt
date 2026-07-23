@@ -189,6 +189,7 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     var isSearchMode by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
+    var isSearchListView by rememberSaveable { mutableStateOf(false) }
     val arrivalAnimationTracker = remember(peerName) { MessageArrivalAnimationTracker() }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var hasAppliedInitialScroll by remember(peerName) { mutableStateOf(false) }
@@ -398,6 +399,20 @@ fun ChatScreen(
     val persistEnabled = remember(context) { sharedPrefs.getBoolean("persist_chat_history", true) }
     val chatViewModel: ChatScreenViewModel = viewModel(key = "chat:$peerName")
     val initialMessages = chatViewModel.messages
+    val searchMatchedIndices by remember(initialMessages, searchQuery) {
+        derivedStateOf {
+            if (searchQuery.isBlank()) emptyList<Int>()
+            else {
+                initialMessages.mapIndexedNotNull { index, msg ->
+                    if (msg.text.contains(searchQuery, ignoreCase = true) ||
+                        msg.attachmentName?.contains(searchQuery, ignoreCase = true) == true) {
+                        index
+                    } else null
+                }
+            }
+        }
+    }
+    var currentMatchPointer by remember(searchQuery) { mutableIntStateOf(0) }
     var isHistoryLoading by chatViewModel.isHistoryLoading
     var loadedPersistedMessageCount by chatViewModel.loadedPersistedMessageCount
     var hasMoreHistory by chatViewModel.hasMoreHistory
@@ -1390,45 +1405,109 @@ fun ChatScreen(
                 }
             }
 
-            ChatMessageList(
-                modifier = Modifier.weight(1f),
-                messages = initialMessages,
-                selectedMessages = selectedMessages,
-                isHistoryLoading = isHistoryLoading,
-                isSearchMode = isSearchMode,
-                searchQuery = searchQuery,
-                isSelectMode = isSelectMode,
-                isTyping = isTyping,
-                peerName = peerName,
-                myAvatarBitmap = myAvatarBitmap,
-                appLanguage = appLanguage,
-                arrivalAnimationTracker = arrivalAnimationTracker,
-                showScrollDownButton = showScrollDownButton,
-                newMessagesBelowCount = newMessagesBelowCount,
-                onScrollToBottom = { newMessagesBelowCount = 0 },
-                listState = listState,
-                primaryColor = primaryColor,
-                surfaceColor = surfaceColor,
-                onSurfaceColor = onSurfaceColor,
-                onSurfaceVariant = onSurfaceVariant,
-                onReply = { replyingToMessage = it },
-                onShowOptions = { selectedMessageForOptions = it },
-                onOpenImages = { images, index ->
-                    activeFullscreenBitmapOverrides = emptyMap()
-                    activeFullscreenImages = images
-                    activeFullscreenImageIndex = index
-                },
-                onOpenVideo = { activeFullscreenVideo = it },
-                onCancelFileTransfer = { message ->
-                    P2PMessageRelay.cancelFileTransfer(
-                        context,
-                        peerName,
-                        message.id,
+            Box(modifier = Modifier.weight(1f)) {
+                if (isSearchMode && searchQuery.isNotEmpty() && isSearchListView) {
+                    SearchResultsListViewOverlay(
+                        messages = initialMessages,
+                        matchedIndices = searchMatchedIndices,
+                        peerName = peerName,
+                        myAvatarBitmap = myAvatarBitmap,
+                        appLanguage = appLanguage,
+                        primaryColor = primaryColor,
+                        surfaceColor = surfaceColor,
+                        onSurfaceColor = onSurfaceColor,
+                        onSurfaceVariant = onSurfaceVariant,
+                        onSelectMatch = { matchIndex ->
+                            isSearchListView = false
+                            currentMatchPointer = matchIndex
+                            val targetIdx = searchMatchedIndices[matchIndex]
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(targetIdx)
+                                highlightedMessageId = initialMessages[targetIdx].id
+                            }
+                        }
                     )
-                },
-                highlightedMessageId = highlightedMessageId,
-                onHighlightFinished = { highlightedMessageId = null },
-            )
+                } else {
+                    ChatMessageList(
+                        modifier = Modifier.fillMaxSize(),
+                        messages = initialMessages,
+                        selectedMessages = selectedMessages,
+                        isHistoryLoading = isHistoryLoading,
+                        isSearchMode = isSearchMode,
+                        searchQuery = searchQuery,
+                        isSelectMode = isSelectMode,
+                        isTyping = isTyping,
+                        peerName = peerName,
+                        myAvatarBitmap = myAvatarBitmap,
+                        appLanguage = appLanguage,
+                        arrivalAnimationTracker = arrivalAnimationTracker,
+                        showScrollDownButton = showScrollDownButton,
+                        newMessagesBelowCount = newMessagesBelowCount,
+                        onScrollToBottom = { newMessagesBelowCount = 0 },
+                        listState = listState,
+                        primaryColor = primaryColor,
+                        surfaceColor = surfaceColor,
+                        onSurfaceColor = onSurfaceColor,
+                        onSurfaceVariant = onSurfaceVariant,
+                        onReply = { replyingToMessage = it },
+                        onShowOptions = { selectedMessageForOptions = it },
+                        onOpenImages = { images, index ->
+                            activeFullscreenBitmapOverrides = emptyMap()
+                            activeFullscreenImages = images
+                            activeFullscreenImageIndex = index
+                        },
+                        onOpenVideo = { activeFullscreenVideo = it },
+                        onCancelFileTransfer = { message ->
+                            P2PMessageRelay.cancelFileTransfer(
+                                context,
+                                peerName,
+                                message.id,
+                            )
+                        },
+                        highlightedMessageId = highlightedMessageId,
+                        onHighlightFinished = { highlightedMessageId = null },
+                        onJumpToMessage = { targetMsg ->
+                            isSearchMode = false
+                            searchQuery = ""
+                            val targetIndex = initialMessages.indexOfFirst { it.id == targetMsg.id }
+                            if (targetIndex != -1) {
+                                coroutineScope.launch {
+                                    listState.animateScrollToItem(targetIndex)
+                                    highlightedMessageId = targetMsg.id
+                                }
+                            }
+                        },
+                    )
+
+                    if (isSearchMode && searchQuery.isNotEmpty() && !isSearchListView) {
+                        SearchNavigationFabs(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(end = 16.dp, bottom = 16.dp),
+                            onNavigatePrev = {
+                                if (searchMatchedIndices.isNotEmpty()) {
+                                    currentMatchPointer = if (currentMatchPointer > 0) currentMatchPointer - 1 else searchMatchedIndices.lastIndex
+                                    val targetIdx = searchMatchedIndices[currentMatchPointer]
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(targetIdx)
+                                        highlightedMessageId = initialMessages[targetIdx].id
+                                    }
+                                }
+                            },
+                            onNavigateNext = {
+                                if (searchMatchedIndices.isNotEmpty()) {
+                                    currentMatchPointer = if (currentMatchPointer < searchMatchedIndices.lastIndex) currentMatchPointer + 1 else 0
+                                    val targetIdx = searchMatchedIndices[currentMatchPointer]
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(targetIdx)
+                                        highlightedMessageId = initialMessages[targetIdx].id
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+            }
 
             // Translucent Floating Notification Pill for Forwarding Toggles
             AnimatedVisibility(
@@ -1457,7 +1536,17 @@ fun ChatScreen(
                 }
             }
 
-            ChatInputBar(
+            if (isSearchMode && searchQuery.isNotEmpty()) {
+                SearchBottomBarPill(
+                    matchCount = searchMatchedIndices.size,
+                    currentIndex = currentMatchPointer,
+                    isListView = isSearchListView,
+                    appLanguage = appLanguage,
+                    primaryColor = primaryColor,
+                    onToggleListView = { isSearchListView = !isSearchListView }
+                )
+            } else {
+                ChatInputBar(
                 showAttachments = showAttachments,
                 replyingToMessage = replyingToMessage,
                 editingMessage = editingMessage,
@@ -1664,6 +1753,7 @@ fun ChatScreen(
                             }
                 },
             )
+            }
         }
 
         // Message Options Overlay Panel

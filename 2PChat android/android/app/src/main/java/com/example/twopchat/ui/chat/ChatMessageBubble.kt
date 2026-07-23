@@ -310,7 +310,26 @@ internal fun ChatMessageBubble(
                                 Spacer(modifier = Modifier.height(6.dp))
                             }
 
-                            when (msg.attachmentType) {
+                            when (if (msg.albumMediaUris.isNotEmpty()) "ALBUM" else msg.attachmentType) {
+                                "ALBUM" -> {
+                                    MediaAlbumGridBubble(
+                                        msg = msg,
+                                        messages = messages,
+                                        selectedMessages = selectedMessages,
+                                        isSelectMode = isSelectMode,
+                                        isTyping = isTyping,
+                                        peerName = peerName,
+                                        appLanguage = appLanguage,
+                                        primaryColor = primaryColor,
+                                        textColor = textColor,
+                                        linkColor = linkColor,
+                                        bubbleShape = bubbleShape,
+                                        index = index,
+                                        onOpenImages = onOpenImages,
+                                        onOpenVideo = onOpenVideo,
+                                        onShowOptions = onShowOptions
+                                    )
+                                }
                                 "IMAGE" -> {
                                     val bitmap = rememberSampledImage(msg.attachmentUri)
                                     val attachmentAvailable = isAttachmentAvailable(msg.attachmentUri)
@@ -1472,6 +1491,371 @@ internal fun LinkPreviewCard(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MediaAlbumGridBubble(
+    msg: Message,
+    messages: List<Message>,
+    selectedMessages: MutableList<Message>,
+    isSelectMode: Boolean,
+    isTyping: Boolean,
+    peerName: String,
+    appLanguage: String,
+    primaryColor: Color,
+    textColor: Color,
+    linkColor: Color,
+    bubbleShape: androidx.compose.ui.graphics.Shape,
+    index: Int,
+    onOpenImages: (List<String>, Int) -> Unit,
+    onOpenVideo: (String) -> Unit,
+    onShowOptions: (Message) -> Unit
+) {
+    val uris = msg.albumMediaUris
+    val types = msg.albumMediaTypes
+    val hasCaption = msg.text.isNotBlank() &&
+            !msg.text.startsWith("Sent an album") &&
+            !msg.text.equals("Альбом", ignoreCase = true) &&
+            !msg.text.equals("Медиаальбом", ignoreCase = true)
+
+    Column(modifier = Modifier.widthIn(max = 280.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(
+                    if (hasCaption) RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
+                    else bubbleShape
+                )
+        ) {
+            when (uris.size) {
+                2 -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(180.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        AlbumItemCell(
+                            uri = uris[0],
+                            type = types.getOrNull(0) ?: "IMAGE",
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            allUris = uris,
+                            cellIndex = 0,
+                            msg = msg,
+                            selectedMessages = selectedMessages,
+                            isSelectMode = isSelectMode,
+                            onOpenImages = onOpenImages,
+                            onOpenVideo = onOpenVideo,
+                            onShowOptions = onShowOptions
+                        )
+                        AlbumItemCell(
+                            uri = uris[1],
+                            type = types.getOrNull(1) ?: "IMAGE",
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            allUris = uris,
+                            cellIndex = 1,
+                            msg = msg,
+                            selectedMessages = selectedMessages,
+                            isSelectMode = isSelectMode,
+                            onOpenImages = onOpenImages,
+                            onOpenVideo = onOpenVideo,
+                            onShowOptions = onShowOptions
+                        )
+                    }
+                }
+                3 -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(200.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        AlbumItemCell(
+                            uri = uris[0],
+                            type = types.getOrNull(0) ?: "IMAGE",
+                            modifier = Modifier.weight(1.2f).fillMaxHeight(),
+                            allUris = uris,
+                            cellIndex = 0,
+                            msg = msg,
+                            selectedMessages = selectedMessages,
+                            isSelectMode = isSelectMode,
+                            onOpenImages = onOpenImages,
+                            onOpenVideo = onOpenVideo,
+                            onShowOptions = onShowOptions
+                        )
+                        Column(
+                            modifier = Modifier.weight(0.8f).fillMaxHeight(),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            AlbumItemCell(
+                                uri = uris[1],
+                                type = types.getOrNull(1) ?: "IMAGE",
+                                modifier = Modifier.fillMaxWidth().weight(1f),
+                                allUris = uris,
+                                cellIndex = 1,
+                                msg = msg,
+                                selectedMessages = selectedMessages,
+                                isSelectMode = isSelectMode,
+                                onOpenImages = onOpenImages,
+                                onOpenVideo = onOpenVideo,
+                                onShowOptions = onShowOptions
+                            )
+                            AlbumItemCell(
+                                uri = uris[2],
+                                type = types.getOrNull(2) ?: "IMAGE",
+                                modifier = Modifier.fillMaxWidth().weight(1f),
+                                allUris = uris,
+                                cellIndex = 2,
+                                msg = msg,
+                                selectedMessages = selectedMessages,
+                                isSelectMode = isSelectMode,
+                                onOpenImages = onOpenImages,
+                                onOpenVideo = onOpenVideo,
+                                onShowOptions = onShowOptions
+                            )
+                        }
+                    }
+                }
+                else -> {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().height(220.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            AlbumItemCell(
+                                uri = uris.getOrNull(0) ?: "",
+                                type = types.getOrNull(0) ?: "IMAGE",
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                allUris = uris,
+                                cellIndex = 0,
+                                msg = msg,
+                                selectedMessages = selectedMessages,
+                                isSelectMode = isSelectMode,
+                                onOpenImages = onOpenImages,
+                                onOpenVideo = onOpenVideo,
+                                onShowOptions = onShowOptions
+                            )
+                            AlbumItemCell(
+                                uri = uris.getOrNull(1) ?: "",
+                                type = types.getOrNull(1) ?: "IMAGE",
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                allUris = uris,
+                                cellIndex = 1,
+                                msg = msg,
+                                selectedMessages = selectedMessages,
+                                isSelectMode = isSelectMode,
+                                onOpenImages = onOpenImages,
+                                onOpenVideo = onOpenVideo,
+                                onShowOptions = onShowOptions
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            AlbumItemCell(
+                                uri = uris.getOrNull(2) ?: "",
+                                type = types.getOrNull(2) ?: "IMAGE",
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                allUris = uris,
+                                cellIndex = 2,
+                                msg = msg,
+                                selectedMessages = selectedMessages,
+                                isSelectMode = isSelectMode,
+                                onOpenImages = onOpenImages,
+                                onOpenVideo = onOpenVideo,
+                                onShowOptions = onShowOptions
+                            )
+                            AlbumItemCell(
+                                uri = uris.getOrNull(3) ?: "",
+                                type = types.getOrNull(3) ?: "IMAGE",
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                                allUris = uris,
+                                cellIndex = 3,
+                                msg = msg,
+                                selectedMessages = selectedMessages,
+                                isSelectMode = isSelectMode,
+                                onOpenImages = onOpenImages,
+                                onOpenVideo = onOpenVideo,
+                                onShowOptions = onShowOptions
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (!hasCaption) {
+                val hasIncomingAfter = if (index < messages.size - 1) {
+                    messages.subList(index + 1, messages.size).any { !it.isMe }
+                } else false
+                val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
+                val isPending = msg.status?.startsWith("PENDING") == true
+
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(6.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = MessageTimestampFormatter.format(msg, appLanguage),
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.95f),
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+                    )
+                    if (msg.isMe) {
+                        if (isPending) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(10.dp),
+                                color = Color.White.copy(alpha = 0.8f),
+                                strokeWidth = 1.2.dp
+                            )
+                        } else {
+                            Icon(
+                                painter = painterResource(id = if (isRead) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
+                                contentDescription = if (isRead) "Read" else "Sent",
+                                tint = if (isRead) Color(0xFF64B5F6) else Color.White.copy(alpha = 0.95f),
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        if (hasCaption) {
+            val hasIncomingAfter = if (index < messages.size - 1) {
+                messages.subList(index + 1, messages.size).any { !it.isMe }
+            } else false
+            val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
+            val isPending = msg.status?.startsWith("PENDING") == true
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
+            ) {
+                LinkifiedText(
+                    text = msg.text,
+                    textColor = textColor,
+                    linkColor = linkColor,
+                    fontSize = 15.sp,
+                    lineHeight = 20.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.align(Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = MessageTimestampFormatter.format(msg, appLanguage),
+                        fontSize = 11.sp,
+                        color = textColor.copy(alpha = 0.6f)
+                    )
+                    if (msg.isMe) {
+                        if (isPending) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(11.dp),
+                                color = primaryColor,
+                                strokeWidth = 1.2.dp
+                            )
+                        } else {
+                            Icon(
+                                painter = painterResource(id = if (isRead) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
+                                contentDescription = if (isRead) "Read" else "Sent",
+                                tint = if (isRead) Color(0xFF64B5F6) else textColor.copy(alpha = 0.6f),
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlbumItemCell(
+    uri: String,
+    type: String,
+    modifier: Modifier,
+    allUris: List<String>,
+    cellIndex: Int,
+    msg: Message,
+    selectedMessages: MutableList<Message>,
+    isSelectMode: Boolean,
+    onOpenImages: (List<String>, Int) -> Unit,
+    onOpenVideo: (String) -> Unit,
+    onShowOptions: (Message) -> Unit
+) {
+    if (uri.isBlank()) return
+    val isVideo = type == "VIDEO" || uri.endsWith(".mp4", ignoreCase = true) || uri.endsWith(".mov", ignoreCase = true)
+    val imageBitmap = if (!isVideo) rememberSampledImage(uri) else null
+    val videoThumbnail = if (isVideo) rememberVideoThumbnail(uri) else null
+    val bitmap = imageBitmap ?: videoThumbnail
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .background(Color.DarkGray)
+            .combinedClickable(
+                onClick = {
+                    if (isSelectMode) {
+                        if (selectedMessages.contains(msg)) {
+                            selectedMessages.remove(msg)
+                        } else {
+                            selectedMessages.add(msg)
+                        }
+                    } else {
+                        if (isVideo) {
+                            onOpenVideo(uri)
+                        } else {
+                            val imageUrisOnly = allUris.filter { !it.endsWith(".mp4", ignoreCase = true) && !it.endsWith(".mov", ignoreCase = true) }
+                            val idx = imageUrisOnly.indexOf(uri).coerceAtLeast(0)
+                            onOpenImages(imageUrisOnly.ifEmpty { allUris }, idx)
+                        }
+                    }
+                },
+                onLongClick = {
+                    if (isSelectMode) {
+                        if (selectedMessages.contains(msg)) {
+                            selectedMessages.remove(msg)
+                        } else {
+                            selectedMessages.add(msg)
+                        }
+                    } else {
+                        onShowOptions(msg)
+                    }
+                }
+            )
+    ) {
+        if (bitmap != null) {
+            Image(
+                bitmap = bitmap.asImageBitmap(),
+                contentDescription = "Album Item",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        if (isVideo) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Play video",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp).padding(start = 2.dp)
+                )
             }
         }
     }

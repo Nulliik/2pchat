@@ -50,6 +50,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         private const val KEY_STATUS = "status"
         private const val KEY_REACTIONS = "reactions"
         private const val KEY_SENT_AT_MS = "sent_at_ms"
+        private const val KEY_IS_PINNED = "is_pinned"
+        private const val KEY_ALBUM_URIS = "album_uris"
+        private const val KEY_ALBUM_TYPES = "album_types"
         private const val KEY_CONTROL_ID = "control_id"
         private const val KEY_CONTROL_TYPE = "control_type"
         private const val KEY_CONTROL_PAYLOAD = "control_payload"
@@ -259,6 +262,14 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         }
     }
 
+    fun updateMessagePinned(id: String, isPinned: Boolean) {
+        val db = this.safeWritableDatabase
+        val values = ContentValues().apply {
+            put(KEY_IS_PINNED, if (isPinned) 1 else 0)
+        }
+        db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
+    }
+
     fun saveMessage(peerName: String, msg: Message) {
         val db = this.safeWritableDatabase
         val values = ContentValues().apply {
@@ -276,6 +287,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             put(KEY_STATUS, msg.status)
             put(KEY_REACTIONS, serializeReactions(msg.reactions))
             put(KEY_SENT_AT_MS, msg.sentAtEpochMs)
+            put(KEY_IS_PINNED, if (msg.isPinned) 1 else 0)
+            put(KEY_ALBUM_URIS, encNullable(if (msg.albumMediaUris.isNotEmpty()) msg.albumMediaUris.joinToString("|||") else null))
+            put(KEY_ALBUM_TYPES, if (msg.albumMediaTypes.isNotEmpty()) msg.albumMediaTypes.joinToString("|||") else null)
         }
         db.insertWithOnConflict(TABLE_MESSAGES, null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -294,6 +308,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val indexReactions = cursor.getColumnIndex(KEY_REACTIONS)
         val indexId = cursor.getColumnIndex(KEY_ID)
         val indexSentAtMs = cursor.getColumnIndex(KEY_SENT_AT_MS)
+        val indexIsPinned = cursor.getColumnIndex(KEY_IS_PINNED)
+        val indexAlbumUris = cursor.getColumnIndex(KEY_ALBUM_URIS)
+        val indexAlbumTypes = cursor.getColumnIndex(KEY_ALBUM_TYPES)
 
         val text = if (indexText != -1) dec(cursor.getString(indexText)) else ""
         val isMe = if (indexIsMe != -1) cursor.getInt(indexIsMe) == 1 else false
@@ -308,6 +325,11 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val reactions = if (indexReactions != -1) deserializeReactions(cursor.getString(indexReactions)) else emptyMap()
         val id = if (indexId != -1) cursor.getString(indexId) else java.util.UUID.randomUUID().toString()
         val sentAtEpochMs = if (indexSentAtMs != -1) cursor.getLong(indexSentAtMs) else 0L
+        val isPinned = if (indexIsPinned != -1) cursor.getInt(indexIsPinned) == 1 else false
+        val rawAlbumUris = if (indexAlbumUris != -1) decNullable(cursor.getString(indexAlbumUris)) else null
+        val albumMediaUris = rawAlbumUris?.split("|||")?.filter { it.isNotBlank() } ?: emptyList()
+        val rawAlbumTypes = if (indexAlbumTypes != -1) cursor.getString(indexAlbumTypes) else null
+        val albumMediaTypes = rawAlbumTypes?.split("|||")?.filter { it.isNotBlank() } ?: emptyList()
 
         return Message(
             id = id,
@@ -323,6 +345,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             status = status,
             reactions = reactions,
             sentAtEpochMs = sentAtEpochMs,
+            isPinned = isPinned,
+            albumMediaUris = albumMediaUris,
+            albumMediaTypes = albumMediaTypes,
         )
     }
 

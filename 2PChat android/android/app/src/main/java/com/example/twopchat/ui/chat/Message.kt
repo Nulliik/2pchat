@@ -20,6 +20,9 @@ data class Message(
     val status: String? = null,
     val reactions: Map<String, List<String>> = emptyMap(),
     val sentAtEpochMs: Long = System.currentTimeMillis(),
+    val isPinned: Boolean = false,
+    val albumMediaUris: List<String> = emptyList(),
+    val albumMediaTypes: List<String> = emptyList(),
 )
 
 object MessageTimestampFormatter {
