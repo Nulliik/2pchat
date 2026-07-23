@@ -64,6 +64,7 @@ internal class P2POutboundMessenger(
         endpoint: String,
         filePath: String,
         messageId: String = "",
+        caption: String = "",
         onResult: (Boolean) -> Unit = {},
     ) {
         if (isPaused(context, peerName)) {
@@ -76,7 +77,7 @@ internal class P2POutboundMessenger(
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
                 log(context, "Sending secure file via Python transport to $peerName", "INFO", null)
-                val success = PythonBridge.sendP2pFile(peerName, endpoint, filePath, fingerprint, messageId)
+                val success = PythonBridge.sendP2pFile(peerName, endpoint, filePath, fingerprint, messageId, caption)
                 log(context, "Sending file status to $peerName: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
                 postResult(onResult, success)
             } catch (error: Exception) {

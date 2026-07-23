@@ -1741,6 +1741,12 @@ async def _read_loop(session, peer_name, fp):
                                 "mime": mime,
                                 "size": state["written"]
                             }
+                            if meta and meta.get("caption"):
+                                file_notification["caption"] = str(meta["caption"])
+                                file_notification["text"] = str(meta["caption"])
+                            elif meta and meta.get("text"):
+                                file_notification["caption"] = str(meta["text"])
+                                file_notification["text"] = str(meta["text"])
                             
                             if message_listener_callback:
                                 try:
@@ -2000,7 +2006,7 @@ async def _send_message_unlocked(peer_name: str, endpoint: str, body: str, expec
         return False
 
 
-def send_p2p_file(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="") -> bool:
+def send_p2p_file(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="", caption="") -> bool:
     """
     Synchronous entry point called from Kotlin to send an encrypted file/photo via Double Ratchet.
     """
@@ -2014,7 +2020,7 @@ def send_p2p_file(peer_name: str, endpoint: str, file_path: str, expected_finger
             return False
             
     future = asyncio.run_coroutine_threadsafe(
-        _send_file_async(peer_name, endpoint, file_path, expected_fingerprint, message_id),
+        _send_file_async(peer_name, endpoint, file_path, expected_fingerprint, message_id, caption),
         loop
     )
     try:
@@ -2025,12 +2031,12 @@ def send_p2p_file(peer_name: str, endpoint: str, file_path: str, expected_finger
         traceback.print_exc()
         return False
 
-async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="") -> bool:
+async def _send_file_async(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="", caption="") -> bool:
     async with _operation_lock(peer_name, expected_fingerprint):
-        return await _send_file_unlocked(peer_name, endpoint, file_path, expected_fingerprint, message_id)
+        return await _send_file_unlocked(peer_name, endpoint, file_path, expected_fingerprint, message_id, caption)
 
 
-async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="") -> bool:
+async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, expected_fingerprint=None, message_id="", caption="") -> bool:
     session = _session_for_peer(peer_name, expected_fingerprint)
     was_cached = session is not None and session.is_online
     try:
@@ -2076,6 +2082,9 @@ async def _send_file_unlocked(peer_name: str, endpoint: str, file_path: str, exp
         }
         if message_id:
             meta["message_id"] = str(message_id)[:128]
+        if caption:
+            meta["caption"] = str(caption)
+            meta["text"] = str(caption)
 
         print(f"Sending file metadata envelope ({file_size} bytes)")
         try:

@@ -30,9 +30,11 @@ internal object IncomingMessageParser {
             val fileName = file.name
             val mime = json.optString("mime", "")
             val attachmentType = VoiceMessageSupport.attachmentType(fileName, mime)
+            val caption = json.optString("caption").ifBlank { json.optString("text", "") }.trim()
+            val displayMsg = if (caption.isNotBlank()) caption else VoiceMessageSupport.displayMessage(attachmentType, fileName)
             IncomingAttachment(
                 messageId = json.optString("message_id"),
-                displayMessage = VoiceMessageSupport.displayMessage(attachmentType, fileName),
+                displayMessage = displayMsg,
                 attachmentType = attachmentType,
                 attachmentUri = filePath,
                 attachmentName = fileName,

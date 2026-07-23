@@ -1355,14 +1355,14 @@ object P2PMessageRelay {
     /**
      * Send an encrypted file to a specific peer and endpoint.
      */
-    fun sendFile(context: Context, peerName: String, endpoint: String, filePath: String, messageId: String = "", onResult: (Boolean) -> Unit = {}) {
-        outboundMessenger.sendFile(context, peerName, endpoint, filePath, messageId, onResult)
+    fun sendFile(context: Context, peerName: String, endpoint: String, filePath: String, messageId: String = "", caption: String = "", onResult: (Boolean) -> Unit = {}) {
+        outboundMessenger.sendFile(context, peerName, endpoint, filePath, messageId, caption, onResult)
     }
 
     @Suppress("unused")
-    fun sendFile(context: Context, endpoint: String, filePath: String, messageId: String = "", onResult: (Boolean) -> Unit = {}) {
+    fun sendFile(context: Context, endpoint: String, filePath: String, messageId: String = "", caption: String = "", onResult: (Boolean) -> Unit = {}) {
         val peerName = peerEndpoints.entries.firstOrNull { it.value == endpoint }?.key ?: "Direct Peer"
-        outboundMessenger.sendFile(context, peerName, endpoint, filePath, messageId, onResult)
+        outboundMessenger.sendFile(context, peerName, endpoint, filePath, messageId, caption, onResult)
     }
 
     fun reconnectSession(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {

@@ -240,10 +240,10 @@ internal fun ChatMessageBubble(
                                 }
                             )
                             // Subtle border for incoming bubbles
-                            .then(if (!msg.isMe && !isOnlyEmoji) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.08f), bubbleShape) else Modifier)
+                            .then(if (!msg.isMe && !isOnlyEmoji && msg.attachmentType != "IMAGE") Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.08f), bubbleShape) else Modifier)
                             .padding(
-                                horizontal = if (isOnlyEmoji) 6.dp else 16.dp,
-                                vertical = if (isOnlyEmoji) 4.dp else 11.dp
+                                horizontal = if (isOnlyEmoji || msg.attachmentType == "IMAGE") 0.dp else 16.dp,
+                                vertical = if (isOnlyEmoji || msg.attachmentType == "IMAGE") 0.dp else 11.dp
                             )
                             .widthIn(max = 280.dp)
                     ) {
@@ -311,13 +311,26 @@ internal fun ChatMessageBubble(
                                         ?: msg.attachmentName?.let { com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[it] }
                                     val isTransferring = progressInfo != null && progressInfo.bytesTransferred < progressInfo.totalBytes && progressInfo.totalBytes > 0
 
+                                    val isDefaultText = msg.text.isBlank() ||
+                                            msg.text.startsWith("Sent an image") ||
+                                            msg.text.startsWith("Captured a photo") ||
+                                            msg.text.equals("Фотография", ignoreCase = true) ||
+                                            msg.text.equals("Отправлена фотография", ignoreCase = true)
+
+                                    val hasCaption = !isDefaultText
+
                                     if (bitmap != null || isTransferring) {
-                                        Column {
+                                        Column(
+                                            modifier = Modifier.widthIn(max = 280.dp)
+                                        ) {
                                             Box(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .heightIn(max = 200.dp)
-                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .heightIn(max = 320.dp)
+                                                    .clip(
+                                                        if (hasCaption) RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
+                                                        else bubbleShape
+                                                    )
                                                     .clickable {
                                                         val allImages = messages.filter { it.attachmentType == "IMAGE" && !it.attachmentUri.isNullOrBlank() }.map { it.attachmentUri!! }
                                                         val clickedUri = msg.attachmentUri
@@ -333,9 +346,26 @@ internal fun ChatMessageBubble(
                                                     Image(
                                                         bitmap = bitmap.asImageBitmap(),
                                                         contentDescription = "Image attachment",
-                                                        modifier = Modifier.fillMaxSize()
+                                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                                        modifier = Modifier.fillMaxWidth()
                                                     )
+                                                } else {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .height(200.dp)
+                                                            .background(Color.Gray.copy(alpha = 0.2f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_file),
+                                                            contentDescription = "Loading",
+                                                            tint = textColor.copy(alpha = 0.5f),
+                                                            modifier = Modifier.size(36.dp)
+                                                        )
+                                                    }
                                                 }
+
                                                 if (isTransferring && progressInfo != null) {
                                                     val pct = (progressInfo.bytesTransferred * 100 / progressInfo.totalBytes).toInt()
                                                     val speedStr = if (progressInfo.speedKbps >= 1024) {
@@ -367,24 +397,101 @@ internal fun ChatMessageBubble(
                                                         }
                                                     }
                                                 }
+
+                                                // If NO caption, floating timestamp pill in bottom-right corner over the photo
+                                                if (!hasCaption) {
+                                                    val hasIncomingAfter = if (index < messages.size - 1) {
+                                                        messages.subList(index + 1, messages.size).any { !it.isMe }
+                                                    } else false
+                                                    val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
+                                                    val isPending = msg.status?.startsWith("PENDING") == true
+
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .align(Alignment.BottomEnd)
+                                                            .padding(6.dp)
+                                                            .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                                            .padding(horizontal = 7.dp, vertical = 3.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = MessageTimestampFormatter.format(msg, appLanguage),
+                                                            fontSize = 10.sp,
+                                                            color = Color.White.copy(alpha = 0.95f),
+                                                            fontWeight = FontWeight.Medium
+                                                        )
+                                                        if (msg.isMe) {
+                                                            if (isPending) {
+                                                                androidx.compose.material3.CircularProgressIndicator(
+                                                                    modifier = Modifier.size(10.dp),
+                                                                    color = Color.White.copy(alpha = 0.8f),
+                                                                    strokeWidth = 1.2.dp
+                                                                )
+                                                            } else {
+                                                                Icon(
+                                                                    painter = painterResource(id = if (isRead) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
+                                                                    contentDescription = if (isRead) "Read" else "Sent",
+                                                                    tint = if (isRead) Color(0xFF64B5F6) else Color.White.copy(alpha = 0.95f),
+                                                                    modifier = Modifier.size(13.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
-                                            if (!msg.text.startsWith("Sent an image") && !msg.text.startsWith("Captured a photo")) {
-                                                Spacer(modifier = Modifier.height(6.dp))
-                                                LinkifiedText(
-                                                    text = msg.text,
-                                                    textColor = textColor,
-                                                    linkColor = linkColor,
-                                                    fontSize = 15.sp,
-                                                    lineHeight = 20.sp
-                                                )
-                                                if (linkPreviewsEnabled && detectedUrl != null) {
-                                                    LinkPreviewCard(
-                                                        url = detectedUrl,
-                                                        isMe = msg.isMe,
-                                                        primaryColor = primaryColor,
-                                                        onSurfaceColor = onSurfaceColor,
-                                                        surfaceColor = surfaceColor
+
+                                            // If HAS caption, render clean caption container at bottom of card
+                                            if (hasCaption) {
+                                                val hasIncomingAfter = if (index < messages.size - 1) {
+                                                    messages.subList(index + 1, messages.size).any { !it.isMe }
+                                                } else false
+                                                val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
+                                                val isPending = msg.status?.startsWith("PENDING") == true
+
+                                                Column(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
+                                                ) {
+                                                    LinkifiedText(
+                                                        text = msg.text,
+                                                        textColor = textColor,
+                                                        linkColor = linkColor,
+                                                        fontSize = 15.sp,
+                                                        lineHeight = 20.sp
                                                     )
+                                                    Spacer(modifier = Modifier.height(4.dp))
+                                                    Row(
+                                                        modifier = Modifier.align(Alignment.End),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = MessageTimestampFormatter.format(msg, appLanguage),
+                                                            fontSize = 10.sp,
+                                                            color = textColor.copy(alpha = 0.75f),
+                                                            fontWeight = FontWeight.Medium
+                                                        )
+                                                        if (msg.isMe) {
+                                                            if (isPending) {
+                                                                androidx.compose.material3.CircularProgressIndicator(
+                                                                    modifier = Modifier.size(10.dp),
+                                                                    color = textColor.copy(alpha = 0.6f),
+                                                                    strokeWidth = 1.2.dp
+                                                                )
+                                                            } else {
+                                                                Icon(
+                                                                    painter = painterResource(id = if (isRead) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
+                                                                    contentDescription = if (isRead) "Read" else "Sent",
+                                                                    tint = if (isRead) {
+                                                                        if (msg.isMe && primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color(0xFF64B5F6)
+                                                                    } else textColor.copy(alpha = 0.75f),
+                                                                    modifier = Modifier.size(13.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -631,69 +738,72 @@ internal fun ChatMessageBubble(
                                     }
                                 }
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.align(Alignment.End)
-                            ) {
-                                Text(
-                                    text = MessageTimestampFormatter.format(msg, appLanguage),
-                                    color = (if (isOnlyEmoji) {
-                                        onSurfaceColor.copy(alpha = 0.5f)
-                                    } else if (msg.isMe) {
-                                        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.65f)
-                                    } else onSurfaceColor.copy(alpha = 0.5f)),
-                                    fontSize = 9.sp
-                                )
-                                if (msg.isMe) {
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    val hasIncomingAfter = if (index < messages.size - 1) {
-                                        messages.subList(index + 1, messages.size).any { !it.isMe }
-                                    } else false
-                                    
-                                    val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
-                                    val isPending = msg.status?.startsWith("PENDING") == true
-                                    
-                                    val statusColor = if (isOnlyEmoji) {
-                                        onSurfaceVariant.copy(alpha = 0.5f)
-                                    } else if (msg.isMe) {
-                                        if (primaryColor == com.example.twopchat.theme.MintGreen) {
-                                            StealthBlack.copy(alpha = 0.45f)
+                            if (msg.attachmentType != "IMAGE") {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.align(Alignment.End)
+                                ) {
+                                    Text(
+                                        text = MessageTimestampFormatter.format(msg, appLanguage),
+                                        color = (if (isOnlyEmoji) {
+                                            onSurfaceColor.copy(alpha = 0.5f)
+                                        } else if (msg.isMe) {
+                                            if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.65f)
+                                        } else onSurfaceColor.copy(alpha = 0.5f)),
+                                        fontSize = 9.sp
+                                    )
+                                    if (msg.isMe) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        val hasIncomingAfter = if (index < messages.size - 1) {
+                                            messages.subList(index + 1, messages.size).any { !it.isMe }
+                                        } else false
+                                        
+                                        val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
+                                        val isPending = msg.status?.startsWith("PENDING") == true
+                                        
+                                        val statusColor = if (isOnlyEmoji) {
+                                            onSurfaceVariant.copy(alpha = 0.5f)
+                                        } else if (msg.isMe) {
+                                            if (primaryColor == com.example.twopchat.theme.MintGreen) {
+                                                StealthBlack.copy(alpha = 0.45f)
+                                            } else {
+                                                Color.White.copy(alpha = 0.55f)
+                                            }
                                         } else {
-                                            Color.White.copy(alpha = 0.55f)
+                                            onSurfaceVariant.copy(alpha = 0.5f)
                                         }
-                                    } else {
-                                        onSurfaceVariant.copy(alpha = 0.5f)
-                                    }
-                                    
-                                    if (isPending) {
-                                        Text(
-                                            text = "🕒",
-                                            color = statusColor,
-                                            fontSize = 9.sp
-                                        )
-                                    } else if (isRead) {
-                                        Icon(
-                                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_double_check),
-                                            contentDescription = "Read",
-                                            tint = statusColor,
-                                            modifier = Modifier.height(11.dp).width(16.dp)
-                                        )
-                                    } else {
-                                        Icon(
-                                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_single_check),
-                                            contentDescription = "Sent",
-                                            tint = statusColor,
-                                            modifier = Modifier.height(11.dp).width(12.dp)
-                                        )
+                                        
+                                        if (isPending) {
+                                            Text(
+                                                text = "🕒",
+                                                color = statusColor,
+                                                fontSize = 9.sp
+                                            )
+                                        } else if (isRead) {
+                                            Icon(
+                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_double_check),
+                                                contentDescription = "Read",
+                                                tint = statusColor,
+                                                modifier = Modifier.height(11.dp).width(16.dp)
+                                            )
+                                        } else {
+                                            Icon(
+                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_single_check),
+                                                contentDescription = "Sent",
+                                                tint = statusColor,
+                                                modifier = Modifier.height(11.dp).width(12.dp)
+                                            )
+                                        }
                                     }
                                 }
-                                if (msg.reactions.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Row(
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
+                            }
+                            if (msg.reactions.isNotEmpty()) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                         msg.reactions.forEach { (emoji, senders) ->
                                             val hasLocalUserReacted = senders.contains("Me") || senders.contains("me")
                                             val chipBg = if (hasLocalUserReacted) {
@@ -788,7 +898,6 @@ internal fun ChatMessageBubble(
             }
         }
     }
-}
 
 private val URL_PATTERN = Pattern.compile(
     "(?:^|[\\s])((?:https?://|www\\.)[\\w\\-_]+(?:\\.[\\w\\-_]+)+(?:[\\w\\-\\.,@?^=%&:/~\\+#]*[\\w\\-\\@?^=%&/~\\+#])?)",

@@ -1000,7 +1000,7 @@ fun ChatScreen(
                         persistDatabase { db.saveMessage(peerName, outMsg) }
                     }
                     if (endpoint != null && peerName != "Saved Messages") {
-                        P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id) { success ->
+                        P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, caption.trim()) { success ->
                             if (!success) {
                                 persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                                 coroutineScope.launch {
