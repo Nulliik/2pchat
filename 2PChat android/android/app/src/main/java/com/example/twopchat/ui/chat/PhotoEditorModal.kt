@@ -215,8 +215,12 @@ fun PhotoEditorModal(
                 .background(surfaceColor)
                 .safeDrawingPadding()
         ) {
+            val isCroppingActive = selectedAspectRatio != AspectRatioOption.ORIGINAL
+
             Column(
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(8.dp)
             ) {
                 // Top Action Bar
                 Row(
@@ -249,14 +253,19 @@ fun PhotoEditorModal(
                             )
                         }
 
-                        // Toggle Drawing Mode
-                        IconButton(onClick = {
-                            isDrawingMode = !isDrawingMode
-                        }) {
+                        // Toggle Drawing Mode (disabled if cropping is active)
+                        IconButton(
+                            onClick = {
+                                if (!isCroppingActive) {
+                                    isDrawingMode = !isDrawingMode
+                                }
+                            },
+                            enabled = !isCroppingActive
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = "Draw",
-                                tint = if (isDrawingMode) primaryColor else onSurfaceColor
+                                tint = if (isCroppingActive) onSurfaceVariant.copy(alpha = 0.3f) else if (isDrawingMode) primaryColor else onSurfaceColor
                             )
                         }
 
@@ -300,6 +309,9 @@ fun PhotoEditorModal(
                             selected = isSelected,
                             onClick = {
                                 selectedAspectRatio = option
+                                if (option != AspectRatioOption.ORIGINAL) {
+                                    isDrawingMode = false
+                                }
                                 if (option == AspectRatioOption.FREEFORM) {
                                     cropLeft = 0.05f
                                     cropTop = 0.05f
