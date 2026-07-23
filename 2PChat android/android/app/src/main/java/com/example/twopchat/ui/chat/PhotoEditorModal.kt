@@ -99,6 +99,10 @@ fun PhotoEditorModal(
     imageUri: Uri?,
     imagePath: String?,
     appLanguage: String,
+    primaryColor: Color = MaterialTheme.colorScheme.primary,
+    surfaceColor: Color = MaterialTheme.colorScheme.surface,
+    onSurfaceColor: Color = MaterialTheme.colorScheme.onSurface,
+    onSurfaceVariant: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     onDismiss: () -> Unit,
     onSendPhoto: (editedFilePath: String, caption: String) -> Unit
 ) {
@@ -137,7 +141,7 @@ fun PhotoEditorModal(
     var rotationDegrees by remember { mutableIntStateOf(0) }
     var selectedAspectRatio by remember { mutableStateOf(AspectRatioOption.ORIGINAL) }
     var isDrawingMode by remember { mutableStateOf(false) }
-    var strokeColor by remember { mutableStateOf(Color(0xFF4CAF50)) } // Mint green default
+    var strokeColor by remember(primaryColor) { mutableStateOf(primaryColor) }
     var strokeWidthPx by remember { mutableFloatStateOf(10f) }
 
     // Freeform crop rectangle normalized fractions [0f..1f]
@@ -152,16 +156,18 @@ fun PhotoEditorModal(
     var captionText by remember { mutableStateOf("") }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
 
-    // Palette colors
-    val paletteColors = listOf(
-        Color(0xFF4CAF50), // Mint
-        Color(0xFFE53935), // Red
-        Color(0xFFFFEB3B), // Yellow
-        Color(0xFF2196F3), // Blue
-        Color(0xFFFFFFFF), // White
-        Color(0xFFFF9800), // Orange
-        Color(0xFF9C27B0)  // Purple
-    )
+    // Palette colors (starts with current active primary theme color)
+    val paletteColors = remember(primaryColor) {
+        listOf(
+            primaryColor,
+            Color(0xFFE53935), // Red
+            Color(0xFFFFEB3B), // Yellow
+            Color(0xFF2196F3), // Blue
+            Color(0xFFFFFFFF), // White
+            Color(0xFFFF9800), // Orange
+            Color(0xFF9C27B0)  // Purple
+        )
+    }
 
     // Current transformed preview bitmap (rotation & preset ratio crop)
     val transformedBitmap = remember(originalBitmap, rotationDegrees, selectedAspectRatio) {
@@ -206,7 +212,7 @@ fun PhotoEditorModal(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0F141A))
+                .background(surfaceColor)
                 .safeDrawingPadding()
         ) {
             Column(
@@ -224,7 +230,7 @@ fun PhotoEditorModal(
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Cancel",
-                            tint = Color.White
+                            tint = onSurfaceColor
                         )
                     }
 
@@ -239,7 +245,7 @@ fun PhotoEditorModal(
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "Rotate",
-                                tint = Color.White
+                                tint = onSurfaceColor
                             )
                         }
 
@@ -250,7 +256,7 @@ fun PhotoEditorModal(
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = "Draw",
-                                tint = if (isDrawingMode) Color(0xFF4CAF50) else Color.White
+                                tint = if (isDrawingMode) primaryColor else onSurfaceColor
                             )
                         }
 
@@ -262,7 +268,7 @@ fun PhotoEditorModal(
                             Icon(
                                 imageVector = Icons.Default.Clear,
                                 contentDescription = "Undo",
-                                tint = if (drawnPaths.isNotEmpty()) Color.White else Color.Gray.copy(alpha = 0.4f)
+                                tint = if (drawnPaths.isNotEmpty()) onSurfaceColor else onSurfaceVariant.copy(alpha = 0.4f)
                             )
                         }
 
@@ -274,7 +280,7 @@ fun PhotoEditorModal(
                             Icon(
                                 imageVector = Icons.Default.Delete,
                                 contentDescription = "Clear",
-                                tint = if (drawnPaths.isNotEmpty()) Color(0xFFFF5252) else Color.Gray.copy(alpha = 0.4f)
+                                tint = if (drawnPaths.isNotEmpty()) Color(0xFFFF5252) else onSurfaceVariant.copy(alpha = 0.4f)
                             )
                         }
                     }
@@ -306,7 +312,7 @@ fun PhotoEditorModal(
                                     Icon(
                                         painter = painterResource(id = com.example.twopchat.R.drawable.ic_crop_custom),
                                         contentDescription = "Crop",
-                                        tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.8f),
+                                        tint = if (isSelected) Color.White else onSurfaceColor.copy(alpha = 0.8f),
                                         modifier = Modifier.size(24.dp)
                                     )
                                 } else {
@@ -318,10 +324,10 @@ fun PhotoEditorModal(
                                 }
                             },
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = Color(0xFF4CAF50),
+                                selectedContainerColor = primaryColor,
                                 selectedLabelColor = Color.White,
-                                containerColor = Color.White.copy(alpha = 0.1f),
-                                labelColor = Color.White.copy(alpha = 0.8f)
+                                containerColor = onSurfaceColor.copy(alpha = 0.08f),
+                                labelColor = onSurfaceColor.copy(alpha = 0.8f)
                             ),
                             modifier = Modifier.padding(horizontal = 3.dp)
                         )
@@ -620,7 +626,7 @@ fun PhotoEditorModal(
 
                 // Bottom Caption Bar & Send Button
                 Surface(
-                    color = Color(0xFF161E27),
+                    color = surfaceColor,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -635,17 +641,17 @@ fun PhotoEditorModal(
                             placeholder = {
                                 Text(
                                     text = if (appLanguage == "Русский") "Добавить подпись..." else "Add a caption...",
-                                    color = Color.White.copy(alpha = 0.5f),
+                                    color = onSurfaceVariant.copy(alpha = 0.6f),
                                     fontSize = 14.sp
                                 )
                             },
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = Color.White.copy(alpha = 0.07f),
-                                unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
-                                focusedBorderColor = Color(0xFF4CAF50),
-                                unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
+                                focusedContainerColor = onSurfaceColor.copy(alpha = 0.07f),
+                                unfocusedContainerColor = onSurfaceColor.copy(alpha = 0.05f),
+                                focusedBorderColor = primaryColor,
+                                unfocusedBorderColor = onSurfaceColor.copy(alpha = 0.15f),
+                                focusedTextColor = onSurfaceColor,
+                                unfocusedTextColor = onSurfaceColor
                             ),
                             shape = RoundedCornerShape(20.dp),
                             singleLine = true,
@@ -737,7 +743,7 @@ fun PhotoEditorModal(
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF4CAF50),
+                                containerColor = primaryColor,
                                 contentColor = Color.White
                             ),
                             shape = CircleShape,
