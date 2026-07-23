@@ -57,6 +57,36 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.activity.compose.BackHandler
 
+private fun calculateDirSize(file: java.io.File?): Long {
+    if (file == null || !file.exists()) return 0L
+    if (file.isFile) return file.length()
+    var total = 0L
+    val children = file.listFiles() ?: return 0L
+    for (child in children) {
+        total += calculateDirSize(child)
+    }
+    return total
+}
+
+private fun deleteDirContents(file: java.io.File?, keepDir: Boolean = true) {
+    if (file == null || !file.exists()) return
+    if (file.isDirectory) {
+        val children = file.listFiles() ?: return
+        for (child in children) {
+            deleteDirContents(child, keepDir = false)
+        }
+    }
+    if (!keepDir) {
+        file.delete()
+    }
+}
+
+private fun formatStorageSize(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB")
+    val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, 3)
+    return "%.1f %s".format(bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
+}
 
 @Composable
 fun SettingsTab(
@@ -488,6 +518,20 @@ fun SettingsTab(
                                 onClick = { activeSubPage = "notifications" }
                             )
                             
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                            // Category: Data & Storage / Данные и память
+                            SettingsRow(
+                                title = if (appLanguage == "Русский") "Данные и память" else "Data & Storage",
+                                subtitle = if (appLanguage == "Русский") "Использование памяти, кэш, автозагрузка" else "Storage usage, cache, auto-download",
+                                iconRes = com.example.twopchat.R.drawable.ic_broom,
+                                iconColor = Color(0xFF66BB6A),
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                onClick = { activeSubPage = "storage" }
+                            )
+
                             HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
                             
                             // Category: Language / Язык
@@ -1437,6 +1481,294 @@ fun SettingsTab(
                             }
                         }
                         
+                        Spacer(modifier = Modifier.height(40.dp))
+                    }
+                }
+            }
+            "storage" -> {
+                var cacheBytes by remember { mutableLongStateOf(0L) }
+                var avatarsBytes by remember { mutableLongStateOf(0L) }
+                var logsBytes by remember { mutableLongStateOf(0L) }
+                var dbBytes by remember { mutableLongStateOf(0L) }
+                var isCalculating by remember { mutableStateOf(true) }
+                var showClearConfirmDialog by remember { mutableStateOf(false) }
+
+                fun refreshStorageSizes() {
+                    isCalculating = true
+                    kotlin.concurrent.thread {
+                        try {
+                            val cacheDir = context.cacheDir
+                            val downloadsDir = java.io.File(context.filesDir, "config/downloads")
+                            val cSize = calculateDirSize(cacheDir) + calculateDirSize(downloadsDir)
+
+                            val avatarsDir = java.io.File(context.filesDir, "avatars")
+                            val aSize = calculateDirSize(avatarsDir)
+
+                            val logFile = java.io.File(java.io.File(context.filesDir, "config"), "app.log")
+                            val lSize = if (logFile.exists()) logFile.length() else 0L
+
+                            val dbFile = context.getDatabasePath("2pchat.db")
+                            val dbWal = context.getDatabasePath("2pchat.db-wal")
+                            val dbShm = context.getDatabasePath("2pchat.db-shm")
+                            val dSize = (if (dbFile.exists()) dbFile.length() else 0L) +
+                                    (if (dbWal.exists()) dbWal.length() else 0L) +
+                                    (if (dbShm.exists()) dbShm.length() else 0L)
+
+                            cacheBytes = cSize
+                            avatarsBytes = aSize
+                            logsBytes = lSize
+                            dbBytes = dSize
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        } finally {
+                            isCalculating = false
+                        }
+                    }
+                }
+
+                LaunchedEffect(Unit) {
+                    refreshStorageSizes()
+                }
+
+                if (showClearConfirmDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showClearConfirmDialog = false },
+                        title = {
+                            Text(if (appLanguage == "Русский") "Очистить кэш и память?" else "Clear cache & storage?")
+                        },
+                        text = {
+                            Text(
+                                if (appLanguage == "Русский") {
+                                    "Будут удалены временные файлы, кэш аватарок, загруженные файлы и логи. История сообщений останется нетронутой."
+                                } else {
+                                    "Temporary files, cached avatars, downloaded media, and logs will be deleted. Message history will remain intact."
+                                }
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    showClearConfirmDialog = false
+                                    kotlin.concurrent.thread {
+                                        try {
+                                            deleteDirContents(context.cacheDir, keepDir = true)
+                                            deleteDirContents(java.io.File(context.filesDir, "config/downloads"), keepDir = true)
+                                            deleteDirContents(java.io.File(context.filesDir, "avatars"), keepDir = true)
+                                            P2PMessageRelay.peerAvatars.clear()
+                                            val logFile = java.io.File(java.io.File(context.filesDir, "config"), "app.log")
+                                            if (logFile.exists()) {
+                                                logFile.writeText("")
+                                            }
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        } finally {
+                                            refreshStorageSizes()
+                                        }
+                                    }
+                                    Toast.makeText(
+                                        context,
+                                        if (appLanguage == "Русский") "Память успешно очищена" else "Storage cleared successfully",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            ) {
+                                Text(if (appLanguage == "Русский") "Очистить" else "Clear", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showClearConfirmDialog = false }) {
+                                Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
+                            }
+                        }
+                    )
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    SubPageLayout(
+                        title = if (appLanguage == "Русский") "Данные и память" else "Data & Storage",
+                        appLanguage = appLanguage,
+                        onBackClick = { activeSubPage = null },
+                        surfaceColor = surfaceColor,
+                        onSurfaceColor = onSurfaceColor
+                    ) {
+                        val totalBytes = cacheBytes + avatarsBytes + logsBytes + dbBytes
+
+                        // Storage breakdown Card
+                        Text(
+                            text = if (appLanguage == "Русский") "Использование памяти" else "Storage Usage",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onSurfaceColor,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = if (appLanguage == "Русский") "Всего занято" else "Total Used",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = onSurfaceColor
+                                    )
+                                    Text(
+                                        text = if (isCalculating) "..." else formatStorageSize(totalBytes),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = primaryColor
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                // Item: Cache & Media
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(if (appLanguage == "Русский") "Временные файлы и медиа" else "Temporary Cache & Media", fontSize = 14.sp, color = onSurfaceColor)
+                                        Text(if (appLanguage == "Русский") "Кэш загрузок и медиафайлов" else "Downloads and media cache", fontSize = 11.sp, color = onSurfaceVariant)
+                                    }
+                                    Text(if (isCalculating) "..." else formatStorageSize(cacheBytes), fontSize = 14.sp, color = onSurfaceVariant)
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Item: Avatars
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(if (appLanguage == "Русский") "Кэш аватарок" else "Cached Avatars", fontSize = 14.sp, color = onSurfaceColor)
+                                        Text(if (appLanguage == "Русский") "Аватарки контактов" else "Peer profile pictures", fontSize = 11.sp, color = onSurfaceVariant)
+                                    }
+                                    Text(if (isCalculating) "..." else formatStorageSize(avatarsBytes), fontSize = 14.sp, color = onSurfaceVariant)
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Item: Logs
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(if (appLanguage == "Русский") "Логи приложения" else "App Logs", fontSize = 14.sp, color = onSurfaceColor)
+                                        Text(if (appLanguage == "Русский") "Файл системных логов" else "System log file", fontSize = 11.sp, color = onSurfaceVariant)
+                                    }
+                                    Text(if (isCalculating) "..." else formatStorageSize(logsBytes), fontSize = 14.sp, color = onSurfaceVariant)
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Item: Database
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(if (appLanguage == "Русский") "База данных сообщений" else "Message Database", fontSize = 14.sp, color = onSurfaceColor)
+                                        Text(if (appLanguage == "Русский") "Зашифрованная история чатов" else "Encrypted chat history", fontSize = 11.sp, color = onSurfaceVariant)
+                                    }
+                                    Text(if (isCalculating) "..." else formatStorageSize(dbBytes), fontSize = 14.sp, color = onSurfaceVariant)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        // Action: Clear Storage Button Card
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Button(
+                                    onClick = { showClearConfirmDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.15f), contentColor = MaterialTheme.colorScheme.error),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = !isCalculating
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_broom),
+                                        contentDescription = "Clear Storage",
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = if (appLanguage == "Русский") "Очистить кэш и память" else "Clear Storage & Cache",
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(20.dp))
+
+                        // Data Preferences Card
+                        Text(
+                            text = if (appLanguage == "Русский") "Настройки данных" else "Data Settings",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onSurfaceColor,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                // Toggle: Auto-download Media
+                                var autoDownloadMedia by remember { mutableStateOf(sharedPrefs.getBoolean("settings_auto_download_media", true)) }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(if (appLanguage == "Русский") "Автозагрузка медиа" else "Auto-download Media", fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                        Text(if (appLanguage == "Русский") "Автоматически скачивать фото и файлы" else "Automatically download photos and files", fontSize = 12.sp, color = onSurfaceVariant)
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = autoDownloadMedia,
+                                        onCheckedChange = {
+                                            autoDownloadMedia = it
+                                            sharedPrefs.edit().putBoolean("settings_auto_download_media", it).apply()
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                    )
+                                }
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(40.dp))
                     }
                 }
