@@ -524,7 +524,7 @@ fun SettingsTab(
                             SettingsRow(
                                 title = if (appLanguage == "Русский") "Данные и память" else "Data & Storage",
                                 subtitle = if (appLanguage == "Русский") "Использование памяти, кэш, автозагрузка" else "Storage usage, cache, auto-download",
-                                iconRes = com.example.twopchat.R.drawable.ic_broom,
+                                iconRes = com.example.twopchat.R.drawable.ic_database_storage,
                                 iconColor = Color(0xFF66BB6A),
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant,
@@ -1748,7 +1748,7 @@ fun SettingsTab(
                                     enabled = !isCalculating
                                 ) {
                                     Icon(
-                                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_broom),
+                                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_database_storage),
                                         contentDescription = "Clear Storage",
                                         tint = dangerRed,
                                         modifier = Modifier.size(18.dp)
