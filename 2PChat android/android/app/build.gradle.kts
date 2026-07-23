@@ -43,8 +43,8 @@ android {
         applicationId = "com.example.twopchat"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 6
+        versionName = "0.0.6"
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
         }
