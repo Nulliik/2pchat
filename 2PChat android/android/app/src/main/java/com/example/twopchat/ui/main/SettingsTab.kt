@@ -1516,12 +1516,8 @@ fun SettingsTab(
                             val logFile = java.io.File(java.io.File(context.filesDir, "config"), "app.log")
                             val lSize = if (logFile.exists()) logFile.length() else 0L
 
-                            val dbFile = context.getDatabasePath("2pchat.db")
-                            val dbWal = context.getDatabasePath("2pchat.db-wal")
-                            val dbShm = context.getDatabasePath("2pchat.db-shm")
-                            val dSize = (if (dbFile.exists()) dbFile.length() else 0L) +
-                                    (if (dbWal.exists()) dbWal.length() else 0L) +
-                                    (if (dbShm.exists()) dbShm.length() else 0L)
+                            val dbDir = context.getDatabasePath("twopchat.db").parentFile
+                            val dSize = calculateDirSize(dbDir)
 
                             cacheBytes = cSize
                             avatarsBytes = aSize
