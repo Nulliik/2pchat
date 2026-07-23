@@ -881,6 +881,9 @@ fun ChatScreen(
         }
     }
 
+    var editingPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var editingPhotoPath by remember { mutableStateOf<String?>(null) }
+
     // Picker Launchers
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -890,50 +893,7 @@ fun ChatScreen(
             return@rememberLauncherForActivityResult
         }
         uri?.let {
-            var fileName = "photo.jpg"
-            context.contentResolver.query(it, null, null, null, null)?.use { cursor ->
-                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (nameIndex != -1 && cursor.moveToFirst()) {
-                    val queried = cursor.getString(nameIndex)
-                    if (!queried.isNullOrBlank()) {
-                        fileName = if (!queried.contains(".")) "$queried.jpg" else queried
-                    }
-                }
-            }
-            val tempFile = saveUriToTempFile(context, it, fileName)
-            if (tempFile != null) {
-                val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                val initialStatus = if (endpoint != null) "SENT" else "PENDING"
-                val outMsg = Message(
-                    id = newMessageId(),
-                    text = "Sent an image",
-                    isMe = true,
-                    timestamp = time,
-                    attachmentType = "IMAGE",
-                    attachmentUri = tempFile.absolutePath,
-                    attachmentName = fileName,
-                    status = initialStatus
-                )
-                arrivalAnimationTracker.mark(outMsg.id)
-                initialMessages.add(outMsg)
-                if (persistEnabled || initialStatus == "PENDING") {
-                    persistDatabase { db.saveMessage(peerName, outMsg) }
-                }
-                if (endpoint != null && peerName != "Saved Messages") {
-                    P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath, outMsg.id) { success ->
-                        if (!success) {
-                            persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                            coroutineScope.launch {
-                                val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                                if (idx != -1) {
-                                    initialMessages[idx] = outMsg.copy(status = "PENDING")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            editingPhotoUri = it
         }
     }
 
@@ -1003,65 +963,58 @@ fun ChatScreen(
             return@rememberLauncherForActivityResult
         }
         val file = tempCameraFile ?: return@rememberLauncherForActivityResult
-        try {
-            // Correct EXIF rotation so photo is not upside-down when sent
-            val exif = android.media.ExifInterface(file.absolutePath)
-            val orientation = exif.getAttributeInt(
-                android.media.ExifInterface.TAG_ORIENTATION,
-                android.media.ExifInterface.ORIENTATION_NORMAL
-            )
-            val rotationAngle = when (orientation) {
-                android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90
-                android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180
-                android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270
-                else -> 0
-            }
-            if (rotationAngle != 0) {
-                val decoded = BitmapFactory.decodeFile(file.absolutePath)
-                if (decoded != null) {
-                    val matrix = android.graphics.Matrix().apply { postRotate(rotationAngle.toFloat()) }
-                    val rotated = android.graphics.Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
-                    val out = FileOutputStream(file)
-                    rotated.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, out)
-                    out.flush(); out.close()
-                    if (rotated != decoded) decoded.recycle()
-                    rotated.recycle()
-                }
-            }
-            val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-            val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-            val initialStatus = if (endpoint != null) "SENT" else "PENDING"
-            val outMsg = Message(
-                id = newMessageId(),
-                text = "Captured a photo",
-                isMe = true,
-                timestamp = time,
-                attachmentType = "IMAGE",
-                attachmentUri = file.absolutePath,
-                attachmentName = file.name,
-                status = initialStatus
-            )
-            arrivalAnimationTracker.mark(outMsg.id)
-            initialMessages.add(outMsg)
-            if (persistEnabled || initialStatus == "PENDING") {
-                persistDatabase { db.saveMessage(peerName, outMsg) }
-            }
-            if (endpoint != null && peerName != "Saved Messages") {
-                P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id) { success ->
-                    if (!success) {
-                        persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                        coroutineScope.launch {
-                            val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                            if (idx != -1) {
-                                initialMessages[idx] = outMsg.copy(status = "PENDING")
+        editingPhotoPath = file.absolutePath
+    }
+
+    if (editingPhotoUri != null || editingPhotoPath != null) {
+        PhotoEditorModal(
+            imageUri = editingPhotoUri,
+            imagePath = editingPhotoPath,
+            appLanguage = appLanguage,
+            onDismiss = {
+                editingPhotoUri = null
+                editingPhotoPath = null
+            },
+            onSendPhoto = { editedFilePath, caption ->
+                editingPhotoUri = null
+                editingPhotoPath = null
+                val file = File(editedFilePath)
+                if (file.exists()) {
+                    val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                    val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+                    val initialStatus = if (endpoint != null) "SENT" else "PENDING"
+                    val msgText = caption.ifBlank { if (appLanguage == "Русский") "Фотография" else "Sent an image" }
+                    val outMsg = Message(
+                        id = newMessageId(),
+                        text = msgText,
+                        isMe = true,
+                        timestamp = time,
+                        attachmentType = "IMAGE",
+                        attachmentUri = file.absolutePath,
+                        attachmentName = file.name,
+                        status = initialStatus
+                    )
+                    arrivalAnimationTracker.mark(outMsg.id)
+                    initialMessages.add(outMsg)
+                    if (persistEnabled || initialStatus == "PENDING") {
+                        persistDatabase { db.saveMessage(peerName, outMsg) }
+                    }
+                    if (endpoint != null && peerName != "Saved Messages") {
+                        P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id) { success ->
+                            if (!success) {
+                                persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
+                                coroutineScope.launch {
+                                    val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                                    if (idx != -1) {
+                                        initialMessages[idx] = outMsg.copy(status = "PENDING")
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        )
     }
 
 
