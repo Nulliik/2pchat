@@ -615,21 +615,30 @@ fun SettingsTab(
                                     }
                                 }
                             )
-                            
-                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                            
-                            // Delete Account
-                            SettingsRow(
-                                title = Localizations.getString("delete_account", appLanguage),
-                                iconRes = com.example.twopchat.R.drawable.ic_delete,
-                                iconColor = MaterialTheme.colorScheme.error,
-                                onSurfaceColor = MaterialTheme.colorScheme.error,
-                                onSurfaceVariant = onSurfaceVariant,
-                                primaryColor = primaryColor,
-                                isWarning = true,
-                                onClick = { showDeleteAccountDialog = true }
-                            )
                         }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Delete Account (Separate Standalone Card)
+                    val dangerRed = Color(0xFFFF5252)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(0.5.dp, dangerRed.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+                    ) {
+                        SettingsRow(
+                            title = Localizations.getString("delete_account", appLanguage),
+                            iconRes = com.example.twopchat.R.drawable.ic_delete,
+                            iconColor = dangerRed,
+                            onSurfaceColor = dangerRed,
+                            onSurfaceVariant = onSurfaceVariant,
+                            primaryColor = primaryColor,
+                            isWarning = true,
+                            onClick = { showDeleteAccountDialog = true }
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -1698,17 +1707,21 @@ fun SettingsTab(
                         Spacer(modifier = Modifier.height(20.dp))
 
                         // Action: Clear Storage Button Card
+                        val dangerRed = Color(0xFFFF5252)
                         Card(
                             colors = CardDefaults.cardColors(containerColor = surfaceColor),
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
+                                .border(0.5.dp, dangerRed.copy(alpha = 0.25f), RoundedCornerShape(16.dp))
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Button(
                                     onClick = { showClearConfirmDialog = true },
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.15f), contentColor = MaterialTheme.colorScheme.error),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = dangerRed.copy(alpha = 0.18f),
+                                        contentColor = dangerRed
+                                    ),
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.fillMaxWidth(),
                                     enabled = !isCalculating
@@ -1716,12 +1729,14 @@ fun SettingsTab(
                                     Icon(
                                         painter = painterResource(id = com.example.twopchat.R.drawable.ic_broom),
                                         contentDescription = "Clear Storage",
+                                        tint = dangerRed,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = if (appLanguage == "Русский") "Очистить кэш и память" else "Clear Storage & Cache",
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.Bold,
+                                        color = dangerRed
                                     )
                                 }
                             }
@@ -2447,6 +2462,10 @@ fun SettingsRow(
     isWarning: Boolean = false,
     onClick: () -> Unit
 ) {
+    val warningRed = Color(0xFFFF5252)
+    val effectiveOnSurfaceColor = if (isWarning) warningRed else onSurfaceColor
+    val effectiveIconColor = if (isWarning) warningRed else iconColor
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -2458,12 +2477,12 @@ fun SettingsRow(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .size(36.dp)
-                .background(color = if (isWarning) MaterialTheme.colorScheme.error.copy(alpha = 0.1f) else iconColor.copy(alpha = 0.15f), shape = CircleShape)
+                .background(color = if (isWarning) warningRed.copy(alpha = 0.15f) else iconColor.copy(alpha = 0.15f), shape = CircleShape)
         ) {
             Icon(
                 painter = painterResource(id = iconRes),
                 contentDescription = null,
-                tint = if (isWarning) MaterialTheme.colorScheme.error else iconColor,
+                tint = effectiveIconColor,
                 modifier = Modifier.size(18.dp)
             )
         }
@@ -2477,7 +2496,7 @@ fun SettingsRow(
                 text = title,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = onSurfaceColor
+                color = effectiveOnSurfaceColor
             )
             if (subtitle != null) {
                 Spacer(modifier = Modifier.height(2.dp))
