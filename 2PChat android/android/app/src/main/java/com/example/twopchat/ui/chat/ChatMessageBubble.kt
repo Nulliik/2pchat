@@ -355,21 +355,41 @@ internal fun ChatMessageBubble(
                                                         if (hasCaption) RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
                                                         else bubbleShape
                                                     )
-                                                    .clickable(
+                                                    .combinedClickable(
                                                         enabled = !isTransferring &&
                                                             !isCancelled &&
                                                             !hasFailed &&
                                                             attachmentAvailable,
-                                                    ) {
-                                                        val allImages = messages.filter { it.attachmentType == "IMAGE" && !it.attachmentUri.isNullOrBlank() }.map { it.attachmentUri!! }
-                                                        val clickedUri = msg.attachmentUri
-                                                        val clickedIndex = if (clickedUri != null) allImages.indexOf(clickedUri) else -1
-                                                        if (clickedIndex != -1) {
-                                                            onOpenImages(allImages, clickedIndex)
-                                                        } else if (clickedUri != null) {
-                                                            onOpenImages(listOf(clickedUri), 0)
+                                                        onClick = {
+                                                            if (isSelectMode) {
+                                                                if (selectedMessages.contains(msg)) {
+                                                                    selectedMessages.remove(msg)
+                                                                } else {
+                                                                    selectedMessages.add(msg)
+                                                                }
+                                                            } else {
+                                                                val allImages = messages.filter { it.attachmentType == "IMAGE" && !it.attachmentUri.isNullOrBlank() }.map { it.attachmentUri!! }
+                                                                val clickedUri = msg.attachmentUri
+                                                                val clickedIndex = if (clickedUri != null) allImages.indexOf(clickedUri) else -1
+                                                                if (clickedIndex != -1) {
+                                                                    onOpenImages(allImages, clickedIndex)
+                                                                } else if (clickedUri != null) {
+                                                                    onOpenImages(listOf(clickedUri), 0)
+                                                                }
+                                                            }
+                                                        },
+                                                        onLongClick = {
+                                                            if (isSelectMode) {
+                                                                if (selectedMessages.contains(msg)) {
+                                                                    selectedMessages.remove(msg)
+                                                                } else {
+                                                                    selectedMessages.add(msg)
+                                                                }
+                                                            } else {
+                                                                onShowOptions(msg)
+                                                            }
                                                         }
-                                                    }
+                                                    )
                                             ) {
                                                 if (bitmap != null) {
                                                     Image(
@@ -610,14 +630,34 @@ internal fun ChatMessageBubble(
                                                     if (hasCaption) RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 0.dp, bottomEnd = 0.dp)
                                                     else bubbleShape
                                                 )
-                                                .clickable(
+                                                .combinedClickable(
                                                     enabled = !isTransferring &&
                                                         !isCancelled &&
                                                         !hasFailed &&
                                                         attachmentAvailable,
-                                                ) {
-                                                    msg.attachmentUri?.let(onOpenVideo)
-                                                }
+                                                    onClick = {
+                                                        if (isSelectMode) {
+                                                            if (selectedMessages.contains(msg)) {
+                                                                selectedMessages.remove(msg)
+                                                            } else {
+                                                                selectedMessages.add(msg)
+                                                            }
+                                                        } else {
+                                                            msg.attachmentUri?.let(onOpenVideo)
+                                                        }
+                                                    },
+                                                    onLongClick = {
+                                                        if (isSelectMode) {
+                                                            if (selectedMessages.contains(msg)) {
+                                                                selectedMessages.remove(msg)
+                                                            } else {
+                                                                selectedMessages.add(msg)
+                                                            }
+                                                        } else {
+                                                            onShowOptions(msg)
+                                                        }
+                                                    }
+                                                )
                                         ) {
                                             if (thumbnail != null) {
                                                 Image(
