@@ -27,9 +27,9 @@ fun SwipeToReplyContainer(
 ) {
     val coroutineScope = rememberCoroutineScope()
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val deadzonePx = with(density) { 18.dp.toPx() }
-    val thresholdPx = with(density) { 75.dp.toPx() }
-    val maxLimitPx = with(density) { 110.dp.toPx() }
+    val deadzonePx = with(density) { 10.dp.toPx() }
+    val thresholdPx = with(density) { 45.dp.toPx() }
+    val maxLimitPx = with(density) { 75.dp.toPx() }
 
     val offsetX = remember { androidx.compose.animation.core.Animatable(0f) }
     var totalDragPx by remember { mutableFloatStateOf(0f) }
@@ -65,7 +65,7 @@ fun SwipeToReplyContainer(
                     change.consume()
                     totalDragPx += dragAmount
                     val effectiveDrag = if (totalDragPx < -deadzonePx) {
-                        (totalDragPx + deadzonePx) * 0.45f
+                        (totalDragPx + deadzonePx) * 0.68f
                     } else {
                         0f
                     }
