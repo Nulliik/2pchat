@@ -68,7 +68,7 @@ enum class AspectRatioOption(val labelRu: String, val labelEn: String, val ratio
     SIXTEEN_NINE("16:9", "16:9", 16f / 9f)
 }
 
-private enum class DragHandle { NONE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
+private enum class DragHandle { NONE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, CENTER }
 
 @Composable
 fun PhotoEditorModal(
@@ -283,7 +283,7 @@ fun PhotoEditorModal(
                                         painter = painterResource(id = com.example.twopchat.R.drawable.ic_crop_custom),
                                         contentDescription = "Crop",
                                         tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.8f),
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(24.dp)
                                     )
                                 } else {
                                     Text(
@@ -322,6 +322,103 @@ fun PhotoEditorModal(
                         modifier = Modifier.fillMaxSize()
                     )
 
+                    // Drawing Overlay Canvas (only active when drawing mode is enabled)
+                    if (isDrawingMode) {
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pointerInput(Unit) {
+                                    detectDragGestures(
+                                        onDragStart = { offset ->
+                                            currentPathPoints = listOf(offset)
+                                        },
+                                        onDrag = { change, _ ->
+                                            change.consume()
+                                            currentPathPoints = currentPathPoints + change.position
+                                        },
+                                        onDragEnd = {
+                                            if (currentPathPoints.isNotEmpty()) {
+                                                drawnPaths.add(
+                                                    DrawPathData(
+                                                        points = currentPathPoints,
+                                                        color = strokeColor,
+                                                        strokeWidth = strokeWidthPx
+                                                    )
+                                                )
+                                                currentPathPoints = emptyList()
+                                            }
+                                        },
+                                        onDragCancel = {
+                                            currentPathPoints = emptyList()
+                                        }
+                                    )
+                                }
+                        ) {
+                            // Render confirmed paths
+                            for (pathData in drawnPaths) {
+                                if (pathData.points.size > 1) {
+                                    val composePath = Path().apply {
+                                        moveTo(pathData.points.first().x, pathData.points.first().y)
+                                        for (i in 1 until pathData.points.size) {
+                                            lineTo(pathData.points[i].x, pathData.points[i].y)
+                                        }
+                                    }
+                                    drawPath(
+                                        path = composePath,
+                                        color = pathData.color,
+                                        style = Stroke(
+                                            width = pathData.strokeWidth,
+                                            cap = StrokeCap.Round,
+                                            join = StrokeJoin.Round
+                                        )
+                                    )
+                                }
+                            }
+
+                            // Render active in-flight drag path
+                            if (currentPathPoints.size > 1) {
+                                val activePath = Path().apply {
+                                    moveTo(currentPathPoints.first().x, currentPathPoints.first().y)
+                                    for (i in 1 until currentPathPoints.size) {
+                                        lineTo(currentPathPoints[i].x, currentPathPoints[i].y)
+                                    }
+                                }
+                                drawPath(
+                                    path = activePath,
+                                    color = strokeColor,
+                                    style = Stroke(
+                                        width = strokeWidthPx,
+                                        cap = StrokeCap.Round,
+                                        join = StrokeJoin.Round
+                                    )
+                                )
+                            }
+                        }
+                    } else if (drawnPaths.isNotEmpty()) {
+                        // Render static drawn paths when drawing mode is off
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            for (pathData in drawnPaths) {
+                                if (pathData.points.size > 1) {
+                                    val composePath = Path().apply {
+                                        moveTo(pathData.points.first().x, pathData.points.first().y)
+                                        for (i in 1 until pathData.points.size) {
+                                            lineTo(pathData.points[i].x, pathData.points[i].y)
+                                        }
+                                    }
+                                    drawPath(
+                                        path = composePath,
+                                        color = pathData.color,
+                                        style = Stroke(
+                                            width = pathData.strokeWidth,
+                                            cap = StrokeCap.Round,
+                                            join = StrokeJoin.Round
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // Freeform Crop Overlay with 4 Corner L-Brackets (when FREEFORM is selected)
                     if (selectedAspectRatio == AspectRatioOption.FREEFORM) {
                         Canvas(
@@ -337,7 +434,7 @@ fun PhotoEditorModal(
                                             val rectRight = cropRight * w
                                             val rectBottom = cropBottom * h
 
-                                            val hitRadius = 60f
+                                            val hitRadius = 120f
                                             val distTL = (pos - Offset(rectLeft, rectTop)).getDistance()
                                             val distTR = (pos - Offset(rectRight, rectTop)).getDistance()
                                             val distBL = (pos - Offset(rectLeft, rectBottom)).getDistance()
@@ -348,6 +445,7 @@ fun PhotoEditorModal(
                                                 distTR < hitRadius -> DragHandle.TOP_RIGHT
                                                 distBL < hitRadius -> DragHandle.BOTTOM_LEFT
                                                 distBR < hitRadius -> DragHandle.BOTTOM_RIGHT
+                                                pos.x in rectLeft..rectRight && pos.y in rectTop..rectBottom -> DragHandle.CENTER
                                                 else -> DragHandle.NONE
                                             }
                                         },
@@ -377,6 +475,16 @@ fun PhotoEditorModal(
                                                 DragHandle.BOTTOM_RIGHT -> {
                                                     cropRight = (cropRight + deltaX).coerceIn(cropLeft + minSize, 1f)
                                                     cropBottom = (cropBottom + deltaY).coerceIn(cropTop + minSize, 1f)
+                                                }
+                                                DragHandle.CENTER -> {
+                                                    val bw = cropRight - cropLeft
+                                                    val bh = cropBottom - cropTop
+                                                    var nL = (cropLeft + deltaX).coerceIn(0f, 1f - bw)
+                                                    var nT = (cropTop + deltaY).coerceIn(0f, 1f - bh)
+                                                    cropLeft = nL
+                                                    cropRight = nL + bw
+                                                    cropTop = nT
+                                                    cropBottom = nT + bh
                                                 }
                                                 DragHandle.NONE -> {}
                                             }
@@ -438,79 +546,6 @@ fun PhotoEditorModal(
                             // Bottom-Right corner L
                             drawLine(cornerColor, Offset(rightPx + cornerStroke / 2f, bottomPx), Offset(rightPx - cornerLen, bottomPx), strokeWidth = cornerStroke, cap = StrokeCap.Square)
                             drawLine(cornerColor, Offset(rightPx, bottomPx + cornerStroke / 2f), Offset(rightPx, bottomPx - cornerLen), strokeWidth = cornerStroke, cap = StrokeCap.Square)
-                        }
-                    }
-
-                    // Drawing Overlay Canvas
-                    Canvas(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .pointerInput(isDrawingMode) {
-                                if (!isDrawingMode) return@pointerInput
-                                detectDragGestures(
-                                    onDragStart = { offset ->
-                                        currentPathPoints = listOf(offset)
-                                    },
-                                    onDrag = { change, _ ->
-                                        change.consume()
-                                        currentPathPoints = currentPathPoints + change.position
-                                    },
-                                    onDragEnd = {
-                                        if (currentPathPoints.isNotEmpty()) {
-                                            drawnPaths.add(
-                                                DrawPathData(
-                                                    points = currentPathPoints,
-                                                    color = strokeColor,
-                                                    strokeWidth = strokeWidthPx
-                                                )
-                                            )
-                                            currentPathPoints = emptyList()
-                                        }
-                                    },
-                                    onDragCancel = {
-                                        currentPathPoints = emptyList()
-                                    }
-                                )
-                            }
-                    ) {
-                        // Render confirmed paths
-                        for (pathData in drawnPaths) {
-                            if (pathData.points.size > 1) {
-                                val composePath = Path().apply {
-                                    moveTo(pathData.points.first().x, pathData.points.first().y)
-                                    for (i in 1 until pathData.points.size) {
-                                        lineTo(pathData.points[i].x, pathData.points[i].y)
-                                    }
-                                }
-                                drawPath(
-                                    path = composePath,
-                                    color = pathData.color,
-                                    style = Stroke(
-                                        width = pathData.strokeWidth,
-                                        cap = StrokeCap.Round,
-                                        join = StrokeJoin.Round
-                                    )
-                                )
-                            }
-                        }
-
-                        // Render active in-flight drag path
-                        if (currentPathPoints.size > 1) {
-                            val activePath = Path().apply {
-                                moveTo(currentPathPoints.first().x, currentPathPoints.first().y)
-                                for (i in 1 until currentPathPoints.size) {
-                                    lineTo(currentPathPoints[i].x, currentPathPoints[i].y)
-                                }
-                            }
-                            drawPath(
-                                path = activePath,
-                                color = strokeColor,
-                                style = Stroke(
-                                    width = strokeWidthPx,
-                                    cap = StrokeCap.Round,
-                                    join = StrokeJoin.Round
-                                )
-                            )
                         }
                     }
                 }
