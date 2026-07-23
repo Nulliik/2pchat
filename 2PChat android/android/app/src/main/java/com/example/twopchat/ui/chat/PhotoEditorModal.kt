@@ -41,6 +41,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -277,11 +278,20 @@ fun PhotoEditorModal(
                                 }
                             },
                             label = {
-                                Text(
-                                    text = if (appLanguage == "Русский") option.labelRu else option.labelEn,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
+                                if (option == AspectRatioOption.FREEFORM) {
+                                    Icon(
+                                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_crop_custom),
+                                        contentDescription = "Crop",
+                                        tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.8f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                } else {
+                                    Text(
+                                        text = if (appLanguage == "Русский") option.labelRu else option.labelEn,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
                             },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = Color(0xFF4CAF50),
