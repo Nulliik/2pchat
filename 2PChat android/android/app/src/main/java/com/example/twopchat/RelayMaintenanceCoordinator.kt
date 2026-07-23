@@ -65,17 +65,17 @@ internal class RelayMaintenanceCoordinator(
                         val endpoint = peerEndpoints[peerName]
                             ?: prefs.getString("last_endpoint_$peerName", null)?.takeIf { it.isNotBlank() }
                             ?: continue
-                        val currentDelay = reconnectDelayMs[fingerprint] ?: 15_000L
+                        val currentDelay = reconnectDelayMs[fingerprint] ?: 5_000L
                         if (now - (lastReconnectAttemptAt[fingerprint] ?: 0L) < currentDelay) continue
                         lastReconnectAttemptAt[fingerprint] = now
-                        reconnectDelayMs[fingerprint] = (currentDelay * 2).coerceAtMost(300_000L)
+                        reconnectDelayMs[fingerprint] = (currentDelay * 2).coerceAtMost(20_000L)
                         log(appContext, "Background reconnection for $peerName at '$endpoint'", "INFO", null)
                         PythonBridge.reconnectPeerSession(peerName, endpoint, fingerprint)
                     }
                 } catch (error: Exception) {
                     log(appContext, "Error maintaining saved peer sessions", "ERROR", error)
                 }
-                delay(30_000)
+                delay(10_000)
             }
         }
 
@@ -106,8 +106,8 @@ internal class RelayMaintenanceCoordinator(
                             candidateAddresses = addresses
                             stableCandidateSamples = 1
                         }
-                        val changedAndStable = addresses != lastAddresses && stableCandidateSamples >= 3
-                        if (lastAnnounceTime == 0L || changedAndStable || now - lastAnnounceTime >= 300_000L) {
+                        val changedAndStable = addresses != lastAddresses && stableCandidateSamples >= 2
+                        if (lastAnnounceTime == 0L || changedAndStable || now - lastAnnounceTime >= 90_000L) {
                             log(appContext, "Announcing self on tracker. Network changed and stable: $changedAndStable, IPs: $addresses", "INFO", null)
                             val success = PythonBridge.announceSelf(username, fingerprint, port)
                             log(appContext, "Announce self status: $success", "INFO", null)
@@ -120,7 +120,7 @@ internal class RelayMaintenanceCoordinator(
                 } catch (error: Exception) {
                     log(appContext, "Error in periodic announce", "ERROR", error)
                 }
-                delay(60_000)
+                delay(25_000)
             }
         }
     }
