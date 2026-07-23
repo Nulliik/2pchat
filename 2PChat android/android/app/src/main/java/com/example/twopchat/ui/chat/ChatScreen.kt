@@ -2420,19 +2420,23 @@ remove("pinned_msg_id_${peerName}")
                         }
 
                         if (isVerified) {
+                            val dangerRed = Color(0xFFE53935)
                             Button(
                                 onClick = {
                                     isVerified = false
                                     P2PPreferences.setPeerVerified(context, peerName, false)
                                 },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.error,
+                                    containerColor = dangerRed,
                                     contentColor = Color.White
                                 ),
-                                shape = RoundedCornerShape(14.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(Localizations.getString("unverify_btn", appLanguage))
+                                Text(
+                                    text = Localizations.getString("unverify_btn", appLanguage),
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         } else {
                             if (isWaitingForVerifyResponse) {

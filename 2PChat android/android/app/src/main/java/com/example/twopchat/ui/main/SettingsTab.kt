@@ -1540,22 +1540,30 @@ fun SettingsTab(
                 }
 
                 if (showClearConfirmDialog) {
+                    val dangerRed = Color(0xFFE53935)
                     AlertDialog(
                         onDismissRequest = { showClearConfirmDialog = false },
                         title = {
-                            Text(if (appLanguage == "Русский") "Очистить кэш и память?" else "Clear cache & storage?")
+                            Text(
+                                text = if (appLanguage == "Русский") "Очистить кэш и память?" else "Clear cache & storage?",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = onSurfaceColor
+                            )
                         },
                         text = {
                             Text(
-                                if (appLanguage == "Русский") {
+                                text = if (appLanguage == "Русский") {
                                     "Будут удалены временные файлы, кэш аватарок, загруженные файлы и логи. История сообщений останется нетронутой."
                                 } else {
                                     "Temporary files, cached avatars, downloaded media, and logs will be deleted. Message history will remain intact."
-                                }
+                                },
+                                fontSize = 14.sp,
+                                color = onSurfaceVariant
                             )
                         },
                         confirmButton = {
-                            TextButton(
+                            Button(
                                 onClick = {
                                     showClearConfirmDialog = false
                                     kotlin.concurrent.thread {
@@ -1579,16 +1587,29 @@ fun SettingsTab(
                                         if (appLanguage == "Русский") "Память успешно очищена" else "Storage cleared successfully",
                                         Toast.LENGTH_SHORT
                                     ).show()
-                                }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = dangerRed,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(12.dp)
                             ) {
-                                Text(if (appLanguage == "Русский") "Очистить" else "Clear", color = MaterialTheme.colorScheme.error)
+                                Text(
+                                    text = if (appLanguage == "Русский") "Очистить" else "Clear",
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { showClearConfirmDialog = false }) {
-                                Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
+                                Text(
+                                    text = if (appLanguage == "Русский") "Отмена" else "Cancel",
+                                    color = primaryColor
+                                )
                             }
-                        }
+                        },
+                        containerColor = surfaceColor,
+                        shape = RoundedCornerShape(20.dp)
                     )
                 }
 
@@ -2302,17 +2323,22 @@ fun SettingsTab(
                 )
             },
             confirmButton = {
+                val dangerRed = Color(0xFFE53935)
                 Button(
                     onClick = {
                         showDeleteAccountDialog = false
                         onDeleteAccount()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
+                        containerColor = dangerRed,
                         contentColor = Color.White
-                    )
+                    ),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text(Localizations.getString("delete", appLanguage))
+                    Text(
+                        text = Localizations.getString("delete", appLanguage),
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {

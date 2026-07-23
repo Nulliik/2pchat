@@ -323,16 +323,36 @@ internal fun ChatHeader(
     }
 
     if (showDeleteDialog) {
+        val dangerRed = Color(0xFFE53935)
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text(if (appLanguage == "Русский") "Удалить чат?" else "Delete chat?") },
-            text = { Text(
-                if (appLanguage == "Русский") "Вы уверены, что хотите полностью удалить этот чат? Все сообщения будут безвозвратно удалены."
-                else "Are you sure you want to delete this chat? All message history will be permanently lost.",
-            ) },
+            title = {
+                Text(
+                    text = if (appLanguage == "Русский") "Удалить чат?" else "Delete chat?",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = if (appLanguage == "Русский") "Вы уверены, что хотите полностью удалить этот чат? Все сообщения будут безвозвратно удалены."
+                    else "Are you sure you want to delete this chat? All message history will be permanently lost.",
+                    fontSize = 14.sp
+                )
+            },
             confirmButton = {
-                TextButton(onClick = { showDeleteDialog = false; onDeleteChat() }) {
-                    Text(if (appLanguage == "Русский") "Удалить" else "Delete", color = Color.Red)
+                Button(
+                    onClick = { showDeleteDialog = false; onDeleteChat() },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = dangerRed,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = if (appLanguage == "Русский") "Удалить" else "Delete",
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {
@@ -340,6 +360,7 @@ internal fun ChatHeader(
                     Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
                 }
             },
+            shape = RoundedCornerShape(20.dp)
         )
     }
 }
