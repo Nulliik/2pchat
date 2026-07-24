@@ -1049,11 +1049,8 @@ private fun NodeDetailContent(
             displayTrackers.forEach { (name, status) ->
                 val ping = trackerPings[name]
                 val announceRtt = Regex("announce_rtt=(\\d+)ms").find(status)?.groupValues?.get(1)?.toLongOrNull()
-                val announceOk = status.contains("announce=OK", ignoreCase = true)
-                val pingText = if (announceRtt != null && announceOk) {
-                    "RTT ${announceRtt}ms"
-                } else if (announceRtt != null) {
-                    if (appLanguage == "Русский") "ошибка через ${announceRtt}ms" else "failed after ${announceRtt}ms"
+                val pingText = if (announceRtt != null) {
+                     "RTT ${announceRtt}ms"
                 } else if (ping == null) {
                     if (appLanguage == "Русский") "опрос..." else "probing..."
                 } else if (ping == -2L) {
@@ -1068,10 +1065,18 @@ private fun NodeDetailContent(
                     "DNS ${ping}ms"
                 }
                 val skipped = status.contains("SKIPPED", ignoreCase = true)
-                val statusColor = when {
-                    skipped || ping == -2L -> onSurfaceVariant
+                val announceOk = status.contains("announce=OK", ignoreCase = true) || status.contains("resolve=OK", ignoreCase = true)
+                val pingColor = when {
+                    ping != null && ping >= 0L -> Color(0xFF4CAF50)
+                    ping == -2L || ping == -3L || skipped -> onSurfaceVariant
+                    ping == null -> Color(0xFFFFD740)
+                    else -> Color(0xFFFF5252)
+                }
+                val detailStatusColor = when {
                     announceOk -> Color(0xFF4CAF50)
-                    else -> Color.Red
+                    status.contains("PENDING", ignoreCase = true) -> Color(0xFFFFD740)
+                    skipped -> onSurfaceVariant
+                    else -> Color(0xFFFF5252)
                 }
                 Card(
                     colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.3f)),
@@ -1083,7 +1088,7 @@ private fun NodeDetailContent(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = onSurfaceColor)
-                            Text(pingText, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = statusColor)
+                            Text(pingText, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = pingColor)
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
