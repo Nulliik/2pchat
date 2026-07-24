@@ -1,7 +1,6 @@
 package com.example.twopchat.ui.chat
 
 import android.graphics.BitmapFactory
-import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -19,17 +18,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.R
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlbumPreviewModal(
-    uris: List<Uri>,
+    files: List<File>,
     appLanguage: String,
     primaryColor: Color = MaterialTheme.colorScheme.primary,
     surfaceColor: Color = MaterialTheme.colorScheme.surface,
@@ -37,18 +36,15 @@ fun AlbumPreviewModal(
     onDismiss: () -> Unit,
     onSendAlbum: (caption: String) -> Unit,
 ) {
-    val context = LocalContext.current
     var captionText by remember { mutableStateOf("") }
     var selectedPreviewIndex by remember { mutableIntStateOf(0) }
 
-    val mainPreviewBitmap = remember(uris, selectedPreviewIndex) {
-        val targetUri = uris.getOrNull(selectedPreviewIndex) ?: uris.firstOrNull()
-        if (targetUri != null) {
+    val mainPreviewBitmap = remember(files, selectedPreviewIndex) {
+        val targetFile = files.getOrNull(selectedPreviewIndex) ?: files.firstOrNull()
+        if (targetFile != null && targetFile.exists()) {
             try {
-                context.contentResolver.openInputStream(targetUri)?.use { stream ->
-                    val options = BitmapFactory.Options().apply { inSampleSize = 2 }
-                    BitmapFactory.decodeStream(stream, null, options)
-                }
+                val options = BitmapFactory.Options().apply { inSampleSize = 2 }
+                BitmapFactory.decodeFile(targetFile.absolutePath, options)
             } catch (_: Exception) {
                 null
             }
@@ -83,7 +79,7 @@ fun AlbumPreviewModal(
                     )
                 }
                 Text(
-                    text = if (isRu) "Альбом (${uris.size})" else "Album (${uris.size})",
+                    text = if (isRu) "Альбом (${files.size})" else "Album (${files.size})",
                     color = Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold
@@ -134,17 +130,17 @@ fun AlbumPreviewModal(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                itemsIndexed(uris) { idx, uri ->
+                itemsIndexed(files) { idx, file ->
                     val isSelected = idx == selectedPreviewIndex
-                    val thumbBitmap = remember(uri) {
-                        try {
-                            context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val thumbBitmap = remember(file) {
+                        if (file.exists()) {
+                            try {
                                 val options = BitmapFactory.Options().apply { inSampleSize = 4 }
-                                BitmapFactory.decodeStream(stream, null, options)
+                                BitmapFactory.decodeFile(file.absolutePath, options)
+                            } catch (_: Exception) {
+                                null
                             }
-                        } catch (_: Exception) {
-                            null
-                        }
+                        } else null
                     }
 
                     Box(

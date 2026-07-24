@@ -910,34 +910,50 @@ fun ChatScreen(
     var editingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var editingPhotoPath by remember { mutableStateOf<String?>(null) }
     var editingVideoPath by remember { mutableStateOf<String?>(null) }
-    var pendingAlbumUris by remember { mutableStateOf<List<Uri>?>(null) }
+    var pendingAlbumFiles by remember { mutableStateOf<List<File>?>(null) }
+    var pendingAlbumTypes by remember { mutableStateOf<List<String>?>(null) }
 
-    fun processAndSendMediaAlbum(uris: List<Uri>, customCaption: String = "") {
+    fun handleMultipleUrisSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        val tempFiles = mutableListOf<File>()
-        val mediaTypes = mutableListOf<String>()
+        coroutineScope.launch(Dispatchers.IO) {
+            val tempFiles = mutableListOf<File>()
+            val mediaTypes = mutableListOf<String>()
+            for ((index, uri) in uris.withIndex()) {
+                try {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: Exception) {}
 
-        for ((index, uri) in uris.withIndex()) {
-            var fileName = "media_$index"
-            var mimeType = context.contentResolver.getType(uri).orEmpty()
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (nameIndex != -1 && cursor.moveToFirst()) {
-                    val queried = cursor.getString(nameIndex)
-                    if (!queried.isNullOrBlank()) fileName = queried
+                var fileName = "media_$index"
+                var mimeType = context.contentResolver.getType(uri).orEmpty()
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1 && cursor.moveToFirst()) {
+                        val queried = cursor.getString(nameIndex)
+                        if (!queried.isNullOrBlank()) fileName = queried
+                    }
+                }
+                val detectedType = VoiceMessageSupport.attachmentType(fileName, mimeType)
+                val defaultExt = if (detectedType == "VIDEO") ".mp4" else ".jpg"
+                if (!fileName.contains(".")) fileName += defaultExt
+
+                val tempFile = saveUriToTempFile(context, uri, fileName)
+                if (tempFile != null) {
+                    tempFiles.add(tempFile)
+                    mediaTypes.add(if (detectedType == "VIDEO") "VIDEO" else "IMAGE")
                 }
             }
-            val detectedType = VoiceMessageSupport.attachmentType(fileName, mimeType)
-            val defaultExt = if (detectedType == "VIDEO") ".mp4" else ".jpg"
-            if (!fileName.contains(".")) fileName += defaultExt
-
-            val tempFile = saveUriToTempFile(context, uri, fileName)
-            if (tempFile != null) {
-                tempFiles.add(tempFile)
-                mediaTypes.add(if (detectedType == "VIDEO") "VIDEO" else "IMAGE")
+            if (tempFiles.isNotEmpty()) {
+                withContext(Dispatchers.Main) {
+                    pendingAlbumFiles = tempFiles
+                    pendingAlbumTypes = mediaTypes
+                }
             }
         }
+    }
 
+    fun processAndSendMediaAlbum(tempFiles: List<File>, mediaTypes: List<String>, customCaption: String = "") {
         if (tempFiles.isEmpty()) return
 
         val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
@@ -946,7 +962,7 @@ fun ChatScreen(
 
         if (tempFiles.size == 1) {
             val file = tempFiles.first()
-            val type = mediaTypes.first()
+            val type = mediaTypes.firstOrNull() ?: "IMAGE"
             val defaultMsgText = if (appLanguage == "Русский") (if (type == "VIDEO") "Видеозапись" else "Фотография") else (if (type == "VIDEO") "Sent a video" else "Sent an image")
             val msgText = customCaption.ifBlank { defaultMsgText }
             val outMsg = Message(
@@ -1026,7 +1042,7 @@ fun ChatScreen(
         if (uris.size == 1) {
             editingPhotoUri = uris.first()
         } else {
-            pendingAlbumUris = uris
+            handleMultipleUrisSelected(uris)
         }
     }
 
@@ -1055,7 +1071,7 @@ fun ChatScreen(
                 editingVideoPath = tempFile.absolutePath
             }
         } else {
-            pendingAlbumUris = uris
+            handleMultipleUrisSelected(uris)
         }
     }
 
@@ -1124,18 +1140,23 @@ fun ChatScreen(
         )
     }
 
-    if (pendingAlbumUris != null) {
+    if (pendingAlbumFiles != null) {
         AlbumPreviewModal(
-            uris = pendingAlbumUris!!,
+            files = pendingAlbumFiles!!,
             appLanguage = appLanguage,
             primaryColor = MaterialTheme.colorScheme.primary,
             surfaceColor = MaterialTheme.colorScheme.surface,
             onSurfaceColor = MaterialTheme.colorScheme.onSurface,
-            onDismiss = { pendingAlbumUris = null },
+            onDismiss = {
+                pendingAlbumFiles = null
+                pendingAlbumTypes = null
+            },
             onSendAlbum = { caption ->
-                val uris = pendingAlbumUris!!
-                pendingAlbumUris = null
-                processAndSendMediaAlbum(uris, caption)
+                val files = pendingAlbumFiles!!
+                val types = pendingAlbumTypes ?: emptyList()
+                pendingAlbumFiles = null
+                pendingAlbumTypes = null
+                processAndSendMediaAlbum(files, types, caption)
             }
         )
     }
@@ -1153,7 +1174,7 @@ fun ChatScreen(
             val type = context.contentResolver.getType(uri).orEmpty()
             type.startsWith("image/") || type.startsWith("video/")
         }) {
-            processAndSendMediaAlbum(uris)
+            handleMultipleUrisSelected(uris)
             return@rememberLauncherForActivityResult
         }
         for (uri in uris) {
