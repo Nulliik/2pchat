@@ -94,7 +94,10 @@ class HttpTrackerDiscovery(DiscoveryProvider):
             context = ssl.create_default_context(cafile=certifi.where())
         except Exception:
             context = ssl.create_default_context()
-        context.minimum_version = ssl.TLSVersion.TLS1_2
+        try:
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+        except AttributeError:
+            pass
         context.check_hostname = True
         context.verify_mode = ssl.CERT_REQUIRED
         return context
