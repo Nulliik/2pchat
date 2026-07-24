@@ -61,6 +61,19 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 
 
+private val defaultTrackerUrls = mapOf(
+    "Torrent.eu.org UDP" to "udp://tracker.torrent.eu.org:451/announce",
+    "Open Stealth UDP" to "udp://open.stealth.si:80/announce",
+    "Exodus UDP" to "udp://exodus.desync.com:6969/announce",
+    "OpenTrackr HTTP" to "http://tracker.opentrackr.org:1337/announce",
+    "Dler HTTP" to "http://tracker2.dler.org:80/announce",
+    "Qu.Ax HTTP" to "http://tracker.qu.ax:6969/announce",
+    "Yemekyedim HTTPS" to "https://tracker.yemekyedim.com:443/announce",
+    "Nyacat HTTPS" to "https://tr.nyacat.pw:443/announce",
+    "Yggdrasil-only HTTP" to "http://[200:1e2f:e608:eb3a:2bf:1e62:87ba:e2f7]/announce",
+    "Yggdrasil-only UDP" to "udp://[202:68d0:f0d5:b88d:1d1a:555e:2f6b:3148]:6969/announce"
+)
+
 private fun readLogFile(context: android.content.Context): String {
     return try {
         val logFile = java.io.File(java.io.File(context.filesDir, "config"), "app.log")
@@ -327,20 +340,7 @@ fun NetworkDiagnosticsDialog(
 
         val peersCount = P2PMessageRelay.peerEndpoints.size
 
-        val trackerUrls = remember {
-            mapOf(
-                "Torrent.eu.org UDP" to "udp://tracker.torrent.eu.org:451/announce",
-                "Open Stealth UDP" to "udp://open.stealth.si:80/announce",
-                "Exodus UDP" to "udp://exodus.desync.com:6969/announce",
-                "OpenTrackr HTTP" to "http://tracker.opentrackr.org:1337/announce",
-                "Dler HTTP" to "http://tracker2.dler.org:80/announce",
-                "Qu.Ax HTTP" to "http://tracker.qu.ax:6969/announce",
-                "Yemekyedim HTTPS" to "https://tracker.yemekyedim.com:443/announce",
-                "Nyacat HTTPS" to "https://tr.nyacat.pw:443/announce",
-                "Yggdrasil-only HTTP" to "http://[200:1e2f:e608:eb3a:2bf:1e62:87ba:e2f7]/announce",
-                "Yggdrasil-only UDP" to "udp://[202:68d0:f0d5:b88d:1d1a:555e:2f6b:3148]:6969/announce"
-            )
-        }
+        val trackerUrls = defaultTrackerUrls
 
         val trackerPings = remember { mutableStateMapOf<String, Long>() }
         val yggdrasilAvailable = yggDiagnostics["state"] in setOf("enabled", "connected") &&
@@ -1041,7 +1041,12 @@ private fun NodeDetailContent(
             }
         }
         RadarNode.TRACKERS -> {
-            trackerDiagnostics.forEach { (name, status) ->
+            val displayTrackers: Map<String, String> = if (trackerDiagnostics.isNotEmpty()) {
+                trackerDiagnostics
+            } else {
+                defaultTrackerUrls.keys.associateWith { "announce=PENDING, resolve=PENDING, announce_rtt=n/ams, resolve_rtt=n/ams" }
+            }
+            displayTrackers.forEach { (name, status) ->
                 val ping = trackerPings[name]
                 val announceRtt = Regex("announce_rtt=(\\d+)ms").find(status)?.groupValues?.get(1)?.toLongOrNull()
                 val announceOk = status.contains("announce=OK", ignoreCase = true)
