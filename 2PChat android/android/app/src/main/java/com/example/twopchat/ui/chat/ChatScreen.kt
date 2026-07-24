@@ -912,42 +912,51 @@ fun ChatScreen(
     var editingVideoPath by remember { mutableStateOf<String?>(null) }
     var pendingAlbumFiles by remember { mutableStateOf<List<File>?>(null) }
     var pendingAlbumTypes by remember { mutableStateOf<List<String>?>(null) }
+    var isProcessingAlbum by remember { mutableStateOf(false) }
 
     fun handleMultipleUrisSelected(uris: List<Uri>) {
         if (uris.isEmpty()) return
+        isProcessingAlbum = true
         coroutineScope.launch(Dispatchers.IO) {
             val tempFiles = mutableListOf<File>()
             val mediaTypes = mutableListOf<String>()
-            for ((index, uri) in uris.withIndex()) {
-                try {
-                    context.contentResolver.takePersistableUriPermission(
-                        uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                } catch (_: Exception) {}
+            try {
+                for ((index, uri) in uris.withIndex()) {
+                    try {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    } catch (_: Exception) {}
 
-                var fileName = "media_$index"
-                var mimeType = context.contentResolver.getType(uri).orEmpty()
-                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex != -1 && cursor.moveToFirst()) {
-                        val queried = cursor.getString(nameIndex)
-                        if (!queried.isNullOrBlank()) fileName = queried
+                    var fileName = "media_$index"
+                    var mimeType = context.contentResolver.getType(uri).orEmpty()
+                    try {
+                        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            if (nameIndex != -1 && cursor.moveToFirst()) {
+                                val queried = cursor.getString(nameIndex)
+                                if (!queried.isNullOrBlank()) fileName = queried
+                            }
+                        }
+                    } catch (_: Exception) {}
+
+                    val detectedType = VoiceMessageSupport.attachmentType(fileName, mimeType)
+                    val defaultExt = if (detectedType == "VIDEO") ".mp4" else ".jpg"
+                    if (!fileName.contains(".")) fileName += defaultExt
+
+                    val tempFile = saveUriToTempFile(context, uri, fileName)
+                    if (tempFile != null) {
+                        tempFiles.add(tempFile)
+                        mediaTypes.add(if (detectedType == "VIDEO") "VIDEO" else "IMAGE")
                     }
                 }
-                val detectedType = VoiceMessageSupport.attachmentType(fileName, mimeType)
-                val defaultExt = if (detectedType == "VIDEO") ".mp4" else ".jpg"
-                if (!fileName.contains(".")) fileName += defaultExt
-
-                val tempFile = saveUriToTempFile(context, uri, fileName)
-                if (tempFile != null) {
-                    tempFiles.add(tempFile)
-                    mediaTypes.add(if (detectedType == "VIDEO") "VIDEO" else "IMAGE")
-                }
-            }
-            if (tempFiles.isNotEmpty()) {
+            } finally {
                 withContext(Dispatchers.Main) {
-                    pendingAlbumFiles = tempFiles
-                    pendingAlbumTypes = mediaTypes
+                    isProcessingAlbum = false
+                    if (tempFiles.isNotEmpty()) {
+                        pendingAlbumFiles = tempFiles
+                        pendingAlbumTypes = mediaTypes
+                    }
                 }
             }
         }
@@ -1013,13 +1022,20 @@ fun ChatScreen(
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (endpoint != null && peerName != "Saved Messages") {
-                for ((idx, file) in tempFiles.withIndex()) {
-                    val fileCaption = if (idx == 0) customCaption else ""
-                    val fileTransferId = "${outMsg.id}_$idx"
-                    P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, fileTransferId, fileCaption) { success ->
-                        if (!success) {
+                coroutineScope.launch(Dispatchers.IO) {
+                    for ((idx, file) in tempFiles.withIndex()) {
+                        val fileCaption = if (idx == 0) customCaption else ""
+                        val fileTransferId = "${outMsg.id}_$idx"
+                        val latch = java.util.concurrent.CountDownLatch(1)
+                        var transferOk = false
+                        P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, fileTransferId, fileCaption) { success ->
+                            transferOk = success
+                            latch.countDown()
+                        }
+                        latch.await(5, java.util.concurrent.TimeUnit.MINUTES)
+                        if (!transferOk) {
                             persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                            coroutineScope.launch {
+                            withContext(Dispatchers.Main) {
                                 val messageIdx = initialMessages.indexOfFirst { it.id == outMsg.id }
                                 if (messageIdx != -1) initialMessages[messageIdx] = outMsg.copy(status = "PENDING")
                             }
@@ -1159,6 +1175,33 @@ fun ChatScreen(
                 processAndSendMediaAlbum(files, types, caption)
             }
         )
+    }
+
+    if (isProcessingAlbum) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = {}) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(24.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Text(
+                        text = if (appLanguage == "Русский") "Подготовка медиафайлов..." else "Preparing media files...",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
     }
 
 
@@ -1425,13 +1468,19 @@ fun ChatScreen(
                 onShowProfile = { showProfileOverlay = true },
                 onVerify = { showVerifyDialog = true },
                 onReconnect = {
+                    Toast.makeText(
+                        context,
+                        if (appLanguage == "Русский") "Проверка и переподключение к $peerName..." else "Checking connection with $peerName...",
+                        Toast.LENGTH_SHORT
+                    ).show()
                     P2PMessageRelay.reconnectSession(context, peerName) { success ->
-                        val text = if (success) {
-                            if (appLanguage == "Русский") "Переподключение запущено..." else "Reconnection initiated..."
+                        val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
+                        val text = if (success || isOnline) {
+                            if (appLanguage == "Русский") "Связь с $peerName восстановлена (Онлайн)" else "Connection restored with $peerName (Online)"
                         } else {
-                            if (appLanguage == "Русский") "Не удалось переподключить" else "Failed to reconnect"
+                            if (appLanguage == "Русский") "Собеседник $peerName недоступен (Офлайн)" else "Peer $peerName is unreachable (Offline)"
                         }
-                        Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, text, Toast.LENGTH_LONG).show()
                     }
                 },
                 onToggleMuted = { muted ->
