@@ -22,6 +22,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.twopchat.R
 import java.io.File
 
@@ -53,12 +55,20 @@ fun AlbumPreviewModal(
 
     val isRu = appLanguage == "Русский"
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.94f))
-            .systemBarsPadding()
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.94f))
+                .systemBarsPadding()
+                .imePadding()
+        ) {
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
@@ -230,5 +240,6 @@ fun AlbumPreviewModal(
                 }
             }
         }
+    }
     }
 }

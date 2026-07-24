@@ -57,11 +57,23 @@ class ChatDatabaseMigrationTest {
         val helper = ChatDatabaseHelper.getInstance(context)
         helper.saveMessage(
             "Alice",
-            Message("migration-test", "hello", true, "12:00", sentAtEpochMs = expectedTimestamp),
+            Message(
+                id = "migration-test",
+                text = "hello",
+                isMe = true,
+                timestamp = "12:00",
+                sentAtEpochMs = expectedTimestamp,
+                isPinned = true,
+                albumMediaUris = listOf("/tmp/one.jpg", "/tmp/two.mp4"),
+                albumMediaTypes = listOf("IMAGE", "VIDEO"),
+            ),
         )
 
         val restored = helper.getMessagesForPeer("Alice").single()
         assertEquals(expectedTimestamp, restored.sentAtEpochMs)
+        assertEquals(true, restored.isPinned)
+        assertEquals(listOf("/tmp/one.jpg", "/tmp/two.mp4"), restored.albumMediaUris)
+        assertEquals(listOf("IMAGE", "VIDEO"), restored.albumMediaTypes)
     }
 
     @Test

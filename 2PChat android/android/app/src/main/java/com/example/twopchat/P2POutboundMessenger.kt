@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.data.PendingControl
+import com.example.twopchat.ui.chat.Message
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -67,6 +68,9 @@ internal class P2POutboundMessenger(
         filePath: String,
         messageId: String = "",
         caption: String = "",
+        albumId: String = "",
+        albumIndex: Int = -1,
+        albumCount: Int = 0,
         onResult: (Boolean) -> Unit = {},
     ) {
         if (isPaused(context, peerName)) {
@@ -92,6 +96,9 @@ internal class P2POutboundMessenger(
                     messageId,
                     caption,
                     previewBase64,
+                    albumId,
+                    albumIndex,
+                    albumCount,
                 )
                 val cancelled = messageId.isNotBlank() && cancelledFileTransfers.remove(messageId)
                 activeFileTransfers.remove(messageId)
@@ -294,12 +301,23 @@ internal class P2POutboundMessenger(
                         put("message_id", message.id)
                         put("text", message.text)
                     }.toString()
+                    val albumFiles = message.albumMediaUris.map(::File)
+                    val hasAlbum = message.attachmentType == "ALBUM" && albumFiles.size > 1
                     val hasAttachment = message.attachmentType != null && !message.attachmentUri.isNullOrBlank()
-                    val attachmentFile = if (hasAttachment) File(message.attachmentUri.orEmpty()) else null
+                    val attachmentFile = if (hasAttachment && !hasAlbum) {
+                        File(message.attachmentUri.orEmpty())
+                    } else {
+                        null
+                    }
+                    val missingAttachment = if (hasAlbum) {
+                        albumFiles.firstOrNull { !it.exists() }
+                    } else {
+                        attachmentFile?.takeIf { !it.exists() }
+                    }
 
                     // If the attachment file was deleted (e.g. OS cleared the temp cache)
                     // mark the message as FAILED and skip it — do NOT stop the queue.
-                    if (attachmentFile != null && !attachmentFile.exists()) {
+                    if (missingAttachment != null) {
                         log(context, "Pending attachment file missing for ${message.id}, marking FAILED and skipping.", "ERROR", null)
                         db.updateMessageStatus(message.id, "FAILED")
                         Handler(Looper.getMainLooper()).post {
@@ -308,9 +326,29 @@ internal class P2POutboundMessenger(
                         continue
                     }
 
-                    val success = if (attachmentFile != null) {
+                    val caption = attachmentCaption(message)
+                    val success = if (hasAlbum) {
+                        albumFiles.withIndex().all { (index, file) ->
+                            PythonBridge.sendP2pFile(
+                                peerName = peerName,
+                                endpoint = endpoint,
+                                filePath = file.absolutePath,
+                                expectedFingerprint = fingerprint,
+                                messageId = "${message.id}_$index",
+                                caption = if (index == 0) caption else "",
+                                albumId = message.id,
+                                albumIndex = index,
+                                albumCount = albumFiles.size,
+                            )
+                        }
+                    } else if (attachmentFile != null) {
                         PythonBridge.sendP2pFile(
-                            peerName, endpoint, attachmentFile.absolutePath, fingerprint, message.id
+                            peerName,
+                            endpoint,
+                            attachmentFile.absolutePath,
+                            fingerprint,
+                            message.id,
+                            caption,
                         )
                     } else {
                         PythonBridge.sendP2pMessage(peerName, endpoint, payload, fingerprint)
@@ -437,5 +475,24 @@ internal class P2POutboundMessenger(
 
     private fun postResult(callback: (Boolean) -> Unit, result: Boolean) {
         Handler(Looper.getMainLooper()).post { callback(result) }
+    }
+
+    private fun attachmentCaption(message: Message): String {
+        val text = message.text.trim()
+        if (text.isBlank()) return ""
+        val defaultText = when (message.attachmentType) {
+            "IMAGE" -> text.equals("Sent an image", ignoreCase = true) ||
+                text.equals("Фотография", ignoreCase = true) ||
+                text.equals("Отправлена фотография", ignoreCase = true)
+            "VIDEO" -> text.equals("Sent a video", ignoreCase = true) ||
+                text.equals("Видеозапись", ignoreCase = true)
+            "VOICE" -> text.equals("Voice message", ignoreCase = true) ||
+                text.equals("Голосовое сообщение", ignoreCase = true)
+            "ALBUM" -> text.startsWith("Sent an album", ignoreCase = true) ||
+                text.startsWith("Album", ignoreCase = true) ||
+                text.startsWith("Альбом", ignoreCase = true)
+            else -> true
+        }
+        return text.takeUnless { defaultText }.orEmpty()
     }
 }

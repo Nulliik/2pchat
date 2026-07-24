@@ -583,6 +583,9 @@ object PythonBridge {
         messageId: String = "",
         caption: String = "",
         previewBase64: String = "",
+        albumId: String = "",
+        albumIndex: Int = -1,
+        albumCount: Int = 0,
     ): Boolean {
         if (!isInitialized) return false
         return try {
@@ -597,6 +600,9 @@ object PythonBridge {
                 messageId,
                 caption,
                 previewBase64,
+                albumId,
+                albumIndex,
+                albumCount,
             )
             success.toBoolean()
         } catch (e: Exception) {

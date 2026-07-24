@@ -41,13 +41,15 @@ class MainScreenTest {
   }
 
   @Test
-  fun appHeader_exists() {
-    composeTestRule.onNodeWithText("2PChat").assertExists()
+  fun navigationBar_exists() {
+    composeTestRule.onNodeWithText("Chats").assertExists()
+    composeTestRule.onNodeWithText("Search").assertExists()
+    composeTestRule.onNodeWithText("Settings").assertExists()
   }
 
   @Test
-  fun activeHandshakes_exists() {
-    composeTestRule.onNodeWithText("Active Handshakes").assertExists()
+  fun savedMessages_exists() {
+    composeTestRule.onNodeWithText("Saved Messages").assertExists()
   }
 
   @Test

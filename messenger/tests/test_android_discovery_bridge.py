@@ -312,6 +312,9 @@ def test_file_metadata_offers_preview_before_chunks_and_cancel_removes_temp_file
         "file_nonce_prefix": base64.b64encode(os.urandom(16)).decode(),
         "message_id": message_id,
         "preview_base64": preview,
+        "album_id": "album-message-id",
+        "album_index": 1,
+        "album_count": 3,
     }
 
     class FakeSession:
@@ -351,6 +354,9 @@ def test_file_metadata_offers_preview_before_chunks_and_cancel_removes_temp_file
     ]
     assert listener.messages[0][1]["preview_base64"] == preview
     assert listener.messages[0][1]["message_id"] == message_id
+    assert listener.messages[0][1]["album_id"] == "album-message-id"
+    assert listener.messages[0][1]["album_index"] == 1
+    assert listener.messages[0][1]["album_count"] == 3
     assert listener.messages[1][1]["cancelled"] is True
     assert bridge.incoming_files == {}
     assert list(tmp_path.glob("*.part")) == []

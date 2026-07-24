@@ -50,7 +50,15 @@ class DefaultChatRepository : ChatRepository {
         messageId: String,
         onResult: (Boolean) -> Unit
     ) {
-        P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, messageId, caption, onResult)
+        P2PMessageRelay.sendFile(
+            context = context,
+            peerName = peerName,
+            endpoint = endpoint,
+            filePath = file.absolutePath,
+            messageId = messageId,
+            caption = caption,
+            onResult = onResult,
+        )
     }
 
     override fun cancelFileTransfer(context: Context, peerName: String, messageId: String): Boolean {

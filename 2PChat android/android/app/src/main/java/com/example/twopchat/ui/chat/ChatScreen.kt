@@ -1028,7 +1028,17 @@ fun ChatScreen(
                         val fileTransferId = "${outMsg.id}_$idx"
                         val latch = java.util.concurrent.CountDownLatch(1)
                         var transferOk = false
-                        P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, fileTransferId, fileCaption) { success ->
+                        P2PMessageRelay.sendFile(
+                            context = context,
+                            peerName = peerName,
+                            endpoint = endpoint,
+                            filePath = file.absolutePath,
+                            messageId = fileTransferId,
+                            caption = fileCaption,
+                            albumId = outMsg.id,
+                            albumIndex = idx,
+                            albumCount = tempFiles.size,
+                        ) { success ->
                             transferOk = success
                             latch.countDown()
                         }
@@ -1039,6 +1049,7 @@ fun ChatScreen(
                                 val messageIdx = initialMessages.indexOfFirst { it.id == outMsg.id }
                                 if (messageIdx != -1) initialMessages[messageIdx] = outMsg.copy(status = "PENDING")
                             }
+                            break
                         }
                     }
                 }

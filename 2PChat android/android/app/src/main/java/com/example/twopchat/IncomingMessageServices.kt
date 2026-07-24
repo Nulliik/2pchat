@@ -16,6 +16,10 @@ internal data class IncomingAttachment(
     val attachmentType: String,
     val attachmentUri: String,
     val attachmentName: String,
+    val caption: String?,
+    val albumId: String?,
+    val albumIndex: Int?,
+    val albumCount: Int?,
 )
 
 internal object IncomingMessageParser {
@@ -32,12 +36,22 @@ internal object IncomingMessageParser {
             val attachmentType = VoiceMessageSupport.attachmentType(fileName, mime)
             val caption = json.optString("caption").ifBlank { json.optString("text", "") }.trim()
             val displayMsg = if (caption.isNotBlank()) caption else VoiceMessageSupport.displayMessage(attachmentType, fileName)
+            val albumId = json.optString("album_id").take(128)
+            val albumIndex = json.optInt("album_index", -1)
+            val albumCount = json.optInt("album_count", 0)
+            val hasValidAlbum = albumId.isNotBlank() &&
+                albumCount in 2..100 &&
+                albumIndex in 0 until albumCount
             IncomingAttachment(
                 messageId = json.optString("message_id"),
                 displayMessage = displayMsg,
                 attachmentType = attachmentType,
                 attachmentUri = filePath,
                 attachmentName = fileName,
+                caption = caption.takeIf { it.isNotBlank() },
+                albumId = albumId.takeIf { hasValidAlbum },
+                albumIndex = albumIndex.takeIf { hasValidAlbum },
+                albumCount = albumCount.takeIf { hasValidAlbum },
             )
         } catch (_: Exception) {
             null

@@ -32,7 +32,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        private const val DATABASE_VERSION = 9
+        private const val DATABASE_VERSION = 10
         private const val TABLE_MESSAGES = "messages"
         private const val TABLE_PENDING_CONTROLS = "pending_controls"
         
@@ -134,7 +134,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 + KEY_REPLY_TO_NAME + " TEXT,"
                 + KEY_STATUS + " TEXT,"
                 + KEY_REACTIONS + " TEXT,"
-                + KEY_SENT_AT_MS + " INTEGER NOT NULL DEFAULT 0" + ")")
+                + KEY_SENT_AT_MS + " INTEGER NOT NULL DEFAULT 0,"
+                + KEY_IS_PINNED + " INTEGER NOT NULL DEFAULT 0,"
+                + KEY_ALBUM_URIS + " TEXT,"
+                + KEY_ALBUM_TYPES + " TEXT" + ")")
         db.execSQL(createTable)
         createMessagePeerIndex(db)
         createPendingControlsTable(db)
@@ -224,6 +227,14 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         }
         if (oldVersion < 9) {
             createMessagePeerIndex(db)
+        }
+        if (oldVersion < 10) {
+            db.execSQL(
+                "ALTER TABLE $TABLE_MESSAGES " +
+                    "ADD COLUMN $KEY_IS_PINNED INTEGER NOT NULL DEFAULT 0"
+            )
+            db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_ALBUM_URIS TEXT")
+            db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_ALBUM_TYPES TEXT")
         }
     }
 

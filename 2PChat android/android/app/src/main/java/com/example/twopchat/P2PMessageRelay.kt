@@ -261,6 +261,7 @@ object P2PMessageRelay {
     val fileProgressStates = mutableStateMapOf<String, FileProgressInfo>()
     val fileTransferPreviews = mutableStateMapOf<String, Bitmap>()
     private val incomingFileOffers = ConcurrentHashMap.newKeySet<String>()
+    private val incomingAlbums = ConcurrentHashMap<String, Message>()
 
     interface MessageListener {
         fun onMessageReceived(sender: String, text: String) {}
@@ -647,6 +648,12 @@ object P2PMessageRelay {
                                     val totalBytes = json.optLong("size").coerceAtLeast(0L)
                                     if (messageId.isBlank() || totalBytes > 100L * 1024L * 1024L) return
                                     val attachmentType = VoiceMessageSupport.attachmentType(fileName, mime)
+                                    val albumId = json.optString("album_id").take(128)
+                                    val albumIndex = json.optInt("album_index", -1)
+                                    val albumCount = json.optInt("album_count", 0)
+                                    val isAlbumPart = albumId.isNotBlank() &&
+                                        albumCount in 2..100 &&
+                                        albumIndex in 0 until albumCount
                                     val offerKey = "$sender:$messageId"
                                     val isNewOffer = incomingFileOffers.add(offerKey)
                                     val preview = decodeFileTransferPreview(
@@ -678,6 +685,10 @@ object P2PMessageRelay {
                                             fileTransferPreviews[messageId] = preview
                                         }
                                     }
+                                    // Album parts are persisted under their shared album id
+                                    // after each file completes. Creating one placeholder per
+                                    // part here would split the album into unrelated bubbles.
+                                    if (isAlbumPart) return
                                     persistAndDispatchIncoming(
                                         appContext,
                                         sender,
@@ -1102,25 +1113,78 @@ object P2PMessageRelay {
                         }
                     }
                         val incomingAttachment = parseIncomingAttachment(appContext, text)
-                        val incomingMessage = if (incomingAttachment != null) {
-                            Message(
-                                    id = incomingAttachment.messageId.ifBlank { UUID.randomUUID().toString() },
-                                    text = incomingAttachment.displayMessage,
-                                    isMe = false,
-                                    timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
-                                    attachmentType = incomingAttachment.attachmentType,
-                                    attachmentUri = incomingAttachment.attachmentUri,
-                                    attachmentName = incomingAttachment.attachmentName,
-                                    status = "SENT"
+                        val albumKey = incomingAttachment?.albumId?.let { "$sender:$it" }
+                        val existingAlbum = if (albumKey != null) {
+                            incomingAlbums[albumKey]
+                                ?: ChatDatabaseHelper.getInstance(appContext).findMessageForReaction(
+                                    sender,
+                                    incomingAttachment.albumId,
+                                    "",
                                 )
                         } else {
+                            null
+                        }
+                        val incomingMessage = if (
+                            incomingAttachment != null &&
+                            incomingAttachment.albumId != null &&
+                            incomingAttachment.albumIndex != null &&
+                            incomingAttachment.albumCount != null
+                        ) {
+                            val albumUris = existingAlbum?.albumMediaUris.orEmpty().toMutableList()
+                            val albumTypes = existingAlbum?.albumMediaTypes.orEmpty().toMutableList()
+                            val partIndex = incomingAttachment.albumIndex
+                            if (partIndex < albumUris.size) {
+                                albumUris[partIndex] = incomingAttachment.attachmentUri
+                                while (albumTypes.size <= partIndex) albumTypes.add("IMAGE")
+                                albumTypes[partIndex] = incomingAttachment.attachmentType
+                            } else {
+                                albumUris.add(incomingAttachment.attachmentUri)
+                                albumTypes.add(incomingAttachment.attachmentType)
+                            }
+                            val albumComplete = albumUris.size >= incomingAttachment.albumCount
                             Message(
-                                    id = UUID.randomUUID().toString(),
-                                    text = text,
-                                    isMe = false,
-                                    timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
-                                    status = "SENT"
-                                )
+                                id = incomingAttachment.albumId,
+                                text = existingAlbum?.text
+                                    ?: incomingAttachment.caption
+                                    ?: "Sent an album (${incomingAttachment.albumCount})",
+                                isMe = false,
+                                timestamp = existingAlbum?.timestamp
+                                    ?: java.text.SimpleDateFormat(
+                                        "HH:mm",
+                                        java.util.Locale.getDefault(),
+                                    ).format(java.util.Date()),
+                                attachmentType = "ALBUM",
+                                attachmentUri = albumUris.firstOrNull(),
+                                attachmentName = "Album",
+                                status = if (albumComplete) "SENT" else "RECEIVING",
+                                albumMediaUris = albumUris,
+                                albumMediaTypes = albumTypes,
+                            ).also { albumMessage ->
+                                if (albumComplete) {
+                                    incomingAlbums.remove(albumKey)
+                                } else if (albumKey != null) {
+                                    incomingAlbums[albumKey] = albumMessage
+                                }
+                            }
+                        } else if (incomingAttachment != null) {
+                            Message(
+                                id = incomingAttachment.messageId.ifBlank { UUID.randomUUID().toString() },
+                                text = incomingAttachment.displayMessage,
+                                isMe = false,
+                                timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
+                                attachmentType = incomingAttachment.attachmentType,
+                                attachmentUri = incomingAttachment.attachmentUri,
+                                attachmentName = incomingAttachment.attachmentName,
+                                status = "SENT"
+                            )
+                        } else {
+                            Message(
+                                id = UUID.randomUUID().toString(),
+                                text = text,
+                                isMe = false,
+                                timestamp = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()),
+                                status = "SENT"
+                            )
                         }
                         val completedOffer = incomingAttachment?.let {
                             incomingFileOffers.remove("$sender:${it.messageId}")
@@ -1153,7 +1217,11 @@ object P2PMessageRelay {
                             appContext,
                             sender,
                             incomingMessage,
-                            countAsNew = !completedOffer,
+                            countAsNew = if (albumKey != null) {
+                                existingAlbum == null
+                            } else {
+                                !completedOffer
+                            },
                         )
                     } catch (ex: Exception) {
                         log(appContext, "Failed to persist incoming message to SharedPreferences/SQLite", "ERROR", ex)
@@ -1549,6 +1617,9 @@ object P2PMessageRelay {
         filePath: String,
         messageId: String = "",
         caption: String = "",
+        albumId: String = "",
+        albumIndex: Int = -1,
+        albumCount: Int = 0,
         onResult: (Boolean) -> Unit = {},
     ) {
         if (messageId.isNotBlank()) {
@@ -1559,7 +1630,17 @@ object P2PMessageRelay {
                 fileProgressStates[messageId] = info
             }
         }
-        outboundMessenger.sendFile(context, peerName, endpoint, filePath, messageId, caption) { success ->
+        outboundMessenger.sendFile(
+            context,
+            peerName,
+            endpoint,
+            filePath,
+            messageId,
+            caption,
+            albumId,
+            albumIndex,
+            albumCount,
+        ) { success ->
             if (messageId.isNotBlank()) {
                 Handler(Looper.getMainLooper()).post {
                     val key = "$peerName:$messageId"
@@ -1590,12 +1671,6 @@ object P2PMessageRelay {
             }
             onResult(success)
         }
-    }
-
-    @Suppress("unused")
-    fun sendFile(context: Context, endpoint: String, filePath: String, messageId: String = "", caption: String = "", onResult: (Boolean) -> Unit = {}) {
-        val peerName = peerEndpoints.entries.firstOrNull { it.value == endpoint }?.key ?: "Direct Peer"
-        sendFile(context, peerName, endpoint, filePath, messageId, caption, onResult)
     }
 
     fun cancelFileTransfer(context: Context, peerName: String, messageId: String): Boolean {

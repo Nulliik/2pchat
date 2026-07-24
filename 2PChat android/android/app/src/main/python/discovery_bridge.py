@@ -416,6 +416,30 @@ def _validated_file_preview_base64(value) -> str:
     return preview if 0 < len(decoded) <= MAX_FILE_PREVIEW_BYTES else ""
 
 
+def _validated_album_metadata(value) -> dict:
+    if not isinstance(value, dict):
+        return {}
+    try:
+        album_id = str(value.get("album_id", ""))[:128]
+        album_index = int(value.get("album_index", -1))
+        album_count = int(value.get("album_count", 0))
+    except (TypeError, ValueError):
+        return {}
+    if (
+        not album_id
+        or album_count < 2
+        or album_count > 100
+        or album_index < 0
+        or album_index >= album_count
+    ):
+        return {}
+    return {
+        "album_id": album_id,
+        "album_index": album_index,
+        "album_count": album_count,
+    }
+
+
 def set_ipv4_enabled(enabled: bool):
     """Apply the user's IPv4 policy to new and currently active sessions."""
     global ipv4_enabled
@@ -1665,6 +1689,7 @@ async def _read_loop(session, peer_name, fp):
                                 "mime": guessed_mime or "application/octet-stream",
                                 "size": file_size,
                                 "preview_base64": preview_base64,
+                                **_validated_album_metadata(msg),
                             }
                             try:
                                 message_listener_callback.onMessageReceived(
@@ -1804,7 +1829,8 @@ async def _read_loop(session, peer_name, fp):
                                 "file_name": file_name,
                                 "file_path": str(target),
                                 "mime": mime,
-                                "size": state["written"]
+                                "size": state["written"],
+                                **_validated_album_metadata(meta),
                             }
                             if meta and meta.get("caption"):
                                 file_notification["caption"] = str(meta["caption"])
@@ -1885,7 +1911,10 @@ def send_p2p_message(peer_name: str, endpoint: str, body: str, expected_fingerpr
         loop
     )
     try:
-        return future.result(timeout=15)
+        # A cold send may spend up to 5 s connecting, 5 s exchanging keys,
+        # and two 3 s reliable-delivery attempts on both identity_info and the
+        # chat frame. Keep enough headroom for that legitimate worst case.
+        return future.result(timeout=45)
     except Exception as e:
         future.cancel()
         print(f"Failed to send message to {peer_name} via python bridge:", e)
@@ -2103,6 +2132,9 @@ def send_p2p_file(
     message_id="",
     caption="",
     preview_base64="",
+    album_id="",
+    album_index=-1,
+    album_count=0,
 ) -> bool:
     """
     Synchronous entry point called from Kotlin to send an encrypted file/photo via Double Ratchet.
@@ -2131,6 +2163,9 @@ def send_p2p_file(
             normalized_message_id,
             caption,
             preview_base64,
+            album_id,
+            album_index,
+            album_count,
         ),
         loop
     )
@@ -2160,6 +2195,9 @@ async def _send_file_async(
     message_id="",
     caption="",
     preview_base64="",
+    album_id="",
+    album_index=-1,
+    album_count=0,
 ) -> bool:
     async with _operation_lock(peer_name, expected_fingerprint):
         return await _send_file_unlocked(
@@ -2170,6 +2208,9 @@ async def _send_file_async(
             message_id,
             caption,
             preview_base64,
+            album_id,
+            album_index,
+            album_count,
         )
 
 
@@ -2181,6 +2222,9 @@ async def _send_file_unlocked(
     message_id="",
     caption="",
     preview_base64="",
+    album_id="",
+    album_index=-1,
+    album_count=0,
 ) -> bool:
     session = _session_for_peer(peer_name, expected_fingerprint)
     was_cached = session is not None and session.is_online
@@ -2230,6 +2274,17 @@ async def _send_file_unlocked(
         if caption:
             meta["caption"] = str(caption)
             meta["text"] = str(caption)
+        normalized_album_id = str(album_id)[:128]
+        normalized_album_count = int(album_count)
+        normalized_album_index = int(album_index)
+        if (
+            normalized_album_id
+            and 2 <= normalized_album_count <= 100
+            and 0 <= normalized_album_index < normalized_album_count
+        ):
+            meta["album_id"] = normalized_album_id
+            meta["album_index"] = normalized_album_index
+            meta["album_count"] = normalized_album_count
         validated_preview = _validated_file_preview_base64(preview_base64)
         if validated_preview:
             meta["preview_base64"] = validated_preview
