@@ -307,8 +307,6 @@ def _session_for_peer(peer_name: str, expected_fingerprint: str | None = None):
         if getattr(s, "peer_label", None) == peer_name:
             return s
 
-    if len(online_sessions) == 1:
-        return online_sessions[0]
     return None
 
 

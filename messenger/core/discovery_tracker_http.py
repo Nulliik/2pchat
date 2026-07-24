@@ -89,7 +89,11 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         return ipv4_endpoint, ipv6_endpoint
 
     def _create_ssl_context(self) -> ssl.SSLContext:
-        context = ssl.create_default_context()
+        try:
+            import certifi
+            context = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            context = ssl.create_default_context()
         context.minimum_version = ssl.TLSVersion.TLS1_2
         context.check_hostname = True
         context.verify_mode = ssl.CERT_REQUIRED
