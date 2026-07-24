@@ -911,29 +911,130 @@ fun ChatScreen(
     var editingPhotoPath by remember { mutableStateOf<String?>(null) }
     var editingVideoPath by remember { mutableStateOf<String?>(null) }
 
-    // Picker Launchers
+    fun processAndSendMediaAlbum(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val tempFiles = mutableListOf<File>()
+        val mediaTypes = mutableListOf<String>()
+
+        for ((index, uri) in uris.withIndex()) {
+            var fileName = "media_$index"
+            var mimeType = context.contentResolver.getType(uri).orEmpty()
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1 && cursor.moveToFirst()) {
+                    val queried = cursor.getString(nameIndex)
+                    if (!queried.isNullOrBlank()) fileName = queried
+                }
+            }
+            val detectedType = VoiceMessageSupport.attachmentType(fileName, mimeType)
+            val defaultExt = if (detectedType == "VIDEO") ".mp4" else ".jpg"
+            if (!fileName.contains(".")) fileName += defaultExt
+
+            val tempFile = saveUriToTempFile(context, uri, fileName)
+            if (tempFile != null) {
+                tempFiles.add(tempFile)
+                mediaTypes.add(if (detectedType == "VIDEO") "VIDEO" else "IMAGE")
+            }
+        }
+
+        if (tempFiles.isEmpty()) return
+
+        val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+        val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+        val initialStatus = if (endpoint != null) "SENT" else "PENDING"
+
+        if (tempFiles.size == 1) {
+            val file = tempFiles.first()
+            val type = mediaTypes.first()
+            val outMsg = Message(
+                id = newMessageId(),
+                text = if (appLanguage == "Русский") (if (type == "VIDEO") "Видеозапись" else "Фотография") else (if (type == "VIDEO") "Sent a video" else "Sent an image"),
+                isMe = true,
+                timestamp = time,
+                attachmentType = type,
+                attachmentUri = file.absolutePath,
+                attachmentName = file.name,
+                status = initialStatus
+            )
+            arrivalAnimationTracker.mark(outMsg.id)
+            initialMessages.add(outMsg)
+            if (persistEnabled || initialStatus == "PENDING") {
+                persistDatabase { db.saveMessage(peerName, outMsg) }
+            }
+            if (endpoint != null && peerName != "Saved Messages") {
+                P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, "") { success ->
+                    if (!success) {
+                        persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
+                        coroutineScope.launch {
+                            val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                            if (idx != -1) initialMessages[idx] = outMsg.copy(status = "PENDING")
+                        }
+                    }
+                }
+            }
+        } else {
+            val albumUris = tempFiles.map { it.absolutePath }
+            val outMsg = Message(
+                id = newMessageId(),
+                text = if (appLanguage == "Русский") "Альбом (${tempFiles.size})" else "Sent an album (${tempFiles.size})",
+                isMe = true,
+                timestamp = time,
+                attachmentType = "ALBUM",
+                attachmentUri = albumUris.first(),
+                attachmentName = "Album",
+                status = initialStatus,
+                albumMediaUris = albumUris,
+                albumMediaTypes = mediaTypes,
+            )
+            arrivalAnimationTracker.mark(outMsg.id)
+            initialMessages.add(outMsg)
+            if (persistEnabled || initialStatus == "PENDING") {
+                persistDatabase { db.saveMessage(peerName, outMsg) }
+            }
+            if (endpoint != null && peerName != "Saved Messages") {
+                for (file in tempFiles) {
+                    P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, "") { success ->
+                        if (!success) {
+                            persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
+                            coroutineScope.launch {
+                                val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                                if (idx != -1) initialMessages[idx] = outMsg.copy(status = "PENDING")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Picker Launchers with Multi-Select support
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
         if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
             Toast.makeText(context, if (appLanguage == "Русский") "Отправка приостановлена до подтверждения ключа" else "Sending is paused until the key is confirmed", Toast.LENGTH_LONG).show()
             return@rememberLauncherForActivityResult
         }
-        uri?.let {
-            editingPhotoUri = it
+        if (uris.size == 1) {
+            editingPhotoUri = uris.first()
+        } else {
+            processAndSendMediaAlbum(uris)
         }
     }
 
     val videoLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
         if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
             Toast.makeText(context, if (appLanguage == "Русский") "Отправка приостановлена до подтверждения ключа" else "Sending is paused until the key is confirmed", Toast.LENGTH_LONG).show()
             return@rememberLauncherForActivityResult
         }
-        uri?.let {
+        if (uris.size == 1) {
+            val uri = uris.first()
             var fileName = "video.mp4"
-            context.contentResolver.query(it, null, null, null, null)?.use { cursor ->
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                 if (nameIndex != -1 && cursor.moveToFirst()) {
                     val queried = cursor.getString(nameIndex)
@@ -942,10 +1043,12 @@ fun ChatScreen(
                     }
                 }
             }
-            val tempFile = saveUriToTempFile(context, it, fileName)
+            val tempFile = saveUriToTempFile(context, uri, fileName)
             if (tempFile != null) {
                 editingVideoPath = tempFile.absolutePath
             }
+        } else {
+            processAndSendMediaAlbum(uris)
         }
     }
 
@@ -1016,21 +1119,29 @@ fun ChatScreen(
 
 
     val fileLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
         if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
             Toast.makeText(context, if (appLanguage == "Русский") "Отправка приостановлена до подтверждения ключа" else "Sending is paused until the key is confirmed", Toast.LENGTH_LONG).show()
             return@rememberLauncherForActivityResult
         }
-        uri?.let {
+        if (uris.size > 1 && uris.all { uri ->
+            val type = context.contentResolver.getType(uri).orEmpty()
+            type.startsWith("image/") || type.startsWith("video/")
+        }) {
+            processAndSendMediaAlbum(uris)
+            return@rememberLauncherForActivityResult
+        }
+        for (uri in uris) {
             var fileName = "Document.pdf"
-            context.contentResolver.query(it, null, null, null, null)?.use { cursor ->
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                 if (nameIndex != -1 && cursor.moveToFirst()) {
                     fileName = cursor.getString(nameIndex)
                 }
             }
-            val tempFile = saveUriToTempFile(context, it, fileName)
+            val tempFile = saveUriToTempFile(context, uri, fileName)
             if (tempFile != null) {
                 val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                 val endpoint = P2PMessageRelay.peerEndpoints[peerName]
