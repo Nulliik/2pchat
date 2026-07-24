@@ -75,6 +75,8 @@ MAX_ENCRYPTED_CHUNK_SIZE = MAX_FILE_CHUNK_PAYLOAD_SIZE
 MAX_CONCURRENT_HANDSHAKES = 10
 MAX_FILE_PREVIEW_BASE64_CHARS = 96 * 1024
 MAX_FILE_PREVIEW_BYTES = 64 * 1024
+loop = None
+runtime_thread = None
 tracker_diagnostics = {}
 public_address_observations = set()
 local_identity_nickname = ""
@@ -810,9 +812,10 @@ def verify_live_endpoints(
     }]
 
 def _run_coro_safely(coro, timeout=15.0):
-    global loop, runtime_thread
-    if loop and loop.is_running() and runtime_thread is not None and threading.current_thread() != runtime_thread:
-        future = asyncio.run_coroutine_threadsafe(coro, loop)
+    active_loop = globals().get("loop")
+    active_thread = globals().get("runtime_thread")
+    if active_loop and active_loop.is_running() and active_thread is not None and threading.current_thread() != active_thread:
+        future = asyncio.run_coroutine_threadsafe(coro, active_loop)
         return future.result(timeout=timeout)
     else:
         temp_loop = asyncio.new_event_loop()
