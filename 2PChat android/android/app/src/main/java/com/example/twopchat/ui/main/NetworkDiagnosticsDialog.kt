@@ -1041,7 +1041,12 @@ private fun NodeDetailContent(
             }
         }
         RadarNode.TRACKERS -> {
-            trackerDiagnostics.forEach { (name, status) ->
+            val displayTrackers = if (trackerDiagnostics.isNotEmpty()) {
+                trackerDiagnostics
+            } else {
+                trackerUrls.keys.associateWith { "announce=PENDING, resolve=PENDING, announce_rtt=n/ams, resolve_rtt=n/ams" }
+            }
+            displayTrackers.forEach { (name, status) ->
                 val ping = trackerPings[name]
                 val announceRtt = Regex("announce_rtt=(\\d+)ms").find(status)?.groupValues?.get(1)?.toLongOrNull()
                 val announceOk = status.contains("announce=OK", ignoreCase = true)

@@ -1286,6 +1286,15 @@ def announce_peer_ygg(nickname: str, fingerprint: str, ygg_host: str, port: int)
 
 
 def get_tracker_diagnostics_json() -> str:
+    all_names = list(_resolve_tracker_names())
+    if _dht_enabled and MAINLINE_DHT not in all_names:
+        all_names.append(MAINLINE_DHT)
+    for name in all_names:
+        if name not in tracker_diagnostics:
+            tracker_diagnostics[name] = {
+                "announce": "PENDING",
+                "resolve": "PENDING",
+            }
     return json.dumps(tracker_diagnostics, sort_keys=True)
 
 
