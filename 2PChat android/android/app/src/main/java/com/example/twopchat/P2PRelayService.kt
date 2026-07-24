@@ -4,10 +4,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.chaquo.python.Python
@@ -15,8 +19,12 @@ import com.chaquo.python.android.AndroidPlatform
 
 /** Process owner for the listener; it keeps receiving while no Activity is visible. */
 class P2PRelayService : Service() {
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
+
     override fun onCreate() {
         super.onCreate()
+        acquireLocks()
         createChannel()
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
@@ -65,11 +73,55 @@ class P2PRelayService : Service() {
     }
 
     override fun onDestroy() {
+        releaseLocks()
         P2PMessageRelay.stopServer()
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun acquireLocks() {
+        try {
+            if (wakeLock == null) {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                wakeLock = powerManager?.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "2PChat:P2PRelayServiceWakeLock",
+                )?.apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }
+            if (wifiLock == null) {
+                val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                @Suppress("DEPRECATION")
+                wifiLock = wifiManager?.createWifiLock(
+                    WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                    "2PChat:P2PRelayServiceWifiLock",
+                )?.apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to acquire WakeLock / WifiLock", e)
+        }
+    }
+
+    private fun releaseLocks() {
+        try {
+            wakeLock?.let {
+                if (it.isHeld) it.release()
+            }
+            wakeLock = null
+            wifiLock?.let {
+                if (it.isHeld) it.release()
+            }
+            wifiLock = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to release WakeLock / WifiLock", e)
+        }
+    }
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -82,6 +134,7 @@ class P2PRelayService : Service() {
 
     companion object {
         const val ACTION_RESTART = "com.example.twopchat.P2PRelayService.RESTART"
+        private const val TAG = "P2PRelayService"
         private const val CHANNEL_ID = "p2p_connectivity"
         private const val NOTIFICATION_ID = 50001
     }
