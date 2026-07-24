@@ -887,7 +887,7 @@ fun ChatScreen(
             if (!attachmentsDir.exists()) {
                 attachmentsDir.mkdirs()
             }
-            val file = java.io.File(attachmentsDir, "sent_file_${System.currentTimeMillis()}_$originalName")
+            val file = java.io.File(attachmentsDir, "sent_file_${System.currentTimeMillis()}_${java.util.UUID.randomUUID().toString().take(8)}_$originalName")
             // Use .use{} on both streams — guarantees close() even if an exception
             // is thrown during the copy, preventing file descriptor leaks (WARN-05).
             inputStream.use { input ->
@@ -999,7 +999,8 @@ fun ChatScreen(
             if (endpoint != null && peerName != "Saved Messages") {
                 for ((idx, file) in tempFiles.withIndex()) {
                     val fileCaption = if (idx == 0) customCaption else ""
-                    P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, fileCaption) { success ->
+                    val fileTransferId = "${outMsg.id}_$idx"
+                    P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, fileTransferId, fileCaption) { success ->
                         if (!success) {
                             persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                             coroutineScope.launch {
