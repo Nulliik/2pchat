@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import ipaddress
 import os
 import random
 import socket
-import ssl
 import time
 import urllib.parse
 import urllib.request
@@ -30,7 +28,6 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         timeout: float = 10.0,
         interval_floor: int = 60,
         retries: int = 2,
-        pinned_cert_hashes: list[str] | set[str] | None = None,
         time_fn=time.time,
     ) -> None:
         self._tracker_url = tracker_url
@@ -45,7 +42,6 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         self._timeout = timeout
         self._interval_floor = max(15, interval_floor)
         self._retries = max(1, retries)
-        self._pinned_cert_hashes = set(pinned_cert_hashes) if pinned_cert_hashes else None
         self._time_fn = time_fn
         self._peer_id = self._make_peer_id()
         self._key = random.randint(0, 0xFFFFFFFF)
@@ -88,37 +84,6 @@ class HttpTrackerDiscovery(DiscoveryProvider):
                 ipv6_endpoint = endpoint
         return ipv4_endpoint, ipv6_endpoint
 
-    def _create_ssl_context(self) -> ssl.SSLContext:
-        try:
-            import certifi
-            context = ssl.create_default_context(cafile=certifi.where())
-        except Exception:
-            context = ssl.create_default_context()
-        try:
-            context.minimum_version = ssl.TLSVersion.TLSv1_2
-        except AttributeError:
-            pass
-        context.check_hostname = True
-        context.verify_mode = ssl.CERT_REQUIRED
-        return context
-
-    def _verify_pinned_certificate(self, response, hostname: str) -> None:
-        if not self._pinned_cert_hashes:
-            return
-        sock = getattr(response, "fp", None)
-        raw_sock = getattr(sock, "raw", None)
-        ssl_sock = getattr(raw_sock, "_sock", None) or getattr(response, "socket", None)
-        if ssl_sock and hasattr(ssl_sock, "getpeercert"):
-            der = ssl_sock.getpeercert(binary_form=True)
-            if der:
-                fingerprint = hashlib.sha256(der).hexdigest().lower()
-                expected = {h.lower() for h in self._pinned_cert_hashes}
-                if fingerprint not in expected:
-                    raise ssl.SSLError(
-                        f"Certificate pinning failure for tracker host '{hostname}'. "
-                        f"Received fingerprint: {fingerprint}"
-                    )
-
     def _announce_request(
         self,
         info_hash: bytes,
@@ -149,17 +114,11 @@ class HttpTrackerDiscovery(DiscoveryProvider):
             url,
             headers={"User-Agent": "2PChat/1.0"},
         )
-        parsed_url = urllib.parse.urlparse(self._tracker_url)
-        context = None
-        if parsed_url.scheme == "https":
-            context = self._create_ssl_context()
 
         last_error = None
         for _attempt in range(self._retries):
             try:
-                with urllib.request.urlopen(request, timeout=self._timeout, context=context) as response:
-                    if parsed_url.scheme == "https":
-                        self._verify_pinned_certificate(response, parsed_url.hostname or "")
+                with urllib.request.urlopen(request, timeout=self._timeout) as response:
                     payload = response.read()
                     self._record_observed_addresses(payload)
                     return payload
