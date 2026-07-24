@@ -1091,7 +1091,7 @@ internal fun ChatMessageBubble(
                                     }
                                 }
                             }
-                            if (msg.attachmentType != "IMAGE" && msg.attachmentType != "VIDEO") {
+                            if (msg.attachmentType != "IMAGE" && msg.attachmentType != "VIDEO" && msg.attachmentType != "ALBUM" && msg.albumMediaUris.isEmpty()) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -1518,6 +1518,8 @@ private fun MediaAlbumGridBubble(
     val types = msg.albumMediaTypes
     val hasCaption = msg.text.isNotBlank() &&
             !msg.text.startsWith("Sent an album") &&
+            !msg.text.startsWith("Album") &&
+            !msg.text.startsWith("Альбом") &&
             !msg.text.equals("Альбом", ignoreCase = true) &&
             !msg.text.equals("Медиаальбом", ignoreCase = true)
 

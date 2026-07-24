@@ -910,8 +910,9 @@ fun ChatScreen(
     var editingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var editingPhotoPath by remember { mutableStateOf<String?>(null) }
     var editingVideoPath by remember { mutableStateOf<String?>(null) }
+    var pendingAlbumUris by remember { mutableStateOf<List<Uri>?>(null) }
 
-    fun processAndSendMediaAlbum(uris: List<Uri>) {
+    fun processAndSendMediaAlbum(uris: List<Uri>, customCaption: String = "") {
         if (uris.isEmpty()) return
         val tempFiles = mutableListOf<File>()
         val mediaTypes = mutableListOf<String>()
@@ -946,9 +947,11 @@ fun ChatScreen(
         if (tempFiles.size == 1) {
             val file = tempFiles.first()
             val type = mediaTypes.first()
+            val defaultMsgText = if (appLanguage == "Русский") (if (type == "VIDEO") "Видеозапись" else "Фотография") else (if (type == "VIDEO") "Sent a video" else "Sent an image")
+            val msgText = customCaption.ifBlank { defaultMsgText }
             val outMsg = Message(
                 id = newMessageId(),
-                text = if (appLanguage == "Русский") (if (type == "VIDEO") "Видеозапись" else "Фотография") else (if (type == "VIDEO") "Sent a video" else "Sent an image"),
+                text = msgText,
                 isMe = true,
                 timestamp = time,
                 attachmentType = type,
@@ -962,7 +965,7 @@ fun ChatScreen(
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (endpoint != null && peerName != "Saved Messages") {
-                P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, "") { success ->
+                P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, customCaption) { success ->
                     if (!success) {
                         persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                         coroutineScope.launch {
@@ -974,9 +977,11 @@ fun ChatScreen(
             }
         } else {
             val albumUris = tempFiles.map { it.absolutePath }
+            val defaultTitle = if (appLanguage == "Русский") "Альбом (${tempFiles.size})" else "Sent an album (${tempFiles.size})"
+            val albumText = customCaption.ifBlank { defaultTitle }
             val outMsg = Message(
                 id = newMessageId(),
-                text = if (appLanguage == "Русский") "Альбом (${tempFiles.size})" else "Sent an album (${tempFiles.size})",
+                text = albumText,
                 isMe = true,
                 timestamp = time,
                 attachmentType = "ALBUM",
@@ -992,13 +997,14 @@ fun ChatScreen(
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (endpoint != null && peerName != "Saved Messages") {
-                for (file in tempFiles) {
-                    P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, "") { success ->
+                for ((idx, file) in tempFiles.withIndex()) {
+                    val fileCaption = if (idx == 0) customCaption else ""
+                    P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, fileCaption) { success ->
                         if (!success) {
                             persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                             coroutineScope.launch {
-                                val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                                if (idx != -1) initialMessages[idx] = outMsg.copy(status = "PENDING")
+                                val messageIdx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                                if (messageIdx != -1) initialMessages[messageIdx] = outMsg.copy(status = "PENDING")
                             }
                         }
                     }
@@ -1019,7 +1025,7 @@ fun ChatScreen(
         if (uris.size == 1) {
             editingPhotoUri = uris.first()
         } else {
-            processAndSendMediaAlbum(uris)
+            pendingAlbumUris = uris
         }
     }
 
@@ -1048,7 +1054,7 @@ fun ChatScreen(
                 editingVideoPath = tempFile.absolutePath
             }
         } else {
-            processAndSendMediaAlbum(uris)
+            pendingAlbumUris = uris
         }
     }
 
@@ -1113,6 +1119,22 @@ fun ChatScreen(
                         }
                     }
                 }
+            }
+        )
+    }
+
+    if (pendingAlbumUris != null) {
+        AlbumPreviewModal(
+            uris = pendingAlbumUris!!,
+            appLanguage = appLanguage,
+            primaryColor = MaterialTheme.colorScheme.primary,
+            surfaceColor = MaterialTheme.colorScheme.surface,
+            onSurfaceColor = MaterialTheme.colorScheme.onSurface,
+            onDismiss = { pendingAlbumUris = null },
+            onSendAlbum = { caption ->
+                val uris = pendingAlbumUris!!
+                pendingAlbumUris = null
+                processAndSendMediaAlbum(uris, caption)
             }
         )
     }
