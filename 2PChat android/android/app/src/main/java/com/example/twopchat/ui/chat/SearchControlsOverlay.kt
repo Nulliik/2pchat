@@ -79,6 +79,8 @@ internal fun SearchBottomBarPill(
     isListView: Boolean,
     appLanguage: String,
     primaryColor: Color,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
     onToggleListView: () -> Unit
 ) {
     val accentColor = primaryColor
@@ -86,7 +88,7 @@ internal fun SearchBottomBarPill(
         modifier = Modifier
             .fillMaxWidth()
             .height(52.dp),
-        color = Color(0xFF1C1C1E),
+        color = surfaceColor,
         shadowElevation = 4.dp
     ) {
         Row(

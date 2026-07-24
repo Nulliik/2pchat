@@ -160,11 +160,12 @@ internal fun ChatMessageBubble(
         )
     }
 
+    val onPrimaryContent = if (primaryColor.luminance() > 0.4f) Color(0xFF1A1A1A) else Color.White
     val textColor = if (msg.isMe) {
-        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else onPrimaryContent
     } else onSurfaceColor
     val linkColor = if (msg.isMe) {
-        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+        if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else onPrimaryContent
     } else primaryColor
 
     androidx.compose.animation.AnimatedVisibility(
@@ -258,14 +259,16 @@ internal fun ChatMessageBubble(
                             // Render reply quote if this message is a reply
                             if (msg.replyToId != null) {
                                 val replyBg = if (msg.isMe) Color.White.copy(alpha = 0.15f) else onSurfaceColor.copy(alpha = 0.05f)
+                                // Use contrast-safe colors: if primaryColor is dark, use white; if light, use dark text
+                                val onPrimary = if (primaryColor.luminance() > 0.4f) Color(0xFF1A1A1A) else Color.White
                                 val replyBarColor = if (msg.isMe) {
-                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else onPrimary
                                 } else primaryColor
                                 val replyTextColor = if (msg.isMe) {
-                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.8f)
+                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.8f) else onPrimary.copy(alpha = 0.8f)
                                 } else onSurfaceVariant
                                 val replyTitleColor = if (msg.isMe) {
-                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White
+                                    if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else onPrimary
                                 } else primaryColor
                                 
                                 Row(

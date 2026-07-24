@@ -1758,6 +1758,8 @@ fun ChatScreen(
                     isListView = isSearchListView,
                     appLanguage = appLanguage,
                     primaryColor = primaryColor,
+                    surfaceColor = surfaceColor,
+                    onSurfaceColor = onSurfaceColor,
                     onToggleListView = { isSearchListView = !isSearchListView }
                 )
             } else {
