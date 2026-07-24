@@ -1885,7 +1885,7 @@ def send_p2p_message(peer_name: str, endpoint: str, body: str, expected_fingerpr
         loop
     )
     try:
-        return future.result(timeout=45)
+        return future.result(timeout=15)
     except Exception as e:
         future.cancel()
         print(f"Failed to send message to {peer_name} via python bridge:", e)

@@ -143,13 +143,9 @@ internal class P2POutboundMessenger(
                 val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null)
                 log(context, "Requesting reconnection for $peerName at endpoint '$endpoint'", "INFO", null)
                 val success = PythonBridge.reconnectPeerSession(peerName, endpoint, fingerprint)
-                if (success) {
-                    sendControlMessage(context, peerName, JSONObject().apply {
-                        put("type", "ping")
-                        put("sent_at_ms", System.currentTimeMillis())
-                    })
-                    processOfflineQueue(context, peerName, endpoint)
-                }
+                // Do NOT call processOfflineQueue here: reconnectPeerSession returns True immediately
+                // (fire-and-forget), meaning the session is not yet established at this point.
+                // The offline queue is flushed from onSessionEstablished once the session is live.
                 postResult(onResult, success)
             } catch (error: Exception) {
                 log(context, "Failed to initiate reconnection for $peerName", "ERROR", error)
