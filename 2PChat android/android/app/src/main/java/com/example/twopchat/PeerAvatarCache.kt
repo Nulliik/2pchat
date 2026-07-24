@@ -12,7 +12,9 @@ import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.security.MessageDigest
-import kotlin.concurrent.thread
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 internal class PeerAvatarCache(
     private val maxBytes: Long = 16L * 1024L * 1024L,
@@ -48,7 +50,7 @@ internal class PeerAvatarCache(
 
     fun loadPersisted(context: Context, onError: (Throwable) -> Unit) {
         val appContext = context.applicationContext
-        thread(start = true, name = "LoadAvatarsThread") {
+        CoroutineScope(Dispatchers.IO).launch {
             try {
                 val avatarDir = File(appContext.filesDir, AVATAR_DIRECTORY)
                 val files = avatarDir.listFiles().orEmpty()

@@ -809,6 +809,19 @@ def verify_live_endpoints(
         "verification_reason": "authenticated direct discovery peer",
     }]
 
+def _run_coro_safely(coro, timeout=15.0):
+    global loop, runtime_thread
+    if loop and loop.is_running() and runtime_thread is not None and threading.current_thread() != runtime_thread:
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        return future.result(timeout=timeout)
+    else:
+        temp_loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(temp_loop)
+            return temp_loop.run_until_complete(coro)
+        finally:
+            temp_loop.close()
+
 def resolve_peers(
     nickname: str,
     shared_code: str,
@@ -826,7 +839,7 @@ def resolve_peers(
 
     expected_live_fingerprint = _canonical_expected_fingerprint(expected_live_fingerprint)
 
-    async def _query_async(t_name):
+    async def _query_async(t_name: str):
         started = time.monotonic()
         try:
             tracker = _configured_tracker(t_name)
@@ -900,10 +913,8 @@ def resolve_peers(
                     traceback.print_exception(type(r), r, r.__traceback__)
         return flat_results
 
-    loop = asyncio.new_event_loop()
     try:
-        asyncio.set_event_loop(loop)
-        descriptors = loop.run_until_complete(_resolve_all())
+        descriptors = _run_coro_safely(_resolve_all(), timeout=15.0)
     except Exception as e:
         if isinstance(e, (urllib.error.URLError, OSError)):
             print(f"Network error in resolve_peers loop: {e}")
@@ -911,11 +922,6 @@ def resolve_peers(
             print("Error in resolve_peers loop:", e)
             traceback.print_exc()
         descriptors = []
-    finally:
-        try:
-            loop.close()
-        except Exception:
-            pass
 
     all_endpoints = []
     seen_ep = set()
@@ -953,12 +959,10 @@ def resolve_peers(
             return_exceptions=True,
         )
 
-    verify_loop = asyncio.new_event_loop()
     try:
-        asyncio.set_event_loop(verify_loop)
-        verified = verify_loop.run_until_complete(_verify_all())
-    finally:
-        verify_loop.close()
+        verified = _run_coro_safely(_verify_all(), timeout=10.0)
+    except Exception:
+        verified = []
 
     verified_by_identity = {}
     for result in verified:
@@ -1253,7 +1257,7 @@ def announce_peer_endpoints(
 
         endpoint_strings = [_format_endpoint(ep.host, ep.port) for ep in endpoints]
         print(f"Announcing endpoints for '{nickname}': {endpoint_strings}")
-        success_count = loop.run_until_complete(_announce_all())
+        success_count = _run_coro_safely(_announce_all(), timeout=30.0)
         print(f"Total successful announce registrations: {success_count}")
         return success_count > 0
     except Exception as e:
@@ -1263,11 +1267,6 @@ def announce_peer_endpoints(
             print("Error announcing endpoints in discovery_bridge:", e)
             traceback.print_exc()
         return False
-    finally:
-        try:
-            loop.close()
-        except Exception:
-            pass
 
 
 def announce_peer(nickname: str, fingerprint: str, host: str, port: int, tracker_name: str = "Yemekyedim HTTPS"):

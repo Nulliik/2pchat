@@ -14,6 +14,10 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
 class NotificationActionReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_REPLY = "com.example.twopchat.ACTION_NOTIFICATION_REPLY"
@@ -33,7 +37,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         val appContext = context.applicationContext
 
-        kotlin.concurrent.thread(start = true, name = "NotificationAction-$action") {
+        CoroutineScope(Dispatchers.IO).launch {
             try {
                 ensureRelayRunning(appContext)
                 when (action) {

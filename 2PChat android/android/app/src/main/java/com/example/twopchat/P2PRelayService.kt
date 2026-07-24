@@ -16,11 +16,17 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /** Process owner for the listener; it keeps receiving while no Activity is visible. */
 class P2PRelayService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -54,7 +60,7 @@ class P2PRelayService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val appContext = applicationContext
         val action = intent?.action
-        kotlin.concurrent.thread(start = true, name = "P2PRelayServiceInit") {
+        serviceScope.launch {
             // Python may already be started by MainActivity. Guard here for the
             // case where the OS restarts the service after the process was killed.
             if (!Python.isStarted()) {
@@ -75,6 +81,7 @@ class P2PRelayService : Service() {
     override fun onDestroy() {
         releaseLocks()
         P2PMessageRelay.stopServer()
+        serviceScope.cancel()
         super.onDestroy()
     }
 

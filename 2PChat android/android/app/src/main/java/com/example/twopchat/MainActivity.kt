@@ -25,6 +25,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import com.example.twopchat.theme._2PChatTheme
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
@@ -106,7 +109,7 @@ class MainActivity : ComponentActivity() {
 
         // Initialize Chaquopy Python & PythonBridge asynchronously to avoid UI main thread ANR
         val appContext = applicationContext
-        kotlin.concurrent.thread(name = "PythonCore-Init") {
+        CoroutineScope(Dispatchers.IO).launch {
             try {
                 if (!Python.isStarted()) {
                     Python.start(AndroidPlatform(appContext))

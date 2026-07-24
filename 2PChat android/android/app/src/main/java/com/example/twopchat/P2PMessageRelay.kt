@@ -41,9 +41,23 @@ object P2PMessageRelay {
     private val startStopLock = Any()
     private val identityLock = Any()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val relayScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(4))
     @Volatile private var isRunning = false
     private val avatarCache = PeerAvatarCache()
     private val notificationService = MessageNotificationService()
+
+    @Volatile private var cachedAvatarBase64: String? = null
+    @Volatile private var cachedAvatarLastModified: Long = -1L
+
+    fun invalidateProfileAvatarCache() {
+        synchronized(identityLock) {
+            cachedAvatarBase64 = null
+            cachedAvatarLastModified = -1L
+        }
+    }
+
+    private val activeFileTransfers = ConcurrentHashMap.newKeySet<String>()
+
     @Volatile private var localPeerDiscovery: LocalPeerDiscovery? = null
     private data class LocalPeerCandidate(val fingerprint: String, val endpoint: String)
 
@@ -89,7 +103,7 @@ object P2PMessageRelay {
 
     fun refreshAnnouncement(context: Context) {
         val appContext = context.applicationContext
-        thread(start = true, name = "ManualTrackerAnnounce") {
+        relayScope.launch {
             val prefs = P2PPreferences.prefs(appContext)
             val username = prefs.getString("username_profile", "").orEmpty()
             val fingerprint = PythonBridge.getLocalFingerprint()
@@ -1353,7 +1367,7 @@ object P2PMessageRelay {
         localPeerCandidates.clear()
         avatarCache.clear()
         // Trigger Python shutdown/cleanup
-        thread(start = true) {
+        relayScope.launch {
             if (!PythonBridge.shutdownAllSessions()) {
                 Log.e(TAG, "Python P2P runtime did not stop cleanly")
             }
@@ -1400,10 +1414,10 @@ object P2PMessageRelay {
         localPeerDiscovery?.stop()
         avatarCache.clear()
         Handler(Looper.getMainLooper()).post { peerRttMs.clear() }
-        thread(start = true, name = "P2PRelayRestart") {
+        relayScope.launch {
             if (!PythonBridge.shutdownAllSessions()) {
                 log(appContext, "Listener restart aborted because the old identity runtime is still active", "ERROR")
-                return@thread
+                return@launch
             }
             startServer(appContext)
         }
@@ -1419,31 +1433,42 @@ object P2PMessageRelay {
             avatarSharesInFlight.remove(shareKey)
             return
         }
-        thread(start = true, name = "AvatarShareThread") {
+        relayScope.launch {
             var sourceBitmap: Bitmap? = null
             var scaledBitmap: Bitmap? = null
             try {
                 val file = File(context.filesDir, "profile_avatar.jpg")
                 if (file.exists()) {
-                    val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-                    sourceBitmap = bitmap
-                    if (bitmap != null) {
-                        val maxDimension = 320
-                        scaledBitmap = if (bitmap.width > maxDimension || bitmap.height > maxDimension) {
-                            val aspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
-                            val width = if (aspectRatio > 1) maxDimension else (maxDimension * aspectRatio).toInt()
-                            val height = if (aspectRatio > 1) (maxDimension / aspectRatio).toInt() else maxDimension
-                            Bitmap.createScaledBitmap(bitmap, width, height, true)
+                    val lastMod = file.lastModified()
+                    val b64 = synchronized(identityLock) {
+                        if (cachedAvatarLastModified == lastMod && !cachedAvatarBase64.isNullOrEmpty()) {
+                            cachedAvatarBase64
                         } else {
-                            bitmap
+                            val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+                            sourceBitmap = bitmap
+                            if (bitmap != null) {
+                                val maxDimension = 320
+                                scaledBitmap = if (bitmap.width > maxDimension || bitmap.height > maxDimension) {
+                                    val aspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
+                                    val width = if (aspectRatio > 1) maxDimension else (maxDimension * aspectRatio).toInt()
+                                    val height = if (aspectRatio > 1) (maxDimension / aspectRatio).toInt() else maxDimension
+                                    Bitmap.createScaledBitmap(bitmap, width, height, true)
+                                } else {
+                                    bitmap
+                                }
+                                val bytes = ByteArrayOutputStream().use { outputStream ->
+                                    checkNotNull(scaledBitmap).compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
+                                    outputStream.toByteArray()
+                                }
+                                val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                                cachedAvatarBase64 = encoded
+                                cachedAvatarLastModified = lastMod
+                                encoded
+                            } else null
                         }
-                        
-                        val bytes = ByteArrayOutputStream().use { outputStream ->
-                            checkNotNull(scaledBitmap).compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
-                            outputStream.toByteArray()
-                        }
-                        val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
-                        
+                    }
+
+                    if (b64 != null) {
                         val json = JSONObject().apply {
                             put("type", "profile_avatar_share")
                             put("avatar_base64", b64)
@@ -1454,14 +1479,13 @@ object P2PMessageRelay {
 
                         if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
                             log(context, "Blocked avatar share while a peer identity change awaits confirmation", "ERROR")
-                            return@thread
+                            return@launch
                         }
                         
                         log(context, "Sending profile avatar (length: ${payload.length})")
                         val success = PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
                         if (success) lastAvatarShareAt[shareKey] = System.currentTimeMillis()
                         log(context, "Avatar send status: $success")
-
                     }
                 } else {
                     log(context, "profile_avatar.jpg does not exist, skipping avatar share.")
@@ -1580,7 +1604,7 @@ object P2PMessageRelay {
         }
         
         // Close Python session asynchronously
-        thread(start = true) {
+        relayScope.launch {
             try {
                 PythonBridge.closePeerSession(peerName, expectedFingerprint)
             } catch (e: Exception) {
@@ -1702,14 +1726,14 @@ object P2PMessageRelay {
             Handler(Looper.getMainLooper()).post { onResult(false) }
             return
         }
-        thread(start = true) {
+        relayScope.launch {
             // Keep the pause active while the old ratchet is closed. Only then
             // atomically replace the pin and start a completely new session.
             PythonBridge.closePeerSession(peerName, oldFingerprint)
             val accepted = P2PPreferences.acceptPendingPeerIdentity(appContext, peerName)
             if (accepted == null) {
                 Handler(Looper.getMainLooper()).post { onResult(false) }
-                return@thread
+                return@launch
             }
             PythonBridge.clearRejectedFingerprint(peerName)
             PythonBridge.rememberPeerName(accepted.acceptedFingerprint, peerName)
@@ -1733,7 +1757,7 @@ object P2PMessageRelay {
             Handler(Looper.getMainLooper()).post { onResult(false) }
             return
         }
-        thread(start = true) {
+        relayScope.launch {
             val success = endpoint.isNotBlank() && oldFingerprint.isNotBlank() &&
                 PythonBridge.reconnectPeerSession(peerName, endpoint, oldFingerprint)
             Handler(Looper.getMainLooper()).post { onResult(success) }
