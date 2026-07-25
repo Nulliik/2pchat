@@ -149,6 +149,8 @@ object Localizations {
         "help_privacy_desc" to "2PChat operates without accounts, central databases, or remote telemetry. Your keys, history, and preferences stay strictly on your local device.",
         "help_duress_title" to "Duress PIN & Emergency Wipe",
         "help_duress_desc" to "Setting a Duress PIN lets you instantly wipe local database files and cryptographic identity directly from the lock screen under emergency conditions.",
+        "help_relay_title" to "How P2P Relay Routing Works",
+        "help_relay_desc" to "2PChat has no central servers storing your chats. Messages are delivered over 3 dynamic transport layers: Direct P2P (local Wi-Fi), Yggdrasil IPv6 mesh, or Relay proxy for strict NAT bypass. All payload bytes are end-to-end encrypted with Double Ratchet so relays never see message content or history.",
 
         // Chat Screen
         "secure_badge" to "SECURE",
@@ -330,6 +332,8 @@ object Localizations {
         "help_privacy_desc" to "2PChat работает без аккаунтов, облачных баз данных или телеметрии. Ваши ключи, история и настройки остаются исключительно на вашем устройстве.",
         "help_duress_title" to "Duress PIN и аварийный сброс",
         "help_duress_desc" to "Установка экстренного PIN-кода (Duress PIN) позволяет мгновенно стереть локальную базу данных и ключи прямо с экрана блокировки в экстренной ситуации.",
+        "help_relay_title" to "Как работает P2P Реле-маршрутизация?",
+        "help_relay_desc" to "В 2PChat нет центральных серверов для хранения переписки. Сообщения передаются по 3 динамическим каналам: Direct P2P (в Wi-Fi сети), Yggdrasil IPv6 Mesh или P2P Relay (для обхода провайдерских NAT). Все данные защищены сквозным E2EE-шифрованием Double Ratchet — реле лишь пересылает зашифрованные пакеты и не имеет доступа к их содержимому или истории.",
 
         // Chat Screen
         "secure_badge" to "ЗАЩИЩЕНО",

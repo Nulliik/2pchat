@@ -2126,6 +2126,22 @@ fun SettingsTab(
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp), color = onSurfaceColor.copy(alpha = 0.08f))
 
                                 Text(
+                                    text = Localizations.getString("help_relay_title", appLanguage),
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryColor
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = Localizations.getString("help_relay_desc", appLanguage),
+                                    fontSize = 13.sp,
+                                    color = onSurfaceColor.copy(alpha = 0.8f),
+                                    lineHeight = 20.sp
+                                )
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp), color = onSurfaceColor.copy(alpha = 0.08f))
+
+                                Text(
                                     text = Localizations.getString("help_e2ee_title", appLanguage),
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
