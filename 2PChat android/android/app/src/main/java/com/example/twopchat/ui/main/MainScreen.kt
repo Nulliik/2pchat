@@ -218,9 +218,9 @@ fun MainScreen(
             }
         }
 
-        // Bottom Navigation Bar with matching surface background extending to system navigation inset
+        // Bottom Navigation Bar with matching screen background extending seamlessly to system navigation inset
         Surface(
-            color = surfaceColor,
+            color = backgroundColor,
             tonalElevation = 0.dp,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -231,6 +231,7 @@ fun MainScreen(
                 primaryColor = primaryColor,
                 surfaceColor = surfaceColor,
                 onSurfaceColor = onSurfaceColor,
+                backgroundColor = backgroundColor,
                 unreadCount = totalUnreadCount,
                 modifier = Modifier.navigationBarsPadding()
             )

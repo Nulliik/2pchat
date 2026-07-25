@@ -75,16 +75,17 @@ fun TabNavigationRow(
     surfaceColor: Color,
     onSurfaceColor: Color,
     unreadCount: Int = 0,
+    backgroundColor: Color = surfaceColor,
     modifier: Modifier = Modifier
 ) {
     NavigationBar(
-        containerColor = surfaceColor,
+        containerColor = backgroundColor,
         tonalElevation = 0.dp,
         windowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier
             .fillMaxWidth()
             .height(56.dp)
-            .border(width = 0.5.dp, color = onSurfaceColor.copy(alpha = 0.05f))
+            .border(width = 0.5.dp, color = onSurfaceColor.copy(alpha = 0.06f))
     ) {
         val tabs = listOf(
             NavigationTabItem(Localizations.getString("tab_chats", appLanguage), com.example.twopchat.R.drawable.ic_menu_chats),
