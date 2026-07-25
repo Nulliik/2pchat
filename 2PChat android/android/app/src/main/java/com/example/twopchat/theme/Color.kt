@@ -18,7 +18,7 @@ val NeonPurple = Color(0xFFBF5AF2)
 val DeepPurple = Color(0xFF230D35)
 
 // Quiet Luxury Light Mode Palette — v2 (warm, airy, premium)
-val AlabasterCream        = Color(0xFFF4F7F4) // Warm white-green background — fresh, not cold
+val AlabasterCream        = Color(0xFFE8ECE8) // Soft warm grey-green background — comfortable contrast
 val PremiumWhite          = Color(0xFFFFFFFF) // Pure white cards
 val CardLight             = Color(0xFFECF0EC) // Input fields / secondary backgrounds — warm grey-green
 val BorderLight           = Color(0xFFD8DED8) // Subtle green-grey divider

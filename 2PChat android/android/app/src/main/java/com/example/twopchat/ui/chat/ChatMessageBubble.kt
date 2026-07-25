@@ -123,7 +123,7 @@ internal fun ChatMessageBubble(
     val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
     val linkPreviewsEnabled = remember(sharedPrefs) { sharedPrefs.getBoolean("settings_link_previews", false) }
     val isText = msg.attachmentType == null
-    val isOnlyEmoji = isText && isSingleEmoji(msg.text)
+    val isOnlyEmoji = isText && isSingleEmoji(msg.text) && msg.replyToId == null
     val detectedUrl = remember(msg.text, isText) {
         if (!isText) null else {
             val matcher = URL_PATTERN.matcher(msg.text)
