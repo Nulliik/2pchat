@@ -137,12 +137,6 @@ fun ChatsTab(
 
     // Pulsing animations
     val animationsEnabled = com.example.twopchat.LocalAppAnimationsEnabled.current
-    val infiniteTransition = if (animationsEnabled) rememberInfiniteTransition(label = "heroRing") else null
-    val ringAlpha = infiniteTransition?.animateFloat(
-        initialValue = 0.2f, targetValue = 0.6f,
-        animationSpec = infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "ringAlpha"
-    )?.value ?: 0.2f
 
     val warningTransition = if (animationsEnabled) rememberInfiniteTransition(label = "warningPulse") else null
     val warningAlpha = warningTransition?.animateFloat(
@@ -193,43 +187,35 @@ fun ChatsTab(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Pulsing avatar
+                    // Avatar
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .size(56.dp)
-                            .clip(CircleShape)
+                            .size(48.dp)
+                            .background(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(primaryColor.copy(alpha = 0.85f), primaryColor.copy(alpha = 0.40f))
+                                ),
+                                shape = CircleShape
+                            )
+                            .border(1.5.dp, primaryColor.copy(alpha = 0.55f), CircleShape)
                     ) {
-                        Box(modifier = Modifier.size(56.dp).graphicsLayer { alpha = ringAlpha * 0.25f }.background(primaryColor, CircleShape))
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .background(
-                                    brush = Brush.radialGradient(
-                                        colors = listOf(primaryColor.copy(alpha = 0.85f), primaryColor.copy(alpha = 0.40f))
-                                    ),
-                                    shape = CircleShape
-                                )
-                                .border(1.5.dp, primaryColor.copy(alpha = 0.55f), CircleShape)
-                        ) {
-                            if (profileBitmap != null) {
-                                androidx.compose.foundation.Image(
-                                    bitmap = profileBitmap.asImageBitmap(),
-                                    contentDescription = "My Profile Avatar",
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(CircleShape)
-                                )
-                            } else {
-                                Text(
-                                    text = currentUsername.take(2).uppercase(),
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                            }
+                        if (profileBitmap != null) {
+                            androidx.compose.foundation.Image(
+                                bitmap = profileBitmap.asImageBitmap(),
+                                contentDescription = "My Profile Avatar",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                            )
+                        } else {
+                            Text(
+                                text = currentUsername.take(2).uppercase(),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
                         }
                     }
 
