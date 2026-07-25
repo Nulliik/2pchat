@@ -43,10 +43,13 @@ internal fun selectExternalIpv4(localIpv4: String, observedAddresses: List<Strin
     }.orEmpty()
 
 object PythonBridge {
-    @Synchronized
     fun ensurePythonStarted(context: Context) {
         if (!Python.isStarted()) {
-            Python.start(com.chaquo.python.android.AndroidPlatform(context.applicationContext))
+            synchronized(this) {
+                if (!Python.isStarted()) {
+                    Python.start(com.chaquo.python.android.AndroidPlatform(context.applicationContext))
+                }
+            }
         }
     }
 
