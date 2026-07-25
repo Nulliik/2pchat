@@ -43,6 +43,13 @@ internal fun selectExternalIpv4(localIpv4: String, observedAddresses: List<Strin
     }.orEmpty()
 
 object PythonBridge {
+    @Synchronized
+    fun ensurePythonStarted(context: Context) {
+        if (!Python.isStarted()) {
+            Python.start(com.chaquo.python.android.AndroidPlatform(context.applicationContext))
+        }
+    }
+
     private const val MIN_ANNOUNCE_INTERVAL_MS = 60_000L
     private val announceLock = Any()
     private val lastAnnounceAt = mutableMapOf<String, Long>()

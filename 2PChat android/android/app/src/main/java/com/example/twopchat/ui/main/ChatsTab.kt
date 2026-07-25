@@ -90,7 +90,8 @@ fun ChatsTab(
     // Read relay SnapshotState maps during composition so route changes are
     // visible immediately even when SharedPreferences hasn't changed.
     val peerNames = remember(activeChatsSet, chatListRevision) { activeChatsSet.toList() }
-    val peers = peerNames.map { name ->
+    val peers = remember(peerNames, chatListRevision, appLanguage) {
+        peerNames.map { name ->
             val draft = sharedPrefs.getString(com.example.twopchat.P2PPreferences.draftMessage(name), null)?.takeIf { it.isNotBlank() }
             val hasDraft = draft != null
             val draftPrefix = if (appLanguage == "Русский") "Черновик: " else "Draft: "
@@ -120,10 +121,11 @@ fun ChatsTab(
                 isBlocked = isBlocked,
                 hasDraft = hasDraft
             )
-    }.sortedWith(
-        compareByDescending<PeerItem> { it.isPinned }
-            .thenBy { it.name }
-    )
+        }.sortedWith(
+            compareByDescending<PeerItem> { it.isPinned }
+                .thenBy { it.name }
+        )
+    }
 
     // Hero Card live state
     var heroActivePeers by chatsViewModel.heroActivePeers
@@ -198,7 +200,7 @@ fun ChatsTab(
                             .size(56.dp)
                             .clip(CircleShape)
                     ) {
-                        Box(modifier = Modifier.size(56.dp).background(primaryColor.copy(alpha = ringAlpha * 0.25f), CircleShape))
+                        Box(modifier = Modifier.size(56.dp).graphicsLayer { alpha = ringAlpha * 0.25f }.background(primaryColor, CircleShape))
                         Box(
                             contentAlignment = Alignment.Center,
                             modifier = Modifier

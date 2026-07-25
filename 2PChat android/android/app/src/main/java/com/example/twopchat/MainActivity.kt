@@ -111,9 +111,7 @@ class MainActivity : ComponentActivity() {
         val appContext = applicationContext
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                if (!Python.isStarted()) {
-                    Python.start(AndroidPlatform(appContext))
-                }
+                PythonBridge.ensurePythonStarted(appContext)
                 PythonBridge.init(appContext)
                 androidx.core.content.ContextCompat.startForegroundService(
                     appContext,

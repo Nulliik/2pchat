@@ -60,15 +60,9 @@ class P2PRelayService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val appContext = applicationContext
         val action = intent?.action
-        serviceScope.launch {
-            // Python may already be started by MainActivity. Guard here for the
-            // case where the OS restarts the service after the process was killed.
-            if (!Python.isStarted()) {
-                Python.start(AndroidPlatform(appContext))
-                // Only init PythonBridge when Python itself was not yet running.
-                // If Python was already started, MainActivity already called init().
-                PythonBridge.init(appContext)
-            }
+        serviceScope.launch(Dispatchers.IO) {
+            PythonBridge.ensurePythonStarted(appContext)
+            PythonBridge.init(appContext)
             if (action == ACTION_RESTART) {
                 P2PMessageRelay.restartServer(appContext)
             } else {

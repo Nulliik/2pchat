@@ -109,7 +109,10 @@ fun TabNavigationRow(
                             contentDescription = tab.label,
                             modifier = Modifier
                                 .size(20.dp)
-                                .graphicsLayer(scaleX = iconScale, scaleY = iconScale)
+                                .graphicsLayer {
+                                    scaleX = iconScale
+                                    scaleY = iconScale
+                                }
                         )
                         if (index == 0 && unreadCount > 0) {
                             Box(
