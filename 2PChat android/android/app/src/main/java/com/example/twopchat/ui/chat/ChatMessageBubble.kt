@@ -123,7 +123,7 @@ internal fun ChatMessageBubble(
     val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
     val linkPreviewsEnabled = remember(sharedPrefs) { sharedPrefs.getBoolean("settings_link_previews", false) }
     val isText = msg.attachmentType == null
-    val isOnlyEmoji = isText && isSingleEmoji(msg.text) && msg.replyToId == null
+    val isOnlyEmoji = isText && isSingleEmoji(msg.text)
     val detectedUrl = remember(msg.text, isText) {
         if (!isText) null else {
             val matcher = URL_PATTERN.matcher(msg.text)
@@ -255,19 +255,31 @@ internal fun ChatMessageBubble(
                             )
                             .widthIn(max = 280.dp)
                     ) {
-                        Column {
+                        Column(horizontalAlignment = alignment) {
                             // Render reply quote if this message is a reply
                             if (msg.replyToId != null) {
-                                val replyBg = if (msg.isMe) Color.White.copy(alpha = 0.15f) else onSurfaceColor.copy(alpha = 0.05f)
+                                val replyBg = if (isOnlyEmoji) {
+                                    onSurfaceColor.copy(alpha = 0.07f)
+                                } else if (msg.isMe) {
+                                    Color.White.copy(alpha = 0.15f)
+                                } else {
+                                    onSurfaceColor.copy(alpha = 0.05f)
+                                }
                                 // Use contrast-safe colors: if primaryColor is dark, use white; if light, use dark text
                                 val onPrimary = if (primaryColor.luminance() > 0.4f) Color(0xFF1A1A1A) else Color.White
-                                val replyBarColor = if (msg.isMe) {
+                                val replyBarColor = if (isOnlyEmoji) {
+                                    primaryColor
+                                } else if (msg.isMe) {
                                     if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else onPrimary
                                 } else primaryColor
-                                val replyTextColor = if (msg.isMe) {
+                                val replyTextColor = if (isOnlyEmoji) {
+                                    onSurfaceVariant
+                                } else if (msg.isMe) {
                                     if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.8f) else onPrimary.copy(alpha = 0.8f)
                                 } else onSurfaceVariant
-                                val replyTitleColor = if (msg.isMe) {
+                                val replyTitleColor = if (isOnlyEmoji) {
+                                    primaryColor
+                                } else if (msg.isMe) {
                                     if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else onPrimary
                                 } else primaryColor
                                 
