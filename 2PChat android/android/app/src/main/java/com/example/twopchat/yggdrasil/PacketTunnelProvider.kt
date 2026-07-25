@@ -209,13 +209,13 @@ open class PacketTunnelProvider: VpnService() {
         readerStream = FileInputStream(parcel.fileDescriptor)
         writerStream = FileOutputStream(parcel.fileDescriptor)
 
-        readerThread = thread {
+        readerThread = thread(name = "Yggdrasil-Reader") {
             reader()
         }
-        writerThread = thread {
+        writerThread = thread(name = "Yggdrasil-Writer") {
             writer()
         }
-        updateThread = thread {
+        updateThread = thread(name = "Yggdrasil-Updater") {
             updater()
         }
 
@@ -351,7 +351,7 @@ open class PacketTunnelProvider: VpnService() {
 
     private fun sleep(isStable: Boolean = false): Boolean {
         try {
-            Thread.sleep(if (isStable) 3000L else 1000L)
+            Thread.sleep(if (isStable) 5000L else 1500L)
         } catch (e: InterruptedException) {
             return true
         }
