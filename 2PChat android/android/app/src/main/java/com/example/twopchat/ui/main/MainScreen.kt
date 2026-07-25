@@ -156,7 +156,6 @@ fun MainScreen(
         modifier = modifier
             .fillMaxSize()
             .background(backgroundColor)
-            .safeDrawingPadding()
     ) {
 
         // Tab Content Area
@@ -164,6 +163,7 @@ fun MainScreen(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
+                .statusBarsPadding()
         ) {
             AnimatedContent(
                 targetState = selectedTab,
@@ -218,17 +218,23 @@ fun MainScreen(
             }
         }
 
-        // Bottom Navigation Bar
-        TabNavigationRow(
-            selectedTab = selectedTab,
-            onTabSelected = { selectedTab = it },
-            appLanguage = appLanguage,
-            primaryColor = primaryColor,
-            surfaceColor = surfaceColor,
-            onSurfaceColor = onSurfaceColor,
-            unreadCount = totalUnreadCount
-
-        )
+        // Bottom Navigation Bar with matching surface background extending to system navigation inset
+        Surface(
+            color = surfaceColor,
+            tonalElevation = 0.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            TabNavigationRow(
+                selectedTab = selectedTab,
+                onTabSelected = { selectedTab = it },
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                unreadCount = totalUnreadCount,
+                modifier = Modifier.navigationBarsPadding()
+            )
+        }
     }
 
     NetworkDiagnosticsDialog(

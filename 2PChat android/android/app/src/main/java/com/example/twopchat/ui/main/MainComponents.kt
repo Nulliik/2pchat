@@ -74,14 +74,16 @@ fun TabNavigationRow(
     primaryColor: Color,
     surfaceColor: Color,
     onSurfaceColor: Color,
-    unreadCount: Int = 0
+    unreadCount: Int = 0,
+    modifier: Modifier = Modifier
 ) {
     NavigationBar(
         containerColor = surfaceColor,
         tonalElevation = 0.dp,
-        modifier = Modifier
+        windowInsets = WindowInsets(0, 0, 0, 0),
+        modifier = modifier
             .fillMaxWidth()
-            .height(64.dp)
+            .height(56.dp)
             .border(width = 0.5.dp, color = onSurfaceColor.copy(alpha = 0.05f))
     ) {
         val tabs = listOf(
