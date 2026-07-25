@@ -344,34 +344,41 @@ fun PeerRow(
             
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Transport Badge (Quiet Luxury design)
+            // Transport Badge (Quiet Luxury design with icons)
             val transportKind = connectionTransportKind(peer.transport)
-            val badgeBg = if (peer.isBlocked) {
-                Color(0xFFFFEBEE)
-            } else if (transportKind == ConnectionTransportKind.DIRECT) {
-                primaryColor.copy(alpha = 0.1f)
-            } else {
-                onSurfaceColor.copy(alpha = 0.05f)
-            }
-            
-            val badgeFg = if (peer.isBlocked) {
-                Color(0xFFC62828)
-            } else if (transportKind == ConnectionTransportKind.DIRECT) {
-                primaryColor
-            } else {
-                onSurfaceVariant
-            }
-            
-            val localizedTransport = if (peer.isBlocked) {
-                if (appLanguage == "Русский") "ЗАБЛОКИРОВАН" else "BLOCKED"
-            } else if (peer.transport == "LOCAL RAM") {
-                Localizations.getString("local_storage", appLanguage)
-            } else if (transportKind == ConnectionTransportKind.DIRECT) {
-                Localizations.getString("direct_p2p", appLanguage)
-            } else if (transportKind == ConnectionTransportKind.YGGDRASIL) {
-                Localizations.getString("yggdrasil", appLanguage)
-            } else {
-                if (appLanguage == "Русский") "МАРШРУТ..." else "DETECTING..."
+            val isSavedMessages = peer.name == Localizations.getString("saved_messages_title", appLanguage) || peer.transport == "LOCAL RAM"
+
+            val (badgeBg, badgeFg, badgeIcon, localizedTransport) = when {
+                peer.isBlocked -> Quadruple(
+                    Color(0xFFE53935).copy(alpha = 0.12f),
+                    Color(0xFFE53935),
+                    "🚫",
+                    if (appLanguage == "Русский") "Заблокирован" else "Blocked"
+                )
+                isSavedMessages -> Quadruple(
+                    onSurfaceColor.copy(alpha = 0.06f),
+                    onSurfaceVariant,
+                    "🔖",
+                    if (appLanguage == "Русский") "Память" else "Storage"
+                )
+                transportKind == ConnectionTransportKind.DIRECT -> Quadruple(
+                    primaryColor.copy(alpha = 0.12f),
+                    primaryColor,
+                    "⚡",
+                    if (appLanguage == "Русский") "Direct P2P" else "Direct P2P"
+                )
+                transportKind == ConnectionTransportKind.YGGDRASIL -> Quadruple(
+                    Color(0xFF8E24AA).copy(alpha = 0.12f),
+                    Color(0xFFAB47BC),
+                    "🌐",
+                    "Yggdrasil"
+                )
+                else -> Quadruple(
+                    Color(0xFFFF9800).copy(alpha = 0.12f),
+                    Color(0xFFFB8C00),
+                    "📡",
+                    if (appLanguage == "Русский") "Реле" else "Relay"
+                )
             }
             
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -408,7 +415,7 @@ fun PeerRow(
                     }
                 }
 
-                if (peer.name != "Saved Messages") {
+                if (!isSavedMessages) {
                     val isMismatch = sharedPrefs.getBoolean("fingerprint_mismatch_${peer.name}", false)
                     val shieldColor = when {
                         isMismatch -> Color(0xFFF44336) // Red
@@ -427,17 +434,27 @@ fun PeerRow(
 
                 Box(
                     modifier = Modifier
-                        .background(badgeBg, shape = RoundedCornerShape(8.dp))
-                        .border(0.5.dp, badgeFg.copy(alpha = 0.22f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .background(badgeBg, shape = RoundedCornerShape(10.dp))
+                        .border(0.5.dp, badgeFg.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 7.dp, vertical = 3.5.dp)
                 ) {
-                    Text(
-                        text = localizedTransport,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = badgeFg,
-                        letterSpacing = 0.6.sp
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = badgeIcon,
+                            fontSize = 10.sp,
+                            modifier = Modifier.padding(end = 3.dp)
+                        )
+                        Text(
+                            text = localizedTransport,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = badgeFg,
+                            letterSpacing = 0.2.sp
+                        )
+                    }
                 }
             }
         }
