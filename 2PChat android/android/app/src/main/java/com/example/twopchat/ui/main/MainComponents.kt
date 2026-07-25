@@ -443,28 +443,30 @@ fun PeerRow(
                     )
                 }
 
-                Box(
-                    modifier = Modifier
-                        .background(badgeBg, shape = RoundedCornerShape(10.dp))
-                        .border(0.5.dp, badgeFg.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
-                        .padding(horizontal = 7.dp, vertical = 3.5.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                if (!isSavedMessages) {
+                    Box(
+                        modifier = Modifier
+                            .background(badgeBg, shape = RoundedCornerShape(10.dp))
+                            .border(0.5.dp, badgeFg.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 7.dp, vertical = 3.5.dp)
                     ) {
-                        Text(
-                            text = badgeIcon,
-                            fontSize = 10.sp,
-                            modifier = Modifier.padding(end = 3.dp)
-                        )
-                        Text(
-                            text = localizedTransport,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = badgeFg,
-                            letterSpacing = 0.2.sp
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = badgeIcon,
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(end = 3.dp)
+                            )
+                            Text(
+                                text = localizedTransport,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = badgeFg,
+                                letterSpacing = 0.2.sp
+                            )
+                        }
                     }
                 }
             }
