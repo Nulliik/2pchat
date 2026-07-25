@@ -183,6 +183,13 @@ data class NavigationTabItem(
     val iconRes: Int
 )
 
+private data class TransportBadgeSpec(
+    val bg: Color,
+    val fg: Color,
+    val icon: String,
+    val text: String
+)
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun PeerRow(
@@ -348,38 +355,42 @@ fun PeerRow(
             val transportKind = connectionTransportKind(peer.transport)
             val isSavedMessages = peer.name == Localizations.getString("saved_messages_title", appLanguage) || peer.transport == "LOCAL RAM"
 
-            val (badgeBg, badgeFg, badgeIcon, localizedTransport) = when {
-                peer.isBlocked -> Quadruple(
+            val badgeSpec = when {
+                peer.isBlocked -> TransportBadgeSpec(
                     Color(0xFFE53935).copy(alpha = 0.12f),
                     Color(0xFFE53935),
                     "🚫",
                     if (appLanguage == "Русский") "Заблокирован" else "Blocked"
                 )
-                isSavedMessages -> Quadruple(
+                isSavedMessages -> TransportBadgeSpec(
                     onSurfaceColor.copy(alpha = 0.06f),
                     onSurfaceVariant,
                     "🔖",
                     if (appLanguage == "Русский") "Память" else "Storage"
                 )
-                transportKind == ConnectionTransportKind.DIRECT -> Quadruple(
+                transportKind == ConnectionTransportKind.DIRECT -> TransportBadgeSpec(
                     primaryColor.copy(alpha = 0.12f),
                     primaryColor,
                     "⚡",
                     if (appLanguage == "Русский") "Direct P2P" else "Direct P2P"
                 )
-                transportKind == ConnectionTransportKind.YGGDRASIL -> Quadruple(
+                transportKind == ConnectionTransportKind.YGGDRASIL -> TransportBadgeSpec(
                     Color(0xFF8E24AA).copy(alpha = 0.12f),
                     Color(0xFFAB47BC),
                     "🌐",
                     "Yggdrasil"
                 )
-                else -> Quadruple(
+                else -> TransportBadgeSpec(
                     Color(0xFFFF9800).copy(alpha = 0.12f),
                     Color(0xFFFB8C00),
                     "📡",
                     if (appLanguage == "Русский") "Реле" else "Relay"
                 )
             }
+            val badgeBg = badgeSpec.bg
+            val badgeFg = badgeSpec.fg
+            val badgeIcon = badgeSpec.icon
+            val localizedTransport = badgeSpec.text
             
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (peer.isPinned) {
