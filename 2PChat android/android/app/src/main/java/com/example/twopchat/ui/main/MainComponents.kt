@@ -84,7 +84,7 @@ fun TabNavigationRow(
         windowInsets = WindowInsets(0, 0, 0, 0),
         modifier = modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .height(58.dp)
     ) {
         val tabs = listOf(
             NavigationTabItem(Localizations.getString("tab_chats", appLanguage), com.example.twopchat.R.drawable.ic_menu_chats),
@@ -95,7 +95,7 @@ fun TabNavigationRow(
         tabs.forEachIndexed { index, tab ->
             val isSelected = selectedTab == index
             val iconScale by animateFloatAsState(
-                targetValue = if (isSelected) 1.18f else 1.0f,
+                targetValue = if (isSelected) 1.15f else 1.0f,
                 animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
                 label = "scale"
             )
@@ -108,7 +108,7 @@ fun TabNavigationRow(
                             painter = painterResource(id = tab.iconRes),
                             contentDescription = tab.label,
                             modifier = Modifier
-                                .size(20.dp)
+                                .size(22.dp)
                                 .graphicsLayer {
                                     scaleX = iconScale
                                     scaleY = iconScale
@@ -117,10 +117,10 @@ fun TabNavigationRow(
                         if (index == 0 && unreadCount > 0) {
                             Box(
                                 modifier = Modifier
-                                    .size(9.dp)
+                                    .size(8.dp)
                                     .align(Alignment.TopEnd)
-                                    .offset(x = 6.dp, y = (-4).dp)
-                                    .background(Color(0xFFE53935), shape = CircleShape)
+                                    .offset(x = 6.dp, y = (-2).dp)
+                                    .background(primaryColor, shape = CircleShape)
                             )
                         }
                     }
@@ -128,15 +128,17 @@ fun TabNavigationRow(
                 label = {
                     Text(
                         text = tab.label,
-                        fontSize = 10.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) primaryColor else Color.Gray
+                        fontSize = 11.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        letterSpacing = 0.2.sp
                     )
                 },
                 colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = primaryColor.copy(alpha = 0.12f),
+                    indicatorColor = Color.Transparent,
                     selectedIconColor = primaryColor,
-                    unselectedIconColor = onSurfaceColor.copy(alpha = 0.4f)
+                    selectedTextColor = primaryColor,
+                    unselectedIconColor = onSurfaceColor.copy(alpha = 0.45f),
+                    unselectedTextColor = onSurfaceColor.copy(alpha = 0.45f)
                 )
             )
         }
