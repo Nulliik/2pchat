@@ -16,6 +16,11 @@ class VoiceMessageSupportTest {
         assertEquals("IMAGE", VoiceMessageSupport.attachmentType("photo.jpg", "application/octet-stream"))
         assertEquals("FILE", VoiceMessageSupport.attachmentType("report.pdf", "application/pdf"))
         assertEquals("STICKER", VoiceMessageSupport.attachmentType("2psticker_moods_love.webp", "image/webp"))
+        assertEquals("GIF", VoiceMessageSupport.attachmentType("animation.gif", "image/gif"))
+        assertEquals(
+            "STICKER_PACK",
+            VoiceMessageSupport.attachmentType("2pstickerpack_moods.2psticker", "application/zip"),
+        )
     }
 
     @Test

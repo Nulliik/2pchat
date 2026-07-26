@@ -48,12 +48,18 @@ object AttachmentStorageManager {
         context.cacheDir,
     )
 
+    private fun protectedLibraryRoots(context: Context): List<File> = listOf(
+        File(context.filesDir, "gif_library"),
+        File(context.filesDir, "sticker_packs"),
+    )
+
     private fun category(type: String?, fileName: String): AttachmentCategory {
         return AttachmentCategory.entries.firstOrNull {
             it.messageType.equals(type, ignoreCase = true)
         } ?: when (VoiceMessageSupport.attachmentType(fileName, "")) {
             "VIDEO" -> AttachmentCategory.VIDEO
             "IMAGE" -> AttachmentCategory.IMAGE
+            GifStorageManager.ATTACHMENT_TYPE -> AttachmentCategory.IMAGE
             "VOICE" -> AttachmentCategory.VOICE
             else -> AttachmentCategory.FILE
         }
@@ -62,11 +68,15 @@ object AttachmentStorageManager {
     private fun recordFile(
         record: StoredAttachmentRecord,
         allowedRoots: List<File>,
+        protectedRoots: List<File>,
     ): File? {
         val path = record.uri
         if (path.isBlank() || "://" in path) return null
         val file = File(path)
-        return file.takeIf { isFileInsideAnyRoot(it, allowedRoots) }
+        return file.takeIf {
+            isFileInsideAnyRoot(it, allowedRoots) &&
+                !isFileInsideAnyRoot(it, protectedRoots)
+        }
     }
 
     private fun scanManagedFiles(context: Context): Sequence<File> {
@@ -84,11 +94,12 @@ object AttachmentStorageManager {
     fun calculateUsage(context: Context): Map<AttachmentCategory, AttachmentCategoryUsage> {
         val appContext = context.applicationContext
         val allowedRoots = allowedRoots(appContext)
+        val protectedRoots = protectedLibraryRoots(appContext)
         val records = ChatDatabaseHelper.getInstance(appContext).getStoredAttachments()
         val categoryByPath = mutableMapOf<String, AttachmentCategory>()
 
         records.forEach { record ->
-            val file = recordFile(record, allowedRoots) ?: return@forEach
+            val file = recordFile(record, allowedRoots, protectedRoots) ?: return@forEach
             val canonicalPath = runCatching { file.canonicalPath }.getOrNull() ?: return@forEach
             categoryByPath.putIfAbsent(
                 canonicalPath,
@@ -126,8 +137,9 @@ object AttachmentStorageManager {
         val database = ChatDatabaseHelper.getInstance(appContext)
         val records = database.getStoredAttachments()
         val allowedRoots = allowedRoots(appContext)
+        val protectedRoots = protectedLibraryRoots(appContext)
         val recordsByPath = records.mapNotNull { record ->
-            val file = recordFile(record, allowedRoots) ?: return@mapNotNull null
+            val file = recordFile(record, allowedRoots, protectedRoots) ?: return@mapNotNull null
             val canonicalPath = runCatching { file.canonicalPath }.getOrNull()
                 ?: return@mapNotNull null
             canonicalPath to record

@@ -24,6 +24,8 @@ import com.example.twopchat.VoiceMessageSupport
 import com.example.twopchat.BuiltinSticker
 import com.example.twopchat.StickerSendRateLimiter
 import com.example.twopchat.StickerSupport
+import com.example.twopchat.GifStorageManager
+import com.example.twopchat.StoredGif
 import androidx.core.content.ContextCompat
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -42,6 +44,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -225,6 +229,18 @@ fun ChatScreen(
     }
     val context = LocalContext.current
     var pendingDownloadMsg by remember { mutableStateOf<Message?>(null) }
+    var viewedStickerMessage by remember { mutableStateOf<Message?>(null) }
+    var stickerPackRequestInProgress by remember { mutableStateOf(false) }
+    var showGifLibrary by remember { mutableStateOf(false) }
+    var gifLibraryLoading by remember { mutableStateOf(false) }
+    var storedGifs by remember { mutableStateOf<List<StoredGif>>(emptyList()) }
+
+    LaunchedEffect(showGifLibrary) {
+        if (!showGifLibrary) return@LaunchedEffect
+        gifLibraryLoading = true
+        storedGifs = withContext(Dispatchers.IO) { GifStorageManager.list(context) }
+        gifLibraryLoading = false
+    }
 
     val storageWritePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -838,6 +854,20 @@ fun ChatScreen(
                 }
             }
 
+            override fun onStickerPackInstalled(sender: String, packId: String) {
+                if (sender != peerName) return
+                stickerPackRequestInProgress = false
+                Toast.makeText(
+                    context,
+                    if (appLanguage == "Русский") {
+                        "Стикерпак добавлен"
+                    } else {
+                        "Sticker pack added"
+                    },
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+
             override fun onForwardingStateChanged(sender: String, enabled: Boolean) {
                 if (sender == peerName) {
                     isForwardingRestricted = enabled
@@ -914,7 +944,7 @@ fun ChatScreen(
 
         coroutineScope.launch {
             val stickerFile = withContext(Dispatchers.IO) {
-                runCatching { StickerSupport.prepareBuiltinSticker(context, sticker) }.getOrNull()
+                runCatching { StickerSupport.prepareSticker(context, sticker) }.getOrNull()
             }
             if (stickerFile == null) {
                 Toast.makeText(
@@ -948,6 +978,7 @@ fun ChatScreen(
                     putStringSet("active_chats", activeSet.toMutableSet().apply { add(peerName) })
                 }
             }
+
             val lastText = if (appLanguage == "Русский") "Вы: Стикер" else "You: Sticker"
             sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt(lastText)) }
 
@@ -959,6 +990,87 @@ fun ChatScreen(
                     filePath = stickerFile.absolutePath,
                     messageId = outMsg.id,
                     caption = sticker.emoji,
+                ) { success ->
+                    if (!success) {
+                        persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
+                        coroutineScope.launch {
+                            val index = initialMessages.indexOfFirst { it.id == outMsg.id }
+                            if (index != -1) initialMessages[index] = outMsg.copy(status = "PENDING")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun sendGifFile(source: File) {
+        showGifLibrary = false
+        if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
+            Toast.makeText(
+                context,
+                if (appLanguage == "Русский") {
+                    "Отправка приостановлена до подтверждения ключа"
+                } else {
+                    "Sending is paused until the key is confirmed"
+                },
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+        coroutineScope.launch {
+            val stored = withContext(Dispatchers.IO) {
+                GifStorageManager.save(context, source).also {
+                    val attachments = File(context.filesDir, "attachments").canonicalFile
+                    if (source.canonicalFile.parentFile == attachments) source.delete()
+                }
+            }
+            if (stored == null) {
+                Toast.makeText(
+                    context,
+                    if (appLanguage == "Русский") "Некорректный GIF" else "Invalid GIF",
+                    Toast.LENGTH_SHORT,
+                ).show()
+                return@launch
+            }
+            storedGifs = withContext(Dispatchers.IO) { GifStorageManager.list(context) }
+            val file = File(stored.filePath)
+            val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+            val initialStatus = if (endpoint != null || peerName == "Saved Messages") "SENT" else "PENDING"
+            val outMsg = Message(
+                id = newMessageId(),
+                text = "GIF",
+                isMe = true,
+                timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
+                attachmentType = GifStorageManager.ATTACHMENT_TYPE,
+                attachmentUri = file.absolutePath,
+                attachmentName = file.name,
+                status = initialStatus,
+            )
+            arrivalAnimationTracker.mark(outMsg.id)
+            initialMessages.add(outMsg)
+            triggerHaptic()
+            if (persistEnabled || initialStatus == "PENDING") {
+                persistDatabase { db.saveMessage(peerName, outMsg) }
+            }
+            val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
+            if (peerName !in activeSet) {
+                sharedPrefs.edit {
+                    putStringSet("active_chats", activeSet + peerName)
+                }
+            }
+            sharedPrefs.edit {
+                putString(
+                    "last_msg_$peerName",
+                    SecureStorage.encrypt(if (appLanguage == "Русский") "Вы: GIF" else "You: GIF"),
+                )
+            }
+            if (endpoint != null && peerName != "Saved Messages") {
+                P2PMessageRelay.sendFile(
+                    context,
+                    peerName,
+                    endpoint,
+                    file.absolutePath,
+                    outMsg.id,
                 ) { success ->
                     if (!success) {
                         persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
@@ -1034,13 +1146,23 @@ fun ChatScreen(
                     } catch (_: Exception) {}
 
                     val detectedType = VoiceMessageSupport.attachmentType(fileName, mimeType)
-                    val defaultExt = if (detectedType == "VIDEO") ".mp4" else ".jpg"
+                    val defaultExt = when (detectedType) {
+                        "VIDEO" -> ".mp4"
+                        GifStorageManager.ATTACHMENT_TYPE -> ".gif"
+                        else -> ".jpg"
+                    }
                     if (!fileName.contains(".")) fileName += defaultExt
 
                     val tempFile = saveUriToTempFile(context, uri, fileName)
                     if (tempFile != null) {
                         tempFiles.add(tempFile)
-                        mediaTypes.add(if (detectedType == "VIDEO") "VIDEO" else "IMAGE")
+                        mediaTypes.add(
+                            when (detectedType) {
+                                "VIDEO" -> "VIDEO"
+                                GifStorageManager.ATTACHMENT_TYPE -> GifStorageManager.ATTACHMENT_TYPE
+                                else -> "IMAGE"
+                            },
+                        )
                     }
                 }
             } finally {
@@ -1065,7 +1187,11 @@ fun ChatScreen(
         if (tempFiles.size == 1) {
             val file = tempFiles.first()
             val type = mediaTypes.firstOrNull() ?: "IMAGE"
-            val defaultMsgText = if (appLanguage == "Русский") (if (type == "VIDEO") "Видеозапись" else "Фотография") else (if (type == "VIDEO") "Sent a video" else "Sent an image")
+            val defaultMsgText = when (type) {
+                "VIDEO" -> if (appLanguage == "Русский") "Видеозапись" else "Sent a video"
+                GifStorageManager.ATTACHMENT_TYPE -> "GIF"
+                else -> if (appLanguage == "Русский") "Фотография" else "Sent an image"
+            }
             val msgText = customCaption.ifBlank { defaultMsgText }
             val outMsg = Message(
                 id = newMessageId(),
@@ -1160,9 +1286,66 @@ fun ChatScreen(
             return@rememberLauncherForActivityResult
         }
         if (uris.size == 1) {
-            editingPhotoUri = uris.first()
+            val uri = uris.first()
+            val mime = context.contentResolver.getType(uri).orEmpty()
+            var fileName = "image"
+            runCatching {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (index != -1 && cursor.moveToFirst()) {
+                        fileName = cursor.getString(index).orEmpty().ifBlank { fileName }
+                    }
+                }
+            }
+            if (VoiceMessageSupport.attachmentType(fileName, mime) == GifStorageManager.ATTACHMENT_TYPE) {
+                coroutineScope.launch(Dispatchers.IO) {
+                    val file = saveUriToTempFile(
+                        context,
+                        uri,
+                        fileName.takeIf { it.endsWith(".gif", true) } ?: "$fileName.gif",
+                    )
+                    if (file != null) {
+                        withContext(Dispatchers.Main) { sendGifFile(file) }
+                    }
+                }
+            } else {
+                editingPhotoUri = uri
+            }
         } else {
             handleMultipleUrisSelected(uris)
+        }
+    }
+
+    val gifImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        coroutineScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                var fileName = "imported_${System.currentTimeMillis()}.gif"
+                runCatching {
+                    context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (index != -1 && cursor.moveToFirst()) {
+                            fileName = cursor.getString(index).orEmpty().ifBlank { fileName }
+                        }
+                    }
+                }
+                if (!fileName.endsWith(".gif", ignoreCase = true)) fileName += ".gif"
+                saveUriToTempFile(context, uri, fileName)?.let { temporary ->
+                    GifStorageManager.save(context, temporary).also { temporary.delete() }
+                }
+            }
+            if (result == null) {
+                Toast.makeText(
+                    context,
+                    if (appLanguage == "Русский") "Не удалось добавить GIF" else "Could not add GIF",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            } else {
+                storedGifs = withContext(Dispatchers.IO) { GifStorageManager.list(context) }
+                showGifLibrary = true
+            }
         }
     }
 
@@ -1765,6 +1948,10 @@ fun ChatScreen(
                             activeFullscreenImageIndex = index
                         },
                         onOpenVideo = { activeFullscreenVideo = it },
+                        onOpenStickerPack = {
+                            stickerPackRequestInProgress = false
+                            viewedStickerMessage = it
+                        },
                         onCancelFileTransfer = { message ->
                             P2PMessageRelay.cancelFileTransfer(
                                 context,
@@ -1895,6 +2082,7 @@ fun ChatScreen(
                                     }
                                 }
                                 "Gallery" -> galleryLauncher.launch("image/*")
+                                "GIF" -> showGifLibrary = true
                                 "Video" -> videoLauncher.launch("video/*")
                                 "File" -> fileLauncher.launch("*/*")
                             }
@@ -2082,6 +2270,7 @@ fun ChatScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
                             .padding(vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
@@ -2258,6 +2447,62 @@ fun ChatScreen(
                                 fontSize = 15.sp,
                                 color = onSurfaceColor
                             )
+                        }
+
+                        if (
+                            msg.attachmentType == GifStorageManager.ATTACHMENT_TYPE &&
+                            msg.attachmentUri != null
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        val source = File(msg.attachmentUri)
+                                        selectedMessageForOptions = null
+                                        coroutineScope.launch {
+                                            val stored = withContext(Dispatchers.IO) {
+                                                GifStorageManager.save(context, source)
+                                            }
+                                            Toast.makeText(
+                                                context,
+                                                if (stored != null) {
+                                                    if (appLanguage == "Русский") {
+                                                        "GIF сохранён в коллекцию"
+                                                    } else {
+                                                        "GIF saved to collection"
+                                                    }
+                                                } else {
+                                                    if (appLanguage == "Русский") {
+                                                        "Не удалось сохранить GIF"
+                                                    } else {
+                                                        "Could not save GIF"
+                                                    }
+                                                },
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        }
+                                    }
+                                    .padding(vertical = 12.dp, horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_add_photo_smiley),
+                                    contentDescription = "Save GIF",
+                                    tint = onSurfaceColor,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(14.dp))
+                                Text(
+                                    text = if (appLanguage == "Русский") {
+                                        "Сохранить в Мои GIF"
+                                    } else {
+                                        "Save to My GIFs"
+                                    },
+                                    fontSize = 15.sp,
+                                    color = onSurfaceColor,
+                                )
+                            }
                         }
 
                         // Save Attachment (If attachmentUri != null, regardless of whether it is IMAGE, VIDEO, or FILE)
@@ -3224,6 +3469,59 @@ remove("pinned_msg_id_${peerName}")
                 primaryColor = primaryColor,
                 onDismiss = { showStickerPicker = false },
                 onStickerSelected = ::sendSticker,
+            )
+        }
+
+        viewedStickerMessage?.let { stickerMessage ->
+            val packId = StickerSupport.packIdFromStickerFileName(
+                stickerMessage.attachmentName.orEmpty(),
+            )
+            if (packId != null) {
+                StickerPackBottomSheet(
+                    packId = packId,
+                    fallbackEmoji = stickerMessage.text,
+                    canRequestFromPeer = !stickerMessage.isMe && peerName != "Saved Messages",
+                    requestInProgress = stickerPackRequestInProgress,
+                    appLanguage = appLanguage,
+                    primaryColor = primaryColor,
+                    onDismiss = {
+                        viewedStickerMessage = null
+                        stickerPackRequestInProgress = false
+                    },
+                    onRequestPack = {
+                        stickerPackRequestInProgress = true
+                        P2PMessageRelay.requestStickerPack(context, peerName, packId) { sent ->
+                            if (!sent) {
+                                stickerPackRequestInProgress = false
+                                Toast.makeText(
+                                    context,
+                                    if (appLanguage == "Русский") {
+                                        "Не удалось запросить стикерпак"
+                                    } else {
+                                        "Could not request sticker pack"
+                                    },
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }
+                    },
+                    onStickerSelected = ::sendSticker,
+                )
+            }
+        }
+
+        if (showGifLibrary) {
+            GifLibraryBottomSheet(
+                gifs = storedGifs,
+                isLoading = gifLibraryLoading,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                onDismiss = { showGifLibrary = false },
+                onImport = {
+                    showGifLibrary = false
+                    gifImportLauncher.launch("image/gif")
+                },
+                onGifSelected = { sendGifFile(File(it.filePath)) },
             )
         }
 

@@ -15,9 +15,18 @@ class StickerSupportTest {
         assertFalse(StickerSupport.isStickerFileName("../photo.webp"))
         assertFalse(StickerSupport.isStickerFileName("2psticker_fake.png"))
         assertEquals(
-            "2psticker_my_pack_hi_there.webp",
+            "2psticker_my_pack--hi_there.webp",
             StickerSupport.fileName(BuiltinSticker("My Pack", "Hi there", "👋", 0L)),
         )
+        assertEquals(
+            "my_pack",
+            StickerSupport.packIdFromStickerFileName("2psticker_my_pack--hi_there.webp"),
+        )
+        assertEquals(
+            "my_pack",
+            StickerSupport.packIdFromArchiveFileName("2pstickerpack_my_pack.2psticker"),
+        )
+        assertTrue(StickerSupport.isStickerPackFileName("2pstickerpack_my_pack.2psticker"))
     }
 
     @Test

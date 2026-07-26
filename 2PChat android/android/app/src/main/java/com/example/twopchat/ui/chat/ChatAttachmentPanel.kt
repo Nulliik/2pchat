@@ -32,6 +32,7 @@ fun AttachmentPanel(
         val attachments = listOf(
             AttachmentItem("Camera", R.drawable.ic_attach_camera, primaryColor.copy(alpha = 0.1f)),
             AttachmentItem("Gallery", R.drawable.ic_attach_gallery, primaryColor.copy(alpha = 0.1f)),
+            AttachmentItem("GIF", R.drawable.ic_add_photo_smiley, primaryColor.copy(alpha = 0.1f)),
             AttachmentItem("Video", R.drawable.ic_voice_play, primaryColor.copy(alpha = 0.1f)),
             AttachmentItem("File", R.drawable.ic_attach_file, primaryColor.copy(alpha = 0.1f)),
         )

@@ -8,7 +8,9 @@ object VoiceMessageSupport {
     fun attachmentType(fileName: String, mime: String): String {
         val extension = fileName.substringAfterLast('.', "").lowercase()
         return when {
+            StickerSupport.isStickerPackFileName(fileName) -> StickerSupport.PACK_ATTACHMENT_TYPE
             StickerSupport.isStickerFileName(fileName) -> StickerSupport.ATTACHMENT_TYPE
+            mime.equals("image/gif", ignoreCase = true) || extension == "gif" -> GifStorageManager.ATTACHMENT_TYPE
             mime.startsWith("image/", ignoreCase = true) || extension in imageExtensions -> "IMAGE"
             mime.startsWith("audio/", ignoreCase = true) || extension in voiceExtensions -> "VOICE"
             mime.startsWith("video/", ignoreCase = true) || extension in videoExtensions -> "VIDEO"
@@ -17,7 +19,9 @@ object VoiceMessageSupport {
     }
 
     fun displayMessage(type: String, fileName: String): String = when (type) {
+        StickerSupport.PACK_ATTACHMENT_TYPE -> "Sticker pack"
         StickerSupport.ATTACHMENT_TYPE -> "Sticker"
+        GifStorageManager.ATTACHMENT_TYPE -> "GIF"
         "IMAGE" -> "Sent an image"
         "VOICE" -> "Voice message"
         "VIDEO" -> "Sent a video"

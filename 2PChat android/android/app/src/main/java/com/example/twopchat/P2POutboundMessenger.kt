@@ -488,10 +488,12 @@ internal class P2POutboundMessenger(
                 text.equals("Видеозапись", ignoreCase = true)
             "VOICE" -> text.equals("Voice message", ignoreCase = true) ||
                 text.equals("Голосовое сообщение", ignoreCase = true)
+            GifStorageManager.ATTACHMENT_TYPE -> text.equals("GIF", ignoreCase = true)
             "ALBUM" -> text.startsWith("Sent an album", ignoreCase = true) ||
                 text.startsWith("Album", ignoreCase = true) ||
                 text.startsWith("Альбом", ignoreCase = true)
             StickerSupport.ATTACHMENT_TYPE -> false
+            StickerSupport.PACK_ATTACHMENT_TYPE -> true
             else -> true
         }
         return text.takeUnless { defaultText }.orEmpty()

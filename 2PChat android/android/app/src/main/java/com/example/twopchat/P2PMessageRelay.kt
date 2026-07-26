@@ -276,6 +276,7 @@ object P2PMessageRelay {
     val fileTransferPreviews = mutableStateMapOf<String, Bitmap>()
     private val incomingFileOffers = ConcurrentHashMap.newKeySet<String>()
     private val incomingAlbums = ConcurrentHashMap<String, Message>()
+    private val stickerPackRequestTimes = ConcurrentHashMap<String, Long>()
 
     interface MessageListener {
         fun onMessageReceived(sender: String, text: String) {}
@@ -290,6 +291,7 @@ object P2PMessageRelay {
         fun onMessageUnpinned(sender: String) {}
         fun onMessageEdited(sender: String, msgId: String, text: String) {}
         fun onMessageDeleted(sender: String, msgId: String) {}
+        fun onStickerPackInstalled(sender: String, packId: String) {}
         fun onForwardingStateChanged(sender: String, enabled: Boolean) {}
         fun onFileProgress(sender: String, msgId: String, bytesTransferred: Long, totalBytes: Long, speedKbps: Double) {}
     }
@@ -821,6 +823,26 @@ object P2PMessageRelay {
                                     return
 
                                 }
+                                "sticker_pack_request" -> {
+                                    val packId = StickerSupport.safeId(json.optString("pack_id"))
+                                    val requestKey = "$sender:$packId"
+                                    val now = System.currentTimeMillis()
+                                    val previous = stickerPackRequestTimes.put(requestKey, now)
+                                    if (previous != null && now - previous < 10_000L) return
+                                    val endpoint = _peerEndpoints[sender] ?: return
+                                    relayScope.launch {
+                                        val archive = StickerSupport.createPackArchive(appContext, packId)
+                                            ?: return@launch
+                                        outboundMessenger.sendFile(
+                                            context = appContext,
+                                            peerName = sender,
+                                            endpoint = endpoint,
+                                            filePath = archive.absolutePath,
+                                            messageId = "sticker-pack-${UUID.randomUUID()}",
+                                        )
+                                    }
+                                    return
+                                }
                                 "pin_message" -> {
                                     val msgId = json.optString("msg_id")
                                     val text = json.optString("text")
@@ -1127,6 +1149,13 @@ object P2PMessageRelay {
                         }
                     }
                         val incomingAttachment = parseIncomingAttachment(appContext, text)
+                        if (incomingAttachment == null && runCatching {
+                                JSONObject(text.trim()).optString("type") == "file"
+                            }.getOrDefault(false)
+                        ) {
+                            log(appContext, "Rejected an invalid incoming file payload", "ERROR")
+                            return
+                        }
                         val albumKey = incomingAttachment?.albumId?.let { "$sender:$it" }
                         val existingAlbum = if (albumKey != null) {
                             incomingAlbums[albumKey]
@@ -1203,6 +1232,16 @@ object P2PMessageRelay {
                         val completedOffer = incomingAttachment?.let {
                             incomingFileOffers.remove("$sender:${it.messageId}")
                         } == true
+                        if (incomingAttachment?.attachmentType == StickerSupport.PACK_ATTACHMENT_TYPE) {
+                            StickerSupport.packIdFromArchiveFileName(incomingAttachment.attachmentName)
+                                ?.let { packId ->
+                                    Handler(Looper.getMainLooper()).post {
+                                        messageListeners.forEach {
+                                            it.onStickerPackInstalled(sender, packId)
+                                        }
+                                    }
+                                }
+                        }
                         if (incomingAttachment != null) {
                             Handler(Looper.getMainLooper()).post {
                                 val key = "$sender:${incomingMessage.id}"
@@ -1795,6 +1834,28 @@ object P2PMessageRelay {
             put("enabled", enabled)
         }
         outboundMessenger.sendControlMessage(context, peerName, payload)
+    }
+
+    fun requestStickerPack(
+        context: Context,
+        peerName: String,
+        packId: String,
+        onResult: (Boolean) -> Unit = {},
+    ) {
+        val normalizedPackId = StickerSupport.safeId(packId)
+        if (peerName == "Saved Messages" || normalizedPackId.isBlank()) {
+            onResult(false)
+            return
+        }
+        outboundMessenger.sendControlMessage(
+            context,
+            peerName,
+            JSONObject().apply {
+                put("type", "sticker_pack_request")
+                put("pack_id", normalizedPackId)
+            },
+            onResult,
+        )
     }
 
     fun processOfflineQueue(context: Context, peerName: String, endpoint: String) {

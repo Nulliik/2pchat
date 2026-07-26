@@ -2,6 +2,7 @@ package com.example.twopchat.ui.chat
 
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
+import android.graphics.Movie
 import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
@@ -54,6 +55,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.TextLinkStyles
@@ -61,8 +64,13 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import java.util.regex.Pattern
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
 
 internal class MessageArrivalAnimationTracker(
     private val lifetimeMs: Long = 1_500L,
@@ -109,6 +117,7 @@ internal fun ChatMessageBubble(
     onShowOptions: (Message) -> Unit,
     onOpenImages: (List<String>, Int) -> Unit,
     onOpenVideo: (String) -> Unit,
+    onOpenStickerPack: (Message) -> Unit,
     onCancelFileTransfer: (Message) -> Unit,
     highlightedMessageId: String? = null,
     onHighlightFinished: () -> Unit = {},
@@ -133,6 +142,7 @@ internal fun ChatMessageBubble(
     val linkPreviewsEnabled = remember(sharedPrefs) { sharedPrefs.getBoolean("settings_link_previews", false) }
     val isText = msg.attachmentType == null
     val isSticker = msg.attachmentType == com.example.twopchat.StickerSupport.ATTACHMENT_TYPE
+    val isGif = msg.attachmentType == com.example.twopchat.GifStorageManager.ATTACHMENT_TYPE
     val isOnlyEmoji = isText && isSingleEmoji(msg.text)
     val detectedUrl = remember(msg.text, isText) {
         if (!isText) null else {
@@ -153,7 +163,7 @@ internal fun ChatMessageBubble(
     }
 
     // Gradient for outgoing bubbles; solid surface for incoming
-    val bubbleModifier = if (isOnlyEmoji || isSticker) {
+    val bubbleModifier = if (isOnlyEmoji || isSticker || isGif) {
         Modifier
     } else if (msg.isMe) {
         Modifier.background(
@@ -258,10 +268,10 @@ internal fun ChatMessageBubble(
                                 }
                             )
                             // Subtle border for incoming bubbles
-                            .then(if (!msg.isMe && !isOnlyEmoji && !isSticker && msg.attachmentType != "IMAGE" && msg.attachmentType != "VIDEO") Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.08f), bubbleShape) else Modifier)
+                            .then(if (!msg.isMe && !isOnlyEmoji && !isSticker && !isGif && msg.attachmentType != "IMAGE" && msg.attachmentType != "VIDEO") Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.08f), bubbleShape) else Modifier)
                             .padding(
-                                horizontal = if (isOnlyEmoji || isSticker || msg.attachmentType == "IMAGE" || msg.attachmentType == "VIDEO") 0.dp else 16.dp,
-                                vertical = if (isOnlyEmoji || isSticker || msg.attachmentType == "IMAGE" || msg.attachmentType == "VIDEO") 0.dp else 11.dp
+                                horizontal = if (isOnlyEmoji || isSticker || isGif || msg.attachmentType == "IMAGE" || msg.attachmentType == "VIDEO") 0.dp else 16.dp,
+                                vertical = if (isOnlyEmoji || isSticker || isGif || msg.attachmentType == "IMAGE" || msg.attachmentType == "VIDEO") 0.dp else 11.dp
                             )
                             .widthIn(max = 280.dp)
                     ) {
@@ -347,12 +357,52 @@ internal fun ChatMessageBubble(
                                                 } else {
                                                     selectedMessages.add(msg)
                                                 }
+                                            } else {
+                                                onOpenStickerPack(msg)
                                             }
                                         },
                                         onLongClick = {
                                             if (!isSelectMode) onShowOptions(msg)
                                         },
                                     )
+                                }
+                                com.example.twopchat.GifStorageManager.ATTACHMENT_TYPE -> {
+                                    GifMessageContent(
+                                        filePath = msg.attachmentUri,
+                                        fallbackText = msg.text,
+                                        bubbleShape = bubbleShape,
+                                        onLongClick = {
+                                            if (!isSelectMode) onShowOptions(msg)
+                                        },
+                                    )
+                                }
+                                com.example.twopchat.StickerSupport.PACK_ATTACHMENT_TYPE -> {
+                                    Row(
+                                        modifier = Modifier
+                                            .background(
+                                                onSurfaceColor.copy(alpha = 0.07f),
+                                                RoundedCornerShape(14.dp),
+                                            )
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text("🎭", fontSize = 32.sp)
+                                        Spacer(Modifier.width(10.dp))
+                                        Column {
+                                            Text(
+                                                text = if (appLanguage == "Русский") "Стикерпак добавлен" else "Sticker pack added",
+                                                color = textColor,
+                                                fontWeight = FontWeight.SemiBold,
+                                            )
+                                            Text(
+                                                text = com.example.twopchat.StickerSupport
+                                                    .packIdFromArchiveFileName(msg.attachmentName.orEmpty())
+                                                    .orEmpty(),
+                                                color = textColor.copy(alpha = 0.65f),
+                                                fontSize = 11.sp,
+                                            )
+                                        }
+                                    }
                                 }
                                 "ALBUM" -> {
                                     MediaAlbumGridBubble(
@@ -1142,7 +1192,7 @@ internal fun ChatMessageBubble(
                                 ) {
                                     Text(
                                         text = MessageTimestampFormatter.format(msg, appLanguage),
-                                        color = (if (isOnlyEmoji || isSticker) {
+                                        color = (if (isOnlyEmoji || isSticker || isGif) {
                                             onSurfaceColor.copy(alpha = 0.5f)
                                         } else if (msg.isMe) {
                                             if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.65f)
@@ -1158,7 +1208,7 @@ internal fun ChatMessageBubble(
                                         val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                                         val isPending = msg.status?.startsWith("PENDING") == true
                                         
-                                        val statusColor = if (isOnlyEmoji || isSticker) {
+                                        val statusColor = if (isOnlyEmoji || isSticker || isGif) {
                                             onSurfaceVariant.copy(alpha = 0.5f)
                                         } else if (msg.isMe) {
                                             if (primaryColor == com.example.twopchat.theme.MintGreen) {
@@ -1294,6 +1344,123 @@ internal fun ChatMessageBubble(
             }
         }
     }
+
+@Composable
+private fun GifMessageContent(
+    filePath: String?,
+    fallbackText: String,
+    bubbleShape: RoundedCornerShape,
+    onLongClick: () -> Unit,
+) {
+    val validPath = remember(filePath) {
+        filePath?.takeIf {
+            com.example.twopchat.GifStorageManager.validateGif(java.io.File(it)) != null
+        }
+    }
+    val drawable by produceState<Drawable?>(initialValue = null, validPath) {
+        value = if (validPath != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    ImageDecoder.decodeDrawable(
+                        ImageDecoder.createSource(java.io.File(validPath)),
+                    ) { decoder, info, _ ->
+                        val width = info.size.width.coerceAtLeast(1)
+                        val height = info.size.height.coerceAtLeast(1)
+                        val scale = minOf(640f / width, 640f / height, 1f)
+                        decoder.setTargetSize(
+                            (width * scale).toInt().coerceAtLeast(1),
+                            (height * scale).toInt().coerceAtLeast(1),
+                        )
+                    }
+                }.getOrNull()
+            }
+        } else {
+            null
+        }
+    }
+    val movie by produceState<Movie?>(initialValue = null, validPath) {
+        value = if (validPath != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            withContext(Dispatchers.IO) {
+                @Suppress("DEPRECATION")
+                Movie.decodeFile(validPath)
+            }
+        } else {
+            null
+        }
+    }
+    DisposableEffect(drawable) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val animated = drawable as? AnimatedImageDrawable
+            animated?.start()
+            onDispose { animated?.stop() }
+        } else {
+            onDispose {}
+        }
+    }
+    var frameTimeMs by remember(validPath) { mutableStateOf(0L) }
+    LaunchedEffect(movie) {
+        val startedAt = withFrameMillis { it }
+        while (isActive && movie != null) {
+            frameTimeMs = withFrameMillis { it } - startedAt
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(width = 260.dp, height = 220.dp)
+            .clip(bubbleShape)
+            .background(Color.Black.copy(alpha = 0.08f))
+            .combinedClickable(onClick = {}, onLongClick = onLongClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            drawable != null -> AndroidView(
+                factory = { context ->
+                    android.widget.ImageView(context).apply {
+                        scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+                    }
+                },
+                update = { it.setImageDrawable(drawable) },
+                modifier = Modifier.fillMaxSize(),
+            )
+            movie != null -> androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                val gif = movie ?: return@Canvas
+                val duration = gif.duration().takeIf { it > 0 } ?: 1_000
+                gif.setTime((frameTimeMs % duration).toInt())
+                drawIntoCanvas { composeCanvas ->
+                    val scale = maxOf(
+                        size.width / gif.width().coerceAtLeast(1),
+                        size.height / gif.height().coerceAtLeast(1),
+                    )
+                    val native = composeCanvas.nativeCanvas
+                    native.save()
+                    native.scale(scale, scale)
+                    gif.draw(native, 0f, 0f)
+                    native.restore()
+                }
+            }
+            else -> Text(
+                text = if (validPath == null) fallbackText.ifBlank { "GIF" } else "GIF…",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+            )
+        }
+        Text(
+            text = "GIF",
+            color = Color.White,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(8.dp)
+                .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                .padding(horizontal = 7.dp, vertical = 3.dp),
+        )
+    }
+}
 
 @Composable
 private fun StickerMessageContent(
