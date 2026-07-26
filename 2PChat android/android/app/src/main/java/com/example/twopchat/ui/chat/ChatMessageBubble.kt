@@ -1,6 +1,10 @@
 package com.example.twopchat.ui.chat
 
 import android.graphics.Bitmap
+import android.graphics.ImageDecoder
+import android.graphics.drawable.AnimatedImageDrawable
+import android.graphics.drawable.Drawable
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
@@ -9,6 +13,7 @@ import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,12 +53,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.viewinterop.AndroidView
 import java.util.regex.Pattern
+import kotlinx.coroutines.delay
 
 internal class MessageArrivalAnimationTracker(
     private val lifetimeMs: Long = 1_500L,
@@ -123,6 +132,7 @@ internal fun ChatMessageBubble(
     val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
     val linkPreviewsEnabled = remember(sharedPrefs) { sharedPrefs.getBoolean("settings_link_previews", false) }
     val isText = msg.attachmentType == null
+    val isSticker = msg.attachmentType == com.example.twopchat.StickerSupport.ATTACHMENT_TYPE
     val isOnlyEmoji = isText && isSingleEmoji(msg.text)
     val detectedUrl = remember(msg.text, isText) {
         if (!isText) null else {
@@ -143,7 +153,7 @@ internal fun ChatMessageBubble(
     }
 
     // Gradient for outgoing bubbles; solid surface for incoming
-    val bubbleModifier = if (isOnlyEmoji) {
+    val bubbleModifier = if (isOnlyEmoji || isSticker) {
         Modifier
     } else if (msg.isMe) {
         Modifier.background(
@@ -248,10 +258,10 @@ internal fun ChatMessageBubble(
                                 }
                             )
                             // Subtle border for incoming bubbles
-                            .then(if (!msg.isMe && !isOnlyEmoji && msg.attachmentType != "IMAGE" && msg.attachmentType != "VIDEO") Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.08f), bubbleShape) else Modifier)
+                            .then(if (!msg.isMe && !isOnlyEmoji && !isSticker && msg.attachmentType != "IMAGE" && msg.attachmentType != "VIDEO") Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = if (surfaceColor.luminance() > 0.5f) 0.09f else 0.08f), bubbleShape) else Modifier)
                             .padding(
-                                horizontal = if (isOnlyEmoji || msg.attachmentType == "IMAGE" || msg.attachmentType == "VIDEO") 0.dp else 16.dp,
-                                vertical = if (isOnlyEmoji || msg.attachmentType == "IMAGE" || msg.attachmentType == "VIDEO") 0.dp else 11.dp
+                                horizontal = if (isOnlyEmoji || isSticker || msg.attachmentType == "IMAGE" || msg.attachmentType == "VIDEO") 0.dp else 16.dp,
+                                vertical = if (isOnlyEmoji || isSticker || msg.attachmentType == "IMAGE" || msg.attachmentType == "VIDEO") 0.dp else 11.dp
                             )
                             .widthIn(max = 280.dp)
                     ) {
@@ -326,6 +336,24 @@ internal fun ChatMessageBubble(
                             }
 
                             when (if (msg.albumMediaUris.isNotEmpty()) "ALBUM" else msg.attachmentType) {
+                                com.example.twopchat.StickerSupport.ATTACHMENT_TYPE -> {
+                                    StickerMessageContent(
+                                        filePath = msg.attachmentUri,
+                                        fallbackEmoji = msg.text,
+                                        onClick = {
+                                            if (isSelectMode) {
+                                                if (selectedMessages.contains(msg)) {
+                                                    selectedMessages.remove(msg)
+                                                } else {
+                                                    selectedMessages.add(msg)
+                                                }
+                                            }
+                                        },
+                                        onLongClick = {
+                                            if (!isSelectMode) onShowOptions(msg)
+                                        },
+                                    )
+                                }
                                 "ALBUM" -> {
                                     MediaAlbumGridBubble(
                                         msg = msg,
@@ -1114,7 +1142,7 @@ internal fun ChatMessageBubble(
                                 ) {
                                     Text(
                                         text = MessageTimestampFormatter.format(msg, appLanguage),
-                                        color = (if (isOnlyEmoji) {
+                                        color = (if (isOnlyEmoji || isSticker) {
                                             onSurfaceColor.copy(alpha = 0.5f)
                                         } else if (msg.isMe) {
                                             if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.65f)
@@ -1130,7 +1158,7 @@ internal fun ChatMessageBubble(
                                         val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                                         val isPending = msg.status?.startsWith("PENDING") == true
                                         
-                                        val statusColor = if (isOnlyEmoji) {
+                                        val statusColor = if (isOnlyEmoji || isSticker) {
                                             onSurfaceVariant.copy(alpha = 0.5f)
                                         } else if (msg.isMe) {
                                             if (primaryColor == com.example.twopchat.theme.MintGreen) {
@@ -1266,6 +1294,87 @@ internal fun ChatMessageBubble(
             }
         }
     }
+
+@Composable
+private fun StickerMessageContent(
+    filePath: String?,
+    fallbackEmoji: String,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    val drawable = remember(filePath) {
+        filePath
+            ?.let { java.io.File(it) }
+            ?.takeIf { com.example.twopchat.StickerSupport.validateWebP(it) != null }
+            ?.let { file ->
+                runCatching {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        ImageDecoder.decodeDrawable(ImageDecoder.createSource(file))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        Drawable.createFromPath(file.absolutePath)
+                    }
+                }.getOrNull()
+            }
+    }
+    var pressed by remember(filePath) { mutableStateOf(false) }
+    val stickerScale by animateFloatAsState(
+        targetValue = if (pressed) 0.86f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium,
+        ),
+        label = "stickerBounce",
+    )
+    LaunchedEffect(pressed) {
+        if (pressed) {
+            delay(110)
+            pressed = false
+        }
+    }
+    DisposableEffect(drawable) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val animatedDrawable = drawable as? AnimatedImageDrawable
+            animatedDrawable?.start()
+            onDispose { animatedDrawable?.stop() }
+        } else {
+            onDispose {}
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(210.dp)
+            .scale(stickerScale)
+            .combinedClickable(
+                onClick = {
+                    pressed = true
+                    onClick()
+                },
+                onLongClick = onLongClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (drawable != null) {
+            AndroidView(
+                factory = { context ->
+                    android.widget.ImageView(context).apply {
+                        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    }
+                },
+                update = { imageView -> imageView.setImageDrawable(drawable) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Text(
+                text = fallbackEmoji.ifBlank { "🎭" },
+                fontSize = 72.sp,
+                lineHeight = 80.sp,
+            )
+        }
+    }
+}
 
 private val URL_PATTERN = Pattern.compile(
     "(?:^|[\\s])((?:https?://|www\\.)[\\w\\-_]+(?:\\.[\\w\\-_]+)+(?:[\\w\\-\\.,@?^=%&:/~\\+#]*[\\w\\-\\@?^=%&/~\\+#])?)",

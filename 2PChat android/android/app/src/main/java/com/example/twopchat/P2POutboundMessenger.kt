@@ -491,6 +491,7 @@ internal class P2POutboundMessenger(
             "ALBUM" -> text.startsWith("Sent an album", ignoreCase = true) ||
                 text.startsWith("Album", ignoreCase = true) ||
                 text.startsWith("Альбом", ignoreCase = true)
+            StickerSupport.ATTACHMENT_TYPE -> false
             else -> true
         }
         return text.takeUnless { defaultText }.orEmpty()

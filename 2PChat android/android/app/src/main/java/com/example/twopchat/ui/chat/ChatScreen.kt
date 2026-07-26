@@ -21,6 +21,9 @@ import com.example.twopchat.copyTextToClipboard
 import com.example.twopchat.SecureStorage
 import com.example.twopchat.R
 import com.example.twopchat.VoiceMessageSupport
+import com.example.twopchat.BuiltinSticker
+import com.example.twopchat.StickerSendRateLimiter
+import com.example.twopchat.StickerSupport
 import androidx.core.content.ContextCompat
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -870,6 +873,8 @@ fun ChatScreen(
     // Session is established lazily on the first real message send — no silent ping needed.
 
     var showAttachments by remember { mutableStateOf(false) }
+    var showStickerPicker by remember { mutableStateOf(false) }
+    val stickerRateLimiter = remember(peerName) { StickerSendRateLimiter() }
     var selectedMessageForOptions by chatViewModel.selectedMessageForOptions
     var replyingToMessage by chatViewModel.replyingToMessage
     var editingMessage by chatViewModel.editingMessage
@@ -878,6 +883,94 @@ fun ChatScreen(
     val selectedMessages = chatViewModel.selectedMessages
     var showForwardDialog by remember { mutableStateOf(false) }
     var messageToForward by remember { mutableStateOf<Message?>(null) }
+
+    fun sendSticker(sticker: BuiltinSticker) {
+        showStickerPicker = false
+        showAttachments = false
+        if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
+            Toast.makeText(
+                context,
+                if (appLanguage == "Русский") {
+                    "Отправка приостановлена до подтверждения ключа"
+                } else {
+                    "Sending is paused until the key is confirmed"
+                },
+                Toast.LENGTH_LONG,
+            ).show()
+            return
+        }
+        if (!stickerRateLimiter.tryAcquire()) {
+            Toast.makeText(
+                context,
+                if (appLanguage == "Русский") {
+                    "Не более 3 стикеров в секунду"
+                } else {
+                    "Up to 3 stickers per second"
+                },
+                Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+
+        coroutineScope.launch {
+            val stickerFile = withContext(Dispatchers.IO) {
+                runCatching { StickerSupport.prepareBuiltinSticker(context, sticker) }.getOrNull()
+            }
+            if (stickerFile == null) {
+                Toast.makeText(
+                    context,
+                    if (appLanguage == "Русский") "Не удалось подготовить стикер" else "Could not prepare sticker",
+                    Toast.LENGTH_SHORT,
+                ).show()
+                return@launch
+            }
+            val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+            val initialStatus = if (endpoint != null || peerName == "Saved Messages") "SENT" else "PENDING"
+            val outMsg = Message(
+                id = newMessageId(),
+                text = sticker.emoji,
+                isMe = true,
+                timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
+                attachmentType = StickerSupport.ATTACHMENT_TYPE,
+                attachmentUri = stickerFile.absolutePath,
+                attachmentName = stickerFile.name,
+                status = initialStatus,
+            )
+            arrivalAnimationTracker.mark(outMsg.id)
+            initialMessages.add(outMsg)
+            triggerHaptic()
+            if (persistEnabled || initialStatus == "PENDING") {
+                persistDatabase { db.saveMessage(peerName, outMsg) }
+            }
+            val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+            if (peerName !in activeSet) {
+                sharedPrefs.edit {
+                    putStringSet("active_chats", activeSet.toMutableSet().apply { add(peerName) })
+                }
+            }
+            val lastText = if (appLanguage == "Русский") "Вы: Стикер" else "You: Sticker"
+            sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt(lastText)) }
+
+            if (endpoint != null && peerName != "Saved Messages") {
+                P2PMessageRelay.sendFile(
+                    context = context,
+                    peerName = peerName,
+                    endpoint = endpoint,
+                    filePath = stickerFile.absolutePath,
+                    messageId = outMsg.id,
+                    caption = sticker.emoji,
+                ) { success ->
+                    if (!success) {
+                        persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
+                        coroutineScope.launch {
+                            val index = initialMessages.indexOfFirst { it.id == outMsg.id }
+                            if (index != -1) initialMessages[index] = outMsg.copy(status = "PENDING")
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Helper to copy Uri contents to a persistent file
     fun saveUriToTempFile(context: android.content.Context, uri: Uri, originalName: String): java.io.File? {
@@ -1848,8 +1941,13 @@ fun ChatScreen(
                         isRecordingVoice = false
                         recordingElapsedMs = 0
                     } else {
+                        showStickerPicker = false
                         showAttachments = !showAttachments
                     }
+                },
+                onOpenStickerPicker = {
+                    showAttachments = false
+                    showStickerPicker = true
                 },
                 onInputTextChange = { inputText = it },
                 onActionClick = {
@@ -3117,6 +3215,15 @@ remove("pinned_msg_id_${peerName}")
                         }
                     }
                 }
+            )
+        }
+
+        if (showStickerPicker) {
+            StickerPickerBottomSheet(
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                onDismiss = { showStickerPicker = false },
+                onStickerSelected = ::sendSticker,
             )
         }
 

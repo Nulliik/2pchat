@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -59,6 +61,7 @@ internal fun ChatInputBar(
     onUnblock: () -> Unit,
     onReviewIdentity: () -> Unit,
     onToggleAttachments: () -> Unit,
+    onOpenStickerPicker: () -> Unit,
     onInputTextChange: (String) -> Unit,
     onActionClick: () -> Unit,
 ) {
@@ -135,6 +138,7 @@ internal fun ChatInputBar(
                 onSurfaceColor = onSurfaceColor,
                 onSurfaceVariant = onSurfaceVariant,
                 onToggleAttachments = onToggleAttachments,
+                onOpenStickerPicker = onOpenStickerPicker,
                 onInputTextChange = onInputTextChange,
                 onActionClick = onActionClick,
             )
@@ -288,6 +292,7 @@ private fun ComposerRow(
     onSurfaceColor: Color,
     onSurfaceVariant: Color,
     onToggleAttachments: () -> Unit,
+    onOpenStickerPicker: () -> Unit,
     onInputTextChange: (String) -> Unit,
     onActionClick: () -> Unit,
 ) {
@@ -359,6 +364,29 @@ private fun ComposerRow(
             )
         }
         Spacer(Modifier.width(8.dp))
+        if (!isRecordingVoice) {
+            IconButton(
+                onClick = onOpenStickerPicker,
+                modifier = Modifier
+                    .size(42.dp)
+                    .semantics {
+                        contentDescription = if (appLanguage == "Русский") {
+                            "Открыть стикеры"
+                        } else {
+                            "Open stickers"
+                        }
+                    }
+                    .background(primaryColor.copy(alpha = 0.12f), CircleShape),
+            ) {
+                Text(
+                    text = "☺",
+                    fontSize = 23.sp,
+                    color = primaryColor,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+        }
         IconButton(
             onClick = onActionClick,
             modifier = Modifier

@@ -34,6 +34,11 @@ internal object IncomingMessageParser {
             val fileName = file.name
             val mime = json.optString("mime", "")
             val attachmentType = VoiceMessageSupport.attachmentType(fileName, mime)
+            val storedFile = if (attachmentType == StickerSupport.ATTACHMENT_TYPE) {
+                StickerSupport.cacheIncomingSticker(context, file) ?: return null
+            } else {
+                file
+            }
             val caption = json.optString("caption").ifBlank { json.optString("text", "") }.trim()
             val displayMsg = if (caption.isNotBlank()) caption else VoiceMessageSupport.displayMessage(attachmentType, fileName)
             val albumId = json.optString("album_id").take(128)
@@ -46,7 +51,7 @@ internal object IncomingMessageParser {
                 messageId = json.optString("message_id"),
                 displayMessage = displayMsg,
                 attachmentType = attachmentType,
-                attachmentUri = filePath,
+                attachmentUri = storedFile.absolutePath,
                 attachmentName = fileName,
                 caption = caption.takeIf { it.isNotBlank() },
                 albumId = albumId.takeIf { hasValidAlbum },

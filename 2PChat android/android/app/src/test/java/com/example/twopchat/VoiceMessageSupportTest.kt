@@ -15,6 +15,7 @@ class VoiceMessageSupportTest {
     fun keepsImagesAndDocumentsDistinct() {
         assertEquals("IMAGE", VoiceMessageSupport.attachmentType("photo.jpg", "application/octet-stream"))
         assertEquals("FILE", VoiceMessageSupport.attachmentType("report.pdf", "application/pdf"))
+        assertEquals("STICKER", VoiceMessageSupport.attachmentType("2psticker_moods_love.webp", "image/webp"))
     }
 
     @Test

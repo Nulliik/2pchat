@@ -8,6 +8,7 @@ object VoiceMessageSupport {
     fun attachmentType(fileName: String, mime: String): String {
         val extension = fileName.substringAfterLast('.', "").lowercase()
         return when {
+            StickerSupport.isStickerFileName(fileName) -> StickerSupport.ATTACHMENT_TYPE
             mime.startsWith("image/", ignoreCase = true) || extension in imageExtensions -> "IMAGE"
             mime.startsWith("audio/", ignoreCase = true) || extension in voiceExtensions -> "VOICE"
             mime.startsWith("video/", ignoreCase = true) || extension in videoExtensions -> "VIDEO"
@@ -16,6 +17,7 @@ object VoiceMessageSupport {
     }
 
     fun displayMessage(type: String, fileName: String): String = when (type) {
+        StickerSupport.ATTACHMENT_TYPE -> "Sticker"
         "IMAGE" -> "Sent an image"
         "VOICE" -> "Voice message"
         "VIDEO" -> "Sent a video"
