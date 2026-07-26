@@ -44,7 +44,9 @@ internal fun attachmentCategory(
     isMine: Boolean = false,
 ): AttachmentCategory? {
     if (StickerSupport.ATTACHMENT_TYPE.equals(type, ignoreCase = true) ||
-        StickerSupport.isStickerFileName(fileName)
+        StickerSupport.PACK_ATTACHMENT_TYPE.equals(type, ignoreCase = true) ||
+        StickerSupport.isStickerFileName(fileName) ||
+        StickerSupport.isStickerPackFileName(fileName)
     ) {
         return AttachmentCategory.STICKER.takeUnless { isMine }
     }
@@ -64,6 +66,7 @@ object AttachmentStorageManager {
         File(context.filesDir, "attachments"),
         File(context.filesDir, "config/downloads"),
         File(context.filesDir, "sticker_cache/received"),
+        File(context.filesDir, "sticker_cache/received_packs"),
     )
 
     private fun allowedRoots(context: Context): List<File> = listOf(
@@ -102,6 +105,17 @@ object AttachmentStorageManager {
         }
     }
 
+    private fun managedFileCategory(context: Context, file: File): AttachmentCategory? =
+        if (isFileInsideAnyRoot(
+                file,
+                listOf(File(context.filesDir, "sticker_cache/received_packs")),
+            )
+        ) {
+            AttachmentCategory.STICKER
+        } else {
+            attachmentCategory(null, file.name)
+        }
+
     fun calculateUsage(context: Context): Map<AttachmentCategory, AttachmentCategoryUsage> {
         val appContext = context.applicationContext
         val allowedRoots = allowedRoots(appContext)
@@ -120,7 +134,7 @@ object AttachmentStorageManager {
         }
         scanManagedFiles(appContext).forEach { file ->
             val canonicalPath = runCatching { file.canonicalPath }.getOrNull() ?: return@forEach
-            attachmentCategory(null, file.name)?.let {
+            managedFileCategory(appContext, file)?.let {
                 categoryByPath.putIfAbsent(canonicalPath, it)
             }
         }
@@ -174,7 +188,7 @@ object AttachmentStorageManager {
             }
         }.toMutableSet()
         scanManagedFiles(appContext).forEach { file ->
-            if (attachmentCategory(null, file.name) in categories) {
+            if (managedFileCategory(appContext, file) in categories) {
                 runCatching { file.canonicalPath }.getOrNull()?.let(selectedPaths::add)
             }
         }

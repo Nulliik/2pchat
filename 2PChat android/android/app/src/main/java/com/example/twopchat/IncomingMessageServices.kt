@@ -37,7 +37,9 @@ internal object IncomingMessageParser {
             val storedFile = if (attachmentType == StickerSupport.ATTACHMENT_TYPE) {
                 StickerSupport.cacheIncomingSticker(context, file) ?: return null
             } else if (attachmentType == StickerSupport.PACK_ATTACHMENT_TYPE) {
-                StickerSupport.importPackArchive(context, file) ?: return null
+                // P2P packs are cached for an in-chat preview first. Installing them
+                // into the user's collection remains an explicit action.
+                StickerSupport.cachePeerPackPreview(context, file) ?: return null
                 file
             } else if (attachmentType == GifStorageManager.ATTACHMENT_TYPE) {
                 GifStorageManager.validateGif(file) ?: return null

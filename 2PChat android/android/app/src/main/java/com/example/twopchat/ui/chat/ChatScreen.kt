@@ -231,6 +231,7 @@ fun ChatScreen(
     var pendingDownloadMsg by remember { mutableStateOf<Message?>(null) }
     var viewedStickerMessage by remember { mutableStateOf<Message?>(null) }
     var stickerPackRequestInProgress by remember { mutableStateOf(false) }
+    var stickerPackPreviewRevision by remember { mutableStateOf(0) }
     var showGifLibrary by remember { mutableStateOf(false) }
     var gifLibraryLoading by remember { mutableStateOf(false) }
     var storedGifs by remember { mutableStateOf<List<StoredGif>>(emptyList()) }
@@ -863,12 +864,13 @@ fun ChatScreen(
             override fun onStickerPackInstalled(sender: String, packId: String) {
                 if (sender != peerName) return
                 stickerPackRequestInProgress = false
+                stickerPackPreviewRevision += 1
                 Toast.makeText(
                     context,
                     if (appLanguage == "Русский") {
-                        "Стикерпак добавлен"
+                        "Стикерпак загружен для предпросмотра"
                     } else {
-                        "Sticker pack added"
+                        "Sticker pack ready to preview"
                     },
                     Toast.LENGTH_SHORT,
                 ).show()
@@ -3488,6 +3490,7 @@ remove("pinned_msg_id_${peerName}")
                     fallbackEmoji = stickerMessage.text,
                     canRequestFromPeer = !stickerMessage.isMe && peerName != "Saved Messages",
                     requestInProgress = stickerPackRequestInProgress,
+                    previewRevision = stickerPackPreviewRevision,
                     appLanguage = appLanguage,
                     primaryColor = primaryColor,
                     onDismiss = {

@@ -33,6 +33,7 @@ class AttachmentStorageManagerTest {
     @Test
     fun categorizesOnlyReceivedStickersAsClearablePeerStickers() {
         val fileName = "2psticker_friends--wave.webp"
+        val packFileName = "2pstickerpack_friends.2psticker"
 
         assertEquals(
             AttachmentCategory.STICKER,
@@ -44,6 +45,21 @@ class AttachmentStorageManagerTest {
         )
         assertNull(
             attachmentCategory(StickerSupport.ATTACHMENT_TYPE, fileName, isMine = true),
+        )
+        assertEquals(
+            AttachmentCategory.STICKER,
+            attachmentCategory(
+                StickerSupport.PACK_ATTACHMENT_TYPE,
+                packFileName,
+                isMine = false,
+            ),
+        )
+        assertNull(
+            attachmentCategory(
+                StickerSupport.PACK_ATTACHMENT_TYPE,
+                packFileName,
+                isMine = true,
+            ),
         )
         assertEquals(
             AttachmentCategory.IMAGE,

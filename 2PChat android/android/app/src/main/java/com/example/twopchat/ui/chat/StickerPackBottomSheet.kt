@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +38,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.BuiltinSticker
 import com.example.twopchat.StickerSupport
+import android.widget.Toast
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,6 +50,7 @@ internal fun StickerPackBottomSheet(
     fallbackEmoji: String,
     canRequestFromPeer: Boolean,
     requestInProgress: Boolean,
+    previewRevision: Int,
     appLanguage: String,
     primaryColor: Color,
     onDismiss: () -> Unit,
@@ -62,17 +66,34 @@ internal fun StickerPackBottomSheet(
     var packLoading by remember(context, packId) {
         mutableStateOf(pack == null)
     }
-    LaunchedEffect(context, packId, requestInProgress) {
+    var isInstalled by remember(context, packId) {
+        mutableStateOf(pack != null)
+    }
+    var requestAttempted by remember(context, packId) { mutableStateOf(false) }
+    var installInProgress by remember(context, packId) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(context, packId, requestInProgress, previewRevision) {
         StickerSupport.builtinPacks.firstOrNull { it.id == packId }?.let {
             pack = it
+            isInstalled = true
             packLoading = false
             return@LaunchedEffect
         }
         packLoading = true
-        pack = withContext(Dispatchers.IO) {
-            StickerSupport.findPack(context, packId)
+        val resolved = withContext(Dispatchers.IO) {
+            val installed = StickerSupport.findPack(context, packId)
+            (installed ?: StickerSupport.findPeerPackPreview(context, packId)) to
+                (installed != null)
         }
+        pack = resolved.first
+        isInstalled = resolved.second
         packLoading = false
+    }
+    LaunchedEffect(packId, packLoading, pack, canRequestFromPeer) {
+        if (!packLoading && pack == null && canRequestFromPeer && !requestAttempted) {
+            requestAttempted = true
+            onRequestPack()
+        }
     }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -105,7 +126,7 @@ internal fun StickerPackBottomSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (packLoading) {
+                if (packLoading || requestInProgress || installInProgress) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
                         color = primaryColor,
@@ -113,17 +134,53 @@ internal fun StickerPackBottomSheet(
                     )
                 } else if (pack == null && canRequestFromPeer) {
                     Button(
-                        onClick = onRequestPack,
-                        enabled = !requestInProgress,
+                        onClick = {
+                            requestAttempted = true
+                            onRequestPack()
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
                     ) {
                         Text(
-                            if (requestInProgress) {
-                                if (appLanguage == "Русский") "Загрузка…" else "Loading…"
-                            } else {
-                                if (appLanguage == "Русский") "Добавить" else "Add"
-                            },
+                            if (appLanguage == "Русский") "Повторить" else "Retry",
                         )
+                    }
+                } else if (pack != null && !isInstalled) {
+                    Button(
+                        onClick = {
+                            installInProgress = true
+                            scope.launch {
+                                val installed = withContext(Dispatchers.IO) {
+                                    StickerSupport.installPeerPackPreview(context, packId)
+                                }
+                                installInProgress = false
+                                if (installed != null) {
+                                    pack = installed
+                                    isInstalled = true
+                                    Toast.makeText(
+                                        context,
+                                        if (appLanguage == "Русский") {
+                                            "Стикерпак добавлен"
+                                        } else {
+                                            "Sticker pack added"
+                                        },
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        if (appLanguage == "Русский") {
+                                            "Не удалось добавить стикерпак"
+                                        } else {
+                                            "Could not add sticker pack"
+                                        },
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                    ) {
+                        Text(if (appLanguage == "Русский") "Добавить" else "Add")
                     }
                 } else if (pack != null) {
                     Text(
@@ -137,6 +194,16 @@ internal fun StickerPackBottomSheet(
             Spacer(Modifier.height(16.dp))
             val currentPack = pack
             if (currentPack != null) {
+                Text(
+                    text = if (appLanguage == "Русский") {
+                        "${currentPack.stickers.size} стикеров"
+                    } else {
+                        "${currentPack.stickers.size} stickers"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.height(8.dp))
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(4),
                     modifier = Modifier

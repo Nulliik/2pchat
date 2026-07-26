@@ -192,6 +192,43 @@ object StickerSupport {
         return readInstalledPack(File(directory, normalizedPackId))
     }
 
+    fun findPeerPackPreview(context: Context, packId: String): BuiltinStickerPack? =
+        readInstalledPack(File(peerPackPreviewDirectory(context), safeId(packId)))
+
+    fun installPeerPackPreview(context: Context, packId: String): BuiltinStickerPack? =
+        synchronized(installedPacksLock) {
+            val normalizedPackId = safeId(packId)
+            findPack(context, normalizedPackId)?.let { return@synchronized it }
+            val previewDirectory = File(peerPackPreviewDirectory(context), normalizedPackId)
+            val preview = readInstalledPack(previewDirectory) ?: return@synchronized null
+            val root = installedPacksDirectory(context)
+            val target = File(root, normalizedPackId)
+            val staging = File(root, "${normalizedPackId}_new_${System.nanoTime()}")
+            if (staging.exists()) staging.deleteRecursively()
+            if (!staging.mkdirs()) return@synchronized null
+            try {
+                File(previewDirectory, "pack.json").copyTo(File(staging, "pack.json"))
+                preview.stickers.forEach { sticker ->
+                    val source = sticker.localFilePath?.let(::File)
+                        ?: return@synchronized null
+                    val copied = File(staging, source.name)
+                    source.copyTo(copied)
+                    if (validateWebP(copied) == null) return@synchronized null
+                }
+                if (target.exists()) return@synchronized readInstalledPack(target)
+                if (!staging.renameTo(target)) return@synchronized null
+                appendPackOrder(context, normalizedPackId)
+                invalidatePackCaches(context, normalizedPackId)
+                readInstalledPack(target)?.also {
+                    previewDirectory.deleteRecursively()
+                }
+            } catch (_: Exception) {
+                null
+            } finally {
+                if (staging.exists()) staging.deleteRecursively()
+            }
+        }
+
     fun createCustomPack(
         context: Context,
         title: String,
@@ -659,7 +696,26 @@ object StickerSupport {
         return if (temporary.renameTo(target)) target else null
     }
 
-    fun importPackArchive(context: Context, archive: File): BuiltinStickerPack? {
+    fun importPackArchive(context: Context, archive: File): BuiltinStickerPack? =
+        synchronized(installedPacksLock) {
+            unpackPackArchive(context, archive, install = true)
+        }
+
+    fun cachePeerPackPreview(context: Context, archive: File): BuiltinStickerPack? =
+        synchronized(installedPacksLock) {
+            unpackPackArchive(context, archive, install = false)
+        }
+
+    internal fun clearPeerPackPreview(context: Context, packId: String): Boolean {
+        val directory = File(peerPackPreviewDirectory(context), safeId(packId))
+        return !directory.exists() || directory.deleteRecursively()
+    }
+
+    private fun unpackPackArchive(
+        context: Context,
+        archive: File,
+        install: Boolean,
+    ): BuiltinStickerPack? {
         if (!isStickerPackFileName(archive.name) ||
             !archive.isFile ||
             archive.length() !in 1..MAX_PACK_BYTES
@@ -725,19 +781,29 @@ object StickerSupport {
                     return null
                 }
             }
-            val packDirectory = File(installedPacksDirectory(context), packId)
-            if (File(packDirectory, OWNED_MARKER).isFile) return null
-            val replacement = File(installedPacksDirectory(context), "${packId}_new")
+            val destinationRoot = if (install) {
+                installedPacksDirectory(context)
+            } else {
+                peerPackPreviewDirectory(context)
+            }
+            val packDirectory = File(destinationRoot, packId)
+            if (install && File(packDirectory, OWNED_MARKER).isFile) return null
+            val replacement = File(destinationRoot, "${packId}_new_${System.nanoTime()}")
             if (replacement.exists()) replacement.deleteRecursively()
             if (!staging.renameTo(replacement)) return null
             if (packDirectory.exists()) packDirectory.deleteRecursively()
             if (!replacement.renameTo(packDirectory)) return null
-            File(
-                File(context.cacheDir, "sticker_pack_exports"),
-                "$PACK_FILE_PREFIX$packId$PACK_FILE_EXTENSION",
-            ).delete()
-            appendPackOrder(context, packId)
-            installedPacksSnapshot = null
+            if (install) {
+                File(
+                    File(context.cacheDir, "sticker_pack_exports"),
+                    "$PACK_FILE_PREFIX$packId$PACK_FILE_EXTENSION",
+                ).delete()
+                appendPackOrder(context, packId)
+                installedPacksSnapshot = null
+            } else {
+                packDirectory.setLastModified(System.currentTimeMillis())
+                trimPeerPackPreviews(destinationRoot, keepPackId = packId)
+            }
             return readInstalledPack(packDirectory)
         } catch (_: Exception) {
             return null
@@ -788,8 +854,26 @@ object StickerSupport {
     internal fun receivedCacheDirectory(context: Context): File =
         File(cacheDirectory(context), "received").apply { mkdirs() }
 
+    internal fun peerPackPreviewDirectory(context: Context): File =
+        File(cacheDirectory(context), "received_packs").apply { mkdirs() }
+
     private fun installedPacksDirectory(context: Context): File =
         File(context.filesDir, "sticker_packs").apply { mkdirs() }
+
+    private fun trimPeerPackPreviews(root: File, keepPackId: String) {
+        val directories = root.listFiles()
+            .orEmpty()
+            .filter { it.isDirectory && it.name != keepPackId }
+            .sortedBy { it.lastModified() }
+        var total = root.walkTopDown()
+            .filter(File::isFile)
+            .sumOf(File::length)
+        directories.forEach { directory ->
+            if (total <= MAX_CACHE_BYTES) return
+            val size = directory.walkTopDown().filter(File::isFile).sumOf(File::length)
+            if (directory.deleteRecursively()) total -= size
+        }
+    }
 
     private fun uniquePackId(root: File, title: String): String {
         val base = safeId(title).take(32)
