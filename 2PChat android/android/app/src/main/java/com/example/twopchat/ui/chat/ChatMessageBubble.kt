@@ -1,10 +1,6 @@
 package com.example.twopchat.ui.chat
 
 import android.graphics.Bitmap
-import android.graphics.ImageDecoder
-import android.graphics.Movie
-import android.graphics.drawable.AnimatedImageDrawable
-import android.graphics.drawable.Drawable
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -54,23 +50,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
 import java.util.regex.Pattern
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.isActive
 
 internal class MessageArrivalAnimationTracker(
     private val lifetimeMs: Long = 1_500L,
@@ -371,6 +360,33 @@ internal fun ChatMessageBubble(
                                         filePath = msg.attachmentUri,
                                         fallbackText = msg.text,
                                         bubbleShape = bubbleShape,
+                                        onClick = {
+                                            if (isSelectMode) {
+                                                if (selectedMessages.contains(msg)) {
+                                                    selectedMessages.remove(msg)
+                                                } else {
+                                                    selectedMessages.add(msg)
+                                                }
+                                            } else {
+                                                val allGifs = messages
+                                                    .asSequence()
+                                                    .filter {
+                                                        it.attachmentType ==
+                                                            com.example.twopchat.GifStorageManager.ATTACHMENT_TYPE
+                                                    }
+                                                    .mapNotNull { it.attachmentUri }
+                                                    .filter { java.io.File(it).isFile }
+                                                    .distinct()
+                                                    .toList()
+                                                val clickedPath = msg.attachmentUri
+                                                val clickedIndex = allGifs.indexOf(clickedPath)
+                                                if (clickedIndex >= 0) {
+                                                    onOpenImages(allGifs, clickedIndex)
+                                                } else if (!clickedPath.isNullOrBlank()) {
+                                                    onOpenImages(listOf(clickedPath), 0)
+                                                }
+                                            }
+                                        },
                                         onLongClick = {
                                             if (!isSelectMode) onShowOptions(msg)
                                         },
@@ -1350,101 +1366,32 @@ private fun GifMessageContent(
     filePath: String?,
     fallbackText: String,
     bubbleShape: RoundedCornerShape,
+    onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
     val validPath = remember(filePath) {
         filePath?.takeIf {
-            com.example.twopchat.GifStorageManager.validateGif(java.io.File(it)) != null
+            java.io.File(it).isFile && java.io.File(it).extension.equals("gif", ignoreCase = true)
         }
     }
-    val drawable by produceState<Drawable?>(initialValue = null, validPath) {
-        value = if (validPath != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    ImageDecoder.decodeDrawable(
-                        ImageDecoder.createSource(java.io.File(validPath)),
-                    ) { decoder, info, _ ->
-                        val width = info.size.width.coerceAtLeast(1)
-                        val height = info.size.height.coerceAtLeast(1)
-                        val scale = minOf(640f / width, 640f / height, 1f)
-                        decoder.setTargetSize(
-                            (width * scale).toInt().coerceAtLeast(1),
-                            (height * scale).toInt().coerceAtLeast(1),
-                        )
-                    }
-                }.getOrNull()
-            }
-        } else {
-            null
-        }
-    }
-    val movie by produceState<Movie?>(initialValue = null, validPath) {
-        value = if (validPath != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-            withContext(Dispatchers.IO) {
-                @Suppress("DEPRECATION")
-                Movie.decodeFile(validPath)
-            }
-        } else {
-            null
-        }
-    }
-    DisposableEffect(drawable) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val animated = drawable as? AnimatedImageDrawable
-            animated?.start()
-            onDispose { animated?.stop() }
-        } else {
-            onDispose {}
-        }
-    }
-    var frameTimeMs by remember(validPath) { mutableStateOf(0L) }
-    LaunchedEffect(movie) {
-        val startedAt = withFrameMillis { it }
-        while (isActive && movie != null) {
-            frameTimeMs = withFrameMillis { it } - startedAt
-        }
-    }
-
     Box(
         modifier = Modifier
             .size(width = 260.dp, height = 220.dp)
             .clip(bubbleShape)
             .background(Color.Black.copy(alpha = 0.08f))
-            .combinedClickable(onClick = {}, onLongClick = onLongClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         contentAlignment = Alignment.Center,
     ) {
-        when {
-            drawable != null -> AndroidView(
-                factory = { context ->
-                    android.widget.ImageView(context).apply {
-                        scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-                    }
-                },
-                update = { imageView ->
-                    if (imageView.drawable !== drawable) {
-                        imageView.setImageDrawable(drawable)
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
-            movie != null -> androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-                val gif = movie ?: return@Canvas
-                val duration = gif.duration().takeIf { it > 0 } ?: 1_000
-                gif.setTime((frameTimeMs % duration).toInt())
-                drawIntoCanvas { composeCanvas ->
-                    val scale = maxOf(
-                        size.width / gif.width().coerceAtLeast(1),
-                        size.height / gif.height().coerceAtLeast(1),
-                    )
-                    val native = composeCanvas.nativeCanvas
-                    native.save()
-                    native.scale(scale, scale)
-                    gif.draw(native, 0f, 0f)
-                    native.restore()
-                }
-            }
-            else -> Text(
-                text = if (validPath == null) fallbackText.ifBlank { "GIF" } else "GIF…",
+        AnimatedGifImage(
+            filePath = validPath,
+            targetMaxDimensionPx = 640,
+            contentScale = GifContentScale.CROP,
+            contentDescription = "GIF attachment",
+            modifier = Modifier.fillMaxSize(),
+        )
+        if (validPath == null) {
+            Text(
+                text = fallbackText.ifBlank { "GIF" },
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier
@@ -1473,23 +1420,6 @@ private fun StickerMessageContent(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    val drawable by produceState<Drawable?>(initialValue = null, filePath) {
-        value = withContext(Dispatchers.IO) {
-            filePath
-                ?.let { java.io.File(it) }
-                ?.takeIf { com.example.twopchat.StickerSupport.validateWebP(it) != null }
-                ?.let { file ->
-                runCatching {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                        ImageDecoder.decodeDrawable(ImageDecoder.createSource(file))
-                    } else {
-                        @Suppress("DEPRECATION")
-                        Drawable.createFromPath(file.absolutePath)
-                    }
-                }.getOrNull()
-            }
-        }
-    }
     var pressed by remember(filePath) { mutableStateOf(false) }
     val stickerScale by animateFloatAsState(
         targetValue = if (pressed) 0.86f else 1f,
@@ -1505,16 +1435,6 @@ private fun StickerMessageContent(
             pressed = false
         }
     }
-    DisposableEffect(drawable) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val animatedDrawable = drawable as? AnimatedImageDrawable
-            animatedDrawable?.start()
-            onDispose { animatedDrawable?.stop() }
-        } else {
-            onDispose {}
-        }
-    }
-
     Box(
         modifier = Modifier
             .size(210.dp)
@@ -1525,31 +1445,16 @@ private fun StickerMessageContent(
                     onClick()
                 },
                 onLongClick = onLongClick,
-            ),
+        ),
         contentAlignment = Alignment.Center,
     ) {
-        if (drawable != null) {
-            AndroidView(
-                factory = { context ->
-                    android.widget.ImageView(context).apply {
-                        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    }
-                },
-                update = { imageView ->
-                    if (imageView.drawable !== drawable) {
-                        imageView.setImageDrawable(drawable)
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            Text(
-                text = fallbackEmoji.ifBlank { "🎭" },
-                fontSize = 72.sp,
-                lineHeight = 80.sp,
-            )
-        }
+        AnimatedStickerImage(
+            filePath = filePath,
+            fallbackEmoji = fallbackEmoji,
+            contentDescription = fallbackEmoji.ifBlank { "Sticker" },
+            targetSizePx = 420,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 

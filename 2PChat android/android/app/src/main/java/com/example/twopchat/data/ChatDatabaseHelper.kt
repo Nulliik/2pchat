@@ -15,6 +15,7 @@ data class StoredAttachmentRecord(
     val uri: String,
     val attachmentName: String?,
     val status: String?,
+    val isMine: Boolean,
 )
 
 class ChatDatabaseHelper private constructor(private val context: Context) : 
@@ -394,6 +395,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 KEY_ATTACHMENT_URI,
                 KEY_ATTACHMENT_NAME,
                 KEY_STATUS,
+                KEY_IS_ME,
             ),
             "$KEY_ATTACHMENT_URI IS NOT NULL",
             null,
@@ -410,6 +412,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                         uri = uri,
                         attachmentName = decNullable(cursor.getString(3)),
                         status = cursor.getString(4),
+                        isMine = cursor.getInt(5) == 1,
                     )
                 }
             }

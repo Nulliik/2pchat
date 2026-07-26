@@ -647,6 +647,15 @@ object P2PMessageRelay {
                 override fun onMessageReceived(sender: String, text: String) {
                     log(appContext, "Incoming secure P2P message (${text.toByteArray().size} bytes)")
                     val sharedPrefs = P2PPreferences.prefs(appContext)
+                    if (shouldRecordIncomingTrafficPayload(text)) {
+                        NetworkTrafficStats.recordMessage(
+                            appContext,
+                            sender,
+                            _peerEndpoints[sender],
+                            text,
+                            TrafficDirection.RECEIVED,
+                        )
+                    }
                     if (sharedPrefs.getBoolean("blocked_peer_$sender", false)) {
                         log(appContext, "Ignored message from a blocked peer")
                         return
@@ -1243,6 +1252,14 @@ object P2PMessageRelay {
                                 }
                         }
                         if (incomingAttachment != null) {
+                            NetworkTrafficStats.recordFile(
+                                appContext,
+                                sender,
+                                _peerEndpoints[sender],
+                                File(incomingAttachment.attachmentUri),
+                                incomingAttachment.attachmentType,
+                                TrafficDirection.RECEIVED,
+                            )
                             Handler(Looper.getMainLooper()).post {
                                 val key = "$sender:${incomingMessage.id}"
                                 val current = fileProgressStates[key]

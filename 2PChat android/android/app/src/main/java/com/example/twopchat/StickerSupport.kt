@@ -559,7 +559,7 @@ object StickerSupport {
         sticker.localFilePath
             ?.let { File(it) }
             ?.takeIf { validateWebP(it) != null }
-            ?.let { cacheIncomingSticker(context, it) }
+            ?.let { cacheSticker(it, cacheDirectory(context)) }
             ?.let { return it }
         return prepareBuiltinSticker(context, sticker)
     }
@@ -752,8 +752,11 @@ object StickerSupport {
      * marker suffix preserves sticker semantics when a message is forwarded.
      */
     fun cacheIncomingSticker(context: Context, incoming: File): File? {
+        return cacheSticker(incoming, receivedCacheDirectory(context))
+    }
+
+    private fun cacheSticker(incoming: File, cacheDir: File): File? {
         if (!isStickerFileName(incoming.name) || validateWebP(incoming) == null) return null
-        val cacheDir = cacheDirectory(context)
         val digest = sha256(incoming)
         val target = File(
             cacheDir,
@@ -781,6 +784,9 @@ object StickerSupport {
 
     private fun cacheDirectory(context: Context): File =
         File(context.filesDir, "sticker_cache").apply { mkdirs() }
+
+    internal fun receivedCacheDirectory(context: Context): File =
+        File(cacheDirectory(context), "received").apply { mkdirs() }
 
     private fun installedPacksDirectory(context: Context): File =
         File(context.filesDir, "sticker_packs").apply { mkdirs() }

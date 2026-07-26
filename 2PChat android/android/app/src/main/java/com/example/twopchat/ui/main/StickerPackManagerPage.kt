@@ -5,7 +5,6 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -55,8 +54,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,7 +64,7 @@ import com.example.twopchat.BuiltinSticker
 import com.example.twopchat.BuiltinStickerPack
 import com.example.twopchat.P2PPreferences
 import com.example.twopchat.StickerSupport
-import com.example.twopchat.ui.chat.rememberSampledImage
+import com.example.twopchat.ui.chat.AnimatedStickerImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -265,7 +262,7 @@ internal fun StickerPackManagerPage(
                     selectedStickerId = null
                 },
                 onSelectSticker = { selectedStickerId = it.stickerId },
-                onAdd = { sourcePicker.launch(arrayOf("image/webp", "image/png", "image/jpeg")) },
+                onAdd = { sourcePicker.launch(arrayOf("image/*")) },
                 onRename = { showRenameDialog = true },
                 onCopy = { showCopyDialog = true },
                 onShare = { sharePack(selectedPack) },
@@ -321,7 +318,7 @@ internal fun StickerPackManagerPage(
             onConfirm = { title ->
                 showCreateDialog = false
                 pendingCreate = title to author
-                sourcePicker.launch(arrayOf("image/webp", "image/png", "image/jpeg"))
+                sourcePicker.launch(arrayOf("image/*"))
             },
         )
     }
@@ -679,6 +676,17 @@ private fun PackEditor(
                     color = onSurfaceVariant,
                     fontSize = 12.sp,
                 )
+                if (pack.isOwned) {
+                    Text(
+                        if (appLanguage == "Русский") {
+                            "PNG/JPEG и WebP до 512×512 · анимированный WebP сохраняет анимацию"
+                        } else {
+                            "PNG/JPEG and WebP up to 512×512 · animated WebP keeps its animation"
+                        },
+                        color = onSurfaceVariant,
+                        fontSize = 11.sp,
+                    )
+                }
                 Spacer(Modifier.height(10.dp))
                 Row(
                     modifier = Modifier
@@ -789,11 +797,6 @@ private fun PackEditor(
 
 @Composable
 private fun StickerThumbnail(sticker: BuiltinSticker, size: Int) {
-    val bitmap = rememberSampledImage(
-        sticker.localFilePath,
-        targetWidth = size * 2,
-        targetHeight = size * 2,
-    )
     Box(
         modifier = Modifier
             .size(size.dp)
@@ -801,16 +804,13 @@ private fun StickerThumbnail(sticker: BuiltinSticker, size: Int) {
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
         contentAlignment = Alignment.Center,
     ) {
-        if (bitmap != null) {
-            Image(
-                bitmap = bitmap.asImageBitmap(),
-                contentDescription = sticker.emoji.ifBlank { "Sticker" },
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            Text(sticker.emoji.ifBlank { "🎭" }, fontSize = (size * 0.56f).sp)
-        }
+        AnimatedStickerImage(
+            filePath = sticker.localFilePath,
+            fallbackEmoji = sticker.emoji,
+            contentDescription = sticker.emoji.ifBlank { "Sticker" },
+            targetSizePx = size * 2,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 

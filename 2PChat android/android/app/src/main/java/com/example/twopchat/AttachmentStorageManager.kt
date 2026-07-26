@@ -10,6 +10,7 @@ enum class AttachmentCategory(val messageType: String) {
     IMAGE("IMAGE"),
     FILE("FILE"),
     VOICE("VOICE"),
+    STICKER(StickerSupport.ATTACHMENT_TYPE),
 }
 
 data class AttachmentCategoryUsage(
@@ -37,10 +38,32 @@ internal fun isFileInsideAnyRoot(file: File, roots: Collection<File>): Boolean {
     }
 }
 
+internal fun attachmentCategory(
+    type: String?,
+    fileName: String,
+    isMine: Boolean = false,
+): AttachmentCategory? {
+    if (StickerSupport.ATTACHMENT_TYPE.equals(type, ignoreCase = true) ||
+        StickerSupport.isStickerFileName(fileName)
+    ) {
+        return AttachmentCategory.STICKER.takeUnless { isMine }
+    }
+    return AttachmentCategory.entries.firstOrNull {
+        it != AttachmentCategory.STICKER && it.messageType.equals(type, ignoreCase = true)
+    } ?: when (VoiceMessageSupport.attachmentType(fileName, "")) {
+        "VIDEO" -> AttachmentCategory.VIDEO
+        "IMAGE" -> AttachmentCategory.IMAGE
+        GifStorageManager.ATTACHMENT_TYPE -> AttachmentCategory.IMAGE
+        "VOICE" -> AttachmentCategory.VOICE
+        else -> AttachmentCategory.FILE
+    }
+}
+
 object AttachmentStorageManager {
     private fun managedRoots(context: Context): List<File> = listOf(
         File(context.filesDir, "attachments"),
         File(context.filesDir, "config/downloads"),
+        File(context.filesDir, "sticker_cache/received"),
     )
 
     private fun allowedRoots(context: Context): List<File> = listOf(
@@ -52,18 +75,6 @@ object AttachmentStorageManager {
         File(context.filesDir, "gif_library"),
         File(context.filesDir, "sticker_packs"),
     )
-
-    private fun category(type: String?, fileName: String): AttachmentCategory {
-        return AttachmentCategory.entries.firstOrNull {
-            it.messageType.equals(type, ignoreCase = true)
-        } ?: when (VoiceMessageSupport.attachmentType(fileName, "")) {
-            "VIDEO" -> AttachmentCategory.VIDEO
-            "IMAGE" -> AttachmentCategory.IMAGE
-            GifStorageManager.ATTACHMENT_TYPE -> AttachmentCategory.IMAGE
-            "VOICE" -> AttachmentCategory.VOICE
-            else -> AttachmentCategory.FILE
-        }
-    }
 
     private fun recordFile(
         record: StoredAttachmentRecord,
@@ -101,14 +112,17 @@ object AttachmentStorageManager {
         records.forEach { record ->
             val file = recordFile(record, allowedRoots, protectedRoots) ?: return@forEach
             val canonicalPath = runCatching { file.canonicalPath }.getOrNull() ?: return@forEach
-            categoryByPath.putIfAbsent(
-                canonicalPath,
-                category(record.attachmentType, record.attachmentName ?: file.name),
-            )
+            attachmentCategory(
+                record.attachmentType,
+                record.attachmentName ?: file.name,
+                record.isMine,
+            )?.let { categoryByPath.putIfAbsent(canonicalPath, it) }
         }
         scanManagedFiles(appContext).forEach { file ->
             val canonicalPath = runCatching { file.canonicalPath }.getOrNull() ?: return@forEach
-            categoryByPath.putIfAbsent(canonicalPath, category(null, file.name))
+            attachmentCategory(null, file.name)?.let {
+                categoryByPath.putIfAbsent(canonicalPath, it)
+            }
         }
 
         val totals = AttachmentCategory.entries.associateWith {
@@ -147,7 +161,11 @@ object AttachmentStorageManager {
 
         val selectedPaths = recordsByPath.mapNotNull { (path, pathRecords) ->
             if (pathRecords.any {
-                    category(it.attachmentType, it.attachmentName ?: File(path).name) in categories
+                    attachmentCategory(
+                        it.attachmentType,
+                        it.attachmentName ?: File(path).name,
+                        it.isMine,
+                    ) in categories
                 }
             ) {
                 path
@@ -156,7 +174,7 @@ object AttachmentStorageManager {
             }
         }.toMutableSet()
         scanManagedFiles(appContext).forEach { file ->
-            if (category(null, file.name) in categories) {
+            if (attachmentCategory(null, file.name) in categories) {
                 runCatching { file.canonicalPath }.getOrNull()?.let(selectedPaths::add)
             }
         }

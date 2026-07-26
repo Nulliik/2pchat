@@ -381,10 +381,10 @@ fun PeerRow(
                     "Yggdrasil"
                 )
                 else -> TransportBadgeSpec(
-                    Color(0xFFFF9800).copy(alpha = 0.12f),
-                    Color(0xFFFB8C00),
-                    "📡",
-                    if (appLanguage == "Русский") "Реле" else "Relay"
+                    onSurfaceColor.copy(alpha = 0.06f),
+                    onSurfaceVariant,
+                    "…",
+                    if (appLanguage == "Русский") "ОПРЕДЕЛЕНИЕ..." else "DETECTING..."
                 )
             }
             val badgeBg = badgeSpec.bg

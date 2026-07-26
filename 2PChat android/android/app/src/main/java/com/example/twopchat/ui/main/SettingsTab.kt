@@ -48,6 +48,7 @@ import com.example.twopchat.P2PRelayService
 import com.example.twopchat.AttachmentCategory
 import com.example.twopchat.AttachmentCategoryUsage
 import com.example.twopchat.AttachmentStorageManager
+import com.example.twopchat.StickerSupport
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.ui.chat.AttachmentImageCache
@@ -94,6 +95,7 @@ private fun formatStorageSize(bytes: Long): String {
 
 private data class StorageSnapshot(
     val cacheBytes: Long,
+    val receivedStickerBytes: Long,
     val avatarsBytes: Long,
     val logsBytes: Long,
     val databaseBytes: Long,
@@ -567,6 +569,23 @@ fun SettingsTab(
                             )
 
                             HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                            SettingsRow(
+                                title = if (appLanguage == "Русский") "Использование сети" else "Network Usage",
+                                subtitle = if (appLanguage == "Русский") {
+                                    "Трафик Direct P2P и Yggdrasil по типам данных"
+                                } else {
+                                    "Direct P2P and Yggdrasil traffic by data type"
+                                },
+                                iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
+                                iconColor = Color(0xFF26A69A),
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                onClick = { activeSubPage = "network_usage" },
+                            )
+
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
                             
                             // Category: Language / Язык
                             SettingsRow(
@@ -693,6 +712,14 @@ fun SettingsTab(
                 surfaceColor = surfaceColor,
                 onSurfaceColor = onSurfaceColor,
                 onSurfaceVariant = onSurfaceVariant,
+            )
+            "network_usage" -> NetworkUsagePage(
+                appLanguage = appLanguage,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                primaryColor = primaryColor,
+                onBackClick = { activeSubPage = null },
             )
             "chat_settings" -> {
                 Column(
@@ -1539,6 +1566,7 @@ fun SettingsTab(
             "storage" -> {
                 val storageScope = rememberCoroutineScope()
                 var cacheBytes by remember { mutableLongStateOf(0L) }
+                var receivedStickerBytes by remember { mutableLongStateOf(0L) }
                 var avatarsBytes by remember { mutableLongStateOf(0L) }
                 var logsBytes by remember { mutableLongStateOf(0L) }
                 var dbBytes by remember { mutableLongStateOf(0L) }
@@ -1568,6 +1596,9 @@ fun SettingsTab(
                                 val cSize = calculateDirSize(cacheDir) +
                                     calculateDirSize(downloadsDir) +
                                     calculateDirSize(attachmentsDir)
+                                val receivedStickersSize = calculateDirSize(
+                                    StickerSupport.receivedCacheDirectory(context),
+                                )
 
                                 val avatarsDir = java.io.File(context.filesDir, "avatars")
                                 val aSize = calculateDirSize(avatarsDir)
@@ -1581,11 +1612,19 @@ fun SettingsTab(
                                 val dbDir = context.getDatabasePath("twopchat.db").parentFile
                                 val dSize = calculateDirSize(dbDir)
                                 val usage = AttachmentStorageManager.calculateUsage(context)
-                                StorageSnapshot(cSize, aSize, lSize, dSize, usage)
+                                StorageSnapshot(
+                                    cSize,
+                                    receivedStickersSize,
+                                    aSize,
+                                    lSize,
+                                    dSize,
+                                    usage,
+                                )
                             }
                         }.getOrNull()
                         if (sizes != null) {
                             cacheBytes = sizes.cacheBytes
+                            receivedStickerBytes = sizes.receivedStickerBytes
                             avatarsBytes = sizes.avatarsBytes
                             logsBytes = sizes.logsBytes
                             dbBytes = sizes.databaseBytes
@@ -1614,9 +1653,9 @@ fun SettingsTab(
                         text = {
                             Text(
                                 text = if (appLanguage == "Русский") {
-                                    "Будут удалены временные файлы, кэш аватарок, загруженные файлы и логи. История сообщений останется нетронутой."
+                                    "Будут удалены временные файлы, кэш аватарок, полученные стикеры, загруженные файлы и логи. История сообщений останется нетронутой."
                                 } else {
-                                    "Temporary files, cached avatars, downloaded media, and logs will be deleted. Message history will remain intact."
+                                    "Temporary files, cached avatars, received stickers, downloaded media, and logs will be deleted. Message history will remain intact."
                                 },
                                 fontSize = 14.sp,
                                 color = onSurfaceVariant
@@ -1717,6 +1756,9 @@ fun SettingsTab(
                         ),
                         AttachmentCategory.VOICE to (
                             if (appLanguage == "Русский") "Голосовые сообщения" else "Voice messages"
+                        ),
+                        AttachmentCategory.STICKER to (
+                            if (appLanguage == "Русский") "Стикеры собеседников" else "Peer stickers"
                         ),
                     )
                     AlertDialog(
@@ -1888,7 +1930,8 @@ fun SettingsTab(
                         surfaceColor = surfaceColor,
                         onSurfaceColor = onSurfaceColor
                     ) {
-                        val totalBytes = cacheBytes + avatarsBytes + logsBytes + dbBytes
+                        val totalBytes =
+                            cacheBytes + receivedStickerBytes + avatarsBytes + logsBytes + dbBytes
 
                         // Storage breakdown Card
                         Text(
@@ -1938,6 +1981,43 @@ fun SettingsTab(
                                         Text(if (appLanguage == "Русский") "Кэш загрузок и медиафайлов" else "Downloads and media cache", fontSize = 11.sp, color = onSurfaceVariant)
                                     }
                                     Text(if (isCalculating) "..." else formatStorageSize(cacheBytes), fontSize = 14.sp, color = onSurfaceVariant)
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Item: received sticker cache. Installed and owned packs are excluded.
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column {
+                                        Text(
+                                            if (appLanguage == "Русский") {
+                                                "Стикеры собеседников"
+                                            } else {
+                                                "Peer stickers"
+                                            },
+                                            fontSize = 14.sp,
+                                            color = onSurfaceColor,
+                                        )
+                                        Text(
+                                            if (appLanguage == "Русский") {
+                                                "Полученные в чатах, без добавленных паков"
+                                            } else {
+                                                "Received in chats, excluding installed packs"
+                                            },
+                                            fontSize = 11.sp,
+                                            color = onSurfaceVariant,
+                                        )
+                                    }
+                                    Text(
+                                        if (isCalculating) "..." else {
+                                            formatStorageSize(receivedStickerBytes)
+                                        },
+                                        fontSize = 14.sp,
+                                        color = onSurfaceVariant,
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.height(10.dp))
@@ -2024,6 +2104,13 @@ fun SettingsTab(
                                     ),
                                     AttachmentCategory.VOICE to (
                                         if (appLanguage == "Русский") "Голосовые сообщения" else "Voice messages"
+                                    ),
+                                    AttachmentCategory.STICKER to (
+                                        if (appLanguage == "Русский") {
+                                            "Стикеры собеседников"
+                                        } else {
+                                            "Peer stickers"
+                                        }
                                     ),
                                 )
                                 AttachmentCategory.entries.forEachIndexed { index, category ->

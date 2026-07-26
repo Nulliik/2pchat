@@ -3,6 +3,8 @@ package com.example.twopchat
 import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -26,5 +28,26 @@ class AttachmentStorageManagerTest {
         val traversal = File(managedRoot, "../private-key.bin")
 
         assertFalse(isFileInsideAnyRoot(traversal, listOf(managedRoot)))
+    }
+
+    @Test
+    fun categorizesOnlyReceivedStickersAsClearablePeerStickers() {
+        val fileName = "2psticker_friends--wave.webp"
+
+        assertEquals(
+            AttachmentCategory.STICKER,
+            attachmentCategory(StickerSupport.ATTACHMENT_TYPE, fileName, isMine = false),
+        )
+        assertEquals(
+            AttachmentCategory.STICKER,
+            attachmentCategory(null, fileName),
+        )
+        assertNull(
+            attachmentCategory(StickerSupport.ATTACHMENT_TYPE, fileName, isMine = true),
+        )
+        assertEquals(
+            AttachmentCategory.IMAGE,
+            attachmentCategory("IMAGE", "photo.webp", isMine = false),
+        )
     }
 }

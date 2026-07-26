@@ -1,6 +1,5 @@
 package com.example.twopchat.ui.chat
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,8 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -149,11 +146,6 @@ internal fun StickerPackBottomSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(currentPack.stickers, key = { it.stickerId }) { sticker ->
-                        val bitmap = rememberSampledImage(
-                            sticker.localFilePath,
-                            targetWidth = 128,
-                            targetHeight = 128,
-                        )
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -172,16 +164,13 @@ internal fun StickerPackBottomSheet(
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (bitmap != null) {
-                                Image(
-                                    bitmap = bitmap.asImageBitmap(),
-                                    contentDescription = sticker.emoji,
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier.size(68.dp),
-                                )
-                            } else {
-                                Text(sticker.emoji.ifBlank { "🎭" }, fontSize = 40.sp)
-                            }
+                            AnimatedStickerImage(
+                                filePath = sticker.localFilePath,
+                                fallbackEmoji = sticker.emoji,
+                                contentDescription = sticker.emoji.ifBlank { "Sticker" },
+                                targetSizePx = 136,
+                                modifier = Modifier.size(68.dp),
+                            )
                         }
                     }
                 }

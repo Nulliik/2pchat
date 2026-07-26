@@ -40,6 +40,15 @@ internal class P2POutboundMessenger(
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
                 val success = PythonBridge.sendP2pMessage(peerName, endpoint, text, fingerprint)
+                if (success) {
+                    NetworkTrafficStats.recordMessage(
+                        context,
+                        peerName,
+                        endpoint,
+                        text,
+                        TrafficDirection.SENT,
+                    )
+                }
                 log(context, "Secure message send: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
                 postResult(onResult, success)
             } catch (error: Exception) {
@@ -106,6 +115,15 @@ internal class P2POutboundMessenger(
                     onMessageStatusChanged(peerName, messageId, "CANCELLED")
                     log(context, "File transfer to $peerName was cancelled", "INFO", null)
                     return@launch postResult(onResult, true)
+                }
+                if (success) {
+                    NetworkTrafficStats.recordFile(
+                        context,
+                        peerName,
+                        endpoint,
+                        File(filePath),
+                        direction = TrafficDirection.SENT,
+                    )
                 }
                 log(context, "Sending file status to $peerName: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
                 postResult(onResult, success)
@@ -328,18 +346,29 @@ internal class P2POutboundMessenger(
 
                     val caption = attachmentCaption(message)
                     val success = if (hasAlbum) {
-                        albumFiles.withIndex().all { (index, file) ->
-                            PythonBridge.sendP2pFile(
-                                peerName = peerName,
-                                endpoint = endpoint,
-                                filePath = file.absolutePath,
-                                expectedFingerprint = fingerprint,
-                                messageId = "${message.id}_$index",
-                                caption = if (index == 0) caption else "",
-                                albumId = message.id,
-                                albumIndex = index,
-                                albumCount = albumFiles.size,
-                            )
+                        run {
+                            for ((index, file) in albumFiles.withIndex()) {
+                                val fileSent = PythonBridge.sendP2pFile(
+                                    peerName = peerName,
+                                    endpoint = endpoint,
+                                    filePath = file.absolutePath,
+                                    expectedFingerprint = fingerprint,
+                                    messageId = "${message.id}_$index",
+                                    caption = if (index == 0) caption else "",
+                                    albumId = message.id,
+                                    albumIndex = index,
+                                    albumCount = albumFiles.size,
+                                )
+                                if (!fileSent) return@run false
+                                NetworkTrafficStats.recordFile(
+                                    context,
+                                    peerName,
+                                    endpoint,
+                                    file,
+                                    direction = TrafficDirection.SENT,
+                                )
+                            }
+                            true
                         }
                     } else if (attachmentFile != null) {
                         PythonBridge.sendP2pFile(
@@ -356,6 +385,24 @@ internal class P2POutboundMessenger(
                     if (!success) {
                         log(context, "Failed to send pending message ${message.id}, stopping queue processing.", "INFO", null)
                         break
+                    }
+                    if (attachmentFile != null) {
+                        NetworkTrafficStats.recordFile(
+                            context,
+                            peerName,
+                            endpoint,
+                            attachmentFile,
+                            attachmentType = message.attachmentType.orEmpty(),
+                            direction = TrafficDirection.SENT,
+                        )
+                    } else if (!hasAlbum) {
+                        NetworkTrafficStats.recordMessage(
+                            context,
+                            peerName,
+                            endpoint,
+                            payload,
+                            TrafficDirection.SENT,
+                        )
                     }
                     db.updateMessageStatus(message.id, "SENT")
                     Handler(Looper.getMainLooper()).post {
@@ -381,7 +428,16 @@ internal class P2POutboundMessenger(
                 if (isPaused(context, peerName)) return@launch
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
-                PythonBridge.sendP2pMessage(peerName, endpoint, payload.toString(), fingerprint)
+                val text = payload.toString()
+                if (PythonBridge.sendP2pMessage(peerName, endpoint, text, fingerprint)) {
+                    NetworkTrafficStats.recordMessage(
+                        context,
+                        peerName,
+                        endpoint,
+                        text,
+                        TrafficDirection.SENT,
+                    )
+                }
             } catch (error: Exception) {
                 log(context, "Failed to send ephemeral ${payload.optString("type")} control", "ERROR", error)
             }
@@ -439,6 +495,15 @@ internal class P2POutboundMessenger(
                     payload.toString(),
                     fingerprint,
                 )
+                if (sent) {
+                    NetworkTrafficStats.recordMessage(
+                        appContext,
+                        peerName,
+                        resolvedEndpoint,
+                        payload.toString(),
+                        TrafficDirection.SENT,
+                    )
+                }
                 if (sent && deleteAfterSend) db.deletePendingControl(controlId)
                 postResult(onResult, sent)
             } catch (error: Exception) {
@@ -468,6 +533,13 @@ internal class P2POutboundMessenger(
                 fingerprint,
             )
             if (!success) break
+            NetworkTrafficStats.recordMessage(
+                context,
+                peerName,
+                endpoint,
+                control.payload,
+                TrafficDirection.SENT,
+            )
             if (control.type == "read_receipt" || control.type == "delete_message") db.deletePendingControl(control.id)
             // Edits remain until the receiver returns edit_ack.
         }

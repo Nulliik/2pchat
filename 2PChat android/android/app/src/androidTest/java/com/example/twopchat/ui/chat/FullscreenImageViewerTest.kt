@@ -1,6 +1,7 @@
 package com.example.twopchat.ui.chat
 
 import android.graphics.Bitmap
+import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -20,6 +21,7 @@ class FullscreenImageViewerTest {
     val composeTestRule = createAndroidComposeRule<ComponentActivity>()
 
     private val imageFiles = mutableListOf<File>()
+    private val gifFiles = mutableListOf<File>()
 
     @Before
     fun createImages() {
@@ -35,11 +37,17 @@ class FullscreenImageViewerTest {
             }
             imageFiles += file
         }
+        repeat(2) { index ->
+            val file = File(context.cacheDir, "viewer-test-$index.gif")
+            file.writeBytes(Base64.decode(ANIMATED_GIF_BASE64, Base64.DEFAULT))
+            gifFiles += file
+        }
     }
 
     @After
     fun deleteImages() {
         imageFiles.forEach(File::delete)
+        gifFiles.forEach(File::delete)
     }
 
     @Test
@@ -82,5 +90,32 @@ class FullscreenImageViewerTest {
 
         composeTestRule.onNodeWithContentDescription("Fullscreen Image").assertExists()
         composeTestRule.onNodeWithContentDescription("Download").assertDoesNotExist()
+    }
+
+    @Test
+    fun animatedGifsOpenFullscreenAndSwipeBetweenChatGifs() {
+        composeTestRule.setContent {
+            FullscreenImageViewer(
+                imagePaths = gifFiles.map(File::getAbsolutePath),
+                initialIndex = 0,
+                appLanguage = "English",
+                onClose = {},
+            )
+        }
+
+        composeTestRule.onNodeWithContentDescription("Fullscreen GIF").assertExists()
+        composeTestRule.onNodeWithText("1 / 2").assertExists()
+        composeTestRule.onNodeWithContentDescription("Fullscreen GIF")
+            .performTouchInput { swipeLeft() }
+
+        composeTestRule.waitUntil(timeoutMillis = 5_000) {
+            composeTestRule.onAllNodesWithText("2 / 2").fetchSemanticsNodes().isNotEmpty()
+        }
+        composeTestRule.onNodeWithText("2 / 2").assertExists()
+    }
+
+    private companion object {
+        const val ANIMATED_GIF_BASE64 =
+            "R0lGODlhBAAEAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAABAAEAAAICQABCBxIsCCAgAAh+QQBCgABACwAAAAABAAEAIEAAP8AAAAAAAAAAAAICQABCBxIsCCAgAA7"
     }
 }

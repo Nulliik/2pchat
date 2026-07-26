@@ -41,6 +41,10 @@ object AccountLifecycle {
             Log.e(TAG, "Failed to synchronously clear account preferences")
             success = false
         }
+        if (!NetworkTrafficStats.clear(context)) {
+            Log.e(TAG, "Failed to synchronously clear network traffic statistics")
+            success = false
+        }
 
         for (database in context.databaseList()) {
             if (!context.deleteDatabase(database)) {

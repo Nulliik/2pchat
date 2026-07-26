@@ -1,10 +1,19 @@
 package com.example.twopchat.ui.chat
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatMediaTest {
+    @Test
+    fun `gif media paths are detected case insensitively`() {
+        assertTrue(isGifMediaPath("C:/chat/animation.gif"))
+        assertTrue(isGifMediaPath("/chat/ANIMATION.GIF"))
+        assertFalse(isGifMediaPath("/chat/animation.webp"))
+    }
+
     @Test
     fun sampledImageCacheSeparatesThumbnailAndFullscreenQuality() {
         val thumbnail = sampledImageCacheKey("image.jpg", 200, 200)

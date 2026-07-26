@@ -66,6 +66,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -191,6 +193,16 @@ fun FullscreenImageViewer(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val fullscreenGifTargetPx = remember(configuration, density) {
+        with(density) {
+            maxOf(configuration.screenWidthDp.dp, configuration.screenHeightDp.dp)
+                .roundToPx()
+                .times(2)
+                .coerceIn(720, 2_048)
+        }
+    }
     val pagerState = androidx.compose.foundation.pager.rememberPagerState(
         initialPage = initialIndex,
         pageCount = { imagePaths.size }
@@ -235,6 +247,7 @@ fun FullscreenImageViewer(
             userScrollEnabled = zoomedPage != pagerState.currentPage
         ) { page ->
             val imagePath = imagePaths[page]
+            val isGif = remember(imagePath) { isGifMediaPath(imagePath) }
             var scale by remember(page) { mutableStateOf(1f) }
             var offset by remember(page) { mutableStateOf(Offset.Zero) }
 
@@ -261,46 +274,54 @@ fun FullscreenImageViewer(
             ) {
                 val overriddenBitmap = bitmapOverrides[imagePath]
                 val sampledBitmap = rememberSampledImage(
-                    filePath = imagePath.takeIf { overriddenBitmap == null },
+                    filePath = imagePath.takeIf { overriddenBitmap == null && !isGif },
                     targetWidth = 2048,
                     targetHeight = 2048,
                 )
                 val bitmap = overriddenBitmap ?: sampledBitmap
-                if (bitmap != null) {
+                val mediaModifier = Modifier
+                    .fillMaxSize()
+                    .transformable(
+                        state = transformState,
+                        // At 1x the pager owns one-finger horizontal drags. Pinch still
+                        // starts zoom, and once zoomed the media owns panning.
+                        canPan = { scale > 1f },
+                    )
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { onClose() },
+                            onDoubleTap = {
+                                if (scale > 1f) {
+                                    scale = 1f
+                                    offset = Offset.Zero
+                                    zoomedPage = -1
+                                } else {
+                                    scale = 3f
+                                    zoomedPage = page
+                                }
+                            },
+                        )
+                    }
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = if (scale > 1f) offset.x else 0f,
+                        translationY = if (scale > 1f) offset.y else 0f,
+                    )
+                if (isGif) {
+                    AnimatedGifImage(
+                        filePath = imagePath,
+                        targetMaxDimensionPx = fullscreenGifTargetPx,
+                        contentScale = GifContentScale.FIT,
+                        contentDescription = "Fullscreen GIF",
+                        modifier = mediaModifier,
+                        isAnimationEnabled = page == pagerState.currentPage,
+                    )
+                } else if (bitmap != null) {
                     Image(
                         bitmap = bitmap.asImageBitmap(),
                         contentDescription = "Fullscreen Image",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .transformable(
-                                state = transformState,
-                                // At 1x the pager owns one-finger horizontal drags. Pinch still
-                                // starts zoom, and once zoomed the image owns panning. Keep the
-                                // gesture detector outside the scaled graphics layer so pointer
-                                // deltas stay in screen pixels at every zoom level.
-                                canPan = { scale > 1f },
-                            )
-                            .pointerInput(Unit) {
-                                detectTapGestures(
-                                    onTap = { onClose() },
-                                    onDoubleTap = {
-                                        if (scale > 1f) {
-                                            scale = 1f
-                                            offset = Offset.Zero
-                                            zoomedPage = -1
-                                        } else {
-                                            scale = 3f
-                                            zoomedPage = page
-                                        }
-                                    }
-                                )
-                            }
-                            .graphicsLayer(
-                                scaleX = scale,
-                                scaleY = scale,
-                                translationX = if (scale > 1f) offset.x else 0f,
-                                translationY = if (scale > 1f) offset.y else 0f
-                            )
+                        modifier = mediaModifier,
                     )
                 } else {
                     CircularProgressIndicator(color = Color.White)
@@ -378,6 +399,9 @@ fun FullscreenImageViewer(
         }
     }
 }
+
+internal fun isGifMediaPath(path: String): Boolean =
+    File(path).extension.equals("gif", ignoreCase = true)
 
 fun getVerificationEmojis(localFingerprint: String, peerFingerprint: String): List<String> {
     val emojiList = listOf(

@@ -34,9 +34,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.foundation.Image
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import com.example.twopchat.BuiltinSticker
 import com.example.twopchat.StickerSupport
@@ -134,11 +131,6 @@ internal fun StickerPickerBottomSheet(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(pack.stickers, key = { it.stickerId }) { sticker ->
-                    val thumbnail = rememberSampledImage(
-                        sticker.localFilePath,
-                        targetWidth = 128,
-                        targetHeight = 128,
-                    )
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -154,20 +146,13 @@ internal fun StickerPickerBottomSheet(
                             .padding(vertical = 12.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (thumbnail != null) {
-                            Image(
-                                bitmap = thumbnail.asImageBitmap(),
-                                contentDescription = sticker.emoji,
-                                contentScale = ContentScale.Fit,
-                                modifier = Modifier.size(64.dp),
-                            )
-                        } else {
-                            Text(
-                                text = sticker.emoji.ifBlank { "🎭" },
-                                fontSize = 43.sp,
-                                lineHeight = 48.sp,
-                            )
-                        }
+                        AnimatedStickerImage(
+                            filePath = sticker.localFilePath,
+                            fallbackEmoji = sticker.emoji,
+                            contentDescription = sticker.emoji.ifBlank { "Sticker" },
+                            targetSizePx = 128,
+                            modifier = Modifier.size(64.dp),
+                        )
                     }
                 }
             }
