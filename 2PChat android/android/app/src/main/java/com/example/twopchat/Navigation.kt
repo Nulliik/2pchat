@@ -12,7 +12,9 @@ import androidx.navigation3.ui.NavDisplay
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import android.content.Context
+import android.content.Intent
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import com.example.twopchat.ui.onboarding.OnboardingScreen
 import com.example.twopchat.ui.main.MainScreen
 import com.example.twopchat.ui.chat.ChatScreen
@@ -44,9 +46,14 @@ fun MainNavigation(
       onComplete = {
         sharedPrefs.edit().putBoolean("onboarding_completed", true).apply()
         isOnboardingCompleted = true
-        // Account deletion stops the listener completely. Recreate it only
+        // Account deletion stops the service completely. Recreate it only
         // after onboarding persisted the new name and generated a new key.
-        P2PMessageRelay.restartServer(context)
+        ContextCompat.startForegroundService(
+          context,
+          Intent(context, P2PRelayService::class.java).apply {
+            action = P2PRelayService.ACTION_RESTART
+          },
+        )
       },
       modifier = Modifier.fillMaxSize()
     )

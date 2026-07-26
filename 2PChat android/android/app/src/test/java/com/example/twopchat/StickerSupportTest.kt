@@ -72,6 +72,29 @@ class StickerSupportTest {
         }
     }
 
+    @Test
+    fun validatesStaticWebPUsingDeclaredRiffSize() {
+        val valid = File.createTempFile("2psticker_static_", ".webp")
+        val forged = File.createTempFile("2psticker_forged_", ".webp")
+        try {
+            val bytes = ByteArray(4_096).apply {
+                extendedWebP(width = 512, height = 384).copyInto(this)
+                putUInt32Le(4, size - 8)
+            }
+            valid.writeBytes(bytes)
+            forged.writeBytes(bytes.copyOf().apply { putUInt32Le(4, size - 9) })
+
+            assertEquals(
+                WebPInfo(512, 384, animated = false),
+                StickerSupport.validateWebP(valid),
+            )
+            assertNull(StickerSupport.validateWebP(forged))
+        } finally {
+            valid.delete()
+            forged.delete()
+        }
+    }
+
     private fun extendedWebP(width: Int, height: Int, animated: Boolean = false): ByteArray =
         ByteArray(30).apply {
             putAscii(0, "RIFF")

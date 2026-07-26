@@ -25,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -39,6 +40,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import com.example.twopchat.BuiltinSticker
 import com.example.twopchat.StickerSupport
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,7 +52,14 @@ internal fun StickerPickerBottomSheet(
     onStickerSelected: (BuiltinSticker) -> Unit,
 ) {
     val context = LocalContext.current
-    val packs = remember(context) { StickerSupport.availablePacks(context) }
+    val packs by produceState(
+        initialValue = StickerSupport.builtinPacks,
+        context,
+    ) {
+        value = withContext(Dispatchers.IO) {
+            StickerSupport.availablePacks(context)
+        }
+    }
     var selectedPackIndex by remember { mutableIntStateOf(0) }
     val pack = packs[selectedPackIndex.coerceIn(0, packs.lastIndex)]
     ModalBottomSheet(

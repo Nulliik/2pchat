@@ -126,9 +126,15 @@ fun SettingsTab(
     
     // Profile photo states
     var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
-    var profileBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)) }
+    var profileBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var pendingCropUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showAvatarOptions by remember { mutableStateOf(false) }
+
+    LaunchedEffect(profilePhotoUri) {
+        profileBitmap = withContext(Dispatchers.IO) {
+            com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)
+        }
+    }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -291,7 +297,6 @@ fun SettingsTab(
             onCropSuccess = { localPath ->
                 profilePhotoUri = localPath
                 sharedPrefs.edit().putString("profile_photo_uri", localPath).apply()
-                profileBitmap = com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, localPath)
                 com.example.twopchat.P2PMessageRelay.shareAvatarWithConnectedPeers(context)
                 Toast.makeText(context, "Profile photo updated", Toast.LENGTH_SHORT).show()
                 pendingCropUri = null

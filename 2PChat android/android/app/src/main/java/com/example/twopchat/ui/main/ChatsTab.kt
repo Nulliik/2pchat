@@ -81,8 +81,14 @@ fun ChatsTab(
     var activeChatsSet by chatsViewModel.activeChatsSet
     var chatListRevision by chatsViewModel.chatListRevision
     var profilePhotoUri by chatsViewModel.profilePhotoUri
-    val profileBitmap = remember(profilePhotoUri) {
-        com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)
+    val profileBitmap by produceState<android.graphics.Bitmap?>(
+        initialValue = null,
+        context,
+        profilePhotoUri,
+    ) {
+        value = withContext(Dispatchers.IO) {
+            com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)
+        }
     }
     var currentUsername by chatsViewModel.currentUsername
     var activeMenuPeer by remember { mutableStateOf<PeerItem?>(null) }
@@ -134,16 +140,6 @@ fun ChatsTab(
     var heroYggOk by chatsViewModel.heroYggOk
     var isRefreshingAll by chatsViewModel.isRefreshingAll
     val heroScope = rememberCoroutineScope()
-
-    // Pulsing animations
-    val animationsEnabled = com.example.twopchat.LocalAppAnimationsEnabled.current
-
-    val warningTransition = if (animationsEnabled) rememberInfiniteTransition(label = "warningPulse") else null
-    val warningAlpha = warningTransition?.animateFloat(
-        initialValue = 0.3f, targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Reverse),
-        label = "warningAlpha"
-    )?.value ?: 1.0f
 
     val activeHandshakesLabel = remember(appLanguage) {
         Localizations.getString("active_handshakes", appLanguage).uppercase()
@@ -200,9 +196,10 @@ fun ChatsTab(
                             )
                             .border(1.5.dp, primaryColor.copy(alpha = 0.55f), CircleShape)
                     ) {
-                        if (profileBitmap != null) {
+                        val avatarBitmap = profileBitmap
+                        if (avatarBitmap != null) {
                             androidx.compose.foundation.Image(
-                                bitmap = profileBitmap.asImageBitmap(),
+                                bitmap = avatarBitmap.asImageBitmap(),
                                 contentDescription = "My Profile Avatar",
                                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                 modifier = Modifier
@@ -305,29 +302,6 @@ fun ChatsTab(
                             null  -> onSurfaceVariant
                         }
                         
-                        val pulseTransition = if (animationsEnabled) rememberInfiniteTransition(label = "pillPulse") else null
-                        val pulseScale = pulseTransition?.animateFloat(
-                            initialValue = 1.0f,
-                            targetValue = 2.4f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(1600, easing = LinearEasing),
-                                repeatMode = RepeatMode.Restart
-                            ),
-                            label = "pulseScale"
-                        )?.value ?: 1.0f
-                        val pulseAlpha = pulseTransition?.animateFloat(
-                            initialValue = 0.6f,
-                            targetValue = 0.0f,
-                            animationSpec = infiniteRepeatable(
-                                animation = tween(1600, easing = LinearEasing),
-                                repeatMode = RepeatMode.Restart
-                            ),
-                            label = "pulseAlpha"
-                        )?.value ?: 0.0f
-
-                        // Slowly blink the dot if there is a warning/error (ok == false)
-                        val dotAlpha = if (ok == false) warningAlpha else 1.0f
-
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
@@ -345,19 +319,13 @@ fun ChatsTab(
                                 if (ok != null) {
                                     Box(
                                         modifier = Modifier
-                                            .size(6.dp)
-                                            .graphicsLayer {
-                                                scaleX = pulseScale
-                                                scaleY = pulseScale
-                                                alpha = pulseAlpha
-                                            }
-                                            .border(1.dp, pillColor, CircleShape)
+                                            .size(12.dp)
+                                            .border(1.dp, pillColor.copy(alpha = 0.38f), CircleShape)
                                     )
                                 }
                                 Box(
                                     modifier = Modifier
                                         .size(6.dp)
-                                        .graphicsLayer { alpha = dotAlpha }
                                         .background(pillColor, CircleShape)
                                 )
                             }

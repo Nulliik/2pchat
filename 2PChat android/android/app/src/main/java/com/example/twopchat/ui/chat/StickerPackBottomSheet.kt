@@ -18,12 +18,17 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,6 +40,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.BuiltinSticker
 import com.example.twopchat.StickerSupport
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,8 +57,25 @@ internal fun StickerPackBottomSheet(
     onStickerSelected: (BuiltinSticker) -> Unit,
 ) {
     val context = LocalContext.current
-    val pack = remember(context, packId, requestInProgress) {
-        StickerSupport.findPack(context, packId)
+    var pack by remember(context, packId) {
+        mutableStateOf(
+            StickerSupport.builtinPacks.firstOrNull { it.id == packId },
+        )
+    }
+    var packLoading by remember(context, packId) {
+        mutableStateOf(pack == null)
+    }
+    LaunchedEffect(context, packId, requestInProgress) {
+        StickerSupport.builtinPacks.firstOrNull { it.id == packId }?.let {
+            pack = it
+            packLoading = false
+            return@LaunchedEffect
+        }
+        packLoading = true
+        pack = withContext(Dispatchers.IO) {
+            StickerSupport.findPack(context, packId)
+        }
+        packLoading = false
     }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -84,7 +108,13 @@ internal fun StickerPackBottomSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                if (pack == null && canRequestFromPeer) {
+                if (packLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = primaryColor,
+                        strokeWidth = 2.dp,
+                    )
+                } else if (pack == null && canRequestFromPeer) {
                     Button(
                         onClick = onRequestPack,
                         enabled = !requestInProgress,
@@ -108,7 +138,8 @@ internal fun StickerPackBottomSheet(
                 }
             }
             Spacer(Modifier.height(16.dp))
-            if (pack != null) {
+            val currentPack = pack
+            if (currentPack != null) {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(4),
                     modifier = Modifier
@@ -117,7 +148,7 @@ internal fun StickerPackBottomSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(pack.stickers, key = { it.stickerId }) { sticker ->
+                    items(currentPack.stickers, key = { it.stickerId }) { sticker ->
                         val bitmap = rememberSampledImage(
                             sticker.localFilePath,
                             targetWidth = 128,

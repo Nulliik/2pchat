@@ -1294,6 +1294,7 @@ fun ContactsTab(
     }
 }
 
+@androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
 @Composable
 private fun CameraQrScannerOverlay(
     appLanguage: String,

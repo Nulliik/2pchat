@@ -7,6 +7,7 @@ import android.graphics.ImageDecoder
 import android.os.Build
 import java.io.File
 import java.io.RandomAccessFile
+import java.util.concurrent.Semaphore
 
 data class StoredGif(
     val id: String,
@@ -27,6 +28,13 @@ object GifStorageManager {
     const val MAX_DIMENSION = 4096
     const val PREVIEW_SIZE = 192
     const val MAX_PREVIEW_CACHE_BYTES = 100L * 1024L * 1024L
+    private const val PREVIEW_ACCESS_TOUCH_INTERVAL_MS = 15L * 60L * 1_000L
+    private const val PREVIEW_TRIM_INTERVAL_MS = 60L * 1_000L
+    private val previewLocks = Array(16) { Any() }
+    private val previewDecodeSlots = Semaphore(2, true)
+    private val previewTrimLock = Any()
+    @Volatile
+    private var lastPreviewTrimAtMs = 0L
 
     fun inspectGifHeader(bytes: ByteArray): GifInfo? {
         if (bytes.size < 10) return null
@@ -96,32 +104,52 @@ object GifStorageManager {
     fun ensurePreview(context: Context, gif: StoredGif): String? =
         ensurePreview(context, File(gif.filePath), gif.id)?.absolutePath
 
-    private fun ensurePreview(context: Context, gif: File, id: String): File? {
+    private fun ensurePreview(context: Context, gif: File, id: String): File? =
+        synchronized(previewLocks[(id.hashCode() and Int.MAX_VALUE) % previewLocks.size]) {
+            ensurePreviewLocked(context, gif, id)
+        }
+
+    private fun ensurePreviewLocked(context: Context, gif: File, id: String): File? {
         val previewDirectory = previewDirectory(context)
         val target = File(previewDirectory, "$id.webp")
         if (target.isFile && target.length() > 0L) {
-            target.setLastModified(System.currentTimeMillis())
+            touchPreviewIfStale(target)
             return target
         }
-        val bitmap = decodeFirstFrame(gif) ?: return null
-        val temporary = File(previewDirectory, "${target.name}.tmp")
+
         try {
-            temporary.outputStream().use { output ->
-                val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    Bitmap.CompressFormat.WEBP_LOSSY
-                } else {
-                    @Suppress("DEPRECATION")
-                    Bitmap.CompressFormat.WEBP
-                }
-                if (!bitmap.compress(format, 78, output)) return null
-            }
-        } finally {
-            bitmap.recycle()
+            previewDecodeSlots.acquire()
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return null
         }
-        if (target.exists()) target.delete()
-        if (!temporary.renameTo(target)) return null
-        trimPreviewCache(previewDirectory)
-        return target
+        try {
+            if (target.isFile && target.length() > 0L) {
+                touchPreviewIfStale(target)
+                return target
+            }
+            val bitmap = decodeFirstFrame(gif) ?: return null
+            val temporary = File(previewDirectory, "${target.name}.tmp")
+            try {
+                temporary.outputStream().use { output ->
+                    val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        Bitmap.CompressFormat.WEBP_LOSSY
+                    } else {
+                        @Suppress("DEPRECATION")
+                        Bitmap.CompressFormat.WEBP
+                    }
+                    if (!bitmap.compress(format, 78, output)) return null
+                }
+            } finally {
+                bitmap.recycle()
+            }
+            if (target.exists()) target.delete()
+            if (!temporary.renameTo(target)) return null
+            trimPreviewCacheIfNeeded(previewDirectory)
+            return target
+        } finally {
+            previewDecodeSlots.release()
+        }
     }
 
     private fun decodeFirstFrame(file: File): Bitmap? = try {
@@ -167,6 +195,31 @@ object GifStorageManager {
 
     private fun previewDirectory(context: Context): File =
         File(context.cacheDir, "gif_previews").apply { mkdirs() }
+
+    private fun touchPreviewIfStale(file: File) {
+        val now = System.currentTimeMillis()
+        if (now - file.lastModified() >= PREVIEW_ACCESS_TOUCH_INTERVAL_MS) {
+            file.setLastModified(now)
+        }
+    }
+
+    private fun trimPreviewCacheIfNeeded(directory: File) {
+        val now = System.currentTimeMillis()
+        if (lastPreviewTrimAtMs != 0L &&
+            now - lastPreviewTrimAtMs < PREVIEW_TRIM_INTERVAL_MS
+        ) {
+            return
+        }
+        synchronized(previewTrimLock) {
+            if (lastPreviewTrimAtMs != 0L &&
+                now - lastPreviewTrimAtMs < PREVIEW_TRIM_INTERVAL_MS
+            ) {
+                return
+            }
+            trimPreviewCache(directory)
+            lastPreviewTrimAtMs = now
+        }
+    }
 
     private fun trimPreviewCache(directory: File) {
         val files = directory.listFiles()

@@ -280,8 +280,14 @@ fun ChatScreen(
     var profilePhotoUri by remember {
         mutableStateOf(sharedPrefs.getString("profile_photo_uri", null))
     }
-    val myAvatarBitmap = remember(context, profilePhotoUri) {
-        com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)
+    val myAvatarBitmap by produceState<Bitmap?>(
+        initialValue = null,
+        context,
+        profilePhotoUri,
+    ) {
+        value = withContext(Dispatchers.IO) {
+            com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)
+        }
     }
     val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
     fun triggerHaptic(type: androidx.compose.ui.hapticfeedback.HapticFeedbackType = androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress) {

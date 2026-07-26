@@ -47,9 +47,15 @@ fun OnboardingScreen(
     var currentStep by remember { mutableStateOf(1) }
     var nickname by remember { mutableStateOf("") }
     var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
-    var profileBitmap by remember { mutableStateOf<Bitmap?>(loadBitmapFromUri(context, profilePhotoUri)) }
+    var profileBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var pendingCropUri by remember { mutableStateOf<Uri?>(null) }
     var showYggdrasilDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(profilePhotoUri) {
+        profileBitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            loadBitmapFromUri(context, profilePhotoUri)
+        }
+    }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -80,7 +86,6 @@ fun OnboardingScreen(
             onCropSuccess = { localPath ->
                 profilePhotoUri = localPath
                 sharedPrefs.edit().putString("profile_photo_uri", localPath).apply()
-                profileBitmap = loadBitmapFromUri(context, localPath)
                 pendingCropUri = null
             },
             onCancel = {
@@ -809,19 +814,52 @@ fun FinalizeStep(
 }
 
 // Global helper to load bitmaps securely
-fun loadBitmapFromUri(context: android.content.Context, uriString: String?): Bitmap? {
+fun loadBitmapFromUri(
+    context: android.content.Context,
+    uriString: String?,
+    maxDimension: Int = 512,
+): Bitmap? {
     if (uriString.isNullOrEmpty()) return null
-    return try {
-        val uri = Uri.parse(uriString)
-        val inputStream = context.contentResolver.openInputStream(uri)
-        BitmapFactory.decodeStream(inputStream)
-    } catch (e: Exception) {
-        try {
-            BitmapFactory.decodeFile(uriString)
-        } catch (ex: Exception) {
-            null
+    val uri = Uri.parse(uriString)
+    val targetDimension = maxDimension.coerceAtLeast(1)
+
+    fun calculateSampleSize(width: Int, height: Int): Int {
+        var sample = 1
+        while (width / sample > targetDimension ||
+            height / sample > targetDimension
+        ) {
+            sample *= 2
         }
+        return sample
     }
+
+    val contentBitmap = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, bounds)
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = calculateSampleSize(bounds.outWidth, bounds.outHeight)
+        }
+        context.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, options)
+        }
+    }.getOrNull()
+    if (contentBitmap != null) return contentBitmap
+
+    return runCatching {
+        val filePath = uri.path.takeUnless { uri.scheme.isNullOrBlank() } ?: uriString
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(filePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+        BitmapFactory.decodeFile(
+            filePath,
+            BitmapFactory.Options().apply {
+                inSampleSize = calculateSampleSize(bounds.outWidth, bounds.outHeight)
+            },
+        )
+    }.getOrNull()
 }
 
 fun saveImageToInternalStorage(context: android.content.Context, uri: Uri): String? {

@@ -56,6 +56,13 @@ object StickerSupport {
     const val MAX_CACHE_BYTES = 100L * 1024L * 1024L
     const val MAX_PACK_STICKERS = 120
     const val MAX_PACK_BYTES = 32L * 1024L * 1024L
+    private data class InstalledPacksSnapshot(
+        val rootPath: String,
+        val packs: List<BuiltinStickerPack>,
+    )
+    private val installedPacksLock = Any()
+    @Volatile
+    private var installedPacksSnapshot: InstalledPacksSnapshot? = null
 
     val builtinPacks: List<BuiltinStickerPack> = listOf(
         BuiltinStickerPack(
@@ -111,19 +118,44 @@ object StickerSupport {
     }
 
     fun availablePacks(context: Context): List<BuiltinStickerPack> =
-        builtinPacks + installedPacksDirectory(context)
-            .listFiles()
-            .orEmpty()
-            .asSequence()
-            .filter { it.isDirectory }
-            .mapNotNull(::readInstalledPack)
-            .filter { installed -> builtinPacks.none { it.id == installed.id } }
-            .sortedBy { it.title.lowercase() }
-            .toList()
+        builtinPacks + installedPacks(context)
 
-    fun findPack(context: Context, packId: String): BuiltinStickerPack? =
-        builtinPacks.firstOrNull { it.id == packId } ?:
-            readInstalledPack(File(installedPacksDirectory(context), safeId(packId)))
+    private fun installedPacks(context: Context): List<BuiltinStickerPack> {
+        val directory = installedPacksDirectory(context)
+        val rootPath = directory.absolutePath
+        installedPacksSnapshot
+            ?.takeIf { it.rootPath == rootPath }
+            ?.let { return it.packs }
+        return synchronized(installedPacksLock) {
+            installedPacksSnapshot
+                ?.takeIf { it.rootPath == rootPath }
+                ?.packs
+                ?: directory
+                    .listFiles()
+                    .orEmpty()
+                    .asSequence()
+                    .filter { it.isDirectory }
+                    .mapNotNull(::readInstalledPack)
+                    .filter { installed -> builtinPacks.none { it.id == installed.id } }
+                    .sortedBy { it.title.lowercase() }
+                    .toList()
+                    .also { packs ->
+                        installedPacksSnapshot = InstalledPacksSnapshot(rootPath, packs)
+                    }
+        }
+    }
+
+    fun findPack(context: Context, packId: String): BuiltinStickerPack? {
+        builtinPacks.firstOrNull { it.id == packId }?.let { return it }
+        val directory = installedPacksDirectory(context)
+        val normalizedPackId = safeId(packId)
+        installedPacksSnapshot
+            ?.takeIf { it.rootPath == directory.absolutePath }
+            ?.let { snapshot ->
+                return snapshot.packs.firstOrNull { it.id == normalizedPackId }
+            }
+        return readInstalledPack(File(directory, normalizedPackId))
+    }
 
     fun inspectWebP(bytes: ByteArray): WebPInfo? {
         if (bytes.size < 30 ||
@@ -161,14 +193,25 @@ object StickerSupport {
     }
 
     fun validateWebP(file: File): WebPInfo? {
-        if (!file.isFile || file.length() <= 0L || file.length() > MAX_ANIMATED_BYTES) return null
-        val bytes = file.readBytes()
-        val info = inspectWebP(bytes) ?: return null
-        val declaredRiffSize = bytes.readUInt32Le(4) + 8L
-        if (declaredRiffSize != bytes.size.toLong()) return null
+        val fileSize = file.length()
+        if (!file.isFile || fileSize < 30L || fileSize > MAX_ANIMATED_BYTES) return null
+        val header = ByteArray(30)
+        val headerRead = file.inputStream().use { input ->
+            var offset = 0
+            while (offset < header.size) {
+                val count = input.read(header, offset, header.size - offset)
+                if (count < 0) break
+                offset += count
+            }
+            offset
+        }
+        if (headerRead != header.size) return null
+        val info = inspectWebP(header) ?: return null
+        val declaredRiffSize = header.readUInt32Le(4) + 8L
+        if (declaredRiffSize != fileSize) return null
         val maxBytes = if (info.animated) MAX_ANIMATED_BYTES else MAX_STATIC_BYTES
-        if (file.length() > maxBytes) return null
-        if (info.animated && !hasSafeAnimationTimeline(bytes)) return null
+        if (fileSize > maxBytes) return null
+        if (info.animated && !hasSafeAnimationTimeline(file.readBytes())) return null
         return info
     }
 
@@ -350,6 +393,7 @@ object StickerSupport {
                 File(context.cacheDir, "sticker_pack_exports"),
                 "$PACK_FILE_PREFIX$packId$PACK_FILE_EXTENSION",
             ).delete()
+            installedPacksSnapshot = null
             return readInstalledPack(packDirectory)
         } catch (_: Exception) {
             return null

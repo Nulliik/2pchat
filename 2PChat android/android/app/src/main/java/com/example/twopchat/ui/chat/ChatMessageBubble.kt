@@ -1420,7 +1420,11 @@ private fun GifMessageContent(
                         scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
                     }
                 },
-                update = { it.setImageDrawable(drawable) },
+                update = { imageView ->
+                    if (imageView.drawable !== drawable) {
+                        imageView.setImageDrawable(drawable)
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
             )
             movie != null -> androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
@@ -1469,11 +1473,12 @@ private fun StickerMessageContent(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    val drawable = remember(filePath) {
-        filePath
-            ?.let { java.io.File(it) }
-            ?.takeIf { com.example.twopchat.StickerSupport.validateWebP(it) != null }
-            ?.let { file ->
+    val drawable by produceState<Drawable?>(initialValue = null, filePath) {
+        value = withContext(Dispatchers.IO) {
+            filePath
+                ?.let { java.io.File(it) }
+                ?.takeIf { com.example.twopchat.StickerSupport.validateWebP(it) != null }
+                ?.let { file ->
                 runCatching {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                         ImageDecoder.decodeDrawable(ImageDecoder.createSource(file))
@@ -1483,6 +1488,7 @@ private fun StickerMessageContent(
                     }
                 }.getOrNull()
             }
+        }
     }
     var pressed by remember(filePath) { mutableStateOf(false) }
     val stickerScale by animateFloatAsState(
@@ -1530,7 +1536,11 @@ private fun StickerMessageContent(
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     }
                 },
-                update = { imageView -> imageView.setImageDrawable(drawable) },
+                update = { imageView ->
+                    if (imageView.drawable !== drawable) {
+                        imageView.setImageDrawable(drawable)
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
             )
         } else {

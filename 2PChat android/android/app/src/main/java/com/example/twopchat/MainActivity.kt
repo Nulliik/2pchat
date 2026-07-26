@@ -113,10 +113,16 @@ class MainActivity : ComponentActivity() {
             try {
                 PythonBridge.ensurePythonStarted(appContext)
                 PythonBridge.init(appContext)
-                androidx.core.content.ContextCompat.startForegroundService(
-                    appContext,
-                    Intent(appContext, P2PRelayService::class.java),
-                )
+                val relayPrefs = P2PPreferences.prefs(appContext)
+                val hasLocalIdentity =
+                    relayPrefs.getBoolean("onboarding_completed", false) &&
+                        !relayPrefs.getString("username_profile", null).isNullOrBlank()
+                if (hasLocalIdentity) {
+                    androidx.core.content.ContextCompat.startForegroundService(
+                        appContext,
+                        Intent(appContext, P2PRelayService::class.java),
+                    )
+                }
             } catch (e: Exception) {
                 android.util.Log.e("MainActivity", "Error initializing Python core in background", e)
             }
