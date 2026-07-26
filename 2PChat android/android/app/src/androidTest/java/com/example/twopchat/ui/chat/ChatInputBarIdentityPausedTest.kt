@@ -39,6 +39,7 @@ class ChatInputBarIdentityPausedTest {
                     onSurfaceColor = Color.Black,
                     onSurfaceVariant = Color.DarkGray,
                     onAttachmentClick = {},
+                    onOpenStickerPicker = {},
                     onDismissReply = {},
                     onDismissEditing = {},
                     onCancelSelection = {},

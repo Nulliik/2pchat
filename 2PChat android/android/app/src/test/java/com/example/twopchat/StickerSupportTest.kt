@@ -95,6 +95,30 @@ class StickerSupportTest {
         }
     }
 
+    @Test
+    fun reordersStickerItemsWithinBounds() {
+        val items = listOf("one", "two", "three")
+
+        assertEquals(listOf("two", "one", "three"), moveItemByOffset(items, 0, 1))
+        assertEquals(listOf("one", "three", "two"), moveItemByOffset(items, 2, -1))
+        assertTrue(moveItemByOffset(items, 0, -1) === items)
+        assertTrue(moveItemByOffset(items, 5, 1) === items)
+    }
+
+    @Test
+    fun receivedPacksAreReadOnlyByDefault() {
+        val received = BuiltinStickerPack(
+            id = "received",
+            title = "Received",
+            stickers = emptyList(),
+            isBuiltin = false,
+        )
+        val owned = received.copy(isOwned = true)
+
+        assertFalse(received.isOwned)
+        assertTrue(owned.isOwned)
+    }
+
     private fun extendedWebP(width: Int, height: Int, animated: Boolean = false): ByteArray =
         ByteArray(30).apply {
             putAscii(0, "RIFF")

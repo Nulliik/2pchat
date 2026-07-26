@@ -478,7 +478,24 @@ fun SettingsTab(
                             )
                             
                             HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                            
+
+                            SettingsRow(
+                                title = if (appLanguage == "Русский") "Стикерпаки" else "Sticker packs",
+                                subtitle = if (appLanguage == "Русский") {
+                                    "Создание, импорт и управление своими паками"
+                                } else {
+                                    "Create, import and manage your packs"
+                                },
+                                iconRes = com.example.twopchat.R.drawable.ic_sticker_smile,
+                                iconColor = Color(0xFFFF8A65),
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                onClick = { activeSubPage = "sticker_packs" }
+                            )
+
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
                             // Category: Privacy & Security / Конфиденциальность
                             SettingsRow(
                                 title = if (appLanguage == "Русский") "Конфиденциальность и Сеть" else "Privacy & Security",
@@ -669,6 +686,14 @@ fun SettingsTab(
                     Spacer(modifier = Modifier.height(40.dp))
                 }
             }
+            "sticker_packs" -> StickerPackManagerPage(
+                appLanguage = appLanguage,
+                onBackClick = { activeSubPage = null },
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+            )
             "chat_settings" -> {
                 Column(
                     modifier = Modifier
