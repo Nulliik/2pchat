@@ -378,11 +378,11 @@ private fun ComposerRow(
                     }
                     .background(primaryColor.copy(alpha = 0.12f), CircleShape),
             ) {
-                Text(
-                    text = "☺",
-                    fontSize = 23.sp,
-                    color = primaryColor,
-                    fontWeight = FontWeight.Bold,
+                Icon(
+                    painter = painterResource(R.drawable.ic_sticker_smile),
+                    contentDescription = null,
+                    tint = primaryColor,
+                    modifier = Modifier.size(25.dp),
                 )
             }
             Spacer(Modifier.width(8.dp))
