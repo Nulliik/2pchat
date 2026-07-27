@@ -17,6 +17,12 @@ object SecureStorage {
     @Volatile
     private var cachedKey: SecretKey? = null
 
+    private val threadLocalCipher = object : ThreadLocal<Cipher>() {
+        override fun initialValue(): Cipher {
+            return Cipher.getInstance("AES/GCM/NoPadding")
+        }
+    }
+
     private fun key(): SecretKey {
         cachedKey?.let { return it }
         return synchronized(this) {
@@ -40,15 +46,13 @@ object SecureStorage {
     }
 
     /**
-     * Reuses the provider's cipher engine across a short batch, such as reading
-     * one database cursor. The batch object must not be retained: keeping it
-     * scoped also preserves key-deletion semantics.
+     * Reuses the thread-local cipher engine across operations to prevent
+     * allocating thousands of Cipher$Transform objects in memory.
      */
     internal class StringCipher internal constructor(
         private val secretKey: SecretKey,
+        private val cipher: Cipher,
     ) {
-        private val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-
         fun encrypt(value: String): String {
             cipher.init(Cipher.ENCRYPT_MODE, secretKey)
             val packed = cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8))
@@ -71,7 +75,7 @@ object SecureStorage {
         }
     }
 
-    internal fun newStringCipher(): StringCipher = StringCipher(key())
+    internal fun newStringCipher(): StringCipher = StringCipher(key(), threadLocalCipher.get()!!)
 
     fun encrypt(value: String): String {
         return newStringCipher().encrypt(value)
@@ -87,14 +91,14 @@ object SecureStorage {
 
     /** Binary envelope used for private media which must not be left as plaintext files. */
     fun encryptBytes(value: ByteArray): ByteArray {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        val cipher = threadLocalCipher.get()!!
         cipher.init(Cipher.ENCRYPT_MODE, key())
         return byteArrayOf(BINARY_VERSION) + cipher.iv + cipher.doFinal(value)
     }
 
     fun decryptBytes(value: ByteArray): ByteArray {
         require(value.size > 13 && value[0] == BINARY_VERSION) { "Invalid encrypted binary value" }
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        val cipher = threadLocalCipher.get()!!
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, value, 1, 12))
         return cipher.doFinal(value, 13, value.size - 13)
     }
