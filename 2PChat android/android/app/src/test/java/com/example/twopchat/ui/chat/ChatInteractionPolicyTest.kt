@@ -1,11 +1,30 @@
 package com.example.twopchat.ui.chat
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChatInteractionPolicyTest {
+    @Test
+    fun incomingMessageLookupIsComputedOnceForEveryHistoryPosition() {
+        val messages = listOf(
+            Message("1", "sent first", true, "12:00"),
+            Message("2", "received", false, "12:01"),
+            Message("3", "sent last", true, "12:02"),
+        )
+
+        assertArrayEquals(
+            booleanArrayOf(true, false, false),
+            incomingMessageAfterFlags(messages),
+        )
+        assertArrayEquals(
+            booleanArrayOf(false, false),
+            incomingMessageAfterFlags(messages.filter { it.isMe }),
+        )
+    }
+
     @Test
     fun incomingMessageDoesNotInterruptReadingOlderHistory() {
         assertFalse(

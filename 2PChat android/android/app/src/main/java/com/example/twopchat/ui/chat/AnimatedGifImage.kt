@@ -60,6 +60,7 @@ internal fun AnimatedGifImage(
     isAnimationEnabled: Boolean = true,
     loadingLabel: String? = "GIF…",
 ) {
+    val shouldAnimate = isAnimationEnabled && isAnimatedMediaActive()
     val validatedPath by produceState<String?>(
         initialValue = null,
         filePath,
@@ -116,12 +117,12 @@ internal fun AnimatedGifImage(
         }
     }
 
-    DisposableEffect(drawable, isAnimationEnabled) {
+    DisposableEffect(drawable, shouldAnimate) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             (drawable as? AnimatedImageDrawable)?.repeatCount =
                 AnimatedImageDrawable.REPEAT_INFINITE
         }
-        if (isAnimationEnabled) {
+        if (shouldAnimate) {
             (drawable as? Animatable)?.start()
         } else {
             (drawable as? Animatable)?.stop()
@@ -130,8 +131,8 @@ internal fun AnimatedGifImage(
     }
 
     var frameTimeMs by remember(movie) { mutableLongStateOf(0L) }
-    LaunchedEffect(movie, isAnimationEnabled) {
-        if (!isAnimationEnabled) {
+    LaunchedEffect(movie, shouldAnimate) {
+        if (!shouldAnimate) {
             frameTimeMs = 0L
             return@LaunchedEffect
         }

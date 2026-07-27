@@ -90,6 +90,8 @@ internal fun ChatMessageBubble(
     index: Int,
     msg: Message,
     messages: List<Message>,
+    hasIncomingAfter: Boolean,
+    isAnimatedMediaEnabled: Boolean,
     selectedMessages: MutableList<Message>,
     isSelectMode: Boolean,
     isTyping: Boolean,
@@ -360,6 +362,7 @@ internal fun ChatMessageBubble(
                                         filePath = msg.attachmentUri,
                                         fallbackText = msg.text,
                                         bubbleShape = bubbleShape,
+                                        isAnimationEnabled = isAnimatedMediaEnabled,
                                         onClick = {
                                             if (isSelectMode) {
                                                 if (selectedMessages.contains(msg)) {
@@ -424,6 +427,7 @@ internal fun ChatMessageBubble(
                                     MediaAlbumGridBubble(
                                         msg = msg,
                                         messages = messages,
+                                        hasIncomingAfter = hasIncomingAfter,
                                         selectedMessages = selectedMessages,
                                         isSelectMode = isSelectMode,
                                         isTyping = isTyping,
@@ -622,9 +626,6 @@ internal fun ChatMessageBubble(
 
                                                 // If NO caption, floating timestamp pill in bottom-right corner over the photo
                                                 if (!hasCaption) {
-                                                    val hasIncomingAfter = if (index < messages.size - 1) {
-                                                        messages.subList(index + 1, messages.size).any { !it.isMe }
-                                                    } else false
                                                     val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                                                     val isPending = msg.status?.startsWith("PENDING") == true
 
@@ -665,9 +666,6 @@ internal fun ChatMessageBubble(
 
                                             // If HAS caption, render clean caption container at bottom of card
                                             if (hasCaption) {
-                                                val hasIncomingAfter = if (index < messages.size - 1) {
-                                                    messages.subList(index + 1, messages.size).any { !it.isMe }
-                                                } else false
                                                 val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                                                 val isPending = msg.status?.startsWith("PENDING") == true
 
@@ -911,9 +909,6 @@ internal fun ChatMessageBubble(
 
                                             // If NO caption, floating timestamp pill in bottom-right corner over the video
                                             if (!hasCaption) {
-                                                val hasIncomingAfter = if (index < messages.size - 1) {
-                                                    messages.subList(index + 1, messages.size).any { !it.isMe }
-                                                } else false
                                                 val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                                                 val isPending = msg.status?.startsWith("PENDING") == true
 
@@ -954,9 +949,6 @@ internal fun ChatMessageBubble(
 
                                         // If HAS caption, render clean caption container at bottom of card
                                         if (hasCaption) {
-                                            val hasIncomingAfter = if (index < messages.size - 1) {
-                                                messages.subList(index + 1, messages.size).any { !it.isMe }
-                                            } else false
                                             val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                                             val isPending = msg.status?.startsWith("PENDING") == true
 
@@ -1217,10 +1209,6 @@ internal fun ChatMessageBubble(
                                     )
                                     if (msg.isMe) {
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        val hasIncomingAfter = if (index < messages.size - 1) {
-                                            messages.subList(index + 1, messages.size).any { !it.isMe }
-                                        } else false
-                                        
                                         val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                                         val isPending = msg.status?.startsWith("PENDING") == true
                                         
@@ -1366,6 +1354,7 @@ private fun GifMessageContent(
     filePath: String?,
     fallbackText: String,
     bubbleShape: RoundedCornerShape,
+    isAnimationEnabled: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -1388,6 +1377,7 @@ private fun GifMessageContent(
             contentScale = GifContentScale.CROP,
             contentDescription = "GIF attachment",
             modifier = Modifier.fillMaxSize(),
+            isAnimationEnabled = isAnimationEnabled,
         )
         if (validPath == null) {
             Text(
@@ -1706,6 +1696,7 @@ internal fun LinkPreviewCard(
 private fun MediaAlbumGridBubble(
     msg: Message,
     messages: List<Message>,
+    hasIncomingAfter: Boolean,
     selectedMessages: MutableList<Message>,
     isSelectMode: Boolean,
     isTyping: Boolean,
@@ -1895,9 +1886,6 @@ private fun MediaAlbumGridBubble(
             }
 
             if (!hasCaption) {
-                val hasIncomingAfter = if (index < messages.size - 1) {
-                    messages.subList(index + 1, messages.size).any { !it.isMe }
-                } else false
                 val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                 val isPending = msg.status?.startsWith("PENDING") == true
 
@@ -1937,9 +1925,6 @@ private fun MediaAlbumGridBubble(
         }
 
         if (hasCaption) {
-            val hasIncomingAfter = if (index < messages.size - 1) {
-                messages.subList(index + 1, messages.size).any { !it.isMe }
-            } else false
             val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
             val isPending = msg.status?.startsWith("PENDING") == true
 

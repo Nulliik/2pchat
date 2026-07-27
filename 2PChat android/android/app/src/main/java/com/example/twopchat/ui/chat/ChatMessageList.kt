@@ -32,6 +32,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -49,6 +51,16 @@ import com.example.twopchat.R
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.theme.StealthBlack
 import kotlinx.coroutines.launch
+
+internal fun incomingMessageAfterFlags(messages: List<Message>): BooleanArray {
+    val result = BooleanArray(messages.size)
+    var hasIncomingAfter = false
+    for (index in messages.lastIndex downTo 0) {
+        result[index] = hasIncomingAfter
+        if (!messages[index].isMe) hasIncomingAfter = true
+    }
+    return result
+}
 
 @Composable
 internal fun ChatMessageList(
@@ -83,6 +95,36 @@ internal fun ChatMessageList(
     onJumpToMessage: ((Message) -> Unit)? = null,
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val displayMessages by remember(messages) {
+        derivedStateOf { messages.toList() }
+    }
+    val incomingAfter = remember(displayMessages) {
+        incomingMessageAfterFlags(displayMessages)
+    }
+    val activeAnimatedGifMessageIds by remember(listState, displayMessages) {
+        derivedStateOf {
+            if (listState.isScrollInProgress) {
+                emptySet()
+            } else {
+                val layoutInfo = listState.layoutInfo
+                val viewportCenter =
+                    (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2
+                layoutInfo.visibleItemsInfo
+                    .asSequence()
+                    .filter { it.index in displayMessages.indices }
+                    .filter {
+                        displayMessages[it.index].attachmentType ==
+                            com.example.twopchat.GifStorageManager.ATTACHMENT_TYPE
+                    }
+                    .sortedBy {
+                        kotlin.math.abs(it.offset + it.size / 2 - viewportCenter)
+                    }
+                    .take(MAX_ACTIVE_CHAT_GIFS)
+                    .map { displayMessages[it.index].id }
+                    .toSet()
+            }
+        }
+    }
     // Messages List
     Box(
         modifier = modifier.fillMaxWidth()
@@ -101,7 +143,6 @@ internal fun ChatMessageList(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
         ) {
-        val displayMessages = messages.toList()
         itemsIndexed(
             items = displayMessages,
             key = { _, msg -> msg.id }
@@ -154,7 +195,9 @@ internal fun ChatMessageList(
                     ChatMessageBubble(
                         index = index,
                         msg = msg,
-                        messages = messages,
+                        messages = displayMessages,
+                        hasIncomingAfter = incomingAfter[index],
+                        isAnimatedMediaEnabled = msg.id in activeAnimatedGifMessageIds,
                         selectedMessages = selectedMessages,
                         isSelectMode = isSelectMode,
                         isTyping = isTyping,
@@ -181,7 +224,9 @@ internal fun ChatMessageList(
                 ChatMessageBubble(
                     index = index,
                     msg = msg,
-                    messages = messages,
+                    messages = displayMessages,
+                    hasIncomingAfter = incomingAfter[index],
+                    isAnimatedMediaEnabled = msg.id in activeAnimatedGifMessageIds,
                     selectedMessages = selectedMessages,
                     isSelectMode = isSelectMode,
                     isTyping = isTyping,
@@ -291,3 +336,5 @@ internal fun ChatMessageList(
     }
 }
 }
+
+private const val MAX_ACTIVE_CHAT_GIFS = 1

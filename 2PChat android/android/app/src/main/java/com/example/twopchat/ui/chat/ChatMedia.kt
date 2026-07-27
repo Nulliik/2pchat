@@ -34,6 +34,10 @@ import java.io.FileOutputStream
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.gestures.rememberTransformableState
@@ -78,6 +82,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
@@ -91,11 +96,27 @@ object AttachmentImageCache {
             return value.byteCount / 1024
         }
     }
+    private val decodeSlots = Semaphore(2)
+    private val decodeLocks = ConcurrentHashMap<String, Mutex>()
 
     fun get(key: String): Bitmap? = cache.get(key)
     fun clear() = cache.evictAll()
     fun put(key: String, bitmap: Bitmap) {
         cache.put(key, bitmap)
+    }
+
+    suspend fun getOrLoad(key: String, loader: () -> Bitmap?): Bitmap? {
+        get(key)?.let { return it }
+        val lock = decodeLocks.computeIfAbsent(key) { Mutex() }
+        return try {
+            lock.withLock {
+                get(key) ?: decodeSlots.withPermit {
+                    loader()?.also { put(key, it) }
+                }
+            }
+        } finally {
+            decodeLocks.remove(key, lock)
+        }
     }
 }
 
@@ -110,26 +131,25 @@ fun rememberSampledImage(filePath: String?, targetWidth: Int = 400, targetHeight
     var bitmapState by remember(cacheKey) { mutableStateOf<Bitmap?>(cached) }
     LaunchedEffect(cacheKey) {
         if (bitmapState != null) return@LaunchedEffect
-        withContext(Dispatchers.IO) {
+        bitmapState = withContext(Dispatchers.IO) {
             try {
                 val file = java.io.File(filePath)
                 if (file.exists()) {
-                    val options = BitmapFactory.Options().apply {
-                        inJustDecodeBounds = true
-                    }
-                    BitmapFactory.decodeFile(filePath, options)
-                    options.inSampleSize = calculateInSampleSize(options, targetWidth, targetHeight)
-                    options.inJustDecodeBounds = false
-                    val decoded = BitmapFactory.decodeFile(filePath, options)
-                    if (decoded != null) {
-                        AttachmentImageCache.put(cacheKey, decoded)
-                        withContext(Dispatchers.Main) {
-                            bitmapState = decoded
+                    AttachmentImageCache.getOrLoad(cacheKey) {
+                        val options = BitmapFactory.Options().apply {
+                            inJustDecodeBounds = true
                         }
+                        BitmapFactory.decodeFile(filePath, options)
+                        options.inSampleSize = calculateInSampleSize(options, targetWidth, targetHeight)
+                        options.inJustDecodeBounds = false
+                        BitmapFactory.decodeFile(filePath, options)
                     }
+                } else {
+                    null
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                null
             }
         }
     }
@@ -144,23 +164,28 @@ fun rememberVideoThumbnail(filePath: String?): Bitmap? {
     var bitmapState by remember(filePath) { mutableStateOf<Bitmap?>(cached) }
     LaunchedEffect(filePath) {
         if (bitmapState != null) return@LaunchedEffect
-        withContext(Dispatchers.IO) {
+        bitmapState = withContext(Dispatchers.IO) {
             try {
                 val file = java.io.File(filePath)
                 if (file.exists()) {
-                    val retriever = android.media.MediaMetadataRetriever()
-                    retriever.setDataSource(filePath)
-                    val frame = retriever.getFrameAtTime(1000000, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                    retriever.release()
-                    if (frame != null) {
-                        AttachmentImageCache.put(cacheKey, frame)
-                        withContext(Dispatchers.Main) {
-                            bitmapState = frame
+                    AttachmentImageCache.getOrLoad(cacheKey) {
+                        val retriever = android.media.MediaMetadataRetriever()
+                        try {
+                            retriever.setDataSource(filePath)
+                            retriever.getFrameAtTime(
+                                1_000_000,
+                                android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                            )
+                        } finally {
+                            retriever.release()
                         }
                     }
+                } else {
+                    null
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                null
             }
         }
     }

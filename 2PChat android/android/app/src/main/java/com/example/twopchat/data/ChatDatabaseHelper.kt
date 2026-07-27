@@ -306,7 +306,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         db.insertWithOnConflict(TABLE_MESSAGES, null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
-    private fun readMessageFromCursor(cursor: android.database.Cursor): Message {
+    private fun readMessageFromCursor(
+        cursor: android.database.Cursor,
+        stringCipher: SecureStorage.StringCipher,
+    ): Message {
         val indexText = cursor.getColumnIndex(KEY_MESSAGE_TEXT)
         val indexIsMe = cursor.getColumnIndex(KEY_IS_ME)
         val indexTimestamp = cursor.getColumnIndex(KEY_TIMESTAMP)
@@ -324,21 +327,25 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val indexAlbumUris = cursor.getColumnIndex(KEY_ALBUM_URIS)
         val indexAlbumTypes = cursor.getColumnIndex(KEY_ALBUM_TYPES)
 
-        val text = if (indexText != -1) dec(cursor.getString(indexText)) else ""
+        val text = if (indexText != -1) {
+            stringCipher.decrypt(cursor.getString(indexText)).orEmpty()
+        } else {
+            ""
+        }
         val isMe = if (indexIsMe != -1) cursor.getInt(indexIsMe) == 1 else false
         val timestamp = if (indexTimestamp != -1) cursor.getString(indexTimestamp) else ""
         val attachType = if (indexAttachType != -1) cursor.getString(indexAttachType) else null
-        val attachUri = if (indexAttachUri != -1) decNullable(cursor.getString(indexAttachUri)) else null
-        val attachName = if (indexAttachName != -1) decNullable(cursor.getString(indexAttachName)) else null
+        val attachUri = if (indexAttachUri != -1) stringCipher.decrypt(cursor.getString(indexAttachUri)) else null
+        val attachName = if (indexAttachName != -1) stringCipher.decrypt(cursor.getString(indexAttachName)) else null
         val replyToId = if (indexReplyToId != -1) cursor.getString(indexReplyToId) else null
-        val replyToText = if (indexReplyToText != -1) decNullable(cursor.getString(indexReplyToText)) else null
-        val replyToName = if (indexReplyToName != -1) decNullable(cursor.getString(indexReplyToName)) else null
+        val replyToText = if (indexReplyToText != -1) stringCipher.decrypt(cursor.getString(indexReplyToText)) else null
+        val replyToName = if (indexReplyToName != -1) stringCipher.decrypt(cursor.getString(indexReplyToName)) else null
         val status = if (indexStatus != -1) cursor.getString(indexStatus) else null
         val reactions = if (indexReactions != -1) deserializeReactions(cursor.getString(indexReactions)) else emptyMap()
         val id = if (indexId != -1) cursor.getString(indexId) else java.util.UUID.randomUUID().toString()
         val sentAtEpochMs = if (indexSentAtMs != -1) cursor.getLong(indexSentAtMs) else 0L
         val isPinned = if (indexIsPinned != -1) cursor.getInt(indexIsPinned) == 1 else false
-        val rawAlbumUris = if (indexAlbumUris != -1) decNullable(cursor.getString(indexAlbumUris)) else null
+        val rawAlbumUris = if (indexAlbumUris != -1) stringCipher.decrypt(cursor.getString(indexAlbumUris)) else null
         val albumMediaUris = rawAlbumUris?.split("|||")?.filter { it.isNotBlank() } ?: emptyList()
         val rawAlbumTypes = if (indexAlbumTypes != -1) cursor.getString(indexAlbumTypes) else null
         val albumMediaTypes = rawAlbumTypes?.split("|||")?.filter { it.isNotBlank() } ?: emptyList()
@@ -376,9 +383,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             "rowid ASC"
         )
         cursor.use {
+            val stringCipher = SecureStorage.newStringCipher()
             if (it.moveToFirst()) {
                 do {
-                    messages.add(readMessageFromCursor(it))
+                    messages.add(readMessageFromCursor(it, stringCipher))
                 } while (it.moveToNext())
             }
         }
@@ -463,9 +471,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             limitClause
         )
         cursor.use {
+            val stringCipher = SecureStorage.newStringCipher()
             if (it.moveToFirst()) {
                 do {
-                    messages.add(readMessageFromCursor(it))
+                    messages.add(readMessageFromCursor(it, stringCipher))
                 } while (it.moveToNext())
             }
         }
@@ -487,7 +496,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         )
         cursor.use {
             if (it.moveToFirst()) {
-                return readMessageFromCursor(it)
+                return readMessageFromCursor(it, SecureStorage.newStringCipher())
             }
         }
         return null
@@ -506,7 +515,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         )
         cursor.use {
             if (it.moveToFirst()) {
-                return readMessageFromCursor(it)
+                return readMessageFromCursor(it, SecureStorage.newStringCipher())
             }
         }
         if (messageText.isNotEmpty()) {
@@ -522,7 +531,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             )
             cursor.use {
                 if (it.moveToFirst()) {
-                    return readMessageFromCursor(it)
+                    return readMessageFromCursor(it, SecureStorage.newStringCipher())
                 }
             }
         }
@@ -654,8 +663,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         // columns (reactions, sentAtEpochMs, etc.) are handled automatically
         // without requiring updates in multiple places (WARN-06).
         cursor.use {
+            val stringCipher = SecureStorage.newStringCipher()
             while (it.moveToNext()) {
-                messages.add(readMessageFromCursor(it))
+                messages.add(readMessageFromCursor(it, stringCipher))
             }
         }
         return messages

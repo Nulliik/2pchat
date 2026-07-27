@@ -62,6 +62,10 @@ class ChatDatabaseMigrationTest {
                 text = "hello",
                 isMe = true,
                 timestamp = "12:00",
+                attachmentUri = "/tmp/attachment.jpg",
+                attachmentName = "attachment.jpg",
+                replyToText = "earlier secret",
+                replyToName = "Alice",
                 sentAtEpochMs = expectedTimestamp,
                 isPinned = true,
                 albumMediaUris = listOf("/tmp/one.jpg", "/tmp/two.mp4"),
@@ -70,6 +74,11 @@ class ChatDatabaseMigrationTest {
         )
 
         val restored = helper.getMessagesForPeer("Alice").single()
+        assertEquals("hello", restored.text)
+        assertEquals("/tmp/attachment.jpg", restored.attachmentUri)
+        assertEquals("attachment.jpg", restored.attachmentName)
+        assertEquals("earlier secret", restored.replyToText)
+        assertEquals("Alice", restored.replyToName)
         assertEquals(expectedTimestamp, restored.sentAtEpochMs)
         assertEquals(true, restored.isPinned)
         assertEquals(listOf("/tmp/one.jpg", "/tmp/two.mp4"), restored.albumMediaUris)

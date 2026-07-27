@@ -39,21 +39,48 @@ object SecureStorage {
         }
     }
 
+    /**
+     * Reuses the provider's cipher engine across a short batch, such as reading
+     * one database cursor. The batch object must not be retained: keeping it
+     * scoped also preserves key-deletion semantics.
+     */
+    internal class StringCipher internal constructor(
+        private val secretKey: SecretKey,
+    ) {
+        private val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+
+        fun encrypt(value: String): String {
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey)
+            val packed = cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+            return PREFIX + Base64.encodeToString(packed, Base64.NO_WRAP)
+        }
+
+        fun decrypt(value: String?): String? {
+            if (value == null || !value.startsWith(PREFIX)) return value
+            val packed = Base64.decode(value.removePrefix(PREFIX), Base64.NO_WRAP)
+            require(packed.size > 12) { "Invalid encrypted value" }
+            cipher.init(
+                Cipher.DECRYPT_MODE,
+                secretKey,
+                GCMParameterSpec(128, packed, 0, 12),
+            )
+            return String(
+                cipher.doFinal(packed, 12, packed.size - 12),
+                Charsets.UTF_8,
+            )
+        }
+    }
+
+    internal fun newStringCipher(): StringCipher = StringCipher(key())
+
     fun encrypt(value: String): String {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, key())
-        val packed = cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-        return PREFIX + Base64.encodeToString(packed, Base64.NO_WRAP)
+        return newStringCipher().encrypt(value)
     }
 
     /** Returns legacy plaintext unchanged, enabling non-destructive migration. */
     fun decrypt(value: String?): String? {
         if (value == null || !value.startsWith(PREFIX)) return value
-        val packed = Base64.decode(value.removePrefix(PREFIX), Base64.NO_WRAP)
-        require(packed.size > 12) { "Invalid encrypted value" }
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, packed, 0, 12))
-        return String(cipher.doFinal(packed, 12, packed.size - 12), Charsets.UTF_8)
+        return newStringCipher().decrypt(value)
     }
 
     fun isEncrypted(value: String?) = value?.startsWith(PREFIX) == true

@@ -36,7 +36,9 @@ internal fun AnimatedStickerImage(
     contentDescription: String,
     targetSizePx: Int,
     modifier: Modifier = Modifier,
+    isAnimationEnabled: Boolean = true,
 ) {
+    val shouldAnimate = isAnimationEnabled && isAnimatedMediaActive()
     val drawable by produceState<Drawable?>(
         initialValue = null,
         filePath,
@@ -81,11 +83,15 @@ internal fun AnimatedStickerImage(
             null
         }
     }
-    DisposableEffect(drawable) {
+    DisposableEffect(drawable, shouldAnimate) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             setInfinitePlatformRepeat(drawable)
         }
-        (drawable as? Animatable)?.start()
+        if (shouldAnimate) {
+            (drawable as? Animatable)?.start()
+        } else {
+            (drawable as? Animatable)?.stop()
+        }
         onDispose { (drawable as? Animatable)?.stop() }
     }
 
