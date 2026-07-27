@@ -107,6 +107,7 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
   implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+  implementation("androidx.work:work-runtime:2.11.2")
   implementation("com.github.penfeizhou.android.animation:awebp:3.0.5")
 
   // Compose

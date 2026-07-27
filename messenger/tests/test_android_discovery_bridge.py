@@ -5,8 +5,10 @@ import hashlib
 import json
 import os
 import threading
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
+from nacl.signing import SigningKey
 
 
 def _load_discovery_bridge():
@@ -717,3 +719,60 @@ def test_disabled_announce_performs_no_network_work(monkeypatch):
         50001,
         "shared-code",
     ) is True
+
+
+def test_group_signature_api_is_domain_separated_and_rejects_tampering(monkeypatch):
+    bridge = _load_discovery_bridge()
+    signing_key = SigningKey.generate()
+    monkeypatch.setattr(
+        bridge,
+        "load_or_create_signing_identity",
+        lambda: signing_key,
+    )
+
+    verification_key = bridge.get_local_signing_public_key()
+    signature = bridge.sign_group_payload("canonical group payload")
+
+    assert verification_key == base64.b64encode(bytes(signing_key.verify_key)).decode("ascii")
+    assert bridge.verify_group_payload(
+        verification_key,
+        "canonical group payload",
+        signature,
+    )
+    assert not bridge.verify_group_payload(
+        verification_key,
+        "canonical group payload!",
+        signature,
+    )
+
+    # A signature made without the group API context must not be accepted.
+    raw_signature = base64.b64encode(
+        signing_key.sign(b"canonical group payload").signature
+    ).decode("ascii")
+    assert not bridge.verify_group_payload(
+        verification_key,
+        "canonical group payload",
+        raw_signature,
+    )
+
+
+def test_group_signature_api_bounds_and_malformed_inputs(monkeypatch):
+    bridge = _load_discovery_bridge()
+    signing_key = SigningKey.generate()
+    monkeypatch.setattr(
+        bridge,
+        "load_or_create_signing_identity",
+        lambda: signing_key,
+    )
+
+    with pytest.raises(ValueError):
+        bridge.sign_group_payload("")
+    with pytest.raises(ValueError):
+        bridge.sign_group_payload("x" * (1024 * 1024 + 1))
+
+    assert not bridge.verify_group_payload("not-base64", "payload", "also-not-base64")
+    assert not bridge.verify_group_payload(
+        base64.b64encode(b"short").decode("ascii"),
+        "payload",
+        base64.b64encode(b"short").decode("ascii"),
+    )

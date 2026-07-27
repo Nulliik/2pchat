@@ -18,6 +18,12 @@ import androidx.core.content.ContextCompat
 import com.example.twopchat.ui.onboarding.OnboardingScreen
 import com.example.twopchat.ui.main.MainScreen
 import com.example.twopchat.ui.chat.ChatScreen
+import com.example.twopchat.group.runtime.AndroidGroupUiController
+import com.example.twopchat.group.runtime.GroupChatCoordinator
+import com.example.twopchat.group.ui.CreateGroupScreen
+import com.example.twopchat.group.ui.GroupChatScreen as P2PGroupChatScreen
+import com.example.twopchat.group.ui.GroupInfoScreen
+import com.example.twopchat.group.ui.PendingGroupInvitesScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,6 +65,13 @@ fun MainNavigation(
     )
   } else {
     val backStack = rememberNavBackStack(Main)
+    val groupController = remember(backStack) {
+      AndroidGroupUiController(
+        onBackNavigation = { backStack.removeLastOrNull() },
+        onOpenGroupNavigation = { groupId -> backStack.add(GroupConversation(groupId)) },
+        onOpenGroupInfoNavigation = { groupId -> backStack.add(GroupInfo(groupId)) },
+      )
+    }
 
     NavDisplay(
       backStack = backStack,
@@ -107,6 +120,39 @@ fun MainNavigation(
               appLanguage = appLanguage,
               onBack = { backStack.removeLastOrNull() },
               modifier = Modifier.fillMaxSize()
+            )
+          }
+          entry<CreateGroup> {
+            val state by GroupChatCoordinator.createState.collectAsState()
+            LaunchedEffect(Unit) { GroupChatCoordinator.refreshContacts() }
+            CreateGroupScreen(
+              state = state,
+              controller = groupController,
+              modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+            )
+          }
+          entry<GroupInvites> {
+            val state by GroupChatCoordinator.pendingInvites.collectAsState()
+            PendingGroupInvitesScreen(
+              state = state,
+              controller = groupController,
+              modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+            )
+          }
+          entry<GroupConversation> { groupKey ->
+            val state by GroupChatCoordinator.chatState(groupKey.groupId).collectAsState()
+            P2PGroupChatScreen(
+              state = state,
+              controller = groupController,
+              modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+            )
+          }
+          entry<GroupInfo> { groupKey ->
+            val state by GroupChatCoordinator.infoState(groupKey.groupId).collectAsState()
+            GroupInfoScreen(
+              state = state,
+              controller = groupController,
+              modifier = Modifier.fillMaxSize().safeDrawingPadding(),
             )
           }
         },

@@ -15,6 +15,7 @@ import struct
 import urllib.parse
 from pathlib import Path
 from datetime import datetime, timezone
+from nacl.signing import VerifyKey
 
 from messenger.core.discovery_manager import get_discovery_provider
 from messenger.core.tracker_catalog import BASE_TRACKERS, TrackerSpec, get_tracker_by_name
@@ -585,6 +586,51 @@ def configure_local_identity(nickname: str, claimed_fingerprint: str = "", about
     local_identity_about_me = str(about_me or "").strip()
     local_identity_fingerprint = actual_fingerprint
     return True
+
+
+_GROUP_SIGNATURE_CONTEXT = b"2pchat-group-signature-api-v1\x00"
+
+
+def get_local_signing_public_key() -> str:
+    """Return only the public Ed25519 key used to authenticate group events."""
+    signing_key = load_or_create_signing_identity()
+    return base64.b64encode(bytes(signing_key.verify_key)).decode("ascii")
+
+
+def sign_group_payload(canonical_payload: str) -> str:
+    """Sign a bounded, domain-separated canonical group envelope."""
+    payload = str(canonical_payload or "").encode("utf-8")
+    if not payload or len(payload) > 1024 * 1024:
+        raise ValueError("group signature payload must be between 1 byte and 1 MiB")
+    signing_key = load_or_create_signing_identity()
+    signature = signing_key.sign(_GROUP_SIGNATURE_CONTEXT + payload).signature
+    return base64.b64encode(signature).decode("ascii")
+
+
+def verify_group_payload(
+    verification_key_base64: str,
+    canonical_payload: str,
+    signature_base64: str,
+) -> bool:
+    """Verify an Ed25519 group signature without accepting non-canonical Base64."""
+    try:
+        verification_key_raw = base64.b64decode(
+            str(verification_key_base64 or ""),
+            validate=True,
+        )
+        signature = base64.b64decode(str(signature_base64 or ""), validate=True)
+        payload = str(canonical_payload or "").encode("utf-8")
+        if len(verification_key_raw) != 32 or len(signature) != 64:
+            return False
+        if not payload or len(payload) > 1024 * 1024:
+            return False
+        VerifyKey(verification_key_raw).verify(
+            _GROUP_SIGNATURE_CONTEXT + payload,
+            signature,
+        )
+        return True
+    except Exception:
+        return False
 
 
 async def _send_local_identity_info(session) -> bool:

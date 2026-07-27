@@ -48,7 +48,11 @@ import androidx.navigation3.runtime.NavKey
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.twopchat.PythonBridge
 import com.example.twopchat.Chat
+import com.example.twopchat.CreateGroup
+import com.example.twopchat.GroupConversation
+import com.example.twopchat.GroupInvites
 import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.group.runtime.GroupChatCoordinator
 import com.example.twopchat.canonicalConnectionTransport
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
@@ -92,6 +96,11 @@ fun ChatsTab(
     }
     var currentUsername by chatsViewModel.currentUsername
     var activeMenuPeer by remember { mutableStateOf<PeerItem?>(null) }
+    val groupSummaries by GroupChatCoordinator.summaries.collectAsState()
+    val pendingGroupInvites by GroupChatCoordinator.pendingInvites.collectAsState()
+    LaunchedEffect(context) {
+        GroupChatCoordinator.initialize(context)
+    }
 
     // Read relay SnapshotState maps during composition so route changes are
     // visible immediately even when SharedPreferences hasn't changed.
@@ -404,6 +413,70 @@ fun ChatsTab(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
+        item(key = "group_actions") {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = { onItemClick(CreateGroup) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(if (appLanguage == "Русский") "Новая группа" else "New group")
+                }
+                OutlinedButton(
+                    onClick = { onItemClick(GroupInvites) },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    val count = pendingGroupInvites.invites.size
+                    Text(
+                        if (appLanguage == "Русский") {
+                            "Приглашения${if (count > 0) " ($count)" else ""}"
+                        } else {
+                            "Invites${if (count > 0) " ($count)" else ""}"
+                        },
+                    )
+                }
+            }
+        }
+
+        if (groupSummaries.isNotEmpty()) {
+            item(key = "groups_header") {
+                Text(
+                    text = if (appLanguage == "Русский") "ГРУППЫ" else "GROUPS",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceVariant,
+                    letterSpacing = 1.2.sp,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 6.dp),
+                )
+            }
+            items(
+                items = groupSummaries,
+                key = { summary -> "group:${summary.groupId}" },
+            ) { summary ->
+                Box(modifier = Modifier.padding(bottom = 10.dp)) {
+                    PeerRow(
+                        peer = PeerItem(
+                            name = summary.title,
+                            lastMsg = summary.lastMessagePreview.ifBlank {
+                                if (appLanguage == "Русский") "Сообщений пока нет" else "No messages yet"
+                            },
+                            transport = "${summary.memberCount} MEMBERS",
+                            isDirect = false,
+                            initials = summary.title.take(2).uppercase(),
+                            unreadCount = summary.unreadCount,
+                        ),
+                        appLanguage = appLanguage,
+                        primaryColor = primaryColor,
+                        surfaceColor = surfaceColor,
+                        onSurfaceColor = onSurfaceColor,
+                        onSurfaceVariant = onSurfaceVariant,
+                        onClick = { onItemClick(GroupConversation(summary.groupId)) },
+                    )
+                }
+            }
+        }
 
         // Chats Header
         item(key = "chats_header") {

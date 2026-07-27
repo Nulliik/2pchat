@@ -1,6 +1,8 @@
 
 package com.example.twopchat.ui.main
 
+import com.example.twopchat.group.runtime.GroupChatCoordinator
+
 import android.widget.Toast
 import android.content.Intent
 import android.net.VpnService
@@ -91,6 +93,8 @@ fun MainScreen(
     var totalUnreadCount by remember {
         mutableStateOf(mainActiveChatsSet.sumOf { sharedPrefs.getInt("unread_count_$it", 0) })
     }
+    val groupSummaries by GroupChatCoordinator.summaries.collectAsState()
+    val combinedUnreadCount = totalUnreadCount + groupSummaries.sumOf { it.unreadCount }
 
     DisposableEffect(sharedPrefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -232,7 +236,7 @@ fun MainScreen(
                 surfaceColor = surfaceColor,
                 onSurfaceColor = onSurfaceColor,
                 backgroundColor = backgroundColor,
-                unreadCount = totalUnreadCount,
+                unreadCount = combinedUnreadCount,
                 modifier = Modifier.navigationBarsPadding()
             )
         }

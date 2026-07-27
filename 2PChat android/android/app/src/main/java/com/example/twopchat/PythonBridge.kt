@@ -509,6 +509,57 @@ object PythonBridge {
         }
     }
 
+    fun getLocalSigningPublicKey(): String {
+        if (!isInitialized) return ""
+        return try {
+            Python.getInstance().getModule("discovery_bridge")
+                .callAttr("get_local_signing_public_key")
+                .toString()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error reading local group signing public key", e)
+            ""
+        }
+    }
+
+    fun signGroupPayload(canonicalPayload: String): String {
+        if (!isInitialized || canonicalPayload.isBlank()) return ""
+        return try {
+            Python.getInstance().getModule("discovery_bridge")
+                .callAttr("sign_group_payload", canonicalPayload)
+                .toString()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error signing group payload", e)
+            ""
+        }
+    }
+
+    fun verifyGroupPayload(
+        verificationKeyBase64: String,
+        canonicalPayload: String,
+        signatureBase64: String,
+    ): Boolean {
+        if (!isInitialized ||
+            verificationKeyBase64.isBlank() ||
+            canonicalPayload.isBlank() ||
+            signatureBase64.isBlank()
+        ) {
+            return false
+        }
+        return try {
+            Python.getInstance().getModule("discovery_bridge")
+                .callAttr(
+                    "verify_group_payload",
+                    verificationKeyBase64,
+                    canonicalPayload,
+                    signatureBase64,
+                )
+                .toBoolean()
+        } catch (e: Exception) {
+            Log.w(TAG, "Rejected invalid group signature", e)
+            false
+        }
+    }
+
     fun shutdownAllSessions(timeoutSeconds: Double = 5.0): Boolean {
         if (!isInitialized) return true
         return try {

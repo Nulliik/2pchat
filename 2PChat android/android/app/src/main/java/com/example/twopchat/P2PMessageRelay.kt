@@ -29,6 +29,8 @@ import java.util.Date
 import java.util.UUID
 import android.util.Base64
 import androidx.compose.runtime.mutableStateMapOf
+import com.example.twopchat.group.runtime.GroupChatCoordinator
+import com.example.twopchat.group.protocol.GroupWireProtocol
 
 internal fun isExpectedPeerFingerprint(persisted: String?, received: String): Boolean =
     persisted.isNullOrBlank() || persisted == received
@@ -638,6 +640,7 @@ object P2PMessageRelay {
             check(PythonBridge.configureLocalIdentity(localName, localFingerprint, aboutMe)) {
                 "Local P2P identity is not configured"
             }
+            GroupChatCoordinator.initialize(appContext)
             // Start the Python P2P listener
             PythonBridge.startP2pListener(port)
             startLocalDiscovery(appContext, port)
@@ -664,6 +667,9 @@ object P2PMessageRelay {
                         val trimmed = text.trim()
                         if (trimmed.startsWith("{")) {
                             val json = org.json.JSONObject(trimmed)
+                            if (GroupChatCoordinator.handleIncoming(appContext, sender, json)) {
+                                return
+                            }
                             when (json.optString("type")) {
                                 "file_offer" -> {
                                     val messageId = json.optString("message_id").take(128)
@@ -1376,6 +1382,7 @@ object P2PMessageRelay {
 
                         shareAvatar(appContext, resolvedPeerName, endpoint)
                         processOfflineQueue(appContext, resolvedPeerName, endpoint)
+                        GroupChatCoordinator.onPeerConnected(appContext, resolvedPeerName)
                     }
                     return true
                 }
@@ -1452,6 +1459,7 @@ object P2PMessageRelay {
             peerRttMs.clear()
         }
         val stopped = PythonBridge.shutdownAllSessions()
+        GroupChatCoordinator.shutdown()
         log(
             appContext,
             "Account P2P runtime shutdown complete: $stopped",
@@ -1851,6 +1859,22 @@ object P2PMessageRelay {
             put("enabled", enabled)
         }
         outboundMessenger.sendControlMessage(context, peerName, payload)
+    }
+
+    /** Send one group protocol envelope through the authenticated pairwise session. */
+    fun sendGroupFrame(
+        context: Context,
+        peerName: String,
+        payload: JSONObject,
+        onResult: (Boolean) -> Unit = {},
+    ) {
+        if (!GroupWireProtocol.isGroupFrame(payload) ||
+            payload.toString().toByteArray(Charsets.UTF_8).size > GroupWireProtocol.MAX_WIRE_BYTES
+        ) {
+            onResult(false)
+            return
+        }
+        outboundMessenger.sendControlMessage(context, peerName, payload, onResult)
     }
 
     fun requestStickerPack(

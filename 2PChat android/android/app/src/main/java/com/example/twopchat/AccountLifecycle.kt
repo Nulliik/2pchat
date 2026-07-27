@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.security.IdentityKeyStore
+import com.example.twopchat.group.runtime.GroupWorkScheduler
 
 internal fun performAccountDeletion(
     shutdownRuntime: () -> Boolean,
@@ -32,6 +33,7 @@ object AccountLifecycle {
     private fun wipePersistentData(context: Context): Boolean {
         var success = true
 
+        GroupWorkScheduler.cancel(context)
         ChatDatabaseHelper.closeAllConnections()
         PythonBridge.clearAccountCaches()
 

@@ -16,6 +16,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import com.example.twopchat.group.runtime.GroupWorkScheduler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,6 +31,7 @@ class P2PRelayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        GroupWorkScheduler.schedule(applicationContext)
         createChannel()
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
