@@ -550,10 +550,13 @@ private fun GroupMessageCard(
     }
 
     val bubbleContainerColor = if (message.isMine) {
-        primaryColor.copy(alpha = 0.15f)
+        primaryColor
     } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        Color(0xFF1E1E24)
     }
+
+    val messageTextColor = Color.White
+    val timestampColor = if (message.isMine) Color.White.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.5f)
 
     Row(
         modifier = Modifier
@@ -665,7 +668,7 @@ private fun GroupMessageCard(
                     Text(
                         text = message.text,
                         fontSize = 14.sp,
-                        color = onSurfaceColor,
+                        color = messageTextColor,
                         modifier = Modifier.padding(vertical = 2.dp)
                     )
                 }
@@ -813,7 +816,7 @@ private fun GroupMessageCard(
                             if (message.isEdited) append(" · изм.")
                         },
                         fontSize = 10.sp,
-                        color = onSurfaceColor.copy(alpha = 0.5f)
+                        color = timestampColor
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
@@ -993,9 +996,22 @@ private fun GroupComposer(
                 enabled = state.textComposerEnabled && !state.isSending,
                 placeholder = {
                     Text(
-                        state.composerPlaceholder.ifBlank { "Сообщение в группу..." },
+                        state.composerPlaceholder.ifBlank { "Сообщение..." },
                         fontSize = 14.sp
                     )
+                },
+                trailingIcon = {
+                    IconButton(
+                        onClick = { onAttachmentClick("GIF") },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_sticker_smile),
+                            contentDescription = "Stickers & Emojis",
+                            tint = primaryColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 },
                 maxLines = 4,
                 shape = RoundedCornerShape(24.dp),
