@@ -540,6 +540,7 @@ fun ChatScreen(
             val currentMessages = initialMessages.toList()
             val firstVisibleIndex = listState.firstVisibleItemIndex
             val firstVisibleOffset = listState.firstVisibleItemScrollOffset
+            val currentFirstVisibleMessageId = currentMessages.getOrNull(firstVisibleIndex)?.id
             val olderPage = withContext(Dispatchers.IO) {
                 db.getMessagesForPeerPaged(
                     peerName = peerName,
@@ -558,8 +559,14 @@ fun ChatScreen(
                     initialMessages.clear()
                     initialMessages.addAll(mergedMessages)
                     if (preserveScrollPosition && addedMessageCount > 0) {
+                        val targetIndex = if (currentFirstVisibleMessageId != null) {
+                            val newIdx = mergedMessages.indexOfFirst { it.id == currentFirstVisibleMessageId }
+                            if (newIdx >= 0) newIdx else (firstVisibleIndex + addedMessageCount)
+                        } else {
+                            firstVisibleIndex + addedMessageCount
+                        }
                         listState.scrollToItem(
-                            (firstVisibleIndex + addedMessageCount).coerceAtMost(mergedMessages.lastIndex),
+                            targetIndex.coerceIn(0, mergedMessages.lastIndex),
                             firstVisibleOffset,
                         )
                     }
