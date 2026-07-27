@@ -44,6 +44,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -2330,28 +2332,44 @@ fun ChatScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 4.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            listOf("👍", "❤️", "😂", "😮", "😢", "🔥", "💩").forEach { emoji ->
+                            listOf("👍", "❤️", "🔥", "😂", "😮", "😢", "👏", "💩", "🎉", "💯").forEach { emoji ->
+                                val senders = msg.reactions[emoji] ?: emptyList()
+                                val isSelected = senders.any { it.equals("Me", ignoreCase = true) }
+                                val bgColor = if (isSelected) primaryColor else primaryColor.copy(alpha = 0.12f)
+
                                 Surface(
-                                    shape = CircleShape,
-                                    color = primaryColor.copy(alpha = 0.12f),
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = bgColor,
+                                    border = if (isSelected) BorderStroke(1.5.dp, primaryColor) else null,
                                     modifier = Modifier
-                                        .size(36.dp)
+                                        .height(40.dp)
                                         .clickable {
                                             triggerHaptic()
                                             val idx = initialMessages.indexOfFirst { it.id == msg.id }
                                             if (idx != -1) {
                                                 val current = initialMessages[idx]
                                                 val updatedMap = current.reactions.toMutableMap()
-                                                val sendersList = (updatedMap[emoji] ?: emptyList()).toMutableList()
-                                                if (!sendersList.contains("Me")) {
-                                                    sendersList.add("Me")
-                                                    updatedMap[emoji] = sendersList
-                                                    initialMessages[idx] = current.copy(reactions = updatedMap)
-                                                    db.updateMessageReactions(msg.id, updatedMap)
+                                                val currentSenders = (updatedMap[emoji] ?: emptyList()).toMutableList()
+                                                val hasReacted = currentSenders.any { it.equals("Me", ignoreCase = true) }
+
+                                                if (hasReacted) {
+                                                    currentSenders.removeAll { it.equals("Me", ignoreCase = true) }
+                                                    if (currentSenders.isEmpty()) {
+                                                        updatedMap.remove(emoji)
+                                                    } else {
+                                                        updatedMap[emoji] = currentSenders
+                                                    }
+                                                } else {
+                                                    currentSenders.add("Me")
+                                                    updatedMap[emoji] = currentSenders
                                                 }
+
+                                                initialMessages[idx] = current.copy(reactions = updatedMap)
+                                                db.updateMessageReactions(msg.id, updatedMap)
                                             }
                                             val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                                             if (endpoint != null && peerName != "Saved Messages") {
@@ -2360,8 +2378,20 @@ fun ChatScreen(
                                             selectedMessageForOptions = null
                                         }
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(text = emoji, fontSize = 18.sp)
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(text = emoji, fontSize = 20.sp)
+                                        if (senders.isNotEmpty()) {
+                                            Text(
+                                                text = "${senders.size}",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) Color.White else primaryColor
+                                            )
+                                        }
                                     }
                                 }
                             }
