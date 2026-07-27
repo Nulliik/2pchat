@@ -102,7 +102,8 @@ data class GroupAttachmentUi(
   val sizeLabel: String,
   val availableBlocks: Int,
   val totalBlocks: Int,
-  val isDownloaded: Boolean = false
+  val isDownloaded: Boolean = false,
+  val localPath: String? = null
 )
 
 data class GroupTimelineMessage(

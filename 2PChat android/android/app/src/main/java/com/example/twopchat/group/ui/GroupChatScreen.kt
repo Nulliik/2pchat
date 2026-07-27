@@ -1,6 +1,12 @@
 package com.example.twopchat.group.ui
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import java.io.File
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.layout.heightIn
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -664,53 +670,100 @@ private fun GroupMessageCard(
                     )
                 }
 
-                // Attachment Card
+                // Attachment Card (Visual Image Preview or File Card)
                 message.attachment?.let { attachment ->
-                    Surface(
-                        color = surfaceColor,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .testTag("attachment_${message.messageId}")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_attach_paperclip),
-                                contentDescription = "Attachment",
-                                tint = primaryColor,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    attachment.fileName,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    "${attachment.sizeLabel} · ${attachment.availableBlocks}/${attachment.totalBlocks} бл.",
-                                    fontSize = 10.sp,
-                                    color = onSurfaceColor.copy(alpha = 0.6f)
-                                )
+                    val isImage = attachment.mimeType.startsWith("image/") ||
+                        attachment.fileName.lowercase().run {
+                            endsWith(".jpg") || endsWith(".jpeg") || endsWith(".png") || endsWith(".webp") || endsWith(".gif")
+                        }
+                    val isVideo = attachment.mimeType.startsWith("video/") ||
+                        attachment.fileName.lowercase().run {
+                            endsWith(".mp4") || endsWith(".mkv") || endsWith(".mov") || endsWith(".avi")
+                        }
+
+                    val imageBitmap = remember(attachment.localPath, attachment.fileName, attachment.isDownloaded) {
+                        if (isImage) {
+                            attachment.localPath?.let { path ->
+                                runCatching {
+                                    val file = File(path)
+                                    if (file.exists()) {
+                                        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                                        BitmapFactory.decodeFile(file.absolutePath, opts)
+                                    } else null
+                                }.getOrNull()
                             }
-                            TextButton(
-                                onClick = {
-                                    controller.downloadAttachment(groupId, message.messageId)
-                                },
-                                enabled = !attachment.isDownloaded,
-                                modifier = Modifier.testTag("download_${message.messageId}")
+                        } else null
+                    }
+
+                    if (imageBitmap != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .testTag("attachment_${message.messageId}")
+                        ) {
+                            Image(
+                                bitmap = imageBitmap.asImageBitmap(),
+                                contentDescription = attachment.fileName,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 240.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                            )
+                        }
+                    } else {
+                        Surface(
+                            color = surfaceColor,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .testTag("attachment_${message.messageId}")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    if (attachment.isDownloaded) "Готово" else "Скачать",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
+                                val iconRes = when {
+                                    isImage -> R.drawable.ic_attach_gallery
+                                    isVideo -> R.drawable.ic_voice_play
+                                    else -> R.drawable.ic_attach_paperclip
+                                }
+                                Icon(
+                                    painter = painterResource(id = iconRes),
+                                    contentDescription = "Attachment",
+                                    tint = primaryColor,
+                                    modifier = Modifier.size(24.dp)
                                 )
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        attachment.fileName,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        "${attachment.sizeLabel} · ${attachment.availableBlocks}/${attachment.totalBlocks} бл.",
+                                        fontSize = 10.sp,
+                                        color = onSurfaceColor.copy(alpha = 0.6f)
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        controller.downloadAttachment(groupId, message.messageId)
+                                    },
+                                    enabled = !attachment.isDownloaded,
+                                    modifier = Modifier.testTag("download_${message.messageId}")
+                                ) {
+                                    Text(
+                                        if (attachment.isDownloaded) "Готово" else "Скачать",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }

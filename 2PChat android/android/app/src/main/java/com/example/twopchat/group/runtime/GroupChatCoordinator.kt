@@ -3519,6 +3519,10 @@ object GroupChatCoordinator {
                 loadAttachmentManifest(groupId, message.messageId)?.let { manifest ->
                     val missing = attachmentStore(groupId).missingBlocks(manifest)
                     val destination = attachmentDestination(groupId, manifest)
+                    val verified = isVerifiedAttachmentDestination(
+                        destination,
+                        manifest,
+                    )
                     GroupAttachmentUi(
                         attachmentId = manifest.attachmentId,
                         fileName = manifest.fileName,
@@ -3526,10 +3530,8 @@ object GroupChatCoordinator {
                         sizeLabel = formatByteCount(manifest.plaintextSize),
                         availableBlocks = manifest.blocks.size - missing.size,
                         totalBlocks = manifest.blocks.size,
-                        isDownloaded = isVerifiedAttachmentDestination(
-                            destination,
-                            manifest,
-                        ),
+                        isDownloaded = verified,
+                        localPath = destination.absolutePath.takeIf { verified || destination.exists() }
                     )
                 }
             } else {
