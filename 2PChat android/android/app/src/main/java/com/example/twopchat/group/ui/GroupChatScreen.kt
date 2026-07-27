@@ -31,10 +31,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import com.example.twopchat.ui.chat.AttachmentPanel
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -238,13 +245,26 @@ fun GroupChatScreen(
 
         HorizontalDivider(color = primaryColor.copy(alpha = 0.1f), thickness = 0.5.dp)
 
+        var isAttachmentPanelOpen by remember { mutableStateOf(false) }
+
         // Chat Input Bar / Composer
         GroupComposer(
             state = state,
             draft = draft,
             onDraftChange = { draft = it },
             onCancelReply = { controller.cancelReply(state.groupId) },
-            onAttach = { attachmentLauncher.launch(arrayOf("*/*")) },
+            isAttachmentPanelOpen = isAttachmentPanelOpen,
+            onToggleAttachmentPanel = { isAttachmentPanelOpen = !isAttachmentPanelOpen },
+            onAttachmentClick = { type ->
+                isAttachmentPanelOpen = false
+                when (type) {
+                    "Camera" -> attachmentLauncher.launch(arrayOf("image/*"))
+                    "Gallery" -> attachmentLauncher.launch(arrayOf("image/*"))
+                    "GIF" -> attachmentLauncher.launch(arrayOf("image/gif"))
+                    "Video" -> attachmentLauncher.launch(arrayOf("video/*"))
+                    else -> attachmentLauncher.launch(arrayOf("*/*"))
+                }
+            },
             onSend = {
                 val text = draft.trim()
                 if (text.isNotEmpty()) {
@@ -789,11 +809,14 @@ private fun GroupComposer(
     draft: String,
     onDraftChange: (String) -> Unit,
     onCancelReply: () -> Unit,
-    onAttach: () -> Unit,
+    isAttachmentPanelOpen: Boolean,
+    onToggleAttachmentPanel: () -> Unit,
+    onAttachmentClick: (String) -> Unit,
     onSend: () -> Unit
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
+    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
 
     Column(
@@ -802,6 +825,19 @@ private fun GroupComposer(
             .background(surfaceColor)
             .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
+        AnimatedVisibility(
+            visible = isAttachmentPanelOpen,
+            enter = expandVertically(expandFrom = Alignment.Bottom, animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) + fadeIn(animationSpec = tween(150)),
+            exit = shrinkVertically(shrinkTowards = Alignment.Bottom, animationSpec = tween(160)) + fadeOut(animationSpec = tween(120)),
+        ) {
+            AttachmentPanel(
+                primaryColor = primaryColor,
+                surfaceVariant = surfaceVariant,
+                onSurfaceColor = onSurfaceColor,
+                onAttachmentClick = onAttachmentClick,
+            )
+        }
+
         state.currentReply?.let { reply ->
             Row(
                 modifier = Modifier
@@ -863,16 +899,33 @@ private fun GroupComposer(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
-                onClick = onAttach,
+                onClick = onToggleAttachmentPanel,
                 enabled = state.mediaComposerEnabled && !state.isSending,
                 modifier = Modifier.testTag("group_attach_button")
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_attach_paperclip),
-                    contentDescription = "Attach File",
-                    tint = if (state.mediaComposerEnabled) primaryColor else onSurfaceColor.copy(alpha = 0.4f),
-                    modifier = Modifier.size(22.dp)
-                )
+                if (isAttachmentPanelOpen) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(primaryColor.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close Panel",
+                            tint = primaryColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                } else {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_attach_paperclip),
+                        contentDescription = "Attach File",
+                        tint = if (state.mediaComposerEnabled) primaryColor else onSurfaceColor.copy(alpha = 0.4f),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
 
             OutlinedTextField(
