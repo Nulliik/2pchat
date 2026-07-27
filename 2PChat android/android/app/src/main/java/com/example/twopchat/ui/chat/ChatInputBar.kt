@@ -53,6 +53,8 @@ internal fun ChatInputBar(
     surfaceVariant: Color,
     onSurfaceColor: Color,
     onSurfaceVariant: Color,
+    suggestedStickers: List<com.example.twopchat.BuiltinSticker> = emptyList(),
+    onSelectSuggestedSticker: (com.example.twopchat.BuiltinSticker) -> Unit = {},
     onAttachmentClick: (String) -> Unit,
     onDismissReply: () -> Unit,
     onDismissEditing: () -> Unit,
@@ -72,6 +74,13 @@ internal fun ChatInputBar(
             .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f))
             .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
+        StickerSuggestionBar(
+            stickers = suggestedStickers,
+            primaryColor = primaryColor,
+            surfaceVariant = surfaceVariant,
+            onStickerSelect = onSelectSuggestedSticker,
+        )
+
         AnimatedVisibility(
             visible = showAttachments,
             enter = expandVertically(expandFrom = Alignment.Bottom, animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) + fadeIn(animationSpec = tween(150)),

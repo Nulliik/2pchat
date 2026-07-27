@@ -43,6 +43,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+internal enum class StickerPackRequestError {
+    NONE,
+    PEER_OFFLINE,
+    TIMEOUT,
+    NOT_FOUND,
+    NETWORK_ERROR,
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun StickerPackBottomSheet(
@@ -53,6 +61,7 @@ internal fun StickerPackBottomSheet(
     previewRevision: Int,
     appLanguage: String,
     primaryColor: Color,
+    requestError: StickerPackRequestError = StickerPackRequestError.NONE,
     onDismiss: () -> Unit,
     onRequestPack: () -> Unit,
     onStickerSelected: (BuiltinSticker) -> Unit,
@@ -252,7 +261,51 @@ internal fun StickerPackBottomSheet(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(fallbackEmoji.ifBlank { "🎭" }, fontSize = 76.sp)
+                    if (requestError != StickerPackRequestError.NONE) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(16.dp),
+                        ) {
+                            Text("⚠️", fontSize = 32.sp)
+                            Spacer(Modifier.height(8.dp))
+                            val errorMessage = when (requestError) {
+                                StickerPackRequestError.PEER_OFFLINE -> if (appLanguage == "Русский") {
+                                    "Собеседник находится не в сети"
+                                } else {
+                                    "Peer is currently offline"
+                                }
+                                StickerPackRequestError.TIMEOUT -> if (appLanguage == "Русский") {
+                                    "Таймаут ожидания P2P ответа"
+                                } else {
+                                    "P2P request timed out"
+                                }
+                                StickerPackRequestError.NOT_FOUND -> if (appLanguage == "Русский") {
+                                    "Стикерпак не найден у собеседника"
+                                } else {
+                                    "Sticker pack not found on peer"
+                                }
+                                StickerPackRequestError.NETWORK_ERROR -> if (appLanguage == "Русский") {
+                                    "Ошибка передачи данных"
+                                } else {
+                                    "Data transfer failed"
+                                }
+                                StickerPackRequestError.NONE -> if (appLanguage == "Русский") {
+                                    "Не удалось загрузить стикерпак"
+                                } else {
+                                    "Could not load sticker pack"
+                                }
+                            }
+                            Text(
+                                text = errorMessage,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.error,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                        }
+                    } else {
+                        Text(fallbackEmoji.ifBlank { "🎭" }, fontSize = 76.sp)
+                    }
                 }
             }
             Spacer(Modifier.height(20.dp))

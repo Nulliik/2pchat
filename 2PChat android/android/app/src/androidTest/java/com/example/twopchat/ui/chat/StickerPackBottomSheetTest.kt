@@ -51,6 +51,31 @@ class StickerPackBottomSheetTest {
     }
 
     @Test
+    fun displaysDetailedErrorWhenPeerIsOffline() {
+        val packId = "missing_peer_pack_${System.nanoTime()}"
+
+        composeRule.setContent {
+            MaterialTheme {
+                StickerPackBottomSheet(
+                    packId = packId,
+                    fallbackEmoji = "🎭",
+                    canRequestFromPeer = true,
+                    requestInProgress = false,
+                    previewRevision = 0,
+                    appLanguage = "English",
+                    primaryColor = Color(0xFF6750A4),
+                    requestError = StickerPackRequestError.PEER_OFFLINE,
+                    onDismiss = {},
+                    onRequestPack = {},
+                    onStickerSelected = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Peer is currently offline").assertIsDisplayed()
+    }
+
+    @Test
     fun displaysEveryStickerFromCachedPeerPackBeforeAddingIt() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val packId = "peer_sheet_${System.nanoTime()}"

@@ -231,6 +231,7 @@ fun ChatScreen(
     var pendingDownloadMsg by remember { mutableStateOf<Message?>(null) }
     var viewedStickerMessage by remember { mutableStateOf<Message?>(null) }
     var stickerPackRequestInProgress by remember { mutableStateOf(false) }
+    var stickerPackRequestError by remember { mutableStateOf(StickerPackRequestError.NONE) }
     var stickerPackPreviewRevision by remember { mutableStateOf(0) }
     var showGifLibrary by remember { mutableStateOf(false) }
     var gifLibraryLoading by remember { mutableStateOf(false) }
@@ -657,6 +658,29 @@ fun ChatScreen(
     }
 
     var inputText by chatViewModel.inputText
+    val availableStickerPacks by produceState(
+        initialValue = StickerSupport.builtinPacks,
+        context,
+    ) {
+        value = withContext(Dispatchers.IO) {
+            StickerSupport.availablePacks(context)
+        }
+    }
+    val inlineSuggestedStickers = remember(inputText, availableStickerPacks) {
+        val trimmed = inputText.trim()
+        if (trimmed.isEmpty()) {
+            emptyList()
+        } else {
+            val q = trimmed.lowercase()
+            availableStickerPacks.flatMap { it.stickers }.filter { sticker ->
+                sticker.emoji.isNotBlank() && (
+                    q.contains(sticker.emoji) ||
+                    sticker.emoji.contains(q) ||
+                    (q.length >= 2 && sticker.stickerId.lowercase().contains(q))
+                )
+            }.distinctBy { "${it.packId}_${it.stickerId}" }
+        }
+    }
     var myTypingState by remember { mutableStateOf(false) }
     val isTyping = P2PMessageRelay.peerTypingStates[peerName] ?: false
 
@@ -2069,6 +2093,11 @@ fun ChatScreen(
                 surfaceVariant = surfaceVariant,
                 onSurfaceColor = onSurfaceColor,
                 onSurfaceVariant = onSurfaceVariant,
+                suggestedStickers = inlineSuggestedStickers,
+                onSelectSuggestedSticker = { sticker ->
+                    sendSticker(sticker)
+                    inputText = ""
+                },
                 onAttachmentClick = { type ->
                     showAttachments = false
                             showAttachments = false
@@ -3485,6 +3514,17 @@ remove("pinned_msg_id_${peerName}")
                 stickerMessage.attachmentName.orEmpty(),
             )
             if (packId != null) {
+                LaunchedEffect(stickerPackRequestInProgress) {
+                    if (stickerPackRequestInProgress) {
+                        kotlinx.coroutines.delay(10_000L)
+                        if (stickerPackRequestInProgress) {
+                            stickerPackRequestInProgress = false
+                            if (stickerPackRequestError == StickerPackRequestError.NONE) {
+                                stickerPackRequestError = StickerPackRequestError.TIMEOUT
+                            }
+                        }
+                    }
+                }
                 StickerPackBottomSheet(
                     packId = packId,
                     fallbackEmoji = stickerMessage.text,
@@ -3493,24 +3533,24 @@ remove("pinned_msg_id_${peerName}")
                     previewRevision = stickerPackPreviewRevision,
                     appLanguage = appLanguage,
                     primaryColor = primaryColor,
+                    requestError = stickerPackRequestError,
                     onDismiss = {
                         viewedStickerMessage = null
                         stickerPackRequestInProgress = false
+                        stickerPackRequestError = StickerPackRequestError.NONE
                     },
                     onRequestPack = {
+                        if (peerName !in P2PMessageRelay.peerEndpoints) {
+                            stickerPackRequestError = StickerPackRequestError.PEER_OFFLINE
+                            stickerPackRequestInProgress = false
+                            return@StickerPackBottomSheet
+                        }
+                        stickerPackRequestError = StickerPackRequestError.NONE
                         stickerPackRequestInProgress = true
                         P2PMessageRelay.requestStickerPack(context, peerName, packId) { sent ->
                             if (!sent) {
                                 stickerPackRequestInProgress = false
-                                Toast.makeText(
-                                    context,
-                                    if (appLanguage == "Русский") {
-                                        "Не удалось запросить стикерпак"
-                                    } else {
-                                        "Could not request sticker pack"
-                                    },
-                                    Toast.LENGTH_SHORT,
-                                ).show()
+                                stickerPackRequestError = StickerPackRequestError.NETWORK_ERROR
                             }
                         }
                     },

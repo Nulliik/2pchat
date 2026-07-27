@@ -19,12 +19,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,7 +62,24 @@ internal fun StickerPickerBottomSheet(
         }
     }
     var selectedPackIndex by remember { mutableIntStateOf(0) }
+    var searchQuery by remember { mutableStateOf("") }
     val pack = packs[selectedPackIndex.coerceIn(0, packs.lastIndex)]
+    val trimmedQuery = searchQuery.trim()
+    val isSearching = trimmedQuery.isNotEmpty()
+
+    val filteredStickers = remember(packs, trimmedQuery, pack) {
+        if (!isSearching) {
+            pack.stickers
+        } else {
+            val q = trimmedQuery.lowercase()
+            packs.flatMap { it.stickers }.filter { sticker ->
+                sticker.emoji.contains(q, ignoreCase = true) ||
+                    sticker.stickerId.lowercase().contains(q) ||
+                    sticker.packId.lowercase().contains(q)
+            }
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
@@ -73,7 +94,7 @@ internal fun StickerPickerBottomSheet(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = if (appLanguage == "Русский") "Стикеры" else "Stickers",
                         fontSize = 20.sp,
@@ -81,7 +102,11 @@ internal fun StickerPickerBottomSheet(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = pack.title,
+                        text = if (isSearching) {
+                            if (appLanguage == "Русский") "Найдено: ${filteredStickers.size}" else "Found: ${filteredStickers.size}"
+                        } else {
+                            pack.title
+                        },
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -95,64 +120,121 @@ internal fun StickerPickerBottomSheet(
                     Text("☺", fontSize = 22.sp)
                 }
             }
-            Spacer(Modifier.height(14.dp))
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                items(packs, key = { it.id }) { candidate ->
-                    val selected = candidate.id == pack.id
+            Spacer(Modifier.height(10.dp))
+
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = {
                     Text(
-                        text = candidate.title,
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 12.sp,
-                        modifier = Modifier
-                            .background(
-                                if (selected) primaryColor else MaterialTheme.colorScheme.surfaceVariant,
-                                RoundedCornerShape(16.dp),
-                            )
-                            .clickable { selectedPackIndex = packs.indexOf(candidate) }
-                            .padding(horizontal = 13.dp, vertical = 8.dp),
+                        if (appLanguage == "Русский") "Поиск стикеров по emoji..." else "Search stickers by emoji...",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(4),
+                },
+                trailingIcon = {
+                    if (isSearching) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Text("✕", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = primaryColor,
+                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(260.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(pack.stickers, key = { it.stickerId }) { sticker ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                if (sticker.localFilePath == null) {
-                                    Color(sticker.backgroundColor).copy(alpha = 0.75f)
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                },
-                                RoundedCornerShape(22.dp),
-                            )
-                            .clickable { onStickerSelected(sticker) }
-                            .padding(vertical = 12.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        AnimatedStickerImage(
-                            filePath = sticker.localFilePath,
-                            fallbackEmoji = sticker.emoji,
-                            contentDescription = sticker.emoji.ifBlank { "Sticker" },
-                            targetSizePx = 128,
-                            modifier = Modifier.size(64.dp),
+                    .height(52.dp),
+            )
+            Spacer(Modifier.height(10.dp))
+
+            if (!isSearching) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    items(packs, key = { it.id }) { candidate ->
+                        val selected = candidate.id == pack.id
+                        Text(
+                            text = candidate.title,
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            modifier = Modifier
+                                .background(
+                                    if (selected) primaryColor else MaterialTheme.colorScheme.surfaceVariant,
+                                    RoundedCornerShape(16.dp),
+                                )
+                                .clickable { selectedPackIndex = packs.indexOf(candidate) }
+                                .padding(horizontal = 13.dp, vertical = 8.dp),
                         )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+
+            if (isSearching && filteredStickers.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp)
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            RoundedCornerShape(20.dp),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("🔍", fontSize = 36.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = if (appLanguage == "Русский") "Ничего не найдено" else "No stickers found",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(4),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(260.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(filteredStickers, key = { "${it.packId}_${it.stickerId}" }) { sticker ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    if (sticker.localFilePath == null) {
+                                        Color(sticker.backgroundColor).copy(alpha = 0.75f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    },
+                                    RoundedCornerShape(22.dp),
+                                )
+                                .clickable { onStickerSelected(sticker) }
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            AnimatedStickerImage(
+                                filePath = sticker.localFilePath,
+                                fallbackEmoji = sticker.emoji,
+                                contentDescription = sticker.emoji.ifBlank { "Sticker" },
+                                targetSizePx = 128,
+                                modifier = Modifier.size(64.dp),
+                            )
+                        }
                     }
                 }
             }
