@@ -415,26 +415,39 @@ fun ChatsTab(
 
         item(key = "group_actions") {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Button(
                     onClick = { onItemClick(CreateGroup) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).height(42.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
                 ) {
-                    Text(if (appLanguage == "Русский") "Новая группа" else "New group")
+                    Text(
+                        text = if (appLanguage == "Русский") "Новая группа" else "New group",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
                 }
                 OutlinedButton(
                     onClick = { onItemClick(GroupInvites) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).height(42.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor.copy(alpha = 0.4f))
                 ) {
                     val count = pendingGroupInvites.invites.size
                     Text(
-                        if (appLanguage == "Русский") {
+                        text = if (appLanguage == "Русский") {
                             "Приглашения${if (count > 0) " ($count)" else ""}"
                         } else {
                             "Invites${if (count > 0) " ($count)" else ""}"
                         },
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = primaryColor
                     )
                 }
             }
