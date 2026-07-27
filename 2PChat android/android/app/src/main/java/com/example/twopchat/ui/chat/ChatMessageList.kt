@@ -95,11 +95,9 @@ internal fun ChatMessageList(
     onJumpToMessage: ((Message) -> Unit)? = null,
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val displayMessages by remember(messages) {
-        derivedStateOf { messages.toList() }
-    }
-    val incomingAfter = remember(displayMessages) {
-        incomingMessageAfterFlags(displayMessages)
+    val displayMessages = messages
+    val incomingAfter = remember(messages) {
+        incomingMessageAfterFlags(messages)
     }
     val activeAnimatedGifMessageIds by remember(listState, displayMessages) {
         derivedStateOf {

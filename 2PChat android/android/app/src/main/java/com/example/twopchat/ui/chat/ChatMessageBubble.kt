@@ -445,7 +445,7 @@ internal fun ChatMessageBubble(
                                 }
                                 "IMAGE" -> {
                                     val bitmap = rememberSampledImage(msg.attachmentUri)
-                                    val attachmentAvailable = isAttachmentAvailable(msg.attachmentUri)
+                                    val attachmentAvailable = remember(msg.attachmentUri) { isAttachmentAvailable(msg.attachmentUri) }
                                     val progressInfo = com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:${msg.id}"]
                                         ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[msg.id]
                                         ?: msg.attachmentName?.let { com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[it] }
@@ -725,7 +725,7 @@ internal fun ChatMessageBubble(
                                     val transferPreview = com.example.twopchat.P2PMessageRelay.fileTransferPreviews["$peerName:${msg.id}"]
                                         ?: com.example.twopchat.P2PMessageRelay.fileTransferPreviews[msg.id]
                                     val thumbnail = completedThumbnail ?: transferPreview
-                                    val attachmentAvailable = isAttachmentAvailable(msg.attachmentUri)
+                                    val attachmentAvailable = remember(msg.attachmentUri) { isAttachmentAvailable(msg.attachmentUri) }
                                     val isTransferring = progressInfo?.state ==
                                         com.example.twopchat.P2PMessageRelay.FileTransferState.TRANSFERRING
                                     val isCancelled = progressInfo?.state ==
@@ -1000,7 +1000,7 @@ internal fun ChatMessageBubble(
                                     }
                                 }
                                 "FILE" -> {
-                                    val attachmentAvailable = isAttachmentAvailable(msg.attachmentUri)
+                                    val attachmentAvailable = remember(msg.attachmentUri) { isAttachmentAvailable(msg.attachmentUri) }
                                     val progressInfo = com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:${msg.id}"]
                                         ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[msg.id]
                                         ?: msg.attachmentName?.let { com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[it] }
@@ -1100,7 +1100,8 @@ internal fun ChatMessageBubble(
                                     }
                                 }
                                 "VOICE" -> {
-                                    if (isAttachmentAvailable(msg.attachmentUri)) {
+                                    val voiceAttachmentAvailable = remember(msg.attachmentUri) { isAttachmentAvailable(msg.attachmentUri) }
+                                    if (voiceAttachmentAvailable) {
                                         VoiceMessagePlayer(
                                             filePath = msg.attachmentUri,
                                             isMine = msg.isMe,
