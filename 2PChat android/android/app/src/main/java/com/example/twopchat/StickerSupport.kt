@@ -136,22 +136,6 @@ object StickerSupport {
                 BuiltinSticker("animals", "penguin", "🐧", 0xFFCFD8DC),
             ),
         ),
-        BuiltinStickerPack(
-            id = "cyber",
-            title = "2P Cyber",
-            stickers = listOf(
-                BuiltinSticker("cyber", "robot", "🤖", 0xFFCFD8DC),
-                BuiltinSticker("cyber", "skull", "💀", 0xFFE0E0E0),
-                BuiltinSticker("cyber", "ghost", "👻", 0xFFF5F5F5),
-                BuiltinSticker("cyber", "alien", "👽", 0xFFC8E6C9),
-                BuiltinSticker("cyber", "monster", "👾", 0xFFE1BEE7),
-                BuiltinSticker("cyber", "eyes", "👀", 0xFFFFF9C4),
-                BuiltinSticker("cyber", "flex", "💪", 0xFFFFE0B2),
-                BuiltinSticker("cyber", "bolt", "⚡", 0xFFFFEE58),
-                BuiltinSticker("cyber", "lock", "🔒", 0xFFB2DFDB),
-                BuiltinSticker("cyber", "mesh", "🌐", 0xFFB3E5FC),
-            ),
-        ),
     )
 
     fun isStickerFileName(fileName: String): Boolean {
