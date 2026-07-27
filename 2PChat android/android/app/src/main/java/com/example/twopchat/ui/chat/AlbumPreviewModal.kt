@@ -36,13 +36,22 @@ fun AlbumPreviewModal(
     surfaceColor: Color = MaterialTheme.colorScheme.surface,
     onSurfaceColor: Color = MaterialTheme.colorScheme.onSurface,
     onDismiss: () -> Unit,
-    onSendAlbum: (caption: String) -> Unit,
+    onSendAlbum: (finalFiles: List<File>, caption: String) -> Unit,
 ) {
     var captionText by remember { mutableStateOf("") }
+    val currentFiles = remember(files) { mutableStateListOf<File>().apply { addAll(files) } }
     var selectedPreviewIndex by remember { mutableIntStateOf(0) }
 
-    val mainPreviewBitmap = remember(files, selectedPreviewIndex) {
-        val targetFile = files.getOrNull(selectedPreviewIndex) ?: files.firstOrNull()
+    LaunchedEffect(currentFiles.size) {
+        if (currentFiles.isEmpty()) {
+            onDismiss()
+        } else if (selectedPreviewIndex >= currentFiles.size) {
+            selectedPreviewIndex = currentFiles.lastIndex.coerceAtLeast(0)
+        }
+    }
+
+    val mainPreviewBitmap = remember(currentFiles.toList(), selectedPreviewIndex) {
+        val targetFile = currentFiles.getOrNull(selectedPreviewIndex) ?: currentFiles.firstOrNull()
         if (targetFile != null && targetFile.exists()) {
             try {
                 val options = BitmapFactory.Options().apply { inSampleSize = 2 }
@@ -69,177 +78,234 @@ fun AlbumPreviewModal(
                 .systemBarsPadding()
                 .imePadding()
         ) {
-        Column(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            // Top Bar
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            Column(
+                modifier = Modifier.fillMaxSize()
             ) {
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_back_arrow),
-                        contentDescription = "Close",
-                        tint = Color.White
+                // Top Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_back_arrow),
+                            contentDescription = "Close",
+                            tint = Color.White
+                        )
+                    }
+                    Text(
+                        text = if (isRu) "Альбом (${currentFiles.size})" else "Album (${currentFiles.size})",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
-                }
-                Text(
-                    text = if (isRu) "Альбом (${files.size})" else "Album (${files.size})",
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Box(modifier = Modifier.size(48.dp))
-            }
-
-            // Main Preview Image Box
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(12.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                if (mainPreviewBitmap != null) {
-                    Image(
-                        bitmap = mainPreviewBitmap.asImageBitmap(),
-                        contentDescription = "Album preview",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(12.dp))
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(120.dp)
-                            .background(Color.White.copy(alpha = 0.1f), CircleShape),
-                        contentAlignment = Alignment.Center
+                    IconButton(
+                        onClick = {
+                            if (currentFiles.isNotEmpty()) {
+                                currentFiles.removeAt(selectedPreviewIndex)
+                                if (currentFiles.isEmpty()) {
+                                    onDismiss()
+                                } else if (selectedPreviewIndex >= currentFiles.size) {
+                                    selectedPreviewIndex = currentFiles.lastIndex
+                                }
+                            }
+                        }
                     ) {
                         Icon(
-                            painter = painterResource(id = R.drawable.ic_attach_paperclip),
-                            contentDescription = "Media",
-                            tint = Color.White.copy(alpha = 0.6f),
-                            modifier = Modifier.size(48.dp)
+                            painter = painterResource(id = R.drawable.ic_delete),
+                            contentDescription = "Delete Item",
+                            tint = Color(0xFFFF5252)
                         )
                     }
                 }
-            }
 
-            // Thumbnails List
-            LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(80.dp)
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                itemsIndexed(files) { idx, file ->
-                    val isSelected = idx == selectedPreviewIndex
-                    val thumbBitmap = remember(file) {
-                        if (file.exists()) {
-                            try {
-                                val options = BitmapFactory.Options().apply { inSampleSize = 4 }
-                                BitmapFactory.decodeFile(file.absolutePath, options)
-                            } catch (_: Exception) {
-                                null
-                            }
-                        } else null
+                // Main Preview Image Box
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (mainPreviewBitmap != null) {
+                        Image(
+                            bitmap = mainPreviewBitmap.asImageBitmap(),
+                            contentDescription = "Album preview",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(12.dp))
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(120.dp)
+                                .background(Color.White.copy(alpha = 0.1f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_attach_paperclip),
+                                contentDescription = "Media",
+                                tint = Color.White.copy(alpha = 0.6f),
+                                modifier = Modifier.size(48.dp)
+                            )
+                        }
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .border(
-                                width = if (isSelected) 2.5.dp else 0.dp,
-                                color = if (isSelected) primaryColor else Color.Transparent,
-                                shape = RoundedCornerShape(8.dp)
+                    // Move left/right reorder overlay buttons
+                    if (currentFiles.size > 1) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 12.dp)
+                                .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = "◀ " + (if (isRu) "Влево" else "Move Left"),
+                                color = if (selectedPreviewIndex > 0) Color.White else Color.White.copy(alpha = 0.3f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable(enabled = selectedPreviewIndex > 0) {
+                                    val item = currentFiles.removeAt(selectedPreviewIndex)
+                                    selectedPreviewIndex -= 1
+                                    currentFiles.add(selectedPreviewIndex, item)
+                                }
                             )
-                            .clickable { selectedPreviewIndex = idx }
-                    ) {
-                        if (thumbBitmap != null) {
-                            Image(
-                                bitmap = thumbBitmap.asImageBitmap(),
-                                contentDescription = "Thumb $idx",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                            Text(
+                                text = (if (isRu) "Вправо" else "Move Right") + " ▶",
+                                color = if (selectedPreviewIndex < currentFiles.lastIndex) Color.White else Color.White.copy(alpha = 0.3f),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.clickable(enabled = selectedPreviewIndex < currentFiles.lastIndex) {
+                                    val item = currentFiles.removeAt(selectedPreviewIndex)
+                                    selectedPreviewIndex += 1
+                                    currentFiles.add(selectedPreviewIndex, item)
+                                }
                             )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(Color.White.copy(alpha = 0.15f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "${idx + 1}",
-                                    color = Color.White,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold
+                        }
+                    }
+                }
+
+                // Thumbnails List
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp)
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    itemsIndexed(currentFiles.toList()) { idx, file ->
+                        val isSelected = idx == selectedPreviewIndex
+                        val thumbBitmap = remember(file) {
+                            if (file.exists()) {
+                                try {
+                                    val options = BitmapFactory.Options().apply { inSampleSize = 4 }
+                                    BitmapFactory.decodeFile(file.absolutePath, options)
+                                } catch (_: Exception) {
+                                    null
+                                }
+                            } else null
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(
+                                    width = if (isSelected) 2.5.dp else 0.dp,
+                                    color = if (isSelected) primaryColor else Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp)
                                 )
+                                .clickable { selectedPreviewIndex = idx }
+                        ) {
+                            if (thumbBitmap != null) {
+                                Image(
+                                    bitmap = thumbBitmap.asImageBitmap(),
+                                    contentDescription = "Thumb $idx",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color.White.copy(alpha = 0.15f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "${idx + 1}",
+                                        color = Color.White,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            // Caption Input and Send Button Footer
-            Surface(
-                color = surfaceColor,
-                tonalElevation = 8.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Caption Input and Send Button Footer
+                Surface(
+                    color = surfaceColor,
+                    tonalElevation = 8.dp,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    OutlinedTextField(
-                        value = captionText,
-                        onValueChange = { captionText = it },
-                        placeholder = {
-                            Text(
-                                text = if (isRu) "Добавить подпись..." else "Add a caption...",
-                                color = onSurfaceColor.copy(alpha = 0.5f)
-                            )
-                        },
-                        modifier = Modifier.weight(1f),
-                        maxLines = 4,
-                        shape = RoundedCornerShape(24.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = primaryColor,
-                            unfocusedBorderColor = onSurfaceColor.copy(alpha = 0.2f),
-                            focusedContainerColor = surfaceColor,
-                            unfocusedContainerColor = surfaceColor,
-                            focusedTextColor = onSurfaceColor,
-                            unfocusedTextColor = onSurfaceColor,
-                        )
-                    )
-
-                    IconButton(
-                        onClick = { onSendAlbum(captionText.trim()) },
+                    Row(
                         modifier = Modifier
-                            .size(48.dp)
-                            .background(primaryColor, CircleShape)
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_send_airplane),
-                            contentDescription = "Send Album",
-                            tint = Color.White
+                        OutlinedTextField(
+                            value = captionText,
+                            onValueChange = { captionText = it },
+                            placeholder = {
+                                Text(
+                                    text = if (isRu) "Добавить подпись..." else "Add a caption...",
+                                    color = onSurfaceColor.copy(alpha = 0.5f)
+                                )
+                            },
+                            modifier = Modifier.weight(1f),
+                            maxLines = 4,
+                            shape = RoundedCornerShape(24.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = primaryColor,
+                                unfocusedBorderColor = onSurfaceColor.copy(alpha = 0.2f),
+                                focusedContainerColor = surfaceColor,
+                                unfocusedContainerColor = surfaceColor,
+                                focusedTextColor = onSurfaceColor,
+                                unfocusedTextColor = onSurfaceColor,
+                            )
                         )
+
+                        IconButton(
+                            onClick = {
+                                if (currentFiles.isNotEmpty()) {
+                                    onSendAlbum(currentFiles.toList(), captionText.trim())
+                                }
+                            },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .background(primaryColor, CircleShape)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_send_airplane),
+                                contentDescription = "Send Album",
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
             }
         }
-    }
     }
 }

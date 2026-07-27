@@ -428,20 +428,26 @@ fun ChatScreen(
     val persistEnabled = remember(context) { sharedPrefs.getBoolean("persist_chat_history", true) }
     val chatViewModel: ChatScreenViewModel = viewModel(key = "chat:$peerName")
     val initialMessages = chatViewModel.messages
-    val searchMatchedIndices by remember(initialMessages, searchQuery) {
+    var selectedCategoryFilter by remember { mutableStateOf(SearchCategoryFilter.ALL) }
+    var selectedDateFilterMs by remember { mutableStateOf<Long?>(null) }
+
+    val searchMatchedIndices by remember(initialMessages, searchQuery, selectedCategoryFilter, selectedDateFilterMs) {
         derivedStateOf {
-            if (searchQuery.isBlank()) emptyList<Int>()
-            else {
+            if (searchQuery.isBlank() && selectedCategoryFilter == SearchCategoryFilter.ALL && selectedDateFilterMs == null) {
+                emptyList<Int>()
+            } else {
                 initialMessages.mapIndexedNotNull { index, msg ->
-                    if (msg.text.contains(searchQuery, ignoreCase = true) ||
-                        msg.attachmentName?.contains(searchQuery, ignoreCase = true) == true) {
-                        index
-                    } else null
+                    val matchesText = searchQuery.isBlank() ||
+                        msg.text.contains(searchQuery, ignoreCase = true) ||
+                        msg.attachmentName?.contains(searchQuery, ignoreCase = true) == true
+                    val matchesCat = msg.matchesCategoryFilter(selectedCategoryFilter)
+                    val matchesDate = msg.matchesDateFilter(selectedDateFilterMs)
+                    if (matchesText && matchesCat && matchesDate) index else null
                 }
             }
         }
     }
-    var currentMatchPointer by remember(searchQuery) { mutableIntStateOf(0) }
+    var currentMatchPointer by remember(searchQuery, selectedCategoryFilter, selectedDateFilterMs) { mutableIntStateOf(0) }
     var isHistoryLoading by chatViewModel.isHistoryLoading
     var loadedPersistedMessageCount by chatViewModel.loadedPersistedMessageCount
     var hasMoreHistory by chatViewModel.hasMoreHistory
@@ -1495,12 +1501,11 @@ fun ChatScreen(
                 pendingAlbumFiles = null
                 pendingAlbumTypes = null
             },
-            onSendAlbum = { caption ->
-                val files = pendingAlbumFiles!!
+            onSendAlbum = { finalFiles, caption ->
                 val types = pendingAlbumTypes ?: emptyList()
                 pendingAlbumFiles = null
                 pendingAlbumTypes = null
-                processAndSendMediaAlbum(files, types, caption)
+                processAndSendMediaAlbum(finalFiles, types, caption)
             }
         )
     }
@@ -1938,7 +1943,8 @@ fun ChatScreen(
             }
 
             Box(modifier = Modifier.weight(1f)) {
-                if (isSearchMode && searchQuery.isNotEmpty() && isSearchListView) {
+                val hasSearchActive = isSearchMode && (searchQuery.isNotEmpty() || selectedCategoryFilter != SearchCategoryFilter.ALL || selectedDateFilterMs != null)
+                if (hasSearchActive && isSearchListView) {
                     SearchResultsListViewOverlay(
                         messages = initialMessages,
                         matchedIndices = searchMatchedIndices,
@@ -2015,7 +2021,7 @@ fun ChatScreen(
                         },
                     )
 
-                    if (isSearchMode && searchQuery.isNotEmpty() && !isSearchListView) {
+                    if (hasSearchActive && !isSearchListView) {
                         SearchNavigationFabs(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
@@ -2072,16 +2078,44 @@ fun ChatScreen(
                 }
             }
 
-            if (isSearchMode && searchQuery.isNotEmpty()) {
+            val hasSearchActive = isSearchMode && (searchQuery.isNotEmpty() || selectedCategoryFilter != SearchCategoryFilter.ALL || selectedDateFilterMs != null)
+            if (hasSearchActive) {
                 SearchBottomBarPill(
                     matchCount = searchMatchedIndices.size,
                     currentIndex = currentMatchPointer,
                     isListView = isSearchListView,
+                    selectedCategory = selectedCategoryFilter,
+                    selectedDateMs = selectedDateFilterMs,
                     appLanguage = appLanguage,
                     primaryColor = primaryColor,
                     surfaceColor = surfaceColor,
                     onSurfaceColor = onSurfaceColor,
-                    onToggleListView = { isSearchListView = !isSearchListView }
+                    onToggleListView = { isSearchListView = !isSearchListView },
+                    onSelectCategory = { selectedCategoryFilter = it },
+                    onPickDate = {
+                        val cal = java.util.Calendar.getInstance().apply {
+                            if (selectedDateFilterMs != null) timeInMillis = selectedDateFilterMs!!
+                        }
+                        android.app.DatePickerDialog(
+                            context,
+                            { _, year, month, dayOfMonth ->
+                                val pickedCal = java.util.Calendar.getInstance().apply {
+                                    set(java.util.Calendar.YEAR, year)
+                                    set(java.util.Calendar.MONTH, month)
+                                    set(java.util.Calendar.DAY_OF_MONTH, dayOfMonth)
+                                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                                    set(java.util.Calendar.MINUTE, 0)
+                                    set(java.util.Calendar.SECOND, 0)
+                                    set(java.util.Calendar.MILLISECOND, 0)
+                                }
+                                selectedDateFilterMs = pickedCal.timeInMillis
+                            },
+                            cal.get(java.util.Calendar.YEAR),
+                            cal.get(java.util.Calendar.MONTH),
+                            cal.get(java.util.Calendar.DAY_OF_MONTH)
+                        ).show()
+                    },
+                    onClearDate = { selectedDateFilterMs = null }
                 )
             } else {
                 ChatInputBar(

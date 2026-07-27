@@ -30,6 +30,44 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.P2PMessageRelay
 
+import java.util.Calendar
+import java.util.TimeZone
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+
+enum class SearchCategoryFilter {
+    ALL,
+    MEDIA,
+    FILES,
+    LINKS,
+}
+
+internal fun Message.matchesCategoryFilter(category: SearchCategoryFilter): Boolean {
+    return when (category) {
+        SearchCategoryFilter.ALL -> true
+        SearchCategoryFilter.MEDIA -> {
+            val type = attachmentType?.uppercase() ?: ""
+            type == "IMAGE" || type == "VIDEO" || type == "GIF" || type == "STICKER" || albumMediaUris.isNotEmpty()
+        }
+        SearchCategoryFilter.FILES -> {
+            val type = attachmentType?.uppercase() ?: ""
+            attachmentType != null && type != "IMAGE" && type != "VIDEO" && type != "GIF" && type != "STICKER" && albumMediaUris.isEmpty()
+        }
+        SearchCategoryFilter.LINKS -> {
+            text.contains("http://", ignoreCase = true) || text.contains("https://", ignoreCase = true)
+        }
+    }
+}
+
+internal fun Message.matchesDateFilter(dateMs: Long?, timeZone: TimeZone = TimeZone.getDefault()): Boolean {
+    if (dateMs == null || dateMs <= 0L) return true
+    if (sentAtEpochMs <= 0L) return false
+    val cal1 = Calendar.getInstance(timeZone).apply { timeInMillis = sentAtEpochMs }
+    val cal2 = Calendar.getInstance(timeZone).apply { timeInMillis = dateMs }
+    return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
+           cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
+}
+
 @Composable
 internal fun SearchNavigationFabs(
     modifier: Modifier = Modifier,
@@ -77,64 +115,137 @@ internal fun SearchBottomBarPill(
     matchCount: Int,
     currentIndex: Int,
     isListView: Boolean,
+    selectedCategory: SearchCategoryFilter = SearchCategoryFilter.ALL,
+    selectedDateMs: Long? = null,
     appLanguage: String,
     primaryColor: Color,
     surfaceColor: Color,
     onSurfaceColor: Color,
-    onToggleListView: () -> Unit
+    onToggleListView: () -> Unit,
+    onSelectCategory: (SearchCategoryFilter) -> Unit = {},
+    onPickDate: () -> Unit = {},
+    onClearDate: () -> Unit = {},
 ) {
     val accentColor = primaryColor
+    val isRu = appLanguage == "Русский"
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp),
+            .wrapContentHeight(),
         color = surfaceColor,
         shadowElevation = 4.dp
     ) {
-        Row(
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .fillMaxWidth()
+                .padding(vertical = 6.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            // Category & Date Filter Bar
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Search",
-                    tint = accentColor,
-                    modifier = Modifier.size(20.dp)
-                )
-                val text = if (!isListView) {
-                    if (matchCount > 0) {
-                        "${currentIndex + 1} из $matchCount"
+                // Calendar Date Chip
+                item {
+                    val dateText = if (selectedDateMs != null) {
+                        val cal = Calendar.getInstance().apply { timeInMillis = selectedDateMs }
+                        String.format("%02d.%02d.%04d ✕", cal.get(Calendar.DAY_OF_MONTH), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR))
                     } else {
-                        if (appLanguage == "Русский") "0 результатов" else "0 results"
+                        "📅 " + (if (isRu) "Дата" else "Date")
                     }
-                } else {
-                    if (appLanguage == "Русский") "$matchCount результатов" else "$matchCount results"
+                    val isDateActive = selectedDateMs != null
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isDateActive) accentColor else accentColor.copy(alpha = 0.12f),
+                        modifier = Modifier.clickable {
+                            if (isDateActive) onClearDate() else onPickDate()
+                        }
+                    ) {
+                        Text(
+                            text = dateText,
+                            color = if (isDateActive) Color.White else accentColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+
+                // Category Chips
+                items(SearchCategoryFilter.values()) { category ->
+                    val isSelected = selectedCategory == category
+                    val chipTitle = when (category) {
+                        SearchCategoryFilter.ALL -> if (isRu) "Все" else "All"
+                        SearchCategoryFilter.MEDIA -> if (isRu) "Медиа" else "Media"
+                        SearchCategoryFilter.FILES -> if (isRu) "Файлы" else "Files"
+                        SearchCategoryFilter.LINKS -> if (isRu) "Ссылки" else "Links"
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isSelected) accentColor else onSurfaceColor.copy(alpha = 0.08f),
+                        modifier = Modifier.clickable { onSelectCategory(category) }
+                    ) {
+                        Text(
+                            text = chipTitle,
+                            color = if (isSelected) Color.White else onSurfaceColor,
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+            }
+
+            // Status count & Toggle view row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = accentColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    val text = if (!isListView) {
+                        if (matchCount > 0) {
+                            "${currentIndex + 1} из $matchCount"
+                        } else {
+                            if (isRu) "0 результатов" else "0 results"
+                        }
+                    } else {
+                        if (isRu) "$matchCount результатов" else "$matchCount results"
+                    }
+                    Text(
+                        text = text,
+                        color = accentColor,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
                 Text(
-                    text = text,
+                    text = if (!isListView) {
+                        if (isRu) "Списком" else "List"
+                    } else {
+                        if (isRu) "В чате" else "In chat"
+                    },
                     color = accentColor,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { onToggleListView() }
                 )
             }
-            Text(
-                text = if (!isListView) {
-                    if (appLanguage == "Русский") "Списком" else "List"
-                } else {
-                    if (appLanguage == "Русский") "В чате" else "In chat"
-                },
-                color = accentColor,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.clickable { onToggleListView() }
-            )
         }
     }
 }
