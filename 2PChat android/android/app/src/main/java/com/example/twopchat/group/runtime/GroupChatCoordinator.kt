@@ -404,6 +404,7 @@ object GroupChatCoordinator {
                 )
                 if (event != null) {
                     attachmentManifests[attachmentManifestKey(groupId, event.eventId)] = manifest
+                    assembleAttachmentIfComplete(groupId, event.eventId, manifest)
                     refreshGroup(groupId)
                 } else {
                     attachmentStore(groupId).discard(manifest)
@@ -3519,6 +3520,9 @@ object GroupChatCoordinator {
                 loadAttachmentManifest(groupId, message.messageId)?.let { manifest ->
                     val missing = attachmentStore(groupId).missingBlocks(manifest)
                     val destination = attachmentDestination(groupId, manifest)
+                    if (!destination.exists() && missing.isEmpty()) {
+                        assembleAttachmentIfComplete(groupId, message.messageId, manifest)
+                    }
                     val verified = isVerifiedAttachmentDestination(
                         destination,
                         manifest,

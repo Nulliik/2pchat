@@ -54,6 +54,13 @@ import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.produceState
+import com.example.twopchat.ui.chat.AnimatedGifImage
+import com.example.twopchat.ui.chat.GifContentScale
+import com.example.twopchat.ui.chat.AnimatedStickerImage
+import com.example.twopchat.ui.chat.GifLibraryBottomSheet
+import com.example.twopchat.StoredGif
+import com.example.twopchat.GifStorageManager
 import com.example.twopchat.ui.chat.AttachmentPanel
 import com.example.twopchat.ui.chat.StickerPickerBottomSheet
 import com.example.twopchat.StickerSupport
@@ -110,6 +117,7 @@ fun GroupChatScreen(
     var deletingMessage by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var selectedMessageForOptions by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var showStickerPicker by remember { mutableStateOf(false) }
+    var showGifLibrary by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -273,7 +281,8 @@ fun GroupChatScreen(
             onAttachmentClick = { type ->
                 isAttachmentPanelOpen = false
                 when (type) {
-                    "GIF", "Stickers" -> showStickerPicker = true
+                    "GIF" -> showGifLibrary = true
+                    "Stickers" -> showStickerPicker = true
                     "Camera" -> attachmentLauncher.launch(arrayOf("image/*"))
                     "Gallery" -> attachmentLauncher.launch(arrayOf("image/*"))
                     "Video" -> attachmentLauncher.launch(arrayOf("video/*"))
@@ -458,6 +467,27 @@ fun GroupChatScreen(
                         controller.sendMessage(state.groupId, sticker.emoji, state.currentReply?.messageId)
                     }
                 }
+            }
+        )
+    }
+
+    if (showGifLibrary) {
+        val gifList by produceState(initialValue = emptyList<StoredGif>(), context) {
+            value = withContext(Dispatchers.IO) { GifStorageManager.list(context) }
+        }
+        GifLibraryBottomSheet(
+            gifs = gifList,
+            isLoading = false,
+            appLanguage = "Русский",
+            primaryColor = primaryColor,
+            onDismiss = { showGifLibrary = false },
+            onImport = {
+                showGifLibrary = false
+                attachmentLauncher.launch(arrayOf("image/gif"))
+            },
+            onGifSelected = { gif ->
+                showGifLibrary = false
+                controller.sendAttachment(state.groupId, Uri.fromFile(File(gif.filePath)).toString(), "image/gif")
             }
         )
     }
@@ -706,11 +736,16 @@ private fun GroupMessageCard(
                     )
                 }
 
-                // Attachment Card (Visual Image Preview or File Card)
+                // Attachment & Rich Media Rendering (GIFs, Stickers, Photos, Videos)
                 message.attachment?.let { attachment ->
+                    val isGif = attachment.mimeType == "image/gif" ||
+                        attachment.fileName.lowercase().endsWith(".gif")
+                    val isSticker = attachment.mimeType.contains("sticker") ||
+                        attachment.fileName.lowercase().contains("sticker") ||
+                        StickerSupport.isStickerFileName(attachment.fileName)
                     val isImage = attachment.mimeType.startsWith("image/") ||
                         attachment.fileName.lowercase().run {
-                            endsWith(".jpg") || endsWith(".jpeg") || endsWith(".png") || endsWith(".webp") || endsWith(".gif")
+                            endsWith(".jpg") || endsWith(".jpeg") || endsWith(".png") || endsWith(".webp")
                         }
                     val isVideo = attachment.mimeType.startsWith("video/") ||
                         attachment.fileName.lowercase().run {
@@ -718,94 +753,133 @@ private fun GroupMessageCard(
                         }
 
                     val context = LocalContext.current
-                    val imageBitmap = remember(attachment.localPath, attachment.fileName, attachment.isDownloaded) {
-                        if (isImage) {
-                            val path = attachment.localPath ?: attachment.fileName
-                            runCatching {
-                                if (path.startsWith("content://")) {
-                                    context.contentResolver.openInputStream(Uri.parse(path))?.use { stream ->
-                                        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-                                        BitmapFactory.decodeStream(stream, null, opts)
-                                    }
-                                } else {
-                                    val file = File(path)
-                                    if (file.exists()) {
-                                        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-                                        BitmapFactory.decodeFile(file.absolutePath, opts)
-                                    } else null
-                                }
-                            }.getOrNull()
-                        } else null
-                    }
+                    val localPath = attachment.localPath ?: attachment.fileName
 
-                    if (imageBitmap != null) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .testTag("attachment_${message.messageId}")
-                        ) {
-                            Image(
-                                bitmap = imageBitmap.asImageBitmap(),
-                                contentDescription = attachment.fileName,
-                                contentScale = ContentScale.Crop,
+                    when {
+                        isSticker && localPath.isNotBlank() -> {
+                            Box(
+                                modifier = Modifier
+                                    .padding(vertical = 4.dp)
+                                    .testTag("attachment_${message.messageId}")
+                            ) {
+                                AnimatedStickerImage(
+                                    filePath = localPath,
+                                    fallbackEmoji = "👍",
+                                    contentDescription = "Sticker",
+                                    targetSizePx = 256,
+                                    modifier = Modifier.size(160.dp)
+                                )
+                            }
+                        }
+                        isGif && localPath.isNotBlank() -> {
+                            Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(max = 240.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                            )
-                        }
-                    } else {
-                        Surface(
-                            color = surfaceColor,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .testTag("attachment_${message.messageId}")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(vertical = 4.dp)
+                                    .testTag("attachment_${message.messageId}")
                             ) {
-                                val iconRes = when {
-                                    isImage -> R.drawable.ic_attach_gallery
-                                    isVideo -> R.drawable.ic_voice_play
-                                    else -> R.drawable.ic_attach_paperclip
-                                }
-                                Icon(
-                                    painter = painterResource(id = iconRes),
-                                    contentDescription = "Attachment",
-                                    tint = primaryColor,
-                                    modifier = Modifier.size(24.dp)
+                                AnimatedGifImage(
+                                    filePath = localPath,
+                                    targetMaxDimensionPx = 512,
+                                    contentScale = GifContentScale.CROP,
+                                    contentDescription = "GIF",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 240.dp)
+                                        .clip(RoundedCornerShape(12.dp))
                                 )
-                                Spacer(Modifier.width(8.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        attachment.fileName,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        "${attachment.sizeLabel} · ${attachment.availableBlocks}/${attachment.totalBlocks} бл.",
-                                        fontSize = 10.sp,
-                                        color = onSurfaceColor.copy(alpha = 0.6f)
+                            }
+                        }
+                        else -> {
+                            val imageBitmap = remember(attachment.localPath, attachment.fileName, attachment.isDownloaded) {
+                                if (isImage || isGif) {
+                                    runCatching {
+                                        if (localPath.startsWith("content://")) {
+                                            context.contentResolver.openInputStream(Uri.parse(localPath))?.use { stream ->
+                                                val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                                                BitmapFactory.decodeStream(stream, null, opts)
+                                            }
+                                        } else {
+                                            val file = File(localPath)
+                                            if (file.exists()) {
+                                                val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                                                BitmapFactory.decodeFile(file.absolutePath, opts)
+                                            } else null
+                                        }
+                                    }.getOrNull()
+                                } else null
+                            }
+
+                            if (imageBitmap != null) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .testTag("attachment_${message.messageId}")
+                                ) {
+                                    Image(
+                                        bitmap = imageBitmap.asImageBitmap(),
+                                        contentDescription = attachment.fileName,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 240.dp)
+                                            .clip(RoundedCornerShape(12.dp))
                                     )
                                 }
-                                TextButton(
-                                    onClick = {
-                                        controller.downloadAttachment(groupId, message.messageId)
-                                    },
-                                    enabled = !attachment.isDownloaded,
-                                    modifier = Modifier.testTag("download_${message.messageId}")
+                            } else {
+                                Surface(
+                                    color = surfaceColor,
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp)
+                                        .testTag("attachment_${message.messageId}")
                                 ) {
-                                    Text(
-                                        if (attachment.isDownloaded) "Готово" else "Скачать",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        val iconRes = when {
+                                            isImage -> R.drawable.ic_attach_gallery
+                                            isVideo -> R.drawable.ic_voice_play
+                                            else -> R.drawable.ic_attach_paperclip
+                                        }
+                                        Icon(
+                                            painter = painterResource(id = iconRes),
+                                            contentDescription = "Attachment",
+                                            tint = primaryColor,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                attachment.fileName,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                "${attachment.sizeLabel} · ${attachment.availableBlocks}/${attachment.totalBlocks} бл.",
+                                                fontSize = 10.sp,
+                                                color = onSurfaceColor.copy(alpha = 0.6f)
+                                            )
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                controller.downloadAttachment(groupId, message.messageId)
+                                            },
+                                            enabled = !attachment.isDownloaded,
+                                            modifier = Modifier.testTag("download_${message.messageId}")
+                                        ) {
+                                            Text(
+                                                if (attachment.isDownloaded) "Готово" else "Скачать",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
