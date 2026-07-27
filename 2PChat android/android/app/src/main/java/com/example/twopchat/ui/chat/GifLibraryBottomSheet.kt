@@ -212,6 +212,6 @@ internal fun GifLibraryBottomSheet(
     }
 }
 
-// GIF frame decoding dominated the sampled CPU profile. Two centered previews
+// GIF frame decoding dominated the sampled CPU profile. Four centered previews
 // retain the animated affordance without running a decoder for every grid cell.
-private const val MAX_ANIMATED_GIF_PREVIEWS = 2
+private const val MAX_ANIMATED_GIF_PREVIEWS = 4

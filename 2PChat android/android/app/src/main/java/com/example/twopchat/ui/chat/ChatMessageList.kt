@@ -337,4 +337,4 @@ internal fun ChatMessageList(
 }
 }
 
-private const val MAX_ACTIVE_CHAT_GIFS = 1
+private const val MAX_ACTIVE_CHAT_GIFS = 2
