@@ -430,6 +430,7 @@ fun ChatScreen(
     val initialMessages = chatViewModel.messages
     var selectedCategoryFilter by remember { mutableStateOf(SearchCategoryFilter.ALL) }
     var selectedDateFilterMs by remember { mutableStateOf<Long?>(null) }
+    var showDatePickerDialog by remember { mutableStateOf(false) }
 
     val searchMatchedIndices by remember(initialMessages, searchQuery, selectedCategoryFilter, selectedDateFilterMs) {
         derivedStateOf {
@@ -2092,29 +2093,7 @@ fun ChatScreen(
                     onSurfaceColor = onSurfaceColor,
                     onToggleListView = { isSearchListView = !isSearchListView },
                     onSelectCategory = { selectedCategoryFilter = it },
-                    onPickDate = {
-                        val cal = java.util.Calendar.getInstance().apply {
-                            if (selectedDateFilterMs != null) timeInMillis = selectedDateFilterMs!!
-                        }
-                        android.app.DatePickerDialog(
-                            context,
-                            { _, year, month, dayOfMonth ->
-                                val pickedCal = java.util.Calendar.getInstance().apply {
-                                    set(java.util.Calendar.YEAR, year)
-                                    set(java.util.Calendar.MONTH, month)
-                                    set(java.util.Calendar.DAY_OF_MONTH, dayOfMonth)
-                                    set(java.util.Calendar.HOUR_OF_DAY, 0)
-                                    set(java.util.Calendar.MINUTE, 0)
-                                    set(java.util.Calendar.SECOND, 0)
-                                    set(java.util.Calendar.MILLISECOND, 0)
-                                }
-                                selectedDateFilterMs = pickedCal.timeInMillis
-                            },
-                            cal.get(java.util.Calendar.YEAR),
-                            cal.get(java.util.Calendar.MONTH),
-                            cal.get(java.util.Calendar.DAY_OF_MONTH)
-                        ).show()
-                    },
+                    onPickDate = { showDatePickerDialog = true },
                     onClearDate = { selectedDateFilterMs = null }
                 )
             } else {
@@ -2785,6 +2764,75 @@ remove("pinned_msg_id_${peerName}")
                 containerColor = surfaceColor,
                 shape = RoundedCornerShape(24.dp)
             )
+        }
+
+        // Custom Themed Date Picker Dialog matching active app primaryColor theme
+        if (showDatePickerDialog) {
+            val datePickerState = rememberDatePickerState(
+                initialSelectedDateMillis = selectedDateFilterMs ?: System.currentTimeMillis()
+            )
+            DatePickerDialog(
+                onDismissRequest = { showDatePickerDialog = false },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            datePickerState.selectedDateMillis?.let { dateMs ->
+                                val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = dateMs }
+                                val localCal = java.util.Calendar.getInstance().apply {
+                                    set(java.util.Calendar.YEAR, utcCal.get(java.util.Calendar.YEAR))
+                                    set(java.util.Calendar.MONTH, utcCal.get(java.util.Calendar.MONTH))
+                                    set(java.util.Calendar.DAY_OF_MONTH, utcCal.get(java.util.Calendar.DAY_OF_MONTH))
+                                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                                    set(java.util.Calendar.MINUTE, 0)
+                                    set(java.util.Calendar.SECOND, 0)
+                                    set(java.util.Calendar.MILLISECOND, 0)
+                                }
+                                selectedDateFilterMs = localCal.timeInMillis
+                            }
+                            showDatePickerDialog = false
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = primaryColor)
+                    ) {
+                        Text(
+                            text = if (appLanguage == "Русский") "ОК" else "OK",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showDatePickerDialog = false },
+                        colors = ButtonDefaults.textButtonColors(contentColor = primaryColor)
+                    ) {
+                        Text(
+                            text = if (appLanguage == "Русский") "ОТМЕНА" else "CANCEL",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                colors = DatePickerDefaults.colors(
+                    containerColor = surfaceColor,
+                )
+            ) {
+                DatePicker(
+                    state = datePickerState,
+                    colors = DatePickerDefaults.colors(
+                        containerColor = surfaceColor,
+                        titleContentColor = primaryColor,
+                        headlineContentColor = primaryColor,
+                        weekdayContentColor = onSurfaceColor.copy(alpha = 0.6f),
+                        subheadContentColor = onSurfaceColor,
+                        yearContentColor = onSurfaceColor,
+                        selectedYearContainerColor = primaryColor,
+                        selectedYearContentColor = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White,
+                        selectedDayContainerColor = primaryColor,
+                        selectedDayContentColor = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White,
+                        todayDateBorderColor = primaryColor,
+                        todayContentColor = primaryColor,
+                        dayContentColor = onSurfaceColor,
+                    )
+                )
+            }
         }
 
         // Forward Dialog

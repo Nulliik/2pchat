@@ -155,7 +155,7 @@ internal fun SearchBottomBarPill(
                         val cal = Calendar.getInstance().apply { timeInMillis = selectedDateMs }
                         String.format("%02d.%02d.%04d ✕", cal.get(Calendar.DAY_OF_MONTH), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR))
                     } else {
-                        "📅 " + (if (isRu) "Дата" else "Date")
+                        if (isRu) "Дата" else "Date"
                     }
                     val isDateActive = selectedDateMs != null
                     Surface(
@@ -165,13 +165,24 @@ internal fun SearchBottomBarPill(
                             if (isDateActive) onClearDate() else onPickDate()
                         }
                     ) {
-                        Text(
-                            text = dateText,
-                            color = if (isDateActive) Color.White else accentColor,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Icon(
+                                painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_calendar),
+                                contentDescription = "Calendar",
+                                tint = if (isDateActive) Color.White else accentColor,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = dateText,
+                                color = if (isDateActive) Color.White else accentColor,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
 
