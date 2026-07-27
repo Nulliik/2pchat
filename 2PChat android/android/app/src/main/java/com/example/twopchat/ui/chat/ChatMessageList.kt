@@ -143,7 +143,8 @@ internal fun ChatMessageList(
         ) {
         itemsIndexed(
             items = displayMessages,
-            key = { _, msg -> msg.id }
+            key = { _, msg -> msg.id },
+            contentType = { _, msg -> msg.attachmentType ?: "text" }
         ) { index, msg ->
             val previousMessage = displayMessages.getOrNull(index - 1)
             val showDateHeader = remember(
