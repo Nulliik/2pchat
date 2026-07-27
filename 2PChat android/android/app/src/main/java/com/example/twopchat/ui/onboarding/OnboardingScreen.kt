@@ -1,8 +1,10 @@
 package com.example.twopchat.ui.onboarding
 
+import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.VpnService
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,7 +33,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.example.twopchat.P2PPreferences
 import com.example.twopchat.PythonBridge
+import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 
@@ -42,7 +47,7 @@ fun OnboardingScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val sharedPrefs = remember { com.example.twopchat.P2PPreferences.prefs(context) }
+    val sharedPrefs = remember { P2PPreferences.prefs(context) }
     
     var currentStep by remember { mutableStateOf(1) }
     var nickname by remember { mutableStateOf("") }
@@ -51,9 +56,37 @@ fun OnboardingScreen(
     var pendingCropUri by remember { mutableStateOf<Uri?>(null) }
     var showYggdrasilDialog by remember { mutableStateOf(false) }
 
+    fun startYggdrasilAndComplete() {
+        try {
+            sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, PacketTunnelProvider::class.java).apply {
+                    action = PacketTunnelProvider.ACTION_START
+                },
+            )
+            onComplete()
+        } catch (error: RuntimeException) {
+            android.util.Log.e("OnboardingScreen", "Unable to start Yggdrasil VPN", error)
+            sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
+            showYggdrasilDialog = true
+        }
+    }
+
     LaunchedEffect(profilePhotoUri) {
         profileBitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             loadBitmapFromUri(context, profilePhotoUri)
+        }
+    }
+
+    val vpnPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && VpnService.prepare(context) == null) {
+            startYggdrasilAndComplete()
+        } else {
+            sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
+            showYggdrasilDialog = true
         }
     }
 
@@ -119,37 +152,13 @@ fun OnboardingScreen(
                 Button(
                     onClick = {
                         showYggdrasilDialog = false
-                        // Toggle Yggdrasil OFF -> ON to force Android OS VpnService permission prompt
-                        try {
-                            val stopIntent = Intent(context, com.example.twopchat.yggdrasil.PacketTunnelProvider::class.java).apply {
-                                action = com.example.twopchat.yggdrasil.PacketTunnelProvider.ACTION_STOP
-                            }
-                            context.stopService(stopIntent)
-                        } catch (_: Exception) {}
-
-                        val vpnPrepareIntent = android.net.VpnService.prepare(context)
+                        val vpnPrepareIntent = VpnService.prepare(context)
                         if (vpnPrepareIntent != null) {
-                            try {
-                                vpnPrepareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                context.startActivity(vpnPrepareIntent)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
+                            sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
+                            vpnPermissionLauncher.launch(vpnPrepareIntent)
                         } else {
-                            val startIntent = Intent(context, com.example.twopchat.yggdrasil.PacketTunnelProvider::class.java).apply {
-                                action = com.example.twopchat.yggdrasil.PacketTunnelProvider.ACTION_START
-                            }
-                            try {
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                    context.startForegroundService(startIntent)
-                                } else {
-                                    context.startService(startIntent)
-                                }
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
+                            startYggdrasilAndComplete()
                         }
-                        onComplete()
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = primaryColor,
@@ -167,6 +176,7 @@ fun OnboardingScreen(
                 TextButton(
                     onClick = {
                         showYggdrasilDialog = false
+                        sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
                         onComplete()
                     }
                 ) {
