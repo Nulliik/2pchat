@@ -47,7 +47,17 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import android.net.Uri
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.example.twopchat.ui.chat.AttachmentPanel
+import com.example.twopchat.ui.chat.StickerPickerBottomSheet
+import com.example.twopchat.StickerSupport
+import com.example.twopchat.BuiltinSticker
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -99,6 +109,8 @@ fun GroupChatScreen(
     var editingMessage by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var deletingMessage by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var selectedMessageForOptions by remember { mutableStateOf<GroupTimelineMessage?>(null) }
+    var showStickerPicker by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
@@ -261,9 +273,9 @@ fun GroupChatScreen(
             onAttachmentClick = { type ->
                 isAttachmentPanelOpen = false
                 when (type) {
+                    "GIF", "Stickers" -> showStickerPicker = true
                     "Camera" -> attachmentLauncher.launch(arrayOf("image/*"))
                     "Gallery" -> attachmentLauncher.launch(arrayOf("image/*"))
-                    "GIF" -> attachmentLauncher.launch(arrayOf("image/gif"))
                     "Video" -> attachmentLauncher.launch(arrayOf("video/*"))
                     else -> attachmentLauncher.launch(arrayOf("*/*"))
                 }
@@ -426,6 +438,27 @@ fun GroupChatScreen(
             },
             containerColor = surfaceColor,
             shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    if (showStickerPicker) {
+        StickerPickerBottomSheet(
+            appLanguage = "Русский",
+            primaryColor = primaryColor,
+            onDismiss = { showStickerPicker = false },
+            onStickerSelected = { sticker ->
+                showStickerPicker = false
+                coroutineScope.launch {
+                    val stickerFile = withContext(Dispatchers.IO) {
+                        runCatching { StickerSupport.prepareSticker(context, sticker) }.getOrNull()
+                    }
+                    if (stickerFile != null) {
+                        controller.sendAttachment(state.groupId, Uri.fromFile(stickerFile).toString(), "image/png")
+                    } else {
+                        controller.sendMessage(state.groupId, sticker.emoji, state.currentReply?.messageId)
+                    }
+                }
+            }
         )
     }
 }
@@ -684,17 +717,24 @@ private fun GroupMessageCard(
                             endsWith(".mp4") || endsWith(".mkv") || endsWith(".mov") || endsWith(".avi")
                         }
 
+                    val context = LocalContext.current
                     val imageBitmap = remember(attachment.localPath, attachment.fileName, attachment.isDownloaded) {
                         if (isImage) {
-                            attachment.localPath?.let { path ->
-                                runCatching {
+                            val path = attachment.localPath ?: attachment.fileName
+                            runCatching {
+                                if (path.startsWith("content://")) {
+                                    context.contentResolver.openInputStream(Uri.parse(path))?.use { stream ->
+                                        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                                        BitmapFactory.decodeStream(stream, null, opts)
+                                    }
+                                } else {
                                     val file = File(path)
                                     if (file.exists()) {
                                         val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
                                         BitmapFactory.decodeFile(file.absolutePath, opts)
                                     } else null
-                                }.getOrNull()
-                            }
+                                }
+                            }.getOrNull()
                         } else null
                     }
 
