@@ -25,6 +25,8 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private val stickerDrawableCache = androidx.collection.LruCache<String, Drawable>(64)
+
 /**
  * Decodes animated WEBP stickers only while their lazy-grid/message item is composed.
  * Android 9+ uses AnimatedImageDrawable; Android 7–8 use the compatibility decoder.
@@ -44,43 +46,50 @@ internal fun AnimatedStickerImage(
         filePath,
         targetSizePx,
     ) {
-        value = if (filePath != null) {
-            withContext(Dispatchers.IO) {
-                val file = File(filePath)
-                val info = StickerSupport.validateWebP(file)
-                if (info == null) {
-                    null
-                } else {
-                    runCatching {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                            ImageDecoder.decodeDrawable(ImageDecoder.createSource(file)) {
-                                    decoder,
-                                    imageInfo,
-                                    _,
-                                ->
-                                val width = imageInfo.size.width.coerceAtLeast(1)
-                                val height = imageInfo.size.height.coerceAtLeast(1)
-                                val scale = minOf(
-                                    targetSizePx.coerceAtLeast(1).toFloat() / width,
-                                    targetSizePx.coerceAtLeast(1).toFloat() / height,
-                                    1f,
-                                )
-                                decoder.setTargetSize(
-                                    (width * scale).toInt().coerceAtLeast(1),
-                                    (height * scale).toInt().coerceAtLeast(1),
-                                )
-                            }
-                        } else if (info.animated) {
-                            WebPDrawable.fromFile(file.absolutePath)
-                        } else {
-                            @Suppress("DEPRECATION")
-                            Drawable.createFromPath(file.absolutePath)
-                        }
-                    }.getOrNull()
-                }
-            }
+        val cacheKey = "${filePath}_${targetSizePx}"
+        val cached = if (filePath != null) stickerDrawableCache.get(cacheKey) else null
+        if (cached != null) {
+            value = cached
         } else {
-            null
+            value = if (filePath != null) {
+                withContext(Dispatchers.IO) {
+                    val file = File(filePath)
+                    val info = StickerSupport.validateWebP(file)
+                    if (info == null) {
+                        null
+                    } else {
+                        val decoded = runCatching {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                                ImageDecoder.decodeDrawable(ImageDecoder.createSource(file)) {
+                                        decoder,
+                                        imageInfo,
+                                        _,
+                                    ->
+                                    val width = imageInfo.size.width.coerceAtLeast(1)
+                                    val height = imageInfo.size.height.coerceAtLeast(1)
+                                    val scale = minOf(
+                                        targetSizePx.coerceAtLeast(1).toFloat() / width,
+                                        targetSizePx.coerceAtLeast(1).toFloat() / height,
+                                        1f,
+                                    )
+                                    decoder.setTargetSize(
+                                        (width * scale).toInt().coerceAtLeast(1),
+                                        (height * scale).toInt().coerceAtLeast(1),
+                                    )
+                                }
+                            } else if (info.animated) {
+                                WebPDrawable.fromFile(file.absolutePath)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                Drawable.createFromPath(file.absolutePath)
+                            }
+                        }.getOrNull()
+                        decoded?.also { stickerDrawableCache.put(cacheKey, it) }
+                    }
+                }
+            } else {
+                null
+            }
         }
     }
     DisposableEffect(drawable, shouldAnimate) {
