@@ -1,10 +1,13 @@
 package com.example.twopchat.ui.chat
 
+import androidx.compose.runtime.Immutable
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.ConcurrentHashMap
 
+@Immutable
 data class Message(
     val id: String,
     val text: String,
@@ -26,6 +29,8 @@ data class Message(
 )
 
 object MessageTimestampFormatter {
+    private val headerCache = ConcurrentHashMap<String, String>()
+
     fun format(
         message: Message,
         language: String,
@@ -62,16 +67,21 @@ object MessageTimestampFormatter {
         timeZone: TimeZone = TimeZone.getDefault(),
     ): String {
         if (epochMs <= 0L) return ""
-        val locale = if (language == "Русский") Locale.forLanguageTag("ru") else Locale.ENGLISH
-        val sent = Calendar.getInstance(timeZone).apply { timeInMillis = epochMs }
-        val today = Calendar.getInstance(timeZone).apply { timeInMillis = nowEpochMs }
-        val yesterday = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
+        val dayBucket = epochMs / 86_400_000L
+        val nowDayBucket = nowEpochMs / 86_400_000L
+        val cacheKey = "$dayBucket|$nowDayBucket|$language|${timeZone.id}"
+        return headerCache.getOrPut(cacheKey) {
+            val locale = if (language == "Русский") Locale.forLanguageTag("ru") else Locale.ENGLISH
+            val sent = Calendar.getInstance(timeZone).apply { timeInMillis = epochMs }
+            val today = Calendar.getInstance(timeZone).apply { timeInMillis = nowEpochMs }
+            val yesterday = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }
 
-        return when {
-            isSameDate(sent, today) -> if (language == "Русский") "Сегодня" else "Today"
-            isSameDate(sent, yesterday) -> if (language == "Русский") "Вчера" else "Yesterday"
-            sent.get(Calendar.YEAR) == today.get(Calendar.YEAR) -> formatDate("d MMMM", locale, timeZone, sent)
-            else -> formatDate("d MMMM yyyy", locale, timeZone, sent)
+            when {
+                isSameDate(sent, today) -> if (language == "Русский") "Сегодня" else "Today"
+                isSameDate(sent, yesterday) -> if (language == "Русский") "Вчера" else "Yesterday"
+                sent.get(Calendar.YEAR) == today.get(Calendar.YEAR) -> formatDate("d MMMM", locale, timeZone, sent)
+                else -> formatDate("d MMMM yyyy", locale, timeZone, sent)
+            }
         }
     }
 
