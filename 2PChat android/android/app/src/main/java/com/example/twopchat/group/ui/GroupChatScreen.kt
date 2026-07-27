@@ -278,7 +278,36 @@ fun GroupChatScreen(
             onDismissRequest = { selectedMessageForOptions = null },
             title = { Text("Действия с сообщением", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (message.canReact) {
+                        Text("Быстрые реакции", fontSize = 12.sp, color = primaryColor, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val quickEmojis = listOf("❤️", "👍", "🔥", "😂", "😮", "😢", "🎉")
+                            quickEmojis.forEach { emoji ->
+                                Surface(
+                                    onClick = {
+                                        controller.toggleReaction(state.groupId, message.messageId, emoji)
+                                        selectedMessageForOptions = null
+                                    },
+                                    shape = CircleShape,
+                                    color = primaryColor.copy(alpha = 0.12f),
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(emoji, fontSize = 18.sp)
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = primaryColor.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 4.dp))
+                    }
+
                     if (message.canReply) {
                         TextButton(
                             onClick = {
@@ -286,7 +315,7 @@ fun GroupChatScreen(
                                 selectedMessageForOptions = null
                             },
                             modifier = Modifier.fillMaxWidth().testTag("reply_${message.messageId}")
-                        ) { Text("Ответить", modifier = Modifier.fillMaxWidth()) }
+                        ) { Text("Ответить", modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold) }
                     }
                     if (message.canReact) {
                         TextButton(
@@ -295,7 +324,7 @@ fun GroupChatScreen(
                                 selectedMessageForOptions = null
                             },
                             modifier = Modifier.fillMaxWidth().testTag("react_${message.messageId}")
-                        ) { Text("Поставить реакцию 👍", modifier = Modifier.fillMaxWidth()) }
+                        ) { Text("Поставить 👍", modifier = Modifier.fillMaxWidth()) }
                     }
                     if (message.canPin) {
                         TextButton(
@@ -323,7 +352,7 @@ fun GroupChatScreen(
                                 selectedMessageForOptions = null
                             },
                             modifier = Modifier.fillMaxWidth().testTag("delete_${message.messageId}")
-                        ) { Text("Удалить", color = Color.Red, modifier = Modifier.fillMaxWidth()) }
+                        ) { Text("Удалить", color = Color.Red, modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold) }
                     }
                 }
             },
@@ -932,12 +961,16 @@ private fun GroupComposer(
                     .size(42.dp)
                     .clip(CircleShape)
                     .background(
-                        if (draft.isNotBlank() && state.textComposerEnabled && !state.isSending) primaryColor
-                        else primaryColor.copy(alpha = 0.3f)
+                        if (draft.isNotBlank()) primaryColor
+                        else Color(0xFFE53935)
                     )
                     .clickable(
-                        enabled = draft.isNotBlank() && state.textComposerEnabled && !state.isSending,
-                        onClick = onSend
+                        enabled = state.textComposerEnabled && !state.isSending,
+                        onClick = {
+                            if (draft.isNotBlank()) {
+                                onSend()
+                            }
+                        }
                     )
                     .testTag("group_send_button"),
                 contentAlignment = Alignment.Center
@@ -950,8 +983,10 @@ private fun GroupComposer(
                     )
                 } else {
                     Icon(
-                        painter = painterResource(id = R.drawable.ic_send_airplane),
-                        contentDescription = "Send",
+                        painter = painterResource(
+                            id = if (draft.isNotBlank()) R.drawable.ic_send_airplane else R.drawable.ic_voice_mic
+                        ),
+                        contentDescription = if (draft.isNotBlank()) "Send" else "Voice Note",
                         tint = Color.White,
                         modifier = Modifier.size(18.dp)
                     )
