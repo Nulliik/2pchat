@@ -448,6 +448,18 @@ fun GroupChatScreen(
                             modifier = Modifier.fillMaxWidth().testTag("reply_${message.messageId}")
                         ) { Text("Ответить", modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold) }
                     }
+                    if (message.text.isNotEmpty()) {
+                        TextButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                val clip = android.content.ClipData.newPlainText("Message Text", message.text)
+                                clipboard.setPrimaryClip(clip)
+                                android.widget.Toast.makeText(context, "Текст скопирован", android.widget.Toast.LENGTH_SHORT).show()
+                                selectedMessageForOptions = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Скопировать текст", modifier = Modifier.fillMaxWidth()) }
+                    }
                     if (message.canReact) {
                         TextButton(
                             onClick = {
