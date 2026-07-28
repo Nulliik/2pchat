@@ -261,7 +261,9 @@ class TrustStore:
         if not self.path.exists():
             return
         try:
-            raw = json.loads(self.path.read_text(encoding="utf-8"))
+            stored = self.path.read_text(encoding="utf-8")
+            raw_text, needs_migration = _unprotect_local_text(stored)
+            raw = json.loads(raw_text)
             if not isinstance(raw, dict):
                 raise ValueError("trust store root must be an object")
             for fp, meta in raw.items():
@@ -274,6 +276,8 @@ class TrustStore:
                     last_seen=meta.get("last_seen", 0.0),
                     state=meta.get("state", "known"),
                 )
+            if needs_migration:
+                self._persist()
         except Exception as exc:
             self.records = {}
             raise TrustStoreCorruptError(
@@ -284,7 +288,9 @@ class TrustStore:
         with _TRUST_LOCK:
             if self.path.exists():
                 try:
-                    on_disk = json.loads(self.path.read_text(encoding="utf-8"))
+                    stored = self.path.read_text(encoding="utf-8")
+                    raw_text, _ = _unprotect_local_text(stored)
+                    on_disk = json.loads(raw_text)
                     if not isinstance(on_disk, dict):
                         raise ValueError("trust store root must be an object")
                 except Exception as exc:
@@ -322,7 +328,8 @@ class TrustStore:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self.path.with_name(f".{self.path.name}.{uuid4().hex}.tmp")
             try:
-                temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+                protected_text = _protect_local_text(json.dumps(payload, indent=2))
+                temporary.write_text(protected_text, encoding="utf-8")
                 try:
                     temporary.chmod(0o600)
                 except OSError:
