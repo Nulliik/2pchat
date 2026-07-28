@@ -3509,11 +3509,7 @@ object GroupChatCoordinator {
                 description = group.description,
                 memberCount = db().listMembers(group.groupId).count { it.isParticipating() },
                 unreadCount = group.unreadCount,
-                lastMessagePreview = when {
-                    last == null -> "No messages yet"
-                    last.deleted -> "Message deleted"
-                    else -> last.body.take(120)
-                },
+                lastMessagePreview = formatGroupLastMessagePreview(last),
                 lastActivityLabel = last?.createdAtMs?.let(::formatTime).orEmpty(),
                 isVerified = true,
                 avatarUri = group.avatarUri,
@@ -3708,7 +3704,7 @@ object GroupChatCoordinator {
                 description = group.description,
                 memberCount = db().listMembers(group.groupId).count { it.isParticipating() },
                 unreadCount = group.unreadCount,
-                lastMessagePreview = if (last?.deleted == true) "Message deleted" else last?.body.orEmpty(),
+                lastMessagePreview = formatGroupLastMessagePreview(last),
                 lastActivityLabel = last?.createdAtMs?.let(::formatTime).orEmpty(),
                 isVerified = true,
                 avatarUri = group.avatarUri,
@@ -4682,6 +4678,17 @@ object GroupChatCoordinator {
     }
     private val dateFormatter = ThreadLocal.withInitial {
         SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+    }
+
+    private fun formatGroupLastMessagePreview(last: StoredGroupMessage?): String {
+        if (last == null) return "No messages yet"
+        if (last.deleted) return "Message deleted"
+        val body = last.body
+        return when {
+            body.startsWith("2psticker_") || body.lowercase().contains("sticker") -> "Стикер"
+            body.startsWith("attachment-") -> "Вложение"
+            else -> body.take(120)
+        }
     }
 
     private fun formatTime(timestampMs: Long): String =
