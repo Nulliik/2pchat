@@ -208,6 +208,11 @@ fun GroupInfoScreen(
                 )
             }
 
+            // Group Info Card (Адрес группы, Описание, Статус верификации) - Matching Direct Chat Profile
+            item(key = "info_details_card") {
+                GroupInfoDetailsCard(state.metadata)
+            }
+
             // Add Members Row
             if (state.management.canInviteMembers && state.inviteCandidates.isNotEmpty()) {
                 item(key = "add_members_row") {
@@ -272,7 +277,7 @@ fun GroupInfoScreen(
                         AdminLogSection(state)
                     }
                 }
-                1 -> { // Медиа вкладка
+                1 -> { // Медиа вкладка (3-column photo grid like Direct Chat Profile)
                     if (mediaMessages.isEmpty()) {
                         item(key = "empty_media") {
                             Box(
@@ -285,10 +290,8 @@ fun GroupInfoScreen(
                             }
                         }
                     } else {
-                        items(mediaMessages, key = { it.messageId }) { msg ->
-                            msg.attachment?.let { attachment ->
-                                MediaAttachmentRow(attachment = attachment, message = msg)
-                            }
+                        item(key = "media_grid") {
+                            GroupMediaGrid(mediaMessages = mediaMessages)
                         }
                     }
                 }
@@ -1167,4 +1170,249 @@ private fun ConfirmationDialog(
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(20.dp)
     )
+}
+
+@Composable
+private fun GroupInfoDetailsCard(
+    metadata: GroupMetadata
+) {
+    val context = LocalContext.current
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    Surface(
+        color = Color(0xFF14161A),
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "Информация",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = primaryColor
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // Group P2P Address
+            Text(
+                text = "Личный адрес группы",
+                fontSize = 12.sp,
+                color = Color.Gray
+            )
+            Spacer(Modifier.height(2.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "group#${metadata.groupId}",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                IconButton(
+                    onClick = {
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("Group ID", "group#${metadata.groupId}")
+                        clipboard.setPrimaryClip(clip)
+                        android.widget.Toast.makeText(context, "Адрес группы скопирован", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Copy Group ID",
+                        tint = Color.Gray,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            HorizontalDivider(
+                color = Color.White.copy(alpha = 0.08f),
+                modifier = Modifier.padding(vertical = 10.dp)
+            )
+
+            // Group Description
+            Text(
+                text = "О себе / Описание",
+                fontSize = 12.sp,
+                color = Color.Gray
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = metadata.description.ifBlank { "P2P децентрализованный групповой чат" },
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color.White
+            )
+
+            HorizontalDivider(
+                color = Color.White.copy(alpha = 0.08f),
+                modifier = Modifier.padding(vertical = 10.dp)
+            )
+
+            // Security Verification Status
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF43A047).copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_check),
+                        contentDescription = "Verified P2P",
+                        tint = Color(0xFF43A047),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Статус верификации",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                    Text(
+                        text = "Группа верифицирована (Double Ratchet)",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupMediaGrid(
+    mediaMessages: List<GroupTimelineMessage>
+) {
+    val chunked = remember(mediaMessages) { mediaMessages.chunked(3) }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        chunked.forEach { rowItems ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                rowItems.forEach { msg ->
+                    val attachment = msg.attachment
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF1C1C1E)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (attachment != null) {
+                            MediaGridCell(attachment = attachment)
+                        }
+                    }
+                }
+                repeat(3 - rowItems.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MediaGridCell(attachment: GroupAttachmentUi) {
+    val context = LocalContext.current
+    val localPath = attachment.localPath ?: attachment.fileName
+    val isGif = attachment.mimeType == "image/gif" || attachment.fileName.lowercase().endsWith(".gif")
+    val isSticker = attachment.mimeType.contains("sticker") || StickerSupport.isStickerFileName(attachment.fileName)
+    val isVideo = attachment.mimeType.startsWith("video/") || attachment.fileName.lowercase().run { endsWith(".mp4") || endsWith(".mov") || endsWith(".mkv") }
+
+    when {
+        isSticker && localPath.isNotBlank() -> {
+            AnimatedStickerImage(
+                filePath = localPath,
+                fallbackEmoji = "👍",
+                contentDescription = "Sticker",
+                targetSizePx = 128,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        isGif && localPath.isNotBlank() -> {
+            AnimatedGifImage(
+                filePath = localPath,
+                targetMaxDimensionPx = 256,
+                contentScale = GifContentScale.CROP,
+                contentDescription = "GIF",
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        else -> {
+            val bitmap = remember(localPath) {
+                runCatching {
+                    if (localPath.startsWith("content://")) {
+                        context.contentResolver.openInputStream(Uri.parse(localPath))?.use { stream ->
+                            val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                            BitmapFactory.decodeStream(stream, null, opts)
+                        }
+                    } else {
+                        val file = File(localPath)
+                        if (file.exists()) {
+                            val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                            BitmapFactory.decodeFile(file.absolutePath, opts)
+                        } else null
+                    }
+                }.getOrNull()
+            }
+            if (bitmap != null) {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = attachment.fileName,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF2C2C2E)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(if (isVideo) R.drawable.ic_voice_play else R.drawable.ic_attach_gallery),
+                        contentDescription = "Media",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+            if (isVideo) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.3f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_voice_play),
+                        contentDescription = "Play Video",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
 }
