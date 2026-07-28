@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -302,7 +303,7 @@ fun GroupChatScreen(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize().safeDrawingPadding()) {
         if (wallpaperBitmap != null) {
             Image(
                 bitmap = wallpaperBitmap.asImageBitmap(),
@@ -1008,7 +1009,6 @@ private fun GroupChatHeader(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .statusBarsPadding()
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -1759,7 +1759,6 @@ private fun GroupComposer(
         modifier = Modifier
             .fillMaxWidth()
             .background(surfaceColor)
-            .navigationBarsPadding()
             .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
         AnimatedVisibility(
