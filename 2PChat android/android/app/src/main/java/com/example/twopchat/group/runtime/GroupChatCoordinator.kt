@@ -565,6 +565,22 @@ object GroupChatCoordinator {
         }
     }
 
+    fun setAdminOnlyPosting(groupId: String, enabled: Boolean) {
+        scope.launch {
+            val group = db().getGroup(groupId) ?: return@launch
+            if (group.adminOnlyPosting == enabled) return@launch
+            requestSerializedControl(
+                groupId,
+                "update_info",
+                JSONObject().apply {
+                    put("title", group.title)
+                    put("description", group.description)
+                    put("admin_only_posting", enabled)
+                },
+            )
+        }
+    }
+
     fun requestJoinFromInvite(groupId: String, inviteToken: String, ownerPeerName: String) {
         val normalizedGroupId = groupId.trim().take(128)
         val normalizedToken = inviteToken.trim().take(128)
@@ -1310,6 +1326,7 @@ object GroupChatCoordinator {
                     groupId = invite.groupId,
                     title = invite.title,
                     description = invite.description,
+                    adminOnlyPosting = invite.adminOnlyPosting,
                     localDeviceId = local.deviceId,
                     ownerDeviceId = owner.deviceId,
                     currentEpoch = invite.epoch,
@@ -2447,6 +2464,17 @@ object GroupChatCoordinator {
     ): Boolean {
         if (!author.isParticipating()) return false
         val actor = author.toPolicyMember()
+        if (
+            kind in setOf(
+                GroupEventKind.MESSAGE,
+                GroupEventKind.REPLY,
+                GroupEventKind.POLL,
+                GroupEventKind.MEDIA,
+            ) &&
+            !GroupRolePolicy.canPostUnderGroupPolicy(group.adminOnlyPosting, actor.role)
+        ) {
+            return false
+        }
         val decision = when (kind) {
             GroupEventKind.MESSAGE,
             GroupEventKind.REPLY,
@@ -2950,6 +2978,7 @@ object GroupChatCoordinator {
         var nextTitle: String? = null
         var nextDescription: String? = null
         var nextAvatarUri: String? = null
+        var nextAdminOnlyPosting: Boolean? = null
         val memberUpdates = mutableListOf<StoredGroupMember>()
         when (event.kind) {
             GroupEventKind.GROUP_UPDATED -> {
@@ -2975,6 +3004,9 @@ object GroupChatCoordinator {
                     } else {
                         nextAvatarUri = payload.optString("avatar_uri", "").ifBlank { null }
                     }
+                }
+                if (payload.has("admin_only_posting")) {
+                    nextAdminOnlyPosting = payload.optBoolean("admin_only_posting")
                 }
                 if (nextTitle.isNullOrBlank()) return
             }
@@ -3145,6 +3177,7 @@ object GroupChatCoordinator {
             title = nextTitle,
             description = nextDescription,
             avatarUri = nextAvatarUri,
+            adminOnlyPosting = nextAdminOnlyPosting,
             members = memberUpdates,
             ownerLineageCertificate = if (
                 event.kind == GroupEventKind.OWNERSHIP_TRANSFERRED
@@ -3462,6 +3495,7 @@ object GroupChatCoordinator {
                     groupId = groupId,
                     title = group.title,
                     description = group.description,
+                    adminOnlyPosting = group.adminOnlyPosting,
                     epoch = group.currentEpoch,
                     epochSecretBase64 = epochKey.keyMaterial.base64(),
                     ownerFingerprint = owner.transportFingerprint,
@@ -3856,11 +3890,19 @@ object GroupChatCoordinator {
         }
         val existingReply = chatFlows[groupId]?.value?.currentReply
         val hasCurrentEpochKey = db().getEpochKey(groupId, group.currentEpoch) != null
-        val canPost = localParticipates && hasCurrentEpochKey && localMember.toPolicyMember().let {
+        val groupPostingAllowed = localMember?.let {
+            runCatching {
+                GroupRolePolicy.canPostUnderGroupPolicy(
+                    group.adminOnlyPosting,
+                    parseRole(it.role),
+                )
+            }.getOrDefault(false)
+        } == true
+        val canPost = localParticipates && hasCurrentEpochKey && groupPostingAllowed && localMember.toPolicyMember().let {
             GroupRolePolicy.canPerform(it, GroupAction.POST_MESSAGE).allowed
         } == true
         val canPostMedia =
-            localParticipates && hasCurrentEpochKey && localMember.toPolicyMember().let {
+            localParticipates && hasCurrentEpochKey && groupPostingAllowed && localMember.toPolicyMember().let {
             GroupRolePolicy.canPerform(it, GroupAction.POST_MEDIA).allowed
         } == true
         chatFlows.computeIfAbsent(groupId) {
@@ -3901,6 +3943,8 @@ object GroupChatCoordinator {
                 "Waiting for the group owner to confirm membership"
             } else if (localParticipates && !hasCurrentEpochKey) {
                 "Waiting for the current group encryption key"
+            } else if (!groupPostingAllowed && group.adminOnlyPosting) {
+                "Только администраторы могут отправлять сообщения"
             } else {
                 "Posting is restricted by a group administrator"
             },
@@ -4006,6 +4050,7 @@ object GroupChatCoordinator {
                 } else {
                     ""
                 },
+                adminOnlyPosting = group.adminOnlyPosting,
             ),
             currentUserRole = local?.role.toUiRole(),
             members = uiMembers,

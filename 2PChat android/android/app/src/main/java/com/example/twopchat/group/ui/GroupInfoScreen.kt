@@ -45,6 +45,7 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -257,6 +258,45 @@ fun GroupInfoScreen(
             // Group Info Card (Адрес группы, Описание, Статус верификации) - Matching Direct Chat Profile
             item(key = "info_details_card") {
                 GroupInfoDetailsCard(state.metadata)
+            }
+
+            if (state.management.canEditMetadata) {
+                item(key = "posting_policy") {
+                    Surface(
+                        color = Color(0xFF14161A),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .testTag("admin_only_posting_setting"),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "Только администраторы могут писать",
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White,
+                                )
+                                Text(
+                                    "Участники и модераторы смогут читать, голосовать и оставлять реакции.",
+                                    fontSize = 12.sp,
+                                    color = Color.Gray,
+                                )
+                            }
+                            Switch(
+                                checked = state.metadata.adminOnlyPosting,
+                                onCheckedChange = {
+                                    controller.setAdminOnlyPosting(state.metadata.groupId, it)
+                                },
+                                modifier = Modifier.testTag("admin_only_posting_switch"),
+                            )
+                        }
+                    }
+                }
             }
 
             // Add Members Row

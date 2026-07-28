@@ -127,6 +127,7 @@ class GroupWireProtocolInstrumentedTest {
             members = members,
             cryptoSuite = EpochAeadGroupCrypto.suiteId,
             signatureBase64 = "",
+            adminOnlyPosting = true,
         )
         val signed = unsigned.copy(
             signatureBase64 = GroupIdentitySignatures.sign(unsigned.canonicalForSignature()),

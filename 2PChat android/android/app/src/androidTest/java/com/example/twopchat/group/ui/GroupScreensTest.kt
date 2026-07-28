@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import org.junit.Assert.assertEquals
@@ -43,6 +44,61 @@ class GroupScreensTest {
     composeTestRule.onNodeWithText("Only administrators can send messages").assertExists()
     composeTestRule.onNodeWithTag("group_send_button").assertDoesNotExist()
     composeTestRule.onNodeWithTag("group_sync_status").assertExists()
+  }
+
+  @Test
+  fun mediaRestrictedState_disablesVoiceAction() {
+    composeTestRule.setContent {
+      MaterialTheme {
+        GroupChatScreen(
+          state = GroupChatUiState(
+            groupId = "group-media-restricted",
+            title = "Text only",
+            memberCount = 2,
+            composerEnabled = true,
+            textComposerEnabled = true,
+            mediaComposerEnabled = false,
+          ),
+          controller = object : GroupUiController {}
+        )
+      }
+    }
+
+    composeTestRule.onNodeWithTag("group_send_button").assertIsNotEnabled()
+  }
+
+  @Test
+  fun administratorCanToggleGroupPostingPolicy() {
+    var submitted: Boolean? = null
+    val controller = object : GroupUiController {
+      override fun setAdminOnlyPosting(groupId: String, enabled: Boolean) {
+        assertEquals("group-policy", groupId)
+        submitted = enabled
+      }
+    }
+
+    composeTestRule.setContent {
+      MaterialTheme {
+        GroupInfoScreen(
+          state = GroupInfoUiState(
+            metadata = GroupMetadata(
+              groupId = "group-policy",
+              title = "Announcements",
+              memberCount = 3,
+              adminOnlyPosting = false,
+            ),
+            currentUserRole = GroupRole.ADMIN,
+            management = GroupManagementPermissions(canEditMetadata = true),
+          ),
+          controller = controller,
+        )
+      }
+    }
+
+    composeTestRule.onNodeWithTag("admin_only_posting_switch")
+      .performScrollTo()
+      .performClick()
+    composeTestRule.runOnIdle { assertEquals(true, submitted) }
   }
 
   @Test

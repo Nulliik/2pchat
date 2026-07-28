@@ -8,6 +8,21 @@ import org.junit.Test
 
 class GroupRolePolicyTest {
     @Test
+    fun adminOnlyPostingAllowsOnlyOwnerAndAdministrator() {
+        GroupRole.entries.forEach { role ->
+            assertEquals(
+                role.name,
+                role == GroupRole.OWNER || role == GroupRole.ADMINISTRATOR,
+                GroupRolePolicy.canPostUnderGroupPolicy(true, role),
+            )
+            assertTrue(
+                role.name,
+                GroupRolePolicy.canPostUnderGroupPolicy(false, role),
+            )
+        }
+    }
+
+    @Test
     fun defaultPermissionMatrixIsCompleteAndLeastPrivilege() {
         val expected = mapOf(
             GroupRole.OWNER to GroupPermission.entries.toSet(),

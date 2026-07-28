@@ -186,6 +186,7 @@ fun ConversationComposerRow(
     attachEnabled: Boolean = true,
     inputEnabled: Boolean = true,
     actionEnabled: Boolean = true,
+    voiceActionEnabled: Boolean = actionEnabled,
     actionLoading: Boolean = false,
     onToggleAttachments: () -> Unit,
     onOpenStickerPicker: () -> Unit,
@@ -295,7 +296,9 @@ fun ConversationComposerRow(
         }
         IconButton(
             onClick = onActionClick,
-            enabled = actionEnabled && !actionLoading,
+            enabled = (
+                if (isRecordingVoice || inputText.isBlank()) voiceActionEnabled else actionEnabled
+                ) && !actionLoading,
             modifier = Modifier
                 .size(42.dp)
                 .then(actionTestTag?.let { Modifier.testTag(it) } ?: Modifier)

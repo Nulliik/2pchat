@@ -62,6 +62,22 @@ class GroupDatabaseHelperInstrumentedTest {
     }
 
     @Test
+    fun postingPolicyPersistsAsControlMetadata() {
+        createGroup()
+
+        assertTrue(
+            helper.applyControlMutation(
+                groupId = GROUP_ID,
+                expectedHead = null,
+                newHead = "policy-control",
+                adminOnlyPosting = true,
+            ),
+        )
+
+        assertTrue(checkNotNull(helper.getGroup(GROUP_ID)).adminOnlyPosting)
+    }
+
+    @Test
     fun duplicateEventDoesNotDuplicateMessageOrUnreadCount() {
         createGroup()
         val event = messageEvent("event-1", "alice-device", 1, 10_000, "hello")
@@ -326,6 +342,11 @@ class GroupDatabaseHelperInstrumentedTest {
         }
         assertTrue("owner lineage table was not migrated", "owner_lineage_certificates" in tables)
         assertTrue("snapshot page table was not migrated", "roster_snapshot_pages" in tables)
+        val groupColumns = mutableSetOf<String>()
+        helper.readableDatabase.rawQuery("PRAGMA table_info(groups)", emptyArray()).use { cursor ->
+            while (cursor.moveToNext()) groupColumns += cursor.getString(1)
+        }
+        assertTrue("posting policy column was not migrated", "admin_only_posting" in groupColumns)
         helper.readableDatabase.rawQuery(
             "SELECT value FROM migration_marker",
             emptyArray(),

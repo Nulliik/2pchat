@@ -29,6 +29,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -73,6 +77,11 @@ private val defaultTrackerUrls = mapOf(
     "Yggdrasil-only HTTP" to "http://[200:1e2f:e608:eb3a:2bf:1e62:87ba:e2f7]/announce",
     "Yggdrasil-only UDP" to "udp://[202:68d0:f0d5:b88d:1d1a:555e:2f6b:3148]:6969/announce"
 )
+
+internal fun isNearLogTail(scrollValue: Int, maxScrollValue: Int, thresholdPx: Int = 32): Boolean {
+    require(scrollValue >= 0 && maxScrollValue >= 0 && thresholdPx >= 0)
+    return maxScrollValue - scrollValue <= thresholdPx
+}
 
 private fun readLogFile(context: android.content.Context): String {
     return try {
@@ -845,10 +854,31 @@ fun NetworkDiagnosticsDialog(
                                         .padding(10.dp)
                                 ) {
                                     val consoleScrollState = rememberScrollState()
-                                    LaunchedEffect(logsText) {
-                                        consoleScrollState.scrollTo(consoleScrollState.maxValue)
+                                    var followLogTail by remember { mutableStateOf(true) }
+                                    val logScrollObserver = remember(consoleScrollState) {
+                                        object : NestedScrollConnection {
+                                            override fun onPostScroll(
+                                                consumed: Offset,
+                                                available: Offset,
+                                                source: NestedScrollSource,
+                                            ): Offset {
+                                                if (source == NestedScrollSource.UserInput) {
+                                                    followLogTail = isNearLogTail(
+                                                        consoleScrollState.value,
+                                                        consoleScrollState.maxValue,
+                                                    )
+                                                }
+                                                return Offset.Zero
+                                            }
+                                        }
                                     }
-                                    
+                                    LaunchedEffect(logsText, followLogTail) {
+                                        if (followLogTail) {
+                                            withFrameNanos { }
+                                            consoleScrollState.scrollTo(consoleScrollState.maxValue)
+                                        }
+                                    }
+
                                     SelectionContainer {
                                         Text(
                                             text = formatLogs(logsText),
@@ -856,8 +886,26 @@ fun NetworkDiagnosticsDialog(
                                             fontSize = 10.sp,
                                             modifier = Modifier
                                                 .fillMaxSize()
+                                                .nestedScroll(logScrollObserver)
                                                 .verticalScroll(consoleScrollState)
                                         )
+                                    }
+                                    if (!followLogTail) {
+                                        FilledTonalIconButton(
+                                            onClick = {
+                                                followLogTail = true
+                                            },
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                                .size(36.dp),
+                                        ) {
+                                            Text(
+                                                "↓",
+                                                color = primaryColor,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 18.sp,
+                                            )
+                                        }
                                     }
                                 }
                             }

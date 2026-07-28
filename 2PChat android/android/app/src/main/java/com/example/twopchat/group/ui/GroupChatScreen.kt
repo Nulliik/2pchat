@@ -191,6 +191,7 @@ fun GroupChatScreen(
     var showForwardDialog by remember { mutableStateOf(false) }
     var showCreatePollDialog by remember { mutableStateOf(false) }
     var showSeenByDialog by remember { mutableStateOf<GroupTimelineMessage?>(null) }
+    var isAttachmentPanelOpen by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -287,6 +288,34 @@ fun GroupChatScreen(
 
     DisposableEffect(voiceRecorder) {
         onDispose { voiceRecorder.cancel() }
+    }
+
+    LaunchedEffect(
+        state.composerEnabled,
+        state.textComposerEnabled,
+        state.mediaComposerEnabled,
+    ) {
+        if (!state.composerEnabled) {
+            isAttachmentPanelOpen = false
+            showStickerPicker = false
+            showGifLibrary = false
+            showCreatePollDialog = false
+            pendingPhotoUri = null
+            pendingVideoPath = null
+            if (isRecordingVoice) finishVoiceRecording(send = false)
+            if (state.currentReply != null) controller.cancelReply(state.groupId)
+        } else if (!state.mediaComposerEnabled) {
+            isAttachmentPanelOpen = false
+            showStickerPicker = false
+            showGifLibrary = false
+            pendingPhotoUri = null
+            pendingVideoPath = null
+            if (isRecordingVoice) finishVoiceRecording(send = false)
+        }
+        if (!state.textComposerEnabled) {
+            showCreatePollDialog = false
+            if (state.currentReply != null) controller.cancelReply(state.groupId)
+        }
     }
 
     val attachmentLauncher = rememberLauncherForActivityResult(
@@ -515,8 +544,6 @@ fun GroupChatScreen(
 
         HorizontalDivider(color = primaryColor.copy(alpha = 0.1f), thickness = 0.5.dp)
 
-        var isAttachmentPanelOpen by remember { mutableStateOf(false) }
-
         // Chat Input Bar / Composer
         GroupComposer(
             state = state,
@@ -543,7 +570,22 @@ fun GroupChatScreen(
                     controller.sendMessage(state.groupId, text, state.currentReply?.messageId)
                     draft = ""
                 }
-            }
+            },
+            isRecordingVoice = isRecordingVoice,
+            recordingElapsedMs = recordingElapsedMs,
+            onStartVoiceRecord = {
+                if (
+                    androidx.core.content.ContextCompat.checkSelfPermission(
+                        context,
+                        android.Manifest.permission.RECORD_AUDIO,
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    beginVoiceRecording()
+                } else {
+                    audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                }
+            },
+            onStopVoiceRecord = ::finishVoiceRecording,
         )
     }
 }
@@ -1773,34 +1815,6 @@ private fun GroupComposer(
             .background(surfaceColor)
             .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
-        AnimatedVisibility(
-            visible = isAttachmentPanelOpen,
-            enter = expandVertically(expandFrom = Alignment.Bottom, animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) + fadeIn(animationSpec = tween(150)),
-            exit = shrinkVertically(shrinkTowards = Alignment.Bottom, animationSpec = tween(160)) + fadeOut(animationSpec = tween(120)),
-        ) {
-            AttachmentPanel(
-                primaryColor = primaryColor,
-                surfaceVariant = surfaceVariant,
-                onSurfaceColor = onSurfaceColor,
-                onAttachmentClick = onAttachmentClick,
-                extraActions = listOf(
-                    ChatAttachmentAction("Poll", R.drawable.ic_add_square),
-                ),
-            )
-        }
-
-        val reply = state.currentReply
-        ConversationMessagePreviewBar(
-            visible = reply != null,
-            title = reply?.let { "Ответ для ${it.authorName}" }.orEmpty(),
-            text = reply?.text.orEmpty(),
-            primaryColor = primaryColor,
-            onSurfaceColor = onSurfaceColor,
-            onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
-            onDismiss = onCancelReply,
-            modifier = Modifier.testTag("reply_composer"),
-        )
-
         if (!state.composerEnabled) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -1819,6 +1833,36 @@ private fun GroupComposer(
             return
         }
 
+        AnimatedVisibility(
+            visible = isAttachmentPanelOpen,
+            enter = expandVertically(expandFrom = Alignment.Bottom, animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) + fadeIn(animationSpec = tween(150)),
+            exit = shrinkVertically(shrinkTowards = Alignment.Bottom, animationSpec = tween(160)) + fadeOut(animationSpec = tween(120)),
+        ) {
+            AttachmentPanel(
+                primaryColor = primaryColor,
+                surfaceVariant = surfaceVariant,
+                onSurfaceColor = onSurfaceColor,
+                onAttachmentClick = onAttachmentClick,
+                extraActions = if (state.textComposerEnabled) {
+                    listOf(ChatAttachmentAction("Poll", R.drawable.ic_add_square))
+                } else {
+                    emptyList()
+                },
+            )
+        }
+
+        val reply = state.currentReply
+        ConversationMessagePreviewBar(
+            visible = reply != null,
+            title = reply?.let { "Ответ для ${it.authorName}" }.orEmpty(),
+            text = reply?.text.orEmpty(),
+            primaryColor = primaryColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
+            onDismiss = onCancelReply,
+            modifier = Modifier.testTag("reply_composer"),
+        )
+
         ConversationComposerRow(
             attachmentsOpen = isAttachmentPanelOpen,
             isRecordingVoice = isRecordingVoice,
@@ -1833,6 +1877,7 @@ private fun GroupComposer(
             attachEnabled = state.mediaComposerEnabled && !state.isSending,
             inputEnabled = state.textComposerEnabled && !state.isSending,
             actionEnabled = state.textComposerEnabled && !state.isSending,
+            voiceActionEnabled = state.mediaComposerEnabled && !state.isSending,
             actionLoading = state.isSending,
             onToggleAttachments = {
                 if (isRecordingVoice) onStopVoiceRecord(false) else onToggleAttachmentPanel()

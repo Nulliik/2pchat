@@ -97,6 +97,9 @@ object GroupRolePolicy {
         -> GroupPermissionSet.NONE
     }
 
+    fun canPostUnderGroupPolicy(adminOnlyPosting: Boolean, role: GroupRole): Boolean =
+        !adminOnlyPosting || role == GroupRole.OWNER || role == GroupRole.ADMINISTRATOR
+
     fun canPerform(actor: GroupMember, action: GroupAction): PolicyDecision {
         if (!actor.isActive || actor.role == GroupRole.RESTRICTED) {
             return PolicyDecision.deny(PolicyDenialReason.ACTOR_NOT_ACTIVE)

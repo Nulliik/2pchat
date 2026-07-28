@@ -33,6 +33,7 @@ data class StoredGroup(
     val pinnedEventId: String? = null,
     val metadataVersion: Long = 0,
     val unreadCount: Int = 0,
+    val adminOnlyPosting: Boolean = false,
     val createdAtMs: Long = System.currentTimeMillis(),
     val updatedAtMs: Long = createdAtMs,
 )
@@ -219,6 +220,7 @@ class GroupDatabaseHelper(
                 pinned_event_id TEXT,
                 metadata_version INTEGER NOT NULL DEFAULT 0,
                 unread_count INTEGER NOT NULL DEFAULT 0 CHECK(unread_count >= 0),
+                admin_only_posting INTEGER NOT NULL DEFAULT 0 CHECK(admin_only_posting IN (0, 1)),
                 created_at_ms INTEGER NOT NULL,
                 updated_at_ms INTEGER NOT NULL
             )
@@ -406,6 +408,12 @@ class GroupDatabaseHelper(
         }
         if (oldVersion < 4) {
             createProtocolRecoveryTables(db)
+        }
+        if (oldVersion < 5) {
+            db.execSQL(
+                "ALTER TABLE groups ADD COLUMN admin_only_posting INTEGER NOT NULL " +
+                    "DEFAULT 0 CHECK(admin_only_posting IN (0, 1))",
+            )
         }
     }
 
@@ -1823,6 +1831,7 @@ class GroupDatabaseHelper(
         title: String? = null,
         description: String? = null,
         avatarUri: String? = null,
+        adminOnlyPosting: Boolean? = null,
         members: List<StoredGroupMember> = emptyList(),
         ownerLineageCertificate: StoredOwnerLineageCertificate? = null,
         admissionRecipientDeviceId: String? = null,
@@ -1910,6 +1919,7 @@ class GroupDatabaseHelper(
                 title?.let { put("title", it) }
                 description?.let { put("description", it) }
                 avatarUri?.let { put("avatar_uri", it) }
+                adminOnlyPosting?.let { put("admin_only_posting", if (it) 1 else 0) }
             }
             check(db.update(TABLE_GROUPS, groupValues, "group_id = ?", arrayOf(groupId)) == 1)
             db.execSQL(
@@ -2388,6 +2398,7 @@ class GroupDatabaseHelper(
         put("pinned_event_id", group.pinnedEventId)
         put("metadata_version", group.metadataVersion)
         put("unread_count", group.unreadCount)
+        put("admin_only_posting", if (group.adminOnlyPosting) 1 else 0)
         put("created_at_ms", group.createdAtMs)
         put("updated_at_ms", group.updatedAtMs)
     }
@@ -2497,6 +2508,7 @@ class GroupDatabaseHelper(
         pinnedEventId = nullableString("pinned_event_id"),
         metadataVersion = long("metadata_version"),
         unreadCount = int("unread_count"),
+        adminOnlyPosting = int("admin_only_posting") != 0,
         createdAtMs = long("created_at_ms"),
         updatedAtMs = long("updated_at_ms"),
     )
@@ -2640,7 +2652,7 @@ class GroupDatabaseHelper(
 
     companion object {
         const val DATABASE_NAME = "twopchat-groups.db"
-        const val DATABASE_VERSION = 4
+        const val DATABASE_VERSION = 5
         private const val MAX_PAGE_SIZE = 1_000
 
         private const val TABLE_GROUPS = "groups"
