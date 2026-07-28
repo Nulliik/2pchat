@@ -64,6 +64,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.DisposableEffect
+import com.example.twopchat.ui.chat.VoiceRecorder
+import com.example.twopchat.ui.chat.VoiceMessagePlayer
+import com.example.twopchat.ui.chat.PhotoEditorModal
+import com.example.twopchat.ui.chat.VideoEditorModal
+import com.example.twopchat.VoiceMessageSupport
 import com.example.twopchat.ui.chat.AnimatedGifImage
 import com.example.twopchat.ui.chat.GifContentScale
 import com.example.twopchat.ui.chat.AnimatedStickerImage
@@ -128,21 +136,75 @@ fun GroupChatScreen(
     var showStickerPicker by remember { mutableStateOf(false) }
     var showGifLibrary by remember { mutableStateOf(false) }
     var selectedFullImagePath by remember { mutableStateOf<String?>(null) }
+    var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingVideoPath by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
 
+    val voiceRecorder = remember(context) { VoiceRecorder(context.applicationContext) }
+    var isRecordingVoice by remember { mutableStateOf(false) }
+    var recordingElapsedMs by remember { mutableIntStateOf(0) }
+    var recordingStartedAt by remember { mutableLongStateOf(0L) }
+
+    fun beginVoiceRecording() {
+        if (voiceRecorder.start()) {
+            recordingStartedAt = android.os.SystemClock.elapsedRealtime()
+            recordingElapsedMs = 0
+            isRecordingVoice = true
+        } else {
+            android.widget.Toast.makeText(context, "Не удалось начать запись", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            beginVoiceRecording()
+        } else {
+            android.widget.Toast.makeText(context, "Разрешите доступ к микрофону для записи голосового сообщения", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun finishVoiceRecording(send: Boolean) {
+        if (!isRecordingVoice) return
+        val recording = voiceRecorder.stop()
+        isRecordingVoice = false
+        if (send && recording != null && recording.durationMs >= 500) {
+            controller.sendAttachment(state.groupId, Uri.fromFile(recording.file).toString(), "audio/m4a")
+        }
+    }
+
+    LaunchedEffect(isRecordingVoice) {
+        while (isRecordingVoice) {
+            recordingElapsedMs = (android.os.SystemClock.elapsedRealtime() - recordingStartedAt).toInt()
+            kotlinx.coroutines.delay(100)
+        }
+    }
+
+    DisposableEffect(voiceRecorder) {
+        onDispose { voiceRecorder.cancel() }
+    }
+
     val attachmentLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            controller.sendAttachment(
-                state.groupId,
-                uri.toString(),
-                context.contentResolver.getType(uri)
-            )
+            val type = context.contentResolver.getType(uri) ?: ""
+            if (type.startsWith("image/") && !type.contains("gif") && !type.contains("sticker")) {
+                pendingPhotoUri = uri
+            } else if (type.startsWith("video/")) {
+                pendingVideoPath = uri.toString()
+            } else {
+                controller.sendAttachment(
+                    state.groupId,
+                    uri.toString(),
+                    type
+                )
+            }
         }
     }
 
@@ -607,6 +669,46 @@ fun GroupChatScreen(
             }
         )
     }
+
+    pendingPhotoUri?.let { uri ->
+        PhotoEditorModal(
+            imageUri = uri,
+            imagePath = null,
+            appLanguage = "Русский",
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = onSurfaceColor.copy(alpha = 0.7f),
+            onDismiss = { pendingPhotoUri = null },
+            onSendPhoto = { editedFilePath, caption ->
+                pendingPhotoUri = null
+                controller.sendAttachment(state.groupId, Uri.fromFile(File(editedFilePath)).toString(), "image/png")
+                if (caption.isNotBlank()) {
+                    controller.sendMessage(state.groupId, caption, null)
+                }
+            }
+        )
+    }
+
+    pendingVideoPath?.let { path ->
+        VideoEditorModal(
+            videoPath = path,
+            appLanguage = "Русский",
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = onSurfaceColor.copy(alpha = 0.7f),
+            onDismiss = { pendingVideoPath = null },
+            onSendVideo = { editedPath, caption ->
+                pendingVideoPath = null
+                val targetUri = if (editedPath.startsWith("content://") || editedPath.startsWith("file://")) editedPath else Uri.fromFile(File(editedPath)).toString()
+                controller.sendAttachment(state.groupId, targetUri, "video/mp4")
+                if (caption.isNotBlank()) {
+                    controller.sendMessage(state.groupId, caption, null)
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -929,11 +1031,30 @@ private fun GroupMessageCard(
                         attachment.fileName.lowercase().run {
                             endsWith(".mp4") || endsWith(".mkv") || endsWith(".mov") || endsWith(".avi")
                         }
+                    val isAudio = attachment.mimeType.startsWith("audio/") ||
+                        attachment.fileName.lowercase().run {
+                            endsWith(".m4a") || endsWith(".aac") || endsWith(".mp3") || endsWith(".wav") || endsWith(".ogg")
+                        }
 
                     val context = LocalContext.current
                     val localPath = attachment.localPath ?: attachment.fileName
 
                     when {
+                        isAudio && localPath.isNotBlank() && attachment.isDownloaded -> {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .testTag("attachment_${message.messageId}")
+                            ) {
+                                VoiceMessagePlayer(
+                                    filePath = localPath,
+                                    isMine = message.isMine,
+                                    primaryColor = primaryColor,
+                                    contentColor = messageTextColor
+                                )
+                            }
+                        }
                         isSticker && localPath.isNotBlank() -> {
                             Box(
                                 modifier = Modifier
@@ -1163,7 +1284,11 @@ private fun GroupComposer(
     isAttachmentPanelOpen: Boolean,
     onToggleAttachmentPanel: () -> Unit,
     onAttachmentClick: (String) -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    isRecordingVoice: Boolean = false,
+    recordingElapsedMs: Int = 0,
+    onStartVoiceRecord: () -> Unit = {},
+    onStopVoiceRecord: (send: Boolean) -> Unit = {}
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
@@ -1225,6 +1350,57 @@ private fun GroupComposer(
                     Text("✕", fontSize = 12.sp, color = onSurfaceColor.copy(alpha = 0.6f))
                 }
             }
+        }
+
+        if (isRecordingVoice) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .background(Color(0xFFE53935).copy(alpha = 0.12f), RoundedCornerShape(26.dp))
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFE53935))
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = VoiceMessageSupport.formatDuration(recordingElapsedMs),
+                    color = onSurfaceColor,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp
+                )
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = { onStopVoiceRecord(false) }) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Cancel Voice Note",
+                        tint = Color.Gray,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(primaryColor)
+                        .clickable { onStopVoiceRecord(true) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_send_airplane),
+                        contentDescription = "Send Voice Note",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+            return
         }
 
         if (!state.composerEnabled) {
@@ -1330,6 +1506,8 @@ private fun GroupComposer(
                         onClick = {
                             if (draft.isNotBlank()) {
                                 onSend()
+                            } else {
+                                onStartVoiceRecord()
                             }
                         }
                     )
