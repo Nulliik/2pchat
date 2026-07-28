@@ -123,6 +123,17 @@ import androidx.compose.ui.unit.sp
 import com.example.twopchat.R
 import kotlin.math.abs
 
+internal object GroupImageCache {
+    private val maxMemory = (Runtime.getRuntime().maxMemory() / 1024).toInt()
+    private val cacheSize = (maxMemory / 8).coerceAtLeast(1024)
+    private val cache = object : android.util.LruCache<String, Bitmap>(cacheSize) {
+        override fun sizeOf(key: String, bitmap: Bitmap): Int = bitmap.byteCount / 1024
+    }
+
+    fun get(key: String): Bitmap? = cache.get(key)
+    fun put(key: String, bitmap: Bitmap) { cache.put(key, bitmap) }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupChatScreen(
@@ -1189,8 +1200,10 @@ private fun GroupMessageCard(
                         else -> {
                             val imageBitmap = remember(att.localPath, att.fileName, att.isDownloaded) {
                                 if (isImage || isGif) {
+                                    val cached = GroupImageCache.get(localPath)
+                                    if (cached != null) return@remember cached
                                     runCatching {
-                                        if (localPath.startsWith("content://")) {
+                                        val decoded = if (localPath.startsWith("content://")) {
                                             context.contentResolver.openInputStream(Uri.parse(localPath))?.use { stream ->
                                                 val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
                                                 BitmapFactory.decodeStream(stream, null, opts)
@@ -1202,6 +1215,7 @@ private fun GroupMessageCard(
                                                 BitmapFactory.decodeFile(file.absolutePath, opts)
                                             } else null
                                         }
+                                        decoded?.also { GroupImageCache.put(localPath, it) }
                                     }.getOrNull()
                                 } else null
                             }

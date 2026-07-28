@@ -381,6 +381,12 @@ class GroupDatabaseHelper(
         db.execSQL(
             "CREATE INDEX idx_outbox_due ON outbox_tasks(state, next_attempt_ms, created_at_ms)",
         )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_group_members_group_status ON group_members(group_id, status)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_group_events_kind ON group_events(group_id, kind)",
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {

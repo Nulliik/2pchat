@@ -368,9 +368,7 @@ object P2PMessageRelay {
             // exposing a new contact to the user.
             injectLocalDiscoveryCandidate(peerName, peerFingerprint, endpoint)
             val currentPrefs = P2PPreferences.prefs(context)
-            val knownName = currentPrefs.all.entries.firstOrNull { (key, value) ->
-                key.startsWith("peer_fingerprint_") && value == peerFingerprint
-            }?.key?.removePrefix("peer_fingerprint_")
+            val knownName = P2PPreferences.findPeerNameByFingerprint(context, peerFingerprint)
             val authenticatedName = knownName ?: peerName.takeIf {
                 currentPrefs.getString(P2PPreferences.peerFingerprint(it), null) == peerFingerprint
             } ?: return@LocalPeerDiscovery
@@ -510,15 +508,9 @@ object P2PMessageRelay {
         synchronized(identityLock) {
             val knownName = fingerprintToPeerName[fingerprint]
             val persistedName = if (knownName.isNullOrBlank() && isPlaceholderPeerName(peerName)) {
-                P2PPreferences.prefs(context)
-                    .all.entries
-                    .firstOrNull { (key, value) ->
-                        key.startsWith("peer_fingerprint_") &&
-                            value == fingerprint &&
-                            !isPlaceholderPeerName(key.removePrefix("peer_fingerprint_"))
-                    }
-                    ?.key
-                    ?.removePrefix("peer_fingerprint_")
+                P2PPreferences.findPeerNameByFingerprint(context, fingerprint)?.takeIf {
+                    !isPlaceholderPeerName(it)
+                }
             } else {
                 null
             }

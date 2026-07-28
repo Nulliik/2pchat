@@ -6,6 +6,8 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.util.UUID
 
+import java.util.concurrent.ConcurrentHashMap
+
 /** Canonical keys for relay state which is intentionally small key/value metadata. */
 object P2PPreferences {
     const val FILE_NAME = "2pchat_prefs"
@@ -19,6 +21,35 @@ object P2PPreferences {
 
     @Volatile
     private var cachedPrefs: SharedPreferences? = null
+
+    private val fingerprintToPeerNameCache = ConcurrentHashMap<String, String>()
+    @Volatile
+    private var fingerprintCacheInitialized = false
+
+    fun findPeerNameByFingerprint(context: Context, fingerprint: String): String? {
+        if (fingerprint.isBlank()) return null
+        if (!fingerprintCacheInitialized) {
+            synchronized(this) {
+                if (!fingerprintCacheInitialized) {
+                    val allEntries = prefs(context).all
+                    for ((key, value) in allEntries) {
+                        if (key.startsWith("peer_fingerprint_") && value is String && value.isNotBlank()) {
+                            val peerName = key.removePrefix("peer_fingerprint_")
+                            fingerprintToPeerNameCache[value] = peerName
+                        }
+                    }
+                    fingerprintCacheInitialized = true
+                }
+            }
+        }
+        return fingerprintToPeerNameCache[fingerprint]
+    }
+
+    fun updateFingerprintCache(fingerprint: String, peerName: String) {
+        if (fingerprint.isNotBlank() && peerName.isNotBlank()) {
+            fingerprintToPeerNameCache[fingerprint] = peerName
+        }
+    }
 
     @Suppress("DEPRECATION")
     fun prefs(context: Context): SharedPreferences {

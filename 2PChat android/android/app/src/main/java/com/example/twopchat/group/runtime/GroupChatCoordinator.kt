@@ -4673,9 +4673,16 @@ object GroupChatCoordinator {
         currentUserRole = com.example.twopchat.group.ui.GroupRole.MEMBER,
     )
 
+    private val timeFormatter = ThreadLocal.withInitial {
+        SimpleDateFormat("HH:mm", Locale.getDefault())
+    }
+    private val dateFormatter = ThreadLocal.withInitial {
+        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+    }
+
     private fun formatTime(timestampMs: Long): String =
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestampMs))
+        timeFormatter.get()?.format(timestampMs) ?: ""
 
     private fun formatDate(timestampMs: Long): String =
-        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(timestampMs))
+        dateFormatter.get()?.format(timestampMs) ?: ""
 }
