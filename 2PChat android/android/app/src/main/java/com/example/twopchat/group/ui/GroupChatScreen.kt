@@ -33,6 +33,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,6 +57,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import android.net.Uri
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
@@ -198,75 +204,137 @@ fun GroupChatScreen(
             }
         }
 
-        // Messages List
-        LazyColumn(
+        val listState = rememberLazyListState()
+
+        // Auto-scroll to bottom when messages initially load or a new message arrives
+        LaunchedEffect(state.messages.size) {
+            if (state.messages.isNotEmpty()) {
+                listState.scrollToItem(state.messages.size)
+            }
+        }
+
+        // Messages List Container
+        Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp)
-                .testTag("group_message_list"),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            item(key = "pagination") {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    when {
-                        state.isLoadingBefore -> CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .testTag("older_messages_loading"),
-                            strokeWidth = 2.dp
-                        )
-                        state.hasMoreBefore -> TextButton(
-                            onClick = {
-                                controller.loadOlderMessages(
-                                    state.groupId,
-                                    state.messages.firstOrNull()?.messageId
-                                )
-                            },
-                            modifier = Modifier.testTag("load_older_messages")
-                        ) {
-                            Text("Загрузить ранние сообщения", fontSize = 12.sp)
-                        }
-                        state.messages.isNotEmpty() -> Text(
-                            "Начало истории группы",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                        )
-                    }
-                }
-            }
-
-            if (state.messages.isEmpty() && !state.isLoadingBefore) {
-                item(key = "empty") {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 8.dp)
+                    .testTag("group_message_list"),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                item(key = "pagination") {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(40.dp),
+                            .padding(8.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "Сообщений пока нет. Начните общение в группе!",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        when {
+                            state.isLoadingBefore -> CircularProgressIndicator(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .testTag("older_messages_loading"),
+                                strokeWidth = 2.dp
+                            )
+                            state.hasMoreBefore -> TextButton(
+                                onClick = {
+                                    controller.loadOlderMessages(
+                                        state.groupId,
+                                        state.messages.firstOrNull()?.messageId
+                                    )
+                                },
+                                modifier = Modifier.testTag("load_older_messages")
+                            ) {
+                                Text("Загрузить ранние сообщения", fontSize = 12.sp)
+                            }
+                            state.messages.isNotEmpty() -> Text(
+                                "Начало истории группы",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                        }
                     }
+                }
+
+                if (state.messages.isEmpty() && !state.isLoadingBefore) {
+                    item(key = "empty") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(40.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Сообщений пока нет. Начните общение в группе!",
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                items(state.messages, key = GroupTimelineMessage::messageId) { message ->
+                    GroupMessageCard(
+                        groupId = state.groupId,
+                        message = message,
+                        controller = controller,
+                        onEdit = { editingMessage = message },
+                        onDelete = { deletingMessage = message },
+                        onOptionsClick = { selectedMessageForOptions = message }
+                    )
                 }
             }
 
-            items(state.messages, key = GroupTimelineMessage::messageId) { message ->
-                GroupMessageCard(
-                    groupId = state.groupId,
-                    message = message,
-                    controller = controller,
-                    onEdit = { editingMessage = message },
-                    onDelete = { deletingMessage = message },
-                    onOptionsClick = { selectedMessageForOptions = message }
-                )
+            // Floating Scroll-to-Bottom Button
+            val showScrollToBottomButton by remember {
+                derivedStateOf {
+                    val total = listState.layoutInfo.totalItemsCount
+                    val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                    total > 0 && lastVisible < total - 2
+                }
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showScrollToBottomButton && state.messages.isNotEmpty(),
+                enter = fadeIn() + scaleIn(),
+                exit = fadeOut() + scaleOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 12.dp)
+            ) {
+                Surface(
+                    color = Color(0xFF1E2226).copy(alpha = 0.92f),
+                    shape = CircleShape,
+                    shadowElevation = 4.dp,
+                    border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.15f)),
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clickable {
+                            coroutineScope.launch {
+                                val target = listState.layoutInfo.totalItemsCount - 1
+                                if (target >= 0) {
+                                    listState.animateScrollToItem(target)
+                                }
+                            }
+                        }
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_scroll_down),
+                            contentDescription = "Scroll down",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
             }
         }
 
