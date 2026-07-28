@@ -623,7 +623,11 @@ fun GroupChatScreen(
                         runCatching { StickerSupport.prepareSticker(context, sticker) }.getOrNull()
                     }
                     if (stickerFile != null) {
-                        controller.sendAttachment(state.groupId, Uri.fromFile(stickerFile).toString(), "image/png")
+                        controller.sendAttachment(
+                            state.groupId,
+                            Uri.fromFile(stickerFile).toString(),
+                            "image/sticker"
+                        )
                     } else {
                         controller.sendMessage(state.groupId, sticker.emoji, state.currentReply?.messageId)
                     }
@@ -981,7 +985,7 @@ private fun GroupMessageCard(
             attachment.fileName.lowercase().contains("sticker") ||
             StickerSupport.isStickerFileName(attachment.fileName)
         )
-        val isImage = attachment != null && (
+        val isImage = attachment != null && !isSticker && (
             attachment.mimeType.startsWith("image/") ||
             attachment.fileName.lowercase().run {
                 endsWith(".jpg") || endsWith(".jpeg") || endsWith(".png") || endsWith(".webp")
@@ -1114,23 +1118,45 @@ private fun GroupMessageCard(
                                 )
                             }
                         }
-                        isSticker && localPath.isNotBlank() -> {
+                        isSticker -> {
                             Box(
                                 modifier = Modifier
                                     .padding(vertical = 4.dp)
                                     .testTag("attachment_${message.messageId}")
                             ) {
-                                AnimatedStickerImage(
-                                    filePath = localPath,
-                                    fallbackEmoji = "👍",
-                                    contentDescription = "Sticker",
-                                    targetSizePx = 256,
-                                    modifier = Modifier
-                                        .size(160.dp)
-                                        .clickable { onMediaClick(localPath) }
-                                )
+                                if (att.isDownloaded && localPath.isNotBlank()) {
+                                    AnimatedStickerImage(
+                                        filePath = localPath,
+                                        fallbackEmoji = message.text.ifBlank { "🌟" },
+                                        contentDescription = "Sticker",
+                                        targetSizePx = 256,
+                                        modifier = Modifier
+                                            .size(160.dp)
+                                            .clickable { onMediaClick(localPath) }
+                                    )
+                                } else {
+                                    // Sticker not yet downloaded — trigger download and show emoji placeholder
+                                    LaunchedEffect(message.messageId) {
+                                        controller.downloadAttachment(groupId, message.messageId)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(160.dp)
+                                            .background(
+                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                                RoundedCornerShape(16.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = message.text.ifBlank { "🌟" },
+                                            fontSize = 48.sp
+                                        )
+                                    }
+                                }
                             }
                         }
+
                         isGif && localPath.isNotBlank() -> {
                             Box(
                                 modifier = Modifier
