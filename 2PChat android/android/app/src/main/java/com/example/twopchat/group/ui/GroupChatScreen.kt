@@ -47,6 +47,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.Checkbox
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -180,6 +181,8 @@ fun GroupChatScreen(
     var currentMatchIndex by remember { mutableIntStateOf(0) }
     var messageToForward by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var showForwardDialog by remember { mutableStateOf(false) }
+    var showCreatePollDialog by remember { mutableStateOf(false) }
+    var showSeenByDialog by remember { mutableStateOf<GroupTimelineMessage?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -541,6 +544,7 @@ fun GroupChatScreen(
                 when (type) {
                     "GIF" -> showGifLibrary = true
                     "Stickers", "STICKER", "Sticker" -> showStickerPicker = true
+                    "Poll", "Polls", "Опрос" -> showCreatePollDialog = true
                     "Camera" -> attachmentLauncher.launch(arrayOf("image/*"))
                     "Gallery" -> attachmentLauncher.launch(arrayOf("image/*"))
                     "Video" -> attachmentLauncher.launch(arrayOf("video/*"))
@@ -652,6 +656,13 @@ fun GroupChatScreen(
                             modifier = Modifier.fillMaxWidth().testTag("pin_${message.messageId}")
                         ) { Text(if (message.isPinned) "Открепить" else "Закрепить", modifier = Modifier.fillMaxWidth()) }
                     }
+                    TextButton(
+                        onClick = {
+                            showSeenByDialog = message
+                            selectedMessageForOptions = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Просмотрено (${message.readByMembers.size})", modifier = Modifier.fillMaxWidth()) }
                     if (message.canEdit) {
                         TextButton(
                             onClick = {
@@ -981,6 +992,39 @@ fun GroupChatScreen(
                     showForwardDialog = false
                     messageToForward = null
                 }) { Text("Отмена") }
+            },
+            containerColor = surfaceColor,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    if (showCreatePollDialog) {
+        CreatePollDialog(
+            onDismiss = { showCreatePollDialog = false },
+            onCreatePoll = { question, options, isAnonymous ->
+                controller.createPoll(state.groupId, question, options, isAnonymous)
+                android.widget.Toast.makeText(context, "Опрос создан", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    showSeenByDialog?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { showSeenByDialog = null },
+            title = { Text("Просмотры сообщения", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            text = {
+                if (msg.readByMembers.isEmpty()) {
+                    Text("Никто пока не просмотрел это сообщение", color = Color.Gray, fontSize = 13.sp)
+                } else {
+                    LazyColumn {
+                        items(msg.readByMembers) { name ->
+                            Text("👤  $name", modifier = Modifier.padding(vertical = 6.dp), fontSize = 14.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSeenByDialog = null }) { Text("Закрыть") }
             },
             containerColor = surfaceColor,
             shape = RoundedCornerShape(20.dp)
@@ -1997,18 +2041,18 @@ private fun GroupComposer(
 
 @Composable
 private fun RoleBadge(role: GroupRole) {
-    val (badgeColor, textColor) = when (role) {
-        GroupRole.OWNER -> Pair(Color(0xFFE53935), Color.White)
-        GroupRole.ADMIN -> Pair(Color(0xFF1E88E5), Color.White)
-        GroupRole.MODERATOR -> Pair(Color(0xFF43A047), Color.White)
-        GroupRole.MEMBER -> Pair(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant)
+    val (badgeColor, textColor, icon) = when (role) {
+        GroupRole.OWNER -> Triple(Color(0xFFE53935), Color.White, "👑 ")
+        GroupRole.ADMIN -> Triple(Color(0xFF1E88E5), Color.White, "⭐ ")
+        GroupRole.MODERATOR -> Triple(Color(0xFF43A047), Color.White, "🛡️ ")
+        GroupRole.MEMBER -> Triple(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant, "")
     }
     Surface(
         color = badgeColor,
         shape = RoundedCornerShape(6.dp)
     ) {
         Text(
-            role.label,
+            "$icon${role.label}",
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
@@ -2057,4 +2101,63 @@ private fun GroupTimelineMessage.matchesCategoryFilter(category: SearchCategoryF
 private fun GroupTimelineMessage.matchesDateFilter(dateMs: Long?): Boolean {
     if (dateMs == null || dateMs <= 0L) return true
     return true
+}
+
+@Composable
+private fun CreatePollDialog(
+    onDismiss: () -> Unit,
+    onCreatePoll: (question: String, options: List<String>, isAnonymous: Boolean) -> Unit
+) {
+    var question by remember { mutableStateOf("") }
+    var options by remember { mutableStateOf(listOf("", "")) }
+    var isAnonymous by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Создать опрос", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = question,
+                    onValueChange = { question = it },
+                    placeholder = { Text("Задайте вопрос...") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text("Варианты ответов:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                options.forEachIndexed { index, opt ->
+                    OutlinedTextField(
+                        value = opt,
+                        onValueChange = { newText ->
+                            options = options.toMutableList().also { it[index] = newText }
+                        },
+                        placeholder = { Text("Вариант ${index + 1}") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (options.size < 6) {
+                    TextButton(onClick = { options = options + "" }) {
+                        Text("+ Добавить вариант")
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = isAnonymous, onCheckedChange = { isAnonymous = it })
+                    Text("Анонимный опрос", fontSize = 13.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val validOpts = options.map { it.trim() }.filter { it.isNotEmpty() }
+                    if (question.isNotBlank() && validOpts.size >= 2) {
+                        onCreatePoll(question.trim(), validOpts, isAnonymous)
+                        onDismiss()
+                    }
+                }
+            ) { Text("Создать") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        }
+    )
 }

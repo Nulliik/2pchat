@@ -118,6 +118,11 @@ fun GroupInfoScreen(
         }
     }
 
+    var isMuted by remember(state.metadata.groupId) {
+        mutableStateOf(P2PPreferences.prefs(context).getBoolean("mute_group_${state.metadata.groupId}", false))
+    }
+    var showQrModal by remember { mutableStateOf(false) }
+
     val wallpaperPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -230,7 +235,15 @@ fun GroupInfoScreen(
             // Quick Action Buttons Row (Чат, Звук, Покинуть)
             item(key = "quick_actions") {
                 GroupQuickActionsRow(
+                    isMuted = isMuted,
                     onChatClick = controller::onBack,
+                    onToggleMuteClick = {
+                        val newMuted = !isMuted
+                        P2PPreferences.prefs(context).edit().putBoolean("mute_group_${state.metadata.groupId}", newMuted).apply()
+                        isMuted = newMuted
+                        android.widget.Toast.makeText(context, if (newMuted) "Уведомления группы отключены" else "Уведомления группы включены", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    onQrClick = { showQrModal = true },
                     onLeaveClick = { showLeaveConfirmation = true }
                 )
             }
@@ -418,22 +431,21 @@ fun GroupInfoScreen(
     if (showClearHistoryConfirmation) {
         AlertDialog(
             onDismissRequest = { showClearHistoryConfirmation = false },
-            title = { Text("Очистить историю", fontWeight = FontWeight.Bold, color = Color.White) },
-            text = { Text("Вы действительно хотите удалить все сообщения этой группы на своем устройстве?", color = Color.LightGray) },
+            title = { Text("Очистить историю?", fontWeight = FontWeight.Bold, color = Color.White) },
+            text = { Text("Все сообщения этой группы будут удалены с вашего устройства.", color = Color.White.copy(alpha = 0.7f)) },
             confirmButton = {
-                Button(
+                TextButton(
                     onClick = {
-                        showClearHistoryConfirmation = false
                         controller.clearHistory(state.metadata.groupId)
+                        showClearHistoryConfirmation = false
                         android.widget.Toast.makeText(context, "История очищена", android.widget.Toast.LENGTH_SHORT).show()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
-                ) { Text("Очистить", color = Color.White) }
+                    }
+                ) { Text("Очистить", color = Color(0xFFE53935)) }
             },
             dismissButton = {
                 TextButton(onClick = { showClearHistoryConfirmation = false }) { Text("Отмена", color = Color.White) }
             },
-            containerColor = Color(0xFF1E1E24),
+            containerColor = Color(0xFF1C1C1E),
             shape = RoundedCornerShape(20.dp)
         )
     }
@@ -816,7 +828,10 @@ private fun GroupHeroHeader(
 
 @Composable
 private fun GroupQuickActionsRow(
+    isMuted: Boolean,
     onChatClick: () -> Unit,
+    onToggleMuteClick: () -> Unit,
+    onQrClick: () -> Unit,
     onLeaveClick: () -> Unit
 ) {
     Row(
@@ -827,7 +842,8 @@ private fun GroupQuickActionsRow(
     ) {
         val actions = listOf(
             Triple("Чат", R.drawable.ic_send_airplane, onChatClick),
-            Triple("Звук", R.drawable.ic_notifications, {}),
+            Triple(if (isMuted) "Вкл. звук" else "Звук", R.drawable.ic_notifications, onToggleMuteClick),
+            Triple("QR код", R.drawable.ic_qr_code, onQrClick),
             Triple("Покинуть", R.drawable.ic_delete, onLeaveClick)
         )
 
@@ -1587,4 +1603,64 @@ private fun MediaGridCell(
             }
         }
     }
+}
+
+@Composable
+private fun GroupInviteQrModal(
+    groupTitle: String,
+    groupId: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val inviteLink = "2pchat://group/invite?id=$groupId"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Приглашение в группу", fontWeight = FontWeight.Bold, color = Color.White) },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
+                Surface(
+                    color = Color.White,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.size(200.dp).padding(8.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "QR CODE\n$groupTitle",
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    text = "Ссылка для входа в группу:",
+                    fontSize = 12.sp,
+                    color = Color.LightGray
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = inviteLink,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable {
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Group Invite", inviteLink))
+                        android.widget.Toast.makeText(context, "Ссылка скопирована!", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Закрыть", color = Color.White) }
+        },
+        containerColor = Color(0xFF1C1C1E),
+        shape = RoundedCornerShape(20.dp)
+    )
 }

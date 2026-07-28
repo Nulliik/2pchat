@@ -46,6 +46,9 @@ internal object GroupNotificationService {
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val myDisplayName = prefs.getString("display_name", "") ?: ""
+        val isMentioned = myDisplayName.isNotBlank() && text.contains("@$myDisplayName", ignoreCase = true)
+        val title = if (isMentioned) "🔔 Вас упомянули в $groupTitle" else groupTitle
         val showPreview = prefs.getBoolean("settings_previews", true)
         val cleanText = formatGroupNotificationText(text)
         val body = if (showPreview) "$authorName: $cleanText" else "Новое сообщение в группе"
@@ -53,7 +56,7 @@ internal object GroupNotificationService {
             notificationId,
             NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_logo_default_fg)
-                .setContentTitle(groupTitle)
+                .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))
                 .setContentIntent(pendingIntent)

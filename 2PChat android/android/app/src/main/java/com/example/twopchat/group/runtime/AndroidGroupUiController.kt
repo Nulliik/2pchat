@@ -62,6 +62,12 @@ class AndroidGroupUiController(
     override fun clearHistory(groupId: String) =
         GroupChatCoordinator.clearHistory(groupId)
 
+    override fun createPoll(groupId: String, question: String, options: List<String>, isAnonymous: Boolean) =
+        GroupChatCoordinator.createPoll(groupId, question, options, isAnonymous)
+
+    override fun votePoll(groupId: String, pollId: String, optionId: Int) =
+        GroupChatCoordinator.votePoll(groupId, pollId, optionId)
+
     override fun toggleReaction(groupId: String, messageId: String, emoji: String) =
         GroupChatCoordinator.toggleReaction(groupId, messageId, emoji)
 

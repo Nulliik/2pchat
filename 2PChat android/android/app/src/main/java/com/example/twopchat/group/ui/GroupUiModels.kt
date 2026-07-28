@@ -40,6 +40,8 @@ interface GroupUiController {
   fun leaveGroup(groupId: String) = Unit
   fun acceptInvite(inviteId: String) = Unit
   fun declineInvite(inviteId: String) = Unit
+  fun createPoll(groupId: String, question: String, options: List<String>, isAnonymous: Boolean) = Unit
+  fun votePoll(groupId: String, pollId: String, optionId: Int) = Unit
 }
 
 enum class GroupRole(val label: String) {
@@ -98,6 +100,21 @@ data class GroupReaction(
   val reactedByMe: Boolean = false
 )
 
+data class GroupPollOption(
+  val id: Int,
+  val text: String,
+  val voteCount: Int = 0,
+  val isVotedByMe: Boolean = false
+)
+
+data class GroupPollUi(
+  val pollId: String,
+  val question: String,
+  val options: List<GroupPollOption> = emptyList(),
+  val totalVotes: Int = 0,
+  val isAnonymous: Boolean = false
+)
+
 data class GroupAttachmentUi(
   val attachmentId: String,
   val fileName: String,
@@ -127,7 +144,9 @@ data class GroupTimelineMessage(
   val canEdit: Boolean = false,
   val canDelete: Boolean = false,
   val canReact: Boolean = true,
-  val canPin: Boolean = false
+  val canPin: Boolean = false,
+  val poll: GroupPollUi? = null,
+  val readByMembers: List<String> = emptyList()
 )
 
 data class GroupMemberPermissions(
@@ -218,7 +237,8 @@ data class GroupChatUiState(
   val composerPlaceholder: String = "Message",
   val readOnlyReason: String = "",
   val isSending: Boolean = false,
-  val typingStatus: String = ""
+  val typingStatus: String = "",
+  val isMuted: Boolean = false
 )
 
 data class GroupInfoUiState(

@@ -524,6 +524,29 @@ object GroupChatCoordinator {
         scope.launch { emitEvent(groupId, GroupEventKind.UNPIN, JSONObject(), messageId) }
     }
 
+    fun createPoll(groupId: String, question: String, options: List<String>, isAnonymous: Boolean) {
+        if (question.isBlank() || options.size < 2) return
+        scope.launch {
+            val jsonOpts = org.json.JSONArray()
+            options.forEach { jsonOpts.put(it.trim()) }
+            val payload = JSONObject()
+                .put("type", "poll")
+                .put("question", question.trim())
+                .put("options", jsonOpts)
+                .put("anonymous", isAnonymous)
+            emitEvent(groupId, GroupEventKind.MESSAGE, payload)
+        }
+    }
+
+    fun votePoll(groupId: String, pollId: String, optionId: Int) {
+        scope.launch {
+            val payload = JSONObject()
+                .put("type", "poll_vote")
+                .put("option_id", optionId)
+            emitEvent(groupId, GroupEventKind.MESSAGE, payload, pollId)
+        }
+    }
+
     fun retryMessage(groupId: String, messageId: String) {
         scope.launch {
             db().requeueOutboxForEvent(groupId, messageId)
