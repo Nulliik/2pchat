@@ -94,7 +94,7 @@ internal fun ChatInputBar(
             )
         }
 
-        MessagePreviewBar(
+        ConversationMessagePreviewBar(
             visible = replyingToMessage != null,
             title = replyingToMessage?.let {
                 if (it.isMe) {
@@ -107,7 +107,7 @@ internal fun ChatInputBar(
             onSurfaceVariant = onSurfaceVariant,
             onDismiss = onDismissReply,
         )
-        MessagePreviewBar(
+        ConversationMessagePreviewBar(
             visible = editingMessage != null,
             title = if (appLanguage == "Русский") "Редактирование сообщения" else "Edit Message",
             text = editingMessage?.text.orEmpty(),
@@ -135,13 +135,13 @@ internal fun ChatInputBar(
                 primaryColor = primaryColor,
                 onUnblock = onUnblock,
             )
-            else -> ComposerRow(
-                showAttachments = showAttachments,
+            else -> ConversationComposerRow(
+                attachmentsOpen = showAttachments,
                 isRecordingVoice = isRecordingVoice,
                 recordingElapsedMs = recordingElapsedMs,
-                editingMessage = editingMessage,
+                isEditing = editingMessage != null,
                 inputText = inputText,
-                appLanguage = appLanguage,
+                placeholder = Localizations.getString("write_placeholder", appLanguage),
                 primaryColor = primaryColor,
                 surfaceColor = surfaceColor,
                 onSurfaceColor = onSurfaceColor,
@@ -154,7 +154,6 @@ internal fun ChatInputBar(
         }
     }
 }
-
 @Composable
 private fun IdentityPausedBar(appLanguage: String, onReviewIdentity: () -> Unit) {
     Row(
@@ -182,43 +181,6 @@ private fun IdentityPausedBar(appLanguage: String, onReviewIdentity: () -> Unit)
         }
         TextButton(onClick = onReviewIdentity) {
             Text(if (appLanguage == "Русский") "Проверить" else "Review")
-        }
-    }
-}
-
-@Composable
-private fun MessagePreviewBar(
-    visible: Boolean,
-    title: String,
-    text: String,
-    primaryColor: Color,
-    onSurfaceColor: Color,
-    onSurfaceVariant: Color,
-    onDismiss: () -> Unit,
-) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp)
-                .background(onSurfaceColor.copy(alpha = 0.03f), RoundedCornerShape(8.dp))
-                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.width(3.dp).height(36.dp).background(primaryColor, RoundedCornerShape(2.dp)))
-            Spacer(Modifier.width(8.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = primaryColor)
-                Text(text, fontSize = 11.sp, color = onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
-                Text("×", fontSize = 18.sp, color = onSurfaceVariant, fontWeight = FontWeight.Bold)
-            }
         }
     }
 }
@@ -288,133 +250,3 @@ private fun BlockedBar(appLanguage: String, primaryColor: Color, onUnblock: () -
     }
 }
 
-@Composable
-private fun ComposerRow(
-    showAttachments: Boolean,
-    isRecordingVoice: Boolean,
-    recordingElapsedMs: Int,
-    editingMessage: Message?,
-    inputText: String,
-    appLanguage: String,
-    primaryColor: Color,
-    surfaceColor: Color,
-    onSurfaceColor: Color,
-    onSurfaceVariant: Color,
-    onToggleAttachments: () -> Unit,
-    onOpenStickerPicker: () -> Unit,
-    onInputTextChange: (String) -> Unit,
-    onActionClick: () -> Unit,
-) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(
-            onClick = onToggleAttachments,
-            modifier = Modifier
-                .size(42.dp)
-                .background(primaryColor.copy(alpha = 0.12f), CircleShape),
-        ) {
-            if (showAttachments || isRecordingVoice) {
-                Text("×", fontSize = 22.sp, color = primaryColor, fontWeight = FontWeight.Bold)
-            } else {
-                Icon(
-                    painterResource(R.drawable.ic_attach_paperclip),
-                    "Attach",
-                    tint = primaryColor,
-                    modifier = Modifier.size(19.dp),
-                )
-            }
-        }
-        Spacer(Modifier.width(8.dp))
-        val isDark = surfaceColor.luminance() < 0.5f
-        val inputBg = if (isDark) Color(0xFF14161A).copy(alpha = 0.9f) else Color(0xFFEFEFEF).copy(alpha = 0.9f)
-        if (isRecordingVoice) {
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(46.dp)
-                    .background(inputBg, RoundedCornerShape(23.dp))
-                    .border(0.5.dp, primaryColor.copy(alpha = 0.25f), RoundedCornerShape(23.dp))
-                    .padding(horizontal = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(8.dp).background(Color.Red, CircleShape))
-                Spacer(Modifier.width(8.dp))
-                Text(VoiceMessageSupport.formatDuration(recordingElapsedMs), color = onSurfaceColor, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Spacer(Modifier.weight(1f))
-                Text(if (appLanguage == "Русский") "Нажмите × для отмены" else "Tap × to cancel", color = onSurfaceVariant.copy(alpha = 0.7f), fontSize = 11.sp)
-            }
-        } else {
-            TextField(
-                value = inputText,
-                onValueChange = onInputTextChange,
-                placeholder = {
-                    Text(
-                        Localizations.getString("write_placeholder", appLanguage),
-                        color = onSurfaceVariant.copy(alpha = 0.5f),
-                        fontSize = 14.sp
-                    )
-                },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = inputBg,
-                    unfocusedContainerColor = inputBg,
-                    focusedTextColor = onSurfaceColor,
-                    unfocusedTextColor = onSurfaceColor,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                ),
-                shape = RoundedCornerShape(23.dp),
-                maxLines = 4,
-                modifier = Modifier
-                    .weight(1f)
-                    .border(
-                        0.5.dp,
-                        if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.08f),
-                        RoundedCornerShape(23.dp),
-                    ),
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        if (!isRecordingVoice) {
-            IconButton(
-                onClick = onOpenStickerPicker,
-                modifier = Modifier
-                    .size(42.dp)
-                    .semantics {
-                        contentDescription = if (appLanguage == "Русский") {
-                            "Открыть стикеры"
-                        } else {
-                            "Open stickers"
-                        }
-                    }
-                    .background(primaryColor.copy(alpha = 0.12f), CircleShape),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_sticker_smile),
-                    contentDescription = null,
-                    tint = primaryColor,
-                    modifier = Modifier.size(25.dp),
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-        }
-        IconButton(
-            onClick = onActionClick,
-            modifier = Modifier
-                .size(42.dp)
-                .background(primaryColor, CircleShape),
-        ) {
-            Icon(
-                painterResource(
-                    when {
-                        isRecordingVoice -> R.drawable.ic_voice_stop
-                        editingMessage != null -> R.drawable.ic_check
-                        inputText.isBlank() -> R.drawable.ic_voice_mic
-                        else -> R.drawable.ic_send_airplane
-                    },
-                ),
-                contentDescription = "Send message",
-                tint = if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color.White,
-                modifier = Modifier.size(17.dp),
-            )
-        }
-    }
-}

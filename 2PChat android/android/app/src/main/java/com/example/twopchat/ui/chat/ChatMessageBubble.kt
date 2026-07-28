@@ -294,45 +294,22 @@ internal fun ChatMessageBubble(
                                     if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else onPrimary
                                 } else primaryColor
                                 
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(replyBg)
-                                        .clickable {
+                                ConversationReplyQuote(
+                                    author = msg.replyToName ?: "Unknown",
+                                    text = msg.replyToText ?: "",
+                                    accentColor = replyBarColor,
+                                    titleColor = replyTitleColor,
+                                    textColor = replyTextColor,
+                                    backgroundColor = replyBg,
+                                    onClick = {
                                             val targetIndex = messages.indexOfFirst { it.id == msg.replyToId }
                                             if (targetIndex != -1) {
                                                 coroutineScope.launch {
                                                     listState.animateScrollToItem(targetIndex)
                                                 }
                                             }
-                                        }
-                                        .padding(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(3.dp)
-                                            .height(36.dp)
-                                            .background(replyBarColor, RoundedCornerShape(2.dp))
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = msg.replyToName ?: "Unknown",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = replyTitleColor
-                                        )
-                                        Text(
-                                            text = msg.replyToText ?: "",
-                                            fontSize = 11.sp,
-                                            color = replyTextColor,
-                                            maxLines = 1,
-                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
+                                    },
+                                )
                                 Spacer(modifier = Modifier.height(6.dp))
                             }
 

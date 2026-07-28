@@ -43,78 +43,26 @@ internal fun PinnedMessageBar(
     onPinnedClick: (Message) -> Unit,
     onUnpinClick: (Message) -> Unit
 ) {
-    AnimatedVisibility(
-        visible = pinnedMessage != null,
-        enter = slideInVertically() + fadeIn(),
-        exit = slideOutVertically() + fadeOut()
-    ) {
-        if (pinnedMessage != null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(surfaceColor.copy(alpha = 0.92f))
-                    .clickable { onPinnedClick(pinnedMessage) }
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Vertical accent bar
-                Box(
-                    modifier = Modifier
-                        .width(3.dp)
-                        .height(34.dp)
-                        .background(primaryColor, RoundedCornerShape(2.dp))
-                )
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_pin),
-                            contentDescription = "Pinned",
-                            tint = primaryColor,
-                            modifier = Modifier.size(13.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (appLanguage == "Русский") "Закреплённое сообщение" else "Pinned Message",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = primaryColor
-                        )
-                    }
-
-                    val previewText = when {
-                        pinnedMessage.text.isNotBlank() -> pinnedMessage.text
-                        pinnedMessage.attachmentType == "IMAGE" -> if (appLanguage == "Русский") "📷 Фотография" else "📷 Photo"
-                        pinnedMessage.attachmentType == "VIDEO" -> if (appLanguage == "Русский") "🎥 Видеозапись" else "🎥 Video"
-                        pinnedMessage.attachmentType == "VOICE" -> if (appLanguage == "Русский") "🎤 Голосовое сообщение" else "🎤 Voice Message"
-                        pinnedMessage.attachmentType == "FILE" -> "📁 ${pinnedMessage.attachmentName ?: "File"}"
-                        pinnedMessage.albumMediaUris.isNotEmpty() -> if (appLanguage == "Русский") "🖼️ Альбом медиа" else "🖼️ Media Album"
-                        else -> ""
-                    }
-
-                    Text(
-                        text = previewText,
-                        fontSize = 12.sp,
-                        color = onSurfaceColor.copy(alpha = 0.85f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                IconButton(
-                    onClick = { onUnpinClick(pinnedMessage) },
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Text(
-                        text = "×",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = onSurfaceVariant
-                    )
-                }
-            }
+    val previewText = pinnedMessage?.let { message ->
+        when {
+            message.text.isNotBlank() -> message.text
+            message.attachmentType == "IMAGE" -> if (appLanguage == "Русский") "📷 Фотография" else "📷 Photo"
+            message.attachmentType == "VIDEO" -> if (appLanguage == "Русский") "🎥 Видеозапись" else "🎥 Video"
+            message.attachmentType == "VOICE" -> if (appLanguage == "Русский") "🎤 Голосовое сообщение" else "🎤 Voice Message"
+            message.attachmentType == "FILE" -> "📁 ${message.attachmentName ?: "File"}"
+            message.albumMediaUris.isNotEmpty() -> if (appLanguage == "Русский") "🖼️ Альбом медиа" else "🖼️ Media Album"
+            else -> ""
         }
-    }
+    }.orEmpty()
+    ConversationPinnedMessageBar(
+        visible = pinnedMessage != null,
+        title = if (appLanguage == "Русский") "Закреплённое сообщение" else "Pinned Message",
+        preview = previewText,
+        primaryColor = primaryColor,
+        surfaceColor = surfaceColor,
+        onSurfaceColor = onSurfaceColor,
+        onSurfaceVariant = onSurfaceVariant,
+        onClick = { pinnedMessage?.let(onPinnedClick) },
+        onUnpin = { pinnedMessage?.let(onUnpinClick) },
+    )
 }

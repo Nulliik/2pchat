@@ -89,6 +89,11 @@ import com.example.twopchat.StoredGif
 import com.example.twopchat.GifStorageManager
 import com.example.twopchat.ui.chat.AttachmentPanel
 import com.example.twopchat.ui.chat.ChatAttachmentAction
+import com.example.twopchat.ui.chat.ConversationComposerRow
+import com.example.twopchat.ui.chat.ConversationMessagePreviewBar
+import com.example.twopchat.ui.chat.ConversationPinnedMessageBar
+import com.example.twopchat.ui.chat.ConversationReplyQuote
+import com.example.twopchat.ui.chat.ConversationSearchHeader
 import com.example.twopchat.ui.chat.StickerPickerBottomSheet
 import com.example.twopchat.ui.chat.StickerPackBottomSheet
 import com.example.twopchat.ui.chat.StickerPackRequestError
@@ -343,12 +348,15 @@ fun GroupChatScreen(
 
         // Pinned Message Bar matching Screenshot 2
         state.pinnedMessage?.let { pinned ->
-            Surface(
-                color = surfaceColor,
-                shadowElevation = 1.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
+            ConversationPinnedMessageBar(
+                visible = true,
+                title = "Закреплённое сообщение",
+                preview = pinned.text,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
+                onClick = {
                         val pinnedId = pinned.messageId
                         val targetIdx = state.messages.indexOfFirst { it.messageId == pinnedId }
                         if (targetIdx != -1) {
@@ -357,48 +365,10 @@ fun GroupChatScreen(
                                 highlightedMessageId = pinnedId
                             }
                         }
-                    }
-                    .testTag("pinned_message")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .width(3.dp)
-                            .height(30.dp)
-                            .background(Color(0xFFE53935), RoundedCornerShape(2.dp))
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            "Закреплённое сообщение",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = Color(0xFFE53935)
-                        )
-                        Text(
-                            pinned.text,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            fontSize = 13.sp,
-                            color = onSurfaceColor.copy(alpha = 0.85f)
-                        )
-                    }
-                    IconButton(
-                        onClick = { controller.unpinMessage(state.groupId, pinned.messageId) },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_pin),
-                            contentDescription = "Unpin",
-                            tint = onSurfaceColor.copy(alpha = 0.6f),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-            }
+                },
+                onUnpin = { controller.unpinMessage(state.groupId, pinned.messageId) },
+                modifier = Modifier.testTag("pinned_message"),
+            )
         }
 
         // Auto-scroll to bottom when messages initially load or a new message arrives
@@ -1061,6 +1031,23 @@ private fun GroupChatHeader(
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
 
+    if (isSearchMode) {
+        ConversationSearchHeader(
+            query = searchQuery,
+            placeholder = "Поиск в беседе...",
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
+            onClose = {
+                onSearchModeChange(false)
+                onSearchQueryChange("")
+            },
+            onQueryChange = onSearchQueryChange,
+        )
+        return
+    }
+
     Surface(
         color = surfaceColor,
         shadowElevation = 2.dp,
@@ -1072,31 +1059,7 @@ private fun GroupChatHeader(
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isSearchMode) {
-                IconButton(onClick = { onSearchModeChange(false); onSearchQueryChange("") }) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = onSurfaceColor
-                    )
-                }
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = onSearchQueryChange,
-                    placeholder = { Text("Поиск в беседе...", color = onSurfaceColor.copy(alpha = 0.5f)) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 4.dp),
-                    singleLine = true,
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { onSearchQueryChange("") }) {
-                                Text("×", fontSize = 20.sp, color = onSurfaceColor, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                )
-            } else {
+            if (!isSearchMode) {
                 IconButton(onClick = controller::onBack) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -1460,38 +1423,17 @@ private fun GroupMessageCard(
 
                 // Reply Preview
                 message.replyTo?.let { reply ->
-                    Surface(
-                        color = surfaceColor.copy(alpha = 0.6f),
-                        shape = RoundedCornerShape(8.dp),
+                    ConversationReplyQuote(
+                        author = reply.authorName,
+                        text = reply.text,
+                        accentColor = primaryColor,
+                        titleColor = primaryColor,
+                        textColor = onSurfaceColor.copy(alpha = 0.7f),
+                        backgroundColor = surfaceColor.copy(alpha = 0.6f),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Row(modifier = Modifier.padding(6.dp)) {
-                            Box(
-                                modifier = Modifier
-                                    .width(2.5.dp)
-                                    .height(30.dp)
-                                    .background(primaryColor, RoundedCornerShape(1.dp))
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Column {
-                                Text(
-                                    reply.authorName,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryColor
-                                )
-                                Text(
-                                    reply.text,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    fontSize = 11.sp,
-                                    color = onSurfaceColor.copy(alpha = 0.7f)
-                                )
-                            }
-                        }
-                    }
+                            .padding(vertical = 4.dp),
+                    )
                 }
 
                 message.poll?.let { poll ->
@@ -1847,94 +1789,17 @@ private fun GroupComposer(
             )
         }
 
-        state.currentReply?.let { reply ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 6.dp)
-                    .background(primaryColor.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                    .testTag("reply_composer"),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .width(3.dp)
-                        .height(28.dp)
-                        .background(primaryColor, RoundedCornerShape(2.dp))
-                )
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "Ответ для ${reply.authorName}",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        color = primaryColor
-                    )
-                    Text(
-                        reply.text,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        fontSize = 11.sp,
-                        color = onSurfaceColor.copy(alpha = 0.7f)
-                    )
-                }
-                IconButton(onClick = onCancelReply, modifier = Modifier.size(24.dp)) {
-                    Text("✕", fontSize = 12.sp, color = onSurfaceColor.copy(alpha = 0.6f))
-                }
-            }
-        }
-
-        if (isRecordingVoice) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .background(Color(0xFFE53935).copy(alpha = 0.12f), RoundedCornerShape(26.dp))
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(12.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFE53935))
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = VoiceMessageSupport.formatDuration(recordingElapsedMs),
-                    color = onSurfaceColor,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp
-                )
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { onStopVoiceRecord(false) }) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Cancel Voice Note",
-                        tint = Color.Gray,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(primaryColor)
-                        .clickable { onStopVoiceRecord(true) },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_send_airplane),
-                        contentDescription = "Send Voice Note",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-            return
-        }
+        val reply = state.currentReply
+        ConversationMessagePreviewBar(
+            visible = reply != null,
+            title = reply?.let { "Ответ для ${it.authorName}" }.orEmpty(),
+            text = reply?.text.orEmpty(),
+            primaryColor = primaryColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
+            onDismiss = onCancelReply,
+            modifier = Modifier.testTag("reply_composer"),
+        )
 
         if (!state.composerEnabled) {
             Surface(
@@ -1954,117 +1819,36 @@ private fun GroupComposer(
             return
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = onToggleAttachmentPanel,
-                enabled = state.mediaComposerEnabled && !state.isSending,
-                modifier = Modifier.testTag("group_attach_button")
-            ) {
-                if (isAttachmentPanelOpen) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(primaryColor.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close Panel",
-                            tint = primaryColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                } else {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_attach_paperclip),
-                        contentDescription = "Attach File",
-                        tint = if (state.mediaComposerEnabled) primaryColor else onSurfaceColor.copy(alpha = 0.4f),
-                        modifier = Modifier.size(22.dp)
-                    )
+        ConversationComposerRow(
+            attachmentsOpen = isAttachmentPanelOpen,
+            isRecordingVoice = isRecordingVoice,
+            recordingElapsedMs = recordingElapsedMs,
+            isEditing = false,
+            inputText = draft,
+            placeholder = state.composerPlaceholder.ifBlank { "Сообщение..." },
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
+            attachEnabled = state.mediaComposerEnabled && !state.isSending,
+            inputEnabled = state.textComposerEnabled && !state.isSending,
+            actionEnabled = state.textComposerEnabled && !state.isSending,
+            actionLoading = state.isSending,
+            onToggleAttachments = {
+                if (isRecordingVoice) onStopVoiceRecord(false) else onToggleAttachmentPanel()
+            },
+            onOpenStickerPicker = { onAttachmentClick("Stickers") },
+            onInputTextChange = onDraftChange,
+            onActionClick = {
+                when {
+                    isRecordingVoice -> onStopVoiceRecord(true)
+                    draft.isNotBlank() -> onSend()
+                    else -> onStartVoiceRecord()
                 }
-            }
-
-            OutlinedTextField(
-                value = draft,
-                onValueChange = onDraftChange,
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("group_composer_input"),
-                enabled = state.textComposerEnabled && !state.isSending,
-                placeholder = {
-                    Text(
-                        state.composerPlaceholder.ifBlank { "Сообщение..." },
-                        fontSize = 14.sp
-                    )
-                },
-                trailingIcon = {
-                    IconButton(
-                        onClick = { onAttachmentClick("Stickers") },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_sticker_smile),
-                            contentDescription = "Stickers & Emojis",
-                            tint = primaryColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                },
-                maxLines = 4,
-                shape = RoundedCornerShape(24.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = primaryColor,
-                    unfocusedBorderColor = primaryColor.copy(alpha = 0.3f),
-                    focusedContainerColor = primaryColor.copy(alpha = 0.04f),
-                    unfocusedContainerColor = surfaceColor
-                )
-            )
-
-            Spacer(Modifier.width(6.dp))
-
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (draft.isNotBlank()) primaryColor
-                        else Color(0xFFE53935)
-                    )
-                    .clickable(
-                        enabled = state.textComposerEnabled && !state.isSending,
-                        onClick = {
-                            if (draft.isNotBlank()) {
-                                onSend()
-                            } else {
-                                onStartVoiceRecord()
-                            }
-                        }
-                    )
-                    .testTag("group_send_button"),
-                contentAlignment = Alignment.Center
-            ) {
-                if (state.isSending) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = Color.White
-                    )
-                } else {
-                    Icon(
-                        painter = painterResource(
-                            id = if (draft.isNotBlank()) R.drawable.ic_send_airplane else R.drawable.ic_voice_mic
-                        ),
-                        contentDescription = if (draft.isNotBlank()) "Send" else "Voice Note",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-        }
+            },
+            inputTestTag = "group_composer_input",
+            actionTestTag = "group_send_button",
+        )
     }
 }
 

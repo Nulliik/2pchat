@@ -72,6 +72,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.example.twopchat.ui.chat.AnimatedGifImage
 import com.example.twopchat.ui.chat.GifContentScale
 import com.example.twopchat.ui.chat.AnimatedStickerImage
+import com.example.twopchat.ui.chat.EmptyStateView
 import com.example.twopchat.StickerSupport
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -379,14 +380,10 @@ fun GroupInfoScreen(
                 1 -> { // Медиа вкладка (3-column photo grid like Direct Chat Profile)
                     if (mediaMessages.isEmpty()) {
                         item(key = "empty_media") {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(40.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("Медиафайлы отсутствуют", fontSize = 14.sp, color = Color.Gray)
-                            }
+                            EmptyStateView(
+                                text = "Медиафайлы отсутствуют",
+                                onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     } else {
                         item(key = "media_grid") {
@@ -400,14 +397,10 @@ fun GroupInfoScreen(
                 3 -> { // Файлы вкладка
                     if (fileMessages.isEmpty()) {
                         item(key = "empty_files") {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(40.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("Файлы отсутствуют", fontSize = 14.sp, color = Color.Gray)
-                            }
+                            EmptyStateView(
+                                text = "Файлы отсутствуют",
+                                onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     } else {
                         items(fileMessages, key = { it.messageId }) { msg ->
@@ -419,14 +412,10 @@ fun GroupInfoScreen(
                 }
                 else -> { // Избранное
                     item(key = "tab_empty_state") {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(40.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("Избранные сообщения отсутствуют", fontSize = 14.sp, color = Color.Gray)
-                        }
+                        EmptyStateView(
+                            text = "Избранные сообщения отсутствуют",
+                            onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

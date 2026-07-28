@@ -59,53 +59,19 @@ internal fun ChatHeader(
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     if (isSearchMode) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(surfaceColor.copy(alpha = 0.78f))
-                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = {
+        ConversationSearchHeader(
+            query = searchQuery,
+            placeholder = if (appLanguage == "Русский") "Поиск по сообщениям..." else "Search messages...",
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = onSurfaceVariant,
+            onClose = {
                 onSearchModeChange(false)
                 onSearchQueryChange("")
-            }) {
-                Icon(
-                    painterResource(R.drawable.ic_back_arrow),
-                    contentDescription = "Close search",
-                    tint = onSurfaceColor,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                placeholder = {
-                    Text(
-                        if (appLanguage == "Русский") "Поиск по сообщениям..." else "Search messages...",
-                        color = onSurfaceVariant,
-                        fontSize = 14.sp,
-                    )
-                },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = primaryColor,
-                    unfocusedBorderColor = onSurfaceColor.copy(alpha = 0.2f),
-                    cursorColor = primaryColor,
-                    focusedTextColor = onSurfaceColor,
-                    unfocusedTextColor = onSurfaceColor,
-                ),
-                textStyle = TextStyle(fontSize = 14.sp),
-                shape = RoundedCornerShape(24.dp),
-            )
-            if (searchQuery.isNotEmpty()) {
-                IconButton(onClick = { onSearchQueryChange("") }) {
-                    Text("×", fontSize = 22.sp, color = onSurfaceVariant, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
+            },
+            onQueryChange = onSearchQueryChange,
+        )
         return
     }
 
