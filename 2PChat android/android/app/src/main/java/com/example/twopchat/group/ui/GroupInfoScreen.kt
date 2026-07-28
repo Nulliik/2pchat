@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.ui.res.painterResource
 import com.example.twopchat.R
+import com.example.twopchat.P2PPreferences
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -86,6 +87,7 @@ fun GroupInfoScreen(
     var banConfirmation by remember { mutableStateOf<GroupMember?>(null) }
     var transferConfirmation by remember { mutableStateOf<GroupMember?>(null) }
     var showLeaveConfirmation by remember { mutableStateOf(false) }
+    var showClearHistoryConfirmation by remember { mutableStateOf(false) }
     var showEditMetadata by remember { mutableStateOf(false) }
     var showInviteMembers by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) } // 0: Участники, 1: Медиа, 2: Избранное, 3: Файлы
@@ -113,6 +115,21 @@ fun GroupInfoScreen(
                 state.metadata.description,
                 uri.toString()
             )
+        }
+    }
+
+    val wallpaperPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            P2PPreferences.prefs(context).edit().putString("group_wallpaper_${state.metadata.groupId}", uri.toString()).apply()
+            android.widget.Toast.makeText(context, "Обои чата обновлены", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -257,6 +274,60 @@ fun GroupInfoScreen(
                 }
             }
 
+            // Chat Wallpaper Row
+            item(key = "wallpaper_row") {
+                Surface(
+                    color = Color(0xFF14161A),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clickable { wallpaperPickerLauncher.launch(arrayOf("image/*")) }
+                        .testTag("group_wallpaper_setting")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🎨", fontSize = 18.sp)
+                        Spacer(Modifier.width(14.dp))
+                        Text(
+                            "Обои чата",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+
+            // Clear History Row
+            item(key = "clear_history_row") {
+                Surface(
+                    color = Color(0xFF14161A),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clickable { showClearHistoryConfirmation = true }
+                        .testTag("clear_group_history")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🗑️", fontSize = 18.sp)
+                        Spacer(Modifier.width(14.dp))
+                        Text(
+                            "Очистить историю",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFE53935)
+                        )
+                    }
+                }
+            }
+
             // Segmented Tab Bar Navigation
             item(key = "tab_navigation") {
                 GroupTabNavigation(
@@ -342,6 +413,29 @@ fun GroupInfoScreen(
                 }
             }
         }
+    }
+
+    if (showClearHistoryConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showClearHistoryConfirmation = false },
+            title = { Text("Очистить историю", fontWeight = FontWeight.Bold, color = Color.White) },
+            text = { Text("Вы действительно хотите удалить все сообщения этой группы на своем устройстве?", color = Color.LightGray) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showClearHistoryConfirmation = false
+                        controller.clearHistory(state.metadata.groupId)
+                        android.widget.Toast.makeText(context, "История очищена", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
+                ) { Text("Очистить", color = Color.White) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearHistoryConfirmation = false }) { Text("Отмена", color = Color.White) }
+            },
+            containerColor = Color(0xFF1E1E24),
+            shape = RoundedCornerShape(20.dp)
+        )
     }
 
     selectedMediaPreviewPath?.let { path ->

@@ -89,9 +89,17 @@ import com.example.twopchat.ui.chat.AttachmentPanel
 import com.example.twopchat.ui.chat.StickerPickerBottomSheet
 import com.example.twopchat.ui.chat.StickerPackBottomSheet
 import com.example.twopchat.ui.chat.StickerPackRequestError
+import com.example.twopchat.ui.chat.SearchCategoryFilter
+import com.example.twopchat.ui.chat.SearchNavigationFabs
+import com.example.twopchat.ui.chat.SearchBottomBarPill
+import com.example.twopchat.ui.chat.matchesCategoryFilter
+import com.example.twopchat.ui.chat.matchesDateFilter
+import com.example.twopchat.group.runtime.GroupChatCoordinator
 import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.StickerSupport
 import com.example.twopchat.BuiltinSticker
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -163,9 +171,48 @@ fun GroupChatScreen(
     var selectedFullImagePath by remember { mutableStateOf<String?>(null) }
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var pendingVideoPath by remember { mutableStateOf<String?>(null) }
+    var isSearchMode by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedCategoryFilter by remember { mutableStateOf(SearchCategoryFilter.ALL) }
+    var selectedDateFilterMs by remember { mutableStateOf<Long?>(null) }
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+    var currentMatchIndex by remember { mutableIntStateOf(0) }
+    var messageToForward by remember { mutableStateOf<GroupTimelineMessage?>(null) }
+    var showForwardDialog by remember { mutableStateOf(false) }
+
+    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+
+    val wallpaperUriStr = remember(state.groupId) {
+        P2PPreferences.prefs(context).getString("group_wallpaper_${state.groupId}", null)
+    }
+    val wallpaperBitmap = remember(wallpaperUriStr) {
+        wallpaperUriStr?.let { uriStr ->
+            runCatching {
+                if (uriStr.startsWith("content://")) {
+                    context.contentResolver.openInputStream(Uri.parse(uriStr))?.use {
+                        BitmapFactory.decodeStream(it)
+                    }
+                } else {
+                    BitmapFactory.decodeFile(uriStr)
+                }
+            }.getOrNull()
+        }
+    }
 
     BackHandler {
         when {
+            isSearchMode -> {
+                isSearchMode = false
+                searchQuery = ""
+            }
+            showForwardDialog -> {
+                showForwardDialog = false
+                messageToForward = null
+            }
             selectedFullImagePath != null -> selectedFullImagePath = null
             viewedStickerMessage != null -> viewedStickerMessage = null
             showStickerPicker -> showStickerPicker = false
@@ -176,11 +223,6 @@ fun GroupChatScreen(
             else -> controller.onBack()
         }
     }
-    val coroutineScope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val surfaceColor = MaterialTheme.colorScheme.surface
-    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
     val appLanguage = remember(context) {
         P2PPreferences.prefs(context).getString("settings_language", "Русский") ?: "Русский"
     }
@@ -249,13 +291,43 @@ fun GroupChatScreen(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(surfaceColor)
-    ) {
-        // Modern Glassmorphic Top App Bar
-        GroupChatHeader(state = state, controller = controller)
+    val searchFilteredMessages = remember(state.messages, searchQuery, selectedCategoryFilter, selectedDateFilterMs) {
+        if (searchQuery.isBlank() && selectedCategoryFilter == SearchCategoryFilter.ALL && selectedDateFilterMs == null) {
+            emptyList()
+        } else {
+            state.messages.filter { msg ->
+                val queryMatches = searchQuery.isBlank() || msg.text.contains(searchQuery, ignoreCase = true) || msg.authorName.contains(searchQuery, ignoreCase = true)
+                queryMatches && msg.matchesCategoryFilter(selectedCategoryFilter) && msg.matchesDateFilter(selectedDateFilterMs)
+            }
+        }
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        if (wallpaperBitmap != null) {
+            Image(
+                bitmap = wallpaperBitmap.asImageBitmap(),
+                contentDescription = "Chat Wallpaper",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(if (wallpaperBitmap != null) Color.Black.copy(alpha = 0.45f) else surfaceColor)
+        ) {
+            // Modern Glassmorphic Top App Bar
+            GroupChatHeader(
+                state = state,
+                controller = controller,
+                isSearchMode = isSearchMode,
+                searchQuery = searchQuery,
+                onSearchModeChange = { isSearchMode = it },
+                onSearchQueryChange = { searchQuery = it }
+            )
+
+        val listState = rememberLazyListState()
 
         // Pinned Message Bar matching Screenshot 2
         state.pinnedMessage?.let { pinned ->
@@ -264,6 +336,16 @@ fun GroupChatScreen(
                 shadowElevation = 1.dp,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clickable {
+                        val pinnedId = pinned.messageId
+                        val targetIdx = state.messages.indexOfFirst { it.messageId == pinnedId }
+                        if (targetIdx != -1) {
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(targetIdx)
+                                highlightedMessageId = pinnedId
+                            }
+                        }
+                    }
                     .testTag("pinned_message")
             ) {
                 Row(
@@ -306,8 +388,6 @@ fun GroupChatScreen(
                 }
             }
         }
-
-        val listState = rememberLazyListState()
 
         // Auto-scroll to bottom when messages initially load or a new message arrives
         LaunchedEffect(state.messages.size) {
@@ -475,6 +555,7 @@ fun GroupChatScreen(
             }
         )
     }
+}
 
     // Full Screen Image Viewer (Direct Chat feature parity)
     selectedFullImagePath?.let { path ->
@@ -531,6 +612,14 @@ fun GroupChatScreen(
                             modifier = Modifier.fillMaxWidth().testTag("reply_${message.messageId}")
                         ) { Text("Ответить", modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold) }
                     }
+                    TextButton(
+                        onClick = {
+                            messageToForward = message
+                            showForwardDialog = true
+                            selectedMessageForOptions = null
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("forward_${message.messageId}")
+                    ) { Text("Переслать", modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold) }
                     if (message.text.isNotEmpty()) {
                         TextButton(
                             onClick = {
@@ -803,10 +892,110 @@ fun GroupChatScreen(
             }
         )
     }
+
+    if (showForwardDialog && messageToForward != null) {
+        val activeSet = P2PPreferences.prefs(context).getStringSet("active_chats", emptySet()) ?: emptySet()
+        val groups = GroupChatCoordinator.visibleGroups()
+        var forwardSearchQuery by remember { mutableStateOf("") }
+
+        val filteredPeers = remember(activeSet, forwardSearchQuery) {
+            activeSet.filter { it.contains(forwardSearchQuery, ignoreCase = true) }
+        }
+        val filteredGroups = remember(groups, forwardSearchQuery) {
+            groups.filter { it.title.contains(forwardSearchQuery, ignoreCase = true) }
+        }
+
+        AlertDialog(
+            onDismissRequest = {
+                showForwardDialog = false
+                messageToForward = null
+            },
+            title = { Text("Переслать сообщение", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
+                    OutlinedTextField(
+                        value = forwardSearchQuery,
+                        onValueChange = { forwardSearchQuery = it },
+                        placeholder = { Text("Поиск...") },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    )
+                    LazyColumn {
+                        if (filteredGroups.isNotEmpty()) {
+                            item { Text("Группы", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = primaryColor) }
+                            items(filteredGroups, key = { "group_${it.groupId}" }) { group ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val text = messageToForward?.text.orEmpty()
+                                            val att = messageToForward?.attachment
+                                            showForwardDialog = false
+                                            messageToForward = null
+                                            if (att != null) {
+                                                controller.sendAttachment(group.groupId, att.fileName, att.mimeType)
+                                            } else {
+                                                controller.sendMessage(group.groupId, text, null)
+                                            }
+                                            android.widget.Toast.makeText(context, "Сообщение переслано в ${group.title}", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                        .padding(vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("👥  ${group.title}", fontWeight = FontWeight.Medium)
+                                }
+                            }
+                        }
+                        if (filteredPeers.isNotEmpty()) {
+                            item { Text("Личные чаты", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = primaryColor) }
+                            items(filteredPeers, key = { "peer_$it" }) { peer ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val text = messageToForward?.text.orEmpty()
+                                            val att = messageToForward?.attachment
+                                            val myName = P2PPreferences.prefs(context).getString("display_name", "Me") ?: "Me"
+                                            showForwardDialog = false
+                                            messageToForward = null
+                                            if (att != null) {
+                                                P2PMessageRelay.sendFile(context, peer, "", att.fileName)
+                                            } else {
+                                                P2PMessageRelay.sendMessage(context, peer, myName, text)
+                                            }
+                                            android.widget.Toast.makeText(context, "Сообщение переслано $peer", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                        .padding(vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("👤  $peer", fontWeight = FontWeight.Medium)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = {
+                    showForwardDialog = false
+                    messageToForward = null
+                }) { Text("Отмена") }
+            },
+            containerColor = surfaceColor,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
 }
 
 @Composable
-private fun GroupChatHeader(state: GroupChatUiState, controller: GroupUiController) {
+private fun GroupChatHeader(
+    state: GroupChatUiState,
+    controller: GroupUiController,
+    isSearchMode: Boolean,
+    searchQuery: String,
+    onSearchModeChange: (Boolean) -> Unit,
+    onSearchQueryChange: (String) -> Unit
+) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
@@ -823,111 +1012,157 @@ private fun GroupChatHeader(state: GroupChatUiState, controller: GroupUiControll
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = controller::onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = onSurfaceColor
-                )
-            }
-
-            // Group Avatar
-            val initials = state.title.take(2).uppercase().ifBlank { "GP" }
-            val avatarColor = remember(state.groupId) {
-                val colors = listOf(
-                    Color(0xFF1E88E5), Color(0xFF43A047), Color(0xFFFB8C00),
-                    Color(0xFF8E24AA), Color(0xFFE53935), Color(0xFF00ACC1)
-                )
-                colors[abs(state.groupId.hashCode()) % colors.size]
-            }
-
-            val context = LocalContext.current
-            val avatarBitmap = remember(state.avatarUri) {
-                state.avatarUri?.let { uriStr ->
-                    runCatching {
-                        if (uriStr.startsWith("content://")) {
-                            context.contentResolver.openInputStream(Uri.parse(uriStr))?.use { stream ->
-                                BitmapFactory.decodeStream(stream)
+            if (isSearchMode) {
+                IconButton(onClick = { onSearchModeChange(false); onSearchQueryChange("") }) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = onSurfaceColor
+                    )
+                }
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    placeholder = { Text("Поиск в беседе...", color = onSurfaceColor.copy(alpha = 0.5f)) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 4.dp),
+                    singleLine = true,
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { onSearchQueryChange("") }) {
+                                Text("×", fontSize = 20.sp, color = onSurfaceColor, fontWeight = FontWeight.Bold)
                             }
-                        } else {
-                            val file = File(uriStr)
-                            if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
                         }
-                    }.getOrNull()
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(avatarColor)
-                    .clickable { controller.openGroupInfo(state.groupId) },
-                contentAlignment = Alignment.Center
-            ) {
-                if (avatarBitmap != null) {
-                    Image(
-                        bitmap = avatarBitmap.asImageBitmap(),
-                        contentDescription = "Group Avatar",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Text(
-                        text = initials,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                }
-            }
-
-            Spacer(Modifier.width(10.dp))
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable { controller.openGroupInfo(state.groupId) }
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        state.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = onSurfaceColor
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text("🛡️", fontSize = 12.sp) // P2P Security Badge
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val statusDotColor = syncStatusColor(state.syncStatus)
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .background(statusDotColor, CircleShape)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        "${state.memberCount} уч. · ${state.syncStatus.label}",
-                        modifier = Modifier.testTag("group_sync_status"),
-                        fontSize = 12.sp,
-                        color = statusDotColor,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-
-            IconButton(
-                onClick = { controller.openGroupInfo(state.groupId) },
-                modifier = Modifier.testTag("open_group_info")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = "Group Info",
-                    tint = primaryColor
+                    }
                 )
+            } else {
+                IconButton(onClick = controller::onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = onSurfaceColor
+                    )
+                }
+
+                // Group Avatar
+                val initials = state.title.take(2).uppercase().ifBlank { "GP" }
+                val avatarColor = remember(state.groupId) {
+                    val colors = listOf(
+                        Color(0xFF1E88E5), Color(0xFF43A047), Color(0xFFFB8C00),
+                        Color(0xFF8E24AA), Color(0xFFE53935), Color(0xFF00ACC1)
+                    )
+                    colors[abs(state.groupId.hashCode()) % colors.size]
+                }
+
+                val context = LocalContext.current
+                val avatarBitmap = remember(state.avatarUri) {
+                    state.avatarUri?.let { uriStr ->
+                        runCatching {
+                            if (uriStr.startsWith("content://")) {
+                                context.contentResolver.openInputStream(Uri.parse(uriStr))?.use { stream ->
+                                    BitmapFactory.decodeStream(stream)
+                                }
+                            } else {
+                                val file = File(uriStr)
+                                if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+                            }
+                        }.getOrNull()
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(avatarColor)
+                        .clickable { controller.openGroupInfo(state.groupId) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (avatarBitmap != null) {
+                        Image(
+                            bitmap = avatarBitmap.asImageBitmap(),
+                            contentDescription = "Group Avatar",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Text(
+                            text = initials,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
+                }
+
+                Spacer(Modifier.width(10.dp))
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { controller.openGroupInfo(state.groupId) }
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            state.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = onSurfaceColor
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("🛡️", fontSize = 12.sp) // P2P Security Badge
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (state.typingStatus.isNotBlank()) {
+                            Text(
+                                state.typingStatus,
+                                fontSize = 12.sp,
+                                color = Color(0xFF43A047),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        } else {
+                            val statusDotColor = syncStatusColor(state.syncStatus)
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .background(statusDotColor, CircleShape)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                "${state.memberCount} уч. · ${state.syncStatus.label}",
+                                modifier = Modifier.testTag("group_sync_status"),
+                                fontSize = 12.sp,
+                                color = statusDotColor,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+
+                IconButton(
+                    onClick = { onSearchModeChange(true) },
+                    modifier = Modifier.testTag("group_search_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = primaryColor
+                    )
+                }
+
+                IconButton(
+                    onClick = { controller.openGroupInfo(state.groupId) },
+                    modifier = Modifier.testTag("open_group_info")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "Group Info",
+                        tint = primaryColor
+                    )
+                }
             }
         }
     }
@@ -1797,4 +2032,30 @@ private fun deliveryStatusColor(status: GroupDeliveryStatus): Color = when (stat
     GroupDeliveryStatus.DELIVERED -> Color(0xFF2E7D32)
     GroupDeliveryStatus.READ -> Color(0xFF00838F)
     GroupDeliveryStatus.FAILED -> Color(0xFFC62828)
+}
+
+private fun GroupTimelineMessage.matchesCategoryFilter(category: SearchCategoryFilter): Boolean {
+    return when (category) {
+        SearchCategoryFilter.ALL -> true
+        SearchCategoryFilter.MEDIA -> {
+            val att = attachment
+            if (att == null) false else {
+                val mime = att.mimeType.lowercase()
+                val name = att.fileName.lowercase()
+                mime.startsWith("image/") || mime.startsWith("video/") || name.endsWith(".gif") || StickerSupport.isStickerFileName(name)
+            }
+        }
+        SearchCategoryFilter.FILES -> {
+            val att = attachment
+            if (att == null) false else !matchesCategoryFilter(SearchCategoryFilter.MEDIA)
+        }
+        SearchCategoryFilter.LINKS -> {
+            text.contains("http://", ignoreCase = true) || text.contains("https://", ignoreCase = true)
+        }
+    }
+}
+
+private fun GroupTimelineMessage.matchesDateFilter(dateMs: Long?): Boolean {
+    if (dateMs == null || dateMs <= 0L) return true
+    return true
 }

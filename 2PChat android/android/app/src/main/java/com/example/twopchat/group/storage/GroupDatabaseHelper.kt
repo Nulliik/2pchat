@@ -2598,6 +2598,20 @@ class GroupDatabaseHelper(
         }
     }
 
+    fun clearHistory(groupId: String) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("group_events", "group_id = ?", arrayOf(groupId))
+            db.delete("group_messages", "group_id = ?", arrayOf(groupId))
+            db.delete("group_attachments", "group_id = ?", arrayOf(groupId))
+            db.execSQL("UPDATE groups SET unread_count = 0, pinned_event_id = NULL WHERE group_id = ?", arrayOf(groupId))
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     companion object {
         const val DATABASE_NAME = "twopchat-groups.db"
         const val DATABASE_VERSION = 4

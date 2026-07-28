@@ -23,6 +23,7 @@ interface GroupUiController {
   fun cancelReply(groupId: String) = Unit
   fun editMessage(groupId: String, messageId: String, newText: String) = Unit
   fun deleteMessage(groupId: String, messageId: String) = Unit
+  fun clearHistory(groupId: String) = Unit
   fun toggleReaction(groupId: String, messageId: String, emoji: String) = Unit
   fun pinMessage(groupId: String, messageId: String) = Unit
   fun unpinMessage(groupId: String, messageId: String) = Unit
@@ -216,7 +217,8 @@ data class GroupChatUiState(
   val mediaComposerEnabled: Boolean = true,
   val composerPlaceholder: String = "Message",
   val readOnlyReason: String = "",
-  val isSending: Boolean = false
+  val isSending: Boolean = false,
+  val typingStatus: String = ""
 )
 
 data class GroupInfoUiState(

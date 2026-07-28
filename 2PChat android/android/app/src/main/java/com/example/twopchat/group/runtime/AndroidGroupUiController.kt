@@ -59,6 +59,9 @@ class AndroidGroupUiController(
     override fun deleteMessage(groupId: String, messageId: String) =
         GroupChatCoordinator.deleteMessage(groupId, messageId)
 
+    override fun clearHistory(groupId: String) =
+        GroupChatCoordinator.clearHistory(groupId)
+
     override fun toggleReaction(groupId: String, messageId: String, emoji: String) =
         GroupChatCoordinator.toggleReaction(groupId, messageId, emoji)
 

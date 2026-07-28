@@ -490,6 +490,14 @@ object GroupChatCoordinator {
         }
     }
 
+    fun clearHistory(groupId: String) {
+        scope.launch {
+            db().clearHistory(groupId)
+            refreshAllSummariesWithoutRecursion()
+            refreshGroup(groupId)
+        }
+    }
+
     fun toggleReaction(groupId: String, messageId: String, emoji: String) {
         val normalized = emoji.trim().take(16)
         if (normalized.isBlank()) return
@@ -3873,7 +3881,7 @@ object GroupChatCoordinator {
         _pendingInvites.value = PendingGroupInvitesUiState(invites)
     }
 
-    private fun visibleGroups(): List<StoredGroup> {
+    internal fun visibleGroups(): List<StoredGroup> {
         if (applicationContext == null) return emptyList()
         return db().listGroups().filter { group ->
             db().getMember(group.groupId, group.localDeviceId)
