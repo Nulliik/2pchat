@@ -3171,15 +3171,32 @@ remove("pinned_msg_id_${peerName}")
                 getVerificationEmojis(localFingerprint, activeFingerprint)
             }
 
+            LaunchedEffect(isWaitingForVerifyResponse) {
+                if (isWaitingForVerifyResponse) {
+                    kotlinx.coroutines.delay(30000L)
+                    if (isWaitingForVerifyResponse) {
+                        isWaitingForVerifyResponse = false
+                        Toast.makeText(
+                            context,
+                            if (appLanguage == "Русский") "Собеседник не ответил на запрос верификации" else "Peer did not respond to verification request",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
+
             AlertDialog(
                 onDismissRequest = { 
-                    if (!isWaitingForVerifyResponse) showVerifyDialog = false 
+                    showVerifyDialog = false 
+                    isWaitingForVerifyResponse = false
                 },
                 confirmButton = {},
                 dismissButton = {
                     TextButton(
-                        enabled = !isWaitingForVerifyResponse,
-                        onClick = { showVerifyDialog = false }
+                        onClick = { 
+                            showVerifyDialog = false 
+                            isWaitingForVerifyResponse = false
+                        }
                     ) {
                         Text(Localizations.getString("close", appLanguage), color = primaryColor)
                     }
@@ -3257,6 +3274,18 @@ remove("pinned_msg_id_${peerName}")
                                         fontSize = 11.sp,
                                         color = onSurfaceVariant
                                     )
+                                    OutlinedButton(
+                                        onClick = {
+                                            isWaitingForVerifyResponse = false
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = if (appLanguage == "Русский") "Отменить запрос" else "Cancel request",
+                                            fontSize = 12.sp
+                                        )
+                                    }
                                 }
                             } else {
                                 Button(
