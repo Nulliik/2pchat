@@ -282,7 +282,7 @@ fun GroupChatScreen(
                 isAttachmentPanelOpen = false
                 when (type) {
                     "GIF" -> showGifLibrary = true
-                    "Stickers" -> showStickerPicker = true
+                    "Stickers", "STICKER", "Sticker" -> showStickerPicker = true
                     "Camera" -> attachmentLauncher.launch(arrayOf("image/*"))
                     "Gallery" -> attachmentLauncher.launch(arrayOf("image/*"))
                     "Video" -> attachmentLauncher.launch(arrayOf("video/*"))
@@ -1178,7 +1178,7 @@ private fun GroupComposer(
                 },
                 trailingIcon = {
                     IconButton(
-                        onClick = { onAttachmentClick("GIF") },
+                        onClick = { onAttachmentClick("Stickers") },
                         modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
