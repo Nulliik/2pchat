@@ -1564,6 +1564,30 @@ class GroupDatabaseHelper(
         return result
     }
 
+    fun listAllReceipts(groupId: String): List<StoredReceipt> {
+        val result = mutableListOf<StoredReceipt>()
+        readableDatabase.query(
+            TABLE_RECEIPTS,
+            null,
+            "group_id = ?",
+            arrayOf(groupId),
+            null,
+            null,
+            "received_at_ms ASC, recipient_device_id ASC, event_id ASC, type ASC",
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                result += StoredReceipt(
+                    groupId = cursor.string("group_id"),
+                    eventId = cursor.string("event_id"),
+                    recipientDeviceId = cursor.string("recipient_device_id"),
+                    type = cursor.string("type"),
+                    receivedAtMs = cursor.long("received_at_ms"),
+                )
+            }
+        }
+        return result
+    }
+
     fun recordReceipt(receipt: StoredReceipt) {
         require(receipt.groupId.isNotBlank() && receipt.eventId.isNotBlank())
         require(receipt.recipientDeviceId.isNotBlank() && receipt.type.isNotBlank())
@@ -2013,6 +2037,7 @@ class GroupDatabaseHelper(
 
         when (event.kind) {
             StoredGroupEventKind.MESSAGE.name,
+            "POLL",
             "MEDIA",
             ->
                 rebuildMaterializedMessage(
@@ -2047,7 +2072,7 @@ class GroupDatabaseHelper(
             "REACTION_REMOVE",
             -> materializeReaction(db, event)
         }
-        if (event.kind in setOf(StoredGroupEventKind.MESSAGE.name, "MEDIA") && countAsUnread) {
+        if (event.kind in setOf(StoredGroupEventKind.MESSAGE.name, "POLL", "MEDIA") && countAsUnread) {
             db.execSQL(
                 "UPDATE $TABLE_GROUPS SET unread_count = unread_count + 1, " +
                     "updated_at_ms = MAX(updated_at_ms, ?) WHERE group_id = ?",
@@ -2261,11 +2286,12 @@ class GroupDatabaseHelper(
         val base = db.query(
             TABLE_EVENTS,
             null,
-            "group_id = ? AND event_id = ? AND kind IN (?, ?)",
+            "group_id = ? AND event_id = ? AND kind IN (?, ?, ?)",
             arrayOf(
                 groupId,
                 messageId,
                 StoredGroupEventKind.MESSAGE.name,
+                "POLL",
                 "MEDIA",
             ),
             null,

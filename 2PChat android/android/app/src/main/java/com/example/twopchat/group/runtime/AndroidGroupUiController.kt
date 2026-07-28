@@ -21,6 +21,9 @@ class AndroidGroupUiController(
 
     override fun openGroupInfo(groupId: String) = onOpenGroupInfoNavigation(groupId)
 
+    override fun setGroupChatActive(groupId: String, active: Boolean) =
+        GroupChatCoordinator.setGroupChatActive(groupId, active)
+
     override fun createGroup(title: String, description: String, contactIds: Set<String>) {
         GroupChatCoordinator.createGroup(title, description, contactIds) { groupId ->
             Handler(Looper.getMainLooper()).post { onOpenGroupNavigation(groupId) }

@@ -88,9 +88,11 @@ import com.example.twopchat.ui.chat.GifLibraryBottomSheet
 import com.example.twopchat.StoredGif
 import com.example.twopchat.GifStorageManager
 import com.example.twopchat.ui.chat.AttachmentPanel
+import com.example.twopchat.ui.chat.ChatAttachmentAction
 import com.example.twopchat.ui.chat.StickerPickerBottomSheet
 import com.example.twopchat.ui.chat.StickerPackBottomSheet
 import com.example.twopchat.ui.chat.StickerPackRequestError
+import com.example.twopchat.ui.chat.SwipeToReplyContainer
 import com.example.twopchat.ui.chat.SearchCategoryFilter
 import com.example.twopchat.ui.chat.SearchNavigationFabs
 import com.example.twopchat.ui.chat.SearchBottomBarPill
@@ -117,6 +119,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -189,6 +192,11 @@ fun GroupChatScreen(
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+
+    DisposableEffect(state.groupId, controller) {
+        controller.setGroupChatActive(state.groupId, true)
+        onDispose { controller.setGroupChatActive(state.groupId, false) }
+    }
 
     val wallpaperUriStr = remember(state.groupId) {
         P2PPreferences.prefs(context).getString("group_wallpaper_${state.groupId}", null)
@@ -466,16 +474,24 @@ fun GroupChatScreen(
                 }
 
                 items(state.messages, key = GroupTimelineMessage::messageId) { message ->
-                    GroupMessageCard(
-                        groupId = state.groupId,
-                        message = message,
-                        controller = controller,
-                        onEdit = { editingMessage = message },
-                        onDelete = { deletingMessage = message },
-                        onOptionsClick = { selectedMessageForOptions = message },
-                        onMediaClick = { path -> selectedFullImagePath = path },
-                        onOpenStickerPack = { msg -> viewedStickerMessage = msg }
-                    )
+                    SwipeToReplyContainer(
+                        onReply = {
+                            if (message.canReply) {
+                                controller.startReply(state.groupId, message.messageId)
+                            }
+                        },
+                    ) {
+                        GroupMessageCard(
+                            groupId = state.groupId,
+                            message = message,
+                            controller = controller,
+                            onEdit = { editingMessage = message },
+                            onDelete = { deletingMessage = message },
+                            onOptionsClick = { selectedMessageForOptions = message },
+                            onMediaClick = { path -> selectedFullImagePath = path },
+                            onOpenStickerPack = { msg -> viewedStickerMessage = msg }
+                        )
+                    }
                 }
             }
 
@@ -1478,6 +1494,15 @@ private fun GroupMessageCard(
                     }
                 }
 
+                message.poll?.let { poll ->
+                    GroupPollCard(
+                        poll = poll,
+                        onVote = { optionId ->
+                            controller.votePoll(groupId, poll.pollId, optionId)
+                        },
+                    )
+                }
+
                 // Message Text (Hide raw attachment- placeholder)
                 if (shouldDisplayText) {
                     Text(
@@ -1816,6 +1841,9 @@ private fun GroupComposer(
                 surfaceVariant = surfaceVariant,
                 onSurfaceColor = onSurfaceColor,
                 onAttachmentClick = onAttachmentClick,
+                extraActions = listOf(
+                    ChatAttachmentAction("Poll", R.drawable.ic_add_square),
+                ),
             )
         }
 
@@ -2102,6 +2130,86 @@ private fun GroupTimelineMessage.matchesCategoryFilter(category: SearchCategoryF
 private fun GroupTimelineMessage.matchesDateFilter(dateMs: Long?): Boolean {
     if (dateMs == null || dateMs <= 0L) return true
     return true
+}
+
+@Composable
+private fun GroupPollCard(
+    poll: GroupPollUi,
+    onVote: (Int) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = "📊 ${poll.question}",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+        )
+        poll.options.forEach { option ->
+            val progress = if (poll.totalVotes == 0) {
+                0f
+            } else {
+                option.voteCount.toFloat() / poll.totalVotes.toFloat()
+            }
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onVote(option.id) }
+                    .testTag("poll_${poll.pollId}_option_${option.id}"),
+                color = if (option.isVotedByMe) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                } else {
+                    Color.White.copy(alpha = 0.08f)
+                },
+                shape = RoundedCornerShape(10.dp),
+                border = if (option.isVotedByMe) {
+                    BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+                } else {
+                    null
+                },
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = option.text,
+                            modifier = Modifier.weight(1f),
+                            fontSize = 13.sp,
+                            color = Color.White,
+                        )
+                        Text(
+                            text = "${option.voteCount}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White.copy(alpha = 0.75f),
+                        )
+                    }
+                    Spacer(Modifier.height(5.dp))
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth().height(3.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = Color.White.copy(alpha = 0.12f),
+                    )
+                }
+            }
+        }
+        Text(
+            text = buildString {
+                append("Голосов: ${poll.totalVotes}")
+                if (poll.isAnonymous) append(" · анонимный")
+            },
+            fontSize = 11.sp,
+            color = Color.White.copy(alpha = 0.62f),
+        )
+    }
 }
 
 @Composable

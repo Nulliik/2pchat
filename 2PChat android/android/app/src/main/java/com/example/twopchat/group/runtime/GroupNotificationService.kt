@@ -46,8 +46,8 @@ internal object GroupNotificationService {
             launchIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val myDisplayName = prefs.getString("display_name", "") ?: ""
-        val isMentioned = myDisplayName.isNotBlank() && text.contains("@$myDisplayName", ignoreCase = true)
+        val myDisplayName = prefs.getString("username_profile", "") ?: ""
+        val isMentioned = isGroupMention(text, myDisplayName)
         val title = if (isMentioned) "🔔 Вас упомянули в $groupTitle" else groupTitle
         val showPreview = prefs.getBoolean("settings_previews", true)
         val cleanText = formatGroupNotificationText(text)
@@ -66,6 +66,14 @@ internal object GroupNotificationService {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .build(),
         )
+    }
+
+    internal fun isGroupMention(text: String, displayName: String): Boolean {
+        val normalizedName = displayName.trim()
+        if (normalizedName.isEmpty()) return false
+        return Regex(
+            pattern = "(?iu)(?<![\\p{L}\\p{N}_])@${Regex.escape(normalizedName)}(?![\\p{L}\\p{N}_])",
+        ).containsMatchIn(text)
     }
 
     private fun formatGroupNotificationText(text: String): String {

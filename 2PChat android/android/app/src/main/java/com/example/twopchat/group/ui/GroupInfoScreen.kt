@@ -25,6 +25,10 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.ui.res.painterResource
 import com.example.twopchat.R
 import com.example.twopchat.P2PPreferences
+import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.PythonBridge
+import com.example.twopchat.ui.common.QrCodeImage
+import com.example.twopchat.ui.main.buildContactQrPayload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -236,6 +240,7 @@ fun GroupInfoScreen(
             item(key = "quick_actions") {
                 GroupQuickActionsRow(
                     isMuted = isMuted,
+                    canInviteByLink = state.metadata.inviteToken.isNotBlank(),
                     onChatClick = controller::onBack,
                     onToggleMuteClick = {
                         val newMuted = !isMuted
@@ -488,6 +493,15 @@ fun GroupInfoScreen(
                 }
             }
         }
+    }
+
+    if (showQrModal) {
+        GroupInviteQrModal(
+            groupTitle = state.metadata.title,
+            groupId = state.metadata.groupId,
+            inviteToken = state.metadata.inviteToken,
+            onDismiss = { showQrModal = false },
+        )
     }
 
     restrictionsFor?.let { member ->
@@ -829,6 +843,7 @@ private fun GroupHeroHeader(
 @Composable
 private fun GroupQuickActionsRow(
     isMuted: Boolean,
+    canInviteByLink: Boolean,
     onChatClick: () -> Unit,
     onToggleMuteClick: () -> Unit,
     onQrClick: () -> Unit,
@@ -840,12 +855,14 @@ private fun GroupQuickActionsRow(
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        val actions = listOf(
-            Triple("Чат", R.drawable.ic_send_airplane, onChatClick),
-            Triple(if (isMuted) "Вкл. звук" else "Звук", R.drawable.ic_notifications, onToggleMuteClick),
-            Triple("QR код", R.drawable.ic_qr_code, onQrClick),
-            Triple("Покинуть", R.drawable.ic_delete, onLeaveClick)
-        )
+        val actions = buildList {
+            add(Triple("Чат", R.drawable.ic_send_airplane, onChatClick))
+            add(Triple(if (isMuted) "Вкл. звук" else "Звук", R.drawable.ic_notifications, onToggleMuteClick))
+            if (canInviteByLink) {
+                add(Triple("QR код", R.drawable.ic_qr_code, onQrClick))
+            }
+            add(Triple("Покинуть", R.drawable.ic_delete, onLeaveClick))
+        }
 
         actions.forEach { (label, iconRes, onClick) ->
             Surface(
@@ -1609,10 +1626,40 @@ private fun MediaGridCell(
 private fun GroupInviteQrModal(
     groupTitle: String,
     groupId: String,
+    inviteToken: String,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val inviteLink = "2pchat://group/invite?id=$groupId"
+    val prefs = remember(context) { P2PPreferences.prefs(context) }
+    val username = remember(prefs) {
+        prefs.getString("username_profile", "2PChat User").orEmpty()
+    }
+    val discoveryCode = remember { PythonBridge.getOrCreateDiscoveryCode() }
+    val fingerprint = remember { PythonBridge.getLocalFingerprint() }
+    val listenerPort = remember { P2PMessageRelay.listenerPort(context) }
+    val localIp = remember { PythonBridge.getLocalIpAddress(false) }
+    val yggIp = remember { PythonBridge.getYggdrasilAddress() }
+    val inviteLink = remember(
+        username,
+        discoveryCode,
+        fingerprint,
+        listenerPort,
+        localIp,
+        yggIp,
+        groupId,
+        inviteToken,
+    ) {
+        buildContactQrPayload(
+            nickname = username,
+            discoveryCode = discoveryCode,
+            fingerprint = fingerprint,
+            localIpv4 = localIp.takeUnless { it == "127.0.0.1" }.orEmpty(),
+            publicIpv4 = "",
+            ipv6 = yggIp,
+            listenerPort = listenerPort,
+        ) + "&group=" + Uri.encode(groupId) +
+            "&group_token=" + Uri.encode(inviteToken)
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1627,15 +1674,11 @@ private fun GroupInviteQrModal(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.size(200.dp).padding(8.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "QR CODE\n$groupTitle",
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Black,
-                            fontSize = 14.sp
-                        )
-                    }
+                    QrCodeImage(
+                        payload = inviteLink,
+                        contentDescription = "QR-приглашение в $groupTitle",
+                        modifier = Modifier.fillMaxSize().padding(6.dp),
+                    )
                 }
                 Spacer(Modifier.height(14.dp))
                 Text(

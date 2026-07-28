@@ -21,6 +21,7 @@ object GroupWireProtocol {
     const val TYPE_ROSTER_SNAPSHOT = "group_roster_snapshot_v1"
     const val TYPE_ATTACHMENT_REQUEST = "group_attachment_request_v1"
     const val TYPE_ATTACHMENT_BLOCK = "group_attachment_block_v1"
+    const val TYPE_JOIN_REQUEST = "group_join_request_v1"
 
     const val MAX_WIRE_BYTES = 768 * 1024
     const val MAX_EVENT_CIPHERTEXT_CHARS = 512 * 1024
@@ -41,6 +42,7 @@ object GroupWireProtocol {
             TYPE_ROSTER_SNAPSHOT,
             TYPE_ATTACHMENT_REQUEST,
             TYPE_ATTACHMENT_BLOCK,
+            TYPE_JOIN_REQUEST,
         )
 
     fun parseEvent(json: JSONObject): GroupWireEvent {
@@ -299,6 +301,8 @@ class GroupEventFactory(
 
 enum class GroupEventKind(val wireName: String) {
     MESSAGE("message"),
+    POLL("poll"),
+    POLL_VOTE("poll_vote"),
     MEDIA("media"),
     REPLY("reply"),
     EDIT("edit"),

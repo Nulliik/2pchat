@@ -30,6 +30,7 @@ import com.example.twopchat.group.model.ReplicaPlanner
 import com.example.twopchat.group.model.ReplicationStatus
 import com.example.twopchat.group.model.RetryPolicy
 import com.example.twopchat.group.model.PolicyDecision
+import com.example.twopchat.group.model.PolicyDenialReason
 import com.example.twopchat.group.model.UserId
 import com.example.twopchat.group.protocol.GroupControlFrames
 import com.example.twopchat.group.protocol.GroupAttachmentBlockFrame
@@ -84,6 +85,7 @@ import com.example.twopchat.group.ui.GroupTimelineMessage
 import com.example.twopchat.group.ui.PendingGroupInvite
 import com.example.twopchat.group.ui.PendingGroupInvitesUiState
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -137,6 +139,7 @@ object GroupChatCoordinator {
     private val infoFlows = ConcurrentHashMap<String, MutableStateFlow<GroupInfoUiState>>()
     private val timelineLimits = ConcurrentHashMap<String, Int>()
     private val lastReadReceiptTargets = ConcurrentHashMap<String, String>()
+    private val activeGroupChats = ConcurrentHashMap.newKeySet<String>()
     private val syncRequestScopes = ConcurrentHashMap<String, List<String>>()
     private val syncFailureCounts = ConcurrentHashMap<String, Int>()
     private val startupScheduled = AtomicBoolean(false)
@@ -202,6 +205,8 @@ object GroupChatCoordinator {
             attachmentBlockStores.clear()
             attachmentServeBudgets.clear()
             controlAncestorCache.clear()
+            activeGroupChats.clear()
+            lastReadReceiptTargets.clear()
             scope = newRuntimeScope()
         }
     }
@@ -240,6 +245,18 @@ object GroupChatCoordinator {
             refreshGroup(groupId)
         }
         return flow.asStateFlow()
+    }
+
+    fun setGroupChatActive(groupId: String, active: Boolean) {
+        if (active) {
+            activeGroupChats += groupId
+            scope.launch {
+                markReadAndSendReceipt(groupId)
+                refreshGroup(groupId)
+            }
+        } else {
+            activeGroupChats -= groupId
+        }
     }
 
     fun infoState(groupId: String): StateFlow<GroupInfoUiState> {
@@ -525,25 +542,51 @@ object GroupChatCoordinator {
     }
 
     fun createPoll(groupId: String, question: String, options: List<String>, isAnonymous: Boolean) {
-        if (question.isBlank() || options.size < 2) return
+        val normalizedQuestion = question.trim()
+        val normalizedOptions = options.map(String::trim).filter(String::isNotEmpty)
+        if (
+            normalizedQuestion.isEmpty() ||
+            normalizedQuestion.length > 500 ||
+            normalizedOptions.size !in 2..10 ||
+            normalizedOptions.any { it.length > 200 } ||
+            normalizedOptions.distinct().size != normalizedOptions.size
+        ) {
+            return
+        }
         scope.launch {
             val jsonOpts = org.json.JSONArray()
-            options.forEach { jsonOpts.put(it.trim()) }
+            normalizedOptions.forEach(jsonOpts::put)
             val payload = JSONObject()
                 .put("type", "poll")
-                .put("question", question.trim())
+                .put("question", normalizedQuestion)
                 .put("options", jsonOpts)
                 .put("anonymous", isAnonymous)
-            emitEvent(groupId, GroupEventKind.MESSAGE, payload)
+            emitEvent(groupId, GroupEventKind.POLL, payload)
         }
     }
 
+    fun requestJoinFromInvite(groupId: String, inviteToken: String, ownerPeerName: String) {
+        val normalizedGroupId = groupId.trim().take(128)
+        val normalizedToken = inviteToken.trim().take(128)
+        if (normalizedGroupId.isEmpty() || normalizedToken.isEmpty() || ownerPeerName.isBlank()) return
+        val context = applicationContext ?: return
+        P2PMessageRelay.sendGroupFrame(
+            context,
+            ownerPeerName,
+            JSONObject()
+                .put("type", GroupWireProtocol.TYPE_JOIN_REQUEST)
+                .put("version", GroupWireProtocol.VERSION)
+                .put("group_id", normalizedGroupId)
+                .put("invite_token", normalizedToken),
+        )
+    }
+
     fun votePoll(groupId: String, pollId: String, optionId: Int) {
+        if (optionId < 0) return
         scope.launch {
             val payload = JSONObject()
-                .put("type", "poll_vote")
                 .put("option_id", optionId)
-            emitEvent(groupId, GroupEventKind.MESSAGE, payload, pollId)
+            emitEvent(groupId, GroupEventKind.POLL_VOTE, payload, pollId)
         }
     }
 
@@ -1019,7 +1062,45 @@ object GroupChatCoordinator {
                 receiveAttachmentRequest(senderPeerName, json)
             GroupWireProtocol.TYPE_ATTACHMENT_BLOCK ->
                 receiveAttachmentBlock(senderPeerName, json)
+            GroupWireProtocol.TYPE_JOIN_REQUEST ->
+                receiveJoinRequest(senderPeerName, json)
         }
+    }
+
+    private suspend fun receiveJoinRequest(senderPeerName: String, json: JSONObject) {
+        require(json.optInt("version", -1) == GroupWireProtocol.VERSION)
+        val groupId = json.optString("group_id").take(128)
+        val suppliedToken = json.optString("invite_token").take(128)
+        val group = db().getGroup(groupId) ?: return
+        val localMember = db().getMember(groupId, group.localDeviceId) ?: return
+        if (
+            !GroupRolePolicy.canPerform(
+                localMember.toPolicyMember(),
+                GroupAction.INVITE_MEMBER,
+            ).allowed
+        ) {
+            return
+        }
+        val expectedToken = inviteCapability(group)
+        if (!MessageDigest.isEqual(
+                suppliedToken.toByteArray(Charsets.UTF_8),
+                expectedToken.toByteArray(Charsets.UTF_8),
+            )
+        ) {
+            throw SecurityException("invalid group invite capability")
+        }
+        val prefs = P2PPreferences.prefs(requireNotNull(applicationContext))
+        val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(senderPeerName), null)
+            ?.takeIf(String::isNotBlank)
+            ?: return
+        requestSerializedControl(
+            groupId,
+            "invite",
+            JSONObject()
+                .put("member_device_id", stableDeviceId(fingerprint))
+                .put("fingerprint", fingerprint)
+                .put("peer_name", senderPeerName.take(160)),
+        )
     }
 
     private suspend fun receiveInvite(senderPeerName: String, json: JSONObject) {
@@ -1727,6 +1808,7 @@ object GroupChatCoordinator {
             countAsUnread = event.authorDeviceId != group.localDeviceId &&
                 event.kind in setOf(
                     GroupEventKind.MESSAGE,
+                    GroupEventKind.POLL,
                     GroupEventKind.MEDIA,
                     GroupEventKind.REPLY,
                 ),
@@ -1761,6 +1843,7 @@ object GroupChatCoordinator {
         if (inserted && event.authorDeviceId != group.localDeviceId &&
             event.kind in setOf(
                 GroupEventKind.MESSAGE,
+                GroupEventKind.POLL,
                 GroupEventKind.MEDIA,
                 GroupEventKind.REPLY,
             )
@@ -1771,7 +1854,11 @@ object GroupChatCoordinator {
                     group.groupId,
                     group.title,
                     author.displayName,
-                    payload.optString("text"),
+                    if (event.kind == GroupEventKind.POLL) {
+                        "Опрос: ${payload.optString("question")}"
+                    } else {
+                        payload.optString("text")
+                    },
                 )
             }
         }
@@ -1793,6 +1880,19 @@ object GroupChatCoordinator {
             }
         }
         refreshGroup(group.groupId)
+        if (
+            inserted &&
+            event.authorDeviceId != group.localDeviceId &&
+            group.groupId in activeGroupChats &&
+            event.kind in setOf(
+                GroupEventKind.MESSAGE,
+                GroupEventKind.POLL,
+                GroupEventKind.MEDIA,
+                GroupEventKind.REPLY,
+            )
+        ) {
+            markReadAndSendReceipt(group.groupId)
+        }
     }
 
     private suspend fun receiveSyncRequest(senderPeerName: String, json: JSONObject) {
@@ -2355,6 +2455,41 @@ object GroupChatCoordinator {
                 payload.optString("text"),
                 GroupRolePolicy.canPerform(actor, GroupAction.POST_MESSAGE),
             )
+            GroupEventKind.POLL -> {
+                val question = payload.optString("question").trim()
+                val options = payload.optJSONArray("options")
+                val normalized = buildList {
+                    if (options != null) {
+                        for (index in 0 until options.length()) {
+                            add(options.optString(index).trim())
+                        }
+                    }
+                }
+                if (
+                    question.isEmpty() ||
+                    question.length > 500 ||
+                    normalized.size !in 2..10 ||
+                    normalized.any { it.isEmpty() || it.length > 200 } ||
+                    normalized.distinct().size != normalized.size
+                ) {
+                    PolicyDecision.deny(PolicyDenialReason.PERMISSION_MISSING)
+                } else {
+                    GroupRolePolicy.canPerform(actor, GroupAction.POST_MESSAGE)
+                }
+            }
+            GroupEventKind.POLL_VOTE -> {
+                val target = targetEventId?.let { db().getEvent(group.groupId, it) }
+                    ?: return false
+                val optionCount = runCatching {
+                    require(target.kind == GroupEventKind.POLL.name)
+                    JSONObject(target.body.orEmpty()).getJSONArray("options").length()
+                }.getOrNull() ?: return false
+                if (payload.optInt("option_id", -1) !in 0 until optionCount) {
+                    PolicyDecision.deny(PolicyDenialReason.PERMISSION_MISSING)
+                } else {
+                    GroupRolePolicy.canPerform(actor, GroupAction.POST_MESSAGE)
+                }
+            }
             GroupEventKind.SYSTEM ->
                 GroupRolePolicy.canPerform(actor, GroupAction.POST_MESSAGE)
             GroupEventKind.MEDIA -> requireLinkPermission(
@@ -3582,6 +3717,26 @@ object GroupChatCoordinator {
             messagesNewest.mapTo(hashSetOf()) { it.messageId },
         )
         val messageById = messagesNewest.associateBy { it.messageId }
+        val readHorizonByMember = db().listAllReceipts(groupId)
+            .asSequence()
+            .filter { it.type == "READ" && it.recipientDeviceId != group.localDeviceId }
+            .mapNotNull { receipt ->
+                val target = messageById[receipt.eventId] ?: db().loadMessage(groupId, receipt.eventId)
+                target?.let { receipt.recipientDeviceId to it }
+            }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, targets) -> targets.maxWith(groupTimelineOrder) }
+        val latestPollVotes = linkedMapOf<Pair<String, String>, Int>()
+        events.asSequence()
+            .filter { it.kind == GroupEventKind.POLL_VOTE.name && it.targetEventId != null }
+            .forEach { vote ->
+                val optionId = runCatching {
+                    JSONObject(vote.body.orEmpty()).optInt("option_id", -1)
+                }.getOrDefault(-1)
+                if (optionId >= 0) {
+                    latestPollVotes[requireNotNull(vote.targetEventId) to vote.authorDeviceId] = optionId
+                }
+            }
         val timeline = messagesNewest.asReversed().map { message ->
             val event = db().getEvent(groupId, message.messageId)
             val author = memberByDevice[message.authorDeviceId]
@@ -3635,12 +3790,40 @@ object GroupChatCoordinator {
             } else {
                 null
             }
+            val poll = if (!message.deleted && event?.kind == GroupEventKind.POLL.name) {
+                runCatching {
+                    val payload = JSONObject(message.body)
+                    val optionsJson = payload.getJSONArray("options")
+                    val votesByMember = latestPollVotes
+                        .filterKeys { (pollId, _) -> pollId == message.messageId }
+                        .mapKeys { (key, _) -> key.second }
+                    projectGroupPoll(
+                        pollId = message.messageId,
+                        question = payload.getString("question"),
+                        options = List(optionsJson.length(), optionsJson::getString),
+                        isAnonymous = payload.optBoolean("anonymous", false),
+                        latestVotesByMember = votesByMember,
+                        localDeviceId = group.localDeviceId,
+                    )
+                }.getOrNull()
+            } else {
+                null
+            }
+            val readByMembers = membersWhoReadMessage(message, readHorizonByMember)
+                .asSequence()
+                .mapNotNull { memberId -> memberByDevice[memberId]?.displayName }
+                .distinct()
+                .toList()
             GroupTimelineMessage(
                 messageId = message.messageId,
                 authorId = message.authorDeviceId,
                 authorName = author?.displayName ?: "Member",
                 authorRole = author?.role.toUiRole(),
-                text = if (message.deleted) "Message deleted" else message.body,
+                text = when {
+                    message.deleted -> "Message deleted"
+                    poll != null -> ""
+                    else -> message.body
+                },
                 timestampLabel = formatTime(message.createdAtMs),
                 isMine = message.authorDeviceId == group.localDeviceId,
                 isEdited = message.edited,
@@ -3659,6 +3842,8 @@ object GroupChatCoordinator {
                     GroupRolePolicy.canPerform(it, GroupAction.ADD_REACTION).allowed
                 } == true,
                 canPin = localPolicy?.let(GroupRolePolicy::canPinMessage)?.allowed == true,
+                poll = poll,
+                readByMembers = readByMembers,
             )
         }
         val activeMembers = members.count { it.isParticipating() }
@@ -3811,6 +3996,15 @@ object GroupChatCoordinator {
                     "Full member fan-out"
                 } else {
                     "$LARGE_GROUP_REPLICAS deterministic replicas + anti-entropy"
+                },
+                inviteToken = if (
+                    localPolicy?.let { member ->
+                        GroupRolePolicy.canPerform(member, GroupAction.INVITE_MEMBER).allowed
+                    } == true
+                ) {
+                    inviteCapability(group)
+                } else {
+                    ""
                 },
             ),
             currentUserRole = local?.role.toUiRole(),
@@ -4034,6 +4228,8 @@ object GroupChatCoordinator {
             } else {
                 StoredGroupEventKind.MESSAGE.name
             }
+            GroupEventKind.POLL -> GroupEventKind.POLL.name
+            GroupEventKind.POLL_VOTE -> GroupEventKind.POLL_VOTE.name
             GroupEventKind.EDIT -> StoredGroupEventKind.EDIT.name
             GroupEventKind.DELETE -> StoredGroupEventKind.DELETE.name
             else -> kind.name
@@ -4044,6 +4240,9 @@ object GroupChatCoordinator {
             GroupEventKind.REPLY,
             GroupEventKind.EDIT,
             -> payload.optString("text")
+            GroupEventKind.POLL,
+            GroupEventKind.POLL_VOTE,
+            -> payload.toString()
             GroupEventKind.REACTION_ADD,
             GroupEventKind.REACTION_REMOVE,
             -> payload.optString("emoji")
@@ -4680,6 +4879,17 @@ object GroupChatCoordinator {
             "\u0000$recipientDeviceId\u0000$validityWindow",
     )
 
+    @Synchronized
+    private fun inviteCapability(group: StoredGroup): String {
+        val prefs = P2PPreferences.prefs(requireNotNull(applicationContext))
+        val key = "group_invite_capability_${group.groupId}_${group.currentEpoch}"
+        prefs.getString(key, null)?.takeIf { it.length in 43..128 }?.let { return it }
+        val random = ByteArray(32).also(SecureRandom()::nextBytes)
+        return encodeGroupInviteCapability(random).also { token ->
+            prefs.edit().putString(key, token).apply()
+        }
+    }
+
     private fun sha256Hex(value: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8))
@@ -4715,7 +4925,17 @@ object GroupChatCoordinator {
         if (last == null) return "No messages yet"
         if (last.deleted) return "Message deleted"
         val body = last.body
+        val pollQuestion = runCatching {
+            JSONObject(body)
+                .takeIf {
+                    it.optString("type") == "poll" &&
+                        it.optJSONArray("options")?.length()?.let { count -> count >= 2 } == true
+                }
+                ?.optString("question")
+                ?.takeIf(String::isNotBlank)
+        }.getOrNull()
         return when {
+            pollQuestion != null -> "📊 $pollQuestion"
             body.startsWith("2psticker_") || body.lowercase().contains("sticker") -> "Стикер"
             body.startsWith("attachment-") -> "Вложение"
             else -> body.take(120)

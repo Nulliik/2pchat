@@ -291,6 +291,8 @@ fun ContactsTab(
                     val directIp = uri.getQueryParameter("ip")
                     val publicIp = uri.getQueryParameter("public_ip")
                     val yggIp = uri.getQueryParameter("ygg")
+                    val requestedGroupId = uri.getQueryParameter("group")
+                    val groupInviteToken = uri.getQueryParameter("group_token")
                     val request = invitePeerSearchRequest(parsedName, token, expectedFp)
 
                     if (request == null) {
@@ -335,6 +337,13 @@ fun ContactsTab(
                                             .apply()
                                     }
                                     com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(request.expectedLiveName, endpointStr)
+                                    if (!requestedGroupId.isNullOrBlank() && !groupInviteToken.isNullOrBlank()) {
+                                        com.example.twopchat.group.runtime.GroupChatCoordinator.requestJoinFromInvite(
+                                            requestedGroupId,
+                                            groupInviteToken,
+                                            request.expectedLiveName,
+                                        )
+                                    }
                                     resolveInviteStatus = ""
                                     onItemClick(Chat(request.expectedLiveName))
                                 } else {
@@ -948,20 +957,7 @@ fun ContactsTab(
                 )
             }
 
-            val qrBitmap = remember(qrPayload) {
-                try {
-                    val size = 512
-                    val writer = com.google.zxing.qrcode.QRCodeWriter()
-                    val bitMatrix = writer.encode(qrPayload, com.google.zxing.BarcodeFormat.QR_CODE, size, size)
-                    val bmp = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
-                    for (x in 0 until size) {
-                        for (y in 0 until size) {
-                            bmp.setPixel(x, y, if (bitMatrix[x, y]) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
-                        }
-                    }
-                    bmp
-                } catch (e: Exception) { null }
-            }
+            val qrBitmap = com.example.twopchat.ui.common.rememberQrCodeBitmap(qrPayload)
 
             Card(
                 colors = CardDefaults.cardColors(containerColor = surfaceColor),

@@ -11,6 +11,7 @@ interface GroupUiController {
   fun onBack() = Unit
   fun openGroup(groupId: String) = Unit
   fun openGroupInfo(groupId: String) = Unit
+  fun setGroupChatActive(groupId: String, active: Boolean) = Unit
   fun createGroup(title: String, description: String, contactIds: Set<String>) = Unit
   fun updateGroupInfo(groupId: String, title: String, description: String) = updateGroupInfo(groupId, title, description, null)
   fun updateGroupInfo(groupId: String, title: String, description: String, avatarUri: String?) = Unit
@@ -193,7 +194,8 @@ data class GroupMetadata(
   val createdByLabel: String = "",
   val createdAtLabel: String = "",
   val replicationLabel: String = "",
-  val isPublic: Boolean = false
+  val isPublic: Boolean = false,
+  val inviteToken: String = ""
 )
 
 data class GroupAdminLogEntry(

@@ -23,6 +23,7 @@ fun AttachmentPanel(
     @Suppress("UNUSED_PARAMETER") surfaceVariant: Color,
     onSurfaceColor: Color,
     onAttachmentClick: (String) -> Unit,
+    extraActions: List<ChatAttachmentAction> = emptyList(),
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 6.dp),
@@ -30,12 +31,12 @@ fun AttachmentPanel(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val attachments = listOf(
-            AttachmentItem("Camera", R.drawable.ic_attach_camera, primaryColor.copy(alpha = 0.1f)),
-            AttachmentItem("Gallery", R.drawable.ic_attach_gallery, primaryColor.copy(alpha = 0.1f)),
-            AttachmentItem("GIF", R.drawable.ic_add_photo_smiley, primaryColor.copy(alpha = 0.1f)),
-            AttachmentItem("Video", R.drawable.ic_voice_play, primaryColor.copy(alpha = 0.1f)),
-            AttachmentItem("File", R.drawable.ic_attach_file, primaryColor.copy(alpha = 0.1f)),
-        )
+            ChatAttachmentAction("Camera", R.drawable.ic_attach_camera),
+            ChatAttachmentAction("Gallery", R.drawable.ic_attach_gallery),
+            ChatAttachmentAction("GIF", R.drawable.ic_add_photo_smiley),
+            ChatAttachmentAction("Video", R.drawable.ic_voice_play),
+            ChatAttachmentAction("File", R.drawable.ic_attach_file),
+        ) + extraActions
         attachments.forEach { item ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -45,7 +46,7 @@ fun AttachmentPanel(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .size(52.dp)
-                        .background(item.bgColor, CircleShape)
+                        .background(primaryColor.copy(alpha = 0.1f), CircleShape)
                         .border(0.5.dp, primaryColor.copy(alpha = 0.2f), CircleShape),
                 ) {
                     Icon(
@@ -62,8 +63,7 @@ fun AttachmentPanel(
     }
 }
 
-private data class AttachmentItem(
+data class ChatAttachmentAction(
     val label: String,
     val iconRes: Int,
-    val bgColor: Color,
 )
