@@ -94,11 +94,19 @@ fun GroupInfoScreen(
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val context = LocalContext.current
 
     val avatarPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
+            // Grant persistent read permission so GroupChatCoordinator can read it on background thread
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
             controller.updateGroupInfo(
                 state.metadata.groupId,
                 state.metadata.title,

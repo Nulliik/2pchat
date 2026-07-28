@@ -307,13 +307,54 @@ object GroupChatCoordinator {
             return
         }
         scope.launch {
+            val context = applicationContext
+            // Persist avatar to internal storage and encode for wire transport
+            val (persistedPath, avatarData) = if (avatarUri != null && context != null) {
+                runCatching {
+                    val bytes = if (avatarUri.startsWith("content://")) {
+                        context.contentResolver.openInputStream(Uri.parse(avatarUri))?.use { it.readBytes() }
+                    } else {
+                        val f = File(avatarUri)
+                        if (f.exists()) f.readBytes() else null
+                    }
+                    if (bytes != null && bytes.size <= 512 * 1024) {
+                        // Scale down if needed and save to internal storage
+                        val avatarsDir = File(context.filesDir, "group_avatars").also { it.mkdirs() }
+                        val destFile = File(avatarsDir, "${groupId}.jpg")
+                        // Decode-compress to JPEG ≤ 200 KB for wire
+                        val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        if (bmp != null) {
+                            val out = java.io.ByteArrayOutputStream()
+                            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, out)
+                            val compressed = out.toByteArray()
+                            destFile.writeBytes(compressed)
+                            destFile.absolutePath to Base64.encodeToString(compressed, Base64.NO_WRAP)
+                        } else null to null
+                    } else null to null
+                }.getOrElse { null to null }
+            } else if (avatarUri != null) {
+                // Already a file path — just re-encode
+                runCatching {
+                    val f = File(avatarUri)
+                    if (f.exists()) {
+                        val bytes = f.readBytes()
+                        avatarUri to Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    } else null to null
+                }.getOrElse { null to null }
+            } else {
+                null to null
+            }
             requestSerializedControl(
                 groupId,
                 "update_info",
                 JSONObject().apply {
                     put("title", normalizedTitle)
                     put("description", normalizedDescription)
-                    avatarUri?.let { put("avatar_uri", it) }
+                    // Always send avatar_uri field (even if null) so receiver knows it changed
+                    if (avatarUri != null) {
+                        put("avatar_uri", persistedPath ?: avatarUri)
+                        avatarData?.let { put("avatar_data", it) }
+                    }
                 },
             )
         }
@@ -2752,7 +2793,22 @@ object GroupChatCoordinator {
                     current.description,
                 ).take(2_000)
                 if (payload.has("avatar_uri")) {
-                    nextAvatarUri = payload.optString("avatar_uri", "").ifBlank { null }
+                    // If the peer sent inline avatar_data, decode and save locally
+                    val avatarDataB64 = payload.optString("avatar_data", "")
+                    val ctx = applicationContext
+                    if (avatarDataB64.isNotBlank() && ctx != null) {
+                        runCatching {
+                            val avatarBytes = Base64.decode(avatarDataB64, Base64.NO_WRAP)
+                            val avatarsDir = File(ctx.filesDir, "group_avatars").also { it.mkdirs() }
+                            val destFile = File(avatarsDir, "${current.groupId}.jpg")
+                            destFile.writeBytes(avatarBytes)
+                            nextAvatarUri = destFile.absolutePath
+                        }.onFailure {
+                            nextAvatarUri = payload.optString("avatar_uri", "").ifBlank { null }
+                        }
+                    } else {
+                        nextAvatarUri = payload.optString("avatar_uri", "").ifBlank { null }
+                    }
                 }
                 if (nextTitle.isNullOrBlank()) return
             }
@@ -3460,6 +3516,7 @@ object GroupChatCoordinator {
                 },
                 lastActivityLabel = last?.createdAtMs?.let(::formatTime).orEmpty(),
                 isVerified = true,
+                avatarUri = group.avatarUri,
             )
         }
     }
@@ -3646,14 +3703,15 @@ object GroupChatCoordinator {
         _summaries.value = visibleGroups().map { group ->
             val last = db().loadTimeline(group.groupId, 1).firstOrNull()
             GroupSummary(
-                group.groupId,
-                group.title,
-                group.description,
-                db().listMembers(group.groupId).count { it.isParticipating() },
-                group.unreadCount,
-                if (last?.deleted == true) "Message deleted" else last?.body.orEmpty(),
-                last?.createdAtMs?.let(::formatTime).orEmpty(),
+                groupId = group.groupId,
+                title = group.title,
+                description = group.description,
+                memberCount = db().listMembers(group.groupId).count { it.isParticipating() },
+                unreadCount = group.unreadCount,
+                lastMessagePreview = if (last?.deleted == true) "Message deleted" else last?.body.orEmpty(),
+                lastActivityLabel = last?.createdAtMs?.let(::formatTime).orEmpty(),
                 isVerified = true,
+                avatarUri = group.avatarUri,
             )
         }
     }
