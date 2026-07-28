@@ -54,15 +54,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.window.Dialog
+import android.net.Uri
+import android.graphics.BitmapFactory
+import java.io.File
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import android.net.Uri
-import android.graphics.BitmapFactory
-import java.io.File
 import com.example.twopchat.ui.chat.AnimatedGifImage
 import com.example.twopchat.ui.chat.GifContentScale
 import com.example.twopchat.ui.chat.AnimatedStickerImage
@@ -88,6 +89,7 @@ fun GroupInfoScreen(
     var showEditMetadata by remember { mutableStateOf(false) }
     var showInviteMembers by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) } // 0: Участники, 1: Медиа, 2: Избранное, 3: Файлы
+    var selectedMediaPreviewPath by remember { mutableStateOf<String?>(null) }
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
@@ -291,7 +293,10 @@ fun GroupInfoScreen(
                         }
                     } else {
                         item(key = "media_grid") {
-                            GroupMediaGrid(mediaMessages = mediaMessages)
+                            GroupMediaGrid(
+                                mediaMessages = mediaMessages,
+                                onMediaClick = { path -> selectedMediaPreviewPath = path }
+                            )
                         }
                     }
                 }
@@ -325,6 +330,46 @@ fun GroupInfoScreen(
                         ) {
                             Text("Избранные сообщения отсутствуют", fontSize = 14.sp, color = Color.Gray)
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    selectedMediaPreviewPath?.let { path ->
+        Dialog(onDismissRequest = { selectedMediaPreviewPath = null }) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .clickable { selectedMediaPreviewPath = null },
+                contentAlignment = Alignment.Center
+            ) {
+                val context = LocalContext.current
+                val bitmap = remember(path) {
+                    runCatching {
+                        if (path.startsWith("content://")) {
+                            context.contentResolver.openInputStream(Uri.parse(path))?.use {
+                                BitmapFactory.decodeStream(it)
+                            }
+                        } else {
+                            BitmapFactory.decodeFile(path)
+                        }
+                    }.getOrNull()
+                }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Full Media",
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    val isGif = path.lowercase().endsWith(".gif")
+                    val isSticker = StickerSupport.isStickerFileName(path)
+                    when {
+                        isSticker -> AnimatedStickerImage(filePath = path, fallbackEmoji = "👍", contentDescription = "Sticker", targetSizePx = 512, modifier = Modifier.size(240.dp))
+                        isGif -> AnimatedGifImage(filePath = path, targetMaxDimensionPx = 1024, contentScale = GifContentScale.FIT, contentDescription = "GIF", modifier = Modifier.fillMaxSize())
+                        else -> Text("Медиафайл недоступен", color = Color.White)
                     }
                 }
             }
@@ -1295,7 +1340,8 @@ private fun GroupInfoDetailsCard(
 
 @Composable
 private fun GroupMediaGrid(
-    mediaMessages: List<GroupTimelineMessage>
+    mediaMessages: List<GroupTimelineMessage>,
+    onMediaClick: (String) -> Unit
 ) {
     val chunked = remember(mediaMessages) { mediaMessages.chunked(3) }
     Column(
@@ -1320,7 +1366,13 @@ private fun GroupMediaGrid(
                         contentAlignment = Alignment.Center
                     ) {
                         if (attachment != null) {
-                            MediaGridCell(attachment = attachment)
+                            MediaGridCell(
+                                attachment = attachment,
+                                onClick = {
+                                    val path = attachment.localPath ?: attachment.fileName
+                                    onMediaClick(path)
+                                }
+                            )
                         }
                     }
                 }
@@ -1333,84 +1385,93 @@ private fun GroupMediaGrid(
 }
 
 @Composable
-private fun MediaGridCell(attachment: GroupAttachmentUi) {
+private fun MediaGridCell(
+    attachment: GroupAttachmentUi,
+    onClick: () -> Unit
+) {
     val context = LocalContext.current
     val localPath = attachment.localPath ?: attachment.fileName
     val isGif = attachment.mimeType == "image/gif" || attachment.fileName.lowercase().endsWith(".gif")
     val isSticker = attachment.mimeType.contains("sticker") || StickerSupport.isStickerFileName(attachment.fileName)
     val isVideo = attachment.mimeType.startsWith("video/") || attachment.fileName.lowercase().run { endsWith(".mp4") || endsWith(".mov") || endsWith(".mkv") }
 
-    when {
-        isSticker && localPath.isNotBlank() -> {
-            AnimatedStickerImage(
-                filePath = localPath,
-                fallbackEmoji = "👍",
-                contentDescription = "Sticker",
-                targetSizePx = 128,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-        isGif && localPath.isNotBlank() -> {
-            AnimatedGifImage(
-                filePath = localPath,
-                targetMaxDimensionPx = 256,
-                contentScale = GifContentScale.CROP,
-                contentDescription = "GIF",
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-        else -> {
-            val bitmap = remember(localPath) {
-                runCatching {
-                    if (localPath.startsWith("content://")) {
-                        context.contentResolver.openInputStream(Uri.parse(localPath))?.use { stream ->
-                            val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
-                            BitmapFactory.decodeStream(stream, null, opts)
-                        }
-                    } else {
-                        val file = File(localPath)
-                        if (file.exists()) {
-                            val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
-                            BitmapFactory.decodeFile(file.absolutePath, opts)
-                        } else null
-                    }
-                }.getOrNull()
-            }
-            if (bitmap != null) {
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = attachment.fileName,
-                    contentScale = ContentScale.Crop,
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable(onClick = onClick)
+    ) {
+        when {
+            isSticker && localPath.isNotBlank() -> {
+                AnimatedStickerImage(
+                    filePath = localPath,
+                    fallbackEmoji = "👍",
+                    contentDescription = "Sticker",
+                    targetSizePx = 128,
                     modifier = Modifier.fillMaxSize()
                 )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFF2C2C2E)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        painter = painterResource(if (isVideo) R.drawable.ic_voice_play else R.drawable.ic_attach_gallery),
-                        contentDescription = "Media",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
             }
-            if (isVideo) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.3f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_voice_play),
-                        contentDescription = "Play Video",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
+            isGif && localPath.isNotBlank() -> {
+                AnimatedGifImage(
+                    filePath = localPath,
+                    targetMaxDimensionPx = 256,
+                    contentScale = GifContentScale.CROP,
+                    contentDescription = "GIF",
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            else -> {
+                val bitmap = remember(localPath) {
+                    runCatching {
+                        if (localPath.startsWith("content://")) {
+                            context.contentResolver.openInputStream(Uri.parse(localPath))?.use { stream ->
+                                val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                                BitmapFactory.decodeStream(stream, null, opts)
+                            }
+                        } else {
+                            val file = File(localPath)
+                            if (file.exists()) {
+                                val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                                BitmapFactory.decodeFile(file.absolutePath, opts)
+                            } else null
+                        }
+                    }.getOrNull()
+                }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = attachment.fileName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
                     )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color(0xFF2C2C2E)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(if (isVideo) R.drawable.ic_voice_play else R.drawable.ic_attach_gallery),
+                            contentDescription = "Media",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                if (isVideo) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.3f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_voice_play),
+                            contentDescription = "Play Video",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
