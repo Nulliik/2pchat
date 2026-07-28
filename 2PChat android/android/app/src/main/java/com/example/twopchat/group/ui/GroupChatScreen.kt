@@ -1413,7 +1413,8 @@ private fun GroupMessageCard(
                 )
         ) {
             Column(
-                modifier = if (isMediaOnly) Modifier.padding(0.dp) else Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                modifier = if (isMediaOnly) Modifier.padding(0.dp) else Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start
             ) {
                 // Header line: Author Name & Role (if not mine and not sticker/media-only)
                 if ((!message.isMine || message.replyTo != null || message.isPinned) && !isSticker) {
@@ -1711,7 +1712,7 @@ private fun GroupMessageCard(
                 if (message.reactions.isNotEmpty()) {
                     Row(
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .wrapContentWidth()
                             .padding(horizontal = if (isMediaOnly) 6.dp else 0.dp)
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
