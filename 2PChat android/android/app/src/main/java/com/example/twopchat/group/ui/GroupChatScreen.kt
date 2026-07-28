@@ -8,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.heightIn
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -156,6 +157,19 @@ fun GroupChatScreen(
     var selectedFullImagePath by remember { mutableStateOf<String?>(null) }
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var pendingVideoPath by remember { mutableStateOf<String?>(null) }
+
+    BackHandler {
+        when {
+            selectedFullImagePath != null -> selectedFullImagePath = null
+            viewedStickerMessage != null -> viewedStickerMessage = null
+            showStickerPicker -> showStickerPicker = false
+            showGifLibrary -> showGifLibrary = false
+            selectedMessageForOptions != null -> selectedMessageForOptions = null
+            deletingMessage != null -> deletingMessage = null
+            editingMessage != null -> editingMessage = null
+            else -> controller.onBack()
+        }
+    }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val primaryColor = MaterialTheme.colorScheme.primary

@@ -144,7 +144,7 @@ fun MainNavigation(
             P2PGroupChatScreen(
               state = state,
               controller = groupController,
-              modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+              modifier = Modifier.fillMaxSize(),
             )
           }
           entry<GroupInfo> { groupKey ->
