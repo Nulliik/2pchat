@@ -1,5 +1,6 @@
 package com.example.twopchat.group.ui
 
+import com.example.twopchat.P2PPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.io.File
@@ -143,6 +144,9 @@ fun GroupChatScreen(
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val appLanguage = remember(context) {
+        P2PPreferences.prefs(context).getString("settings_language", "Русский") ?: "Русский"
+    }
 
     val voiceRecorder = remember(context) { VoiceRecorder(context.applicationContext) }
     var isRecordingVoice by remember { mutableStateOf(false) }
@@ -347,7 +351,8 @@ fun GroupChatScreen(
                         controller = controller,
                         onEdit = { editingMessage = message },
                         onDelete = { deletingMessage = message },
-                        onOptionsClick = { selectedMessageForOptions = message }
+                        onOptionsClick = { selectedMessageForOptions = message },
+                        onMediaClick = { path -> selectedFullImagePath = path }
                     )
                 }
             }
@@ -433,36 +438,14 @@ fun GroupChatScreen(
         )
     }
 
-    // Full Screen Image Dialog (Direct Chat feature parity)
+    // Full Screen Image Viewer (Direct Chat feature parity)
     selectedFullImagePath?.let { path ->
-        Dialog(onDismissRequest = { selectedFullImagePath = null }) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black)
-                    .clickable { selectedFullImagePath = null },
-                contentAlignment = Alignment.Center
-            ) {
-                val bitmap = remember(path) {
-                    runCatching {
-                        if (path.startsWith("content://")) {
-                            context.contentResolver.openInputStream(Uri.parse(path))?.use {
-                                BitmapFactory.decodeStream(it)
-                            }
-                        } else {
-                            BitmapFactory.decodeFile(path)
-                        }
-                    }.getOrNull()
-                }
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Full Image",
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-        }
+        com.example.twopchat.ui.chat.FullscreenImageViewer(
+            imagePaths = listOf(path),
+            initialIndex = 0,
+            appLanguage = appLanguage,
+            onClose = { selectedFullImagePath = null }
+        )
     }
 
     // Message Actions Options Dialog (for long press or extra menu)
@@ -892,7 +875,8 @@ private fun GroupMessageCard(
     controller: GroupUiController,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onOptionsClick: () -> Unit
+    onOptionsClick: () -> Unit,
+    onMediaClick: (String) -> Unit = {}
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
@@ -1141,7 +1125,9 @@ private fun GroupMessageCard(
                                     fallbackEmoji = "👍",
                                     contentDescription = "Sticker",
                                     targetSizePx = 256,
-                                    modifier = Modifier.size(160.dp)
+                                    modifier = Modifier
+                                        .size(160.dp)
+                                        .clickable { onMediaClick(localPath) }
                                 )
                             }
                         }
@@ -1160,6 +1146,7 @@ private fun GroupMessageCard(
                                         .fillMaxWidth()
                                         .heightIn(max = 260.dp)
                                         .clip(RoundedCornerShape(16.dp))
+                                        .clickable { onMediaClick(localPath) }
                                 )
                                 if (isMediaOnly) {
                                     MessageTimestampBadge(
@@ -1207,6 +1194,7 @@ private fun GroupMessageCard(
                                             .fillMaxWidth()
                                             .heightIn(max = 280.dp)
                                             .clip(RoundedCornerShape(16.dp))
+                                            .clickable { onMediaClick(localPath) }
                                     )
                                     if (isMediaOnly) {
                                         MessageTimestampBadge(

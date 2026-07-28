@@ -644,42 +644,51 @@ private fun GroupHeroHeader(
     ) {
         Box(
             modifier = Modifier
-                .size(100.dp)
-                .clip(CircleShape)
-                .border(2.dp, Color.White.copy(alpha = 0.8f), CircleShape)
-                .background(avatarColor)
-                .clickable(onClick = onAvatarClick),
+                .size(108.dp)
+                .testTag("group_avatar_container"),
             contentAlignment = Alignment.Center
         ) {
-            if (avatarBitmap != null) {
-                Image(
-                    bitmap = avatarBitmap.asImageBitmap(),
-                    contentDescription = "Group Avatar",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Text(
-                    text = initials,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 36.sp
-                )
+            Box(
+                modifier = Modifier
+                    .size(100.dp)
+                    .clip(CircleShape)
+                    .border(2.dp, Color.White.copy(alpha = 0.8f), CircleShape)
+                    .background(avatarColor)
+                    .clickable(onClick = onAvatarClick),
+                contentAlignment = Alignment.Center
+            ) {
+                if (avatarBitmap != null) {
+                    Image(
+                        bitmap = avatarBitmap.asImageBitmap(),
+                        contentDescription = "Group Avatar",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Text(
+                        text = initials,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 36.sp
+                    )
+                }
             }
 
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .size(28.dp)
+                    .size(32.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
+                    .background(MaterialTheme.colorScheme.primary)
+                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                    .clickable(onClick = onAvatarClick),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_attach_camera),
                     contentDescription = "Change Avatar",
                     tint = Color.White,
-                    modifier = Modifier.size(14.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
