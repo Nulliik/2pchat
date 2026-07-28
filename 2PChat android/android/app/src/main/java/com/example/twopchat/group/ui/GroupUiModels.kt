@@ -12,7 +12,7 @@ interface GroupUiController {
   fun openGroup(groupId: String) = Unit
   fun openGroupInfo(groupId: String) = Unit
   fun createGroup(title: String, description: String, contactIds: Set<String>) = Unit
-  fun updateGroupInfo(groupId: String, title: String, description: String) = Unit
+  fun updateGroupInfo(groupId: String, title: String, description: String, avatarUri: String? = null) = Unit
   fun inviteMembers(groupId: String, contactIds: Set<String>) = Unit
   fun loadOlderMessages(groupId: String, beforeMessageId: String?) = Unit
   fun sendMessage(groupId: String, text: String, replyToMessageId: String?) = Unit
@@ -166,6 +166,7 @@ data class GroupMetadata(
   val groupId: String,
   val title: String,
   val description: String = "",
+  val avatarUri: String? = null,
   val memberCount: Int,
   val createdByLabel: String = "",
   val createdAtLabel: String = "",
@@ -221,7 +222,8 @@ data class GroupInfoUiState(
   val members: List<GroupMember> = emptyList(),
   val inviteCandidates: List<GroupContactSummary> = emptyList(),
   val management: GroupManagementPermissions = GroupManagementPermissions(),
-  val adminLog: List<GroupAdminLogEntry> = emptyList()
+  val adminLog: List<GroupAdminLogEntry> = emptyList(),
+  val timelineMessages: List<GroupTimelineMessage> = emptyList()
 )
 
 data class PendingGroupInvitesUiState(

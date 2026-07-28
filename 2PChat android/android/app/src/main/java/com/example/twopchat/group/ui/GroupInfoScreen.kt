@@ -52,6 +52,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import android.net.Uri
+import android.graphics.BitmapFactory
+import java.io.File
+import com.example.twopchat.ui.chat.AnimatedGifImage
+import com.example.twopchat.ui.chat.GifContentScale
+import com.example.twopchat.ui.chat.AnimatedStickerImage
+import com.example.twopchat.StickerSupport
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -77,6 +92,48 @@ fun GroupInfoScreen(
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+
+    val avatarPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            controller.updateGroupInfo(
+                state.metadata.groupId,
+                state.metadata.title,
+                state.metadata.description,
+                uri.toString()
+            )
+        }
+    }
+
+    val mediaMessages = remember(state.timelineMessages) {
+        state.timelineMessages.filter { msg ->
+            val att = msg.attachment
+            if (att == null) false else {
+                val mime = att.mimeType.lowercase()
+                val name = att.fileName.lowercase()
+                mime.startsWith("image/") || mime.startsWith("video/") ||
+                    name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") ||
+                    name.endsWith(".webp") || name.endsWith(".gif") || name.endsWith(".mp4") ||
+                    name.endsWith(".mov") || name.endsWith(".mkv")
+            }
+        }
+    }
+
+    val fileMessages = remember(state.timelineMessages) {
+        state.timelineMessages.filter { msg ->
+            val att = msg.attachment
+            if (att == null) false else {
+                val mime = att.mimeType.lowercase()
+                val name = att.fileName.lowercase()
+                val isMedia = mime.startsWith("image/") || mime.startsWith("video/") ||
+                    name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") ||
+                    name.endsWith(".webp") || name.endsWith(".gif") || name.endsWith(".mp4") ||
+                    name.endsWith(".mov") || name.endsWith(".mkv")
+                !isMedia
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -133,10 +190,17 @@ fun GroupInfoScreen(
         ) {
             // Group Hero Avatar & Title Header
             item(key = "hero_header") {
-                GroupHeroHeader(state.metadata)
+                GroupHeroHeader(
+                    metadata = state.metadata,
+                    onAvatarClick = {
+                        if (state.management.canEditMetadata) {
+                            avatarPickerLauncher.launch(arrayOf("image/*"))
+                        }
+                    }
+                )
             }
 
-            // Quick Action Buttons Row (Чат, Звук, Видеочат, Покинуть)
+            // Quick Action Buttons Row (Чат, Звук, Покинуть)
             item(key = "quick_actions") {
                 GroupQuickActionsRow(
                     onChatClick = controller::onBack,
@@ -188,41 +252,76 @@ fun GroupInfoScreen(
             }
 
             // Members List or Tab Content
-            if (selectedTab == 0) {
-                items(state.members, key = GroupMember::memberId) { member ->
-                    GroupMemberCard(
-                        groupId = state.metadata.groupId,
-                        member = member,
-                        management = state.management,
-                        controller = controller,
-                        onMemberClick = { selectedMemberForOptions = member },
-                        onRestrict = { restrictionsFor = member },
-                        onRemove = { removeConfirmation = member },
-                        onBan = { banConfirmation = member },
-                        onTransfer = { transferConfirmation = member }
-                    )
-                }
-
-                item(key = "admin_log") {
-                    AdminLogSection(state)
-                }
-            } else {
-                item(key = "tab_empty_state") {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(40.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = when (selectedTab) {
-                                1 -> "Медиафайлы отсутствуют"
-                                2 -> "Избранные сообщения отсутствуют"
-                                else -> "Файлы отсутствуют"
-                            },
-                            fontSize = 14.sp,
-                            color = Color.Gray
+            when (selectedTab) {
+                0 -> {
+                    items(state.members, key = GroupMember::memberId) { member ->
+                        GroupMemberCard(
+                            groupId = state.metadata.groupId,
+                            member = member,
+                            management = state.management,
+                            controller = controller,
+                            onMemberClick = { selectedMemberForOptions = member },
+                            onRestrict = { restrictionsFor = member },
+                            onRemove = { removeConfirmation = member },
+                            onBan = { banConfirmation = member },
+                            onTransfer = { transferConfirmation = member }
                         )
+                    }
+
+                    item(key = "admin_log") {
+                        AdminLogSection(state)
+                    }
+                }
+                1 -> { // Медиа вкладка
+                    if (mediaMessages.isEmpty()) {
+                        item(key = "empty_media") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Медиафайлы отсутствуют", fontSize = 14.sp, color = Color.Gray)
+                            }
+                        }
+                    } else {
+                        items(mediaMessages, key = { it.messageId }) { msg ->
+                            msg.attachment?.let { attachment ->
+                                MediaAttachmentRow(attachment = attachment, message = msg)
+                            }
+                        }
+                    }
+                }
+                3 -> { // Файлы вкладка
+                    if (fileMessages.isEmpty()) {
+                        item(key = "empty_files") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Файлы отсутствуют", fontSize = 14.sp, color = Color.Gray)
+                            }
+                        }
+                    } else {
+                        items(fileMessages, key = { it.messageId }) { msg ->
+                            msg.attachment?.let { attachment ->
+                                FileAttachmentRow(attachment = attachment, message = msg, controller = controller, groupId = state.metadata.groupId)
+                            }
+                        }
+                    }
+                }
+                else -> { // Избранное
+                    item(key = "tab_empty_state") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(40.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("Избранные сообщения отсутствуют", fontSize = 14.sp, color = Color.Gray)
+                        }
                     }
                 }
             }
@@ -459,7 +558,10 @@ fun GroupInfoScreen(
 }
 
 @Composable
-private fun GroupHeroHeader(metadata: GroupMetadata) {
+private fun GroupHeroHeader(
+    metadata: GroupMetadata,
+    onAvatarClick: () -> Unit
+) {
     val initials = metadata.title.take(2).uppercase().ifBlank { "GP" }
     val avatarColor = remember(metadata.groupId) {
         val colors = listOf(
@@ -467,6 +569,22 @@ private fun GroupHeroHeader(metadata: GroupMetadata) {
             Color(0xFF1E88E5), Color(0xFF00ACC1), Color(0xFF43A047)
         )
         colors[abs(metadata.groupId.hashCode()) % colors.size]
+    }
+
+    val context = LocalContext.current
+    val avatarBitmap = remember(metadata.avatarUri) {
+        metadata.avatarUri?.let { uriStr ->
+            runCatching {
+                if (uriStr.startsWith("content://")) {
+                    context.contentResolver.openInputStream(Uri.parse(uriStr))?.use { stream ->
+                        BitmapFactory.decodeStream(stream)
+                    }
+                } else {
+                    val file = File(uriStr)
+                    if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+                }
+            }.getOrNull()
+        }
     }
 
     Column(
@@ -481,15 +599,41 @@ private fun GroupHeroHeader(metadata: GroupMetadata) {
                 .size(100.dp)
                 .clip(CircleShape)
                 .border(2.dp, Color.White.copy(alpha = 0.8f), CircleShape)
-                .background(avatarColor),
+                .background(avatarColor)
+                .clickable(onClick = onAvatarClick),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = initials,
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 36.sp
-            )
+            if (avatarBitmap != null) {
+                Image(
+                    bitmap = avatarBitmap.asImageBitmap(),
+                    contentDescription = "Group Avatar",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text(
+                    text = initials,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 36.sp
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_attach_camera),
+                    contentDescription = "Change Avatar",
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
         }
 
         Spacer(Modifier.height(14.dp))
@@ -525,7 +669,6 @@ private fun GroupQuickActionsRow(
         val actions = listOf(
             Triple("Чат", R.drawable.ic_send_airplane, onChatClick),
             Triple("Звук", R.drawable.ic_notifications, {}),
-            Triple("Видеочат", R.drawable.ic_voice_play, {}),
             Triple("Покинуть", R.drawable.ic_delete, onLeaveClick)
         )
 
@@ -556,6 +699,169 @@ private fun GroupQuickActionsRow(
                         color = Color.White
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MediaAttachmentRow(
+    attachment: GroupAttachmentUi,
+    message: GroupTimelineMessage
+) {
+    val context = LocalContext.current
+    val localPath = attachment.localPath ?: attachment.fileName
+
+    Surface(
+        color = Color(0xFF14161A),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(60.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                val isGif = attachment.mimeType == "image/gif" || attachment.fileName.lowercase().endsWith(".gif")
+                val isSticker = attachment.mimeType.contains("sticker") || StickerSupport.isStickerFileName(attachment.fileName)
+                when {
+                    isSticker && localPath.isNotBlank() -> {
+                        AnimatedStickerImage(
+                            filePath = localPath,
+                            fallbackEmoji = "👍",
+                            contentDescription = "Sticker",
+                            targetSizePx = 128,
+                            modifier = Modifier.size(56.dp)
+                        )
+                    }
+                    isGif && localPath.isNotBlank() -> {
+                        AnimatedGifImage(
+                            filePath = localPath,
+                            targetMaxDimensionPx = 256,
+                            contentScale = GifContentScale.CROP,
+                            contentDescription = "GIF",
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                    else -> {
+                        val bitmap = remember(localPath) {
+                            runCatching {
+                                if (localPath.startsWith("content://")) {
+                                    context.contentResolver.openInputStream(Uri.parse(localPath))?.use { stream ->
+                                        val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                                        BitmapFactory.decodeStream(stream, null, opts)
+                                    }
+                                } else {
+                                    val file = File(localPath)
+                                    if (file.exists()) {
+                                        val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
+                                        BitmapFactory.decodeFile(file.absolutePath, opts)
+                                    } else null
+                                }
+                            }.getOrNull()
+                        }
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = attachment.fileName,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_attach_gallery),
+                                contentDescription = "Media",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = attachment.fileName,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "${message.authorName} · ${message.timestampLabel} · ${attachment.sizeLabel}",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FileAttachmentRow(
+    attachment: GroupAttachmentUi,
+    message: GroupTimelineMessage,
+    controller: GroupUiController,
+    groupId: String
+) {
+    Surface(
+        color = Color(0xFF14161A),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_attach_paperclip),
+                contentDescription = "File",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp)
+            )
+
+            Spacer(Modifier.width(12.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = attachment.fileName,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "${message.authorName} · ${message.timestampLabel} · ${attachment.sizeLabel}",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
+            }
+
+            TextButton(
+                onClick = { controller.downloadAttachment(groupId, message.messageId) },
+                enabled = !attachment.isDownloaded
+            ) {
+                Text(
+                    if (attachment.isDownloaded) "Скачано" else "Скачать",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }

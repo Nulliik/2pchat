@@ -1792,6 +1792,7 @@ class GroupDatabaseHelper(
         currentEpoch: Long? = null,
         title: String? = null,
         description: String? = null,
+        avatarUri: String? = null,
         members: List<StoredGroupMember> = emptyList(),
         ownerLineageCertificate: StoredOwnerLineageCertificate? = null,
         admissionRecipientDeviceId: String? = null,
@@ -1878,6 +1879,7 @@ class GroupDatabaseHelper(
                 currentEpoch?.let { put("current_epoch", it) }
                 title?.let { put("title", it) }
                 description?.let { put("description", it) }
+                avatarUri?.let { put("avatar_uri", it) }
             }
             check(db.update(TABLE_GROUPS, groupValues, "group_id = ?", arrayOf(groupId)) == 1)
             db.execSQL(

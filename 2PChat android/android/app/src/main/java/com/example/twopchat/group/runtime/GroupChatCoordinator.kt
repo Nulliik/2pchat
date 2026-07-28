@@ -294,7 +294,7 @@ object GroupChatCoordinator {
         scope.launch { refreshGroup(groupId) }
     }
 
-    fun updateGroupInfo(groupId: String, title: String, description: String) {
+    fun updateGroupInfo(groupId: String, title: String, description: String, avatarUri: String? = null) {
         val normalizedTitle = title.trim()
         val normalizedDescription = description.trim()
         if (normalizedTitle.isBlank() || normalizedTitle.length > 160 ||
@@ -309,6 +309,7 @@ object GroupChatCoordinator {
                 JSONObject().apply {
                     put("title", normalizedTitle)
                     put("description", normalizedDescription)
+                    avatarUri?.let { put("avatar_uri", it) }
                 },
             )
         }
@@ -2737,6 +2738,7 @@ object GroupChatCoordinator {
         var nextOwner: String? = null
         var nextTitle: String? = null
         var nextDescription: String? = null
+        var nextAvatarUri: String? = null
         val memberUpdates = mutableListOf<StoredGroupMember>()
         when (event.kind) {
             GroupEventKind.GROUP_UPDATED -> {
@@ -2745,6 +2747,9 @@ object GroupChatCoordinator {
                     "description",
                     current.description,
                 ).take(2_000)
+                if (payload.has("avatar_uri")) {
+                    nextAvatarUri = payload.optString("avatar_uri", "").ifBlank { null }
+                }
                 if (nextTitle.isNullOrBlank()) return
             }
             GroupEventKind.MEMBER_ADDED -> {
@@ -2913,6 +2918,7 @@ object GroupChatCoordinator {
             currentEpoch = nextEpoch,
             title = nextTitle,
             description = nextDescription,
+            avatarUri = nextAvatarUri,
             members = memberUpdates,
             ownerLineageCertificate = if (
                 event.kind == GroupEventKind.OWNERSHIP_TRANSFERRED
@@ -3628,7 +3634,7 @@ object GroupChatCoordinator {
         )
         infoFlows.computeIfAbsent(groupId) {
             MutableStateFlow(emptyInfoState(groupId))
-        }.value = buildInfoState(group, members, events)
+        }.value = buildInfoState(group, members, events, timeline)
         refreshAllSummariesWithoutRecursion()
     }
 
@@ -3652,6 +3658,7 @@ object GroupChatCoordinator {
         group: StoredGroup,
         members: List<StoredGroupMember>,
         events: List<StoredGroupEvent>,
+        timelineMessages: List<GroupTimelineMessage> = emptyList(),
     ): GroupInfoUiState {
         val local = members.firstOrNull { it.deviceId == group.localDeviceId }
         val localPolicy = local?.takeIf { it.isParticipating() }?.toPolicyMember()
@@ -3705,6 +3712,7 @@ object GroupChatCoordinator {
                 groupId = group.groupId,
                 title = group.title,
                 description = group.description,
+                avatarUri = group.avatarUri,
                 memberCount = members.count { it.isParticipating() },
                 createdByLabel = members.firstOrNull {
                     it.deviceId == group.ownerDeviceId
@@ -3759,6 +3767,7 @@ object GroupChatCoordinator {
                     timestampLabel = formatDate(it.createdAtMs),
                 )
             },
+            timelineMessages = timelineMessages
         )
     }
 
