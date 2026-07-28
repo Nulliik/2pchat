@@ -84,6 +84,8 @@ import com.example.twopchat.StoredGif
 import com.example.twopchat.GifStorageManager
 import com.example.twopchat.ui.chat.AttachmentPanel
 import com.example.twopchat.ui.chat.StickerPickerBottomSheet
+import com.example.twopchat.ui.chat.StickerPackBottomSheet
+import com.example.twopchat.ui.chat.StickerPackRequestError
 import com.example.twopchat.StickerSupport
 import com.example.twopchat.BuiltinSticker
 import androidx.compose.material3.AlertDialog
@@ -150,6 +152,7 @@ fun GroupChatScreen(
     var selectedMessageForOptions by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var showStickerPicker by remember { mutableStateOf(false) }
     var showGifLibrary by remember { mutableStateOf(false) }
+    var viewedStickerMessage by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var selectedFullImagePath by remember { mutableStateOf<String?>(null) }
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var pendingVideoPath by remember { mutableStateOf<String?>(null) }
@@ -366,7 +369,8 @@ fun GroupChatScreen(
                         onEdit = { editingMessage = message },
                         onDelete = { deletingMessage = message },
                         onOptionsClick = { selectedMessageForOptions = message },
-                        onMediaClick = { path -> selectedFullImagePath = path }
+                        onMediaClick = { path -> selectedFullImagePath = path },
+                        onOpenStickerPack = { msg -> viewedStickerMessage = msg }
                     )
                 }
             }
@@ -650,6 +654,42 @@ fun GroupChatScreen(
         )
     }
 
+    viewedStickerMessage?.let { stickerMessage ->
+        val att = stickerMessage.attachment
+        val packId = att?.let { StickerSupport.packIdFromStickerFileName(it.fileName) }
+        if (packId != null) {
+            StickerPackBottomSheet(
+                packId = packId,
+                fallbackEmoji = stickerMessage.text,
+                canRequestFromPeer = false,
+                requestInProgress = false,
+                previewRevision = 0,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                requestError = StickerPackRequestError.NONE,
+                onDismiss = { viewedStickerMessage = null },
+                onRequestPack = {},
+                onStickerSelected = { sticker ->
+                    viewedStickerMessage = null
+                    coroutineScope.launch {
+                        val stickerFile = withContext(Dispatchers.IO) {
+                            runCatching { StickerSupport.prepareSticker(context, sticker) }.getOrNull()
+                        }
+                        if (stickerFile != null) {
+                            controller.sendAttachment(
+                                state.groupId,
+                                Uri.fromFile(stickerFile).toString(),
+                                "image/sticker"
+                            )
+                        } else {
+                            controller.sendMessage(state.groupId, sticker.emoji, state.currentReply?.messageId)
+                        }
+                    }
+                }
+            )
+        }
+    }
+
     if (showGifLibrary) {
         val gifList by produceState(initialValue = emptyList<StoredGif>(), context) {
             value = withContext(Dispatchers.IO) { GifStorageManager.list(context) }
@@ -894,7 +934,8 @@ private fun GroupMessageCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onOptionsClick: () -> Unit,
-    onMediaClick: (String) -> Unit = {}
+    onMediaClick: (String) -> Unit = {},
+    onOpenStickerPack: (GroupTimelineMessage) -> Unit = {}
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
@@ -1154,7 +1195,10 @@ private fun GroupMessageCard(
                                     .size(200.dp)
                                     .scale(stickerScale)
                                     .combinedClickable(
-                                        onClick = { pressed = true },
+                                        onClick = {
+                                            pressed = true
+                                            onOpenStickerPack(message)
+                                        },
                                         onLongClick = onOptionsClick
                                     )
                                     .testTag("attachment_${message.messageId}"),
