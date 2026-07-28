@@ -40,6 +40,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.material.icons.Icons
@@ -118,6 +121,7 @@ fun GroupChatScreen(
     var selectedMessageForOptions by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var showStickerPicker by remember { mutableStateOf(false) }
     var showGifLibrary by remember { mutableStateOf(false) }
+    var selectedFullImagePath by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -270,6 +274,29 @@ fun GroupChatScreen(
 
         var isAttachmentPanelOpen by remember { mutableStateOf(false) }
 
+        AnimatedVisibility(
+            visible = isAttachmentPanelOpen,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            AttachmentPanel(
+                primaryColor = primaryColor,
+                surfaceVariant = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onAttachmentClick = { type ->
+                    isAttachmentPanelOpen = false
+                    when (type) {
+                        "GIF" -> showGifLibrary = true
+                        "Stickers", "STICKER", "Sticker" -> showStickerPicker = true
+                        "Camera" -> attachmentLauncher.launch(arrayOf("image/*"))
+                        "Gallery" -> attachmentLauncher.launch(arrayOf("image/*"))
+                        "Video" -> attachmentLauncher.launch(arrayOf("video/*"))
+                        else -> attachmentLauncher.launch(arrayOf("*/*"))
+                    }
+                }
+            )
+        }
+
         // Chat Input Bar / Composer
         GroupComposer(
             state = state,
@@ -297,6 +324,38 @@ fun GroupChatScreen(
                 }
             }
         )
+    }
+
+    // Full Screen Image Dialog (Direct Chat feature parity)
+    selectedFullImagePath?.let { path ->
+        Dialog(onDismissRequest = { selectedFullImagePath = null }) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .clickable { selectedFullImagePath = null },
+                contentAlignment = Alignment.Center
+            ) {
+                val bitmap = remember(path) {
+                    runCatching {
+                        if (path.startsWith("content://")) {
+                            context.contentResolver.openInputStream(Uri.parse(path))?.use {
+                                BitmapFactory.decodeStream(it)
+                            }
+                        } else {
+                            BitmapFactory.decodeFile(path)
+                        }
+                    }.getOrNull()
+                }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Full Image",
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
     }
 
     // Message Actions Options Dialog (for long press or extra menu)
