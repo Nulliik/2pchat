@@ -368,6 +368,18 @@ private fun decryptBlock(
     throw SecurityException("attachment block authentication failed", error)
 }
 
+fun purgeStaleDownloads(downloadsDir: File, maxAgeMs: Long = 48 * 3600 * 1000L): Int {
+    if (!downloadsDir.exists() || !downloadsDir.isDirectory) return 0
+    val now = System.currentTimeMillis()
+    var purgedCount = 0
+    downloadsDir.listFiles()?.forEach { file ->
+        if (file.isFile && (now - file.lastModified()) > maxAgeMs) {
+            if (file.delete()) purgedCount++
+        }
+    }
+    return purgedCount
+}
+
 private fun readChunk(input: FileInputStream, buffer: ByteArray): Int {
     var total = 0
     while (total < buffer.size) {

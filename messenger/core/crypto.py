@@ -61,6 +61,13 @@ _SCRYPT_DEFAULT_PARAMS = {
 }
 
 
+def wipe_buffer(buf: bytearray) -> None:
+    """Overwrites a mutable bytearray with zeroes to remove secrets from memory."""
+    if isinstance(buf, bytearray):
+        for i in range(len(buf)):
+            buf[i] = 0
+
+
 def generate_identity_keypair() -> Tuple[PublicKey, PrivateKey]:
     """Generate a new X25519 identity keypair."""
 
