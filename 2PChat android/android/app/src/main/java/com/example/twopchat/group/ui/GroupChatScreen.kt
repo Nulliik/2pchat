@@ -838,6 +838,54 @@ private fun GroupChatHeader(state: GroupChatUiState, controller: GroupUiControll
 }
 
 @Composable
+private fun MessageTimestampBadge(
+    timestampLabel: String,
+    isEdited: Boolean,
+    deliveryStatus: GroupDeliveryStatus,
+    messageId: String,
+    isOverlayOnImage: Boolean,
+    modifier: Modifier = Modifier,
+    textColor: Color = Color.Unspecified
+) {
+    Surface(
+        color = if (isOverlayOnImage) Color.Black.copy(alpha = 0.55f) else Color.Transparent,
+        shape = RoundedCornerShape(10.dp),
+        modifier = modifier.padding(if (isOverlayOnImage) 6.dp else 0.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(
+                horizontal = if (isOverlayOnImage) 6.dp else 0.dp,
+                vertical = if (isOverlayOnImage) 2.dp else 0.dp
+            ),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                buildString {
+                    append(timestampLabel)
+                    if (isEdited) append(" · изм.")
+                },
+                fontSize = 10.sp,
+                color = if (isOverlayOnImage) Color.White else textColor
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                when (deliveryStatus) {
+                    GroupDeliveryStatus.QUEUED -> "⏳"
+                    GroupDeliveryStatus.REPLICATING -> "✔"
+                    GroupDeliveryStatus.REPLICATED, GroupDeliveryStatus.DELIVERED -> "✔✔"
+                    GroupDeliveryStatus.READ -> "✔✔"
+                    GroupDeliveryStatus.FAILED -> "❌"
+                },
+                modifier = Modifier.testTag("delivery_${messageId}"),
+                fontSize = 10.sp,
+                color = if (isOverlayOnImage) Color.White else deliveryStatusColor(deliveryStatus)
+            )
+        }
+    }
+}
+
+@Composable
 private fun GroupMessageCard(
     groupId: String,
     message: GroupTimelineMessage,
@@ -889,6 +937,8 @@ private fun GroupMessageCard(
         return
     }
 
+
+
     val authorNameColor = remember(message.authorName, message.isMine) {
         if (message.isMine) Color(0xFF64B5F6)
         else {
@@ -937,9 +987,45 @@ private fun GroupMessageCard(
             Spacer(Modifier.width(6.dp))
         }
 
+        val attachment = message.attachment
+        val isGif = attachment != null && (
+            attachment.mimeType == "image/gif" ||
+            attachment.fileName.lowercase().endsWith(".gif")
+        )
+        val isSticker = attachment != null && (
+            attachment.mimeType.contains("sticker") ||
+            attachment.fileName.lowercase().contains("sticker") ||
+            StickerSupport.isStickerFileName(attachment.fileName)
+        )
+        val isImage = attachment != null && (
+            attachment.mimeType.startsWith("image/") ||
+            attachment.fileName.lowercase().run {
+                endsWith(".jpg") || endsWith(".jpeg") || endsWith(".png") || endsWith(".webp")
+            }
+        )
+        val isVideo = attachment != null && (
+            attachment.mimeType.startsWith("video/") ||
+            attachment.fileName.lowercase().run {
+                endsWith(".mp4") || endsWith(".mkv") || endsWith(".mov") || endsWith(".avi")
+            }
+        )
+        val isAudio = attachment != null && (
+            attachment.mimeType.startsWith("audio/") ||
+            attachment.fileName.lowercase().run {
+                endsWith(".m4a") || endsWith(".aac") || endsWith(".mp3") || endsWith(".wav") || endsWith(".ogg")
+            }
+        )
+
+        val isAttachmentPlaceholder = attachment != null && (
+            message.text.startsWith("attachment-") ||
+            message.text == attachment.fileName
+        )
+        val shouldDisplayText = message.text.isNotEmpty() && !isAttachmentPlaceholder
+        val isMediaOnly = attachment != null && !shouldDisplayText && (isImage || isGif || isSticker)
+
         Surface(
-            shape = bubbleShape,
-            color = bubbleContainerColor,
+            shape = if (isSticker) RoundedCornerShape(0.dp) else bubbleShape,
+            color = if (isSticker) Color.Transparent else if (isMediaOnly && (isImage || isGif)) Color.Transparent else bubbleContainerColor,
             modifier = Modifier
                 .wrapContentWidth()
                 .widthIn(max = 300.dp)
@@ -948,25 +1034,32 @@ private fun GroupMessageCard(
                     onLongClick = onOptionsClick
                 )
         ) {
-            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                // Header line: Author Name & Role
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        message.authorName,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = authorNameColor
-                    )
-                    if (message.authorRole != GroupRole.MEMBER) {
-                        Spacer(Modifier.width(6.dp))
-                        RoleBadge(message.authorRole)
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (message.isPinned) {
+            Column(
+                modifier = if (isMediaOnly) Modifier.padding(0.dp) else Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                // Header line: Author Name & Role (if not mine and not sticker/media-only)
+                if (!message.isMine || message.replyTo != null || message.isPinned) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = if (isMediaOnly) Modifier.padding(horizontal = 8.dp, vertical = 4.dp) else Modifier
+                    ) {
                         Text(
-                            "📌",
-                            fontSize = 11.sp
+                            message.authorName,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = authorNameColor
                         )
+                        if (message.authorRole != GroupRole.MEMBER) {
+                            Spacer(Modifier.width(6.dp))
+                            RoleBadge(message.authorRole)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        if (message.isPinned) {
+                            Text(
+                                "📌",
+                                fontSize = 11.sp
+                            )
+                        }
                     }
                 }
 
@@ -1006,8 +1099,8 @@ private fun GroupMessageCard(
                     }
                 }
 
-                // Message Text
-                if (message.text.isNotEmpty()) {
+                // Message Text (Hide raw attachment- placeholder)
+                if (shouldDisplayText) {
                     Text(
                         text = message.text,
                         fontSize = 14.sp,
@@ -1017,30 +1110,12 @@ private fun GroupMessageCard(
                 }
 
                 // Attachment & Rich Media Rendering (GIFs, Stickers, Photos, Videos)
-                message.attachment?.let { attachment ->
-                    val isGif = attachment.mimeType == "image/gif" ||
-                        attachment.fileName.lowercase().endsWith(".gif")
-                    val isSticker = attachment.mimeType.contains("sticker") ||
-                        attachment.fileName.lowercase().contains("sticker") ||
-                        StickerSupport.isStickerFileName(attachment.fileName)
-                    val isImage = attachment.mimeType.startsWith("image/") ||
-                        attachment.fileName.lowercase().run {
-                            endsWith(".jpg") || endsWith(".jpeg") || endsWith(".png") || endsWith(".webp")
-                        }
-                    val isVideo = attachment.mimeType.startsWith("video/") ||
-                        attachment.fileName.lowercase().run {
-                            endsWith(".mp4") || endsWith(".mkv") || endsWith(".mov") || endsWith(".avi")
-                        }
-                    val isAudio = attachment.mimeType.startsWith("audio/") ||
-                        attachment.fileName.lowercase().run {
-                            endsWith(".m4a") || endsWith(".aac") || endsWith(".mp3") || endsWith(".wav") || endsWith(".ogg")
-                        }
-
+                attachment?.let { att ->
                     val context = LocalContext.current
-                    val localPath = attachment.localPath ?: attachment.fileName
+                    val localPath = att.localPath ?: att.fileName
 
                     when {
-                        isAudio && localPath.isNotBlank() && attachment.isDownloaded -> {
+                        isAudio && localPath.isNotBlank() && att.isDownloaded -> {
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1074,7 +1149,6 @@ private fun GroupMessageCard(
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
                                     .testTag("attachment_${message.messageId}")
                             ) {
                                 AnimatedGifImage(
@@ -1084,13 +1158,23 @@ private fun GroupMessageCard(
                                     contentDescription = "GIF",
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .heightIn(max = 240.dp)
-                                        .clip(RoundedCornerShape(12.dp))
+                                        .heightIn(max = 260.dp)
+                                        .clip(RoundedCornerShape(16.dp))
                                 )
+                                if (isMediaOnly) {
+                                    MessageTimestampBadge(
+                                        timestampLabel = message.timestampLabel,
+                                        isEdited = message.isEdited,
+                                        deliveryStatus = message.deliveryStatus,
+                                        messageId = message.messageId,
+                                        isOverlayOnImage = true,
+                                        modifier = Modifier.align(Alignment.BottomEnd)
+                                    )
+                                }
                             }
                         }
                         else -> {
-                            val imageBitmap = remember(attachment.localPath, attachment.fileName, attachment.isDownloaded) {
+                            val imageBitmap = remember(att.localPath, att.fileName, att.isDownloaded) {
                                 if (isImage || isGif) {
                                     runCatching {
                                         if (localPath.startsWith("content://")) {
@@ -1113,18 +1197,27 @@ private fun GroupMessageCard(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 4.dp)
                                         .testTag("attachment_${message.messageId}")
                                 ) {
                                     Image(
                                         bitmap = imageBitmap.asImageBitmap(),
-                                        contentDescription = attachment.fileName,
+                                        contentDescription = att.fileName,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .heightIn(max = 240.dp)
-                                            .clip(RoundedCornerShape(12.dp))
+                                            .heightIn(max = 280.dp)
+                                            .clip(RoundedCornerShape(16.dp))
                                     )
+                                    if (isMediaOnly) {
+                                        MessageTimestampBadge(
+                                            timestampLabel = message.timestampLabel,
+                                            isEdited = message.isEdited,
+                                            deliveryStatus = message.deliveryStatus,
+                                            messageId = message.messageId,
+                                            isOverlayOnImage = true,
+                                            modifier = Modifier.align(Alignment.BottomEnd)
+                                        )
+                                    }
                                 }
                             } else {
                                 Surface(
@@ -1153,14 +1246,14 @@ private fun GroupMessageCard(
                                         Spacer(Modifier.width(8.dp))
                                         Column(Modifier.weight(1f)) {
                                             Text(
-                                                attachment.fileName,
+                                                att.fileName,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 12.sp,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
-                                                "${attachment.sizeLabel} · ${attachment.availableBlocks}/${attachment.totalBlocks} бл.",
+                                                "${att.sizeLabel} · ${att.availableBlocks}/${att.totalBlocks} бл.",
                                                 fontSize = 10.sp,
                                                 color = onSurfaceColor.copy(alpha = 0.6f)
                                             )
@@ -1169,11 +1262,11 @@ private fun GroupMessageCard(
                                             onClick = {
                                                 controller.downloadAttachment(groupId, message.messageId)
                                             },
-                                            enabled = !attachment.isDownloaded,
+                                            enabled = !att.isDownloaded,
                                             modifier = Modifier.testTag("download_${message.messageId}")
                                         ) {
                                             Text(
-                                                if (attachment.isDownloaded) "Готово" else "Скачать",
+                                                if (att.isDownloaded) "Готово" else "Скачать",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
@@ -1190,6 +1283,7 @@ private fun GroupMessageCard(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(horizontal = if (isMediaOnly) 6.dp else 0.dp)
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
@@ -1215,34 +1309,15 @@ private fun GroupMessageCard(
                     }
                 }
 
-                // Message Footer: Timestamp & Delivery Status
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 2.dp),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        buildString {
-                            append(message.timestampLabel)
-                            if (message.isEdited) append(" · изм.")
-                        },
-                        fontSize = 10.sp,
-                        color = timestampColor
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        when (message.deliveryStatus) {
-                            GroupDeliveryStatus.QUEUED -> "⏳"
-                            GroupDeliveryStatus.REPLICATING -> "✔"
-                            GroupDeliveryStatus.REPLICATED, GroupDeliveryStatus.DELIVERED -> "✔✔"
-                            GroupDeliveryStatus.READ -> "✔✔"
-                            GroupDeliveryStatus.FAILED -> "❌"
-                        },
-                        modifier = Modifier.testTag("delivery_${message.messageId}"),
-                        fontSize = 10.sp,
-                        color = deliveryStatusColor(message.deliveryStatus)
+                // Message Footer: Timestamp & Delivery Status (Only if not already rendered as overlay on image)
+                if (!isMediaOnly) {
+                    MessageTimestampBadge(
+                        timestampLabel = message.timestampLabel,
+                        isEdited = message.isEdited,
+                        deliveryStatus = message.deliveryStatus,
+                        messageId = message.messageId,
+                        isOverlayOnImage = false,
+                        textColor = timestampColor
                     )
                 }
 
