@@ -304,7 +304,12 @@ internal fun StickerPackBottomSheet(
                             )
                         }
                     } else {
-                        Text(fallbackEmoji.ifBlank { "🎭" }, fontSize = 76.sp)
+                        val displayEmoji = if (fallbackEmoji.startsWith("2psticker_") || fallbackEmoji.contains(".webp") || fallbackEmoji.startsWith("attachment-")) {
+                            "🎭"
+                        } else {
+                            fallbackEmoji.ifBlank { "🎭" }
+                        }
+                        Text(displayEmoji, fontSize = 76.sp)
                     }
                 }
             }

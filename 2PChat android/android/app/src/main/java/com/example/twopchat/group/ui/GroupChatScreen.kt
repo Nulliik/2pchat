@@ -87,6 +87,7 @@ import com.example.twopchat.ui.chat.AttachmentPanel
 import com.example.twopchat.ui.chat.StickerPickerBottomSheet
 import com.example.twopchat.ui.chat.StickerPackBottomSheet
 import com.example.twopchat.ui.chat.StickerPackRequestError
+import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.StickerSupport
 import com.example.twopchat.BuiltinSticker
 import androidx.compose.material3.AlertDialog
@@ -154,6 +155,9 @@ fun GroupChatScreen(
     var showStickerPicker by remember { mutableStateOf(false) }
     var showGifLibrary by remember { mutableStateOf(false) }
     var viewedStickerMessage by remember { mutableStateOf<GroupTimelineMessage?>(null) }
+    var stickerPackRequestInProgress by remember { mutableStateOf(false) }
+    var stickerPackRequestError by remember { mutableStateOf(StickerPackRequestError.NONE) }
+    var stickerPackPreviewRevision by remember { mutableIntStateOf(0) }
     var selectedFullImagePath by remember { mutableStateOf<String?>(null) }
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var pendingVideoPath by remember { mutableStateOf<String?>(null) }
@@ -672,17 +676,50 @@ fun GroupChatScreen(
         val att = stickerMessage.attachment
         val packId = att?.let { StickerSupport.packIdFromStickerFileName(it.fileName) }
         if (packId != null) {
+            val peerName = stickerMessage.authorName
+            val canRequest = !stickerMessage.isMine && peerName.isNotBlank() && peerName != "SYSTEM" && peerName != "System"
+
+            LaunchedEffect(stickerPackRequestInProgress) {
+                if (stickerPackRequestInProgress) {
+                    delay(10_000L)
+                    if (stickerPackRequestInProgress) {
+                        stickerPackRequestInProgress = false
+                        if (stickerPackRequestError == StickerPackRequestError.NONE) {
+                            stickerPackRequestError = StickerPackRequestError.TIMEOUT
+                        }
+                    }
+                }
+            }
+
             StickerPackBottomSheet(
                 packId = packId,
-                fallbackEmoji = stickerMessage.text,
-                canRequestFromPeer = false,
-                requestInProgress = false,
-                previewRevision = 0,
+                fallbackEmoji = if (stickerMessage.text.startsWith("2psticker_") || stickerMessage.text.contains(".webp")) "🎭" else stickerMessage.text,
+                canRequestFromPeer = canRequest,
+                requestInProgress = stickerPackRequestInProgress,
+                previewRevision = stickerPackPreviewRevision,
                 appLanguage = appLanguage,
                 primaryColor = primaryColor,
-                requestError = StickerPackRequestError.NONE,
-                onDismiss = { viewedStickerMessage = null },
-                onRequestPack = {},
+                requestError = stickerPackRequestError,
+                onDismiss = {
+                    viewedStickerMessage = null
+                    stickerPackRequestInProgress = false
+                    stickerPackRequestError = StickerPackRequestError.NONE
+                },
+                onRequestPack = {
+                    if (peerName.isBlank() || !P2PMessageRelay.peerEndpoints.containsKey(peerName)) {
+                        stickerPackRequestError = StickerPackRequestError.PEER_OFFLINE
+                        stickerPackRequestInProgress = false
+                        return@StickerPackBottomSheet
+                    }
+                    stickerPackRequestError = StickerPackRequestError.NONE
+                    stickerPackRequestInProgress = true
+                    P2PMessageRelay.requestStickerPack(context, peerName, packId) { sent ->
+                        if (!sent) {
+                            stickerPackRequestInProgress = false
+                            stickerPackRequestError = StickerPackRequestError.NETWORK_ERROR
+                        }
+                    }
+                },
                 onStickerSelected = { sticker ->
                     viewedStickerMessage = null
                     coroutineScope.launch {

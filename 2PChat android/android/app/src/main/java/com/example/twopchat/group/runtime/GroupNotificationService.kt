@@ -47,7 +47,8 @@ internal object GroupNotificationService {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val showPreview = prefs.getBoolean("settings_previews", true)
-        val body = if (showPreview) "$authorName: ${text.take(500)}" else "New group message"
+        val cleanText = formatGroupNotificationText(text)
+        val body = if (showPreview) "$authorName: $cleanText" else "Новое сообщение в группе"
         manager.notify(
             notificationId,
             NotificationCompat.Builder(context, CHANNEL_ID)
@@ -62,5 +63,14 @@ internal object GroupNotificationService {
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .build(),
         )
+    }
+
+    private fun formatGroupNotificationText(text: String): String {
+        val trimmed = text.trim()
+        return when {
+            trimmed.startsWith("2psticker_") || trimmed.lowercase().contains("sticker") -> "Стикер"
+            trimmed.startsWith("attachment-") -> "Вложение"
+            else -> trimmed.take(500)
+        }
     }
 }
