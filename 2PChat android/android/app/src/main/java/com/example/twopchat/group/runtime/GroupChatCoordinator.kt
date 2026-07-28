@@ -281,10 +281,10 @@ object GroupChatCoordinator {
             val normalizedTitle = title.trim()
             val normalizedDescription = description.trim()
             if (normalizedTitle.isBlank() || normalizedTitle.length > 160 ||
-                normalizedDescription.length > 2_000 || contactIds.isEmpty()
+                normalizedDescription.length > 2_000
             ) {
                 _createState.value = _createState.value.copy(
-                    errorMessage = "Choose at least one contact and enter a group name",
+                    errorMessage = "Enter a valid group name and description",
                 )
                 return@launch
             }

@@ -65,7 +65,6 @@ fun CreateGroupScreen(
     }
     val cleanTitle = title.trim()
     val canCreate = cleanTitle.isNotEmpty() &&
-        selectedContactIds.isNotEmpty() &&
         !state.isCreating
 
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -165,7 +164,7 @@ fun CreateGroupScreen(
                     color = primaryColor
                 )
                 Text(
-                    text = "Выберите минимум одного контакта. Вы станете владельцем группы.",
+                    text = "Это необязательно: участников можно добавить после создания. Вы станете владельцем группы.",
                     fontSize = 12.sp,
                     color = onSurfaceColor.copy(alpha = 0.6f)
                 )

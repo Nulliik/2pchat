@@ -178,7 +178,7 @@ class GroupScreensTest {
   }
 
   @Test
-  fun createGroup_requiresTitleAndAtLeastOneContact() {
+  fun createGroup_allowsOwnerOnlyGroup() {
     var submittedTitle: String? = null
     var submittedContacts: Set<String> = emptySet()
     val controller = object : GroupUiController {
@@ -204,13 +204,11 @@ class GroupScreensTest {
 
     composeTestRule.onNodeWithTag("create_group_button").assertIsNotEnabled()
     composeTestRule.onNodeWithTag("group_title_input").performTextInput("Distributed systems")
-    composeTestRule.onNodeWithTag("create_group_button").assertIsNotEnabled()
-    composeTestRule.onNodeWithTag("contact_alice").performClick()
     composeTestRule.onNodeWithTag("create_group_button").assertIsEnabled().performClick()
 
     composeTestRule.runOnIdle {
       assertEquals("Distributed systems", submittedTitle)
-      assertEquals(setOf("alice"), submittedContacts)
+      assertEquals(emptySet<String>(), submittedContacts)
     }
   }
 
