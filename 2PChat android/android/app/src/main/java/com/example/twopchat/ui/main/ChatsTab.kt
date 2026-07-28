@@ -478,6 +478,7 @@ fun ChatsTab(
                             transport = "${summary.memberCount} MEMBERS",
                             isDirect = false,
                             initials = summary.title.take(2).uppercase(),
+                            avatarUri = summary.avatarUri,
                             unreadCount = summary.unreadCount,
                         ),
                         appLanguage = appLanguage,

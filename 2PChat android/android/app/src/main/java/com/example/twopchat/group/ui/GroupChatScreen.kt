@@ -527,19 +527,45 @@ private fun GroupChatHeader(state: GroupChatUiState, controller: GroupUiControll
                 colors[abs(state.groupId.hashCode()) % colors.size]
             }
 
+            val context = LocalContext.current
+            val avatarBitmap = remember(state.avatarUri) {
+                state.avatarUri?.let { uriStr ->
+                    runCatching {
+                        if (uriStr.startsWith("content://")) {
+                            context.contentResolver.openInputStream(Uri.parse(uriStr))?.use { stream ->
+                                BitmapFactory.decodeStream(stream)
+                            }
+                        } else {
+                            val file = File(uriStr)
+                            if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+                        }
+                    }.getOrNull()
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(avatarColor),
+                    .background(avatarColor)
+                    .clickable { controller.openGroupInfo(state.groupId) },
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = initials,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
+                if (avatarBitmap != null) {
+                    Image(
+                        bitmap = avatarBitmap.asImageBitmap(),
+                        contentDescription = "Group Avatar",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Text(
+                        text = initials,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                }
             }
 
             Spacer(Modifier.width(10.dp))
@@ -621,6 +647,42 @@ private fun GroupMessageCard(
     val messageTextColor = Color.White
     val timestampColor = if (message.isMine) Color.White.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.5f)
 
+    if (message.authorId == "SYSTEM" || message.authorName == "System") {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                color = Color.White.copy(alpha = 0.08f),
+                shape = CircleShape
+            ) {
+                Text(
+                    text = message.text,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.7f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
+        return
+    }
+
+    val authorNameColor = remember(message.authorName, message.isMine) {
+        if (message.isMine) Color(0xFF64B5F6)
+        else {
+            val colors = listOf(
+                Color(0xFFE57373), Color(0xFF64B5F6), Color(0xFF81C784),
+                Color(0xFFFFB74D), Color(0xFFBA68C8), Color(0xFF4DD0E1),
+                Color(0xFFFF8A65), Color(0xFFAED581)
+            )
+            colors[abs(message.authorName.hashCode()) % colors.size]
+        }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -675,7 +737,7 @@ private fun GroupMessageCard(
                         message.authorName,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
-                        color = if (message.isMine) primaryColor else MaterialTheme.colorScheme.tertiary
+                        color = authorNameColor
                     )
                     if (message.authorRole != GroupRole.MEMBER) {
                         Spacer(Modifier.width(6.dp))

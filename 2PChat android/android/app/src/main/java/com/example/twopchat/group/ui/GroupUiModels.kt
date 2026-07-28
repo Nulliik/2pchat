@@ -72,7 +72,8 @@ data class GroupSummary(
   val lastMessagePreview: String = "",
   val lastActivityLabel: String = "",
   val isMuted: Boolean = false,
-  val isVerified: Boolean = false
+  val isVerified: Boolean = false,
+  val avatarUri: String? = null
 )
 
 data class GroupContactSummary(
@@ -202,6 +203,7 @@ data class GroupChatUiState(
   val groupId: String,
   val title: String,
   val memberCount: Int,
+  val avatarUri: String? = null,
   val syncStatus: GroupSyncStatus = GroupSyncStatus.SYNCING,
   val messages: List<GroupTimelineMessage> = emptyList(),
   val hasMoreBefore: Boolean = false,

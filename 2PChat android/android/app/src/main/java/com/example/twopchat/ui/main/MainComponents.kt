@@ -152,6 +152,7 @@ data class PeerItem(
     val transport: String,
     val isDirect: Boolean,
     val initials: String,
+    val avatarUri: String? = null,
     val unreadCount: Int = 0,
     val isPinned: Boolean = false,
     val isBlocked: Boolean = false,
@@ -261,11 +262,26 @@ fun PeerRow(
                             .fillMaxSize()
                             .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
                     ) {
-                        val avatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[peer.name]
+                        val customAvatar = remember(peer.avatarUri) {
+                            peer.avatarUri?.let { uriStr ->
+                                runCatching {
+                                    if (uriStr.startsWith("content://")) {
+                                        context.contentResolver.openInputStream(android.net.Uri.parse(uriStr))?.use { stream ->
+                                            android.graphics.BitmapFactory.decodeStream(stream)
+                                        }
+                                    } else {
+                                        val file = java.io.File(uriStr)
+                                        if (file.exists()) android.graphics.BitmapFactory.decodeFile(file.absolutePath) else null
+                                    }
+                                }.getOrNull()
+                            }
+                        }
+                        val avatarBitmap = customAvatar ?: com.example.twopchat.P2PMessageRelay.peerAvatars[peer.name]
                         if (avatarBitmap != null) {
                             Image(
                                 bitmap = avatarBitmap.asImageBitmap(),
                                 contentDescription = "Avatar",
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize().clip(CircleShape)
                             )
                         } else if (peer.initials == "🔖") {
