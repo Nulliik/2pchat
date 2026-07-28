@@ -27,6 +27,9 @@ class AndroidGroupUiController(
         }
     }
 
+    override fun updateGroupInfo(groupId: String, title: String, description: String) =
+        GroupChatCoordinator.updateGroupInfo(groupId, title, description, null)
+
     override fun updateGroupInfo(groupId: String, title: String, description: String, avatarUri: String?) =
         GroupChatCoordinator.updateGroupInfo(groupId, title, description, avatarUri)
 

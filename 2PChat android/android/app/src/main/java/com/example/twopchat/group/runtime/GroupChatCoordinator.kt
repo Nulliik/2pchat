@@ -294,6 +294,10 @@ object GroupChatCoordinator {
         scope.launch { refreshGroup(groupId) }
     }
 
+    fun updateGroupInfo(groupId: String, title: String, description: String) {
+        updateGroupInfo(groupId, title, description, null)
+    }
+
     fun updateGroupInfo(groupId: String, title: String, description: String, avatarUri: String? = null) {
         val normalizedTitle = title.trim()
         val normalizedDescription = description.trim()
