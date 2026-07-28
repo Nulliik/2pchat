@@ -46,6 +46,9 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.draw.scale
+import kotlinx.coroutines.delay
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -1017,10 +1020,11 @@ private fun GroupMessageCard(
 
         val isAttachmentPlaceholder = attachment != null && (
             message.text.startsWith("attachment-") ||
-            message.text == attachment.fileName
+            message.text == attachment.fileName ||
+            isSticker
         )
-        val shouldDisplayText = message.text.isNotEmpty() && !isAttachmentPlaceholder
-        val isMediaOnly = attachment != null && !shouldDisplayText && (isImage || isGif || isSticker)
+        val shouldDisplayText = message.text.isNotEmpty() && !isAttachmentPlaceholder && !isSticker
+        val isMediaOnly = attachment != null && (!shouldDisplayText || isSticker) && (isImage || isGif || isSticker)
 
         Surface(
             shape = if (isSticker) RoundedCornerShape(0.dp) else bubbleShape,
@@ -1037,7 +1041,7 @@ private fun GroupMessageCard(
                 modifier = if (isMediaOnly) Modifier.padding(0.dp) else Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 // Header line: Author Name & Role (if not mine and not sticker/media-only)
-                if (!message.isMine || message.replyTo != null || message.isPinned) {
+                if ((!message.isMine || message.replyTo != null || message.isPinned) && !isSticker) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = if (isMediaOnly) Modifier.padding(horizontal = 8.dp, vertical = 4.dp) else Modifier
@@ -1130,20 +1134,39 @@ private fun GroupMessageCard(
                             }
                         }
                         isSticker -> {
+                            var pressed by remember(message.messageId) { mutableStateOf(false) }
+                            val stickerScale by animateFloatAsState(
+                                targetValue = if (pressed) 0.86f else 1f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                                    stiffness = Spring.StiffnessMedium,
+                                ),
+                                label = "stickerBounce",
+                            )
+                            LaunchedEffect(pressed) {
+                                if (pressed) {
+                                    delay(110)
+                                    pressed = false
+                                }
+                            }
                             Box(
                                 modifier = Modifier
-                                    .padding(vertical = 4.dp)
-                                    .testTag("attachment_${message.messageId}")
+                                    .size(200.dp)
+                                    .scale(stickerScale)
+                                    .combinedClickable(
+                                        onClick = { pressed = true },
+                                        onLongClick = onOptionsClick
+                                    )
+                                    .testTag("attachment_${message.messageId}"),
+                                contentAlignment = Alignment.Center
                             ) {
                                 if (att.isDownloaded && localPath.isNotBlank()) {
                                     AnimatedStickerImage(
                                         filePath = localPath,
                                         fallbackEmoji = message.text.ifBlank { "🌟" },
                                         contentDescription = "Sticker",
-                                        targetSizePx = 256,
-                                        modifier = Modifier
-                                            .size(160.dp)
-                                            .clickable { onMediaClick(localPath) }
+                                        targetSizePx = 400,
+                                        modifier = Modifier.fillMaxSize()
                                     )
                                 } else {
                                     // Sticker not yet downloaded — trigger download and show emoji placeholder
@@ -1152,16 +1175,16 @@ private fun GroupMessageCard(
                                     }
                                     Box(
                                         modifier = Modifier
-                                            .size(160.dp)
+                                            .size(200.dp)
                                             .background(
-                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                                RoundedCornerShape(16.dp)
+                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                                RoundedCornerShape(24.dp)
                                             ),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
                                             text = message.text.ifBlank { "🌟" },
-                                            fontSize = 48.sp
+                                            fontSize = 54.sp
                                         )
                                     }
                                 }

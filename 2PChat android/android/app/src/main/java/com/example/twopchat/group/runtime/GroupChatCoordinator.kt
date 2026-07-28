@@ -4384,18 +4384,22 @@ object GroupChatCoordinator {
         val context = applicationContext ?: return null
         return runCatching {
             val resolver = context.contentResolver
-            val displayName = resolver.query(
-                uri,
-                arrayOf(OpenableColumns.DISPLAY_NAME),
-                null,
-                null,
-                null,
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME))
-                } else {
-                    null
-                }
+            val displayName = if (uri.scheme == "file" || (uri.scheme == null && uri.path?.startsWith("/") == true)) {
+                uri.lastPathSegment ?: File(uri.path.orEmpty()).name
+            } else {
+                resolver.query(
+                    uri,
+                    arrayOf(OpenableColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null,
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME))
+                    } else {
+                        null
+                    }
+                } ?: uri.lastPathSegment
             }
             val safeName = File(displayName.orEmpty()).name
                 .take(200)
