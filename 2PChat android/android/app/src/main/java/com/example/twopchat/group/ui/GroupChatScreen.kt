@@ -1,6 +1,12 @@
 package com.example.twopchat.group.ui
 
 import com.example.twopchat.P2PPreferences
+import com.example.twopchat.ui.chat.AlbumPreviewModal
+import com.example.twopchat.ui.chat.VoiceMessageSupport
+import com.example.twopchat.ui.chat.GifStorageManager
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Surface
+import androidx.compose.ui.unit.sp
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.io.File
@@ -349,6 +355,121 @@ fun GroupChatScreen(
         }
     }
 
+    var pendingAlbumFiles by remember { mutableStateOf<List<File>?>(null) }
+    var pendingAlbumTypes by remember { mutableStateOf<List<String>?>(null) }
+    var isProcessingAlbum by remember { mutableStateOf(false) }
+
+    fun saveUriToTempFile(context: android.content.Context, uri: Uri, originalName: String): File? {
+        return try {
+            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+            val attachmentsDir = File(context.filesDir, "attachments")
+            if (!attachmentsDir.exists()) {
+                attachmentsDir.mkdirs()
+            }
+            val file = File(attachmentsDir, "sent_file_${System.currentTimeMillis()}_${java.util.UUID.randomUUID().toString().take(8)}_$originalName")
+            inputStream.use { input ->
+                java.io.FileOutputStream(file).use { output ->
+                    val buffer = ByteArray(4 * 1024)
+                    var read: Int
+                    while (input.read(buffer).also { read = it } != -1) {
+                        output.write(buffer, 0, read)
+                    }
+                    output.flush()
+                }
+            }
+            file
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    fun handleMultipleUrisSelected(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        isProcessingAlbum = true
+        coroutineScope.launch(Dispatchers.IO) {
+            val tempFiles = mutableListOf<File>()
+            val mediaTypes = mutableListOf<String>()
+            try {
+                for ((index, uri) in uris.withIndex()) {
+                    try {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+                    } catch (_: Exception) {}
+
+                    var fileName = "media_$index"
+                    val mimeType = context.contentResolver.getType(uri).orEmpty()
+                    try {
+                        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                            if (nameIndex != -1 && cursor.moveToFirst()) {
+                                val queried = cursor.getString(nameIndex)
+                                if (!queried.isNullOrBlank()) fileName = queried
+                            }
+                        }
+                    } catch (_: Exception) {}
+
+                    val detectedType = VoiceMessageSupport.attachmentType(fileName, mimeType)
+                    val defaultExt = when (detectedType) {
+                        "VIDEO" -> ".mp4"
+                        GifStorageManager.ATTACHMENT_TYPE -> ".gif"
+                        else -> ".jpg"
+                    }
+                    if (!fileName.contains(".")) fileName += defaultExt
+
+                    val tempFile = saveUriToTempFile(context, uri, fileName)
+                    if (tempFile != null) {
+                        tempFiles.add(tempFile)
+                        mediaTypes.add(
+                            when (detectedType) {
+                                "VIDEO" -> "VIDEO"
+                                GifStorageManager.ATTACHMENT_TYPE -> GifStorageManager.ATTACHMENT_TYPE
+                                else -> "IMAGE"
+                            },
+                        )
+                    }
+                }
+            } finally {
+                withContext(Dispatchers.Main) {
+                    isProcessingAlbum = false
+                    if (tempFiles.isNotEmpty()) {
+                        pendingAlbumFiles = tempFiles
+                        pendingAlbumTypes = mediaTypes
+                    }
+                }
+            }
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        if (uris.size == 1) {
+            val uri = uris.first()
+            val type = context.contentResolver.getType(uri).orEmpty()
+            if (type.startsWith("video/")) {
+                pendingVideoPath = uri.toString()
+            } else {
+                pendingPhotoUri = uri
+            }
+        } else {
+            handleMultipleUrisSelected(uris)
+        }
+    }
+
+    val videoLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        if (uris.size == 1) {
+            pendingVideoPath = uris.first().toString()
+        } else {
+            handleMultipleUrisSelected(uris)
+        }
+    }
+
     val attachmentLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -589,9 +710,9 @@ fun GroupChatScreen(
                     "GIF" -> showGifLibrary = true
                     "Stickers", "STICKER", "Sticker" -> showStickerPicker = true
                     "Poll", "Polls", "Опрос" -> showCreatePollDialog = true
-                    "Camera" -> attachmentLauncher.launch(arrayOf("image/*"))
-                    "Gallery" -> attachmentLauncher.launch(arrayOf("image/*"))
-                    "Video" -> attachmentLauncher.launch(arrayOf("video/*"))
+                    "Camera" -> galleryLauncher.launch("image/*")
+                    "Gallery" -> galleryLauncher.launch("image/*")
+                    "Video" -> videoLauncher.launch("video/*")
                     else -> attachmentLauncher.launch(arrayOf("*/*"))
                 }
             },
@@ -962,6 +1083,66 @@ fun GroupChatScreen(
                 }
             }
         )
+    }
+
+    if (pendingAlbumFiles != null) {
+        AlbumPreviewModal(
+            files = pendingAlbumFiles!!,
+            appLanguage = "Русский",
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onDismiss = {
+                pendingAlbumFiles = null
+                pendingAlbumTypes = null
+            },
+            onSendAlbum = { finalFiles, caption ->
+                val types = pendingAlbumTypes ?: emptyList()
+                pendingAlbumFiles = null
+                pendingAlbumTypes = null
+                coroutineScope.launch {
+                    if (caption.isNotBlank()) {
+                        controller.sendMessage(state.groupId, caption, null)
+                    }
+                    for ((idx, file) in finalFiles.withIndex()) {
+                        val mime = types.getOrNull(idx) ?: "IMAGE"
+                        val fileMime = when (mime) {
+                            "VIDEO" -> "video/mp4"
+                            GifStorageManager.ATTACHMENT_TYPE -> "image/gif"
+                            else -> if (file.name.endsWith(".jpg", true) || file.name.endsWith(".jpeg", true)) "image/jpeg" else "image/png"
+                        }
+                        controller.sendAttachment(state.groupId, Uri.fromFile(file).toString(), fileMime)
+                    }
+                }
+            }
+        )
+    }
+
+    if (isProcessingAlbum) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = {}) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = surfaceColor,
+                tonalElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(24.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator(
+                        color = primaryColor,
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Text(
+                        text = "Подготовка медиафайлов...",
+                        color = onSurfaceColor,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
     }
 
     if (showForwardDialog && messageToForward != null) {
