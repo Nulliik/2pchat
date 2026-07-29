@@ -911,7 +911,7 @@ private fun GroupQuickActionsRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         val actions = buildList {
             add(Triple("Чат", R.drawable.ic_menu_chats, onChatClick))
