@@ -1,5 +1,8 @@
 package com.example.twopchat.group.ui
 
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.Stable
+
 /**
  * Backend-neutral contract used by the group screens.
  *
@@ -7,6 +10,7 @@ package com.example.twopchat.group.ui
  * incremental integration can render the complete UI before a group backend
  * is attached.
  */
+@Stable
 interface GroupUiController {
   fun onBack() = Unit
   fun openGroup(groupId: String) = Unit
@@ -69,6 +73,7 @@ enum class GroupSyncStatus(val label: String) {
   DEGRADED("Degraded · using replicas")
 }
 
+@Immutable
 data class GroupSummary(
   val groupId: String,
   val title: String,
@@ -82,6 +87,7 @@ data class GroupSummary(
   val avatarUri: String? = null
 )
 
+@Immutable
 data class GroupContactSummary(
   val contactId: String,
   val displayName: String,
@@ -90,18 +96,21 @@ data class GroupContactSummary(
   val isAlreadySelected: Boolean = false
 )
 
+@Immutable
 data class GroupReplyPreview(
   val messageId: String,
   val authorName: String,
   val text: String
 )
 
+@Immutable
 data class GroupReaction(
   val emoji: String,
   val count: Int,
   val reactedByMe: Boolean = false
 )
 
+@Immutable
 data class GroupPollOption(
   val id: Int,
   val text: String,
@@ -109,6 +118,7 @@ data class GroupPollOption(
   val isVotedByMe: Boolean = false
 )
 
+@Immutable
 data class GroupPollUi(
   val pollId: String,
   val question: String,
@@ -117,6 +127,7 @@ data class GroupPollUi(
   val isAnonymous: Boolean = false
 )
 
+@Immutable
 data class GroupAttachmentUi(
   val attachmentId: String,
   val fileName: String,
@@ -128,6 +139,7 @@ data class GroupAttachmentUi(
   val localPath: String? = null
 )
 
+@Immutable
 data class GroupTimelineMessage(
   val messageId: String,
   val authorId: String,
@@ -151,6 +163,7 @@ data class GroupTimelineMessage(
   val readByMembers: List<String> = emptyList()
 )
 
+@Immutable
 data class GroupMemberPermissions(
   val canSendMessages: Boolean = true,
   val canSendMedia: Boolean = true,
@@ -160,6 +173,7 @@ data class GroupMemberPermissions(
   val canDeleteOthersMessages: Boolean = false
 )
 
+@Immutable
 data class GroupMember(
   val memberId: String,
   val displayName: String,
@@ -174,6 +188,7 @@ data class GroupMember(
   val canTransferOwnership: Boolean = false
 )
 
+@Immutable
 data class GroupManagementPermissions(
   val canEditMetadata: Boolean = false,
   val canInviteMembers: Boolean = false,
@@ -186,6 +201,7 @@ data class GroupManagementPermissions(
   val canLeave: Boolean = true
 )
 
+@Immutable
 data class GroupMetadata(
   val groupId: String,
   val title: String,
@@ -200,6 +216,7 @@ data class GroupMetadata(
   val adminOnlyPosting: Boolean = false
 )
 
+@Immutable
 data class GroupAdminLogEntry(
   val entryId: String,
   val actorName: String,
@@ -207,6 +224,7 @@ data class GroupAdminLogEntry(
   val timestampLabel: String
 )
 
+@Immutable
 data class PendingGroupInvite(
   val inviteId: String,
   val groupId: String,
@@ -218,12 +236,14 @@ data class PendingGroupInvite(
   val isProcessing: Boolean = false
 )
 
+@Immutable
 data class CreateGroupUiState(
   val knownContacts: List<GroupContactSummary> = emptyList(),
   val isCreating: Boolean = false,
   val errorMessage: String? = null
 )
 
+@Immutable
 data class GroupChatUiState(
   val groupId: String,
   val title: String,
@@ -245,6 +265,7 @@ data class GroupChatUiState(
   val isMuted: Boolean = false
 )
 
+@Immutable
 data class GroupInfoUiState(
   val metadata: GroupMetadata,
   val currentUserRole: GroupRole,
@@ -255,6 +276,7 @@ data class GroupInfoUiState(
   val timelineMessages: List<GroupTimelineMessage> = emptyList()
 )
 
+@Immutable
 data class PendingGroupInvitesUiState(
   val invites: List<PendingGroupInvite> = emptyList(),
   val isLoading: Boolean = false

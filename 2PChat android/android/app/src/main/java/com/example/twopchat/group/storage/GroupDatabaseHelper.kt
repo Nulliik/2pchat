@@ -389,6 +389,12 @@ class GroupDatabaseHelper(
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_group_events_kind ON group_events(group_id, kind)",
         )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_group_receipts_lookup ON group_receipts(group_id, message_id)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_group_events_lookup ON group_events(group_id, event_id)",
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
