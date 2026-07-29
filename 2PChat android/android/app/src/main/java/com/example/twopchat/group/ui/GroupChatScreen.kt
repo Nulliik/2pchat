@@ -913,15 +913,6 @@ fun GroupChatScreen(
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Выбрать", modifier = Modifier.fillMaxWidth()) }
-                    if (message.canReact) {
-                        TextButton(
-                            onClick = {
-                                controller.toggleReaction(state.groupId, message.messageId, "👍")
-                                selectedMessageForOptions = null
-                            },
-                            modifier = Modifier.fillMaxWidth().testTag("react_${message.messageId}")
-                        ) { Text("Поставить 👍", modifier = Modifier.fillMaxWidth()) }
-                    }
                     if (message.canPin) {
                         TextButton(
                             onClick = {
@@ -939,7 +930,7 @@ fun GroupChatScreen(
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Просмотрено (${message.readByMembers.size})", modifier = Modifier.fillMaxWidth()) }
-                    if (message.canEdit) {
+                    if (message.canEdit && message.isMine) {
                         TextButton(
                             onClick = {
                                 editingMessage = message

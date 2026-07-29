@@ -693,26 +693,30 @@ private fun PackEditor(
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val compactPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     if (pack.isOwned) {
-                        FilledTonalButton(onClick = onAdd) {
-                            Text(if (appLanguage == "Русский") "＋ Стикеры" else "＋ Stickers")
+                        FilledTonalButton(onClick = onAdd, contentPadding = compactPadding) {
+                            Text(if (appLanguage == "Русский") "＋ Стикеры" else "＋ Stickers", maxLines = 1, softWrap = false)
                         }
-                        OutlinedButton(onClick = onRename) {
-                            Text(if (appLanguage == "Русский") "Переименовать" else "Rename")
+                        OutlinedButton(onClick = onRename, contentPadding = compactPadding) {
+                            Text(if (appLanguage == "Русский") "Переименовать" else "Rename", maxLines = 1, softWrap = false)
                         }
                     } else {
-                        FilledTonalButton(onClick = onCopy) {
-                            Text(if (appLanguage == "Русский") "Создать копию" else "Make a copy")
+                        FilledTonalButton(onClick = onCopy, contentPadding = compactPadding) {
+                            Text(if (appLanguage == "Русский") "Создать копию" else "Make a copy", maxLines = 1, softWrap = false)
                         }
                     }
-                    OutlinedButton(onClick = onShare) {
-                        Text(if (appLanguage == "Русский") "Поделиться" else "Share")
+                    OutlinedButton(onClick = onShare, contentPadding = compactPadding) {
+                        Text(if (appLanguage == "Русский") "Поделиться" else "Share", maxLines = 1, softWrap = false)
                     }
-                    TextButton(onClick = onDelete) {
+                    TextButton(onClick = onDelete, contentPadding = compactPadding) {
                         Text(
                             if (appLanguage == "Русский") "Удалить пак" else "Delete pack",
                             color = MaterialTheme.colorScheme.error,
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }

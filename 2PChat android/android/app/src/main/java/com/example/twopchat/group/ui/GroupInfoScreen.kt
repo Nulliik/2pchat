@@ -178,10 +178,15 @@ fun GroupInfoScreen(
         }
     }
 
+    val backgroundColor = MaterialTheme.colorScheme.background
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF0A0A0C))
+            .background(backgroundColor)
     ) {
         // Telegram Style Top Bar
         Row(
@@ -195,7 +200,7 @@ fun GroupInfoScreen(
                 Icon(
                     painter = painterResource(R.drawable.ic_back_arrow),
                     contentDescription = "Back",
-                    tint = Color.White
+                    tint = onSurfaceColor
                 )
             }
             Row {
@@ -207,7 +212,7 @@ fun GroupInfoScreen(
                         Icon(
                             painter = painterResource(R.drawable.ic_edit),
                             contentDescription = "Edit Group",
-                            tint = Color.White,
+                            tint = onSurfaceColor,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -219,7 +224,7 @@ fun GroupInfoScreen(
                     Icon(
                         imageVector = Icons.Default.MoreVert,
                         contentDescription = "More",
-                        tint = Color.White
+                        tint = onSurfaceColor
                     )
                 }
             }
@@ -270,7 +275,7 @@ fun GroupInfoScreen(
             if (state.management.canEditMetadata) {
                 item(key = "posting_policy") {
                     Surface(
-                        color = Color(0xFF14161A),
+                        color = surfaceColor,
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -286,12 +291,12 @@ fun GroupInfoScreen(
                                     "Только администраторы могут писать",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = Color.White,
+                                    color = onSurfaceColor,
                                 )
                                 Text(
                                     "Участники и модераторы смогут читать, голосовать и оставлять реакции.",
                                     fontSize = 12.sp,
-                                    color = Color.Gray,
+                                    color = onSurfaceVariant,
                                 )
                             }
                             Switch(
@@ -310,7 +315,7 @@ fun GroupInfoScreen(
             if (state.management.canInviteMembers && state.inviteCandidates.isNotEmpty()) {
                 item(key = "add_members_row") {
                     Surface(
-                        color = Color(0xFF14161A),
+                        color = surfaceColor,
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -333,7 +338,7 @@ fun GroupInfoScreen(
                                 "Добавить участников",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color.White
+                                color = onSurfaceColor
                             )
                         }
                     }
@@ -345,7 +350,7 @@ fun GroupInfoScreen(
             if (canChangeWallpaper) {
                 item(key = "wallpaper_row") {
                     Surface(
-                        color = Color(0xFF14161A),
+                        color = surfaceColor,
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -360,7 +365,7 @@ fun GroupInfoScreen(
                             Icon(
                                 painter = painterResource(R.drawable.ic_chat_wallpaper),
                                 contentDescription = "Обои чата",
-                                tint = Color.White,
+                                tint = onSurfaceColor,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(Modifier.width(14.dp))
@@ -368,7 +373,7 @@ fun GroupInfoScreen(
                                 "Обои чата",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color.White
+                                color = onSurfaceColor
                             )
                         }
                     }
@@ -883,7 +888,7 @@ private fun GroupHeroHeader(
             text = metadata.title,
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -892,7 +897,7 @@ private fun GroupHeroHeader(
         Text(
             text = "${metadata.memberCount} участников",
             fontSize = 14.sp,
-            color = Color.Gray
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }
@@ -935,7 +940,7 @@ private fun GroupQuickActionsRow(
             )
 
             Surface(
-                color = Color(0xFF1C1C1E),
+                color = MaterialTheme.colorScheme.surface,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .weight(1f)
@@ -957,7 +962,7 @@ private fun GroupQuickActionsRow(
                     Icon(
                         painter = painterResource(iconRes),
                         contentDescription = label,
-                        tint = Color.White,
+                        tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(Modifier.height(6.dp))
@@ -965,7 +970,7 @@ private fun GroupQuickActionsRow(
                         label,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
             }
@@ -1086,7 +1091,7 @@ private fun FileAttachmentRow(
     groupId: String
 ) {
     Surface(
-        color = Color(0xFF14161A),
+        color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -1110,7 +1115,7 @@ private fun FileAttachmentRow(
                     text = attachment.fileName,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1118,7 +1123,7 @@ private fun FileAttachmentRow(
                 Text(
                     text = "${message.authorName} · ${message.timestampLabel} · ${attachment.sizeLabel}",
                     fontSize = 12.sp,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
@@ -1144,7 +1149,7 @@ private fun GroupTabNavigation(
 ) {
     val tabs = listOf("Участники", "Медиа", "Избранное", "Файлы")
     Surface(
-        color = Color(0xFF14161A),
+        color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(20.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -1174,7 +1179,7 @@ private fun GroupTabNavigation(
                         text = title,
                         fontSize = 12.sp,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -1253,7 +1258,7 @@ private fun GroupMemberCard(
                         },
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -1606,9 +1611,12 @@ private fun GroupInfoDetailsCard(
 ) {
     val context = LocalContext.current
     val primaryColor = MaterialTheme.colorScheme.primary
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
 
     Surface(
-        color = Color(0xFF14161A),
+        color = surfaceColor,
         shape = RoundedCornerShape(20.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -1628,7 +1636,7 @@ private fun GroupInfoDetailsCard(
             Text(
                 text = "Личный адрес группы",
                 fontSize = 12.sp,
-                color = Color.Gray
+                color = onSurfaceVariant
             )
             Spacer(Modifier.height(2.dp))
             Row(
@@ -1639,7 +1647,7 @@ private fun GroupInfoDetailsCard(
                     text = "group#${metadata.groupId}",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color.White,
+                    color = onSurfaceColor,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -1656,14 +1664,14 @@ private fun GroupInfoDetailsCard(
                     Icon(
                         painter = painterResource(R.drawable.ic_copy),
                         contentDescription = "Copy Group ID",
-                        tint = Color.Gray,
+                        tint = onSurfaceVariant,
                         modifier = Modifier.size(16.dp)
                     )
                 }
             }
 
             HorizontalDivider(
-                color = Color.White.copy(alpha = 0.08f),
+                color = onSurfaceColor.copy(alpha = 0.08f),
                 modifier = Modifier.padding(vertical = 10.dp)
             )
 
@@ -1671,18 +1679,18 @@ private fun GroupInfoDetailsCard(
             Text(
                 text = "О себе / Описание",
                 fontSize = 12.sp,
-                color = Color.Gray
+                color = onSurfaceVariant
             )
             Spacer(Modifier.height(2.dp))
             Text(
                 text = metadata.description.ifBlank { "P2P децентрализованный групповой чат" },
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Normal,
-                color = Color.White
+                color = onSurfaceColor
             )
 
             HorizontalDivider(
-                color = Color.White.copy(alpha = 0.08f),
+                color = onSurfaceColor.copy(alpha = 0.08f),
                 modifier = Modifier.padding(vertical = 10.dp)
             )
 
@@ -1707,13 +1715,13 @@ private fun GroupInfoDetailsCard(
                     Text(
                         text = "Статус верификации",
                         fontSize = 12.sp,
-                        color = Color.Gray
+                        color = onSurfaceVariant
                     )
                     Text(
                         text = "Группа верифицирована (Double Ratchet)",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = onSurfaceColor
                     )
                 }
             }
