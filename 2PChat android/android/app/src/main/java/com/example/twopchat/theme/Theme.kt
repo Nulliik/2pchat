@@ -22,7 +22,11 @@ private val DarkMintColorScheme = darkColorScheme(
     onBackground = TextLight,
     onSurface = TextLight,
     surfaceVariant = DarkSurfaceVariantMint,
-    onSurfaceVariant = TextGray
+    onSurfaceVariant = TextGray,
+    outline = Color(0xFF26332C),
+    outlineVariant = Color(0xFF1B2620),
+    surfaceContainer = Color(0xFF141F1A),
+    surfaceContainerHigh = Color(0xFF1C2B24)
 )
 
 private val DarkBlueColorScheme = darkColorScheme(
@@ -34,7 +38,11 @@ private val DarkBlueColorScheme = darkColorScheme(
     onBackground = TextLight,
     onSurface = TextLight,
     surfaceVariant = DarkSurfaceVariantBlue,
-    onSurfaceVariant = TextGray
+    onSurfaceVariant = TextGray,
+    outline = Color(0xFF222B3D),
+    outlineVariant = Color(0xFF182030),
+    surfaceContainer = Color(0xFF141926),
+    surfaceContainerHigh = Color(0xFF1E2538)
 )
 
 private val AmoledMintColorScheme = darkColorScheme(
@@ -46,7 +54,11 @@ private val AmoledMintColorScheme = darkColorScheme(
     onBackground = TextLight,
     onSurface = TextLight,
     surfaceVariant = Color(0xFF161A1D),
-    onSurfaceVariant = TextGray
+    onSurfaceVariant = TextGray,
+    outline = Color(0xFF22272B),
+    outlineVariant = Color(0xFF191C1F),
+    surfaceContainer = Color(0xFF111417),
+    surfaceContainerHigh = Color(0xFF1A1F24)
 )
 
 private val AmoledBlueColorScheme = darkColorScheme(
@@ -58,7 +70,11 @@ private val AmoledBlueColorScheme = darkColorScheme(
     onBackground = TextLight,
     onSurface = TextLight,
     surfaceVariant = Color(0xFF151D2A),
-    onSurfaceVariant = TextGray
+    onSurfaceVariant = TextGray,
+    outline = Color(0xFF202A3B),
+    outlineVariant = Color(0xFF171F2C),
+    surfaceContainer = Color(0xFF111722),
+    surfaceContainerHigh = Color(0xFF1A2233)
 )
 
 private val LightMintColorScheme = lightColorScheme(
