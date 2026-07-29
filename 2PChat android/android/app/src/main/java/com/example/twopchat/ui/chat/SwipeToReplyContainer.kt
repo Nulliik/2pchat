@@ -50,14 +50,14 @@ fun SwipeToReplyContainer(
                     hasTriggeredHapticForSwipe = false
                     if (offsetX.value < -thresholdPx) onReply()
                     coroutineScope.launch {
-                        offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
+                        offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow))
                     }
                     totalDragPx = 0f
                 },
                 onDragCancel = {
                     hasTriggeredHapticForSwipe = false
                     coroutineScope.launch {
-                        offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
+                        offsetX.animateTo(0f, spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow))
                     }
                     totalDragPx = 0f
                 },

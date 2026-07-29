@@ -1,3 +1,10 @@
+:root {
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-sharp: cubic-bezier(0.2, 0, 0, 1);
+  --duration-fast: 160ms;
+  --duration-normal: 200ms;
+}
+
 body {
   margin: 0;
   font-family: Arial, sans-serif;
@@ -24,6 +31,8 @@ body {
   border-radius: 999px;
   padding: 0.3rem 0.7rem;
   font-weight: bold;
+  transition: background-color var(--duration-normal) var(--ease-sharp),
+              color var(--duration-normal) ease;
 }
 
 .online { background: #23b26b; }
@@ -40,6 +49,43 @@ body {
 .settings select,
 .composer input {
   padding: 0.45rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+
+.settings input:focus-visible,
+.settings select:focus-visible,
+.composer input:focus-visible {
+  outline: none;
+  border-color: #0682cc;
+  box-shadow: 0 0 0 2px rgba(6, 130, 204, 0.2);
+}
+
+.settings button,
+.composer button {
+  padding: 0.45rem 0.9rem;
+  border: none;
+  border-radius: 4px;
+  background: #0682cc;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-sharp),
+              background-color var(--duration-fast) ease,
+              opacity var(--duration-fast) ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .settings button:hover,
+  .composer button:hover {
+    opacity: 0.92;
+  }
+}
+
+.settings button:active,
+.composer button:active {
+  transform: scale(0.97);
 }
 
 .chatlog {
@@ -48,6 +94,22 @@ body {
   margin-top: 0.8rem;
   min-height: 280px;
   padding: 0.8rem;
+}
+
+.chatlog p {
+  margin: 0.4rem 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  background: #f7f9fc;
+  transition: opacity 180ms var(--ease-out-quint),
+              transform 180ms var(--ease-out-quint);
+}
+
+@starting-style {
+  .chatlog p {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
 .composer {
@@ -65,3 +127,4 @@ body {
   font-size: 0.85rem;
   opacity: 0.95;
 }
+

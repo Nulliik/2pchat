@@ -181,18 +181,12 @@ internal fun ChatMessageBubble(
 
     androidx.compose.animation.AnimatedVisibility(
         visibleState = visibleState,
-        enter = fadeIn(animationSpec = tween(200)) + scaleIn(
-            initialScale = 0.85f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            )
+        enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(180, easing = androidx.compose.animation.core.LinearOutSlowInEasing)) + scaleIn(
+            initialScale = 0.96f,
+            animationSpec = androidx.compose.animation.core.tween(180, easing = androidx.compose.animation.core.FastOutSlowInEasing)
         ) + slideInVertically(
-            initialOffsetY = { it / 3 },
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow
-            )
+            initialOffsetY = { it / 6 },
+            animationSpec = androidx.compose.animation.core.tween(180, easing = androidx.compose.animation.core.FastOutSlowInEasing)
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
