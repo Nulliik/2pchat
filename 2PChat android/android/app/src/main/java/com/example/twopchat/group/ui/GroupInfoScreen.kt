@@ -141,8 +141,8 @@ fun GroupInfoScreen(
                     android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
             }
-            P2PPreferences.prefs(context).edit().putString("group_wallpaper_${state.metadata.groupId}", uri.toString()).apply()
-            android.widget.Toast.makeText(context, "Обои чата обновлены", android.widget.Toast.LENGTH_SHORT).show()
+            controller.updateGroupWallpaper(state.metadata.groupId, uri.toString())
+            android.widget.Toast.makeText(context, "Обои чата обновлены и отправлены участникам", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -335,34 +335,37 @@ fun GroupInfoScreen(
                 }
             }
 
-            // Chat Wallpaper Row
-            item(key = "wallpaper_row") {
-                Surface(
-                    color = Color(0xFF14161A),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .clickable { wallpaperPickerLauncher.launch(arrayOf("image/*")) }
-                        .testTag("group_wallpaper_setting")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            // Chat Wallpaper Row (Admin Only)
+            val canChangeWallpaper = state.management.canEditMetadata || state.members.firstOrNull { it.isCurrentUser }?.let { it.role == GroupRole.OWNER || it.role == GroupRole.ADMIN } == true
+            if (canChangeWallpaper) {
+                item(key = "wallpaper_row") {
+                    Surface(
+                        color = Color(0xFF14161A),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                            .clickable { wallpaperPickerLauncher.launch(arrayOf("image/*")) }
+                            .testTag("group_wallpaper_setting")
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_chat_wallpaper),
-                            contentDescription = "Обои чата",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(Modifier.width(14.dp))
-                        Text(
-                            "Обои чата",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_chat_wallpaper),
+                                contentDescription = "Обои чата",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(14.dp))
+                            Text(
+                                "Обои чата",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            )
+                        }
                     }
                 }
             }
@@ -1301,41 +1304,81 @@ private fun GroupMemberCard(
 
 @Composable
 private fun AdminLogSection(state: GroupInfoUiState) {
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    if (!state.management.canViewAdminLog) return
 
-    Column(
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    var isExpanded by remember { mutableStateOf(false) }
+
+    Surface(
+        color = Color(0xFF14161A),
+        shape = RoundedCornerShape(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
             .testTag("admin_log")
     ) {
-        Text("Журнал администрирования", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(4.dp))
-        if (!state.management.canViewAdminLog) {
-            Text(
-                "Просмотр доступен модераторам и администраторам.",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            return
-        }
-        if (state.adminLog.isEmpty()) {
-            Text(
-                "Записи отсутствуют",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            return
-        }
-        state.adminLog.forEach { entry ->
-            Column(Modifier.padding(vertical = 4.dp)) {
-                Text("${entry.actorName} · ${entry.action}", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded = !isExpanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("📋 ", fontSize = 16.sp)
+                    Text(
+                        "Журнал администрирования",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "(${state.adminLog.size})",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                }
                 Text(
-                    entry.timestampLabel,
-                    fontSize = 11.sp,
-                    color = onSurfaceColor.copy(alpha = 0.5f)
+                    text = if (isExpanded) "▲" else "▼",
+                    color = Color.Gray,
+                    fontSize = 12.sp
                 )
+            }
+
+            if (isExpanded) {
+                Spacer(Modifier.height(10.dp))
+                if (state.adminLog.isEmpty()) {
+                    Text(
+                        "Записи отсутствуют",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        state.adminLog.forEach { entry ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF1C1E24), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    "${entry.actorName} ${entry.action}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.White
+                                )
+                                Text(
+                                    entry.timestampLabel,
+                                    fontSize = 10.sp,
+                                    color = Color.Gray
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }

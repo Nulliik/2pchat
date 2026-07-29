@@ -1422,11 +1422,16 @@ private fun GroupMessageCard(
                 attachment.mimeType == "image/gif" ||
                 attachment.fileName.lowercase().endsWith(".gif")
             )
-            val isSticker = attachment != null && (
+            val textIsSticker = message.text.startsWith("2psticker:", ignoreCase = true) ||
+                message.text.startsWith("2psticker_", ignoreCase = true) ||
+                message.text.startsWith("sticker:", ignoreCase = true) ||
+                StickerSupport.isStickerFileName(message.text) ||
+                (message.text.lowercase().contains("sticker") && message.text.lowercase().endsWith(".webp"))
+            val isSticker = textIsSticker || (attachment != null && (
                 attachment.mimeType.contains("sticker") ||
                 attachment.fileName.lowercase().contains("sticker") ||
                 StickerSupport.isStickerFileName(attachment.fileName)
-            )
+            ))
             val isImage = attachment != null && !isSticker && (
                 attachment.mimeType.startsWith("image/") ||
                 attachment.fileName.lowercase().run {
@@ -1579,6 +1584,25 @@ private fun GroupMessageCard(
                                 ),
                                 label = "stickerBounce",
                             )
+                            val stickerLocalPath = remember(message.text, att?.localPath, att?.fileName) {
+                                if (att != null && !att.localPath.isNullOrBlank() && java.io.File(att.localPath).exists()) {
+                                    att.localPath
+                                } else {
+                                    val cleanName = message.text.removePrefix("2psticker:").removePrefix("sticker:").trim()
+                                    val contextDir = context.filesDir
+                                    val cacheReceived = java.io.File(java.io.File(contextDir, "sticker_cache"), "received")
+                                    val candidateInReceived = java.io.File(cacheReceived, cleanName)
+                                    val candidateInCache = java.io.File(java.io.File(contextDir, "sticker_cache"), cleanName)
+                                    val candidateInPacks = java.io.File(java.io.File(contextDir, "sticker_packs"), cleanName)
+                                    when {
+                                        candidateInReceived.exists() -> candidateInReceived.absolutePath
+                                        candidateInCache.exists() -> candidateInCache.absolutePath
+                                        candidateInPacks.exists() -> candidateInPacks.absolutePath
+                                        java.io.File(cleanName).isAbsolute && java.io.File(cleanName).exists() -> cleanName
+                                        else -> null
+                                    }
+                                }
+                            }
                             LaunchedEffect(pressed) {
                                 if (pressed) {
                                     delay(110)
@@ -1599,18 +1623,20 @@ private fun GroupMessageCard(
                                     .testTag("attachment_${message.messageId}"),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (att.isDownloaded && localPath.isNotBlank()) {
+                                val resolvedPath = stickerLocalPath ?: (if (att != null && att.isDownloaded && localPath.isNotBlank()) localPath else null)
+                                if (!resolvedPath.isNullOrBlank()) {
                                     AnimatedStickerImage(
-                                        filePath = localPath,
-                                        fallbackEmoji = message.text.ifBlank { "🌟" },
+                                        filePath = resolvedPath,
+                                        fallbackEmoji = "🎭",
                                         contentDescription = "Sticker",
                                         targetSizePx = 400,
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 } else {
-                                    // Sticker not yet downloaded — trigger download and show emoji placeholder
-                                    LaunchedEffect(message.messageId) {
-                                        controller.downloadAttachment(groupId, message.messageId)
+                                    if (att != null) {
+                                        LaunchedEffect(message.messageId) {
+                                            controller.downloadAttachment(groupId, message.messageId)
+                                        }
                                     }
                                     Box(
                                         modifier = Modifier
@@ -1621,9 +1647,12 @@ private fun GroupMessageCard(
                                             ),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text(
-                                            text = message.text.ifBlank { "🌟" },
-                                            fontSize = 54.sp
+                                        AnimatedStickerImage(
+                                            filePath = null,
+                                            fallbackEmoji = "🎭",
+                                            contentDescription = "Sticker",
+                                            targetSizePx = 400,
+                                            modifier = Modifier.fillMaxSize()
                                         )
                                     }
                                 }

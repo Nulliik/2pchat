@@ -371,6 +371,65 @@ object GroupChatCoordinator {
         }
     }
 
+    fun updateGroupWallpaper(groupId: String, wallpaperUri: String?) {
+        scope.launch {
+            val context = applicationContext ?: return@launch
+            val (persistedPath, wallpaperData) = if (wallpaperUri != null) {
+                runCatching {
+                    val bmp = if (wallpaperUri.startsWith("content://")) {
+                        context.contentResolver.openInputStream(Uri.parse(wallpaperUri))?.use { stream ->
+                            android.graphics.BitmapFactory.decodeStream(stream)
+                        }
+                    } else {
+                        val f = File(wallpaperUri)
+                        if (f.exists()) android.graphics.BitmapFactory.decodeFile(f.absolutePath) else null
+                    }
+                    if (bmp != null) {
+                        val maxDim = 1080
+                        val scaledBmp = if (bmp.width > maxDim || bmp.height > maxDim) {
+                            val scale = maxDim.toFloat() / Math.max(bmp.width, bmp.height)
+                            android.graphics.Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true)
+                        } else {
+                            bmp
+                        }
+                        val dir = File(context.filesDir, "group_wallpapers").also { it.mkdirs() }
+                        val destFile = File(dir, "${groupId}.jpg")
+                        val out = java.io.ByteArrayOutputStream()
+                        scaledBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, out)
+                        val compressed = out.toByteArray()
+                        destFile.writeBytes(compressed)
+                        val b64 = Base64.encodeToString(compressed, Base64.NO_WRAP)
+                        destFile.absolutePath to b64
+                    } else null to null
+                }.getOrElse { null to null }
+            } else null to null
+
+            if (persistedPath != null) {
+                P2PPreferences.prefs(context).edit().putString("group_wallpaper_$groupId", persistedPath).apply()
+            } else if (wallpaperUri == null) {
+                P2PPreferences.prefs(context).edit().remove("group_wallpaper_$groupId").apply()
+            }
+
+            val g = db().getGroup(groupId) ?: return@launch
+            requestSerializedControl(
+                groupId,
+                "update_info",
+                JSONObject().apply {
+                    put("title", g.title)
+                    put("description", g.description)
+                    if (wallpaperUri != null) {
+                        put("wallpaper_uri", persistedPath ?: wallpaperUri)
+                        if (!wallpaperData.isNullOrBlank()) {
+                            put("wallpaper_data", wallpaperData)
+                        }
+                    } else {
+                        put("wallpaper_uri", "")
+                    }
+                }
+            )
+        }
+    }
+
     fun inviteMembers(groupId: String, contactIds: Set<String>) {
         if (contactIds.isEmpty()) return
         scope.launch {
@@ -2999,6 +3058,24 @@ object GroupChatCoordinator {
                         nextAvatarUri = payload.optString("avatar_uri", "").ifBlank { null }
                     }
                 }
+                if (payload.has("wallpaper_uri") || payload.has("wallpaper_data")) {
+                    val wallpaperDataB64 = payload.optString("wallpaper_data", "")
+                    val wallpaperUriInPayload = payload.optString("wallpaper_uri", "")
+                    val ctx = applicationContext
+                    if (wallpaperDataB64.isNotBlank() && ctx != null) {
+                        runCatching {
+                            val bytes = Base64.decode(wallpaperDataB64, Base64.NO_WRAP)
+                            val dir = File(ctx.filesDir, "group_wallpapers").also { it.mkdirs() }
+                            val destFile = File(dir, "${current.groupId}.jpg")
+                            destFile.writeBytes(bytes)
+                            P2PPreferences.prefs(ctx).edit().putString("group_wallpaper_${current.groupId}", destFile.absolutePath).apply()
+                        }
+                    } else if (wallpaperUriInPayload.isBlank() && ctx != null) {
+                        P2PPreferences.prefs(ctx).edit().remove("group_wallpaper_${current.groupId}").apply()
+                    } else if (wallpaperUriInPayload.isNotBlank() && ctx != null) {
+                        P2PPreferences.prefs(ctx).edit().putString("group_wallpaper_${current.groupId}", wallpaperUriInPayload).apply()
+                    }
+                }
                 if (payload.has("admin_only_posting")) {
                     nextAdminOnlyPosting = payload.optBoolean("admin_only_posting")
                 }
@@ -4079,14 +4156,65 @@ object GroupChatCoordinator {
                     !hasPendingInvites,
                 canLeave = local?.role != GroupRole.OWNER.name,
             ),
-            adminLog = events.filter { isAdminLogKind(it.kind) }.takeLast(100).asReversed().map {
+            adminLog = events.filter { isAdminLogKind(it.kind) }.takeLast(100).asReversed().map { evt ->
+                val actorName = members.firstOrNull { member ->
+                    member.deviceId == evt.authorDeviceId
+                }?.displayName ?: "Участник"
+
+                val payloadJson = evt.payload?.let { pBytes ->
+                    runCatching { JSONObject(String(pBytes, Charsets.UTF_8)) }.getOrNull()
+                }
+
+                val targetMemberName = payloadJson?.optString("member_device_id")?.let { targetId ->
+                    members.firstOrNull { it.deviceId == targetId }?.displayName ?: targetId.take(8)
+                }
+
+                val actionDescription = when (evt.kind) {
+                    "GROUP_UPDATED" -> {
+                        when {
+                            payloadJson?.has("wallpaper_uri") == true || payloadJson?.has("wallpaper_data") == true ->
+                                "изменил обои чата"
+                            payloadJson?.has("avatar_uri") == true || payloadJson?.has("avatar_data") == true ->
+                                "изменил фото профиля беседы"
+                            payloadJson?.has("title") == true ->
+                                "изменил название беседы на «${payloadJson.optString("title")}»"
+                            payloadJson?.has("description") == true ->
+                                "изменил описание беседы"
+                            else -> "обновил параметры беседы"
+                        }
+                    }
+                    "MEMBER_ADDED" -> {
+                        if (targetMemberName != null) "добавил пользователя $targetMemberName"
+                        else "добавил участника"
+                    }
+                    "MEMBER_REMOVED" -> {
+                        if (targetMemberName != null) "исключил пользователя $targetMemberName"
+                        else "исключил участника"
+                    }
+                    "ROLE_CHANGED" -> {
+                        val roleStr = when (payloadJson?.optString("role")?.uppercase()) {
+                            "ADMIN" -> "Администратор"
+                            "MODERATOR" -> "Модератор"
+                            "MEMBER" -> "Участник"
+                            else -> payloadJson?.optString("role") ?: ""
+                        }
+                        if (targetMemberName != null) "изменил роль $targetMemberName на $roleStr"
+                        else "изменил роль участника"
+                    }
+                    "PERMISSIONS_CHANGED", "MEMBER_MUTED" -> {
+                        if (targetMemberName != null) "изменил права $targetMemberName"
+                        else "изменил права участника"
+                    }
+                    "PIN" -> "закрепил сообщение"
+                    "UNPIN" -> "открепил сообщение"
+                    else -> evt.kind.lowercase().replace('_', ' ')
+                }
+
                 GroupAdminLogEntry(
-                    entryId = it.eventId,
-                    actorName = members.firstOrNull { member ->
-                        member.deviceId == it.authorDeviceId
-                    }?.displayName ?: "Member",
-                    action = it.kind.lowercase().replace('_', ' '),
-                    timestampLabel = formatDate(it.createdAtMs),
+                    entryId = evt.eventId,
+                    actorName = actorName,
+                    action = actionDescription,
+                    timestampLabel = formatDate(evt.createdAtMs),
                 )
             },
             timelineMessages = timelineMessages

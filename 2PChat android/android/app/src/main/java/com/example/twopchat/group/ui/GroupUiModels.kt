@@ -19,6 +19,7 @@ interface GroupUiController {
   fun createGroup(title: String, description: String, contactIds: Set<String>) = Unit
   fun updateGroupInfo(groupId: String, title: String, description: String) = updateGroupInfo(groupId, title, description, null)
   fun updateGroupInfo(groupId: String, title: String, description: String, avatarUri: String?) = Unit
+  fun updateGroupWallpaper(groupId: String, wallpaperUri: String?) = Unit
   fun setAdminOnlyPosting(groupId: String, enabled: Boolean) = Unit
   fun inviteMembers(groupId: String, contactIds: Set<String>) = Unit
   fun loadOlderMessages(groupId: String, beforeMessageId: String?) = Unit
