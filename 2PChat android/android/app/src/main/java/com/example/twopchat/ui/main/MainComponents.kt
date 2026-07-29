@@ -369,7 +369,7 @@ fun PeerRow(
 
             // Transport Badge (Quiet Luxury design with icons)
             val transportKind = connectionTransportKind(peer.transport)
-            val isGroup = !peer.isDirect || peer.transport.contains("MEMBERS", ignoreCase = true)
+            val isGroup = !peer.isDirect
             val isSavedMessages = peer.name == Localizations.getString("saved_messages_title", appLanguage) || peer.transport == "LOCAL RAM"
 
             val badgeSpec = when {
