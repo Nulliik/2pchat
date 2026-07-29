@@ -1,5 +1,6 @@
 package com.example.twopchat.group.ui
 
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.graphicsLayer
 import com.example.twopchat.R
 import com.example.twopchat.P2PPreferences
 import com.example.twopchat.P2PMessageRelay
@@ -904,12 +906,31 @@ private fun GroupQuickActionsRow(
         }
 
         actions.forEach { (label, iconRes, onClick) ->
+            val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            val isPressed by interactionSource.collectIsPressedAsState()
+            val scale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (isPressed) 0.94f else 1.0f,
+                animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
+                    stiffness = androidx.compose.animation.core.Spring.StiffnessLow
+                ),
+                label = "quickActionScale"
+            )
+
             Surface(
                 color = Color(0xFF1C1C1E),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .weight(1f)
-                    .clickable(onClick = onClick)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick
+                    )
             ) {
                 Column(
                     modifier = Modifier.padding(vertical = 12.dp),

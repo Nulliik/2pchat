@@ -7,8 +7,10 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.os.SystemClock
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
@@ -20,6 +22,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.SliderDefaults
 import com.example.twopchat.theme.StealthBlack
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Text
@@ -121,6 +124,8 @@ fun VoiceMessagePlayer(
     var duration by remember(filePath) { mutableIntStateOf(voiceDuration(filePath)) }
     var position by remember(filePath) { mutableIntStateOf(0) }
 
+    var speedMultiplier by remember { mutableFloatStateOf(1.0f) }
+
     DisposableEffect(filePath) {
         onDispose {
             runCatching { player?.release() }
@@ -135,7 +140,7 @@ fun VoiceMessagePlayer(
     }
 
     Row(
-        modifier = Modifier.widthIn(min = 220.dp, max = 280.dp),
+        modifier = Modifier.widthIn(min = 230.dp, max = 290.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val playBtnBg = if (isMine) {
@@ -162,6 +167,9 @@ fun VoiceMessagePlayer(
                         created.setDataSource(filePath)
                         created.prepare()
                         duration = created.duration
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && speedMultiplier != 1.0f) {
+                            runCatching { created.playbackParams = created.playbackParams.setSpeed(speedMultiplier) }
+                        }
                         created.setOnCompletionListener {
                             isPlaying = false
                             position = 0
@@ -173,6 +181,9 @@ fun VoiceMessagePlayer(
                         active.pause()
                         isPlaying = false
                     } else {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && speedMultiplier != 1.0f) {
+                            runCatching { active.playbackParams = active.playbackParams.setSpeed(speedMultiplier) }
+                        }
                         active.start()
                         isPlaying = true
                     }
@@ -212,11 +223,54 @@ fun VoiceMessagePlayer(
                     inactiveTrackColor = themeColor.copy(alpha = 0.24f)
                 )
             )
-            Text(
-                text = VoiceMessageSupport.formatDuration(if (isPlaying) position else duration),
-                color = contentColor.copy(alpha = 0.72f),
-                fontSize = 10.sp,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = VoiceMessageSupport.formatDuration(if (isPlaying) position else duration),
+                    color = contentColor.copy(alpha = 0.72f),
+                    fontSize = 10.sp,
+                )
+                
+                // Playback Speed Toggle Chip
+                val speedText = when (speedMultiplier) {
+                    1.5f -> "1.5x"
+                    2.0f -> "2x"
+                    else -> "1x"
+                }
+                Box(
+                    modifier = Modifier
+                        .background(themeColor.copy(alpha = 0.15f), shape = RoundedCornerShape(6.dp))
+                        .clickable {
+                            val next = when (speedMultiplier) {
+                                1.0f -> 1.5f
+                                1.5f -> 2.0f
+                                else -> 1.0f
+                            }
+                            speedMultiplier = next
+                            runCatching {
+                                player?.let { p ->
+                                    val wasPlaying = p.isPlaying
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                        p.playbackParams = p.playbackParams.setSpeed(next)
+                                        if (!wasPlaying) p.pause()
+                                    }
+                                }
+                            }
+                        }
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = speedText,
+                        color = themeColor,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
     }
 }
