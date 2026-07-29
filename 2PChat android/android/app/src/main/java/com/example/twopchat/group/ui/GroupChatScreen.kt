@@ -2,8 +2,6 @@ package com.example.twopchat.group.ui
 
 import com.example.twopchat.P2PPreferences
 import com.example.twopchat.ui.chat.AlbumPreviewModal
-import com.example.twopchat.ui.chat.VoiceMessageSupport
-import com.example.twopchat.ui.chat.GifStorageManager
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.ui.unit.sp
@@ -1836,7 +1834,7 @@ private fun GroupMessageCard(
                         titleColor = primaryColor,
                         textColor = onSurfaceColor.copy(alpha = 0.7f),
                         backgroundColor = surfaceColor.copy(alpha = 0.6f),
-                        onClick = { onReplyQuoteClick(reply.replyToMessageId) },
+                        onClick = { onReplyQuoteClick(reply.messageId) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp),
