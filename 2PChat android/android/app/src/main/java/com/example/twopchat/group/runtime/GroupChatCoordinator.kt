@@ -766,7 +766,36 @@ object GroupChatCoordinator {
     fun leaveGroup(groupId: String) {
         scope.launch {
             val group = db().getGroup(groupId) ?: return@launch
-            if (group.ownerDeviceId == group.localDeviceId) return@launch
+            if (group.ownerDeviceId == group.localDeviceId) {
+                val hasOtherParticipants = db().listMembers(groupId).any {
+                    it.deviceId != group.localDeviceId && it.isParticipating()
+                }
+                if (hasOtherParticipants || !db().deleteGroup(groupId)) return@launch
+
+                activeGroupChats.remove(groupId)
+                timelineLimits.remove(groupId)
+                lastReadReceiptTargets.remove(groupId)
+                controlAncestorCache.remove(groupId)
+                chatFlows.remove(groupId)
+                infoFlows.remove(groupId)
+                attachmentBlockStores.remove(groupId)
+                attachmentManifests.keys.removeAll {
+                    it.startsWith("$groupId\u0000")
+                }
+                attachmentRequests.entries.removeAll { it.value.groupId == groupId }
+                applicationContext?.filesDir?.let { filesDir ->
+                    File(
+                        File(filesDir, "group_attachment_blocks"),
+                        sha256Hex(groupId),
+                    ).deleteRecursively()
+                    File(
+                        File(filesDir, "group_downloads"),
+                        sha256Hex(groupId),
+                    ).deleteRecursively()
+                }
+                refreshAllGroups()
+                return@launch
+            }
             val notice = emitEvent(
                 groupId,
                 GroupEventKind.SYSTEM,
@@ -4154,7 +4183,10 @@ object GroupChatCoordinator {
                 canTransferOwnership = local?.role == GroupRole.OWNER.name &&
                     local.isParticipating() &&
                     !hasPendingInvites,
-                canLeave = local?.role != GroupRole.OWNER.name,
+                canLeave = local?.role != GroupRole.OWNER.name ||
+                    members.none {
+                        it.deviceId != group.localDeviceId && it.isParticipating()
+                    },
             ),
             adminLog = events.filter { isAdminLogKind(it.kind) }.takeLast(100).asReversed().map { evt ->
                 val actorName = members.firstOrNull { member ->

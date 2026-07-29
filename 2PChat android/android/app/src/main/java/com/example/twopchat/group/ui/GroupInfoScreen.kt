@@ -130,6 +130,8 @@ fun GroupInfoScreen(
     var isMuted by remember(state.metadata.groupId) {
         mutableStateOf(P2PPreferences.prefs(context).getBoolean("mute_group_${state.metadata.groupId}", false))
     }
+    val isSoloOwner =
+        state.currentUserRole == GroupRole.OWNER && state.metadata.memberCount == 1
     var showQrModal by remember { mutableStateOf(false) }
 
     val wallpaperPickerLauncher = rememberLauncherForActivityResult(
@@ -247,6 +249,7 @@ fun GroupInfoScreen(
                 GroupQuickActionsRow(
                     isMuted = isMuted,
                     canInviteByLink = state.metadata.inviteToken.isNotBlank(),
+                    leaveLabel = if (isSoloOwner) "Удалить" else "Покинуть",
                     onChatClick = controller::onBack,
                     onToggleMuteClick = {
                         val newMuted = !isMuted
@@ -605,13 +608,15 @@ fun GroupInfoScreen(
 
     if (showLeaveConfirmation) {
         ConfirmationDialog(
-            title = "Выйти из группы?",
-            body = if (state.currentUserRole == GroupRole.OWNER) {
+            title = if (isSoloOwner) "Удалить группу?" else "Выйти из группы?",
+            body = if (isSoloOwner) {
+                "Группа и история сообщений будут удалены с этого устройства."
+            } else if (state.currentUserRole == GroupRole.OWNER) {
                 "Передайте права владельца перед выходом, если в группе остаются участники."
             } else {
                 "История сообщений на устройстве сохранится."
             },
-            confirmLabel = "Выйти",
+            confirmLabel = if (isSoloOwner) "Удалить" else "Выйти",
             confirmTag = "confirm_leave_group",
             onDismiss = { showLeaveConfirmation = false },
             onConfirm = {
@@ -896,6 +901,7 @@ private fun GroupHeroHeader(
 private fun GroupQuickActionsRow(
     isMuted: Boolean,
     canInviteByLink: Boolean,
+    leaveLabel: String,
     onChatClick: () -> Unit,
     onToggleMuteClick: () -> Unit,
     onQrClick: () -> Unit,
@@ -913,7 +919,7 @@ private fun GroupQuickActionsRow(
             if (canInviteByLink) {
                 add(Triple("QR код", R.drawable.ic_qr_code, onQrClick))
             }
-            add(Triple("Покинуть", R.drawable.ic_delete, onLeaveClick))
+            add(Triple(leaveLabel, R.drawable.ic_delete, onLeaveClick))
         }
 
         actions.forEach { (label, iconRes, onClick) ->

@@ -26,6 +26,7 @@ import com.example.twopchat.group.protocol.GroupWireProtocol
 import com.example.twopchat.group.storage.GroupDatabaseHelper
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -80,6 +81,30 @@ class GroupChatCoordinatorInstrumentedTest {
             .edit()
             .remove(P2PPreferences.peerFingerprint(ownerPeerName))
             .commit()
+    }
+
+    @Test
+    fun soloOwnerCanDeleteGroupFromChatList() {
+        val createdGroupId = AtomicReference<String>()
+        GroupChatCoordinator.createGroup(
+            title = "Solo group",
+            description = "",
+            contactIds = emptySet(),
+            onCreated = createdGroupId::set,
+        )
+        awaitCondition { createdGroupId.get() != null }
+        val groupId = checkNotNull(createdGroupId.get())
+        awaitCondition {
+            GroupChatCoordinator.summaries.value.any { it.groupId == groupId }
+        }
+
+        GroupChatCoordinator.leaveGroup(groupId)
+
+        awaitCondition {
+            GroupDatabaseHelper(context).use { database ->
+                database.getGroup(groupId) == null
+            } && GroupChatCoordinator.summaries.value.none { it.groupId == groupId }
+        }
     }
 
     @Test
