@@ -171,7 +171,10 @@ data class GroupMemberPermissions(
   val canSendLinks: Boolean = true,
   val canAddMembers: Boolean = false,
   val canPinMessages: Boolean = false,
-  val canDeleteOthersMessages: Boolean = false
+  val canDeleteOthersMessages: Boolean = false,
+  val canEditGroupInfo: Boolean = false,
+  val canBanMembers: Boolean = false,
+  val canAssignRoles: Boolean = false
 )
 
 @Immutable

@@ -4732,6 +4732,9 @@ object GroupChatCoordinator {
         canAddMembers = this and GroupPermission.INVITE_MEMBERS.bit != 0L,
         canPinMessages = this and GroupPermission.PIN_MESSAGES.bit != 0L,
         canDeleteOthersMessages = this and GroupPermission.DELETE_ANY_MESSAGES.bit != 0L,
+        canEditGroupInfo = this and GroupPermission.MANAGE_GROUP_INFO.bit != 0L,
+        canBanMembers = this and GroupPermission.BAN_MEMBERS.bit != 0L,
+        canAssignRoles = this and GroupPermission.ASSIGN_ROLES.bit != 0L,
     )
 
     private fun buildPermissionSet(permissions: GroupMemberPermissions): GroupPermissionSet {
@@ -4746,9 +4749,10 @@ object GroupChatCoordinator {
         if (permissions.canSendLinks) bits = bits or GroupPermission.POST_LINKS.bit
         if (permissions.canAddMembers) bits = bits or GroupPermission.INVITE_MEMBERS.bit
         if (permissions.canPinMessages) bits = bits or GroupPermission.PIN_MESSAGES.bit
-        if (permissions.canDeleteOthersMessages) {
-            bits = bits or GroupPermission.DELETE_ANY_MESSAGES.bit
-        }
+        if (permissions.canDeleteOthersMessages) bits = bits or GroupPermission.DELETE_ANY_MESSAGES.bit
+        if (permissions.canEditGroupInfo) bits = bits or GroupPermission.MANAGE_GROUP_INFO.bit
+        if (permissions.canBanMembers) bits = bits or GroupPermission.BAN_MEMBERS.bit
+        if (permissions.canAssignRoles) bits = bits or GroupPermission.ASSIGN_ROLES.bit
         return GroupPermissionSet(bits)
     }
 

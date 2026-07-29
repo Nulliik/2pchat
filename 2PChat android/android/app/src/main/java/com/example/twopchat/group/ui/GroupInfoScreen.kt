@@ -1,5 +1,6 @@
 package com.example.twopchat.group.ui
 
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -1391,12 +1392,83 @@ private fun MemberRestrictionsDialog(
     onApply: (GroupMemberPermissions) -> Unit
 ) {
     var permissions by remember(member.memberId) { mutableStateOf(member.permissions) }
+
+    val dialogTitle = when (member.role) {
+        GroupRole.ADMIN -> "Права администратора"
+        GroupRole.MODERATOR -> "Права модератора"
+        else -> "Права участника"
+    }
+
+    val sectionHeader = when (member.role) {
+        GroupRole.ADMIN -> "Возможности администратора:"
+        GroupRole.MODERATOR -> "Возможности модератора:"
+        else -> "Разрешения участника:"
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Ограничения для ${member.displayName}", fontWeight = FontWeight.Bold) },
-        text = {
+        title = {
             Column {
-                PermissionToggle("Отправка сообщений", permissions.canSendMessages) {
+                Text(dialogTitle, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1C1C1E), RoundedCornerShape(12.dp))
+                        .padding(10.dp)
+                ) {
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                    ) {
+                        Text(
+                            text = if (member.displayName.length >= 2) member.displayName.substring(0, 2).uppercase() else member.displayName.uppercase(),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(member.displayName, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                        Text(member.statusLabel, fontSize = 12.sp, color = Color.Gray)
+                    }
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = sectionHeader,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+
+                PermissionToggle("Изменение профиля группы", permissions.canEditGroupInfo) {
+                    permissions = permissions.copy(canEditGroupInfo = it)
+                }
+                PermissionToggle("Удаление сообщений", permissions.canDeleteOthersMessages) {
+                    permissions = permissions.copy(canDeleteOthersMessages = it)
+                }
+                PermissionToggle("Блокировка пользователей", permissions.canBanMembers) {
+                    permissions = permissions.copy(canBanMembers = it)
+                }
+                PermissionToggle("Пригласительные ссылки и добавление", permissions.canAddMembers) {
+                    permissions = permissions.copy(canAddMembers = it)
+                }
+                PermissionToggle("Закрепление сообщений", permissions.canPinMessages) {
+                    permissions = permissions.copy(canPinMessages = it)
+                }
+                PermissionToggle("Отправка текстовых сообщений", permissions.canSendMessages) {
                     permissions = permissions.copy(canSendMessages = it)
                 }
                 PermissionToggle("Отправка медиафайлов", permissions.canSendMedia) {
@@ -1405,8 +1477,27 @@ private fun MemberRestrictionsDialog(
                 PermissionToggle("Отправка ссылок", permissions.canSendLinks) {
                     permissions = permissions.copy(canSendLinks = it)
                 }
-                PermissionToggle("Добавление участников", permissions.canAddMembers) {
-                    permissions = permissions.copy(canAddMembers = it)
+                PermissionToggle("Добавление администраторов", permissions.canAssignRoles) {
+                    permissions = permissions.copy(canAssignRoles = it)
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1C1C1E), RoundedCornerShape(8.dp))
+                        .padding(10.dp)
+                ) {
+                    Text(
+                        text = if (!permissions.canAssignRoles) {
+                            "Этот ${if (member.role == GroupRole.ADMIN) "администратор" else "участник"} не сможет добавлять новых администраторов."
+                        } else {
+                            "Может назначать новых модераторов и администраторов."
+                        },
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
                 }
             }
         },
@@ -1414,26 +1505,43 @@ private fun MemberRestrictionsDialog(
             TextButton(
                 onClick = { onApply(permissions) },
                 modifier = Modifier.testTag("apply_member_restrictions")
-            ) { Text("Применить", fontWeight = FontWeight.Bold) }
+            ) { Text("Сохранить", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) { Text("Отмена", color = Color.Gray) }
         },
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = Color(0xFF14161A),
         shape = RoundedCornerShape(20.dp)
     )
 }
 
 @Composable
-private fun PermissionToggle(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun PermissionToggle(label: String, checked: Boolean, enabled: Boolean = true, onCheckedChange: (Boolean) -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp)
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
+            .padding(vertical = 4.dp)
     ) {
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
-        Text(label, fontSize = 14.sp)
+        Text(
+            text = label,
+            fontSize = 14.sp,
+            color = if (enabled) Color.White else Color.Gray,
+            modifier = Modifier.weight(1f)
+        )
+        androidx.compose.material3.Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = onCheckedChange,
+            colors = androidx.compose.material3.SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                uncheckedThumbColor = Color.Gray,
+                uncheckedTrackColor = Color(0xFF2C2C2E)
+            )
+        )
     }
 }
 
