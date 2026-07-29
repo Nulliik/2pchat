@@ -109,7 +109,6 @@ object LinkPreviewFetcher {
                 connection.readTimeout = 4000
                 connection.instanceFollowRedirects = false // Follow redirects manually
                 connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                connection.setRequestProperty("Accept-Language", "en-US,en;q=0.9,ru;q=0.8")
 
                 responseCode = connection.responseCode
                 if (responseCode in 300..399) {

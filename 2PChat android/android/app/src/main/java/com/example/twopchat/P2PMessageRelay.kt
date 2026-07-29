@@ -176,9 +176,11 @@ object P2PMessageRelay {
         expectedVersion: Long,
     ) {
         val version = peerPresenceVersions.advanceIfCurrent(peerName, expectedVersion) ?: return
-        if (peerPresenceVersions.current(peerName) != version) return
-        peerSessionStates[peerName] = true
-        if (transport != null) peerConnectionTransports[peerName] = transport
+        Handler(Looper.getMainLooper()).post {
+            if (peerPresenceVersions.current(peerName) != version) return@post
+            peerSessionStates[peerName] = true
+            if (transport != null) peerConnectionTransports[peerName] = transport
+        }
         sendConnectedPeerHeartbeat(context, peerName)
     }
 

@@ -79,7 +79,8 @@ internal class RelayMaintenanceCoordinator(
                         if (now - (lastReconnectAttemptAt[fingerprint] ?: 0L) < currentDelay) continue
                         lastReconnectAttemptAt[fingerprint] = now
                         reconnectDelayMs[fingerprint] = (currentDelay * 2).coerceAtMost(20_000L)
-                        log(appContext, "Background reconnection for $peerName at '$endpoint'", "INFO", null)
+                        val anonymizedPeer = (peerName ?: "").take(2) + "***"
+                        log(appContext, "Background reconnection for $anonymizedPeer", "INFO", null)
                         PythonBridge.reconnectPeerSession(peerName, endpoint, fingerprint)
                     }
                 } catch (error: Exception) {
@@ -118,7 +119,7 @@ internal class RelayMaintenanceCoordinator(
                         }
                         val changedAndStable = addresses != lastAddresses && stableCandidateSamples >= 2
                         if (lastAnnounceTime == 0L || changedAndStable || now - lastAnnounceTime >= 90_000L) {
-                            log(appContext, "Announcing self on tracker. Network changed and stable: $changedAndStable, IPs: $addresses", "INFO", null)
+                            log(appContext, "Announcing self on tracker. Network changed: $changedAndStable, count: ${addresses.size}", "INFO", null)
                             val success = PythonBridge.announceSelf(username, fingerprint, port)
                             log(appContext, "Announce self status: $success", "INFO", null)
                             if (success) {

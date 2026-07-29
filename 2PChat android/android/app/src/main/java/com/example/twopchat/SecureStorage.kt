@@ -33,7 +33,8 @@ object SecureStorage {
                     KeyGenParameterSpec.Builder(
                         KEY_ALIAS,
                         KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
-                    ).setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    ).setKeySize(256)
+                        .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                         .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                         .setRandomizedEncryptionRequired(true)
                         .build()
@@ -123,7 +124,8 @@ object SecureStorage {
 
     @Synchronized
     fun clearDbPassphrase() {
-        // No-op (memory-safe: passphrase is not cached in memory)
+        cachedKey = null
+        com.example.twopchat.data.ChatDatabaseHelper.closeAllConnections()
     }
 
     @Synchronized

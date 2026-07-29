@@ -59,17 +59,18 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         private const val KEY_CONTROL_PAYLOAD = "control_payload"
         private const val KEY_CREATED_AT_MS = "created_at_ms"
         private const val TAG = "ChatDatabaseHelper"
+        private val dbLock = Any()
         private val activeHelpers = java.util.Collections.newSetFromMap(java.util.WeakHashMap<ChatDatabaseHelper, Boolean>())
         @Volatile private var instance: ChatDatabaseHelper? = null
         @Volatile private var isMigrationChecked = false
 
         fun getInstance(context: Context): ChatDatabaseHelper =
-            instance ?: synchronized(this) {
+            instance ?: synchronized(dbLock) {
                 instance ?: ChatDatabaseHelper(context.applicationContext).also { instance = it }
             }
 
         fun closeAllConnections() {
-            synchronized(activeHelpers) {
+            synchronized(dbLock) {
                 for (helper in activeHelpers) {
                     try {
                         helper.close()
@@ -622,6 +623,79 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
         } catch (e: Exception) {
             Log.e(TAG, "Failed to update reactions for $id", e)
+        }
+    }
+
+    fun getMessageById(id: String): Message? {
+        val db = this.safeReadableDatabase
+        val cursor = db.query(
+            TABLE_MESSAGES,
+            null,
+            "$KEY_ID = ?",
+            arrayOf(id),
+            null,
+            null,
+            null,
+            "1"
+        )
+        cursor.use {
+            if (it.moveToFirst()) {
+                return readMessageFromCursor(it, SecureStorage.newStringCipher())
+            }
+        }
+        return null
+    }
+
+    fun updateMessageTextForPeer(id: String, peerName: String, newText: String): Boolean {
+        try {
+            val db = this.safeWritableDatabase
+            var isMe = 1
+            var oldStatus = ""
+            val selectQuery = "SELECT $KEY_STATUS, $KEY_IS_ME FROM $TABLE_MESSAGES WHERE $KEY_ID = ? AND $KEY_PEER_NAME = ?"
+            db.rawQuery(selectQuery, arrayOf(id, peerName)).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    oldStatus = cursor.getString(0) ?: ""
+                    isMe = cursor.getInt(1)
+                } else {
+                    return false
+                }
+            }
+            if (isMe != 0) return false // CRIT-01: Peer can only edit incoming messages sent by the peer
+
+            val values = ContentValues().apply {
+                put(KEY_MESSAGE_TEXT, enc(newText))
+                if (!oldStatus.contains("edited")) {
+                    val newStatus = if (oldStatus.isEmpty()) "edited" else "${oldStatus}_edited"
+                    put(KEY_STATUS, newStatus)
+                }
+            }
+            val rows = db.update(TABLE_MESSAGES, values, "$KEY_ID = ? AND $KEY_PEER_NAME = ? AND $KEY_IS_ME = 0", arrayOf(id, peerName))
+            return rows > 0
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update text for $id for peer $peerName", e)
+            return false
+        }
+    }
+
+    fun deleteMessageForPeer(id: String, peerName: String): Boolean {
+        try {
+            val db = this.safeWritableDatabase
+            var isMe = 1
+            val selectQuery = "SELECT $KEY_IS_ME FROM $TABLE_MESSAGES WHERE $KEY_ID = ? AND $KEY_PEER_NAME = ?"
+            db.rawQuery(selectQuery, arrayOf(id, peerName)).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    isMe = cursor.getInt(0)
+                } else {
+                    return false
+                }
+            }
+            if (isMe != 0) return false // CRIT-01: Peer can only delete incoming messages sent by the peer
+
+            val rows = db.delete(TABLE_MESSAGES, "$KEY_ID = ? AND $KEY_PEER_NAME = ? AND $KEY_IS_ME = 0", arrayOf(id, peerName))
+            return rows > 0
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete message $id for peer $peerName", e)
+            return false
         }
     }
 

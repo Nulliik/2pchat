@@ -144,7 +144,12 @@ internal class MessageNotificationService {
                 .joinToString("") { "%02x".format(it) }
             val historyKey = "history_${senderDigest.take(32)}"
             val messageIdsKey = "message_ids_${senderDigest.take(32)}"
-            val existingStr = prefs.getString(historyKey, "") ?: ""
+            val rawExisting = prefs.getString(historyKey, "") ?: ""
+            val existingStr = if (rawExisting.startsWith("2PCHAT_ENC:")) {
+                SecureStorage.decrypt(rawExisting).orEmpty()
+            } else {
+                rawExisting
+            }
             val list = if (existingStr.isNotBlank()) existingStr.split("|||").toMutableList() else mutableListOf()
             list.add(text)
             if (list.size > 10) list.removeAt(0)
@@ -160,8 +165,9 @@ internal class MessageNotificationService {
             // notifications remain untouched for a long time.
             while (messageIds.size > 1_000) messageIds.removeAt(0)
 
+            val encryptedHistory = SecureStorage.encrypt(list.joinToString("|||"))
             prefs.edit()
-                .putString(historyKey, list.joinToString("|||"))
+                .putString(historyKey, encryptedHistory)
                 .putString(messageIdsKey, messageIds.joinToString("|||"))
                 .commit()
             return NotificationHistory(list, messageIds)

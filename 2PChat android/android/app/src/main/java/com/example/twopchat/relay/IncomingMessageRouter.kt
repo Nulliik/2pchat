@@ -284,7 +284,10 @@ internal class IncomingMessageRouter(
         val text = json.optString("text")
         if (msgId.isNotEmpty() && text.isNotEmpty()) {
             val db = ChatDatabaseHelper.getInstance(context)
-            db.updateMessageText(msgId, text)
+            // CRIT-01 Fix: Only update if the message belongs to sender and was sent BY sender (isMe == 0)
+            val updated = db.updateMessageTextForPeer(msgId, sender, text)
+            if (!updated) return
+
             val prefs = P2PPreferences.prefs(context)
             if (prefs.getString(P2PPreferences.pinnedMessageId(sender), null) == msgId) {
                 prefs.edit().putString(P2PPreferences.pinnedMessageText(sender), SecureStorage.encrypt(text)).apply()
@@ -312,7 +315,10 @@ internal class IncomingMessageRouter(
         val msgId = json.optString("message_id")
         if (msgId.isNotEmpty()) {
             val db = ChatDatabaseHelper.getInstance(context)
-            db.deleteMessage(msgId)
+            // CRIT-01 Fix: Only delete if the message belongs to sender and was sent BY sender (isMe == 0)
+            val deleted = db.deleteMessageForPeer(msgId, sender)
+            if (!deleted) return
+
             val prefs = P2PPreferences.prefs(context)
             if (prefs.getString(P2PPreferences.pinnedMessageId(sender), null) == msgId) {
                 prefs.edit()
