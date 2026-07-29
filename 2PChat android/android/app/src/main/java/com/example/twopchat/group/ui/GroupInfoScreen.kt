@@ -1211,6 +1211,7 @@ private fun GroupMemberCard(
                 .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val memberAvatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName]
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -1218,12 +1219,21 @@ private fun GroupMemberCard(
                     .background(avatarColor),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = memberInitials,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
+                if (memberAvatarBitmap != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = memberAvatarBitmap.asImageBitmap(),
+                        contentDescription = member.displayName,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                    )
+                } else {
+                    Text(
+                        text = memberInitials,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                }
             }
 
             Spacer(Modifier.width(12.dp))

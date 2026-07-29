@@ -68,8 +68,10 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.runtime.mutableStateListOf
 import android.net.Uri
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.LaunchedEffect
@@ -230,6 +232,8 @@ fun GroupChatScreen(
     var showCreatePollDialog by remember { mutableStateOf(false) }
     var showSeenByDialog by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var isAttachmentPanelOpen by remember { mutableStateOf(false) }
+    var isSelectMode by remember { mutableStateOf(false) }
+    val selectedMessages = remember { mutableStateListOf<GroupTimelineMessage>() }
 
     val coroutineScope = rememberCoroutineScope()
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -515,15 +519,81 @@ fun GroupChatScreen(
                 .fillMaxSize()
                 .background(if (wallpaperBitmap != null) Color.Black.copy(alpha = 0.45f) else surfaceColor)
         ) {
-            // Modern Glassmorphic Top App Bar
-            GroupChatHeader(
-                state = state,
-                controller = controller,
-                isSearchMode = isSearchMode,
-                searchQuery = searchQuery,
-                onSearchModeChange = { isSearchMode = it },
-                onSearchQueryChange = { searchQuery = it }
-            )
+            if (isSelectMode) {
+                Surface(
+                    color = surfaceColor,
+                    shadowElevation = 2.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = {
+                                isSelectMode = false
+                                selectedMessages.clear()
+                            }) {
+                                Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = onSurfaceColor)
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "${selectedMessages.size} выбрано",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = onSurfaceColor
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = {
+                                val combinedText = selectedMessages.mapNotNull { it.text.takeIf { t -> t.isNotBlank() } }.joinToString("\n")
+                                if (combinedText.isNotBlank()) {
+                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    val clip = android.content.ClipData.newPlainText("Messages", combinedText)
+                                    clipboard.setPrimaryClip(clip)
+                                    android.widget.Toast.makeText(context, "Текст скопирован", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                                isSelectMode = false
+                                selectedMessages.clear()
+                            }) {
+                                Icon(painter = painterResource(id = R.drawable.ic_copy), contentDescription = "Copy", tint = primaryColor)
+                            }
+                            IconButton(onClick = {
+                                val firstToForward = selectedMessages.firstOrNull()
+                                if (firstToForward != null) {
+                                    messageToForward = firstToForward
+                                    showForwardDialog = true
+                                }
+                                isSelectMode = false
+                                selectedMessages.clear()
+                            }) {
+                                Icon(painter = painterResource(id = R.drawable.ic_forward), contentDescription = "Forward", tint = primaryColor)
+                            }
+                            IconButton(onClick = {
+                                selectedMessages.forEach { msg ->
+                                    controller.deleteMessage(state.groupId, msg.messageId)
+                                }
+                                isSelectMode = false
+                                selectedMessages.clear()
+                            }) {
+                                Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
+                            }
+                        }
+                    }
+                }
+            } else {
+                GroupChatHeader(
+                    state = state,
+                    controller = controller,
+                    isSearchMode = isSearchMode,
+                    searchQuery = searchQuery,
+                    onSearchModeChange = { isSearchMode = it },
+                    onSearchQueryChange = { searchQuery = it }
+                )
+            }
 
         val listState = rememberLazyListState()
 
@@ -640,7 +710,25 @@ fun GroupChatScreen(
                             onDelete = { deletingMessage = message },
                             onOptionsClick = { selectedMessageForOptions = message },
                             onMediaClick = { path -> selectedFullImagePath = path },
-                            onOpenStickerPack = { msg -> viewedStickerMessage = msg }
+                            onOpenStickerPack = { msg -> viewedStickerMessage = msg },
+                            isSelectMode = isSelectMode,
+                            isSelected = selectedMessages.any { it.messageId == message.messageId },
+                            onToggleSelect = {
+                                if (selectedMessages.any { it.messageId == message.messageId }) {
+                                    selectedMessages.removeAll { it.messageId == message.messageId }
+                                } else {
+                                    selectedMessages.add(message)
+                                }
+                                if (selectedMessages.isEmpty()) isSelectMode = false
+                            },
+                            onReplyQuoteClick = { targetMsgId ->
+                                val targetIndex = state.messages.indexOfFirst { it.messageId == targetMsgId }
+                                if (targetIndex != -1) {
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(targetIndex)
+                                    }
+                                }
+                            }
                         )
                     }
                 }
@@ -817,6 +905,16 @@ fun GroupChatScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("Скопировать текст", modifier = Modifier.fillMaxWidth()) }
                     }
+                    TextButton(
+                        onClick = {
+                            isSelectMode = true
+                            if (!selectedMessages.any { it.messageId == message.messageId }) {
+                                selectedMessages.add(message)
+                            }
+                            selectedMessageForOptions = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Выбрать", modifier = Modifier.fillMaxWidth()) }
                     if (message.canReact) {
                         TextButton(
                             onClick = {
@@ -1505,7 +1603,11 @@ private fun GroupMessageCard(
     onDelete: () -> Unit,
     onOptionsClick: () -> Unit,
     onMediaClick: (String) -> Unit = {},
-    onOpenStickerPack: (GroupTimelineMessage) -> Unit = {}
+    onOpenStickerPack: (GroupTimelineMessage) -> Unit = {},
+    isSelectMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onReplyQuoteClick: (String) -> Unit = {}
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
@@ -1572,6 +1674,13 @@ private fun GroupMessageCard(
         horizontalArrangement = if (message.isMine) Arrangement.End else Arrangement.Start,
         verticalAlignment = Alignment.Bottom
     ) {
+        if (isSelectMode) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onToggleSelect() },
+                modifier = Modifier.padding(end = 4.dp).align(Alignment.CenterVertically)
+            )
+        }
         // Peer avatar on left
         if (!message.isMine) {
             val peerInitials = message.authorName.take(2).uppercase().ifBlank { "U" }
@@ -1582,6 +1691,7 @@ private fun GroupMessageCard(
                 )
                 colors[abs(message.authorName.hashCode()) % colors.size]
             }
+            val peerAvatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[message.authorName]
 
             Box(
                 modifier = Modifier
@@ -1590,12 +1700,21 @@ private fun GroupMessageCard(
                     .background(peerAvatarColor),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = peerInitials,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp
-                )
+                if (peerAvatarBitmap != null) {
+                    Image(
+                        bitmap = peerAvatarBitmap.asImageBitmap(),
+                        contentDescription = message.authorName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                    )
+                } else {
+                    Text(
+                        text = peerInitials,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                }
             }
             Spacer(Modifier.width(6.dp))
         }
@@ -1669,8 +1788,13 @@ private fun GroupMessageCard(
                 .wrapContentWidth()
                 .widthIn(max = 300.dp)
                 .combinedClickable(
-                    onClick = {},
-                    onLongClick = onOptionsClick
+                    onClick = {
+                        if (isSelectMode) onToggleSelect()
+                    },
+                    onLongClick = {
+                        if (isSelectMode) onToggleSelect()
+                        else onOptionsClick()
+                    }
                 )
         ) {
             Column(
@@ -1712,6 +1836,7 @@ private fun GroupMessageCard(
                         titleColor = primaryColor,
                         textColor = onSurfaceColor.copy(alpha = 0.7f),
                         backgroundColor = surfaceColor.copy(alpha = 0.6f),
+                        onClick = { onReplyQuoteClick(reply.replyToMessageId) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp),

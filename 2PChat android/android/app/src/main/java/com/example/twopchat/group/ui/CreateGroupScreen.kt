@@ -222,6 +222,7 @@ fun CreateGroupScreen(
                                 enabled = !state.isCreating
                             )
                             Spacer(Modifier.width(8.dp))
+                            val contactAvatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[contact.displayName]
                             Box(
                                 modifier = Modifier
                                     .size(36.dp)
@@ -229,12 +230,21 @@ fun CreateGroupScreen(
                                     .background(avatarColor),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = initials,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
+                                if (contactAvatarBitmap != null) {
+                                    androidx.compose.foundation.Image(
+                                        bitmap = contactAvatarBitmap.asImageBitmap(),
+                                        contentDescription = contact.displayName,
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                    )
+                                } else {
+                                    Text(
+                                        text = initials,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
                             }
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
