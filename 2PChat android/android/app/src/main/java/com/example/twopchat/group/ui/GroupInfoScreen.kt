@@ -348,7 +348,12 @@ fun GroupInfoScreen(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("🎨", fontSize = 18.sp)
+                        Icon(
+                            painter = painterResource(R.drawable.ic_chat_wallpaper),
+                            contentDescription = "Обои чата",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
                         Spacer(Modifier.width(14.dp))
                         Text(
                             "Обои чата",
@@ -375,7 +380,12 @@ fun GroupInfoScreen(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("🗑️", fontSize = 18.sp)
+                        Icon(
+                            painter = painterResource(R.drawable.ic_broom),
+                            contentDescription = "Очистить историю",
+                            tint = Color(0xFFE53935),
+                            modifier = Modifier.size(20.dp)
+                        )
                         Spacer(Modifier.width(14.dp))
                         Text(
                             "Очистить историю",
