@@ -207,6 +207,22 @@ object P2PPreferences {
         return AcceptedPeerIdentity(current, pending, endpoint)
     }
 
+    fun saveDraft(context: Context, chatId: String, text: String) {
+        if (chatId.isBlank()) return
+        val trimmed = text.trim()
+        val prefs = prefs(context)
+        if (trimmed.isEmpty()) {
+            prefs.edit().remove("draft_$chatId").apply()
+        } else {
+            prefs.edit().putString("draft_$chatId", text).apply()
+        }
+    }
+
+    fun getDraft(context: Context, chatId: String): String? {
+        if (chatId.isBlank()) return null
+        return prefs(context).getString("draft_$chatId", null)
+    }
+
     fun rejectPendingPeerIdentity(context: Context, peerName: String): Boolean =
         prefs(context).edit()
             .putBoolean(fingerprintMismatch(peerName), false)

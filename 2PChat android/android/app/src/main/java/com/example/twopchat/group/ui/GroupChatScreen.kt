@@ -168,7 +168,25 @@ fun GroupChatScreen(
     controller: GroupUiController,
     modifier: Modifier = Modifier
 ) {
-    var draft by rememberSaveable(state.groupId) { mutableStateOf("") }
+    val context = LocalContext.current
+    val draftKey = "draft_msg_group_${state.groupId}"
+    val sharedPrefs = remember(context) { P2PPreferences.prefs(context) }
+    var draft by rememberSaveable(state.groupId) {
+        mutableStateOf(sharedPrefs.getString(draftKey, "") ?: "")
+    }
+
+    LaunchedEffect(draft) {
+        val currentDraft = sharedPrefs.getString(draftKey, null)
+        if (draft.isNotEmpty()) {
+            if (currentDraft != draft) {
+                sharedPrefs.edit().putString(draftKey, draft).apply()
+            }
+        } else {
+            if (currentDraft != null) {
+                sharedPrefs.edit().remove(draftKey).apply()
+            }
+        }
+    }
     var editingMessage by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var deletingMessage by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var selectedMessageForOptions by remember { mutableStateOf<GroupTimelineMessage?>(null) }
@@ -194,7 +212,6 @@ fun GroupChatScreen(
     var isAttachmentPanelOpen by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
-    val context = LocalContext.current
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface

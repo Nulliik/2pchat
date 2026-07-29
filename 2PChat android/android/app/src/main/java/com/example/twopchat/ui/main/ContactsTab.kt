@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.VpnService
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import org.json.JSONArray
+import com.example.twopchat.GroupConversation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -1058,8 +1059,23 @@ fun ContactsTab(
                 onQrScanned = { scannedResult ->
                     showCameraScannerDialog = false
                     showQrPanel = false
-                    searchQuery = scannedResult
-                    performSearch(scannedResult)
+                    val trimmed = scannedResult.trim()
+                    if (trimmed.startsWith("2pchat://group/invite") || trimmed.contains("group/invite") || trimmed.contains("group_id=")) {
+                        val uri = android.net.Uri.parse(trimmed)
+                        val groupId = uri.getQueryParameter("id") ?: uri.getQueryParameter("groupId") ?: trimmed.substringAfter("id=", "").substringBefore("&")
+                        val token = uri.getQueryParameter("token").orEmpty()
+                        val peer = uri.getQueryParameter("peer").orEmpty()
+                        if (groupId.isNotBlank()) {
+                            if (token.isNotBlank()) {
+                                com.example.twopchat.group.runtime.GroupChatCoordinator.requestJoinFromInvite(groupId, token, peer)
+                            }
+                            onItemClick(GroupConversation(groupId))
+                            Toast.makeText(context, if (appLanguage == "Русский") "Вход в группу..." else "Joining group...", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        searchQuery = trimmed
+                        performSearch(trimmed)
+                    }
                 }
             )
         }
@@ -1374,11 +1390,8 @@ private fun CameraQrScannerOverlay(
                             .setBackpressureStrategy(androidx.camera.core.ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .build()
 
-                        val barcodeScanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient(
-                            com.google.mlkit.vision.barcode.BarcodeScannerOptions.Builder()
-                                .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
-                                .build()
-                        )
+                        val barcodeScanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient()
+                        val zxingReader = com.google.zxing.MultiFormatReader()
 
                         imageAnalysis.setAnalyzer(java.util.concurrent.Executors.newSingleThreadExecutor()) { imageProxy ->
                             val mediaImage = imageProxy.image
@@ -1389,16 +1402,37 @@ private fun CameraQrScannerOverlay(
                                 )
                                 barcodeScanner.process(inputImage)
                                     .addOnSuccessListener { barcodes ->
+                                        var found = false
                                         for (barcode in barcodes) {
-                                            val rawValue = barcode.rawValue ?: continue
+                                            val rawValue = barcode.rawValue ?: barcode.displayValue ?: continue
                                             if (rawValue.isNotBlank() && !hasScanned) {
                                                 hasScanned = true
+                                                found = true
                                                 (ctx as? android.app.Activity)?.runOnUiThread {
                                                     haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                                     onQrScanned(rawValue)
                                                 }
                                                 break
                                             }
+                                        }
+                                        if (!found && !hasScanned) {
+                                            try {
+                                                val buffer = mediaImage.planes[0].buffer
+                                                val bytes = ByteArray(buffer.remaining())
+                                                buffer.get(bytes)
+                                                val width = mediaImage.width
+                                                val height = mediaImage.height
+                                                val source = com.google.zxing.PlanarYUVLuminanceSource(bytes, width, height, 0, 0, width, height, false)
+                                                val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
+                                                val result = zxingReader.decode(binaryBitmap)
+                                                if (result != null && result.text.isNotBlank() && !hasScanned) {
+                                                    hasScanned = true
+                                                    (ctx as? android.app.Activity)?.runOnUiThread {
+                                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                                        onQrScanned(result.text)
+                                                    }
+                                                }
+                                            } catch (_: Exception) {}
                                         }
                                     }
                                     .addOnCompleteListener {

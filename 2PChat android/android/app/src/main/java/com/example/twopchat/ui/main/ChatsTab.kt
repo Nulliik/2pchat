@@ -468,18 +468,26 @@ fun ChatsTab(
                 items = groupSummaries,
                 key = { summary -> "group:${summary.groupId}" },
             ) { summary ->
+                val groupDraft = sharedPrefs.getString("draft_msg_group_${summary.groupId}", null)?.takeIf { it.isNotBlank() }
+                val hasGroupDraft = groupDraft != null
+                val draftPrefix = if (appLanguage == "Русский") "Черновик: " else "Draft: "
+                val lastMsgText = if (hasGroupDraft) {
+                    "$draftPrefix$groupDraft"
+                } else {
+                    summary.lastMessagePreview.ifBlank {
+                        if (appLanguage == "Русский") "Сообщений пока нет" else "No messages yet"
+                    }
+                }
                 Box(modifier = Modifier.padding(bottom = 10.dp)) {
                     PeerRow(
                         peer = PeerItem(
                             name = summary.title,
-                            lastMsg = summary.lastMessagePreview.ifBlank {
-                                if (appLanguage == "Русский") "Сообщений пока нет" else "No messages yet"
-                            },
+                            lastMsg = lastMsgText,
                             transport = "${summary.memberCount} MEMBERS",
                             isDirect = false,
                             initials = summary.title.take(2).uppercase(),
-                            avatarUri = summary.avatarUri,
                             unreadCount = summary.unreadCount,
+                            hasDraft = hasGroupDraft
                         ),
                         appLanguage = appLanguage,
                         primaryColor = primaryColor,
