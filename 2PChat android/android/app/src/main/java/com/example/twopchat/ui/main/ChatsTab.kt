@@ -457,11 +457,11 @@ fun ChatsTab(
             item(key = "groups_header") {
                 Text(
                     text = if (appLanguage == "Русский") "ГРУППЫ" else "GROUPS",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = onSurfaceVariant,
-                    letterSpacing = 1.2.sp,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 6.dp),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = onSurfaceVariant.copy(alpha = 0.7f),
+                    letterSpacing = 1.0.sp,
+                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
                 )
             }
             items(
@@ -505,11 +505,11 @@ fun ChatsTab(
         item(key = "chats_header") {
             Text(
                 text = activeHandshakesLabel,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = onSurfaceVariant,
-                letterSpacing = 1.2.sp,
-                modifier = Modifier.padding(top = 4.dp, bottom = 6.dp)
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = onSurfaceVariant.copy(alpha = 0.7f),
+                letterSpacing = 1.0.sp,
+                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
             )
         }
 

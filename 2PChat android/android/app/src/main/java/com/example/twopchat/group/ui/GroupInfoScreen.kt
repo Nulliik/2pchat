@@ -908,7 +908,7 @@ private fun GroupQuickActionsRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         val actions = buildList {
-            add(Triple("Чат", R.drawable.ic_send_airplane, onChatClick))
+            add(Triple("Чат", R.drawable.ic_menu_chats, onChatClick))
             add(Triple(if (isMuted) "Вкл. звук" else "Звук", R.drawable.ic_notifications, onToggleMuteClick))
             if (canInviteByLink) {
                 add(Triple("QR код", R.drawable.ic_qr_code, onQrClick))
@@ -1255,23 +1255,28 @@ private fun GroupMemberCard(
 
             Surface(
                 color = when (member.role) {
-                    GroupRole.OWNER -> Color(0xFFE53935).copy(alpha = 0.2f)
-                    GroupRole.ADMIN -> Color(0xFF1E88E5).copy(alpha = 0.2f)
-                    GroupRole.MODERATOR -> Color(0xFF43A047).copy(alpha = 0.2f)
-                    GroupRole.MEMBER -> Color.White.copy(alpha = 0.08f)
+                    GroupRole.OWNER -> Color(0xFFE5C158).copy(alpha = 0.15f)
+                    GroupRole.ADMIN -> Color(0xFF0A84FF).copy(alpha = 0.15f)
+                    GroupRole.MODERATOR -> Color(0xFF10B981).copy(alpha = 0.15f)
+                    GroupRole.MEMBER -> Color.White.copy(alpha = 0.06f)
                 },
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text(
-                    text = member.role.label,
+                    text = when (member.role) {
+                        GroupRole.OWNER -> "👑 ${member.role.label}"
+                        GroupRole.ADMIN -> "🛡️ ${member.role.label}"
+                        GroupRole.MODERATOR -> "⚡ ${member.role.label}"
+                        GroupRole.MEMBER -> member.role.label
+                    },
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = when (member.role) {
-                        GroupRole.OWNER -> Color(0xFFE53935)
-                        GroupRole.ADMIN -> Color(0xFF1E88E5)
-                        GroupRole.MODERATOR -> Color(0xFF43A047)
-                        GroupRole.MEMBER -> Color.Gray
+                        GroupRole.OWNER -> Color(0xFFE5C158)
+                        GroupRole.ADMIN -> Color(0xFF0A84FF)
+                        GroupRole.MODERATOR -> Color(0xFF10B981)
+                        GroupRole.MEMBER -> Color(0xFF8E929A)
                     }
                 )
             }
@@ -1633,7 +1638,7 @@ private fun GroupInfoDetailsCard(
                     modifier = Modifier.size(28.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.MoreVert,
+                        painter = painterResource(R.drawable.ic_copy),
                         contentDescription = "Copy Group ID",
                         tint = Color.Gray,
                         modifier = Modifier.size(16.dp)
