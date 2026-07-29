@@ -233,6 +233,7 @@ fun GroupInfoScreen(
             item(key = "hero_header") {
                 GroupHeroHeader(
                     metadata = state.metadata,
+                    canEditAvatar = state.management.canEditMetadata,
                     onAvatarClick = {
                         if (state.management.canEditMetadata) {
                             avatarPickerLauncher.launch(arrayOf("image/*"))
@@ -781,6 +782,7 @@ fun GroupInfoScreen(
 @Composable
 private fun GroupHeroHeader(
     metadata: GroupMetadata,
+    canEditAvatar: Boolean = false,
     onAvatarClick: () -> Unit
 ) {
     val initials = metadata.title.take(2).uppercase().ifBlank { "GP" }
@@ -793,7 +795,7 @@ private fun GroupHeroHeader(
     }
 
     val context = LocalContext.current
-    val avatarBitmap = remember(metadata.avatarUri) {
+    val avatarBitmap = remember(metadata.avatarUri, metadata.groupId) {
         metadata.avatarUri?.let { uriStr ->
             runCatching {
                 if (uriStr.startsWith("content://")) {
@@ -805,6 +807,9 @@ private fun GroupHeroHeader(
                     if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
                 }
             }.getOrNull()
+        } ?: run {
+            val f = File(context.filesDir, "group_avatars/${metadata.groupId}.jpg")
+            if (f.exists()) BitmapFactory.decodeFile(f.absolutePath) else null
         }
     }
 
@@ -827,7 +832,7 @@ private fun GroupHeroHeader(
                     .clip(CircleShape)
                     .border(2.dp, Color.White.copy(alpha = 0.8f), CircleShape)
                     .background(avatarColor)
-                    .clickable(onClick = onAvatarClick),
+                    .then(if (canEditAvatar) Modifier.clickable(onClick = onAvatarClick) else Modifier),
                 contentAlignment = Alignment.Center
             ) {
                 if (avatarBitmap != null) {
@@ -847,22 +852,24 @@ private fun GroupHeroHeader(
                 }
             }
 
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
-                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
-                    .clickable(onClick = onAvatarClick),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_attach_camera),
-                    contentDescription = "Change Avatar",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
+            if (canEditAvatar) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                        .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                        .clickable(onClick = onAvatarClick),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_attach_camera),
+                        contentDescription = "Change Avatar",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
 

@@ -1152,7 +1152,7 @@ private fun GroupChatHeader(
                 }
 
                 val context = LocalContext.current
-                val avatarBitmap = remember(state.avatarUri) {
+                val avatarBitmap = remember(state.avatarUri, state.groupId) {
                     state.avatarUri?.let { uriStr ->
                         runCatching {
                             if (uriStr.startsWith("content://")) {
@@ -1164,6 +1164,9 @@ private fun GroupChatHeader(
                                 if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
                             }
                         }.getOrNull()
+                    } ?: run {
+                        val f = File(context.filesDir, "group_avatars/${state.groupId}.jpg")
+                        if (f.exists()) BitmapFactory.decodeFile(f.absolutePath) else null
                     }
                 }
 
