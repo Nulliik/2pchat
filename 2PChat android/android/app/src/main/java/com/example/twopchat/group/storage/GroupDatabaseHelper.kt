@@ -972,6 +972,29 @@ class GroupDatabaseHelper(
         }
     }
 
+    /**
+     * Batch ingests multiple events within a single SQLite transaction,
+     * reducing disk I/O flushes from N transactions down to 1.
+     */
+    fun ingestEventsBatch(items: List<Pair<StoredGroupEvent, Boolean>>): Int {
+        if (items.isEmpty()) return 0
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            var count = 0
+            for ((event, countAsUnread) in items) {
+                validateEventForIngest(event)
+                if (insertAndMaterializeEvent(db, event, countAsUnread)) {
+                    count++
+                }
+            }
+            db.setTransactionSuccessful()
+            return count
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     fun getEvent(groupId: String, eventId: String): StoredGroupEvent? =
         readableDatabase.query(
             TABLE_EVENTS,

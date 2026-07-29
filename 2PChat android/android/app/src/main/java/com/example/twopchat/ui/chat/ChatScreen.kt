@@ -719,6 +719,9 @@ fun ChatScreen(
     }
 
     LaunchedEffect(inputText) {
+        if (inputText.isNotEmpty()) {
+            kotlinx.coroutines.delay(300)
+        }
         val draftKey = P2PPreferences.draftMessage(peerName)
         val currentDraft = sharedPrefs.getString(draftKey, null)
         if (inputText.isNotEmpty()) {

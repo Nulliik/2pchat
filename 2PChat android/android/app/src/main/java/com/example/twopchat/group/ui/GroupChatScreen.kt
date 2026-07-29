@@ -161,6 +161,17 @@ internal object GroupImageCache {
     fun put(key: String, bitmap: Bitmap) { cache.put(key, bitmap) }
 }
 
+private data class MediaFlags(
+    val isGif: Boolean,
+    val isSticker: Boolean,
+    val isImage: Boolean,
+    val isVideo: Boolean,
+    val isAudio: Boolean,
+    val isAttachmentPlaceholder: Boolean,
+    val shouldDisplayText: Boolean,
+    val isMediaOnly: Boolean,
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupChatScreen(
@@ -176,6 +187,9 @@ fun GroupChatScreen(
     }
 
     LaunchedEffect(draft) {
+        if (draft.isNotEmpty()) {
+            kotlinx.coroutines.delay(300)
+        }
         val currentDraft = sharedPrefs.getString(draftKey, null)
         if (draft.isNotEmpty()) {
             if (currentDraft != draft) {
@@ -1403,41 +1417,61 @@ private fun GroupMessageCard(
         }
 
         val attachment = message.attachment
-        val isGif = attachment != null && (
-            attachment.mimeType == "image/gif" ||
-            attachment.fileName.lowercase().endsWith(".gif")
-        )
-        val isSticker = attachment != null && (
-            attachment.mimeType.contains("sticker") ||
-            attachment.fileName.lowercase().contains("sticker") ||
-            StickerSupport.isStickerFileName(attachment.fileName)
-        )
-        val isImage = attachment != null && !isSticker && (
-            attachment.mimeType.startsWith("image/") ||
-            attachment.fileName.lowercase().run {
-                endsWith(".jpg") || endsWith(".jpeg") || endsWith(".png") || endsWith(".webp")
-            }
-        )
-        val isVideo = attachment != null && (
-            attachment.mimeType.startsWith("video/") ||
-            attachment.fileName.lowercase().run {
-                endsWith(".mp4") || endsWith(".mkv") || endsWith(".mov") || endsWith(".avi")
-            }
-        )
-        val isAudio = attachment != null && (
-            attachment.mimeType.startsWith("audio/") ||
-            attachment.fileName.lowercase().run {
-                endsWith(".m4a") || endsWith(".aac") || endsWith(".mp3") || endsWith(".wav") || endsWith(".ogg")
-            }
-        )
+        val mediaFlags = remember(attachment?.fileName, attachment?.mimeType, message.text) {
+            val isGif = attachment != null && (
+                attachment.mimeType == "image/gif" ||
+                attachment.fileName.lowercase().endsWith(".gif")
+            )
+            val isSticker = attachment != null && (
+                attachment.mimeType.contains("sticker") ||
+                attachment.fileName.lowercase().contains("sticker") ||
+                StickerSupport.isStickerFileName(attachment.fileName)
+            )
+            val isImage = attachment != null && !isSticker && (
+                attachment.mimeType.startsWith("image/") ||
+                attachment.fileName.lowercase().run {
+                    endsWith(".jpg") || endsWith(".jpeg") || endsWith(".png") || endsWith(".webp")
+                }
+            )
+            val isVideo = attachment != null && (
+                attachment.mimeType.startsWith("video/") ||
+                attachment.fileName.lowercase().run {
+                    endsWith(".mp4") || endsWith(".mkv") || endsWith(".mov") || endsWith(".avi")
+                }
+            )
+            val isAudio = attachment != null && (
+                attachment.mimeType.startsWith("audio/") ||
+                attachment.fileName.lowercase().run {
+                    endsWith(".m4a") || endsWith(".aac") || endsWith(".mp3") || endsWith(".wav") || endsWith(".ogg")
+                }
+            )
+            val isAttachmentPlaceholder = attachment != null && (
+                message.text.startsWith("attachment-") ||
+                message.text == attachment.fileName ||
+                isSticker
+            )
+            val shouldDisplayText = message.text.isNotEmpty() && !isAttachmentPlaceholder && !isSticker
+            val isMediaOnly = attachment != null && (!shouldDisplayText || isSticker) && (isImage || isGif || isSticker)
 
-        val isAttachmentPlaceholder = attachment != null && (
-            message.text.startsWith("attachment-") ||
-            message.text == attachment.fileName ||
-            isSticker
-        )
-        val shouldDisplayText = message.text.isNotEmpty() && !isAttachmentPlaceholder && !isSticker
-        val isMediaOnly = attachment != null && (!shouldDisplayText || isSticker) && (isImage || isGif || isSticker)
+            MediaFlags(
+                isGif = isGif,
+                isSticker = isSticker,
+                isImage = isImage,
+                isVideo = isVideo,
+                isAudio = isAudio,
+                isAttachmentPlaceholder = isAttachmentPlaceholder,
+                shouldDisplayText = shouldDisplayText,
+                isMediaOnly = isMediaOnly
+            )
+        }
+        val isGif = mediaFlags.isGif
+        val isSticker = mediaFlags.isSticker
+        val isImage = mediaFlags.isImage
+        val isVideo = mediaFlags.isVideo
+        val isAudio = mediaFlags.isAudio
+        val isAttachmentPlaceholder = mediaFlags.isAttachmentPlaceholder
+        val shouldDisplayText = mediaFlags.shouldDisplayText
+        val isMediaOnly = mediaFlags.isMediaOnly
 
         Surface(
             shape = if (isSticker) RoundedCornerShape(0.dp) else bubbleShape,
