@@ -325,42 +325,36 @@ object GroupChatCoordinator {
         }
         scope.launch {
             val context = applicationContext
-            // Persist avatar to internal storage and encode for wire transport
             val (persistedPath, avatarData) = if (avatarUri != null && context != null) {
                 runCatching {
-                    val bytes = if (avatarUri.startsWith("content://")) {
-                        context.contentResolver.openInputStream(Uri.parse(avatarUri))?.use { it.readBytes() }
+                    val bmp = if (avatarUri.startsWith("content://")) {
+                        context.contentResolver.openInputStream(Uri.parse(avatarUri))?.use { stream ->
+                            android.graphics.BitmapFactory.decodeStream(stream)
+                        }
                     } else {
                         val f = File(avatarUri)
-                        if (f.exists()) f.readBytes() else null
+                        if (f.exists()) android.graphics.BitmapFactory.decodeFile(f.absolutePath) else null
                     }
-                    if (bytes != null && bytes.size <= 512 * 1024) {
-                        // Scale down if needed and save to internal storage
+                    if (bmp != null) {
+                        val maxDim = 512
+                        val scaledBmp = if (bmp.width > maxDim || bmp.height > maxDim) {
+                            val scale = maxDim.toFloat() / Math.max(bmp.width, bmp.height)
+                            android.graphics.Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true)
+                        } else {
+                            bmp
+                        }
                         val avatarsDir = File(context.filesDir, "group_avatars").also { it.mkdirs() }
                         val destFile = File(avatarsDir, "${groupId}.jpg")
-                        // Decode-compress to JPEG ≤ 200 KB for wire
-                        val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                        if (bmp != null) {
-                            val out = java.io.ByteArrayOutputStream()
-                            bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, out)
-                            val compressed = out.toByteArray()
-                            destFile.writeBytes(compressed)
-                            destFile.absolutePath to Base64.encodeToString(compressed, Base64.NO_WRAP)
-                        } else null to null
+                        val out = java.io.ByteArrayOutputStream()
+                        scaledBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 75, out)
+                        val compressed = out.toByteArray()
+                        destFile.writeBytes(compressed)
+                        val b64 = Base64.encodeToString(compressed, Base64.NO_WRAP)
+                        destFile.absolutePath to b64
                     } else null to null
                 }.getOrElse { null to null }
-            } else if (avatarUri != null) {
-                // Already a file path — just re-encode
-                runCatching {
-                    val f = File(avatarUri)
-                    if (f.exists()) {
-                        val bytes = f.readBytes()
-                        avatarUri to Base64.encodeToString(bytes, Base64.NO_WRAP)
-                    } else null to null
-                }.getOrElse { null to null }
-            } else {
-                null to null
-            }
+            } else null to null
+
             requestSerializedControl(
                 groupId,
                 "update_info",

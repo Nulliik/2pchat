@@ -487,7 +487,8 @@ fun ChatsTab(
                             isDirect = false,
                             initials = summary.title.take(2).uppercase(),
                             unreadCount = summary.unreadCount,
-                            hasDraft = hasGroupDraft
+                            hasDraft = hasGroupDraft,
+                            avatarUri = summary.avatarUri
                         ),
                         appLanguage = appLanguage,
                         primaryColor = primaryColor,
