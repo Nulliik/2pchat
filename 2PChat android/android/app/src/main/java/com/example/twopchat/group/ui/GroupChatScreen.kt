@@ -739,17 +739,40 @@ fun GroupChatScreen(
             }
 
             // Floating Scroll-to-Bottom Button with Unread Badge
-            val scrollInfo by remember {
+            var newMessagesBelowCount by remember { mutableIntStateOf(0) }
+            var previousMessageCount by remember { mutableIntStateOf(state.messages.size) }
+
+            val isAtBottom by remember {
                 derivedStateOf {
                     val total = listState.layoutInfo.totalItemsCount
                     val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                    val shouldShow = total > 0 && lastVisible < total - 2
-                    val unread = (total - 1 - lastVisible).coerceAtLeast(0)
-                    Pair(shouldShow, unread)
+                    total == 0 || lastVisible >= total - 2
                 }
             }
-            val showScrollToBottomButton = scrollInfo.first
-            val unreadCount = scrollInfo.second
+
+            val showScrollToBottomButton by remember {
+                derivedStateOf {
+                    val total = listState.layoutInfo.totalItemsCount
+                    val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                    total > 0 && lastVisible < total - 2
+                }
+            }
+
+            LaunchedEffect(state.messages.size) {
+                val newSize = state.messages.size
+                if (newSize > previousMessageCount) {
+                    if (!isAtBottom) {
+                        newMessagesBelowCount += (newSize - previousMessageCount)
+                    }
+                }
+                previousMessageCount = newSize
+            }
+
+            LaunchedEffect(isAtBottom) {
+                if (isAtBottom) {
+                    newMessagesBelowCount = 0
+                }
+            }
 
             androidx.compose.animation.AnimatedVisibility(
                 visible = showScrollToBottomButton && state.messages.isNotEmpty(),
@@ -768,6 +791,7 @@ fun GroupChatScreen(
                         modifier = Modifier
                             .size(44.dp)
                             .clickable {
+                                newMessagesBelowCount = 0
                                 coroutineScope.launch {
                                     val target = listState.layoutInfo.totalItemsCount - 1
                                     if (target >= 0) {
@@ -789,7 +813,7 @@ fun GroupChatScreen(
                         }
                     }
 
-                    if (unreadCount > 0) {
+                    if (newMessagesBelowCount > 0) {
                         Surface(
                             color = primaryColor,
                             shape = CircleShape,
@@ -798,7 +822,7 @@ fun GroupChatScreen(
                                 .offset(x = 4.dp, y = (-4).dp)
                         ) {
                             Text(
-                                text = if (unreadCount > 99) "99+" else "$unreadCount",
+                                text = if (newMessagesBelowCount > 99) "99+" else "$newMessagesBelowCount",
                                 color = Color.White,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
@@ -2416,24 +2440,19 @@ private fun GroupComposer(
 
 @Composable
 private fun RoleBadge(role: GroupRole) {
-    val (badgeColor, textColor, icon) = when (role) {
-        GroupRole.OWNER -> Triple(Color(0xFFE53935), Color.White, "👑 ")
-        GroupRole.ADMIN -> Triple(Color(0xFF1E88E5), Color.White, "⭐ ")
-        GroupRole.MODERATOR -> Triple(Color(0xFF43A047), Color.White, "🛡️ ")
-        GroupRole.MEMBER -> Triple(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant, "")
+    if (role == GroupRole.MEMBER) return
+    val labelColor = when (role) {
+        GroupRole.OWNER -> Color(0xFFE53935)
+        GroupRole.ADMIN -> Color(0xFF1E88E5)
+        GroupRole.MODERATOR -> Color(0xFF43A047)
+        GroupRole.MEMBER -> MaterialTheme.colorScheme.onSurfaceVariant
     }
-    Surface(
-        color = badgeColor,
-        shape = RoundedCornerShape(6.dp)
-    ) {
-        Text(
-            "$icon${role.label}",
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            color = textColor
-        )
-    }
+    Text(
+        "· ${role.label}",
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = labelColor
+    )
 }
 
 private fun syncStatusColor(status: GroupSyncStatus): Color = when (status) {
