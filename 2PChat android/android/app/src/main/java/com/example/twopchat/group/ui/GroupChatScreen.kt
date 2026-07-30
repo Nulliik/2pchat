@@ -694,7 +694,11 @@ fun GroupChatScreen(
                     }
                 }
 
-                items(state.messages, key = GroupTimelineMessage::messageId) { message ->
+                items(
+                    items = state.messages,
+                    key = GroupTimelineMessage::messageId,
+                    contentType = { if (it.attachment != null) "MEDIA_${it.attachment.mimeType}" else "TEXT" }
+                ) { message ->
                     SwipeToReplyContainer(
                         onReply = {
                             if (message.canReply) {
@@ -2106,36 +2110,38 @@ private fun GroupMessageCard(
                             }
                         }
                         else -> {
-                            val imageBitmap = remember(att.localPath, att.fileName, att.isDownloaded) {
+                            val imageBitmap by produceState<Bitmap?>(initialValue = GroupImageCache.get(localPath), key1 = localPath, key2 = att.isDownloaded) {
+                                if (value != null) return@produceState
                                 if (isImage || isGif) {
-                                    val cached = GroupImageCache.get(localPath)
-                                    if (cached != null) return@remember cached
-                                    runCatching {
-                                        val decoded = if (localPath.startsWith("content://")) {
-                                            context.contentResolver.openInputStream(Uri.parse(localPath))?.use { stream ->
-                                                val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-                                                BitmapFactory.decodeStream(stream, null, opts)
+                                    value = withContext(Dispatchers.IO) {
+                                        runCatching {
+                                            val decoded = if (localPath.startsWith("content://")) {
+                                                context.contentResolver.openInputStream(Uri.parse(localPath))?.use { stream ->
+                                                    val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                                                    BitmapFactory.decodeStream(stream, null, opts)
+                                                }
+                                            } else {
+                                                val file = File(localPath)
+                                                if (file.exists()) {
+                                                    val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                                                    BitmapFactory.decodeFile(file.absolutePath, opts)
+                                                } else null
                                             }
-                                        } else {
-                                            val file = File(localPath)
-                                            if (file.exists()) {
-                                                val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-                                                BitmapFactory.decodeFile(file.absolutePath, opts)
-                                            } else null
-                                        }
-                                        decoded?.also { GroupImageCache.put(localPath, it) }
-                                    }.getOrNull()
-                                } else null
+                                            decoded?.also { GroupImageCache.put(localPath, it) }
+                                        }.getOrNull()
+                                    }
+                                }
                             }
 
-                            if (imageBitmap != null) {
+                            val loadedBmp = imageBitmap
+                            if (loadedBmp != null) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .testTag("attachment_${message.messageId}")
                                 ) {
                                     Image(
-                                        bitmap = imageBitmap.asImageBitmap(),
+                                        bitmap = loadedBmp.asImageBitmap(),
                                         contentDescription = att.fileName,
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier

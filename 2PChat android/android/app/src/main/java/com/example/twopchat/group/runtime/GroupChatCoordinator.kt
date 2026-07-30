@@ -3872,8 +3872,9 @@ object GroupChatCoordinator {
                     latestPollVotes[requireNotNull(vote.targetEventId) to vote.authorDeviceId] = optionId
                 }
             }
+        val eventMap = events.associateBy { it.eventId }
         val timeline = messagesNewest.asReversed().map { message ->
-            val event = db().getEvent(groupId, message.messageId)
+            val event = eventMap[message.messageId] ?: db().getEvent(groupId, message.messageId)
             val author = memberByDevice[message.authorDeviceId]
             val authorPolicy = author?.toPolicyMember()
             val localPolicy = localMember?.takeIf { it.isParticipating() }?.toPolicyMember()
