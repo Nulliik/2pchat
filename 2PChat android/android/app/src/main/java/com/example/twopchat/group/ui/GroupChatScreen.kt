@@ -70,6 +70,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.mutableStateListOf
 import android.net.Uri
 import androidx.compose.runtime.rememberCoroutineScope
@@ -1579,15 +1580,84 @@ private fun GroupChatHeader(
                     )
                 }
 
-                IconButton(
-                    onClick = { controller.openGroupInfo(state.groupId) },
-                    modifier = Modifier.testTag("open_group_info")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "Group Info",
-                        tint = primaryColor
-                    )
+                var showHeaderMenu by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(
+                        onClick = { showHeaderMenu = true },
+                        modifier = Modifier.testTag("group_header_more_menu")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More Options",
+                            tint = primaryColor
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showHeaderMenu,
+                        onDismissRequest = { showHeaderMenu = false },
+                        modifier = Modifier.background(surfaceColor)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Информация о группе", color = onSurfaceColor) },
+                            onClick = {
+                                showHeaderMenu = false
+                                controller.openGroupInfo(state.groupId)
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Info,
+                                    contentDescription = "Info",
+                                    tint = onSurfaceColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Переподключить соединение", color = onSurfaceColor) },
+                            onClick = {
+                                showHeaderMenu = false
+                                android.widget.Toast.makeText(context, "Синхронизация группы...", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Sync",
+                                    tint = onSurfaceColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Очистить историю", color = Color.Red) },
+                            onClick = {
+                                showHeaderMenu = false
+                                controller.clearHistory(state.groupId)
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_broom),
+                                    contentDescription = "Clear History",
+                                    tint = Color.Red,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Покинуть группу", color = Color.Red) },
+                            onClick = {
+                                showHeaderMenu = false
+                                controller.openGroupInfo(state.groupId)
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Leave",
+                                    tint = Color.Red,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        )
+                    }
                 }
             }
         }

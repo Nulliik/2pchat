@@ -32,6 +32,9 @@ import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.PythonBridge
 import com.example.twopchat.ui.common.QrCodeImage
 import com.example.twopchat.ui.main.buildContactQrPayload
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -97,6 +100,7 @@ fun GroupInfoScreen(
     var transferConfirmation by remember { mutableStateOf<GroupMember?>(null) }
     var showLeaveConfirmation by remember { mutableStateOf(false) }
     var showClearHistoryConfirmation by remember { mutableStateOf(false) }
+    var showTopMenu by remember { mutableStateOf(false) }
     var showEditMetadata by remember { mutableStateOf(false) }
     var showInviteMembers by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) } // 0: Участники, 1: Медиа, 2: Избранное, 3: Файлы
@@ -215,15 +219,87 @@ fun GroupInfoScreen(
                         )
                     }
                 }
-                IconButton(
-                    onClick = { showLeaveConfirmation = true },
-                    modifier = Modifier.testTag("leave_group_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "More",
-                        tint = onSurfaceColor
-                    )
+                Box {
+                    IconButton(
+                        onClick = { showTopMenu = true },
+                        modifier = Modifier.testTag("leave_group_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More Options",
+                            tint = onSurfaceColor
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showTopMenu,
+                        onDismissRequest = { showTopMenu = false },
+                        modifier = Modifier.background(surfaceColor)
+                    ) {
+                        if (state.management.canEditMetadata) {
+                            DropdownMenuItem(
+                                text = { Text("Редактировать группу", color = onSurfaceColor) },
+                                onClick = {
+                                    showTopMenu = false
+                                    showEditMetadata = true
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_edit),
+                                        contentDescription = "Edit",
+                                        tint = onSurfaceColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text(if (isMuted) "Включить уведомления" else "Выключить уведомления", color = onSurfaceColor) },
+                            onClick = {
+                                showTopMenu = false
+                                val newMuted = !isMuted
+                                P2PPreferences.prefs(context).edit().putBoolean("mute_group_${state.metadata.groupId}", newMuted).apply()
+                                isMuted = newMuted
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    painter = painterResource(if (isMuted) R.drawable.ic_notifications else R.drawable.ic_notifications_off),
+                                    contentDescription = "Mute",
+                                    tint = onSurfaceColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Очистить историю", color = Color.Red) },
+                            onClick = {
+                                showTopMenu = false
+                                showClearHistoryConfirmation = true
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_broom),
+                                    contentDescription = "Clear History",
+                                    tint = Color.Red,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (isSoloOwner) "Удалить группу" else "Покинуть группу", color = Color.Red) },
+                            onClick = {
+                                showTopMenu = false
+                                showLeaveConfirmation = true
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Leave",
+                                    tint = Color.Red,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        )
+                    }
                 }
             }
         }
