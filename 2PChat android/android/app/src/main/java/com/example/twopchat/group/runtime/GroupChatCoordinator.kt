@@ -494,11 +494,19 @@ object GroupChatCoordinator {
             }
             val staged = stageAttachment(Uri.parse(uri)) ?: return@launch
             try {
+                val finalMime = mimeType?.takeIf { it.isNotBlank() && it != "application/octet-stream" }
+                    ?: staged.mimeType
+                    ?: when {
+                        staged.file.name.endsWith(".jpg", true) || staged.file.name.endsWith(".jpeg", true) -> "image/jpeg"
+                        staged.file.name.endsWith(".png", true) -> "image/png"
+                        staged.file.name.endsWith(".webp", true) -> "image/webp"
+                        staged.file.name.endsWith(".gif", true) -> "image/gif"
+                        staged.file.name.endsWith(".mp4", true) -> "video/mp4"
+                        else -> "application/octet-stream"
+                    }
                 val manifest = attachmentStore(groupId).encrypt(
                     staged.file,
-                    mimeType?.takeIf { it.isNotBlank() }
-                        ?: staged.mimeType
-                        ?: "application/octet-stream",
+                    finalMime,
                 )
                 val manifestJson = manifest.toJson()
                 if (
@@ -532,11 +540,87 @@ object GroupChatCoordinator {
         }
     }
 
+    fun sendMediaAlbum(groupId: String, uris: List<String>, mimeTypes: List<String>, caption: String? = null) {
+        if (uris.isEmpty()) return
+        if (uris.size == 1) {
+            sendAttachment(groupId, uris.first(), mimeTypes.firstOrNull(), caption)
+            return
+        }
+        if (chatFlows[groupId]?.value?.mediaComposerEnabled != true) return
+        scope.launch {
+            val group = db().getGroup(groupId) ?: return@launch
+            val local = db().getMember(groupId, group.localDeviceId) ?: return@launch
+            if (
+                !local.isParticipating() ||
+                !GroupRolePolicy.canPerform(
+                    local.toPolicyMember(),
+                    GroupAction.POST_MEDIA,
+                ).allowed
+            ) {
+                return@launch
+            }
+            val stagedList = mutableListOf<StagedAttachment>()
+            val manifests = mutableListOf<GroupAttachmentManifest>()
+            try {
+                for ((idx, uriStr) in uris.withIndex()) {
+                    val staged = stageAttachment(Uri.parse(uriStr)) ?: continue
+                    stagedList.add(staged)
+                    val paramMime = mimeTypes.getOrNull(idx)
+                    val finalMime = paramMime?.takeIf { it.isNotBlank() && it != "application/octet-stream" }
+                        ?: staged.mimeType
+                        ?: when {
+                            staged.file.name.endsWith(".jpg", true) || staged.file.name.endsWith(".jpeg", true) -> "image/jpeg"
+                            staged.file.name.endsWith(".png", true) -> "image/png"
+                            staged.file.name.endsWith(".webp", true) -> "image/webp"
+                            staged.file.name.endsWith(".gif", true) -> "image/gif"
+                            staged.file.name.endsWith(".mp4", true) -> "video/mp4"
+                            else -> "application/octet-stream"
+                        }
+                    val manifest = attachmentStore(groupId).encrypt(staged.file, finalMime)
+                    manifests.add(manifest)
+                }
+                if (manifests.isEmpty()) return@launch
+
+                val manifestsJsonArray = JSONArray()
+                manifests.forEach { manifestsJsonArray.put(it.toJson()) }
+
+                val eventText = if (!caption.isNullOrBlank()) caption.trim() else "Альбом (${manifests.size})"
+                val event = emitEvent(
+                    groupId,
+                    GroupEventKind.MEDIA,
+                    JSONObject().apply {
+                        put("text", eventText)
+                        put("attachments", manifestsJsonArray)
+                        put("attachment", manifests.first().toJson())
+                    },
+                )
+                if (event != null) {
+                    for (manifest in manifests) {
+                        attachmentManifests[attachmentManifestKey(groupId, event.eventId)] = manifest
+                        assembleAttachmentIfComplete(groupId, event.eventId, manifest)
+                    }
+                    refreshGroup(groupId)
+                } else {
+                    for (manifest in manifests) {
+                        attachmentStore(groupId).discard(manifest)
+                    }
+                }
+            } finally {
+                for (staged in stagedList) {
+                    staged.directory.deleteRecursively()
+                }
+            }
+        }
+    }
+
     fun downloadAttachment(groupId: String, messageId: String) {
         scope.launch {
-            val manifest = loadAttachmentManifest(groupId, messageId) ?: return@launch
-            if (!assembleAttachmentIfComplete(groupId, messageId, manifest)) {
-                requestMissingAttachmentBlocks(groupId, messageId, manifest)
+            val manifests = loadAttachmentManifests(groupId, messageId)
+            if (manifests.isEmpty()) return@launch
+            for (manifest in manifests) {
+                if (!assembleAttachmentIfComplete(groupId, messageId, manifest)) {
+                    requestMissingAttachmentBlocks(groupId, messageId, manifest)
+                }
             }
             refreshGroup(groupId)
         }
@@ -1964,19 +2048,29 @@ object GroupChatCoordinator {
         }
         if (inserted) replicateStoredEvent(group, event, json, senderPeerName)
         if (inserted && event.kind == GroupEventKind.MEDIA && shouldSeedAttachment(group, stored)) {
-            payload.optJSONObject("attachment")?.let { manifestJson ->
-                runCatching { GroupAttachmentManifest.fromJson(manifestJson) }
-                    .onSuccess { manifest ->
-                        attachmentManifests[
-                            attachmentManifestKey(group.groupId, event.eventId)
-                        ] = manifest
-                        requestMissingAttachmentBlocks(
-                            group.groupId,
-                            event.eventId,
-                            manifest,
-                            preferredPeerName = senderPeerName,
-                        )
+            val manifestsToSeed = mutableListOf<GroupAttachmentManifest>()
+            payload.optJSONArray("attachments")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    arr.optJSONObject(i)?.let { json ->
+                        runCatching { GroupAttachmentManifest.fromJson(json) }.getOrNull()?.let { manifestsToSeed.add(it) }
                     }
+                }
+            }
+            if (manifestsToSeed.isEmpty()) {
+                payload.optJSONObject("attachment")?.let { manifestJson ->
+                    runCatching { GroupAttachmentManifest.fromJson(manifestJson) }.getOrNull()?.let { manifestsToSeed.add(it) }
+                }
+            }
+            for (manifest in manifestsToSeed) {
+                attachmentManifests[
+                    attachmentManifestKey(group.groupId, event.eventId)
+                ] = manifest
+                requestMissingAttachmentBlocks(
+                    group.groupId,
+                    event.eventId,
+                    manifest,
+                    preferredPeerName = senderPeerName,
+                )
             }
         }
         refreshGroup(group.groupId)
@@ -3901,8 +3995,8 @@ object GroupChatCoordinator {
                     )
                 }
             }
-            val attachment = if (!message.deleted && event?.kind == GroupEventKind.MEDIA.name) {
-                loadAttachmentManifest(groupId, message.messageId)?.let { manifest ->
+            val attachmentsUi = if (!message.deleted && event?.kind == GroupEventKind.MEDIA.name) {
+                loadAttachmentManifests(groupId, message.messageId).map { manifest ->
                     val missing = attachmentStore(groupId).missingBlocks(manifest)
                     val destination = attachmentDestination(groupId, manifest)
                     if (!destination.exists() && missing.isEmpty()) {
@@ -3924,8 +4018,9 @@ object GroupChatCoordinator {
                     )
                 }
             } else {
-                null
+                emptyList()
             }
+            val attachment = if (attachmentsUi.size == 1) attachmentsUi.first() else null
             val poll = if (!message.deleted && event?.kind == GroupEventKind.POLL.name) {
                 runCatching {
                     val payload = JSONObject(message.body)
@@ -3965,6 +4060,7 @@ object GroupChatCoordinator {
                 isEdited = message.edited,
                 isPinned = group.pinnedEventId == message.messageId,
                 attachment = attachment,
+                attachments = attachmentsUi,
                 replyTo = reply,
                 reactions = reactions,
                 deliveryStatus = deliveryStatus(group, message),
@@ -4832,9 +4928,32 @@ object GroupChatCoordinator {
                     }
                 } ?: uri.lastPathSegment
             }
-            val safeName = File(displayName.orEmpty()).name
-                .take(200)
-                .ifBlank { "attachment-${UUID.randomUUID()}" }
+            var rawName = File(displayName.orEmpty()).name
+            if (rawName.startsWith("sent_file_")) {
+                rawName = rawName.replaceFirst(Regex("^sent_file_\\d+_[a-f0-9]+_"), "")
+            }
+            val mimeFromResolver = resolver.getType(uri)
+            val inferredMime = mimeFromResolver ?: when {
+                rawName.endsWith(".jpg", true) || rawName.endsWith(".jpeg", true) -> "image/jpeg"
+                rawName.endsWith(".png", true) -> "image/png"
+                rawName.endsWith(".webp", true) -> "image/webp"
+                rawName.endsWith(".gif", true) -> "image/gif"
+                rawName.endsWith(".mp4", true) -> "video/mp4"
+                rawName.endsWith(".m4a", true) -> "audio/m4a"
+                else -> null
+            }
+            if (!rawName.contains(".") && inferredMime != null) {
+                val ext = when {
+                    inferredMime.startsWith("image/jpeg") -> ".jpg"
+                    inferredMime.startsWith("image/png") -> ".png"
+                    inferredMime.startsWith("image/webp") -> ".webp"
+                    inferredMime.startsWith("image/gif") -> ".gif"
+                    inferredMime.startsWith("video/") -> ".mp4"
+                    else -> ""
+                }
+                rawName += ext
+            }
+            val safeName = rawName.take(200).ifBlank { "attachment-${UUID.randomUUID()}" }
             val directory = File(
                 context.cacheDir,
                 "group-upload-${UUID.randomUUID()}",
@@ -4858,11 +4977,43 @@ object GroupChatCoordinator {
             StagedAttachment(
                 directory = directory,
                 file = destination,
-                mimeType = resolver.getType(uri),
+                mimeType = inferredMime,
             )
         }.onFailure {
             Log.w(TAG, "Could not stage group attachment: ${it.message}")
         }.getOrNull()
+    }
+
+    private fun loadAttachmentManifests(
+        groupId: String,
+        eventId: String,
+    ): List<GroupAttachmentManifest> {
+        val stored = db().getEvent(groupId, eventId)
+            ?.takeIf { it.kind == GroupEventKind.MEDIA.name }
+            ?: return emptyList()
+        val wire = stored.payload?.let {
+            runCatching {
+                GroupWireProtocol.parseEvent(JSONObject(it.toString(Charsets.UTF_8)))
+            }.getOrNull()
+        } ?: return emptyList()
+        val key = db().getEpochKey(groupId, wire.epoch) ?: return emptyList()
+        return runCatching {
+            val payload = eventFactory.decrypt(wire, key.keyMaterial)
+            val list = mutableListOf<GroupAttachmentManifest>()
+            val attachmentsArr = payload.optJSONArray("attachments")
+            if (attachmentsArr != null && attachmentsArr.length() > 0) {
+                for (i in 0 until attachmentsArr.length()) {
+                    attachmentsArr.optJSONObject(i)?.let { json ->
+                        list.add(GroupAttachmentManifest.fromJson(json))
+                    }
+                }
+            } else {
+                payload.optJSONObject("attachment")?.let { json ->
+                    list.add(GroupAttachmentManifest.fromJson(json))
+                }
+            }
+            list
+        }.getOrDefault(emptyList())
     }
 
     private fun loadAttachmentManifest(
@@ -4871,23 +5022,8 @@ object GroupChatCoordinator {
     ): GroupAttachmentManifest? {
         val cacheKey = attachmentManifestKey(groupId, eventId)
         attachmentManifests[cacheKey]?.let { return it }
-        val stored = db().getEvent(groupId, eventId)
-            ?.takeIf { it.kind == GroupEventKind.MEDIA.name }
-            ?: return null
-        val wire = stored.payload?.let {
-            runCatching {
-                GroupWireProtocol.parseEvent(JSONObject(it.toString(Charsets.UTF_8)))
-            }.getOrNull()
-        } ?: return null
-        val key = db().getEpochKey(groupId, wire.epoch) ?: return null
-        return runCatching {
-            val payload = eventFactory.decrypt(wire, key.keyMaterial)
-            GroupAttachmentManifest.fromJson(
-                payload.optJSONObject("attachment")
-                    ?: throw IllegalArgumentException("media event has no attachment manifest"),
-            )
-        }.onSuccess { attachmentManifests[cacheKey] = it }
-            .getOrNull()
+        val manifests = loadAttachmentManifests(groupId, eventId)
+        return manifests.firstOrNull()?.also { attachmentManifests[cacheKey] = it }
     }
 
     private fun assembleAttachmentIfComplete(

@@ -908,14 +908,25 @@ fun GroupChatScreen(
 }
 
     val allGroupImages = remember(state.messages) {
-        state.messages.mapNotNull { msg ->
-            val att = msg.attachment
-            if (att != null) {
-                val p = att.localPath ?: att.fileName
-                if (p.isNotBlank() && (att.mimeType.startsWith("image/") || p.endsWith(".jpg", true) || p.endsWith(".jpeg", true) || p.endsWith(".png", true) || p.endsWith(".webp", true))) {
-                    p
-                } else null
-            } else null
+        state.messages.flatMap { msg ->
+            val list = mutableListOf<String>()
+            if (msg.attachments.size > 1) {
+                msg.attachments.forEach { att ->
+                    val p = att.localPath ?: att.fileName
+                    if (p.isNotBlank() && (att.mimeType.startsWith("image/") || p.endsWith(".jpg", true) || p.endsWith(".jpeg", true) || p.endsWith(".png", true) || p.endsWith(".webp", true))) {
+                        list.add(p)
+                    }
+                }
+            } else {
+                val att = msg.attachment
+                if (att != null) {
+                    val p = att.localPath ?: att.fileName
+                    if (p.isNotBlank() && (att.mimeType.startsWith("image/") || p.endsWith(".jpg", true) || p.endsWith(".jpeg", true) || p.endsWith(".png", true) || p.endsWith(".webp", true))) {
+                        list.add(p)
+                    }
+                }
+            }
+            list
         }
     }
 
@@ -1303,15 +1314,26 @@ fun GroupChatScreen(
                 pendingAlbumTypes = null
                 coroutineScope.launch {
                     val cleanCaption = caption.trim().takeIf { it.isNotBlank() }
-                    for ((idx, file) in finalFiles.withIndex()) {
-                        val itemCaption = if (idx == 0) cleanCaption else null
-                        val mime = types.getOrNull(idx) ?: "IMAGE"
+                    if (finalFiles.size == 1) {
+                        val file = finalFiles.first()
+                        val mime = types.firstOrNull() ?: "IMAGE"
                         val fileMime = when (mime) {
                             "VIDEO" -> "video/mp4"
                             GifStorageManager.ATTACHMENT_TYPE -> "image/gif"
                             else -> if (file.name.endsWith(".jpg", true) || file.name.endsWith(".jpeg", true)) "image/jpeg" else "image/png"
                         }
-                        controller.sendAttachment(state.groupId, Uri.fromFile(file).toString(), fileMime, itemCaption)
+                        controller.sendAttachment(state.groupId, Uri.fromFile(file).toString(), fileMime, cleanCaption)
+                    } else if (finalFiles.size > 1) {
+                        val uris = finalFiles.map { Uri.fromFile(it).toString() }
+                        val mimes = finalFiles.mapIndexed { idx, file ->
+                            val mime = types.getOrNull(idx) ?: "IMAGE"
+                            when (mime) {
+                                "VIDEO" -> "video/mp4"
+                                GifStorageManager.ATTACHMENT_TYPE -> "image/gif"
+                                else -> if (file.name.endsWith(".jpg", true) || file.name.endsWith(".jpeg", true)) "image/jpeg" else "image/png"
+                            }
+                        }
+                        controller.sendMediaAlbum(state.groupId, uris, mimes, cleanCaption)
                     }
                 }
             }
@@ -2016,8 +2038,18 @@ private fun GroupMessageCard(
                     )
                 }
 
-                // Attachment & Rich Media Rendering (GIFs, Stickers, Photos, Videos)
-                attachment?.let { att ->
+                // Attachment & Rich Media Rendering (GIFs, Stickers, Photos, Videos, Albums)
+                if (message.attachments.size > 1) {
+                    GroupMediaAlbumBubble(
+                        groupId = groupId,
+                        message = message,
+                        controller = controller,
+                        onMediaClick = onMediaClick,
+                        primaryColor = primaryColor,
+                        surfaceColor = surfaceColor,
+                        onSurfaceColor = onSurfaceColor
+                    )
+                } else attachment?.let { att ->
                     val context = LocalContext.current
                     val localPath = att.localPath ?: att.fileName
 
@@ -2652,4 +2684,194 @@ private fun CreatePollDialog(
             TextButton(onClick = onDismiss) { Text("Отмена") }
         }
     )
+}
+
+@Composable
+private fun GroupMediaAlbumBubble(
+    groupId: String,
+    message: GroupTimelineMessage,
+    controller: GroupUiController,
+    onMediaClick: (String) -> Unit,
+    primaryColor: Color,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
+) {
+    val attachments = message.attachments
+    LaunchedEffect(message.messageId, attachments.any { !it.isDownloaded }) {
+        if (attachments.any { !it.isDownloaded }) {
+            controller.downloadAttachment(groupId, message.messageId)
+        }
+    }
+
+    val uris = attachments.map { it.localPath ?: "" }
+    val types = attachments.map { att ->
+        when {
+            att.mimeType.startsWith("video/") -> "VIDEO"
+            att.mimeType == "image/gif" || att.fileName.endsWith(".gif", true) -> GifStorageManager.ATTACHMENT_TYPE
+            else -> "IMAGE"
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .testTag("attachment_${message.messageId}")
+    ) {
+        when (uris.size) {
+            2 -> {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    GroupAlbumCell(uris[0], types.getOrNull(0) ?: "IMAGE", attachments[0], Modifier.weight(1f).fillMaxHeight(), onMediaClick)
+                    GroupAlbumCell(uris[1], types.getOrNull(1) ?: "IMAGE", attachments[1], Modifier.weight(1f).fillMaxHeight(), onMediaClick)
+                }
+            }
+            3 -> {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    GroupAlbumCell(uris[0], types.getOrNull(0) ?: "IMAGE", attachments[0], Modifier.weight(1.2f).fillMaxHeight(), onMediaClick)
+                    Column(
+                        modifier = Modifier
+                            .weight(0.8f)
+                            .fillMaxHeight(),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        GroupAlbumCell(uris[1], types.getOrNull(1) ?: "IMAGE", attachments[1], Modifier.fillMaxWidth().weight(1f), onMediaClick)
+                        GroupAlbumCell(uris[2], types.getOrNull(2) ?: "IMAGE", attachments[2], Modifier.fillMaxWidth().weight(1f), onMediaClick)
+                    }
+                }
+            }
+            else -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        GroupAlbumCell(uris[0], types.getOrNull(0) ?: "IMAGE", attachments[0], Modifier.weight(1f).fillMaxHeight(), onMediaClick)
+                        GroupAlbumCell(uris[1], types.getOrNull(1) ?: "IMAGE", attachments[1], Modifier.weight(1f).fillMaxHeight(), onMediaClick)
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        GroupAlbumCell(uris[2], types.getOrNull(2) ?: "IMAGE", attachments[2], Modifier.weight(1f).fillMaxHeight(), onMediaClick)
+                        GroupAlbumCell(
+                            uris.getOrNull(3) ?: "",
+                            types.getOrNull(3) ?: "IMAGE",
+                            attachments.getOrNull(3) ?: attachments.last(),
+                            Modifier.weight(1f).fillMaxHeight(),
+                            onMediaClick,
+                            extraCount = if (uris.size > 4) uris.size - 4 else 0
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupAlbumCell(
+    uri: String,
+    type: String,
+    att: GroupAttachmentUi,
+    modifier: Modifier = Modifier,
+    onMediaClick: (String) -> Unit,
+    extraCount: Int = 0
+) {
+    val isImage = type == "IMAGE" || att.mimeType.startsWith("image/")
+    val isVideo = type == "VIDEO" || att.mimeType.startsWith("video/")
+    val isGif = type == GifStorageManager.ATTACHMENT_TYPE || att.mimeType == "image/gif"
+
+    val imageBitmap by produceState<Bitmap?>(initialValue = GroupImageCache.get(uri), key1 = uri, key2 = att.isDownloaded) {
+        if (value != null) return@produceState
+        if (uri.isNotBlank() && (isImage || isGif)) {
+            value = withContext(Dispatchers.IO) {
+                runCatching {
+                    val file = File(uri)
+                    if (file.exists()) {
+                        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                        BitmapFactory.decodeFile(file.absolutePath, opts)
+                    } else null
+                }.getOrNull()
+            }?.also { GroupImageCache.put(uri, it) }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .background(Color.DarkGray)
+            .clickable {
+                if (uri.isNotBlank() && File(uri).exists()) {
+                    onMediaClick(uri)
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        val bmp = imageBitmap
+        if (bmp != null) {
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = att.fileName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Icon(
+                painter = painterResource(id = if (isVideo) R.drawable.ic_voice_play else R.drawable.ic_attach_gallery),
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.7f),
+                modifier = Modifier.size(32.dp)
+            )
+        }
+
+        if (isVideo) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_voice_play),
+                    contentDescription = "Play Video",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        if (extraCount > 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "+$extraCount",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
 }

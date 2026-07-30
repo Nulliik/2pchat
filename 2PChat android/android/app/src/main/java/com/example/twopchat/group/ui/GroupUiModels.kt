@@ -25,6 +25,7 @@ interface GroupUiController {
   fun loadOlderMessages(groupId: String, beforeMessageId: String?) = Unit
   fun sendMessage(groupId: String, text: String, replyToMessageId: String?) = Unit
   fun sendAttachment(groupId: String, uri: String, mimeType: String?, caption: String? = null) = Unit
+  fun sendMediaAlbum(groupId: String, uris: List<String>, mimeTypes: List<String>, caption: String? = null) = Unit
   fun downloadAttachment(groupId: String, messageId: String) = Unit
   fun startReply(groupId: String, messageId: String) = Unit
   fun cancelReply(groupId: String) = Unit
@@ -152,6 +153,7 @@ data class GroupTimelineMessage(
   val isEdited: Boolean = false,
   val isPinned: Boolean = false,
   val attachment: GroupAttachmentUi? = null,
+  val attachments: List<GroupAttachmentUi> = emptyList(),
   val replyTo: GroupReplyPreview? = null,
   val reactions: List<GroupReaction> = emptyList(),
   val deliveryStatus: GroupDeliveryStatus = GroupDeliveryStatus.REPLICATED,
