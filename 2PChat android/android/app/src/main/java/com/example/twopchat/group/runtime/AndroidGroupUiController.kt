@@ -51,8 +51,8 @@ class AndroidGroupUiController(
     override fun sendMessage(groupId: String, text: String, replyToMessageId: String?) =
         GroupChatCoordinator.sendMessage(groupId, text, replyToMessageId)
 
-    override fun sendAttachment(groupId: String, uri: String, mimeType: String?) =
-        GroupChatCoordinator.sendAttachment(groupId, uri, mimeType)
+    override fun sendAttachment(groupId: String, uri: String, mimeType: String?, caption: String?) =
+        GroupChatCoordinator.sendAttachment(groupId, uri, mimeType, caption)
 
     override fun downloadAttachment(groupId: String, messageId: String) =
         GroupChatCoordinator.downloadAttachment(groupId, messageId)

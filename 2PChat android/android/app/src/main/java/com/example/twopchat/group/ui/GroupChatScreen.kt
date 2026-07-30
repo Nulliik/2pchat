@@ -1144,10 +1144,12 @@ fun GroupChatScreen(
             onDismiss = { pendingPhotoUri = null },
             onSendPhoto = { editedFilePath, caption ->
                 pendingPhotoUri = null
-                controller.sendAttachment(state.groupId, Uri.fromFile(File(editedFilePath)).toString(), "image/png")
-                if (caption.isNotBlank()) {
-                    controller.sendMessage(state.groupId, caption, null)
-                }
+                controller.sendAttachment(
+                    state.groupId,
+                    Uri.fromFile(File(editedFilePath)).toString(),
+                    "image/png",
+                    caption.trim().takeIf { it.isNotBlank() }
+                )
             }
         )
     }
@@ -1164,10 +1166,12 @@ fun GroupChatScreen(
             onSendVideo = { editedPath, caption ->
                 pendingVideoPath = null
                 val targetUri = if (editedPath.startsWith("content://") || editedPath.startsWith("file://")) editedPath else Uri.fromFile(File(editedPath)).toString()
-                controller.sendAttachment(state.groupId, targetUri, "video/mp4")
-                if (caption.isNotBlank()) {
-                    controller.sendMessage(state.groupId, caption, null)
-                }
+                controller.sendAttachment(
+                    state.groupId,
+                    targetUri,
+                    "video/mp4",
+                    caption.trim().takeIf { it.isNotBlank() }
+                )
             }
         )
     }
@@ -1188,17 +1192,16 @@ fun GroupChatScreen(
                 pendingAlbumFiles = null
                 pendingAlbumTypes = null
                 coroutineScope.launch {
-                    if (caption.isNotBlank()) {
-                        controller.sendMessage(state.groupId, caption, null)
-                    }
+                    val cleanCaption = caption.trim().takeIf { it.isNotBlank() }
                     for ((idx, file) in finalFiles.withIndex()) {
+                        val itemCaption = if (idx == 0) cleanCaption else null
                         val mime = types.getOrNull(idx) ?: "IMAGE"
                         val fileMime = when (mime) {
                             "VIDEO" -> "video/mp4"
                             GifStorageManager.ATTACHMENT_TYPE -> "image/gif"
                             else -> if (file.name.endsWith(".jpg", true) || file.name.endsWith(".jpeg", true)) "image/jpeg" else "image/png"
                         }
-                        controller.sendAttachment(state.groupId, Uri.fromFile(file).toString(), fileMime)
+                        controller.sendAttachment(state.groupId, Uri.fromFile(file).toString(), fileMime, itemCaption)
                     }
                 }
             }

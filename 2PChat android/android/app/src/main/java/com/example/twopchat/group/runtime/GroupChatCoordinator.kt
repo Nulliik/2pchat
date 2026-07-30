@@ -478,7 +478,7 @@ object GroupChatCoordinator {
         }
     }
 
-    fun sendAttachment(groupId: String, uri: String, mimeType: String?) {
+    fun sendAttachment(groupId: String, uri: String, mimeType: String?, caption: String? = null) {
         if (chatFlows[groupId]?.value?.mediaComposerEnabled != true) return
         scope.launch {
             val group = db().getGroup(groupId) ?: return@launch
@@ -510,11 +510,12 @@ object GroupChatCoordinator {
                         "attachment manifest is too large for a group event",
                     )
                 }
+                val eventText = if (!caption.isNullOrBlank()) caption.trim() else manifest.fileName
                 val event = emitEvent(
                     groupId,
                     GroupEventKind.MEDIA,
                     JSONObject().apply {
-                        put("text", manifest.fileName)
+                        put("text", eventText)
                         put("attachment", manifestJson)
                     },
                 )

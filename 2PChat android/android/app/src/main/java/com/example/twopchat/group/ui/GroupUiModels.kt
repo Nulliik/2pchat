@@ -24,7 +24,7 @@ interface GroupUiController {
   fun inviteMembers(groupId: String, contactIds: Set<String>) = Unit
   fun loadOlderMessages(groupId: String, beforeMessageId: String?) = Unit
   fun sendMessage(groupId: String, text: String, replyToMessageId: String?) = Unit
-  fun sendAttachment(groupId: String, uri: String, mimeType: String?) = Unit
+  fun sendAttachment(groupId: String, uri: String, mimeType: String?, caption: String? = null) = Unit
   fun downloadAttachment(groupId: String, messageId: String) = Unit
   fun startReply(groupId: String, messageId: String) = Unit
   fun cancelReply(groupId: String) = Unit
