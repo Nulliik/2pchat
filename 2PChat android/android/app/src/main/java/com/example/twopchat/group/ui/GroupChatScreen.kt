@@ -169,6 +169,40 @@ internal object GroupImageCache {
     fun put(key: String, bitmap: Bitmap) { cache.put(key, bitmap) }
 }
 
+@Composable
+private fun rememberGroupBitmap(
+    cacheKey: String?,
+    uri: String?,
+    fallbackFile: File? = null,
+): Bitmap? {
+    val context = LocalContext.current
+    return produceState<Bitmap?>(
+        initialValue = cacheKey?.let(GroupImageCache::get),
+        key1 = cacheKey,
+        key2 = uri,
+        key3 = fallbackFile?.absolutePath,
+    ) {
+        if (cacheKey == null || value != null) return@produceState
+        value = withContext(Dispatchers.IO) {
+            val decoded = runCatching {
+                when {
+                    !uri.isNullOrBlank() && uri.startsWith("content://") ->
+                        context.contentResolver.openInputStream(Uri.parse(uri))?.use {
+                            BitmapFactory.decodeStream(it)
+                        }
+                    !uri.isNullOrBlank() -> File(uri).takeIf(File::isFile)?.let {
+                        BitmapFactory.decodeFile(it.absolutePath)
+                    }
+                    else -> fallbackFile?.takeIf(File::isFile)?.let {
+                        BitmapFactory.decodeFile(it.absolutePath)
+                    }
+                }
+            }.getOrNull()
+            decoded?.also { GroupImageCache.put(cacheKey, it) }
+        }
+    }.value
+}
+
 private data class MediaFlags(
     val isGif: Boolean,
     val isSticker: Boolean,
@@ -248,19 +282,10 @@ fun GroupChatScreen(
     val wallpaperUriStr = remember(state.groupId) {
         P2PPreferences.prefs(context).getString("group_wallpaper_${state.groupId}", null)
     }
-    val wallpaperBitmap = remember(wallpaperUriStr) {
-        wallpaperUriStr?.let { uriStr ->
-            runCatching {
-                if (uriStr.startsWith("content://")) {
-                    context.contentResolver.openInputStream(Uri.parse(uriStr))?.use {
-                        BitmapFactory.decodeStream(it)
-                    }
-                } else {
-                    BitmapFactory.decodeFile(uriStr)
-                }
-            }.getOrNull()
-        }
-    }
+    val wallpaperBitmap = rememberGroupBitmap(
+        cacheKey = wallpaperUriStr?.let { "wallpaper:${state.groupId}:$it" },
+        uri = wallpaperUriStr,
+    )
 
     BackHandler {
         when {
@@ -1508,23 +1533,16 @@ private fun GroupChatHeader(
                 }
 
                 val context = LocalContext.current
-                val avatarBitmap = remember(state.avatarUri, state.groupId) {
-                    state.avatarUri?.let { uriStr ->
-                        runCatching {
-                            if (uriStr.startsWith("content://")) {
-                                context.contentResolver.openInputStream(Uri.parse(uriStr))?.use { stream ->
-                                    BitmapFactory.decodeStream(stream)
-                                }
-                            } else {
-                                val file = File(uriStr)
-                                if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
-                            }
-                        }.getOrNull()
-                    } ?: run {
-                        val f = File(context.filesDir, "group_avatars/${state.groupId}.jpg")
-                        if (f.exists()) BitmapFactory.decodeFile(f.absolutePath) else null
-                    }
+                val fallbackAvatar = remember(context, state.groupId) {
+                    File(context.filesDir, "group_avatars/${state.groupId}.jpg")
                 }
+                val avatarSource = state.avatarUri
+                    ?: fallbackAvatar.takeIf(File::isFile)?.absolutePath
+                val avatarBitmap = rememberGroupBitmap(
+                    cacheKey = avatarSource?.let { "group-avatar:${state.groupId}:$it" },
+                    uri = state.avatarUri,
+                    fallbackFile = fallbackAvatar,
+                )
 
                 Box(
                     modifier = Modifier

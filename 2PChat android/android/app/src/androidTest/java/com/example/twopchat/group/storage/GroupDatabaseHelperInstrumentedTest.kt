@@ -59,6 +59,13 @@ class GroupDatabaseHelperInstrumentedTest {
 
         assertTrue(actual.containsAll(expected))
         assertEquals(GroupDatabaseHelper.DATABASE_VERSION, helper.readableDatabase.version)
+        helper.readableDatabase.rawQuery(
+            "SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = ?",
+            arrayOf("idx_group_receipts_lookup"),
+        ).use { cursor ->
+            assertTrue("receipt lookup index was not created", cursor.moveToFirst())
+            assertEquals("receipts", cursor.getString(0))
+        }
     }
 
     @Test

@@ -6,6 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import kotlin.io.path.createTempDirectory
 
 class StickerSupportTest {
     @Test
@@ -117,6 +118,53 @@ class StickerSupportTest {
 
         assertFalse(received.isOwned)
         assertTrue(owned.isOwned)
+    }
+
+    @Test
+    fun trimsOldestReceivedStickersToConfiguredLimit() {
+        val cache = createTempDirectory("2pchat_sticker_cache_").toFile()
+        try {
+            val oldest = File(cache, "oldest.webp").apply {
+                writeBytes(ByteArray(40))
+                setLastModified(1_000L)
+            }
+            val middle = File(cache, "middle.webp").apply {
+                writeBytes(ByteArray(40))
+                setLastModified(2_000L)
+            }
+            val newest = File(cache, "newest.webp").apply {
+                writeBytes(ByteArray(40))
+                setLastModified(3_000L)
+            }
+
+            assertEquals(80L, StickerSupport.trimCache(cache, maxBytes = 50L))
+            assertFalse(oldest.exists())
+            assertFalse(middle.exists())
+            assertTrue(newest.exists())
+        } finally {
+            cache.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun trimmingNeverDeletesStickerBeingCached() {
+        val cache = createTempDirectory("2pchat_sticker_cache_keep_").toFile()
+        try {
+            val keep = File(cache, "keep.webp").apply {
+                writeBytes(ByteArray(60))
+                setLastModified(1_000L)
+            }
+            val other = File(cache, "other.webp").apply {
+                writeBytes(ByteArray(40))
+                setLastModified(2_000L)
+            }
+
+            assertEquals(40L, StickerSupport.trimCache(cache, maxBytes = 50L, keepFile = keep))
+            assertTrue(keep.exists())
+            assertFalse(other.exists())
+        } finally {
+            cache.deleteRecursively()
+        }
     }
 
     private fun extendedWebP(width: Int, height: Int, animated: Boolean = false): ByteArray =

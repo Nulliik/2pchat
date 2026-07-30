@@ -484,6 +484,7 @@ fun ChatsTab(
             items(
                 items = groupSummaries,
                 key = { summary -> "group:${summary.groupId}" },
+                contentType = { "group" },
             ) { summary ->
                 val groupDraft = sharedPrefs.getString("draft_msg_group_${summary.groupId}", null)?.takeIf { it.isNotBlank() }
                 val hasGroupDraft = groupDraft != null
@@ -547,6 +548,7 @@ fun ChatsTab(
         items(
             items = peers,
             key = { peer -> peer.name },
+            contentType = { "peer" },
         ) { peer ->
             Box(modifier = Modifier.padding(bottom = 10.dp)) {
                 PeerRow(

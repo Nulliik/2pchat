@@ -675,7 +675,7 @@ object StickerSupport {
         check(validateWebP(temporary) != null) { "Generated sticker failed WEBP validation" }
         if (target.exists()) target.delete()
         check(temporary.renameTo(target)) { "Could not commit generated sticker" }
-        trimCache(cacheDir)
+        trimCache(cacheDir, MAX_CACHE_BYTES, keepFile = target)
         return target
     }
 
@@ -852,10 +852,18 @@ object StickerSupport {
      * marker suffix preserves sticker semantics when a message is forwarded.
      */
     fun cacheIncomingSticker(context: Context, incoming: File): File? {
-        return cacheSticker(incoming, receivedCacheDirectory(context))
+        return cacheSticker(
+            incoming,
+            receivedCacheDirectory(context),
+            receivedCacheLimitBytes(context),
+        )
     }
 
-    private fun cacheSticker(incoming: File, cacheDir: File): File? {
+    private fun cacheSticker(
+        incoming: File,
+        cacheDir: File,
+        maxCacheBytes: Long = MAX_CACHE_BYTES,
+    ): File? {
         if (!isStickerFileName(incoming.name) || validateWebP(incoming) == null) return null
         val digest = sha256(incoming)
         val target = File(
@@ -878,9 +886,18 @@ object StickerSupport {
             }
         }
         target.setLastModified(System.currentTimeMillis())
-        trimCache(cacheDir)
+        trimCache(cacheDir, maxCacheBytes, keepFile = target)
         return target
     }
+
+    fun trimReceivedCache(context: Context): Long =
+        trimCache(
+            receivedCacheDirectory(context),
+            receivedCacheLimitBytes(context),
+        )
+
+    private fun receivedCacheLimitBytes(context: Context): Long =
+        P2PPreferences.stickerCacheLimitMb(context) * 1024L * 1024L
 
     private fun cacheDirectory(context: Context): File =
         File(context.filesDir, "sticker_cache").apply { mkdirs() }
@@ -1178,17 +1195,28 @@ object StickerSupport {
         }
     }
 
-    private fun trimCache(cacheDir: File) {
+    internal fun trimCache(
+        cacheDir: File,
+        maxBytes: Long,
+        keepFile: File? = null,
+    ): Long {
+        if (maxBytes < 0L) return 0L
         val files = cacheDir.listFiles()
             ?.filter { it.isFile && !it.name.endsWith(".tmp") }
             ?.sortedBy { it.lastModified() }
             .orEmpty()
         var total = files.sumOf { it.length() }
+        var deletedBytes = 0L
         for (file in files) {
-            if (total <= MAX_CACHE_BYTES) break
+            if (total <= maxBytes) break
+            if (keepFile != null && file.absolutePath == keepFile.absolutePath) continue
             val size = file.length()
-            if (file.delete()) total -= size
+            if (file.delete()) {
+                total -= size
+                deletedBytes += size
+            }
         }
+        return deletedBytes
     }
 
     fun sha256(file: File): String {

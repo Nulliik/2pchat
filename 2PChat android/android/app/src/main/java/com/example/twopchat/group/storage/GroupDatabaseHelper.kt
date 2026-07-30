@@ -389,9 +389,7 @@ class GroupDatabaseHelper(
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_group_events_kind ON group_events(group_id, kind)",
         )
-        db.execSQL(
-            "CREATE INDEX IF NOT EXISTS idx_group_receipts_lookup ON group_receipts(group_id, message_id)",
-        )
+        createReceiptLookupIndex(db)
         db.execSQL(
             "CREATE INDEX IF NOT EXISTS idx_group_events_lookup ON group_events(group_id, event_id)",
         )
@@ -421,6 +419,20 @@ class GroupDatabaseHelper(
                     "DEFAULT 0 CHECK(admin_only_posting IN (0, 1))",
             )
         }
+        if (oldVersion < 6) {
+            createReceiptLookupIndex(db)
+        }
+    }
+
+    private fun createReceiptLookupIndex(db: SQLiteDatabase) {
+        val receiptsTableExists = db.rawQuery(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            arrayOf(TABLE_RECEIPTS),
+        ).use { it.moveToFirst() }
+        if (!receiptsTableExists) return
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_group_receipts_lookup ON receipts(group_id, event_id)",
+        )
     }
 
     fun createGroup(
@@ -2681,7 +2693,7 @@ class GroupDatabaseHelper(
 
     companion object {
         const val DATABASE_NAME = "twopchat-groups.db"
-        const val DATABASE_VERSION = 5
+        const val DATABASE_VERSION = 6
         private const val MAX_PAGE_SIZE = 1_000
 
         private const val TABLE_GROUPS = "groups"

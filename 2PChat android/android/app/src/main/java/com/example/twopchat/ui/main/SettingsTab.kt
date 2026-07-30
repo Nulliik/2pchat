@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -1579,6 +1580,9 @@ fun SettingsTab(
                 }
                 var isCalculating by remember { mutableStateOf(true) }
                 var isClearingMedia by remember { mutableStateOf(false) }
+                var stickerCacheLimitMb by remember {
+                    mutableIntStateOf(P2PPreferences.stickerCacheLimitMb(context))
+                }
                 var showClearConfirmDialog by remember { mutableStateOf(false) }
                 var showMediaCleanupDialog by remember { mutableStateOf(false) }
                 var selectedMediaCategories by remember {
@@ -2018,6 +2022,56 @@ fun SettingsTab(
                                         fontSize = 14.sp,
                                         color = onSurfaceVariant,
                                     )
+                                }
+
+                                Text(
+                                    text = if (appLanguage == "Русский") {
+                                        "Лимит кэша"
+                                    } else {
+                                        "Cache limit"
+                                    },
+                                    modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                                    fontSize = 12.sp,
+                                    color = onSurfaceVariant,
+                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    P2PPreferences.STICKER_CACHE_LIMIT_OPTIONS_MB.forEach { limitMb ->
+                                        FilterChip(
+                                            selected = stickerCacheLimitMb == limitMb,
+                                            onClick = {
+                                                if (stickerCacheLimitMb != limitMb) {
+                                                    stickerCacheLimitMb = limitMb
+                                                    P2PPreferences.setStickerCacheLimitMb(
+                                                        context,
+                                                        limitMb,
+                                                    )
+                                                    storageScope.launch {
+                                                        withContext(Dispatchers.IO) {
+                                                            StickerSupport.trimReceivedCache(context)
+                                                        }
+                                                        refreshStorageSizes()
+                                                    }
+                                                }
+                                            },
+                                            label = { Text("$limitMb MB") },
+                                            leadingIcon = if (stickerCacheLimitMb == limitMb) {
+                                                {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp),
+                                                    )
+                                                }
+                                            } else {
+                                                null
+                                            },
+                                        )
+                                    }
                                 }
 
                                 Spacer(modifier = Modifier.height(10.dp))

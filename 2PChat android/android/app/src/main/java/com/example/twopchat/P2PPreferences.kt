@@ -15,7 +15,10 @@ object P2PPreferences {
     const val ACTIVE_CHATS = "active_chats"
     const val LISTENER_PORT = "listener_port"
     const val WIFI_DISCOVERY = "settings_wifi"
+    const val STICKER_CACHE_LIMIT_MB = "settings_sticker_cache_limit_mb"
     const val DEFAULT_LISTENER_PORT = 50001
+    const val DEFAULT_STICKER_CACHE_LIMIT_MB = 100
+    val STICKER_CACHE_LIMIT_OPTIONS_MB = listOf(50, 100, 250, 500)
     const val MIN_LISTENER_PORT = 1024
     const val MAX_LISTENER_PORT = 65535
 
@@ -100,6 +103,22 @@ object P2PPreferences {
     fun listenerPort(context: Context): Int =
         prefs(context).getInt(LISTENER_PORT, DEFAULT_LISTENER_PORT)
             .coerceIn(MIN_LISTENER_PORT, MAX_LISTENER_PORT)
+
+    fun stickerCacheLimitMb(context: Context): Int {
+        val stored = prefs(context).getInt(
+            STICKER_CACHE_LIMIT_MB,
+            DEFAULT_STICKER_CACHE_LIMIT_MB,
+        )
+        return stored.takeIf { it in STICKER_CACHE_LIMIT_OPTIONS_MB }
+            ?: DEFAULT_STICKER_CACHE_LIMIT_MB
+    }
+
+    fun setStickerCacheLimitMb(context: Context, limitMb: Int) {
+        require(limitMb in STICKER_CACHE_LIMIT_OPTIONS_MB) {
+            "Unsupported sticker cache limit: $limitMb MB"
+        }
+        prefs(context).edit().putInt(STICKER_CACHE_LIMIT_MB, limitMb).apply()
+    }
 
     fun peerFingerprint(peerName: String) = "peer_fingerprint_$peerName"
     fun fingerprintMismatch(peerName: String) = "fingerprint_mismatch_$peerName"
