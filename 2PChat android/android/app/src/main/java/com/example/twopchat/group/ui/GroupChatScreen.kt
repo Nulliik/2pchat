@@ -222,7 +222,9 @@ fun GroupChatScreen(
     state: GroupChatUiState,
     controller: GroupUiController,
     modifier: Modifier = Modifier,
-    listState: LazyListState = rememberLazyListState(),
+    listState: LazyListState = rememberLazyListState(
+        initialFirstVisibleItemIndex = state.messages.size,
+    ),
 ) {
     val context = LocalContext.current
     val draftKey = "draft_msg_group_${state.groupId}"
@@ -648,13 +650,21 @@ fun GroupChatScreen(
             )
         }
 
-        // Auto-scroll to bottom when messages initially load or a new message arrives
+        var previousMessageCount by remember(state.groupId) {
+            mutableIntStateOf(state.messages.size)
+        }
+        // Follow new messages only while the user is already at the bottom.
+        // This avoids a full-list jump when older history is loaded or read.
         LaunchedEffect(state.messages.size) {
-            if (state.messages.isNotEmpty()) {
+            val messageCount = state.messages.size
+            val wasAtBottom = previousMessageCount == 0 ||
+                listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index
+                    ?.let { it >= previousMessageCount } == true
+            if (messageCount > previousMessageCount && wasAtBottom) {
                 listState.scrollToItem(state.messages.size)
             }
+            previousMessageCount = messageCount
         }
-
         // Messages List Container
         Box(
             modifier = Modifier
@@ -2168,10 +2178,9 @@ private fun GroupMessageCard(
                                     contentScale = GifContentScale.CROP,
                                     contentDescription = "GIF",
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(max = 260.dp)
+                                        .size(width = 260.dp, height = 220.dp)
                                         .clip(RoundedCornerShape(16.dp))
-                                        .clickable { onMediaClick(localPath) }
+                                        .clickable { onMediaClick(localPath) },
                                 )
                                 if (isMediaOnly) {
                                     MessageTimestampBadge(

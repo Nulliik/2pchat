@@ -77,7 +77,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.window.Dialog
 import android.net.Uri
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
+import android.os.Build
 import java.io.File
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.aspectRatio
@@ -85,7 +88,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.produceState
 import com.example.twopchat.ui.chat.AnimatedGifImage
+import com.example.twopchat.ui.chat.AttachmentImageCache
 import com.example.twopchat.ui.chat.GifContentScale
 import com.example.twopchat.ui.chat.AnimatedStickerImage
 import com.example.twopchat.ui.chat.EmptyStateView
@@ -95,6 +100,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.abs
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun GroupInfoScreen(
@@ -175,6 +182,7 @@ fun GroupInfoScreen(
             }
         }
     }
+    val mediaRows = remember(mediaMessages) { mediaMessages.chunked(3) }
 
     val fileMessages = remember(state.timelineMessages) {
         state.timelineMessages.filter { msg ->
@@ -536,9 +544,12 @@ fun GroupInfoScreen(
                             )
                         }
                     } else {
-                        item(key = "media_grid") {
-                            GroupMediaGrid(
-                                mediaMessages = mediaMessages,
+                        items(
+                            items = mediaRows,
+                            key = { row -> "media_${row.joinToString("_") { it.messageId }}" },
+                        ) { row ->
+                            GroupMediaRow(
+                                rowItems = row,
                                 onMediaClick = { path -> selectedMediaPreviewPath = path }
                             )
                         }
@@ -1816,47 +1827,40 @@ private fun GroupInfoDetailsCard(
 }
 
 @Composable
-private fun GroupMediaGrid(
-    mediaMessages: List<GroupTimelineMessage>,
+private fun GroupMediaRow(
+    rowItems: List<GroupTimelineMessage>,
     onMediaClick: (String) -> Unit
 ) {
-    val chunked = remember(mediaMessages) { mediaMessages.chunked(3) }
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+            .padding(horizontal = 16.dp, vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        chunked.forEach { rowItems ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+        rowItems.forEach { msg ->
+            val attachment = msg.attachment
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF1C1C1E))
+                    .testTag("group_media_${msg.messageId}"),
+                contentAlignment = Alignment.Center
             ) {
-                rowItems.forEach { msg ->
-                    val attachment = msg.attachment
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .aspectRatio(1f)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF1C1C1E)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (attachment != null) {
-                            MediaGridCell(
-                                attachment = attachment,
-                                onClick = {
-                                    val path = attachment.localPath ?: attachment.fileName
-                                    onMediaClick(path)
-                                }
-                            )
+                if (attachment != null) {
+                    MediaGridCell(
+                        attachment = attachment,
+                        onClick = {
+                            val path = attachment.localPath ?: attachment.fileName
+                            onMediaClick(path)
                         }
-                    }
-                }
-                repeat(3 - rowItems.size) {
-                    Spacer(modifier = Modifier.weight(1f))
+                    )
                 }
             }
+        }
+        repeat(3 - rowItems.size) {
+            Spacer(modifier = Modifier.weight(1f))
         }
     }
 }
@@ -1868,92 +1872,111 @@ private fun MediaGridCell(
 ) {
     val context = LocalContext.current
     val localPath = attachment.localPath ?: attachment.fileName
-    val isGif = attachment.mimeType == "image/gif" || attachment.fileName.lowercase().endsWith(".gif")
-    val isSticker = attachment.mimeType.contains("sticker") || StickerSupport.isStickerFileName(attachment.fileName)
     val isVideo = attachment.mimeType.startsWith("video/") || attachment.fileName.lowercase().run { endsWith(".mp4") || endsWith(".mov") || endsWith(".mkv") }
+    val thumbnailCacheKey = remember(localPath) { "group-media:$localPath:256" }
+    val thumbnail by produceState<Bitmap?>(
+        initialValue = AttachmentImageCache.get(thumbnailCacheKey),
+        thumbnailCacheKey,
+    ) {
+        value = withContext(Dispatchers.IO) {
+            AttachmentImageCache.getOrLoad(thumbnailCacheKey) {
+                decodeMediaThumbnail(context, localPath, targetDimensionPx = 256)
+            }
+        }
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .clickable(onClick = onClick)
     ) {
-        when {
-            isSticker && localPath.isNotBlank() -> {
-                AnimatedStickerImage(
-                    filePath = localPath,
-                    fallbackEmoji = "👍",
-                    contentDescription = "Sticker",
-                    targetSizePx = 128,
-                    modifier = Modifier.fillMaxSize()
+        if (thumbnail != null) {
+            Image(
+                bitmap = thumbnail!!.asImageBitmap(),
+                contentDescription = attachment.fileName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF2C2C2E)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(if (isVideo) R.drawable.ic_voice_play else R.drawable.ic_attach_gallery),
+                    contentDescription = "Media",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
                 )
             }
-            isGif && localPath.isNotBlank() -> {
-                AnimatedGifImage(
-                    filePath = localPath,
-                    targetMaxDimensionPx = 256,
-                    contentScale = GifContentScale.CROP,
-                    contentDescription = "GIF",
-                    modifier = Modifier.fillMaxSize()
+        }
+        if (isVideo) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.3f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_voice_play),
+                    contentDescription = "Play Video",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
                 )
-            }
-            else -> {
-                val bitmap = remember(localPath) {
-                    runCatching {
-                        if (localPath.startsWith("content://")) {
-                            context.contentResolver.openInputStream(Uri.parse(localPath))?.use { stream ->
-                                val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
-                                BitmapFactory.decodeStream(stream, null, opts)
-                            }
-                        } else {
-                            val file = File(localPath)
-                            if (file.exists()) {
-                                val opts = BitmapFactory.Options().apply { inSampleSize = 4 }
-                                BitmapFactory.decodeFile(file.absolutePath, opts)
-                            } else null
-                        }
-                    }.getOrNull()
-                }
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = attachment.fileName,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xFF2C2C2E)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            painter = painterResource(if (isVideo) R.drawable.ic_voice_play else R.drawable.ic_attach_gallery),
-                            contentDescription = "Media",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-                if (isVideo) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.3f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_voice_play),
-                            contentDescription = "Play Video",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
             }
         }
     }
 }
+
+private fun decodeMediaThumbnail(
+    context: Context,
+    path: String,
+    targetDimensionPx: Int,
+): Bitmap? = runCatching {
+    if (path.isBlank()) return@runCatching null
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        val source = if (path.startsWith("content://")) {
+            ImageDecoder.createSource(context.contentResolver, Uri.parse(path))
+        } else {
+            val file = File(path)
+            if (!file.isFile) return@runCatching null
+            ImageDecoder.createSource(file)
+        }
+        ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            val width = info.size.width.coerceAtLeast(1)
+            val height = info.size.height.coerceAtLeast(1)
+            val target = targetDimensionPx.coerceAtLeast(1)
+            val scale = minOf(
+                target.toFloat() / width,
+                target.toFloat() / height,
+                1f,
+            )
+            decoder.setTargetSize(
+                (width * scale).toInt().coerceAtLeast(1),
+                (height * scale).toInt().coerceAtLeast(1),
+            )
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+        }
+    } else if (path.startsWith("content://")) {
+        context.contentResolver.openInputStream(Uri.parse(path))?.use { stream ->
+            BitmapFactory.decodeStream(
+                stream,
+                null,
+                BitmapFactory.Options().apply { inSampleSize = 4 },
+            )
+        }
+    } else {
+        val file = File(path)
+        if (!file.isFile) null else {
+            BitmapFactory.decodeFile(
+                file.absolutePath,
+                BitmapFactory.Options().apply { inSampleSize = 4 },
+            )
+        }
+    }
+}.getOrNull()
 
 @Composable
 private fun GroupInviteQrModal(

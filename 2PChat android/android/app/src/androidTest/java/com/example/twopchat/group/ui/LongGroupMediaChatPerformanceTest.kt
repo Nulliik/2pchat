@@ -78,7 +78,9 @@ class LongGroupMediaChatPerformanceTest {
         val initialStartedAt = SystemClock.elapsedRealtime()
         composeRule.setContent {
             MaterialTheme {
-                listState = rememberLazyListState()
+                listState = rememberLazyListState(
+                    initialFirstVisibleItemIndex = messages.size,
+                )
                 GroupChatScreen(
                     state = GroupChatUiState(
                         groupId = "performance-group",

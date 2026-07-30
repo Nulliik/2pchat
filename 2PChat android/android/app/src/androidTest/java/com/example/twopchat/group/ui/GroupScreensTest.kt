@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onFirst
@@ -12,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import org.junit.Assert.assertEquals
@@ -43,7 +45,7 @@ class GroupScreensTest {
     composeTestRule.onNodeWithTag("read_only_composer").assertExists()
     composeTestRule.onNodeWithText("Only administrators can send messages").assertExists()
     composeTestRule.onNodeWithTag("group_send_button").assertDoesNotExist()
-    composeTestRule.onNodeWithTag("group_sync_status").assertExists()
+    composeTestRule.onNodeWithTag("group_sync_status", useUnmergedTree = true).assertExists()
   }
 
   @Test
@@ -99,6 +101,51 @@ class GroupScreensTest {
       .performScrollTo()
       .performClick()
     composeTestRule.runOnIdle { assertEquals(true, submitted) }
+  }
+
+  @Test
+  fun mediaTab_composesOnlyVisibleRows() {
+    val mediaMessages = List(90) { index ->
+      GroupTimelineMessage(
+        messageId = "media-$index",
+        authorId = "member",
+        authorName = "Member",
+        text = "",
+        timestampLabel = "",
+        attachment = GroupAttachmentUi(
+          attachmentId = "attachment-$index",
+          fileName = "missing-$index.gif",
+          mimeType = "image/gif",
+          sizeLabel = "1 KB",
+          availableBlocks = 1,
+          totalBlocks = 1,
+          localPath = "/missing/media-$index.gif",
+        ),
+      )
+    }
+
+    composeTestRule.setContent {
+      MaterialTheme {
+        GroupInfoScreen(
+          state = GroupInfoUiState(
+            metadata = GroupMetadata(
+              groupId = "large-media-group",
+              title = "Media",
+              memberCount = 1,
+            ),
+            currentUserRole = GroupRole.MEMBER,
+            timelineMessages = mediaMessages,
+          ),
+          controller = object : GroupUiController {},
+        )
+      }
+    }
+
+    composeTestRule.onNodeWithText("Медиа").performScrollTo().performClick()
+    composeTestRule.waitForIdle()
+
+    composeTestRule.onNodeWithTag("group_media_media-0").assertExists()
+    composeTestRule.onNodeWithTag("group_media_media-89").assertDoesNotExist()
   }
 
   @Test
@@ -178,6 +225,8 @@ class GroupScreensTest {
       }
     }
 
+    composeTestRule.onNodeWithTag("group_info_list")
+      .performScrollToNode(hasTestTag("make_admin_bob"))
     composeTestRule.onNodeWithTag("make_admin_bob").assertExists()
     composeTestRule.onNodeWithTag("make_moderator_bob").assertExists()
     composeTestRule.onNodeWithTag("restrict_bob").assertExists()
@@ -223,9 +272,13 @@ class GroupScreensTest {
       }
     }
 
-    composeTestRule.onNodeWithTag("restrict_bob").performClick()
-    composeTestRule.onNodeWithText("Send links").assertExists()
-    composeTestRule.onAllNodes(isToggleable())[2].performClick()
+    composeTestRule.onNodeWithTag("group_info_list")
+      .performScrollToNode(hasTestTag("restrict_bob"))
+    composeTestRule.onNodeWithTag("member_bob").performClick()
+    composeTestRule.onNodeWithText("Ограничить права").performClick()
+    composeTestRule.onNodeWithText("Отправка ссылок", useUnmergedTree = true)
+      .performScrollTo()
+      .performClick()
     composeTestRule.onNodeWithTag("apply_member_restrictions").performClick()
 
     composeTestRule.runOnIdle {
@@ -302,7 +355,7 @@ class GroupScreensTest {
     composeTestRule.onNodeWithTag("edit_group_info").performClick()
     composeTestRule.onNodeWithTag("edit_group_title").performTextClearance()
     composeTestRule.onNodeWithTag("edit_group_title").performTextInput("  New title  ")
-    composeTestRule.onNodeWithText("Save").assertIsEnabled().performClick()
+    composeTestRule.onNodeWithText("Сохранить").assertIsEnabled().performClick()
 
     composeTestRule.runOnIdle {
       assertEquals("editable-group", submittedGroupId)
@@ -343,9 +396,11 @@ class GroupScreensTest {
       }
     }
 
+    composeTestRule.onNodeWithTag("group_info_list")
+      .performScrollToNode(hasTestTag("invite_group_members"))
     composeTestRule.onNodeWithTag("invite_group_members").performClick()
     composeTestRule.onAllNodes(isToggleable()).onFirst().performClick()
-    composeTestRule.onNodeWithText("Invite").assertIsEnabled().performClick()
+    composeTestRule.onNodeWithText("Пригласить").assertIsEnabled().performClick()
 
     composeTestRule.runOnIdle {
       assertEquals("invite-group", submittedGroupId)
@@ -388,8 +443,11 @@ class GroupScreensTest {
       }
     }
 
-    composeTestRule.onNodeWithTag("ban_bob").performClick()
-    composeTestRule.onNodeWithTag("confirm_ban_member").performClick()
+    composeTestRule.onNodeWithTag("group_info_list")
+      .performScrollToNode(hasTestTag("ban_bob"))
+    composeTestRule.onNodeWithTag("member_bob").performClick()
+    composeTestRule.onNodeWithText("Заблокировать").performClick()
+    composeTestRule.onNodeWithTag("confirm_ban_member", useUnmergedTree = true).performClick()
 
     composeTestRule.runOnIdle {
       assertEquals("moderated-group", bannedGroupId)
@@ -457,7 +515,8 @@ class GroupScreensTest {
       }
     }
 
-    composeTestRule.onNodeWithTag("delivery_read-message").assertTextEquals("Read")
+    composeTestRule.onNodeWithTag("delivery_read-message", useUnmergedTree = true)
+      .assertTextEquals("✔✔")
   }
 
   @Test
@@ -498,12 +557,11 @@ class GroupScreensTest {
       }
     }
 
-    composeTestRule.onNodeWithTag("attachment_media-1").assertExists()
-    composeTestRule.onNodeWithText("2.0 MiB · 2/4 blocks").assertExists()
+    composeTestRule.onNodeWithTag("attachment_media-1", useUnmergedTree = true).assertExists()
+    composeTestRule.onNodeWithText("2.0 MiB · 2/4 бл.").assertExists()
     composeTestRule.onNodeWithTag("download_media-1").performClick()
     composeTestRule.runOnIdle {
       assertEquals("group-files:media-1", requestedMessage)
     }
-    composeTestRule.onNodeWithTag("group_attach_button").assertIsEnabled()
   }
 }

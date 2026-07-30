@@ -183,16 +183,9 @@ internal fun ChatMessageBubble(
         if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else onPrimaryContent
     } else primaryColor
 
-    androidx.compose.animation.AnimatedVisibility(
+    MessageAppearance(
+        animateOnAppearance = animateOnAppearance,
         visibleState = visibleState,
-        enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(180, easing = androidx.compose.animation.core.LinearOutSlowInEasing)) + scaleIn(
-            initialScale = 0.96f,
-            animationSpec = androidx.compose.animation.core.tween(180, easing = androidx.compose.animation.core.FastOutSlowInEasing)
-        ) + slideInVertically(
-            initialOffsetY = { it / 6 },
-            animationSpec = androidx.compose.animation.core.tween(180, easing = androidx.compose.animation.core.FastOutSlowInEasing)
-        ),
-        modifier = Modifier.fillMaxWidth()
     ) {
         SwipeToReplyContainer(
             onReply = {
@@ -1331,8 +1324,44 @@ internal fun ChatMessageBubble(
                     }
                 }
             }
-        }
     }
+}
+
+@Composable
+private fun MessageAppearance(
+    animateOnAppearance: Boolean,
+    visibleState: MutableTransitionState<Boolean>,
+    content: @Composable () -> Unit,
+) {
+    if (!animateOnAppearance) {
+        content()
+        return
+    }
+    androidx.compose.animation.AnimatedVisibility(
+        visibleState = visibleState,
+        enter = fadeIn(
+            animationSpec = androidx.compose.animation.core.tween(
+                180,
+                easing = androidx.compose.animation.core.LinearOutSlowInEasing,
+            ),
+        ) + scaleIn(
+            initialScale = 0.96f,
+            animationSpec = androidx.compose.animation.core.tween(
+                180,
+                easing = androidx.compose.animation.core.FastOutSlowInEasing,
+            ),
+        ) + slideInVertically(
+            initialOffsetY = { it / 6 },
+            animationSpec = androidx.compose.animation.core.tween(
+                180,
+                easing = androidx.compose.animation.core.FastOutSlowInEasing,
+            ),
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        content()
+    }
+}
 
 @Composable
 private fun GifMessageContent(

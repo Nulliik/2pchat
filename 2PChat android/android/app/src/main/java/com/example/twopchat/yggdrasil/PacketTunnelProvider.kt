@@ -60,7 +60,16 @@ open class PacketTunnelProvider: VpnService() {
     }
 
     override fun onDestroy() {
+        // Finish our side of the VPN before Service teardown. Calling stopSelf()
+        // from onDestroy() can leave VpnService.Callback bound to an already
+        // destroyed service until the system notices the closed TUN descriptor.
+        stop(stopService = false)
         super.onDestroy()
+    }
+
+    override fun onRevoke() {
+        // The platform has already deactivated the interface. Close native and
+        // file-descriptor resources before asking the service to stop.
         stop()
     }
 
@@ -226,11 +235,10 @@ open class PacketTunnelProvider: VpnService() {
     }
 
     private fun stop(stopService: Boolean = true) {
-        if (!started.compareAndSet(true, false)) {
-            return
+        val wasStarted = started.getAndSet(false)
+        if (wasStarted) {
+            yggdrasil.stop()
         }
-
-        yggdrasil.stop()
 
         // БАГ 2 ИСПРАВЛЕН: Сначала прерываем потоки, потом закрываем стримы.
         // Если закрыть стримы раньше — потоки reader/writer получат NPE или IOException.
@@ -238,18 +246,12 @@ open class PacketTunnelProvider: VpnService() {
         threads.forEach(Thread::interrupt)
 
         // Закрываем стримы после того, как потоки прерваны
-        readerStream?.let {
-            it.close()
-            readerStream = null
-        }
-        writerStream?.let {
-            it.close()
-            writerStream = null
-        }
-        parcel?.let {
-            it.close()
-            parcel = null
-        }
+        runCatching { readerStream?.close() }
+        readerStream = null
+        runCatching { writerStream?.close() }
+        writerStream = null
+        runCatching { parcel?.close() }
+        parcel = null
         // Do not let a restart overlap old native/FD users. Closing the streams above
         // unblocks reads; bounded joins avoid hanging service shutdown indefinitely.
         threads.filter { it !== Thread.currentThread() }.forEach { thread ->
@@ -275,7 +277,12 @@ open class PacketTunnelProvider: VpnService() {
         if (stopService) {
             stopSelf()
         }
-        multicastLock?.release()
+        multicastLock?.let { lock ->
+            if (lock.isHeld) {
+                runCatching { lock.release() }
+            }
+        }
+        multicastLock = null
     }
 
     private fun connect() {
