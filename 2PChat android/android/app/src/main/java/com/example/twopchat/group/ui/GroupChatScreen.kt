@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.scaleIn
@@ -219,7 +220,8 @@ private data class MediaFlags(
 fun GroupChatScreen(
     state: GroupChatUiState,
     controller: GroupUiController,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    listState: LazyListState = rememberLazyListState(),
 ) {
     val context = LocalContext.current
     val draftKey = "draft_msg_group_${state.groupId}"
@@ -619,8 +621,6 @@ fun GroupChatScreen(
                     onSearchQueryChange = { searchQuery = it }
                 )
             }
-
-        val listState = rememberLazyListState()
 
         // Pinned Message Bar matching Screenshot 2
         state.pinnedMessage?.let { pinned ->
