@@ -2005,9 +2005,10 @@ private fun GroupMessageCard(
                                 ),
                                 label = "stickerBounce",
                             )
-                            val stickerLocalPath = remember(message.text, att?.localPath, att?.fileName) {
-                                if (att != null && !att.localPath.isNullOrBlank() && java.io.File(att.localPath).exists()) {
-                                    att.localPath
+                            val stickerLocalPath = remember(message.text, att.localPath, att.fileName) {
+                                val path = att.localPath
+                                if (!path.isNullOrBlank() && java.io.File(path).exists()) {
+                                    path
                                 } else {
                                     val cleanName = message.text.removePrefix("2psticker:").removePrefix("sticker:").trim()
                                     val contextDir = context.filesDir
