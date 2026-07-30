@@ -27,6 +27,15 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.graphicsLayer
 import com.example.twopchat.R
+import android.content.Context
+import android.widget.Toast
+import android.content.ClipboardManager
+import android.content.ClipData
+import android.content.Intent
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.filled.Close
 import com.example.twopchat.P2PPreferences
 import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.PythonBridge
@@ -630,6 +639,7 @@ fun GroupInfoScreen(
             groupTitle = state.metadata.title,
             groupId = state.metadata.groupId,
             inviteToken = state.metadata.inviteToken,
+            candidates = state.inviteCandidates,
             onDismiss = { showQrModal = false },
         )
     }
@@ -1950,9 +1960,15 @@ private fun GroupInviteQrModal(
     groupTitle: String,
     groupId: String,
     inviteToken: String,
+    candidates: List<GroupContactSummary>,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
+    val primaryColor = MaterialTheme.colorScheme.primary
+
     val prefs = remember(context) { P2PPreferences.prefs(context) }
     val username = remember(prefs) {
         prefs.getString("username_profile", "2PChat User").orEmpty()
@@ -1962,15 +1978,9 @@ private fun GroupInviteQrModal(
     val listenerPort = remember { P2PMessageRelay.listenerPort(context) }
     val localIp = remember { PythonBridge.getLocalIpAddress(false) }
     val yggIp = remember { PythonBridge.getYggdrasilAddress() }
+
     val inviteLink = remember(
-        username,
-        discoveryCode,
-        fingerprint,
-        listenerPort,
-        localIp,
-        yggIp,
-        groupId,
-        inviteToken,
+        username, discoveryCode, fingerprint, listenerPort, localIp, yggIp, groupId, inviteToken
     ) {
         buildContactQrPayload(
             nickname = username,
@@ -1984,49 +1994,251 @@ private fun GroupInviteQrModal(
             "&group_token=" + Uri.encode(inviteToken)
     }
 
-    AlertDialog(
+    var showShareContactDialog by remember { mutableStateOf(false) }
+
+    Dialog(
         onDismissRequest = onDismiss,
-        title = { Text("Приглашение в группу", fontWeight = FontWeight.Bold, color = Color.White) },
-        text = {
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            color = surfaceColor,
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .padding(vertical = 16.dp)
+        ) {
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                modifier = Modifier
+                    .padding(20.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Header with title & close button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Приглашение в группу",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onSurfaceColor
+                        )
+                        Text(
+                            text = groupTitle,
+                            fontSize = 13.sp,
+                            color = primaryColor,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                // Beautiful QR Code Frame
                 Surface(
                     color = Color.White,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.size(200.dp).padding(8.dp)
+                    shape = RoundedCornerShape(16.dp),
+                    shadowElevation = 4.dp,
+                    modifier = Modifier
+                        .size(200.dp)
+                        .padding(4.dp)
                 ) {
                     QrCodeImage(
                         payload = inviteLink,
                         contentDescription = "QR-приглашение в $groupTitle",
-                        modifier = Modifier.fillMaxSize().padding(6.dp),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(8.dp)
                     )
                 }
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    text = "Ссылка для входа в группу:",
-                    fontSize = 12.sp,
-                    color = Color.LightGray
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = inviteLink,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable {
-                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Group Invite", inviteLink))
-                        android.widget.Toast.makeText(context, "Ссылка скопирована!", android.widget.Toast.LENGTH_SHORT).show()
+
+                Spacer(Modifier.height(16.dp))
+
+                // Clean Link Box
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_quick_link),
+                            contentDescription = "Link",
+                            tint = primaryColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "2pchat.join/$groupTitle",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = onSurfaceColor,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("Group Invite", inviteLink))
+                                Toast.makeText(context, "Ссылка скопирована!", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_copy),
+                                contentDescription = "Copy",
+                                tint = primaryColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
-                )
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                // Share Buttons Row
+                Button(
+                    onClick = {
+                        if (candidates.isNotEmpty()) {
+                            showShareContactDialog = true
+                        } else {
+                            Toast.makeText(context, "У вас пока нет контактов для отправки", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth().height(46.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_forward),
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Отправить в 2PChat", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            val sendIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, "Приглашение в группу «$groupTitle» в 2PChat:\n\n$inviteLink")
+                                type = "text/plain"
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, "Поделиться приглашением"))
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.weight(1f).height(42.dp)
+                    ) {
+                        Text("Внешний доступ", fontSize = 12.sp, maxLines = 1)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Group Invite", inviteLink))
+                            Toast.makeText(context, "Ссылка скопирована в буфер!", Toast.LENGTH_SHORT).show()
+                        },
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.weight(1f).height(42.dp)
+                    ) {
+                        Text("Скопировать", fontSize = 12.sp, maxLines = 1)
+                    }
+                }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Закрыть", color = Color.White) }
-        },
-        containerColor = Color(0xFF1C1C1E),
-        shape = RoundedCornerShape(20.dp)
-    )
+        }
+    }
+
+    // Modal to pick a 1-on-1 contact inside 2PChat
+    if (showShareContactDialog) {
+        AlertDialog(
+            onDismissRequest = { showShareContactDialog = false },
+            title = { Text("Выберите чат", fontWeight = FontWeight.Bold) },
+            text = {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(candidates, key = GroupContactSummary::contactId) { contact ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showShareContactDialog = false
+                                    val peerName = contact.displayName
+                                    val localUsername = prefs.getString("username_profile", "2PChat User").orEmpty()
+                                    val shareText = "👋 Приглашение в группу «$groupTitle»!\n\nСсылка для входа:\n$inviteLink"
+                                    P2PMessageRelay.sendMessage(context, peerName, localUsername, shareText) { success ->
+                                        val msg = if (success) "Приглашение отправлено ${contact.displayName}!" else "Отправлено (доставится при подключении)"
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(primaryColor.copy(alpha = 0.15f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = contact.displayName.take(1).uppercase(),
+                                        fontWeight = FontWeight.Bold,
+                                        color = primaryColor
+                                    )
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = contact.displayName,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp
+                                    )
+                                    if (contact.isOnline) {
+                                        Text("В сети", fontSize = 11.sp, color = Color(0xFF43A047))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showShareContactDialog = false }) {
+                    Text("Отмена")
+                }
+            },
+            containerColor = surfaceColor,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
 }
