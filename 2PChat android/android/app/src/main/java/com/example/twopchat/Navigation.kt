@@ -28,6 +28,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+
 @Composable
 fun MainNavigation(
     isDarkTheme: Boolean,
@@ -73,89 +76,104 @@ fun MainNavigation(
       )
     }
 
-    NavDisplay(
-      backStack = backStack,
-      onBack = { backStack.removeLastOrNull() },
-      entryProvider =
-        entryProvider {
-          entry<Main> {
-            MainScreen(
-              onItemClick = { navKey -> backStack.add(navKey) },
-              isDarkTheme = isDarkTheme,
-              onThemeChanged = onThemeChanged,
-              useCerulean = useCerulean,
-              onAccentChanged = onAccentChanged,
-              useAmoled = useAmoled,
-              onAmoledChanged = onAmoledChanged,
-              appLanguage = appLanguage,
-              onLanguageChanged = onLanguageChanged,
-              onIconChanged = onIconChanged,
-              onDeleteAccount = {
-                  if (!accountDeletionInProgress) {
-                      accountDeletionInProgress = true
-                      coroutineScope.launch {
-                          val deleted = withContext(Dispatchers.IO) {
-                              AccountLifecycle.deleteAccount(context)
-                          }
-                          accountDeletionInProgress = false
-                          if (deleted) {
-                              isOnboardingCompleted = false
-                          } else {
-                              Toast.makeText(
-                                  context,
-                                  "Account deletion failed: secure sessions are still active",
-                                  Toast.LENGTH_LONG,
-                              ).show()
-                          }
-                      }
-                  }
-              },
-              modifier = Modifier.fillMaxSize()
-            )
-          }
-          entry<Chat> { chatKey ->
-            ChatScreen(
-              peerName = chatKey.peerName,
-              isActive = backStack.lastOrNull() == chatKey,
-              appLanguage = appLanguage,
-              onBack = { backStack.removeLastOrNull() },
-              modifier = Modifier.fillMaxSize()
-            )
-          }
-          entry<CreateGroup> {
-            val state by GroupChatCoordinator.createState.collectAsState()
-            LaunchedEffect(Unit) { GroupChatCoordinator.refreshContacts() }
-            CreateGroupScreen(
-              state = state,
-              controller = groupController,
-              modifier = Modifier.fillMaxSize().safeDrawingPadding(),
-            )
-          }
-          entry<GroupInvites> {
-            val state by GroupChatCoordinator.pendingInvites.collectAsState()
-            PendingGroupInvitesScreen(
-              state = state,
-              controller = groupController,
-              modifier = Modifier.fillMaxSize().safeDrawingPadding(),
-            )
-          }
-          entry<GroupConversation> { groupKey ->
-            val state by GroupChatCoordinator.chatState(groupKey.groupId).collectAsState()
-            P2PGroupChatScreen(
-              state = state,
-              controller = groupController,
-              modifier = Modifier.fillMaxSize(),
-            )
-          }
-          entry<GroupInfo> { groupKey ->
-            val state by GroupChatCoordinator.infoState(groupKey.groupId).collectAsState()
-            GroupInfoScreen(
-              state = state,
-              controller = groupController,
-              modifier = Modifier.fillMaxSize().safeDrawingPadding(),
-            )
-          }
-        },
-    )
+    val currentDestination = backStack.lastOrNull()
+    AnimatedContent(
+      targetState = currentDestination,
+      transitionSpec = {
+        if (targetState != Main) {
+          (slideInHorizontally(initialOffsetX = { width -> width }, animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(260)))
+            .togetherWith(slideOutHorizontally(targetOffsetX = { width -> -width / 3 }, animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)) + fadeOut(animationSpec = tween(200)))
+        } else {
+          (slideInHorizontally(initialOffsetX = { width -> -width / 3 }, animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(260)))
+            .togetherWith(slideOutHorizontally(targetOffsetX = { width -> width }, animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)) + fadeOut(animationSpec = tween(200)))
+        }
+      },
+      label = "ScreenNavigationTransition"
+    ) { _ ->
+      NavDisplay(
+        backStack = backStack,
+        onBack = { backStack.removeLastOrNull() },
+        entryProvider =
+          entryProvider {
+            entry<Main> {
+              MainScreen(
+                onItemClick = { navKey -> backStack.add(navKey) },
+                isDarkTheme = isDarkTheme,
+                onThemeChanged = onThemeChanged,
+                useCerulean = useCerulean,
+                onAccentChanged = onAccentChanged,
+                useAmoled = useAmoled,
+                onAmoledChanged = onAmoledChanged,
+                appLanguage = appLanguage,
+                onLanguageChanged = onLanguageChanged,
+                onIconChanged = onIconChanged,
+                onDeleteAccount = {
+                    if (!accountDeletionInProgress) {
+                        accountDeletionInProgress = true
+                        coroutineScope.launch {
+                            val deleted = withContext(Dispatchers.IO) {
+                                AccountLifecycle.deleteAccount(context)
+                            }
+                            accountDeletionInProgress = false
+                            if (deleted) {
+                                isOnboardingCompleted = false
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Account deletion failed: secure sessions are still active",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+              )
+            }
+            entry<Chat> { chatKey ->
+              ChatScreen(
+                peerName = chatKey.peerName,
+                isActive = backStack.lastOrNull() == chatKey,
+                appLanguage = appLanguage,
+                onBack = { backStack.removeLastOrNull() },
+                modifier = Modifier.fillMaxSize()
+              )
+            }
+            entry<CreateGroup> {
+              val state by GroupChatCoordinator.createState.collectAsState()
+              LaunchedEffect(Unit) { GroupChatCoordinator.refreshContacts() }
+              CreateGroupScreen(
+                state = state,
+                controller = groupController,
+                modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+              )
+            }
+            entry<GroupInvites> {
+              val state by GroupChatCoordinator.pendingInvites.collectAsState()
+              PendingGroupInvitesScreen(
+                state = state,
+                controller = groupController,
+                modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+              )
+            }
+            entry<GroupConversation> { groupKey ->
+              val state by GroupChatCoordinator.chatState(groupKey.groupId).collectAsState()
+              P2PGroupChatScreen(
+                state = state,
+                controller = groupController,
+                modifier = Modifier.fillMaxSize(),
+              )
+            }
+            entry<GroupInfo> { groupKey ->
+              val state by GroupChatCoordinator.infoState(groupKey.groupId).collectAsState()
+              GroupInfoScreen(
+                state = state,
+                controller = groupController,
+                modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+              )
+            }
+          },
+      )
+    }
   }
 }
