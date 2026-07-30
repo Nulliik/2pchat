@@ -2,6 +2,10 @@ package com.example.twopchat.ui.chat
 
 import android.graphics.Bitmap
 import android.os.Build
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
@@ -672,14 +676,23 @@ internal fun ChatMessageBubble(
                                                                     strokeWidth = 1.2.dp
                                                                 )
                                                             } else {
-                                                                Icon(
-                                                                    painter = painterResource(id = if (isRead) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
-                                                                    contentDescription = if (isRead) "Read" else "Sent",
-                                                                    tint = if (isRead) {
-                                                                        if (msg.isMe && primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color(0xFF64B5F6)
-                                                                    } else textColor.copy(alpha = 0.75f),
-                                                                    modifier = Modifier.size(13.dp)
-                                                                )
+                                                                AnimatedContent(
+                                                                    targetState = isRead,
+                                                                    transitionSpec = {
+                                                                        (scaleIn(initialScale = 0.7f, animationSpec = tween(140, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(140)))
+                                                                            .togetherWith(fadeOut(animationSpec = tween(90)))
+                                                                    },
+                                                                    label = "MessageStatusCheckTransition"
+                                                                ) { readState ->
+                                                                    Icon(
+                                                                        painter = painterResource(id = if (readState) com.example.twopchat.R.drawable.ic_msg_double_check else com.example.twopchat.R.drawable.ic_msg_single_check),
+                                                                        contentDescription = if (readState) "Read" else "Sent",
+                                                                        tint = if (readState) {
+                                                                            if (msg.isMe && primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack else Color(0xFF64B5F6)
+                                                                        } else textColor.copy(alpha = 0.75f),
+                                                                        modifier = Modifier.size(13.dp)
+                                                                    )
+                                                                }
                                                             }
                                                         }
                                                     }
