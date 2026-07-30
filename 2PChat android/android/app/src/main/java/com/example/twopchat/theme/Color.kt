@@ -16,30 +16,31 @@ val ChampagneGold = Color(0xFFE5C158)
 val DeepGold = Color(0xFF26200D)
 val NeonPurple = Color(0xFFBF5AF2)
 val DeepPurple = Color(0xFF230D35)
+val EmeraldGreen = Color(0xFF10B981)
 
 // Quiet Luxury Light Mode Palette — v2 (warm, airy, premium)
-val AlabasterCream        = Color(0xFFE8ECE8) // Soft warm grey-green background — comfortable contrast
+val AlabasterCream        = Color(0xFFF0F4F8) // Clean light ice background
 val PremiumWhite          = Color(0xFFFFFFFF) // Pure white cards
-val CardLight             = Color(0xFFECF0EC) // Input fields / secondary backgrounds — warm grey-green
-val BorderLight           = Color(0xFFD8DED8) // Subtle green-grey divider
-val TextDark              = Color(0xFF1A1F1C) // Near-black with warm green undertone
-val TextSubdued           = Color(0xFF5C6B61) // Subdued text — warmer, less cold than pure grey
+val CardLight             = Color(0xFFE8EEF5) // Input fields / secondary backgrounds
+val BorderLight           = Color(0x140F172A) // Subtle 8% opacity dark stroke
+val TextDark              = Color(0xFF0F172A) // Slate dark title
+val TextSubdued           = Color(0xFF64748B) // Subdued text
 
 // High-Contrast Light Mode Brand Accents — v2
 val MintGreenLight        = Color(0xFF00966F) // Richer emerald: more vivid, better on white
-val CeruleanBlueLight     = Color(0xFF0071E3) // Apple-style deep blue, slightly warmer
+val CeruleanBlueLight     = Color(0xFF007AFF) // Apple-style vibrant blue
 
 // Light theme surface hierarchy
 val LightSurface          = Color(0xFFFFFFFF) // Card surface — pure white
-val LightSurfaceVariant   = Color(0xFFEBF0EB) // Sidebar / input background
-val LightSurfaceContainer = Color(0xFFF0F4F0) // Slight elevation above background
+val LightSurfaceVariant   = Color(0xFFF1F5F9) // Sidebar / input background
+val LightSurfaceContainer = Color(0xFFF8FAFC) // Slight elevation above background
 
 // Premium Tinted Darks for Mint Green theme
-val DarkBgMint             = Color(0xFF080C0A) // Extremely dark forest green/black
-val DarkSurfaceMint        = Color(0xFF111A16) // Deep pine tinted dark grey
-val DarkSurfaceVariantMint = Color(0xFF16221D) // Slightly lighter pine tinted dark grey
+val DarkBgMint             = Color(0xFF0B0E14) // Deep carbon charcoal
+val DarkSurfaceMint        = Color(0xFF161B22) // Card surface
+val DarkSurfaceVariantMint = Color(0xFF1C212A) // Input background
 
 // Premium Tinted Darks for Cerulean Blue theme
-val DarkBgBlue             = Color(0xFF08090E) // Extremely dark navy/black
-val DarkSurfaceBlue        = Color(0xFF10141F) // Deep navy tinted dark grey
-val DarkSurfaceVariantBlue = Color(0xFF151A29) // Slightly lighter navy tinted dark grey
+val DarkBgBlue             = Color(0xFF0B0E14) // Deep carbon charcoal
+val DarkSurfaceBlue        = Color(0xFF161B22) // Card surface
+val DarkSurfaceVariantBlue = Color(0xFF1C212A) // Input background

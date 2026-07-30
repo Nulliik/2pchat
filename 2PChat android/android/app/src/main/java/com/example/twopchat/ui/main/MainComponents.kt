@@ -232,7 +232,7 @@ fun PeerRow(
 
     Card(
         colors = CardDefaults.cardColors(containerColor = surfaceColor),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = if (isLight) 2.dp else 0.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -246,10 +246,10 @@ fun PeerRow(
                 onClick = onClick,
                 onLongClick = onLongClick
             )
-            .border(0.5.dp, onSurfaceColor.copy(alpha = borderAlpha), RoundedCornerShape(16.dp))
+            .border(0.75.dp, onSurfaceColor.copy(alpha = if (isLight) 0.12f else 0.08f), RoundedCornerShape(20.dp))
     ) {
         Row(
-            modifier = Modifier.padding(14.dp).fillMaxWidth(),
+            modifier = Modifier.padding(15.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {

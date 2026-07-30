@@ -169,21 +169,21 @@ fun ChatsTab(
         // ─── Hero Identity Card ────────────────────────────────────
         Card(
             colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(26.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(vertical = 12.dp)
                 .background(
                     brush = Brush.linearGradient(
                         colors = listOf(
-                            primaryColor.copy(alpha = 0.10f),
-                            surfaceColor.copy(alpha = 0.90f),
-                            primaryColor.copy(alpha = 0.04f)
+                            primaryColor.copy(alpha = 0.18f),
+                            surfaceColor.copy(alpha = 0.95f),
+                            primaryColor.copy(alpha = 0.08f)
                         )
                     ),
-                    shape = RoundedCornerShape(24.dp)
+                    shape = RoundedCornerShape(26.dp)
                 )
-                .border(0.5.dp, primaryColor.copy(alpha = 0.20f), RoundedCornerShape(24.dp))
+                .border(1.dp, primaryColor.copy(alpha = 0.35f), RoundedCornerShape(26.dp))
         ) {
             Column(modifier = Modifier.padding(18.dp)) {
 
@@ -306,8 +306,8 @@ fun ChatsTab(
                         node: RadarNode
                     ) {
                         val pillColor = when (ok) {
-                            true  -> Color(0xFF00C853)
-                            false -> Color(0xFFFF5252)
+                            true  -> Color(0xFF10B981)
+                            false -> Color(0xFFEF4444)
                             null  -> onSurfaceVariant
                         }
                         
@@ -315,11 +315,11 @@ fun ChatsTab(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(RoundedCornerShape(16.dp))
                                 .clickable { onStatusPillClick(node) }
-                                .background(pillColor.copy(alpha = 0.08f))
-                                .border(0.5.dp, pillColor.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-                                .padding(vertical = 8.dp, horizontal = 2.dp)
+                                .background(pillColor.copy(alpha = 0.12f))
+                                .border(0.75.dp, pillColor.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+                                .padding(vertical = 10.dp, horizontal = 4.dp)
                         ) {
                             Box(
                                 contentAlignment = Alignment.Center,

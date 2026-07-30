@@ -343,11 +343,11 @@ fun SettingsTab(
                     // Visual Profile Card with interactive photo selector
                     Card(
                         colors = CardDefaults.cardColors(containerColor = surfaceColor),
-                        shape = RoundedCornerShape(20.dp),
+                        shape = RoundedCornerShape(24.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 12.dp)
-                            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
+                            .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
                     ) {
                         Row(
                             modifier = Modifier

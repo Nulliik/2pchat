@@ -23,10 +23,10 @@ private val DarkMintColorScheme = darkColorScheme(
     onSurface = TextLight,
     surfaceVariant = DarkSurfaceVariantMint,
     onSurfaceVariant = TextGray,
-    outline = Color(0xFF26332C),
-    outlineVariant = Color(0xFF1B2620),
-    surfaceContainer = Color(0xFF141F1A),
-    surfaceContainerHigh = Color(0xFF1C2B24)
+    outline = Color(0x1AFFFFFF),
+    outlineVariant = Color(0x0DFFFFFF),
+    surfaceContainer = Color(0xFF161B22),
+    surfaceContainerHigh = Color(0xFF1C212A)
 )
 
 private val DarkBlueColorScheme = darkColorScheme(
@@ -34,15 +34,15 @@ private val DarkBlueColorScheme = darkColorScheme(
     secondary = DeepCerulean,
     background = DarkBgBlue,
     surface = DarkSurfaceBlue,
-    onPrimary = StealthBlack,
+    onPrimary = Color.White,
     onBackground = TextLight,
     onSurface = TextLight,
     surfaceVariant = DarkSurfaceVariantBlue,
     onSurfaceVariant = TextGray,
-    outline = Color(0xFF222B3D),
-    outlineVariant = Color(0xFF182030),
-    surfaceContainer = Color(0xFF141926),
-    surfaceContainerHigh = Color(0xFF1E2538)
+    outline = Color(0x1AFFFFFF),
+    outlineVariant = Color(0x0DFFFFFF),
+    surfaceContainer = Color(0xFF161B22),
+    surfaceContainerHigh = Color(0xFF1C212A)
 )
 
 private val AmoledMintColorScheme = darkColorScheme(
@@ -55,8 +55,8 @@ private val AmoledMintColorScheme = darkColorScheme(
     onSurface = TextLight,
     surfaceVariant = Color(0xFF161A1D),
     onSurfaceVariant = TextGray,
-    outline = Color(0xFF22272B),
-    outlineVariant = Color(0xFF191C1F),
+    outline = Color(0x1AFFFFFF),
+    outlineVariant = Color(0x0DFFFFFF),
     surfaceContainer = Color(0xFF111417),
     surfaceContainerHigh = Color(0xFF1A1F24)
 )
@@ -66,13 +66,13 @@ private val AmoledBlueColorScheme = darkColorScheme(
     secondary = DeepCerulean,
     background = Color.Black,
     surface = StealthBlack,
-    onPrimary = StealthBlack,
+    onPrimary = Color.White,
     onBackground = TextLight,
     onSurface = TextLight,
     surfaceVariant = Color(0xFF151D2A),
     onSurfaceVariant = TextGray,
-    outline = Color(0xFF202A3B),
-    outlineVariant = Color(0xFF171F2C),
+    outline = Color(0x1AFFFFFF),
+    outlineVariant = Color(0x0DFFFFFF),
     surfaceContainer = Color(0xFF111722),
     surfaceContainerHigh = Color(0xFF1A2233)
 )
@@ -80,7 +80,7 @@ private val AmoledBlueColorScheme = darkColorScheme(
 private val LightMintColorScheme = lightColorScheme(
     primary            = MintGreenLight,
     onPrimary          = Color.White,
-    primaryContainer   = Color(0xFFB8F0DC),  // soft mint tint for chips/badges
+    primaryContainer   = Color(0xFFB8F0DC),
     onPrimaryContainer = Color(0xFF00382A),
     secondary          = DeepPine,
     background         = AlabasterCream,
@@ -91,7 +91,7 @@ private val LightMintColorScheme = lightColorScheme(
     onSurfaceVariant   = TextSubdued,
     surfaceContainer   = LightSurfaceContainer,
     outline            = BorderLight,
-    outlineVariant     = Color(0xFFE4EAE4)
+    outlineVariant     = Color(0x0A0F172A)
 )
 
 private val LightBlueColorScheme = lightColorScheme(
@@ -100,15 +100,15 @@ private val LightBlueColorScheme = lightColorScheme(
     primaryContainer   = Color(0xFFCCE4FF),
     onPrimaryContainer = Color(0xFF001F4A),
     secondary          = DeepCerulean,
-    background         = Color(0xFFE6EBF2),  // soft blue-tinted grey background
+    background         = Color(0xFFF0F4F8),
     onBackground       = TextDark,
     surface            = LightSurface,
     onSurface          = TextDark,
-    surfaceVariant     = Color(0xFFE8EDF5),
+    surfaceVariant     = Color(0xFFE2E8F0),
     onSurfaceVariant   = TextSubdued,
-    surfaceContainer   = Color(0xFFEEF2F8),
-    outline            = Color(0xFFD4DCE8),
-    outlineVariant     = Color(0xFFDDE4EE)
+    surfaceContainer   = Color(0xFFFFFFFF),
+    outline            = BorderLight,
+    outlineVariant     = Color(0x0A0F172A)
 )
 
 @Composable
