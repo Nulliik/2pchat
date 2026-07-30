@@ -2660,11 +2660,16 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
         print(f"[RECONNECT] Suppressing reconnect to '{peer_name}' (fingerprint change pending approval)")
         return False
 
-    # Close old session
+    # Close old session or verify health
     session = _session_for_peer(peer_name, expected_fingerprint)
     if session and session.is_online:
-        print(f"[RECONNECT] Session with {peer_name} is already online; keeping it")
-        return True
+        try:
+            probe_fut = asyncio.run_coroutine_threadsafe(session.send_reliable({"type": "heartbeat"}), loop)
+            probe_fut.result(timeout=3.0)
+            print(f"[RECONNECT] Session with {peer_name} is healthy and responsive; keeping it")
+            return True
+        except Exception as probe_err:
+            print(f"[RECONNECT] Session with {peer_name} failed health probe ({probe_err}); replacing stale session")
     if session:
         try:
             if hasattr(session, "close"):
