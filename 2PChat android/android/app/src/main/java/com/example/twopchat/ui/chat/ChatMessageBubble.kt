@@ -1439,7 +1439,7 @@ private val URL_PATTERN = Pattern.compile(
 )
 
 @Composable
-internal fun LinkifiedText(
+fun LinkifiedText(
     text: String,
     textColor: Color,
     linkColor: Color,

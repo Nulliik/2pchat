@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -732,14 +733,18 @@ fun GroupChatScreen(
                 }
             }
 
-            // Floating Scroll-to-Bottom Button
-            val showScrollToBottomButton by remember {
+            // Floating Scroll-to-Bottom Button with Unread Badge
+            val scrollInfo by remember {
                 derivedStateOf {
                     val total = listState.layoutInfo.totalItemsCount
                     val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                    total > 0 && lastVisible < total - 2
+                    val shouldShow = total > 0 && lastVisible < total - 2
+                    val unread = (total - 1 - lastVisible).coerceAtLeast(0)
+                    Pair(shouldShow, unread)
                 }
             }
+            val showScrollToBottomButton = scrollInfo.first
+            val unreadCount = scrollInfo.second
 
             androidx.compose.animation.AnimatedVisibility(
                 visible = showScrollToBottomButton && state.messages.isNotEmpty(),
@@ -749,32 +754,52 @@ fun GroupChatScreen(
                     .align(Alignment.BottomEnd)
                     .padding(end = 16.dp, bottom = 12.dp)
             ) {
-                Surface(
-                    color = Color(0xFF1E2226).copy(alpha = 0.92f),
-                    shape = CircleShape,
-                    shadowElevation = 4.dp,
-                    border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.15f)),
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clickable {
-                            coroutineScope.launch {
-                                val target = listState.layoutInfo.totalItemsCount - 1
-                                if (target >= 0) {
-                                    listState.animateScrollToItem(target)
+                Box {
+                    Surface(
+                        color = Color(0xFF1E2226).copy(alpha = 0.92f),
+                        shape = CircleShape,
+                        shadowElevation = 4.dp,
+                        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.15f)),
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clickable {
+                                coroutineScope.launch {
+                                    val target = listState.layoutInfo.totalItemsCount - 1
+                                    if (target >= 0) {
+                                        listState.animateScrollToItem(target)
+                                    }
                                 }
                             }
-                        }
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize()
                     ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_scroll_down),
-                            contentDescription = "Scroll down",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_scroll_down),
+                                contentDescription = "Scroll down",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    if (unreadCount > 0) {
+                        Surface(
+                            color = primaryColor,
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 4.dp, y = (-4).dp)
+                        ) {
+                            Text(
+                                text = if (unreadCount > 99) "99+" else "$unreadCount",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -828,11 +853,25 @@ fun GroupChatScreen(
     }
 }
 
+    val allGroupImages = remember(state.messages) {
+        state.messages.mapNotNull { msg ->
+            val att = msg.attachment
+            if (att != null) {
+                val p = att.localPath ?: att.fileName
+                if (p.isNotBlank() && (att.mimeType.startsWith("image/") || p.endsWith(".jpg", true) || p.endsWith(".jpeg", true) || p.endsWith(".png", true) || p.endsWith(".webp", true))) {
+                    p
+                } else null
+            } else null
+        }
+    }
+
     // Full Screen Image Viewer (Direct Chat feature parity)
     selectedFullImagePath?.let { path ->
+        val imageList = if (allGroupImages.contains(path)) allGroupImages else listOf(path)
+        val startIndex = imageList.indexOf(path).coerceAtLeast(0)
         com.example.twopchat.ui.chat.FullscreenImageViewer(
-            imagePaths = listOf(path),
-            initialIndex = 0,
+            imagePaths = imageList,
+            initialIndex = startIndex,
             appLanguage = appLanguage,
             onClose = { selectedFullImagePath = null }
         )
@@ -902,6 +941,23 @@ fun GroupChatScreen(
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("Скопировать текст", modifier = Modifier.fillMaxWidth()) }
+                    }
+                    message.attachment?.let { att ->
+                        val filePath = att.localPath ?: att.fileName
+                        if (filePath.isNotBlank() && java.io.File(filePath).exists()) {
+                            TextButton(
+                                onClick = {
+                                    val savedUri = com.example.twopchat.ui.chat.saveFileToPublicDownloads(context, filePath, att.fileName)
+                                    if (savedUri != null) {
+                                        android.widget.Toast.makeText(context, if (appLanguage == "Русский") "Файл сохранён в Загрузки" else "File saved to Downloads", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        android.widget.Toast.makeText(context, if (appLanguage == "Русский") "Ошибка сохранения" else "Save failed", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                    selectedMessageForOptions = null
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text(if (appLanguage == "Русский") "Сохранить в Загрузки" else "Save to Downloads", modifier = Modifier.fillMaxWidth()) }
+                        }
                     }
                     TextButton(
                         onClick = {
@@ -2088,12 +2144,14 @@ private fun GroupMessageCard(
                     }
                 }
 
-                // Message Text (Rendered BELOW attachment to match 1-on-1 chat layout)
+                // Message Text with Clickable Links
                 if (shouldDisplayText) {
-                    Text(
+                    com.example.twopchat.ui.chat.LinkifiedText(
                         text = message.text,
+                        textColor = messageTextColor,
+                        linkColor = if (message.isMine) Color(0xFF90CAF9) else Color(0xFF64B5F6),
                         fontSize = 14.sp,
-                        color = messageTextColor,
+                        lineHeight = 19.sp,
                         modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
                     )
                 }
