@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.VpnService
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import org.json.JSONArray
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -311,12 +312,28 @@ fun ChatsTab(
                             null  -> onSurfaceVariant
                         }
                         
+                        val pillInteractionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                        val isPillPressed by pillInteractionSource.collectIsPressedAsState()
+                        val pillScale by animateFloatAsState(
+                            targetValue = if (isPillPressed) 0.94f else 1.0f,
+                            animationSpec = spring(dampingRatio = 0.7f, stiffness = 500f),
+                            label = "pillScale"
+                        )
+
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
                                 .weight(1f)
+                                .graphicsLayer {
+                                    scaleX = pillScale
+                                    scaleY = pillScale
+                                }
                                 .clip(RoundedCornerShape(16.dp))
-                                .clickable { onStatusPillClick(node) }
+                                .clickable(
+                                    interactionSource = pillInteractionSource,
+                                    indication = ripple(),
+                                    onClick = { onStatusPillClick(node) }
+                                )
                                 .background(pillColor.copy(alpha = 0.12f))
                                 .border(0.75.dp, pillColor.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
                                 .padding(vertical = 10.dp, horizontal = 4.dp)
