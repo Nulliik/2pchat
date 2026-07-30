@@ -367,12 +367,14 @@ fun GroupInfoScreen(
                                     fontWeight = FontWeight.SemiBold,
                                     color = onSurfaceColor,
                                 )
+                                Spacer(Modifier.height(2.dp))
                                 Text(
                                     "Участники и модераторы смогут читать, голосовать и оставлять реакции.",
                                     fontSize = 12.sp,
                                     color = onSurfaceVariant,
                                 )
                             }
+                            Spacer(Modifier.width(12.dp))
                             Switch(
                                 checked = state.metadata.adminOnlyPosting,
                                 onCheckedChange = {
@@ -457,7 +459,7 @@ fun GroupInfoScreen(
             // Clear History Row
             item(key = "clear_history_row") {
                 Surface(
-                    color = Color(0xFF14161A),
+                    color = surfaceColor,
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1061,7 +1063,7 @@ private fun MediaAttachmentRow(
     val localPath = attachment.localPath ?: attachment.fileName
 
     Surface(
-        color = Color(0xFF14161A),
+        color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -1418,7 +1420,7 @@ private fun AdminLogSection(state: GroupInfoUiState) {
     var isExpanded by remember { mutableStateOf(false) }
 
     Surface(
-        color = Color(0xFF14161A),
+        color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -1617,7 +1619,7 @@ private fun MemberRestrictionsDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Отмена", color = Color.Gray) }
         },
-        containerColor = Color(0xFF14161A),
+        containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(20.dp)
     )
 }
