@@ -1844,16 +1844,6 @@ private fun GroupMessageCard(
                     )
                 }
 
-                // Message Text (Hide raw attachment- placeholder)
-                if (shouldDisplayText) {
-                    Text(
-                        text = message.text,
-                        fontSize = 14.sp,
-                        color = messageTextColor,
-                        modifier = Modifier.padding(vertical = 2.dp)
-                    )
-                }
-
                 // Attachment & Rich Media Rendering (GIFs, Stickers, Photos, Videos)
                 attachment?.let { att ->
                     val context = LocalContext.current
@@ -2096,6 +2086,16 @@ private fun GroupMessageCard(
                             }
                         }
                     }
+                }
+
+                // Message Text (Rendered BELOW attachment to match 1-on-1 chat layout)
+                if (shouldDisplayText) {
+                    Text(
+                        text = message.text,
+                        fontSize = 14.sp,
+                        color = messageTextColor,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                    )
                 }
 
                 // Reactions Row
