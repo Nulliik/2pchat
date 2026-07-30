@@ -157,6 +157,20 @@ internal fun shouldLoadOlderHistory(
     !isSearchMode &&
     !showProfileOverlay
 
+internal fun repairMisclassifiedLocalImage(message: Message): Message {
+    if (message.attachmentType != "FILE") return message
+    val path = message.attachmentUri?.takeIf { it.isNotBlank() && "://" !in it } ?: return message
+    val file = File(path)
+    if (!file.isFile) return message
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(file.absolutePath, bounds)
+    return if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+        message.copy(attachmentType = "IMAGE")
+    } else {
+        message
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
@@ -508,7 +522,11 @@ fun ChatScreen(
                     peerName = peerName,
                     limit = fastHistoryLimit,
                     offset = 0,
-                )
+                ).map { message ->
+                    repairMisclassifiedLocalImage(message).also { repaired ->
+                        if (repaired !== message) db.saveMessage(peerName, repaired)
+                    }
+                }
             }
         } else {
             emptyList()
@@ -555,7 +573,11 @@ fun ChatScreen(
                     peerName = peerName,
                     limit = HISTORY_PAGE_SIZE,
                     offset = loadedPersistedMessageCount,
-                )
+                ).map { message ->
+                    repairMisclassifiedLocalImage(message).also { repaired ->
+                        if (repaired !== message) db.saveMessage(peerName, repaired)
+                    }
+                }
             }
             loadedPersistedMessageCount += olderPage.size
             hasMoreHistory = olderPage.size >= HISTORY_PAGE_SIZE
@@ -1196,13 +1218,8 @@ fun ChatScreen(
                         }
                     } catch (_: Exception) {}
 
+                    fileName = VoiceMessageSupport.ensureMediaExtension(fileName, mimeType)
                     val detectedType = VoiceMessageSupport.attachmentType(fileName, mimeType)
-                    val defaultExt = when (detectedType) {
-                        "VIDEO" -> ".mp4"
-                        GifStorageManager.ATTACHMENT_TYPE -> ".gif"
-                        else -> ".jpg"
-                    }
-                    if (!fileName.contains(".")) fileName += defaultExt
 
                     val tempFile = saveUriToTempFile(context, uri, fileName)
                     if (tempFile != null) {
@@ -1558,19 +1575,24 @@ fun ChatScreen(
             return@rememberLauncherForActivityResult
         }
         for (uri in uris) {
-            var fileName = "Document.pdf"
+            var fileName = "file"
+            val mime = context.contentResolver.getType(uri).orEmpty()
             context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                 if (nameIndex != -1 && cursor.moveToFirst()) {
                     fileName = cursor.getString(nameIndex)
                 }
             }
+            fileName = VoiceMessageSupport.ensureMediaExtension(fileName, mime)
             val tempFile = saveUriToTempFile(context, uri, fileName)
             if (tempFile != null) {
                 val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                 val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                 val initialStatus = if (endpoint != null) "SENT" else "PENDING"
-                val detectedType = VoiceMessageSupport.attachmentType(fileName, "")
+                // Some document providers return extensionless generated names
+                // for photos and stickers. Preserve their MIME type instead of
+                // rendering them forever as generic sent_file_* attachments.
+                val detectedType = VoiceMessageSupport.attachmentType(fileName, mime)
                 val displayMsgText = if (detectedType == "IMAGE") "Sent an image" else if (detectedType == "VIDEO") "Sent a video" else fileName
                 val outMsg = Message(
                     id = newMessageId(),

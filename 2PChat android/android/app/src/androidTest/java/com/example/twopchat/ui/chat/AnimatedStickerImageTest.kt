@@ -4,11 +4,14 @@ import android.graphics.ImageDecoder
 import android.graphics.drawable.AnimatedImageDrawable
 import android.os.Build
 import android.util.Base64
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
@@ -47,6 +50,37 @@ class AnimatedStickerImageTest {
                 }
             }
             composeRule.onNodeWithContentDescription("Animated sticker").assertIsDisplayed()
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun sameAnimatedStickerCanBackMultipleVisibleViews() {
+        assumeTrue(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val file = File(context.cacheDir, "2psticker_test--shared.webp")
+        file.writeBytes(Base64.decode(ANIMATED_WEBP_BASE64, Base64.DEFAULT))
+
+        try {
+            composeRule.setContent {
+                MaterialTheme {
+                    Row {
+                        repeat(2) {
+                            AnimatedStickerImage(
+                                filePath = file.absolutePath,
+                                fallbackEmoji = "🎭",
+                                contentDescription = "Repeated animated sticker",
+                                targetSizePx = 128,
+                                modifier = Modifier.size(64.dp),
+                            )
+                        }
+                    }
+                }
+            }
+            composeRule.waitForIdle()
+            composeRule.onAllNodesWithContentDescription("Repeated animated sticker")
+                .assertCountEquals(2)
         } finally {
             file.delete()
         }

@@ -14,12 +14,29 @@ class VoiceMessageSupportTest {
     @Test
     fun keepsImagesAndDocumentsDistinct() {
         assertEquals("IMAGE", VoiceMessageSupport.attachmentType("photo.jpg", "application/octet-stream"))
+        assertEquals("IMAGE", VoiceMessageSupport.attachmentType("provider-generated-name", "image/jpeg"))
         assertEquals("FILE", VoiceMessageSupport.attachmentType("report.pdf", "application/pdf"))
         assertEquals("STICKER", VoiceMessageSupport.attachmentType("2psticker_moods_love.webp", "image/webp"))
         assertEquals("GIF", VoiceMessageSupport.attachmentType("animation.gif", "image/gif"))
         assertEquals(
             "STICKER_PACK",
             VoiceMessageSupport.attachmentType("2pstickerpack_moods.2psticker", "application/zip"),
+        )
+    }
+
+    @Test
+    fun addsMimeExtensionToExtensionlessProviderNames() {
+        assertEquals(
+            "provider-generated-name.jpg",
+            VoiceMessageSupport.ensureMediaExtension("provider-generated-name", "image/jpeg"),
+        )
+        assertEquals(
+            "photo.png",
+            VoiceMessageSupport.ensureMediaExtension("../photo", "image/png"),
+        )
+        assertEquals(
+            "already.webp",
+            VoiceMessageSupport.ensureMediaExtension("already.webp", "image/jpeg"),
         )
     }
 

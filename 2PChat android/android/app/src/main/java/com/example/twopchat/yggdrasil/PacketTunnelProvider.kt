@@ -95,9 +95,13 @@ open class PacketTunnelProvider: VpnService() {
             }
             ACTION_CONNECT -> {
                 Log.d(TAG, "Connecting...")
-                if (started.get()) {
+                if (isTunnelHealthy()) {
                     connect()
                 } else {
+                    if (started.get()) {
+                        Log.w(TAG, "Tunnel reports started but its workers are dead; rebuilding it")
+                        stop(stopService = false)
+                    }
                     start()
                 }
                 START_STICKY
@@ -292,6 +296,13 @@ open class PacketTunnelProvider: VpnService() {
         yggdrasil.retryPeersNow()
     }
 
+    private fun isTunnelHealthy(): Boolean =
+        started.get() &&
+            parcel?.fileDescriptor?.valid() == true &&
+            readerThread?.isAlive == true &&
+            writerThread?.isAlive == true &&
+            updateThread?.isAlive == true
+
     private fun updater() {
         try {
             Thread.sleep(500)
@@ -303,6 +314,14 @@ open class PacketTunnelProvider: VpnService() {
         var lastStateUpdate = 0L
         val probeStartedAt = System.currentTimeMillis()
         updates@ while (started.get()) {
+            if (readerThread?.isAlive != true || writerThread?.isAlive != true) {
+                Log.w(TAG, "Tunnel packet worker stopped unexpectedly; rebuilding it")
+                if (started.get()) {
+                    stop(stopService = false)
+                    start()
+                }
+                return
+            }
             val treeJSON = yggdrasil.treeJSON
             if ((application as GlobalApplication).needUiUpdates()) {
                 val intent = Intent(STATE_INTENT)

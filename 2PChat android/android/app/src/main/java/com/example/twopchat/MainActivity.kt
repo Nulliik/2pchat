@@ -95,6 +95,35 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         applyScreenSecurity()
+        val appContext = applicationContext
+        val preferences = P2PPreferences.prefs(appContext)
+        val hasLocalIdentity =
+            preferences.getBoolean("onboarding_completed", false) &&
+                !preferences.getString("username_profile", null).isNullOrBlank()
+        if (hasLocalIdentity) {
+            androidx.core.content.ContextCompat.startForegroundService(
+                appContext,
+                Intent(appContext, P2PRelayService::class.java),
+            )
+        }
+        if (
+            preferences.getBoolean("settings_yggdrasil", true) &&
+            android.net.VpnService.prepare(appContext) == null
+        ) {
+            runCatching {
+                startService(
+                    Intent(
+                        appContext,
+                        com.example.twopchat.yggdrasil.PacketTunnelProvider::class.java,
+                    ).apply {
+                        action =
+                            com.example.twopchat.yggdrasil.PacketTunnelProvider.ACTION_CONNECT
+                    },
+                )
+            }.onFailure {
+                android.util.Log.w("MainActivity", "Could not heal Yggdrasil on resume", it)
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
