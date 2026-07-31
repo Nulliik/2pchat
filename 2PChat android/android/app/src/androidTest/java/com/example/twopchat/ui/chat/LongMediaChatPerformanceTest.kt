@@ -90,7 +90,7 @@ class LongMediaChatPerformanceTest {
                         .fillMaxSize()
                         .testTag(CHAT_LIST_TAG),
                     messages = messages,
-                    selectedMessages = mutableStateListOf(),
+                    selectedMessages = remember { mutableStateListOf() },
                     isHistoryLoading = false,
                     isSearchMode = false,
                     searchQuery = "",

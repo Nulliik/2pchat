@@ -89,7 +89,7 @@ fun MainNavigation(
         }
       },
       label = "ScreenNavigationTransition"
-    ) { _ ->
+    ) { targetDestination ->
       NavDisplay(
         backStack = backStack,
         onBack = { backStack.removeLastOrNull() },

@@ -102,7 +102,7 @@ class P2PRelayService : Service() {
                     "2PChat:P2PRelayServiceWakeLock",
                 )?.apply {
                     setReferenceCounted(false)
-                    acquire()
+                    acquire(10 * 60 * 1000L) // 10-minute timeout; re-acquired on next ping cycle
                 }
             }
             if (wifiLock == null) {

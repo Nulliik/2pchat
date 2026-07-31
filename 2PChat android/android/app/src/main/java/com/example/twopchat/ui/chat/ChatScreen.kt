@@ -3601,10 +3601,8 @@ fun saveFileToPublicDownloads(context: android.content.Context, filePath: String
                     inputStream.copyTo(outputStream)
                 }
             }
-            // Trigger MediaScanner
-            val mediaScanIntent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
-            mediaScanIntent.data = Uri.fromFile(destFile)
-            context.sendBroadcast(mediaScanIntent)
+            // Trigger MediaScanner (API-21+ compatible)
+            android.media.MediaScannerConnection.scanFile(context, arrayOf(destFile.absolutePath), null, null)
             return Uri.fromFile(destFile)
         }
     } catch (e: Exception) {
