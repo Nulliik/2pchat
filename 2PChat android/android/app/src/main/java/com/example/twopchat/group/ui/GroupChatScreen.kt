@@ -2092,7 +2092,7 @@ private fun GroupMessageCard(
             color = if (isSticker) Color.Transparent else if (isMediaOnly) Color.Transparent else bubbleContainerColor,
             modifier = Modifier
                 .wrapContentWidth()
-                .widthIn(max = 300.dp)
+                .widthIn(max = 280.dp)
                 .combinedClickable(
                     onClick = {
                         if (isSelectMode) onToggleSelect()
@@ -2102,9 +2102,10 @@ private fun GroupMessageCard(
                         else onOptionsClick()
                     }
                 )
+                .then(if (!message.isMine && !isSticker && !isMediaOnly && !hasMediaContent) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), bubbleShape) else Modifier)
         ) {
             Column(
-                modifier = if (isMediaOnly || hasMediaContent) Modifier.padding(0.dp) else Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                modifier = if (isMediaOnly || hasMediaContent) Modifier.padding(0.dp) else Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
                 horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start
             ) {
                 // Header line: Author Name & Role (if not mine and not sticker/media-only)
@@ -2407,7 +2408,7 @@ private fun GroupMessageCard(
                                 }
                             } else {
                                 Surface(
-                                    color = surfaceColor,
+                                    color = if (message.isMine) Color.White.copy(alpha = 0.15f) else onSurfaceColor.copy(alpha = 0.06f),
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -2470,8 +2471,8 @@ private fun GroupMessageCard(
                         text = message.text,
                         textColor = messageTextColor,
                         linkColor = if (message.isMine) Color(0xFF90CAF9) else Color(0xFF64B5F6),
-                        fontSize = 14.sp,
-                        lineHeight = 19.sp,
+                        fontSize = 15.sp,
+                        lineHeight = 20.sp,
                         modifier = if (hasMediaContent) Modifier.padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 4.dp) else Modifier.padding(top = 4.dp, bottom = 2.dp)
                     )
                 }
