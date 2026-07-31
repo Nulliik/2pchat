@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.*
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
@@ -228,8 +232,8 @@ class MainActivity : ComponentActivity() {
             var appLanguage by remember { mutableStateOf(sharedPrefs.getString("settings_language", systemDefaultLanguage) ?: systemDefaultLanguage) }
             
             var isAppLocked by remember { mutableStateOf(sharedPrefs.getBoolean("settings_passcode", false)) }
-            val passcodeVal = remember(isAppLocked) { sharedPrefs.getString("passcode_value", "") ?: "" }
-            val duressPinVal = remember(isAppLocked) { sharedPrefs.getString("passcode_duress_value", "") ?: "" }
+            val passcodeVal = remember<String>(isAppLocked) { sharedPrefs.getString("passcode_value", "") ?: "" }
+            val duressPinVal = remember<String>(isAppLocked) { sharedPrefs.getString("passcode_duress_value", "") ?: "" }
             var isStealthDisguiseLocked by remember { mutableStateOf(sharedPrefs.getBoolean("settings_stealth_disguise", false)) }
 
             // Check auto-lock on app start/resume
