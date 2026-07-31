@@ -2203,70 +2203,36 @@ private fun GroupInviteQrModal(
 
     // Modal to pick a 1-on-1 contact inside 2PChat
     if (showShareContactDialog) {
-        AlertDialog(
-            onDismissRequest = { showShareContactDialog = false },
-            title = { Text("Выберите чат", fontWeight = FontWeight.Bold) },
-            text = {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(candidates, key = GroupContactSummary::contactId) { contact ->
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    showShareContactDialog = false
-                                    val peerName = contact.displayName
-                                    val localUsername = prefs.getString("username_profile", "2PChat User").orEmpty()
-                                    val shareText = "👋 Приглашение в группу «$groupTitle»!\n\nСсылка для входа:\n$inviteLink"
-                                    P2PMessageRelay.sendMessage(context, peerName, localUsername, shareText) { success ->
-                                        val msg = if (success) "Приглашение отправлено ${contact.displayName}!" else "Отправлено (доставится при подключении)"
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .background(primaryColor.copy(alpha = 0.15f), CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = contact.displayName.take(1).uppercase(),
-                                        fontWeight = FontWeight.Bold,
-                                        color = primaryColor
-                                    )
-                                }
-                                Spacer(Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = contact.displayName,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 14.sp
-                                    )
-                                    if (contact.isOnline) {
-                                        Text("В сети", fontSize = 11.sp, color = Color(0xFF43A047))
-                                    }
-                                }
-                            }
-                        }
-                    }
+        val recipientItems = candidates.map { contact ->
+            val peerName = contact.displayName
+            val avatar = P2PMessageRelay.peerAvatars[peerName]
+            com.example.twopchat.ui.common.RecipientItem(
+                id = contact.contactId,
+                title = contact.displayName,
+                subtitle = if (contact.isOnline) "В сети" else "Был(а) недавно",
+                isOnline = contact.isOnline,
+                avatarBitmap = avatar,
+                initials = contact.displayName.take(2).uppercase(),
+                isGroup = false,
+            )
+        }
+
+        com.example.twopchat.ui.common.RecipientPickerDialog(
+            title = "Выберите чат",
+            searchPlaceholder = "Поиск получателя...",
+            recipients = recipientItems,
+            primaryColor = primaryColor,
+            onDismiss = { showShareContactDialog = false },
+            onRecipientSelected = { item ->
+                showShareContactDialog = false
+                val peerName = item.title
+                val localUsername = prefs.getString("username_profile", "2PChat User").orEmpty()
+                val shareText = "👋 Приглашение в группу «$groupTitle»!\n\nСсылка для входа:\n$inviteLink"
+                P2PMessageRelay.sendMessage(context, peerName, localUsername, shareText) { success ->
+                    val msg = if (success) "Приглашение отправлено $peerName!" else "Отправлено (доставится при подключении)"
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { showShareContactDialog = false }) {
-                    Text("Отмена")
-                }
-            },
-            containerColor = surfaceColor,
-            shape = RoundedCornerShape(20.dp)
+            }
         )
     }
 }

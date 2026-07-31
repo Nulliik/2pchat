@@ -1497,93 +1497,65 @@ fun GroupChatScreen(
     if (showForwardDialog && messageToForward != null) {
         val activeSet = P2PPreferences.prefs(context).getStringSet("active_chats", emptySet()) ?: emptySet()
         val groups = GroupChatCoordinator.visibleGroups()
-        var forwardSearchQuery by remember { mutableStateOf("") }
 
-        val filteredPeers = remember(activeSet, forwardSearchQuery) {
-            activeSet.filter { it.contains(forwardSearchQuery, ignoreCase = true) }
-        }
-        val filteredGroups = remember(groups, forwardSearchQuery) {
-            groups.filter { it.title.contains(forwardSearchQuery, ignoreCase = true) }
+        val groupItems = groups.map { group ->
+            com.example.twopchat.ui.common.RecipientItem(
+                id = "group_${group.groupId}",
+                title = group.title,
+                subtitle = "Группа",
+                isOnline = true,
+                isGroup = true,
+            )
         }
 
-        AlertDialog(
-            onDismissRequest = {
+        val peerItems = activeSet.filter { it != "Saved Messages" }.map { peer ->
+            val avatar = P2PMessageRelay.peerAvatars[peer]
+            val isOnline = P2PMessageRelay.peerSessionStates[peer] == true
+            com.example.twopchat.ui.common.RecipientItem(
+                id = "peer_$peer",
+                title = peer,
+                subtitle = if (isOnline) "В сети" else "Был(а) недавно",
+                isOnline = isOnline,
+                avatarBitmap = avatar,
+                initials = peer.take(2).uppercase(),
+                isGroup = false,
+            )
+        }
+
+        com.example.twopchat.ui.common.RecipientPickerDialog(
+            title = "Переслать сообщение",
+            searchPlaceholder = "Поиск получателя...",
+            recipients = groupItems + peerItems,
+            primaryColor = primaryColor,
+            onDismiss = {
                 showForwardDialog = false
                 messageToForward = null
             },
-            title = { Text("Переслать сообщение", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)) {
-                    OutlinedTextField(
-                        value = forwardSearchQuery,
-                        onValueChange = { forwardSearchQuery = it },
-                        placeholder = { Text("Поиск...") },
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-                    )
-                    LazyColumn {
-                        if (filteredGroups.isNotEmpty()) {
-                            item { Text("Группы", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = primaryColor) }
-                            items(filteredGroups, key = { "group_${it.groupId}" }) { group ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            val text = messageToForward?.text.orEmpty()
-                                            val att = messageToForward?.attachment
-                                            showForwardDialog = false
-                                            messageToForward = null
-                                            if (att != null) {
-                                                controller.sendAttachment(group.groupId, att.fileName, att.mimeType)
-                                            } else {
-                                                controller.sendMessage(group.groupId, text, null)
-                                            }
-                                            android.widget.Toast.makeText(context, "Сообщение переслано в ${group.title}", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                        .padding(vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("👥  ${group.title}", fontWeight = FontWeight.Medium)
-                                }
-                            }
-                        }
-                        if (filteredPeers.isNotEmpty()) {
-                            item { Text("Личные чаты", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = primaryColor) }
-                            items(filteredPeers, key = { "peer_$it" }) { peer ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            val text = messageToForward?.text.orEmpty()
-                                            val att = messageToForward?.attachment
-                                            val myName = P2PPreferences.prefs(context).getString("display_name", "Me") ?: "Me"
-                                            showForwardDialog = false
-                                            messageToForward = null
-                                            if (att != null) {
-                                                P2PMessageRelay.sendFile(context, peer, "", att.fileName)
-                                            } else {
-                                                P2PMessageRelay.sendMessage(context, peer, myName, text)
-                                            }
-                                            android.widget.Toast.makeText(context, "Сообщение переслано $peer", android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                        .padding(vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text("👤  $peer", fontWeight = FontWeight.Medium)
-                                }
-                            }
-                        }
+            onRecipientSelected = { item ->
+                val text = messageToForward?.text.orEmpty()
+                val att = messageToForward?.attachment
+                showForwardDialog = false
+                messageToForward = null
+
+                if (item.isGroup) {
+                    val targetGroupId = item.id.removePrefix("group_")
+                    if (att != null) {
+                        controller.sendAttachment(targetGroupId, att.fileName, att.mimeType)
+                    } else {
+                        controller.sendMessage(targetGroupId, text, null)
                     }
+                    android.widget.Toast.makeText(context, "Сообщение переслано в ${item.title}", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    val targetPeer = item.id.removePrefix("peer_")
+                    val myName = P2PPreferences.prefs(context).getString("display_name", "Me") ?: "Me"
+                    if (att != null) {
+                        P2PMessageRelay.sendFile(context, targetPeer, "", att.fileName)
+                    } else {
+                        P2PMessageRelay.sendMessage(context, targetPeer, myName, text)
+                    }
+                    android.widget.Toast.makeText(context, "Сообщение переслано $targetPeer", android.widget.Toast.LENGTH_SHORT).show()
                 }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = {
-                    showForwardDialog = false
-                    messageToForward = null
-                }) { Text("Отмена") }
-            },
-            containerColor = surfaceColor,
-            shape = RoundedCornerShape(20.dp)
+            }
         )
     }
 

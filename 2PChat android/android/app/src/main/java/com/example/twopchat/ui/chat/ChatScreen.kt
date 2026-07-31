@@ -2862,328 +2862,116 @@ remove("pinned_msg_id_${peerName}")
 
         // Forward Dialog
         if (showForwardDialog && messageToForward != null) {
-            var forwardSearchQuery by remember { mutableStateOf("") }
             val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-            val chatList = remember(activeSet, peerName) {
-                activeSet.filter { it != peerName }.toList()
-            }
-            val filteredChats = remember(chatList, forwardSearchQuery) {
-                chatList.filter { it.contains(forwardSearchQuery, ignoreCase = true) }
-            }
+            val groups = com.example.twopchat.group.runtime.GroupChatCoordinator.visibleGroups()
             
-            AlertDialog(
-                onDismissRequest = { 
+            val groupItems = groups.map { group ->
+                com.example.twopchat.ui.common.RecipientItem(
+                    id = "group_${group.groupId}",
+                    title = group.title,
+                    subtitle = if (appLanguage == "Русский") "Группа" else "Group",
+                    isOnline = true,
+                    isGroup = true,
+                )
+            }
+
+            val peerItems = activeSet.filter { it != peerName }.map { name ->
+                val avatar = P2PMessageRelay.peerAvatars[name]
+                val isOnline = P2PMessageRelay.peerSessionStates[name] == true || name == "Saved Messages"
+                val subtitle = when {
+                    name == "Saved Messages" -> if (appLanguage == "Русский") "Личное хранилище" else "Personal storage"
+                    isOnline -> if (appLanguage == "Русский") "В сети" else "Online"
+                    else -> if (appLanguage == "Русский") "Был(а) недавно" else "Offline"
+                }
+                val initials = if (name == "Saved Messages") {
+                    "🔖"
+                } else if (name.contains(" ")) {
+                    name.split(" ").map { it.take(1) }.joinToString("")
+                } else {
+                    name.take(2).uppercase()
+                }
+                com.example.twopchat.ui.common.RecipientItem(
+                    id = "peer_$name",
+                    title = name,
+                    subtitle = subtitle,
+                    isOnline = isOnline,
+                    avatarBitmap = avatar,
+                    initials = initials,
+                    isGroup = false,
+                )
+            }
+
+            com.example.twopchat.ui.common.RecipientPickerDialog(
+                title = if (appLanguage == "Русский") "Переслать сообщение" else "Forward Message",
+                searchPlaceholder = if (appLanguage == "Русский") "Поиск получателя..." else "Search recipient...",
+                recipients = groupItems + peerItems,
+                primaryColor = primaryColor,
+                onDismiss = {
                     showForwardDialog = false
                     messageToForward = null
                 },
-                confirmButton = {},
-                dismissButton = {},
-                containerColor = surfaceColor,
-                shape = RoundedCornerShape(24.dp),
-                text = {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                    ) {
-                        // Header Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = if (appLanguage == "Русский") "Переслать сообщение" else "Forward Message",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = onSurfaceColor
-                            )
-                            IconButton(
-                                onClick = {
-                                    showForwardDialog = false
-                                    messageToForward = null
-                                },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Close",
-                                    tint = onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                onRecipientSelected = { item ->
+                    val currentMsg = messageToForward
+                    if (item.isGroup) {
+                        val targetGroupId = item.id.removePrefix("group_")
+                        val textToForward = currentMsg?.text.orEmpty()
+                        showForwardDialog = false
+                        messageToForward = null
+                        if (currentMsg?.attachmentUri != null && currentMsg?.attachmentName != null) {
+                            com.example.twopchat.group.runtime.GroupChatCoordinator.sendAttachment(targetGroupId, currentMsg.attachmentName!!, "")
+                        } else {
+                            com.example.twopchat.group.runtime.GroupChatCoordinator.sendMessage(targetGroupId, textToForward, null)
                         }
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // Search Bar
-                        BasicTextField(
-                            value = forwardSearchQuery,
-                            onValueChange = { forwardSearchQuery = it },
-                            singleLine = true,
-                            textStyle = TextStyle(
-                                color = onSurfaceColor,
-                                fontSize = 14.sp,
-                                platformStyle = PlatformTextStyle(
-                                    includeFontPadding = false
-                                )
-                            ),
-                            cursorBrush = SolidColor(onSurfaceColor),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(44.dp)
-                                .background(surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                                .border(
-                                    width = 0.5.dp, 
-                                    color = onSurfaceColor.copy(alpha = 0.08f), 
-                                    shape = RoundedCornerShape(12.dp)
-                                ),
-                            decorationBox = { innerTextField ->
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(horizontal = 12.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Search,
-                                        contentDescription = "Search",
-                                        tint = onSurfaceVariant.copy(alpha = 0.5f),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Box(
-                                        modifier = Modifier.weight(1f),
-                                        contentAlignment = Alignment.CenterStart
-                                    ) {
-                                        if (forwardSearchQuery.isEmpty()) {
-                                            Text(
-                                                text = if (appLanguage == "Русский") "Поиск получателя..." else "Search recipient...", 
-                                                color = onSurfaceVariant.copy(alpha = 0.5f),
-                                                fontSize = 14.sp,
-                                                style = TextStyle(
-                                                    platformStyle = PlatformTextStyle(
-                                                        includeFontPadding = false
-                                                    )
-                                                )
-                                            )
-                                        }
-                                        innerTextField()
-                                    }
-                                    if (forwardSearchQuery.isNotEmpty()) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        IconButton(
-                                            onClick = { forwardSearchQuery = "" },
-                                            modifier = Modifier.size(20.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Close,
-                                                contentDescription = "Clear",
-                                                tint = onSurfaceVariant.copy(alpha = 0.5f),
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                        Toast.makeText(context, if (appLanguage == "Русский") "Переслано в ${item.title}" else "Forwarded to ${item.title}", Toast.LENGTH_SHORT).show()
+                    } else {
+                        val chatName = item.id.removePrefix("peer_")
+                        if (P2PPreferences.isPeerIdentityChangePending(context, chatName)) {
+                            Toast.makeText(
+                                context,
+                                if (appLanguage == "Русский") "В чате $chatName отправка приостановлена из-за смены ключа" else "Sending to $chatName is paused because its key changed",
+                                Toast.LENGTH_LONG,
+                            ).show()
+                            return@RecipientPickerDialog
+                        }
+                        val textToForward = currentMsg?.text ?: ""
+                        val forwardTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                        val forwardEndpoint = P2PMessageRelay.peerEndpoints[chatName]
+                        val fwdInitialStatus = if (forwardEndpoint != null || chatName == "Saved Messages") "SENT" else "PENDING"
+                        val fwdMsg = Message(
+                            id = newMessageId(),
+                            text = textToForward,
+                            isMe = true,
+                            timestamp = forwardTime,
+                            attachmentType = currentMsg?.attachmentType,
+                            attachmentUri = currentMsg?.attachmentUri,
+                            attachmentName = currentMsg?.attachmentName,
+                            status = fwdInitialStatus
                         )
                         
-                        Spacer(modifier = Modifier.height(16.dp))
+                        if (persistEnabled || fwdInitialStatus == "PENDING") {
+                            persistDatabase { db.saveMessage(chatName, fwdMsg) }
+                        }
+                        sharedPrefs.edit { putString("last_msg_$chatName", SecureStorage.encrypt("You: $textToForward")) }
                         
-                        // Body List
-                        if (chatList.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(120.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Нет других активных чатов" else "No other active chats", 
-                                    color = onSurfaceVariant,
-                                    fontSize = 14.sp
-                                )
-                            }
-                        } else if (filteredChats.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(120.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Ничего не найдено" else "No matches found", 
-                                    color = onSurfaceVariant,
-                                    fontSize = 14.sp
-                                )
-                            }
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier.heightIn(max = 300.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                items(filteredChats) { chatName ->
-                                    val initials = if (chatName == "Saved Messages") {
-                                        "🔖"
-                                    } else if (chatName.contains(" ")) {
-                                        chatName.split(" ").map { it.take(1) }.joinToString("")
-                                    } else {
-                                        chatName.take(2).uppercase()
+                        if (forwardEndpoint != null && chatName != "Saved Messages") {
+                            if (currentMsg?.attachmentType != null && currentMsg?.attachmentUri != null) {
+                                P2PMessageRelay.sendFile(context, chatName, forwardEndpoint, currentMsg.attachmentUri!!, fwdMsg.id) { success ->
+                                    if (!success) {
+                                        persistDatabase { db.updateMessageStatus(fwdMsg.id, "PENDING") }
                                     }
-                                    val avatarBitmap = P2PMessageRelay.peerAvatars[chatName]
-                                    val endpoint = P2PMessageRelay.peerEndpoints[chatName]
-                                    val isOnline =
-                                        P2PMessageRelay.peerSessionStates[chatName] == true ||
-                                            chatName == "Saved Messages"
-                                    
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .clickable forwardClick@{
-                                                if (P2PPreferences.isPeerIdentityChangePending(context, chatName)) {
-                                                    Toast.makeText(
-                                                        context,
-                                                        if (appLanguage == "Русский") "В чате $chatName отправка приостановлена из-за смены ключа" else "Sending to $chatName is paused because its key changed",
-                                                        Toast.LENGTH_LONG,
-                                                    ).show()
-                                                    return@forwardClick
-                                                }
-                                                val textToForward = messageToForward?.text ?: ""
-                                                val forwardTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                                                val forwardEndpoint = P2PMessageRelay.peerEndpoints[chatName]
-                                                val fwdInitialStatus = if (forwardEndpoint != null || chatName == "Saved Messages") "SENT" else "PENDING"
-                                                val fwdMsg = Message(
-                                                    id = newMessageId(),
-                                                    text = textToForward,
-                                                    isMe = true,
-                                                    timestamp = forwardTime,
-                                                    attachmentType = messageToForward?.attachmentType,
-                                                    attachmentUri = messageToForward?.attachmentUri,
-                                                    attachmentName = messageToForward?.attachmentName,
-                                                    status = fwdInitialStatus
-                                                )
-                                                
-                                                if (persistEnabled || fwdInitialStatus == "PENDING") {
-                                                    persistDatabase { db.saveMessage(chatName, fwdMsg) }
-                                                }
-                                                sharedPrefs.edit { putString("last_msg_$chatName", SecureStorage.encrypt("You: $textToForward")) }
-                                                
-                                                if (forwardEndpoint != null && chatName != "Saved Messages") {
-                                                    if (messageToForward?.attachmentType != null && messageToForward?.attachmentUri != null) {
-                                                        P2PMessageRelay.sendFile(context, chatName, forwardEndpoint, messageToForward!!.attachmentUri!!, fwdMsg.id) { success ->
-                                                            if (!success) {
-                                                                persistDatabase { db.updateMessageStatus(fwdMsg.id, "PENDING") }
-                                                            }
-                                                        }
-                                                    } else {
-                                                        P2PMessageRelay.sendMessage(context, forwardEndpoint, username, textToForward) { success ->
-                                                            if (!success) {
-                                                                persistDatabase { db.updateMessageStatus(fwdMsg.id, "PENDING") }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                
-                                                Toast.makeText(context, if (appLanguage == "Русский") "Переслано в $chatName" else "Forwarded to $chatName", Toast.LENGTH_SHORT).show()
-                                                showForwardDialog = false
-                                                messageToForward = null
-                                            }
-                                            .padding(all = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // Avatar Circle
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier
-                                                .size(40.dp)
-                                                .background(
-                                                    brush = Brush.linearGradient(
-                                                        colors = listOf(primaryColor.copy(alpha = 0.15f), primaryColor.copy(alpha = 0.05f))
-                                                    ),
-                                                    shape = CircleShape
-                                                )
-                                        ) {
-                                            if (avatarBitmap != null) {
-                                                Image(
-                                                    bitmap = avatarBitmap.asImageBitmap(),
-                                                    contentDescription = "Avatar",
-                                                    modifier = Modifier.fillMaxSize().clip(CircleShape)
-                                                )
-                                            } else if (chatName == "Saved Messages") {
-                                                Icon(
-                                                    painter = painterResource(id = R.drawable.ic_saved_messages),
-                                                    contentDescription = "Saved Messages",
-                                                    tint = primaryColor,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            } else {
-                                                Text(
-                                                    text = initials,
-                                                    color = primaryColor,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 13.sp
-                                                )
-                                            }
-                                        }
-                                        
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        
-                                        // Info Column
-                                        Column(
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Text(
-                                                text = chatName,
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 15.sp,
-                                                color = onSurfaceColor
-                                            )
-                                            
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(6.dp)
-                                                        .background(
-                                                            color = if (isOnline) Color(0xFF4CAF50) else onSurfaceVariant.copy(alpha = 0.4f),
-                                                            shape = CircleShape
-                                                        )
-                                                )
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text(
-                                                    text = when {
-                                                        chatName == "Saved Messages" -> if (appLanguage == "Русский") "Личное хранилище" else "Personal storage"
-                                                        isOnline -> if (appLanguage == "Русский") "В сети" else "Online"
-                                                        else -> if (appLanguage == "Русский") "Был(а) недавно" else "Offline"
-                                                    },
-                                                    fontSize = 11.sp,
-                                                    color = onSurfaceVariant.copy(alpha = 0.7f)
-                                                )
-                                            }
-                                        }
-                                        
-                                        // Forward Icon Button
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier
-                                                .size(32.dp)
-                                                .background(primaryColor.copy(alpha = 0.1f), CircleShape)
-                                        ) {
-                                            Icon(
-                                                painter = painterResource(id = R.drawable.ic_forward),
-                                                contentDescription = "Forward to $chatName",
-                                                tint = primaryColor,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                        }
+                                }
+                            } else {
+                                P2PMessageRelay.sendMessage(context, forwardEndpoint, username, textToForward) { success ->
+                                    if (!success) {
+                                        persistDatabase { db.updateMessageStatus(fwdMsg.id, "PENDING") }
                                     }
                                 }
                             }
                         }
+                        
+                        Toast.makeText(context, if (appLanguage == "Русский") "Переслано в $chatName" else "Forwarded to $chatName", Toast.LENGTH_SHORT).show()
+                        showForwardDialog = false
+                        messageToForward = null
                     }
                 }
             )
