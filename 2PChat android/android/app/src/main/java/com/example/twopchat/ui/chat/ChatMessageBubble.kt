@@ -239,7 +239,7 @@ internal fun ChatMessageBubble(
                             )
                             .widthIn(max = 280.dp)
                     ) {
-                        Column(horizontalAlignment = alignment) {
+                        Column(horizontalAlignment = Alignment.Start) {
                             // Render reply quote if this message is a reply
                             if (msg.replyToId != null) {
                                 val replyBg = if (isOnlyEmoji) {

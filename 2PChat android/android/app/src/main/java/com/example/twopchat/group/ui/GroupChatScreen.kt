@@ -588,7 +588,7 @@ fun GroupChatScreen(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize().safeDrawingPadding()) {
+    Box(modifier = modifier.fillMaxSize()) {
         if (wallpaperBitmap != null) {
             Image(
                 bitmap = wallpaperBitmap.asImageBitmap(),
@@ -596,12 +596,23 @@ fun GroupChatScreen(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
             )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(surfaceColor)
+            )
         }
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(if (wallpaperBitmap != null) Color.Black.copy(alpha = 0.45f) else surfaceColor)
+                .safeDrawingPadding()
         ) {
             if (isSelectMode) {
                 Surface(
@@ -1736,19 +1747,18 @@ private fun GroupChatHeader(
                                 fontWeight = FontWeight.SemiBold
                             )
                         } else {
-                            val statusDotColor = syncStatusColor(state.syncStatus)
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .background(statusDotColor, CircleShape)
-                            )
-                            Spacer(Modifier.width(4.dp))
+                            val membersWord = when {
+                                state.memberCount % 100 in 11..19 -> "участников"
+                                state.memberCount % 10 == 1 -> "участник"
+                                state.memberCount % 10 in 2..4 -> "участника"
+                                else -> "участников"
+                            }
                             Text(
-                                "${state.memberCount} уч. · ${state.syncStatus.label}",
+                                "${state.memberCount} $membersWord",
                                 modifier = Modifier.testTag("group_sync_status"),
-                                fontSize = 12.sp,
-                                color = statusDotColor,
-                                fontWeight = FontWeight.Medium
+                                fontSize = 13.sp,
+                                color = onSurfaceColor.copy(alpha = 0.65f),
+                                fontWeight = FontWeight.Normal
                             )
                         }
                     }
@@ -2106,7 +2116,7 @@ private fun GroupMessageCard(
         ) {
             Column(
                 modifier = if (isMediaOnly || hasMediaContent) Modifier.padding(0.dp) else Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
-                horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start
+                horizontalAlignment = Alignment.Start
             ) {
                 // Header line: Author Name & Role (if not mine and not sticker/media-only)
                 if ((!message.isMine || message.replyTo != null || message.isPinned) && !isSticker) {

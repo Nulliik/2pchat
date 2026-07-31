@@ -1792,12 +1792,18 @@ fun ChatScreen(
     }
 
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(backgroundColor)
-            .safeDrawingPadding()
+        modifier = modifier.fillMaxSize()
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(backgroundColor)
+        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding()
+        ) {
             ChatHeader(
                 peerName = peerName,
                 appLanguage = appLanguage,
