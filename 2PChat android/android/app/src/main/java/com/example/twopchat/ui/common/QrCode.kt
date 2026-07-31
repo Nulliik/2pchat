@@ -13,7 +13,11 @@ import com.google.zxing.qrcode.QRCodeWriter
 fun generateQrCodeBitmap(payload: String, sizePx: Int = 512): Bitmap? {
     if (payload.isBlank() || sizePx <= 0) return null
     return runCatching {
-        val matrix = QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, sizePx, sizePx)
+        val hints = mapOf(
+            com.google.zxing.EncodeHintType.CHARACTER_SET to "UTF-8",
+            com.google.zxing.EncodeHintType.MARGIN to 1,
+        )
+        val matrix = QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, sizePx, sizePx, hints)
         val pixels = IntArray(sizePx * sizePx)
         for (y in 0 until sizePx) {
             val rowOffset = y * sizePx

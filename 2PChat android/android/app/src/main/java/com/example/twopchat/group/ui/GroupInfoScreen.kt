@@ -2142,7 +2142,12 @@ private fun GroupInviteQrModal(
                         if (candidates.isNotEmpty()) {
                             showShareContactDialog = true
                         } else {
-                            Toast.makeText(context, "У вас пока нет контактов для отправки", Toast.LENGTH_SHORT).show()
+                            val sendIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, "Приглашение в группу «$groupTitle» в 2PChat:\n\n$inviteLink")
+                                type = "text/plain"
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, "Поделиться приглашением"))
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = primaryColor),

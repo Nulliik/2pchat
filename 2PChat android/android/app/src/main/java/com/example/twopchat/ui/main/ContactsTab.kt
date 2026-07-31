@@ -1441,12 +1441,11 @@ private fun CameraQrScannerOverlay(
                                 return@setAnalyzer
                             }
                             isProcessingFrame = true
-                            val mediaImage = imageProxy.image
-                            if (mediaImage != null) {
-                                val inputImage = com.google.mlkit.vision.common.InputImage.fromMediaImage(
-                                    mediaImage,
-                                    imageProxy.imageInfo.rotationDegrees
-                                )
+                            val bitmap = runCatching { imageProxy.toBitmap() }.getOrNull()
+                            imageProxy.close()
+
+                            if (bitmap != null && !hasScanned) {
+                                val inputImage = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0)
                                 barcodeScanner.process(inputImage)
                                     .addOnSuccessListener { barcodes ->
                                         var found = false
@@ -1464,7 +1463,6 @@ private fun CameraQrScannerOverlay(
                                         }
                                         if (!found && !hasScanned) {
                                             try {
-                                                val bitmap = imageProxy.toBitmap()
                                                 val intArray = IntArray(bitmap.width * bitmap.height)
                                                 bitmap.getPixels(intArray, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
                                                 val source = com.google.zxing.RGBLuminanceSource(bitmap.width, bitmap.height, intArray)
@@ -1482,11 +1480,9 @@ private fun CameraQrScannerOverlay(
                                     }
                                     .addOnCompleteListener {
                                         isProcessingFrame = false
-                                        imageProxy.close()
                                     }
                             } else {
                                 isProcessingFrame = false
-                                imageProxy.close()
                             }
                         }
 

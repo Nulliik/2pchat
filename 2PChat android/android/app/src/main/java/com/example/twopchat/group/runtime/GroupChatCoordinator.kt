@@ -4359,13 +4359,12 @@ object GroupChatCoordinator {
         val contacts = prefs.getStringSet("active_chats", emptySet()).orEmpty()
             .asSequence()
             .filter { it != "Saved Messages" }
-            .mapNotNull { peerName ->
-                val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null)
-                    ?: return@mapNotNull null
+            .map { peerName ->
+                val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
                 GroupContactSummary(
                     contactId = peerName,
                     displayName = peerName,
-                    secondaryText = fingerprint.take(16),
+                    secondaryText = if (fingerprint.isNotBlank()) fingerprint.take(16) else peerName,
                     isOnline = P2PMessageRelay.peerSessionStates[peerName] == true,
                 )
             }
