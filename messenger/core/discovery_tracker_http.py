@@ -25,9 +25,9 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         peer_port: int,
         transport: str = "direct",
         num_want: int = 50,
-        timeout: float = 10.0,
+        timeout: float = 3.5,
         interval_floor: int = 60,
-        retries: int = 2,
+        retries: int = 1,
         time_fn=time.time,
     ) -> None:
         self._tracker_url = tracker_url

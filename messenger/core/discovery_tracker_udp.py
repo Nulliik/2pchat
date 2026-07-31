@@ -39,9 +39,9 @@ class UdpTrackerDiscovery(DiscoveryProvider):
         peer_port: int,
         transport: str = "direct",
         num_want: int = 50,
-        timeout: float = 8.0,
+        timeout: float = 3.0,
         interval_floor: int = 60,
-        retries: int = 2,
+        retries: int = 1,
         time_fn=time.time,
     ) -> None:
         self._tracker_host, self._tracker_port = self._parse_tracker_url(tracker_url)

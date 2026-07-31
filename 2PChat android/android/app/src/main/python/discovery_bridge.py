@@ -896,7 +896,9 @@ def resolve_peers(
                 tracker.discovery_scheme,
                 tracker_url=tracker.announce_url,
                 peer_port=listener_port,
-                transport="direct"
+                transport="direct",
+                timeout=3.0,
+                retries=1,
             )
             result = await provider.resolve(nickname, shared_code)
             _record_public_addresses(provider)
@@ -1186,8 +1188,8 @@ def announce_peer_endpoints(
         if discovery_code.strip():
             variants.append((nickname, discovery_code.strip()))
         if fingerprint and len(fingerprint) > 10:
-            variants.append((nickname, fingerprint))
             variants.append((fingerprint, fingerprint))
+        variants = list(dict.fromkeys(variants))
 
         async def _announce_tracker(tracker_name: str):
             started = time.monotonic()
@@ -1197,6 +1199,8 @@ def announce_peer_endpoints(
                 tracker_url=tracker.announce_url,
                 peer_port=port,
                 transport="direct",
+                timeout=3.0,
+                retries=1,
             )
             tasks = [
                 provider.announce(nick, shared_code, transport="direct", endpoints=endpoints)
