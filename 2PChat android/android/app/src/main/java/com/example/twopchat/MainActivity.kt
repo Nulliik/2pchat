@@ -239,7 +239,7 @@ class MainActivity : ComponentActivity() {
                     isStealthDisguiseLocked = true
                 }
                 if (sharedPrefs.getBoolean("settings_passcode", false)) {
-                    val elapsed = System.currentTimeMillis() - lastStopTime
+                    val elapsed = System.currentTimeMillis() - maxOf(lastStopTime, lastInteractionTime)
                     val timeoutMinutes = sharedPrefs.getInt("passcode_autolock_minutes", 1)
                     if (elapsed >= timeoutMinutes * 60 * 1000) {
                         isAppLocked = true
@@ -249,6 +249,7 @@ class MainActivity : ComponentActivity() {
 
             // Check inactivity timer during in-app usage
             LaunchedEffect(isAppLocked) {
+                P2PPreferences.setAppLocked(isAppLocked)
                 if (sharedPrefs.getBoolean("settings_passcode", false) && !isAppLocked) {
                     while (true) {
                         kotlinx.coroutines.delay(5000) // check every 5 seconds
@@ -263,6 +264,7 @@ class MainActivity : ComponentActivity() {
             }
 
             LaunchedEffect(isAppLocked) {
+                P2PPreferences.setAppLocked(isAppLocked)
                 if (isAppLocked) {
                     SecureStorage.clearDbPassphrase()
                     com.example.twopchat.data.ChatDatabaseHelper.closeAllConnections()

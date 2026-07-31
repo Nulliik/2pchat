@@ -41,10 +41,12 @@ internal class PeerPresenceManager {
         sendHeartbeat: (Context, String) -> Unit
     ) {
         val version = peerPresenceVersions.advanceIfCurrent(peerName, expectedVersion) ?: return
-        if (peerPresenceVersions.current(peerName) != version) return
-        peerSessionStates[peerName] = true
-        if (transport != null) peerConnectionTransports[peerName] = transport
-        sendHeartbeat(context, peerName)
+        Handler(Looper.getMainLooper()).post {
+            if (peerPresenceVersions.current(peerName) != version) return@post
+            peerSessionStates[peerName] = true
+            if (transport != null) peerConnectionTransports[peerName] = transport
+            sendHeartbeat(context, peerName)
+        }
     }
 
     fun clearPeerPresenceImmediately(peerName: String) {

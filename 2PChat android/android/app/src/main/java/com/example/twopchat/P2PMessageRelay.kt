@@ -398,11 +398,13 @@ object P2PMessageRelay {
         if (sender !in activeSet) {
             prefs.edit { putStringSet(P2PPreferences.ACTIVE_CHATS, activeSet + sender) }
         }
-        if (prefs.getBoolean("persist_chat_history", true)) {
-            ChatDatabaseHelper.getInstance(context).saveMessage(sender, message)
-        }
-        prefs.edit {
-            putString(P2PPreferences.lastMessage(sender), SecureStorage.encrypt(notificationText))
+        if (!P2PPreferences.isAppLocked()) {
+            if (prefs.getBoolean("persist_chat_history", true)) {
+                ChatDatabaseHelper.getInstance(context).saveMessage(sender, message)
+            }
+            prefs.edit {
+                putString(P2PPreferences.lastMessage(sender), SecureStorage.encrypt(notificationText))
+            }
         }
         serviceScope.launch(Dispatchers.Main) {
             messageListeners.forEach { it.onMessageReceived(sender, message) }

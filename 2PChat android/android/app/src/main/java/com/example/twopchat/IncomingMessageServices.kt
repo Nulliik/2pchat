@@ -184,6 +184,12 @@ internal class MessageNotificationService {
             prefs.edit().remove(historyKey).remove(messageIdsKey).apply()
         }
 
+        @Synchronized
+        fun clearAllHistory(context: Context) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().clear().commit()
+        }
+
         fun getPeerAvatarIcon(context: Context, sender: String): androidx.core.graphics.drawable.IconCompat {
             // 1. Try RAM cache
             val cached = P2PMessageRelay.peerAvatars[sender]

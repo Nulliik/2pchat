@@ -201,13 +201,10 @@ def load_or_create_signing_identity(path: Optional[str] = None) -> SigningKey:
             if needs_migration:
                 _write_identity(target, data)
             return SigningKey(Base64Encoder.decode(data))
-        except Exception:
-            # The long-lived X25519 identity is the user-visible trust anchor
-            # and must never be replaced silently. The Ed25519 signing key is
-            # auxiliary, so recover it instead of leaving the listener
-            # permanently offline when an Android Keystore blob is unreadable.
-            quarantine = target.with_name(f"{target.name}.unreadable-{uuid4().hex}")
-            os.replace(target, quarantine)
+        except Exception as exc:
+            raise RuntimeError(
+                f"Signing identity key file is unreadable or corrupt ({target}): {exc}"
+            ) from exc
 
     sk = SigningKey.generate()
     _write_identity(target, sk.encode(Base64Encoder).decode("ascii"))

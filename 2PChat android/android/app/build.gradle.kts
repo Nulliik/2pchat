@@ -18,19 +18,22 @@ val generatedPythonRoot = layout.buildDirectory.dir("generated/python/main")
 val syncCanonicalPythonCore by tasks.registering(Sync::class) {
     from(rootProject.layout.projectDirectory.dir("../../messenger")) {
         exclude("tests/**", "**/__pycache__/**", "**/*.pyc")
+        into("messenger")
     }
-    into(generatedPythonRoot.map { it.dir("messenger") })
+    from(rootProject.layout.projectDirectory.file("../../messenger/discovery_bridge.py"))
+    from(rootProject.layout.projectDirectory.file("../../messenger/bootstrap.py"))
+    into(generatedPythonRoot)
 }
 
 val forbidDuplicatedPythonCore by tasks.registering {
-    val duplicate = layout.projectDirectory.dir("src/main/python/messenger")
-    inputs.dir(layout.projectDirectory.dir("src/main/python"))
+    val pythonDir = layout.projectDirectory.dir("src/main/python")
+    inputs.dir(pythonDir)
     doLast {
-        val committedSources = duplicate.asFile.takeIf { it.exists() }
+        val committedSources = pythonDir.asFile.takeIf { it.exists() }
             ?.walkTopDown()
             ?.any { it.isFile && it.extension == "py" } == true
         check(!committedSources) {
-            "Do not commit an Android copy of messenger; edit the canonical repository messenger/ directory"
+            "Do not commit Python files in src/main/python; edit the canonical repository messenger/ directory"
         }
     }
 }

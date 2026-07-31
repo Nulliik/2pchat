@@ -25,6 +25,15 @@ object P2PPreferences {
     @Volatile
     private var cachedPrefs: SharedPreferences? = null
 
+    @Volatile
+    private var isAppLockedState = false
+
+    fun isAppLocked(): Boolean = isAppLockedState
+
+    fun setAppLocked(locked: Boolean) {
+        isAppLockedState = locked
+    }
+
     private val fingerprintToPeerNameCache = ConcurrentHashMap<String, String>()
     @Volatile
     private var fingerprintCacheInitialized = false
@@ -72,8 +81,8 @@ object P2PPreferences {
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
                 )
             } catch (e: Exception) {
-                android.util.Log.e("P2PPreferences", "Failed to initialize EncryptedSharedPreferences, falling back to standard SharedPreferences", e)
-                appContext.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
+                android.util.Log.e("P2PPreferences", "Failed to initialize EncryptedSharedPreferences", e)
+                throw IllegalStateException("EncryptedSharedPreferences initialization failed: Keystore unavailable", e)
             }
             migrateLegacyPreferences(appContext, preferences)
             cachedPrefs = preferences

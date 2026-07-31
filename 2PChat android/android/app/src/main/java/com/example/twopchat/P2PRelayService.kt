@@ -31,6 +31,7 @@ class P2PRelayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         GroupWorkScheduler.schedule(applicationContext)
         createChannel()
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent(this, MainActivity::class.java)
@@ -46,15 +47,21 @@ class P2PRelayService : Service() {
             .setContentIntent(pendingIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start foreground service", e)
+            releaseLocks()
+            stopSelf()
         }
     }
 
@@ -88,6 +95,7 @@ class P2PRelayService : Service() {
         releaseLocks()
         P2PMessageRelay.stopServer()
         serviceScope.cancel()
+        instance = null
         super.onDestroy()
     }
 
@@ -121,6 +129,19 @@ class P2PRelayService : Service() {
         }
     }
 
+    private fun refreshLocks() {
+        try {
+            wakeLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                }
+                it.acquire(10 * 60 * 1000L)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to refresh WakeLock", e)
+        }
+    }
+
     private fun releaseLocks() {
         try {
             wakeLock?.let {
@@ -150,5 +171,12 @@ class P2PRelayService : Service() {
         private const val TAG = "P2PRelayService"
         private const val CHANNEL_ID = "p2p_connectivity"
         private const val NOTIFICATION_ID = 50001
+
+        @Volatile
+        private var instance: P2PRelayService? = null
+
+        fun refreshWakeLock() {
+            instance?.refreshLocks()
+        }
     }
 }

@@ -8,6 +8,7 @@ object AppLog {
     private const val MAX_LOG_BYTES = 5L * 1024L * 1024L
     private val ipv4Pattern = Regex("(?<![\\w.])(?:\\d{1,3}\\.){3}\\d{1,3}(?::\\d{1,5})?")
     private val bracketedIpv6Pattern = Regex("\\[[0-9a-fA-F:]+](?::\\d{1,5})?")
+    private val bareIpv6Pattern = Regex("(?<![\\w:])(?:[0-9a-fA-F]{1,4}:){3,7}[0-9a-fA-F]{1,4}(?::\\d{1,5})?")
     private val fingerprintPattern = Regex("(?i)(?<![0-9a-f])[0-9a-f]{40,128}(?![0-9a-f])")
 
     internal fun redactSensitive(text: String, privateRoot: String? = null): String {
@@ -15,6 +16,7 @@ object AppLog {
         if (!privateRoot.isNullOrBlank()) redacted = redacted.replace(privateRoot, "<app-private-dir>")
         redacted = ipv4Pattern.replace(redacted, "<ip>")
         redacted = bracketedIpv6Pattern.replace(redacted, "<ip>")
+        redacted = bareIpv6Pattern.replace(redacted, "<ip>")
         redacted = fingerprintPattern.replace(redacted, "<fingerprint>")
         return redacted
     }

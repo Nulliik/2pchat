@@ -97,19 +97,15 @@ object LinkPreviewFetcher {
                 }
 
                 val host = urlObj.host.orEmpty()
-                if (isPrivateOrInternalHost(host)) {
+                val conn = openSafeConnection(urlObj, 4000, 4000)
+                if (conn == null) {
                     val fallbackHost = extractHost(targetUrl)
                     val fallback = LinkPreviewMetadata(url = targetUrl, siteName = fallbackHost)
                     cache.put(targetUrl, fallback)
                     return@withContext fallback
                 }
 
-                connection = urlObj.openConnection() as HttpURLConnection
-                connection.connectTimeout = 4000
-                connection.readTimeout = 4000
-                connection.instanceFollowRedirects = false // Follow redirects manually
-                connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-
+                connection = conn
                 responseCode = connection.responseCode
                 if (responseCode in 300..399) {
                     val location = connection.getHeaderField("Location")
@@ -240,23 +236,70 @@ object LinkPreviewFetcher {
         }
     }
 
+    internal fun isPrivateOrInternalAddress(addr: java.net.InetAddress): Boolean {
+        return addr.isLoopbackAddress ||
+                addr.isAnyLocalAddress ||
+                addr.isLinkLocalAddress ||
+                addr.isSiteLocalAddress ||
+                addr.isMulticastAddress ||
+                (addr.address.size == 16 && (addr.address[0].toInt() and 0xFE) == 0xFC)
+    }
+
     internal fun isPrivateOrInternalHost(host: String): Boolean {
         if (host.isBlank()) return true
         val lower = host.lowercase(java.util.Locale.ROOT)
         if (lower == "localhost" || lower.endsWith(".local") || lower.endsWith(".internal")) return true
         return try {
             val addresses = java.net.InetAddress.getAllByName(host)
-            addresses.any { addr ->
-                addr.isLoopbackAddress ||
-                addr.isAnyLocalAddress ||
-                addr.isLinkLocalAddress ||
-                addr.isSiteLocalAddress ||
-                addr.isMulticastAddress ||
-                (addr.address.size == 16 && (addr.address[0].toInt() and 0xFE) == 0xFC)
-            }
+            addresses.isEmpty() || addresses.any { isPrivateOrInternalAddress(it) }
         } catch (_: Exception) {
             true
         }
+    }
+
+    internal fun openSafeConnection(
+        urlObj: URL,
+        connectTimeout: Int = 4000,
+        readTimeout: Int = 4000,
+        userAgent: String = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    ): HttpURLConnection? {
+        val protocol = urlObj.protocol?.lowercase(java.util.Locale.ROOT) ?: ""
+        if (protocol != "http" && protocol != "https") return null
+        val host = urlObj.host.orEmpty()
+        if (isPrivateOrInternalHost(host)) return null
+
+        val addresses = try {
+            java.net.InetAddress.getAllByName(host)
+        } catch (_: Exception) {
+            return null
+        }
+        if (addresses.isEmpty() || addresses.any { isPrivateOrInternalAddress(it) }) return null
+
+        val ipAddress = addresses.first().hostAddress ?: return null
+        val port = if (urlObj.port != -1) urlObj.port else urlObj.defaultPort
+        val file = urlObj.file.ifEmpty { "/" }
+
+        val ipUrlStr = if ((protocol == "http" && port == 80) || (protocol == "https" && port == 443)) {
+            "$protocol://$ipAddress$file"
+        } else {
+            "$protocol://$ipAddress:$port$file"
+        }
+
+        val conn = (URL(ipUrlStr).openConnection() as HttpURLConnection).apply {
+            this.connectTimeout = connectTimeout
+            this.readTimeout = readTimeout
+            this.instanceFollowRedirects = false
+            this.setRequestProperty("User-Agent", userAgent)
+            this.setRequestProperty("Host", host)
+        }
+
+        if (conn is javax.net.ssl.HttpsURLConnection) {
+            conn.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, session ->
+                javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier().verify(host, session)
+            }
+        }
+
+        return conn
     }
 
     suspend fun fetchImage(rawUrl: String): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
@@ -265,12 +308,9 @@ object LinkPreviewFetcher {
         var connection: HttpURLConnection? = null
         try {
             while (redirects <= MAX_REDIRECTS) {
-                if (!isSafeHttpUrl(currentUrl)) return@withContext null
-                connection = URL(currentUrl).openConnection() as HttpURLConnection
-                connection.connectTimeout = 6_000
-                connection.readTimeout = 6_000
-                connection.instanceFollowRedirects = false
-                connection.setRequestProperty("User-Agent", "2PChat Link Preview")
+                val conn = openSafeConnection(URL(currentUrl), 6_000, 6_000, "2PChat Link Preview")
+                    ?: return@withContext null
+                connection = conn
                 val responseCode = connection.responseCode
                 if (responseCode in 300..399) {
                     val location = connection.getHeaderField("Location") ?: return@withContext null

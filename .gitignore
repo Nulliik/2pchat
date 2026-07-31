@@ -238,5 +238,6 @@ Android_App/android/local.properties
 2PChat android/android/**/.cxx/
 2PChat android/android/**/.externalNativeBuild/
 2PChat android/android/captures/
+2PChat android/android/app/src/main/python/
 *.apk
 *.aab

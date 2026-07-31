@@ -228,6 +228,7 @@ object PythonBridge {
     }
 
     /** Stable, human-shareable discovery code. It is never the user's fingerprint. */
+    @Synchronized
     fun getOrCreateDiscoveryCode(): String {
         val context = appContext ?: return ""
         val prefs = P2PPreferences.prefs(context)

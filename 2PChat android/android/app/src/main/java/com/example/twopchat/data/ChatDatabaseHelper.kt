@@ -94,7 +94,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     private val safeWritableDatabase: SQLiteDatabase
         get() {
             if (!isMigrationChecked) {
-                synchronized(ChatDatabaseHelper::class.java) {
+                synchronized(dbLock) {
                     if (!isMigrationChecked) {
                         val pass = SecureStorage.getOrGenerateDbPassphrase(context)
                         val dbFile = context.getDatabasePath(DATABASE_NAME)
@@ -109,7 +109,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     private val safeReadableDatabase: SQLiteDatabase
         get() {
             if (!isMigrationChecked) {
-                synchronized(ChatDatabaseHelper::class.java) {
+                synchronized(dbLock) {
                     if (!isMigrationChecked) {
                         val pass = SecureStorage.getOrGenerateDbPassphrase(context)
                         val dbFile = context.getDatabasePath(DATABASE_NAME)
@@ -746,6 +746,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     }
 
     fun enqueuePendingControl(control: PendingControl) {
+        val db = safeWritableDatabase
         val values = ContentValues().apply {
             put(KEY_CONTROL_ID, control.id)
             put(KEY_PEER_NAME, control.peerName)
@@ -753,12 +754,21 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             put(KEY_CONTROL_PAYLOAD, enc(control.payload))
             put(KEY_CREATED_AT_MS, control.createdAtEpochMs)
         }
-        safeWritableDatabase.insertWithOnConflict(
+        db.insertWithOnConflict(
             TABLE_PENDING_CONTROLS,
             null,
             values,
             SQLiteDatabase.CONFLICT_REPLACE,
         )
+        try {
+            db.execSQL(
+                "DELETE FROM $TABLE_PENDING_CONTROLS WHERE $KEY_PEER_NAME = ? AND $KEY_CONTROL_ID NOT IN (" +
+                    "SELECT $KEY_CONTROL_ID FROM $TABLE_PENDING_CONTROLS WHERE $KEY_PEER_NAME = ? ORDER BY $KEY_CREATED_AT_MS DESC LIMIT 1000)",
+                arrayOf(control.peerName, control.peerName)
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to trim pending_controls for ${control.peerName}", e)
+        }
     }
 
     fun getPendingControlsForPeer(peerName: String): List<PendingControl> {

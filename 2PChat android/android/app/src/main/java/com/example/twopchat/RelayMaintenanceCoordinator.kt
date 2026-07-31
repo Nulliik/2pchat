@@ -28,8 +28,14 @@ internal class RelayMaintenanceCoordinator(
         stop()
         val appContext = context.applicationContext
         sessionJob = scope.launch {
+            var lastWakeLockRefreshAt = System.currentTimeMillis()
             while (isActive && isRunning()) {
                 try {
+                    val now = System.currentTimeMillis()
+                    if (now - lastWakeLockRefreshAt >= 8 * 60 * 1000L) {
+                        lastWakeLockRefreshAt = now
+                        P2PRelayService.refreshWakeLock()
+                    }
                     val prefs = P2PPreferences.prefs(appContext)
                     val chats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
                         .filterNot { it == "Saved Messages" || isPlaceholderPeerName(it) }
@@ -63,7 +69,6 @@ internal class RelayMaintenanceCoordinator(
                         }
                     }
 
-                    val now = System.currentTimeMillis()
                     for (peerName in chats) {
                         if (P2PPreferences.isPeerIdentityChangePending(appContext, peerName)) continue
                         val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)

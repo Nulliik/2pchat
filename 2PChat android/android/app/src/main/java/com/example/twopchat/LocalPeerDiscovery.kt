@@ -23,11 +23,12 @@ internal class LocalPeerDiscovery(
         stop()
         if (name.isBlank() || fingerprint.isBlank()) return
         localFingerprint = fingerprint
+        val safeFingerprint = fingerprint.take(16)
         val service = NsdServiceInfo().apply {
-            serviceName = "2PChat-${fingerprint.take(12)}"
+            serviceName = "2PChat-$safeFingerprint"
             serviceType = SERVICE_TYPE
             setPort(port)
-            setAttribute(ATTRIBUTE_NAME, name)
+            setAttribute(ATTRIBUTE_NAME, name.take(32))
             setAttribute(ATTRIBUTE_FINGERPRINT, fingerprint)
         }
         registrationListener = object : NsdManager.RegistrationListener {

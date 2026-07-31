@@ -17,10 +17,8 @@ object SecureStorage {
     @Volatile
     private var cachedKey: SecretKey? = null
 
-    private val threadLocalCipher = object : ThreadLocal<Cipher>() {
-        override fun initialValue(): Cipher {
-            return Cipher.getInstance("AES/GCM/NoPadding")
-        }
+    private fun createCipher(): Cipher {
+        return Cipher.getInstance("AES/GCM/NoPadding")
     }
 
     private fun key(): SecretKey {
@@ -46,10 +44,6 @@ object SecureStorage {
         }
     }
 
-    /**
-     * Reuses the thread-local cipher engine across operations to prevent
-     * allocating thousands of Cipher$Transform objects in memory.
-     */
     internal class StringCipher internal constructor(
         private val secretKey: SecretKey,
         private val cipher: Cipher,
@@ -76,7 +70,7 @@ object SecureStorage {
         }
     }
 
-    internal fun newStringCipher(): StringCipher = StringCipher(key(), threadLocalCipher.get()!!)
+    internal fun newStringCipher(): StringCipher = StringCipher(key(), createCipher())
 
     fun encrypt(value: String): String {
         return newStringCipher().encrypt(value)
@@ -92,14 +86,14 @@ object SecureStorage {
 
     /** Binary envelope used for private media which must not be left as plaintext files. */
     fun encryptBytes(value: ByteArray): ByteArray {
-        val cipher = threadLocalCipher.get()!!
+        val cipher = createCipher()
         cipher.init(Cipher.ENCRYPT_MODE, key())
         return byteArrayOf(BINARY_VERSION) + cipher.iv + cipher.doFinal(value)
     }
 
     fun decryptBytes(value: ByteArray): ByteArray {
         require(value.size > 13 && value[0] == BINARY_VERSION) { "Invalid encrypted binary value" }
-        val cipher = threadLocalCipher.get()!!
+        val cipher = createCipher()
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, value, 1, 12))
         return cipher.doFinal(value, 13, value.size - 13)
     }
@@ -124,13 +118,17 @@ object SecureStorage {
 
     @Synchronized
     fun clearDbPassphrase() {
-        cachedKey = null
+        synchronized(this) {
+            cachedKey = null
+        }
         com.example.twopchat.data.ChatDatabaseHelper.closeAllConnections()
     }
 
     @Synchronized
     fun deleteKey() {
-        cachedKey = null
+        synchronized(this) {
+            cachedKey = null
+        }
         KeyStore.getInstance("AndroidKeyStore").apply {
             load(null)
             if (containsAlias(KEY_ALIAS)) deleteEntry(KEY_ALIAS)

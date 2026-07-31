@@ -4,7 +4,7 @@ from pathlib import Path
 
 def _load_android_bootstrap():
     root = Path(__file__).resolve().parents[2]
-    path = root / "2PChat android" / "android" / "app" / "src" / "main" / "python" / "bootstrap.py"
+    path = root / "messenger" / "bootstrap.py"
     spec = importlib.util.spec_from_file_location("android_bootstrap", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

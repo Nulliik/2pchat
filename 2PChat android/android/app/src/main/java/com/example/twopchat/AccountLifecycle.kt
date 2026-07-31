@@ -36,6 +36,7 @@ object AccountLifecycle {
         GroupWorkScheduler.cancel(context)
         ChatDatabaseHelper.closeAllConnections()
         PythonBridge.clearAccountCaches()
+        MessageNotificationService.clearAllHistory(context)
 
         if (!P2PPreferences.prefs(context)
                 .edit().clear().commit()
