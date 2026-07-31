@@ -30,6 +30,13 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -626,8 +633,20 @@ private fun PackCard(
                         fontSize = 12.sp,
                     )
                 }
-                TextButton(onClick = onMoveUp, enabled = canMoveUp) { Text("↑") }
-                TextButton(onClick = onMoveDown, enabled = canMoveDown) { Text("↓") }
+                IconButton(onClick = onMoveUp, enabled = canMoveUp) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowUp,
+                        contentDescription = "Move Up",
+                        tint = if (canMoveUp) primaryColor else onSurfaceVariant.copy(alpha = 0.38f)
+                    )
+                }
+                IconButton(onClick = onMoveDown, enabled = canMoveDown) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Move Down",
+                        tint = if (canMoveDown) primaryColor else onSurfaceVariant.copy(alpha = 0.38f)
+                    )
+                }
             }
             Spacer(Modifier.height(10.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -783,8 +802,20 @@ private fun PackEditor(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedButton(onClick = { onMoveSticker(-1) }) { Text("←") }
-                OutlinedButton(onClick = { onMoveSticker(1) }) { Text("→") }
+                IconButton(onClick = { onMoveSticker(-1) }) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Move Left",
+                        tint = primaryColor
+                    )
+                }
+                IconButton(onClick = { onMoveSticker(1) }) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Move Right",
+                        tint = primaryColor
+                    )
+                }
                 OutlinedButton(onClick = onEditEmoji) { Text("Emoji") }
                 TextButton(
                     onClick = onRemoveSticker,
@@ -859,7 +890,13 @@ private fun ManagerHeader(
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(onClick = onBackClick) { Text("←") }
+        IconButton(onClick = onBackClick) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                tint = onSurfaceColor
+            )
+        }
         Text(
             title,
             color = onSurfaceColor,

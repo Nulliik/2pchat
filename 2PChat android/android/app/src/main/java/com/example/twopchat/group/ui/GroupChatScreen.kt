@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -612,13 +613,15 @@ fun GroupChatScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .safeDrawingPadding()
+                .imePadding()
         ) {
             if (isSelectMode) {
                 Surface(
                     color = surfaceColor,
                     shadowElevation = 2.dp,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
                 ) {
                     Row(
                         modifier = Modifier
@@ -1655,7 +1658,9 @@ private fun GroupChatHeader(
     Surface(
         color = surfaceColor,
         shadowElevation = 2.dp,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
     ) {
         Row(
             modifier = Modifier
