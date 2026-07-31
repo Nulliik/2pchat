@@ -366,7 +366,7 @@ object LinkPreviewFetcher {
 @Composable
 fun rememberNetworkImage(url: String?): android.graphics.Bitmap? {
     if (url.isNullOrBlank()) return null
-    var bitmap by remember(url) { mutableStateOf<android.graphics.Bitmap?>(LinkPreviewFetcher.getImageFromCache(url)) }
+    var bitmap by remember<androidx.compose.runtime.MutableState<android.graphics.Bitmap?>>(url) { mutableStateOf(LinkPreviewFetcher.getImageFromCache(url)) }
     if (bitmap == null) {
         LaunchedEffect(url) {
             val decoded = LinkPreviewFetcher.fetchImage(url)

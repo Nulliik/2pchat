@@ -233,7 +233,7 @@ class MainActivity : ComponentActivity() {
             var isStealthDisguiseLocked by remember { mutableStateOf(sharedPrefs.getBoolean("settings_stealth_disguise", false)) }
 
             // Check auto-lock on app start/resume
-            val triggerLockCheck by remember { triggerLockCheckState }
+            val triggerLockCheck = triggerLockCheckState.value
             LaunchedEffect(triggerLockCheck) {
                 if (sharedPrefs.getBoolean("settings_stealth_disguise", false)) {
                     isStealthDisguiseLocked = true
