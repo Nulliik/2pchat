@@ -17,8 +17,6 @@ import com.example.twopchat.ui.chat.Message
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.os.Handler
-import android.os.Looper
 import kotlinx.coroutines.delay
 import androidx.core.content.edit
 import org.json.JSONObject
@@ -700,7 +698,7 @@ object P2PMessageRelay {
                                         attachmentName = fileName,
                                         status = "RECEIVING",
                                     )
-                                    Handler(Looper.getMainLooper()).post {
+                                    serviceScope.launch(Dispatchers.Main) {
                                         val info = FileProgressInfo(
                                             bytesTransferred = 0L,
                                             totalBytes = totalBytes,
@@ -740,7 +738,7 @@ object P2PMessageRelay {
                                     incomingFileOffers.remove(key)
                                     ChatDatabaseHelper.getInstance(appContext)
                                         .updateMessageStatus(messageId, "CANCELLED")
-                                    Handler(Looper.getMainLooper()).post {
+                                    serviceScope.launch(Dispatchers.Main) {
                                         val current = fileProgressStates[key]
                                             ?: fileProgressStates[messageId]
                                             ?: FileProgressInfo(0L, 0L, 0.0)
@@ -763,7 +761,7 @@ object P2PMessageRelay {
                                     incomingFileOffers.remove(key)
                                     ChatDatabaseHelper.getInstance(appContext)
                                         .updateMessageStatus(messageId, "FAILED")
-                                    Handler(Looper.getMainLooper()).post {
+                                    serviceScope.launch(Dispatchers.Main) {
                                         val current = fileProgressStates[key]
                                             ?: fileProgressStates[messageId]
                                             ?: FileProgressInfo(0L, 0L, 0.0)
@@ -780,14 +778,14 @@ object P2PMessageRelay {
                                     return
                                 }
                                 "verification_request" -> {
-                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    serviceScope.launch(Dispatchers.Main) {
                                         messageListeners.forEach { it.onVerificationRequest(sender) }
                                     }
                                     return
                                 }
                                 "verification_response" -> {
                                     val success = json.optBoolean("success", false)
-                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    serviceScope.launch(Dispatchers.Main) {
                                         if (success) {
                                             // Verification responses can arrive while the chat screen is not
                                             // composed. Persist the trust decision before notifying UI listeners.
@@ -815,7 +813,7 @@ object P2PMessageRelay {
                                                 android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
                                             )
                                             if (bitmap != null) {
-                                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                serviceScope.launch(Dispatchers.Main) {
                                                     avatarCache.put(sender, bitmap)
                                                 }
                                                 log(appContext, "Received and cached an authenticated peer avatar")
@@ -900,7 +898,7 @@ object P2PMessageRelay {
                                                 )
                                                 .commit()
                                             if (stateHandled) {
-                                                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                serviceScope.launch(Dispatchers.Main) {
                                                     messageListeners.forEach {
                                                         it.onMessagePinned(sender, msgId, storedText, isFromSender)
                                                     }
@@ -944,7 +942,7 @@ object P2PMessageRelay {
                                             )
                                             .commit()
                                         if (stateHandled) {
-                                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                            serviceScope.launch(Dispatchers.Main) {
                                                 messageListeners.forEach { it.onMessageUnpinned(sender) }
                                             }
                                         }
@@ -956,7 +954,7 @@ object P2PMessageRelay {
                                 }
                                 "typing_state" -> {
                                     val isTyping = json.optBoolean("is_typing", false)
-                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    serviceScope.launch(Dispatchers.Main) {
                                         peerTypingStates[sender] = isTyping
                                     }
                                     return
@@ -966,7 +964,7 @@ object P2PMessageRelay {
                                     if (msgId.isNotEmpty()) {
                                         val db = ChatDatabaseHelper.getInstance(appContext)
                                         db.updateMessageStatus(msgId, "READ")
-                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        serviceScope.launch(Dispatchers.Main) {
                                             messageListeners.forEach { it.onMessageStatusChanged(sender, msgId, "READ") }
                                         }
                                     }
@@ -987,7 +985,7 @@ object P2PMessageRelay {
                                                 )
                                                 .apply()
                                         }
-                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        serviceScope.launch(Dispatchers.Main) {
                                             messageListeners.forEach { it.onMessageEdited(sender, msgId, text) }
                                         }
                                         val controlId = json.optString("control_id")
@@ -1019,7 +1017,7 @@ object P2PMessageRelay {
                                                 .remove(P2PPreferences.pinnedBy(sender))
                                                 .apply()
                                         }
-                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        serviceScope.launch(Dispatchers.Main) {
                                             messageListeners.forEach { it.onMessageDeleted(sender, msgId) }
                                         }
                                     }
@@ -1040,7 +1038,7 @@ object P2PMessageRelay {
                                     val sentAt = json.optLong("sent_at_ms")
                                     if (sentAt > 0L) {
                                         val rtt = (System.currentTimeMillis() - sentAt).coerceIn(0L, 60_000L)
-                                        Handler(Looper.getMainLooper()).post { peerRttMs[sender] = rtt }
+                                        serviceScope.launch(Dispatchers.Main) { peerRttMs[sender] = rtt }
                                     }
                                     return
                                 }
@@ -1069,11 +1067,11 @@ object P2PMessageRelay {
                                             FileTransferState.TRANSFERRING
                                         },
                                     )
-                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    serviceScope.launch(Dispatchers.Main) {
                                         val existing = fileProgressStates[key]
                                             ?: fileProgressStates[msgId]
                                         if (existing?.state == FileTransferState.CANCELLED) {
-                                            return@post
+                                            return@launch
                                         }
                                         if (msgId.isNotEmpty()) {
                                             fileProgressStates[key] = info
@@ -1093,7 +1091,7 @@ object P2PMessageRelay {
                                     val enabled = json.optBoolean("enabled", false)
                                     val sp = P2PPreferences.prefs(appContext)
                                     sp.edit().putBoolean("restrict_forwarding_$sender", enabled).apply()
-                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                    serviceScope.launch(Dispatchers.Main) {
                                         messageListeners.forEach { it.onForwardingStateChanged(sender, enabled) }
                                     }
                                     return
@@ -1114,7 +1112,7 @@ object P2PMessageRelay {
                                                 db.updateMessageReactions(msgId, updatedMap)
                                             }
                                         }
-                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        serviceScope.launch(Dispatchers.Main) {
                                             messageListeners.forEach {
                                                 it.onMessageReactionChanged(sender, existing?.id ?: msgId, emoji, sender)
                                             }
@@ -1247,7 +1245,7 @@ object P2PMessageRelay {
                         if (incomingAttachment?.attachmentType == StickerSupport.PACK_ATTACHMENT_TYPE) {
                             StickerSupport.packIdFromArchiveFileName(incomingAttachment.attachmentName)
                                 ?.let { packId ->
-                                    Handler(Looper.getMainLooper()).post {
+                                    serviceScope.launch(Dispatchers.Main) {
                                         messageListeners.forEach {
                                             it.onStickerPackInstalled(sender, packId)
                                         }
@@ -1263,7 +1261,7 @@ object P2PMessageRelay {
                                 incomingAttachment.attachmentType,
                                 TrafficDirection.RECEIVED,
                             )
-                            Handler(Looper.getMainLooper()).post {
+                            serviceScope.launch(Dispatchers.Main) {
                                 val key = "$sender:${incomingMessage.id}"
                                 val current = fileProgressStates[key]
                                     ?: fileProgressStates[incomingMessage.id]
@@ -1450,7 +1448,7 @@ object P2PMessageRelay {
         _peerEndpoints.clear()
         avatarCache.clear()
         peerPresenceVersions.clear()
-        Handler(Looper.getMainLooper()).post {
+        serviceScope.launch(Dispatchers.Main) {
             peerConnectionTransports.clear()
             peerSessionStates.clear()
             peerRttMs.clear()
@@ -1474,7 +1472,7 @@ object P2PMessageRelay {
         maintenanceCoordinator.stop()
         localPeerDiscovery?.stop()
         avatarCache.clear()
-        Handler(Looper.getMainLooper()).post { peerRttMs.clear() }
+        serviceScope.launch(Dispatchers.Main) { peerRttMs.clear() }
         relayScope.launch {
             if (!PythonBridge.shutdownAllSessions()) {
                 log(appContext, "Listener restart aborted because the old identity runtime is still active", "ERROR")
@@ -1709,7 +1707,7 @@ object P2PMessageRelay {
     ) {
         if (messageId.isNotBlank()) {
             val size = File(filePath).length().coerceAtLeast(0L)
-            Handler(Looper.getMainLooper()).post {
+            serviceScope.launch(Dispatchers.Main) {
                 val info = FileProgressInfo(0L, size, 0.0)
                 fileProgressStates["$peerName:$messageId"] = info
                 fileProgressStates[messageId] = info
@@ -1727,7 +1725,7 @@ object P2PMessageRelay {
             albumCount,
         ) { success ->
             if (messageId.isNotBlank()) {
-                Handler(Looper.getMainLooper()).post {
+                serviceScope.launch(Dispatchers.Main) {
                     val key = "$peerName:$messageId"
                     val current = fileProgressStates[key] ?: fileProgressStates[messageId]
                     if (current?.state != FileTransferState.CANCELLED) {
@@ -1784,7 +1782,7 @@ object P2PMessageRelay {
         val oldFingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
         val pendingFingerprint = prefs.getString(P2PPreferences.pendingPeerFingerprint(peerName), null).orEmpty()
         if (!canAcceptPendingPeerFingerprint(oldFingerprint, pendingFingerprint)) {
-            Handler(Looper.getMainLooper()).post { onResult(false) }
+            serviceScope.launch(Dispatchers.Main) { onResult(false) }
             return
         }
         relayScope.launch {
@@ -1793,7 +1791,7 @@ object P2PMessageRelay {
             PythonBridge.closePeerSession(peerName, oldFingerprint)
             val accepted = P2PPreferences.acceptPendingPeerIdentity(appContext, peerName)
             if (accepted == null) {
-                Handler(Looper.getMainLooper()).post { onResult(false) }
+                serviceScope.launch(Dispatchers.Main) { onResult(false) }
                 return@launch
             }
             PythonBridge.clearRejectedFingerprint(peerName)
@@ -1804,7 +1802,7 @@ object P2PMessageRelay {
             clearPeerPresenceImmediately(peerName)
             val success = endpoint.isNotBlank() &&
                 PythonBridge.reconnectPeerSession(peerName, endpoint, accepted.acceptedFingerprint)
-            Handler(Looper.getMainLooper()).post { onResult(success) }
+            serviceScope.launch(Dispatchers.Main) { onResult(success) }
         }
     }
 
