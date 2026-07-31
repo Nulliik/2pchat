@@ -91,6 +91,39 @@ class GroupMembershipTransitionsTest {
         assertFalse(GroupMembershipTransitions.canTransferOwnership(true, true))
     }
 
+    @Test
+    fun pendingInviteExpiresAtFixedLifetimeWithoutSlidingRefresh() {
+        val week = 7L * 24L * 60L * 60L * 1_000L
+        val invitedAt = 1_000_000L
+
+        assertFalse(
+            GroupMembershipTransitions.shouldExpireInvite(
+                "INVITED",
+                invitedAt,
+                invitedAt + week - 1L,
+                week,
+            ),
+        )
+        assertTrue(
+            GroupMembershipTransitions.shouldExpireInvite(
+                "INVITED",
+                invitedAt,
+                invitedAt + week,
+                week,
+            ),
+        )
+        listOf("JOINING", "ACTIVE", "RESTRICTED", "LEFT", "BANNED").forEach { status ->
+            assertFalse(
+                GroupMembershipTransitions.shouldExpireInvite(
+                    status,
+                    invitedAt,
+                    invitedAt + week,
+                    week,
+                ),
+            )
+        }
+    }
+
     private data class RefreshArgs(
         val localStatus: String? = "JOINING",
         val ownerMatches: Boolean = true,

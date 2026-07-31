@@ -62,4 +62,16 @@ internal object GroupMembershipTransitions {
         hasPendingInvite: Boolean,
         hasPendingRosterDelivery: Boolean,
     ): Boolean = !hasPendingInvite && !hasPendingRosterDelivery
+
+    fun shouldExpireInvite(
+        status: String,
+        invitedAtMs: Long,
+        nowMs: Long,
+        lifetimeMs: Long,
+    ): Boolean =
+        status == "INVITED" &&
+            invitedAtMs >= 0L &&
+            lifetimeMs > 0L &&
+            nowMs >= invitedAtMs &&
+            nowMs - invitedAtMs >= lifetimeMs
 }

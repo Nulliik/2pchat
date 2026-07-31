@@ -982,7 +982,9 @@ object GroupChatCoordinator {
         }
         flushDeclinedInviteResponses()
         var flushed = flushDueOutbox()
-        db().listGroups().forEach { group ->
+        db().listGroups().forEach { initialGroup ->
+            expireStaleInvites(initialGroup.groupId)
+            val group = db().getGroup(initialGroup.groupId) ?: return@forEach
             enqueuePendingMemberInvites(group.groupId)
             repairReplicaAttachments(group)
             val connected = db().listMembers(group.groupId)
@@ -1005,6 +1007,56 @@ object GroupChatCoordinator {
         }
         flushed += flushDueOutbox()
         return flushed
+    }
+
+    /**
+     * An invite contains the current epoch secret. Merely rejecting an old
+     * signature does not revoke that already-disclosed key, so the owner must
+     * remove an unaccepted recipient and rotate the epoch when its fixed
+     * invitation lifetime ends.
+     */
+    private suspend fun expireStaleInvites(
+        groupId: String,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
+        val candidateIds = db().listMembers(groupId)
+            .filter {
+                GroupMembershipTransitions.shouldExpireInvite(
+                    status = it.status,
+                    invitedAtMs = it.updatedAtMs,
+                    nowMs = nowMs,
+                    lifetimeMs = INVITE_LIFETIME_MS,
+                )
+            }
+            .map { it.deviceId }
+
+        for (deviceId in candidateIds) {
+            controlMutex.withLock {
+                val group = db().getGroup(groupId) ?: return@withLock
+                if (group.localDeviceId != group.ownerDeviceId) return@withLock
+                val recipient = db().getMember(groupId, deviceId) ?: return@withLock
+                if (
+                    !GroupMembershipTransitions.shouldExpireInvite(
+                        status = recipient.status,
+                        invitedAtMs = recipient.updatedAtMs,
+                        nowMs = nowMs,
+                        lifetimeMs = INVITE_LIFETIME_MS,
+                    )
+                ) {
+                    return@withLock
+                }
+                executeSerializedControlLocked(
+                    groupId = groupId,
+                    action = "remove",
+                    payload = JSONObject().apply {
+                        put("member_device_id", deviceId)
+                        put("status", "LEFT")
+                        put("reason", "invite_expired")
+                    },
+                    proposalEventId = null,
+                )
+            }
+        }
     }
 
     /**
@@ -3676,6 +3728,12 @@ object GroupChatCoordinator {
             .asSequence()
             .filter {
                 it.status == "INVITED" &&
+                    !GroupMembershipTransitions.shouldExpireInvite(
+                        status = it.status,
+                        invitedAtMs = it.updatedAtMs,
+                        nowMs = now,
+                        lifetimeMs = INVITE_LIFETIME_MS,
+                    ) &&
                     (onlyRecipientDeviceId == null || it.deviceId == onlyRecipientDeviceId)
             }
             .forEach { recipient ->
