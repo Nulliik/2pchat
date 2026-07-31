@@ -36,6 +36,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -98,6 +99,63 @@ internal fun ChatMessageList(
     val displayMessages = messages
     val incomingAfter = remember(messages) {
         incomingMessageAfterFlags(messages)
+    }
+    val currentMessages by rememberUpdatedState(displayMessages)
+    val currentOnOpenImages by rememberUpdatedState(onOpenImages)
+    val onScrollToReply = remember(listState, coroutineScope) {
+        { replyToId: String ->
+            val target = currentMessages.indexOfFirst { it.id == replyToId }
+            if (target >= 0) {
+                coroutineScope.launch { listState.animateScrollToItem(target) }
+            }
+        }
+    }
+    val onOpenGifGallery = remember {
+        { message: Message ->
+            val paths = currentMessages
+                .asSequence()
+                .filter {
+                    it.attachmentType == com.example.twopchat.GifStorageManager.ATTACHMENT_TYPE
+                }
+                .mapNotNull { it.attachmentUri }
+                .filter { java.io.File(it).isFile }
+                .distinct()
+                .toList()
+            val clickedPath = message.attachmentUri
+            val clickedIndex = paths.indexOf(clickedPath)
+            if (clickedIndex >= 0) {
+                currentOnOpenImages(paths, clickedIndex)
+            } else if (!clickedPath.isNullOrBlank()) {
+                currentOnOpenImages(listOf(clickedPath), 0)
+            }
+        }
+    }
+    val onOpenImageGallery = remember {
+        { message: Message ->
+            val paths = currentMessages
+                .asSequence()
+                .filter { it.attachmentType == "IMAGE" }
+                .mapNotNull { it.attachmentUri }
+                .distinct()
+                .toList()
+            val clickedPath = message.attachmentUri
+            val clickedIndex = paths.indexOf(clickedPath)
+            if (clickedIndex >= 0) {
+                currentOnOpenImages(paths, clickedIndex)
+            } else if (!clickedPath.isNullOrBlank()) {
+                currentOnOpenImages(listOf(clickedPath), 0)
+            }
+        }
+    }
+    val onSelectionChange = remember(selectedMessages) {
+        { message: Message, selected: Boolean ->
+            if (selected) {
+                if (message !in selectedMessages) selectedMessages.add(message)
+            } else {
+                selectedMessages.remove(message)
+            }
+            Unit
+        }
     }
     val activeAnimatedGifMessageIds by remember(listState, displayMessages) {
         derivedStateOf {
@@ -189,22 +247,26 @@ internal fun ChatMessageList(
             val animateOnAppearance = remember(msg.id) {
                 arrivalAnimationTracker.consume(msg.id)
             }
+            val isRead = msg.isMe && (
+                incomingAfter.getOrElse(index) { false } ||
+                    msg.status?.startsWith("READ") == true ||
+                    isTyping ||
+                    peerName == "Saved Messages"
+                )
             if (isSearchMode && searchQuery.isNotEmpty() && onJumpToMessage != null) {
                 Box(modifier = Modifier.fillMaxWidth().clickable { onJumpToMessage(msg) }) {
                     ChatMessageBubble(
                         index = index,
                         msg = msg,
-                        messages = displayMessages,
-                        hasIncomingAfter = incomingAfter.getOrElse(index) { false },
                         isAnimatedMediaEnabled = msg.id in activeAnimatedGifMessageIds,
-                        selectedMessages = selectedMessages,
+                        isSelected = msg in selectedMessages,
+                        onSelectionChange = onSelectionChange,
                         isSelectMode = isSelectMode,
-                        isTyping = isTyping,
+                        isRead = isRead,
                         peerName = peerName,
                         myAvatarBitmap = myAvatarBitmap,
                         appLanguage = appLanguage,
                         animateOnAppearance = animateOnAppearance,
-                        listState = listState,
                         primaryColor = primaryColor,
                         surfaceColor = surfaceColor,
                         onSurfaceColor = onSurfaceColor,
@@ -215,6 +277,9 @@ internal fun ChatMessageList(
                         onOpenVideo = onOpenVideo,
                         onOpenStickerPack = onOpenStickerPack,
                         onCancelFileTransfer = onCancelFileTransfer,
+                        onScrollToReply = onScrollToReply,
+                        onOpenGifGallery = onOpenGifGallery,
+                        onOpenImageGallery = onOpenImageGallery,
                         highlightedMessageId = highlightedMessageId,
                         onHighlightFinished = onHighlightFinished,
                     )
@@ -223,17 +288,15 @@ internal fun ChatMessageList(
                 ChatMessageBubble(
                     index = index,
                     msg = msg,
-                    messages = displayMessages,
-                    hasIncomingAfter = incomingAfter.getOrElse(index) { false },
                     isAnimatedMediaEnabled = msg.id in activeAnimatedGifMessageIds,
-                    selectedMessages = selectedMessages,
+                    isSelected = msg in selectedMessages,
+                    onSelectionChange = onSelectionChange,
                     isSelectMode = isSelectMode,
-                    isTyping = isTyping,
+                    isRead = isRead,
                     peerName = peerName,
                     myAvatarBitmap = myAvatarBitmap,
                     appLanguage = appLanguage,
                     animateOnAppearance = animateOnAppearance,
-                    listState = listState,
                     primaryColor = primaryColor,
                     surfaceColor = surfaceColor,
                     onSurfaceColor = onSurfaceColor,
@@ -244,6 +307,9 @@ internal fun ChatMessageList(
                     onOpenVideo = onOpenVideo,
                     onOpenStickerPack = onOpenStickerPack,
                     onCancelFileTransfer = onCancelFileTransfer,
+                    onScrollToReply = onScrollToReply,
+                    onOpenGifGallery = onOpenGifGallery,
+                    onOpenImageGallery = onOpenImageGallery,
                     highlightedMessageId = highlightedMessageId,
                     onHighlightFinished = onHighlightFinished,
                 )

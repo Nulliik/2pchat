@@ -21,7 +21,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
@@ -31,7 +30,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,7 +47,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.R
 import com.example.twopchat.theme.StealthBlack
-import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -93,17 +90,15 @@ private fun isAttachmentAvailable(uri: String?): Boolean {
 internal fun ChatMessageBubble(
     index: Int,
     msg: Message,
-    messages: List<Message>,
-    hasIncomingAfter: Boolean,
     isAnimatedMediaEnabled: Boolean,
-    selectedMessages: MutableList<Message>,
+    isSelected: Boolean,
+    onSelectionChange: (Message, Boolean) -> Unit,
     isSelectMode: Boolean,
-    isTyping: Boolean,
+    isRead: Boolean,
     peerName: String,
     myAvatarBitmap: Bitmap?,
     appLanguage: String,
     animateOnAppearance: Boolean,
-    listState: LazyListState,
     primaryColor: Color,
     surfaceColor: Color,
     onSurfaceColor: Color,
@@ -114,10 +109,12 @@ internal fun ChatMessageBubble(
     onOpenVideo: (String) -> Unit,
     onOpenStickerPack: (Message) -> Unit,
     onCancelFileTransfer: (Message) -> Unit,
+    onScrollToReply: (String) -> Unit,
+    onOpenGifGallery: (Message) -> Unit,
+    onOpenImageGallery: (Message) -> Unit,
     highlightedMessageId: String? = null,
     onHighlightFinished: () -> Unit = {},
 ) {
-    val coroutineScope = rememberCoroutineScope()
     val isHighlighted = msg.id == highlightedMessageId
     var highlightAlpha by remember(msg.id, isHighlighted) { mutableStateOf(if (isHighlighted) 0.5f else 0.0f) }
     if (isHighlighted && highlightAlpha > 0f) {
@@ -200,16 +197,9 @@ internal fun ChatMessageBubble(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (isSelectMode) {
-                    val isSelected = selectedMessages.contains(msg)
                     Checkbox(
                         checked = isSelected,
-                        onCheckedChange = { checked ->
-                            if (checked) {
-                                selectedMessages.add(msg)
-                            } else {
-                                selectedMessages.remove(msg)
-                            }
-                        },
+                        onCheckedChange = { checked -> onSelectionChange(msg, checked) },
                         colors = CheckboxDefaults.colors(checkedColor = primaryColor),
                         modifier = Modifier.padding(end = 8.dp)
                     )
@@ -220,11 +210,7 @@ internal fun ChatMessageBubble(
                         .weight(1f)
                         .clickable(enabled = isSelectMode) {
                             if (isSelectMode) {
-                                if (selectedMessages.contains(msg)) {
-                                    selectedMessages.remove(msg)
-                                } else {
-                                    selectedMessages.add(msg)
-                                }
+                                onSelectionChange(msg, !isSelected)
                             }
                         },
                     horizontalAlignment = alignment
@@ -234,11 +220,7 @@ internal fun ChatMessageBubble(
                             .combinedClickable(
                                 onClick = {
                                     if (isSelectMode) {
-                                        if (selectedMessages.contains(msg)) {
-                                            selectedMessages.remove(msg)
-                                        } else {
-                                            selectedMessages.add(msg)
-                                        }
+                                        onSelectionChange(msg, !isSelected)
                                     } else {
                                         onShowOptions(msg)
                                     }
@@ -292,14 +274,7 @@ internal fun ChatMessageBubble(
                                     titleColor = replyTitleColor,
                                     textColor = replyTextColor,
                                     backgroundColor = replyBg,
-                                    onClick = {
-                                            val targetIndex = messages.indexOfFirst { it.id == msg.replyToId }
-                                            if (targetIndex != -1) {
-                                                coroutineScope.launch {
-                                                    listState.animateScrollToItem(targetIndex)
-                                                }
-                                            }
-                                    },
+                                    onClick = { msg.replyToId?.let(onScrollToReply) },
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                             }
@@ -311,11 +286,7 @@ internal fun ChatMessageBubble(
                                         fallbackEmoji = msg.text,
                                         onClick = {
                                             if (isSelectMode) {
-                                                if (selectedMessages.contains(msg)) {
-                                                    selectedMessages.remove(msg)
-                                                } else {
-                                                    selectedMessages.add(msg)
-                                                }
+                                                onSelectionChange(msg, !isSelected)
                                             } else {
                                                 onOpenStickerPack(msg)
                                             }
@@ -333,29 +304,9 @@ internal fun ChatMessageBubble(
                                         isAnimationEnabled = isAnimatedMediaEnabled,
                                         onClick = {
                                             if (isSelectMode) {
-                                                if (selectedMessages.contains(msg)) {
-                                                    selectedMessages.remove(msg)
-                                                } else {
-                                                    selectedMessages.add(msg)
-                                                }
+                                                onSelectionChange(msg, !isSelected)
                                             } else {
-                                                val allGifs = messages
-                                                    .asSequence()
-                                                    .filter {
-                                                        it.attachmentType ==
-                                                            com.example.twopchat.GifStorageManager.ATTACHMENT_TYPE
-                                                    }
-                                                    .mapNotNull { it.attachmentUri }
-                                                    .filter { java.io.File(it).isFile }
-                                                    .distinct()
-                                                    .toList()
-                                                val clickedPath = msg.attachmentUri
-                                                val clickedIndex = allGifs.indexOf(clickedPath)
-                                                if (clickedIndex >= 0) {
-                                                    onOpenImages(allGifs, clickedIndex)
-                                                } else if (!clickedPath.isNullOrBlank()) {
-                                                    onOpenImages(listOf(clickedPath), 0)
-                                                }
+                                                onOpenGifGallery(msg)
                                             }
                                         },
                                         onLongClick = {
@@ -394,12 +345,10 @@ internal fun ChatMessageBubble(
                                 "ALBUM" -> {
                                     MediaAlbumGridBubble(
                                         msg = msg,
-                                        messages = messages,
-                                        hasIncomingAfter = hasIncomingAfter,
-                                        selectedMessages = selectedMessages,
+                                        isSelected = isSelected,
+                                        onSelectionChange = onSelectionChange,
                                         isSelectMode = isSelectMode,
-                                        isTyping = isTyping,
-                                        peerName = peerName,
+                                        isRead = isRead,
                                         appLanguage = appLanguage,
                                         primaryColor = primaryColor,
                                         textColor = textColor,
@@ -462,29 +411,14 @@ internal fun ChatMessageBubble(
                                                             attachmentAvailable,
                                                         onClick = {
                                                             if (isSelectMode) {
-                                                                if (selectedMessages.contains(msg)) {
-                                                                    selectedMessages.remove(msg)
-                                                                } else {
-                                                                    selectedMessages.add(msg)
-                                                                }
+                                                                onSelectionChange(msg, !isSelected)
                                                             } else {
-                                                                val allImages = messages.filter { it.attachmentType == "IMAGE" && !it.attachmentUri.isNullOrBlank() }.map { it.attachmentUri!! }
-                                                                val clickedUri = msg.attachmentUri
-                                                                val clickedIndex = if (clickedUri != null) allImages.indexOf(clickedUri) else -1
-                                                                if (clickedIndex != -1) {
-                                                                    onOpenImages(allImages, clickedIndex)
-                                                                } else if (clickedUri != null) {
-                                                                    onOpenImages(listOf(clickedUri), 0)
-                                                                }
+                                                                onOpenImageGallery(msg)
                                                             }
                                                         },
                                                         onLongClick = {
                                                             if (isSelectMode) {
-                                                                if (selectedMessages.contains(msg)) {
-                                                                    selectedMessages.remove(msg)
-                                                                } else {
-                                                                    selectedMessages.add(msg)
-                                                                }
+                                                                onSelectionChange(msg, !isSelected)
                                                             } else {
                                                                 onShowOptions(msg)
                                                             }
@@ -594,7 +528,6 @@ internal fun ChatMessageBubble(
 
                                                 // If NO caption, floating timestamp pill in bottom-right corner over the photo
                                                 if (!hasCaption) {
-                                                    val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                                                     val isPending = msg.status?.startsWith("PENDING") == true
 
                                                     Row(
@@ -634,7 +567,6 @@ internal fun ChatMessageBubble(
 
                                             // If HAS caption, render clean caption container at bottom of card
                                             if (hasCaption) {
-                                                val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                                                 val isPending = msg.status?.startsWith("PENDING") == true
 
                                                 Column(
@@ -740,22 +672,14 @@ internal fun ChatMessageBubble(
                                                         attachmentAvailable,
                                                     onClick = {
                                                         if (isSelectMode) {
-                                                            if (selectedMessages.contains(msg)) {
-                                                                selectedMessages.remove(msg)
-                                                            } else {
-                                                                selectedMessages.add(msg)
-                                                            }
+                                                            onSelectionChange(msg, !isSelected)
                                                         } else {
                                                             msg.attachmentUri?.let(onOpenVideo)
                                                         }
                                                     },
                                                     onLongClick = {
                                                         if (isSelectMode) {
-                                                            if (selectedMessages.contains(msg)) {
-                                                                selectedMessages.remove(msg)
-                                                            } else {
-                                                                selectedMessages.add(msg)
-                                                            }
+                                                            onSelectionChange(msg, !isSelected)
                                                         } else {
                                                             onShowOptions(msg)
                                                         }
@@ -886,7 +810,6 @@ internal fun ChatMessageBubble(
 
                                             // If NO caption, floating timestamp pill in bottom-right corner over the video
                                             if (!hasCaption) {
-                                                val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                                                 val isPending = msg.status?.startsWith("PENDING") == true
 
                                                 Row(
@@ -926,7 +849,6 @@ internal fun ChatMessageBubble(
 
                                         // If HAS caption, render clean caption container at bottom of card
                                         if (hasCaption) {
-                                            val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                                             val isPending = msg.status?.startsWith("PENDING") == true
 
                                             Column(
@@ -1187,7 +1109,6 @@ internal fun ChatMessageBubble(
                                     )
                                     if (msg.isMe) {
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                                         val isPending = msg.status?.startsWith("PENDING") == true
                                         
                                         val statusColor = if (isOnlyEmoji || isSticker || isGif) {
@@ -1709,12 +1630,10 @@ internal fun LinkPreviewCard(
 @Composable
 private fun MediaAlbumGridBubble(
     msg: Message,
-    messages: List<Message>,
-    hasIncomingAfter: Boolean,
-    selectedMessages: MutableList<Message>,
+    isSelected: Boolean,
+    onSelectionChange: (Message, Boolean) -> Unit,
     isSelectMode: Boolean,
-    isTyping: Boolean,
-    peerName: String,
+    isRead: Boolean,
     appLanguage: String,
     primaryColor: Color,
     textColor: Color,
@@ -1725,6 +1644,7 @@ private fun MediaAlbumGridBubble(
     onOpenVideo: (String) -> Unit,
     onShowOptions: (Message) -> Unit
 ) {
+    val onToggleSelection = { onSelectionChange(msg, !isSelected) }
     val uris = msg.albumMediaUris
     val types = msg.albumMediaTypes
     val hasCaption = msg.text.isNotBlank() &&
@@ -1756,7 +1676,7 @@ private fun MediaAlbumGridBubble(
                             allUris = uris,
                             cellIndex = 0,
                             msg = msg,
-                            selectedMessages = selectedMessages,
+                            onToggleSelection = onToggleSelection,
                             isSelectMode = isSelectMode,
                             onOpenImages = onOpenImages,
                             onOpenVideo = onOpenVideo,
@@ -1769,7 +1689,7 @@ private fun MediaAlbumGridBubble(
                             allUris = uris,
                             cellIndex = 1,
                             msg = msg,
-                            selectedMessages = selectedMessages,
+                            onToggleSelection = onToggleSelection,
                             isSelectMode = isSelectMode,
                             onOpenImages = onOpenImages,
                             onOpenVideo = onOpenVideo,
@@ -1789,7 +1709,7 @@ private fun MediaAlbumGridBubble(
                             allUris = uris,
                             cellIndex = 0,
                             msg = msg,
-                            selectedMessages = selectedMessages,
+                            onToggleSelection = onToggleSelection,
                             isSelectMode = isSelectMode,
                             onOpenImages = onOpenImages,
                             onOpenVideo = onOpenVideo,
@@ -1806,7 +1726,7 @@ private fun MediaAlbumGridBubble(
                                 allUris = uris,
                                 cellIndex = 1,
                                 msg = msg,
-                                selectedMessages = selectedMessages,
+                                onToggleSelection = onToggleSelection,
                                 isSelectMode = isSelectMode,
                                 onOpenImages = onOpenImages,
                                 onOpenVideo = onOpenVideo,
@@ -1819,7 +1739,7 @@ private fun MediaAlbumGridBubble(
                                 allUris = uris,
                                 cellIndex = 2,
                                 msg = msg,
-                                selectedMessages = selectedMessages,
+                                onToggleSelection = onToggleSelection,
                                 isSelectMode = isSelectMode,
                                 onOpenImages = onOpenImages,
                                 onOpenVideo = onOpenVideo,
@@ -1844,7 +1764,7 @@ private fun MediaAlbumGridBubble(
                                 allUris = uris,
                                 cellIndex = 0,
                                 msg = msg,
-                                selectedMessages = selectedMessages,
+                                onToggleSelection = onToggleSelection,
                                 isSelectMode = isSelectMode,
                                 onOpenImages = onOpenImages,
                                 onOpenVideo = onOpenVideo,
@@ -1857,7 +1777,7 @@ private fun MediaAlbumGridBubble(
                                 allUris = uris,
                                 cellIndex = 1,
                                 msg = msg,
-                                selectedMessages = selectedMessages,
+                                onToggleSelection = onToggleSelection,
                                 isSelectMode = isSelectMode,
                                 onOpenImages = onOpenImages,
                                 onOpenVideo = onOpenVideo,
@@ -1875,7 +1795,7 @@ private fun MediaAlbumGridBubble(
                                 allUris = uris,
                                 cellIndex = 2,
                                 msg = msg,
-                                selectedMessages = selectedMessages,
+                                onToggleSelection = onToggleSelection,
                                 isSelectMode = isSelectMode,
                                 onOpenImages = onOpenImages,
                                 onOpenVideo = onOpenVideo,
@@ -1888,7 +1808,7 @@ private fun MediaAlbumGridBubble(
                                 allUris = uris,
                                 cellIndex = 3,
                                 msg = msg,
-                                selectedMessages = selectedMessages,
+                                onToggleSelection = onToggleSelection,
                                 isSelectMode = isSelectMode,
                                 onOpenImages = onOpenImages,
                                 onOpenVideo = onOpenVideo,
@@ -1900,7 +1820,6 @@ private fun MediaAlbumGridBubble(
             }
 
             if (!hasCaption) {
-                val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
                 val isPending = msg.status?.startsWith("PENDING") == true
 
                 Row(
@@ -1939,7 +1858,6 @@ private fun MediaAlbumGridBubble(
         }
 
         if (hasCaption) {
-            val isRead = hasIncomingAfter || msg.status?.startsWith("READ") == true || isTyping || peerName == "Saved Messages"
             val isPending = msg.status?.startsWith("PENDING") == true
 
             Column(
@@ -1995,7 +1913,7 @@ private fun AlbumItemCell(
     allUris: List<String>,
     cellIndex: Int,
     msg: Message,
-    selectedMessages: MutableList<Message>,
+    onToggleSelection: () -> Unit,
     isSelectMode: Boolean,
     onOpenImages: (List<String>, Int) -> Unit,
     onOpenVideo: (String) -> Unit,
@@ -2014,11 +1932,7 @@ private fun AlbumItemCell(
             .combinedClickable(
                 onClick = {
                     if (isSelectMode) {
-                        if (selectedMessages.contains(msg)) {
-                            selectedMessages.remove(msg)
-                        } else {
-                            selectedMessages.add(msg)
-                        }
+                        onToggleSelection()
                     } else {
                         if (isVideo) {
                             onOpenVideo(uri)
@@ -2031,11 +1945,7 @@ private fun AlbumItemCell(
                 },
                 onLongClick = {
                     if (isSelectMode) {
-                        if (selectedMessages.contains(msg)) {
-                            selectedMessages.remove(msg)
-                        } else {
-                            selectedMessages.add(msg)
-                        }
+                        onToggleSelection()
                     } else {
                         onShowOptions(msg)
                     }
