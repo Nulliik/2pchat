@@ -2,6 +2,7 @@ package com.example.twopchat
 
 import android.content.Context
 import android.util.Log
+import com.chaquo.python.PyObject
 import com.chaquo.python.Python
 import org.json.JSONArray
 import org.json.JSONObject
@@ -43,6 +44,29 @@ internal fun selectExternalIpv4(localIpv4: String, observedAddresses: List<Strin
     }.orEmpty()
 
 object PythonBridge {
+    @Volatile
+    private var cachedDiscoveryBridge: PyObject? = null
+    @Volatile
+    private var cachedIdentityModule: PyObject? = null
+
+    private fun getDiscoveryBridgeModule(): PyObject? {
+        if (!isInitialized) return null
+        return cachedDiscoveryBridge ?: synchronized(this) {
+            cachedDiscoveryBridge ?: runCatching {
+                Python.getInstance().getModule("discovery_bridge").also { cachedDiscoveryBridge = it }
+            }.getOrNull()
+        }
+    }
+
+    private fun getIdentityModule(): PyObject? {
+        if (!isInitialized) return null
+        return cachedIdentityModule ?: synchronized(this) {
+            cachedIdentityModule ?: runCatching {
+                Python.getInstance().getModule("messenger.core.identity").also { cachedIdentityModule = it }
+            }.getOrNull()
+        }
+    }
+
     fun ensurePythonStarted(context: Context) {
         if (!Python.isStarted()) {
             synchronized(this) {
@@ -93,8 +117,8 @@ object PythonBridge {
             bootstrap.callAttr("set_config_dir", configDir.absolutePath)
             
             // Try loading core modules to verify (they will now read the environment variable correctly during import)
-            val identity = py.getModule("messenger.core.identity")
-            val discoveryBridge = py.getModule("discovery_bridge")
+            val identity = py.getModule("messenger.core.identity").also { cachedIdentityModule = it }
+            val discoveryBridge = py.getModule("discovery_bridge").also { cachedDiscoveryBridge = it }
             check(
                 discoveryBridge.callAttr(
                     "configure_trackers",
@@ -133,8 +157,7 @@ object PythonBridge {
     fun getLocalFingerprint(): String {
         if (!isInitialized) return "Not Initialized"
         return try {
-            val py = Python.getInstance()
-            val identity = py.getModule("messenger.core.identity")
+            val identity = getIdentityModule() ?: return "Error"
             // Call load_or_create_identity()
             val privKey = identity.callAttr("load_or_create_identity")
             val fp = identity.callAttr("fingerprint", privKey.get("public_key"))
@@ -153,8 +176,7 @@ object PythonBridge {
     ): List<Map<String, Any>> {
         if (!isInitialized) return emptyList()
         return try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return emptyList()
             if (!applyTrackerConfiguration(bridge)) return emptyList()
             val directEndpoints = orderedDirectEndpoints(
                 P2PMessageRelay.localDiscoveryEndpoints(expectedLiveName) +
@@ -372,8 +394,7 @@ object PythonBridge {
             announcesInFlight.add(announceKey)
         }
         return try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return false
             if (!applyTrackerConfiguration(bridge, trackerConfig)) return false
 
             Log.i(
@@ -408,8 +429,7 @@ object PythonBridge {
     fun getTrackerDiagnostics(): Map<String, String> {
         if (!isInitialized) return emptyMap()
         return try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return emptyMap()
             if (!applyTrackerConfiguration(bridge)) return emptyMap()
             val rawJson = bridge.callAttr("get_tracker_diagnostics_json").toString()
             val json = JSONObject(rawJson)
@@ -593,8 +613,7 @@ object PythonBridge {
     fun registerMessageListener(listener: PyMessageListener) {
         if (!isInitialized) return
         try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return
             bridge.callAttr("register_message_listener", listener)
         } catch (e: Exception) {
             Log.e(TAG, "Error registering message listener", e)
@@ -604,8 +623,7 @@ object PythonBridge {
     fun registerSessionListener(listener: PySessionListener) {
         if (!isInitialized) return
         try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return
             bridge.callAttr("register_session_listener", listener)
         } catch (e: Exception) {
             Log.e(TAG, "Error registering session listener", e)
@@ -615,8 +633,7 @@ object PythonBridge {
     fun startP2pListener(port: Int = 50001) {
         if (!isInitialized) return
         try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return
             bridge.callAttr("start_p2p_listener", port)
         } catch (e: Exception) {
             Log.e(TAG, "Error starting P2P listener", e)
@@ -626,8 +643,7 @@ object PythonBridge {
     fun sendP2pMessage(peerName: String, endpoint: String, text: String, expectedFingerprint: String? = null): Boolean {
         if (!isInitialized) return false
         return try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return false
             val success = bridge.callAttr("send_p2p_message", peerName, endpoint, text, expectedFingerprint)
             success.toBoolean()
         } catch (e: Exception) {
@@ -650,8 +666,7 @@ object PythonBridge {
     ): Boolean {
         if (!isInitialized) return false
         return try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return false
             val success = bridge.callAttr(
                 "send_p2p_file",
                 peerName,
@@ -675,9 +690,8 @@ object PythonBridge {
     fun cancelP2pFile(peerName: String, messageId: String, expectedFingerprint: String? = null): Boolean {
         if (!isInitialized || messageId.isBlank()) return false
         return try {
-            Python.getInstance().getModule("discovery_bridge")
-                .callAttr("cancel_p2p_file", peerName, messageId, expectedFingerprint)
-                .toBoolean()
+            val bridge = getDiscoveryBridgeModule() ?: return false
+            bridge.callAttr("cancel_p2p_file", peerName, messageId, expectedFingerprint).toBoolean()
         } catch (e: Exception) {
             Log.e(TAG, "Error cancelling P2P file via Python", e)
             false
@@ -687,8 +701,7 @@ object PythonBridge {
     fun getActivePeers(): List<String> {
         if (!isInitialized) return emptyList()
         return try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return emptyList()
             val peersStr = bridge.callAttr("get_active_peers_list").toString()
             if (peersStr.isEmpty()) emptyList() else peersStr.split(",")
         } catch (e: Exception) {
@@ -732,8 +745,7 @@ object PythonBridge {
     fun getActivePeerFingerprints(): List<String> {
         if (!isInitialized) return emptyList()
         return try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return emptyList()
             val fingerprints = bridge.callAttr("probe_active_peer_fingerprints_list").toString()
             if (fingerprints.isEmpty()) emptyList() else fingerprints.split(",")
         } catch (e: Exception) {
@@ -745,10 +757,8 @@ object PythonBridge {
     fun rememberPeerName(fingerprint: String, peerName: String): Boolean {
         if (!isInitialized || fingerprint.isBlank() || peerName.isBlank()) return false
         return try {
-            val py = Python.getInstance()
-            py.getModule("discovery_bridge")
-                .callAttr("remember_peer_name", fingerprint, peerName)
-                .toBoolean()
+            val bridge = getDiscoveryBridgeModule() ?: return false
+            bridge.callAttr("remember_peer_name", fingerprint, peerName).toBoolean()
         } catch (e: Exception) {
             Log.e(TAG, "Error remembering authenticated peer name", e)
             false
@@ -758,8 +768,7 @@ object PythonBridge {
     fun closePeerSession(peerName: String, expectedFingerprint: String? = null): Boolean {
         if (!isInitialized) return false
         return try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return false
             val success = bridge.callAttr("close_peer_session", peerName, expectedFingerprint)
             success.toBoolean()
         } catch (e: Exception) {
@@ -771,8 +780,7 @@ object PythonBridge {
     fun reconnectPeerSession(peerName: String, endpoint: String, expectedFingerprint: String? = null): Boolean {
         if (!isInitialized) return false
         return try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return false
             val success = bridge.callAttr("reconnect_peer_session", peerName, endpoint, expectedFingerprint)
             success.toBoolean()
         } catch (e: Exception) {
@@ -784,8 +792,7 @@ object PythonBridge {
     fun isUpnpMapped(): Boolean {
         if (!isInitialized) return false
         return try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return false
             bridge.callAttr("is_upnp_mapped").toBoolean()
         } catch (e: Exception) {
             Log.e(TAG, "Error checking UPnP mapping status", e)
@@ -796,8 +803,7 @@ object PythonBridge {
     fun getUpnpDetails(): Map<String, String> {
         if (!isInitialized) return emptyMap()
         return try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return emptyMap()
             val jsonStr = bridge.callAttr("get_upnp_details_json").toString()
             val json = JSONObject(jsonStr)
             val result = mutableMapOf<String, String>()
@@ -816,8 +822,7 @@ object PythonBridge {
     fun triggerUpnpReopen(): Boolean {
         if (!isInitialized) return false
         return try {
-            val py = Python.getInstance()
-            val bridge = py.getModule("discovery_bridge")
+            val bridge = getDiscoveryBridgeModule() ?: return false
             bridge.callAttr("trigger_upnp_reopen").toBoolean()
         } catch (e: Exception) {
             Log.e(TAG, "Error triggering UPnP reopen", e)
