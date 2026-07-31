@@ -1425,11 +1425,24 @@ private fun CameraQrScannerOverlay(
                             )
                             .build()
                         val barcodeScanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient(options)
-                        val zxingReader = com.google.zxing.MultiFormatReader()
+                        val zxingReader = com.google.zxing.MultiFormatReader().apply {
+                            setHints(
+                                mapOf(
+                                    com.google.zxing.DecodeHintType.POSSIBLE_FORMATS to listOf(com.google.zxing.BarcodeFormat.QR_CODE),
+                                    com.google.zxing.DecodeHintType.TRY_HARDER to true,
+                                )
+                            )
+                        }
+                        var isProcessingFrame = false
 
                         imageAnalysis.setAnalyzer(java.util.concurrent.Executors.newSingleThreadExecutor()) { imageProxy ->
+                            if (hasScanned || isProcessingFrame) {
+                                imageProxy.close()
+                                return@setAnalyzer
+                            }
+                            isProcessingFrame = true
                             val mediaImage = imageProxy.image
-                            if (mediaImage != null && !hasScanned) {
+                            if (mediaImage != null) {
                                 val inputImage = com.google.mlkit.vision.common.InputImage.fromMediaImage(
                                     mediaImage,
                                     imageProxy.imageInfo.rotationDegrees
@@ -1451,23 +1464,10 @@ private fun CameraQrScannerOverlay(
                                         }
                                         if (!found && !hasScanned) {
                                             try {
-                                                val yPlane = mediaImage.planes[0]
-                                                val buffer = yPlane.buffer
-                                                val bytes = ByteArray(buffer.remaining())
-                                                buffer.get(bytes)
-                                                val width = mediaImage.width
-                                                val height = mediaImage.height
-                                                val rowStride = yPlane.rowStride
-                                                val source = com.google.zxing.PlanarYUVLuminanceSource(
-                                                    bytes,
-                                                    rowStride,
-                                                    height,
-                                                    0,
-                                                    0,
-                                                    width,
-                                                    height,
-                                                    false
-                                                )
+                                                val bitmap = imageProxy.toBitmap()
+                                                val intArray = IntArray(bitmap.width * bitmap.height)
+                                                bitmap.getPixels(intArray, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+                                                val source = com.google.zxing.RGBLuminanceSource(bitmap.width, bitmap.height, intArray)
                                                 val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
                                                 val result = zxingReader.decode(binaryBitmap)
                                                 if (result != null && result.text.isNotBlank() && !hasScanned) {
@@ -1481,9 +1481,11 @@ private fun CameraQrScannerOverlay(
                                         }
                                     }
                                     .addOnCompleteListener {
+                                        isProcessingFrame = false
                                         imageProxy.close()
                                     }
                             } else {
+                                isProcessingFrame = false
                                 imageProxy.close()
                             }
                         }
