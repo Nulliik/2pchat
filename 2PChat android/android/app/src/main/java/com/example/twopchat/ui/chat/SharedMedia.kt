@@ -154,6 +154,7 @@ fun SharedMediaScreen(
                 .fillMaxWidth()
                 .background(surfaceColor)
                 .border(width = 0.5.dp, color = onSurfaceColor.copy(alpha = 0.05f))
+                .statusBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
