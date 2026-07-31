@@ -1,5 +1,6 @@
 package com.example.twopchat.group.ui
 
+import android.widget.Toast
 import com.example.twopchat.P2PPreferences
 import com.example.twopchat.ui.chat.AlbumPreviewModal
 import androidx.compose.material3.CircularProgressIndicator
@@ -506,11 +507,60 @@ fun GroupChatScreen(
         }
     }
 
-    val attachmentLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
-            val type = context.contentResolver.getType(uri) ?: ""
+    val gifImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        coroutineScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                var fileName = "imported_${System.currentTimeMillis()}.gif"
+                runCatching {
+                    context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (index != -1 && cursor.moveToFirst()) {
+                            fileName = cursor.getString(index).orEmpty().ifBlank { fileName }
+                        }
+                    }
+                }
+                if (!fileName.endsWith(".gif", ignoreCase = true)) fileName += ".gif"
+                saveUriToTempFile(context, uri, fileName)?.let { temporary ->
+                    GifStorageManager.save(context, temporary).also { temporary.delete() }
+                }
+            }
+            if (result == null) {
+                Toast.makeText(
+                    context,
+                    if (appLanguage == "Русский") "Не удалось добавить GIF" else "Could not add GIF",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            } else {
+                showGifLibrary = true
+            }
+        }
+    }
+
+    var tempCameraFile by remember { mutableStateOf<File?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success: Boolean ->
+        if (!success) return@rememberLauncherForActivityResult
+        val file = tempCameraFile ?: return@rememberLauncherForActivityResult
+        pendingPhotoUri = Uri.fromFile(file)
+    }
+
+    val fileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        if (uris.size > 1 && uris.all { uri ->
+            val type = context.contentResolver.getType(uri).orEmpty()
+            type.startsWith("image/") || type.startsWith("video/")
+        }) {
+            handleMultipleUrisSelected(uris)
+            return@rememberLauncherForActivityResult
+        }
+        for (uri in uris) {
+            val type = context.contentResolver.getType(uri).orEmpty()
             if (type.startsWith("image/") && !type.contains("gif") && !type.contains("sticker")) {
                 pendingPhotoUri = uri
             } else if (type.startsWith("video/")) {
@@ -936,10 +986,26 @@ fun GroupChatScreen(
                     "GIF" -> showGifLibrary = true
                     "Stickers", "STICKER", "Sticker" -> showStickerPicker = true
                     "Poll", "Polls", "Опрос" -> showCreatePollDialog = true
-                    "Camera" -> galleryLauncher.launch("image/*")
+                    "Camera" -> {
+                        try {
+                            val attachmentsDir = File(context.cacheDir, "attachments")
+                            if (!attachmentsDir.exists()) attachmentsDir.mkdirs()
+                            val file = File(attachmentsDir, "camera_capture_${System.currentTimeMillis()}.jpg")
+                            tempCameraFile = file
+                            val photoUri = androidx.core.content.FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.fileprovider",
+                                file
+                            )
+                            cameraLauncher.launch(photoUri)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, if (appLanguage == "Русский") "Не удалось открыть камеру" else "Camera launch failed", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                     "Gallery" -> galleryLauncher.launch("image/*")
                     "Video" -> videoLauncher.launch("video/*")
-                    else -> attachmentLauncher.launch(arrayOf("*/*"))
+                    "File" -> fileLauncher.launch("*/*")
+                    else -> fileLauncher.launch("*/*")
                 }
             },
             onSend = {
@@ -1305,7 +1371,7 @@ fun GroupChatScreen(
             onDismiss = { showGifLibrary = false },
             onImport = {
                 showGifLibrary = false
-                attachmentLauncher.launch(arrayOf("image/gif"))
+                gifImportLauncher.launch("image/gif")
             },
             onGifSelected = { gif ->
                 showGifLibrary = false
