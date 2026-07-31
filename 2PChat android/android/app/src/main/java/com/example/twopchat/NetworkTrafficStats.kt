@@ -122,7 +122,7 @@ internal object NetworkTrafficStats {
             .edit()
             .clear()
             .putLong(STARTED_AT, System.currentTimeMillis())
-            .commit()
+            .apply()
     }
 
     @Synchronized

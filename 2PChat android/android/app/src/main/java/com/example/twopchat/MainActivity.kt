@@ -581,7 +581,7 @@ fun PasscodeUnlockScreen(
                                                             lockPrefs.edit()
                                                                 .putInt("failed_attempts", 0)
                                                                 .putLong("lockout_until", lockoutUntil)
-                                                                .commit()
+                                                                .apply()
                                                         }
                                                         showError = true
                                                         inputPin = ""

@@ -153,7 +153,7 @@ object TrackerPreferences {
             .remove(ENABLED_PROTOCOLS)
             .remove(DISABLED_BUILTINS)
             .remove(CUSTOM_TRACKERS_JSON)
-            .commit()
+            .apply()
     }
 
     fun configJson(context: Context): String = JSONObject().apply {

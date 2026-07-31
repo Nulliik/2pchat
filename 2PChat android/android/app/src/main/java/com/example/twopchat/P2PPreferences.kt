@@ -206,6 +206,7 @@ object P2PPreferences {
         }
         // The session callback is synchronous. Persist the security boundary before
         // Python can process any application frames or another sender can race it.
+        // commit() is intentional here: we must ensure the block is written before returning.
         editor.commit()
     }
 

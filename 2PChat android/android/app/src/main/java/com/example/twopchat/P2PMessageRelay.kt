@@ -19,6 +19,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
+import kotlinx.coroutines.delay
 import androidx.core.content.edit
 import org.json.JSONObject
 import java.io.File
@@ -161,8 +162,8 @@ object P2PMessageRelay {
         endpoint: String = "",
     ) {
         val version = peerPresenceVersions.advance(peerName)
-        Handler(Looper.getMainLooper()).post {
-            if (peerPresenceVersions.current(peerName) != version) return@post
+        serviceScope.launch(Dispatchers.Main) {
+            if (peerPresenceVersions.current(peerName) != version) return@launch
             peerSessionStates[peerName] = true
             if (transport != null) peerConnectionTransports[peerName] = transport
             if (endpoint.isNotEmpty()) rememberAuthenticatedPeerEndpoint(peerName, endpoint)
@@ -176,8 +177,8 @@ object P2PMessageRelay {
         expectedVersion: Long,
     ) {
         val version = peerPresenceVersions.advanceIfCurrent(peerName, expectedVersion) ?: return
-        Handler(Looper.getMainLooper()).post {
-            if (peerPresenceVersions.current(peerName) != version) return@post
+        serviceScope.launch(Dispatchers.Main) {
+            if (peerPresenceVersions.current(peerName) != version) return@launch
             peerSessionStates[peerName] = true
             if (transport != null) peerConnectionTransports[peerName] = transport
         }
@@ -197,8 +198,8 @@ object P2PMessageRelay {
 
     private fun clearPeerPresenceImmediately(peerName: String) {
         val version = peerPresenceVersions.advance(peerName)
-        Handler(Looper.getMainLooper()).post {
-            if (peerPresenceVersions.current(peerName) != version) return@post
+        serviceScope.launch(Dispatchers.Main) {
+            if (peerPresenceVersions.current(peerName) != version) return@launch
             peerConnectionTransports.remove(peerName)
             peerSessionStates.remove(peerName)
             peerRttMs.remove(peerName)
@@ -207,26 +208,28 @@ object P2PMessageRelay {
 
     private fun schedulePeerOffline(peerName: String) {
         val version = peerPresenceVersions.advance(peerName)
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (peerPresenceVersions.current(peerName) != version) return@postDelayed
+        serviceScope.launch(Dispatchers.Main) {
+            delay(OFFLINE_UI_GRACE_MS)
+            if (peerPresenceVersions.current(peerName) != version) return@launch
             peerConnectionTransports.remove(peerName)
             peerSessionStates.remove(peerName)
             peerRttMs.remove(peerName)
-        }, OFFLINE_UI_GRACE_MS)
+        }
     }
 
     private fun schedulePeerOfflineIfCurrent(peerName: String, expectedVersion: Long) {
         val version = peerPresenceVersions.advanceIfCurrent(peerName, expectedVersion) ?: return
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (peerPresenceVersions.current(peerName) != version) return@postDelayed
+        serviceScope.launch(Dispatchers.Main) {
+            delay(OFFLINE_UI_GRACE_MS)
+            if (peerPresenceVersions.current(peerName) != version) return@launch
             peerConnectionTransports.remove(peerName)
             peerSessionStates.remove(peerName)
             peerRttMs.remove(peerName)
-        }, OFFLINE_UI_GRACE_MS)
+        }
     }
     private val outboundMessenger by lazy {
         P2POutboundMessenger(_peerEndpoints, ::log) { peerName, messageId, status ->
-            Handler(Looper.getMainLooper()).post {
+            serviceScope.launch(Dispatchers.Main) {
                 if (status == "CANCELLED") {
                     val key = "$peerName:$messageId"
                     val current = fileProgressStates[key] ?: fileProgressStates[messageId]
@@ -375,7 +378,7 @@ object P2PMessageRelay {
                 currentPrefs.getString(P2PPreferences.peerFingerprint(it), null) == peerFingerprint
             } ?: return@LocalPeerDiscovery
             currentPrefs.edit().putString(P2PPreferences.lastEndpoint(authenticatedName), endpoint).apply()
-            Handler(Looper.getMainLooper()).post { rememberAuthenticatedPeerEndpoint(authenticatedName, endpoint) }
+            serviceScope.launch(Dispatchers.Main) { rememberAuthenticatedPeerEndpoint(authenticatedName, endpoint) }
             outboundMessenger.reconnect(context, authenticatedName)
         }.also { localPeerDiscovery = it }
         try {
@@ -403,7 +406,7 @@ object P2PMessageRelay {
         prefs.edit {
             putString(P2PPreferences.lastMessage(sender), SecureStorage.encrypt(notificationText))
         }
-        Handler(Looper.getMainLooper()).post {
+        serviceScope.launch(Dispatchers.Main) {
             messageListeners.forEach { it.onMessageReceived(sender, message) }
             if (countAsNew && activeChatPeer.get() != sender) {
                 val unreadKey = P2PPreferences.unreadCount(sender)
@@ -521,7 +524,7 @@ object P2PMessageRelay {
                     fingerprintToPeerName[fingerprint] = persistedName
                     if (peerName != persistedName && isPlaceholderPeerName(peerName)) {
                         moveChatState(context, peerName, persistedName)
-                        Handler(Looper.getMainLooper()).post {
+                        serviceScope.launch(Dispatchers.Main) {
                             _peerEndpoints.remove(peerName)
                             peerPresenceVersions.remove(peerName)
                             peerSessionStates.remove(peerName)
@@ -538,14 +541,14 @@ object P2PMessageRelay {
                 isPlaceholderPeerName(knownName) && !isPlaceholderPeerName(peerName) -> {
                     fingerprintToPeerName[fingerprint] = peerName
                     moveChatState(context, knownName, peerName)
-                    Handler(Looper.getMainLooper()).post {
+                    serviceScope.launch(Dispatchers.Main) {
                         _peerEndpoints.remove(knownName)
                     }
                     peerName
                 }
                 !isPlaceholderPeerName(knownName) && isPlaceholderPeerName(peerName) -> {
                     moveChatState(context, peerName, knownName)
-                    Handler(Looper.getMainLooper()).post {
+                    serviceScope.launch(Dispatchers.Main) {
                         _peerEndpoints.remove(peerName)
                     }
                     knownName
@@ -1812,13 +1815,13 @@ object P2PMessageRelay {
         val endpoint = prefs.getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
         val cleared = P2PPreferences.rejectPendingPeerIdentity(appContext, peerName)
         if (!cleared) {
-            Handler(Looper.getMainLooper()).post { onResult(false) }
+            serviceScope.launch(Dispatchers.Main) { onResult(false) }
             return
         }
         relayScope.launch {
             val success = endpoint.isNotBlank() && oldFingerprint.isNotBlank() &&
                 PythonBridge.reconnectPeerSession(peerName, endpoint, oldFingerprint)
-            Handler(Looper.getMainLooper()).post { onResult(success) }
+            serviceScope.launch(Dispatchers.Main) { onResult(success) }
         }
     }
 

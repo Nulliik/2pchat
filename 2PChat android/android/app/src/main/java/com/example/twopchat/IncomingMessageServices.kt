@@ -127,7 +127,7 @@ internal class MessageNotificationService {
             if (existing != 0) return existing
             val next = prefs.getInt(NEXT_ID_KEY, 1_000).coerceAtLeast(1_000)
             val following = if (next == Int.MAX_VALUE) 1_000 else next + 1
-            prefs.edit().putInt(key, next).putInt(NEXT_ID_KEY, following).commit()
+            prefs.edit().putInt(key, next).putInt(NEXT_ID_KEY, following).apply()
             return next
         }
 
@@ -169,7 +169,7 @@ internal class MessageNotificationService {
             prefs.edit()
                 .putString(historyKey, encryptedHistory)
                 .putString(messageIdsKey, messageIds.joinToString("|||"))
-                .commit()
+                .apply()
             return NotificationHistory(list, messageIds)
         }
 
@@ -181,7 +181,7 @@ internal class MessageNotificationService {
                 .joinToString("") { "%02x".format(it) }
             val historyKey = "history_${senderDigest.take(32)}"
             val messageIdsKey = "message_ids_${senderDigest.take(32)}"
-            prefs.edit().remove(historyKey).remove(messageIdsKey).commit()
+            prefs.edit().remove(historyKey).remove(messageIdsKey).apply()
         }
 
         fun getPeerAvatarIcon(context: Context, sender: String): androidx.core.graphics.drawable.IconCompat {

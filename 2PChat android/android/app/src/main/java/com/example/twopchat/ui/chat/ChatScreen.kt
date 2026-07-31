@@ -2918,8 +2918,12 @@ remove("pinned_msg_id_${peerName}")
                         val textToForward = currentMsg?.text.orEmpty()
                         showForwardDialog = false
                         messageToForward = null
-                        if (currentMsg?.attachmentUri != null && currentMsg?.attachmentName != null) {
-                            com.example.twopchat.group.runtime.GroupChatCoordinator.sendAttachment(targetGroupId, currentMsg.attachmentName!!, "")
+                        if (currentMsg?.attachmentUri != null && currentMsg.attachmentName != null) {
+                            com.example.twopchat.group.runtime.GroupChatCoordinator.sendAttachment(
+                                targetGroupId,
+                                currentMsg.attachmentName,
+                                ""
+                            )
                         } else {
                             com.example.twopchat.group.runtime.GroupChatCoordinator.sendMessage(targetGroupId, textToForward, null)
                         }
@@ -2955,8 +2959,9 @@ remove("pinned_msg_id_${peerName}")
                         sharedPrefs.edit { putString("last_msg_$chatName", SecureStorage.encrypt("You: $textToForward")) }
                         
                         if (forwardEndpoint != null && chatName != "Saved Messages") {
-                            if (currentMsg?.attachmentType != null && currentMsg?.attachmentUri != null) {
-                                P2PMessageRelay.sendFile(context, chatName, forwardEndpoint, currentMsg.attachmentUri!!, fwdMsg.id) { success ->
+                            val attachUri = currentMsg?.attachmentUri
+                            if (currentMsg?.attachmentType != null && attachUri != null) {
+                                P2PMessageRelay.sendFile(context, chatName, forwardEndpoint, attachUri, fwdMsg.id) { success ->
                                     if (!success) {
                                         persistDatabase { db.updateMessageStatus(fwdMsg.id, "PENDING") }
                                     }

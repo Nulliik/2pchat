@@ -191,7 +191,7 @@ object YggdrasilPeerPreferences {
             .remove(DISABLED_PUBLIC_PEERS)
             .remove(CUSTOM_PEERS_JSON)
             .remove(PEER_SORT)
-            .commit()
+            .apply()
     }
 
     internal fun peerProtocol(uri: String): String? = try {
