@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -90,7 +91,7 @@ class LongMediaChatPerformanceTest {
                         .fillMaxSize()
                         .testTag(CHAT_LIST_TAG),
                     messages = messages,
-                    selectedMessages = remember { mutableStateListOf() },
+                    selectedMessages = remember { mutableStateListOf<Message>() },
                     isHistoryLoading = false,
                     isSearchMode = false,
                     searchQuery = "",
