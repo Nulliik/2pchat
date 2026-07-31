@@ -517,7 +517,7 @@ def _record_public_addresses(provider) -> None:
             print(f"Discovery observed our public address as {candidate}")
 
 
-def _discover_public_ipv4_stun(timeout: float = 2.5) -> str | None:
+def _discover_public_ipv4_stun(timeout: float = 1.5) -> str | None:
     """Return the NAT-mapped IPv4 address from an RFC 5389 binding response."""
     cookie = 0x2112A442
     transaction_id = os.urandom(12)
@@ -859,7 +859,7 @@ def verify_live_endpoints(
 
 def _run_coro_safely(coro, timeout=15.0):
     active_loop = globals().get("loop")
-    active_thread = globals().get("runtime_thread")
+    active_thread = globals().get("_listener_thread")
     if active_loop and active_loop.is_running() and active_thread is not None and threading.current_thread() != active_thread:
         future = asyncio.run_coroutine_threadsafe(coro, active_loop)
         return future.result(timeout=timeout)
@@ -1281,15 +1281,16 @@ def announce_peer_endpoints(
 
             # Start every discovery channel immediately. Previously BEP 5 was
             # delayed until even the slowest tracker request had completed.
+            # Launch STUN discovery in background without blocking tracker announcements
+            asyncio.create_task(asyncio.to_thread(_discover_public_ipv4_stun))
+
             combined_results = await asyncio.gather(
                 *[_announce_tracker(tracker_name) for tracker_name in tracker_names],
                 _announce_dht(),
-                asyncio.to_thread(_discover_public_ipv4_stun),
                 return_exceptions=True,
             )
             tracker_results = combined_results[:len(tracker_names)]
             dht_result = combined_results[len(tracker_names)]
-            observed_ipv4 = combined_results[len(tracker_names) + 1]
             total_success = 0
             for tracker_name, result in zip(tracker_names, tracker_results):
                 if isinstance(result, Exception):
@@ -1302,15 +1303,11 @@ def announce_peer_endpoints(
             else:
                 print(f"Mainline DHT announce task crashed: {dht_result}")
 
-            if isinstance(observed_ipv4, str) and observed_ipv4:
-                if observed_ipv4 not in public_address_observations:
-                    public_address_observations.add(observed_ipv4)
-                    print(f"STUN observed our public address as {observed_ipv4}")
             return total_success
 
         endpoint_strings = [_format_endpoint(ep.host, ep.port) for ep in endpoints]
         print(f"Announcing endpoints for '{nickname}': {endpoint_strings}")
-        success_count = _run_coro_safely(_announce_all(), timeout=30.0)
+        success_count = _run_coro_safely(_announce_all(), timeout=10.0)
         print(f"Total successful announce registrations: {success_count}")
         return success_count > 0
     except Exception as e:

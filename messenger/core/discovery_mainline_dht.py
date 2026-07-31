@@ -118,8 +118,11 @@ class MainlineDHTBackend:
 
         async def _resolve(host: str, port: int) -> list[tuple[bytes, tuple]]:
             try:
-                infos = await loop.getaddrinfo(host, port, type=socket.SOCK_DGRAM)
-            except OSError:
+                infos = await asyncio.wait_for(
+                    loop.getaddrinfo(host, port, type=socket.SOCK_DGRAM),
+                    timeout=2.5,
+                )
+            except (OSError, asyncio.TimeoutError):
                 return []
             resolved = []
             for family, _kind, _proto, _name, address in infos:
