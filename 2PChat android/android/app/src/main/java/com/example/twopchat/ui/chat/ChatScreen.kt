@@ -473,6 +473,7 @@ fun ChatScreen(
 
     LaunchedEffect(peerName, isActive) {
         if (!isActive) return@LaunchedEffect
+        sharedPrefs.edit { putInt("unread_count_$peerName", 0) }
         initialMessages.indices.forEach { index ->
             val message = initialMessages[index]
             val attachmentPath = message.attachmentUri
@@ -786,9 +787,8 @@ fun ChatScreen(
                         if (shouldCountIncomingMessage(layoutInfo.totalItemsCount, lastVisibleItemIndex)) {
                             newMessagesBelowCount += 1
                         }
-                        val unreadKey = "unread_count_$peerName"
                         sharedPrefs.edit {
-                            putInt(unreadKey, sharedPrefs.getInt(unreadKey, 0) + 1)
+                            putInt("unread_count_$peerName", 0)
                         }
                         arrivalAnimationTracker.mark(rxMsg.id)
                         initialMessages.add(rxMsg)
@@ -958,6 +958,7 @@ fun ChatScreen(
         if (isActive) {
             P2PMessageRelay.activeChatPeerName = peerName
             P2PMessageRelay.registerMessageListener(messageListener)
+            sharedPrefs.edit { putInt("unread_count_$peerName", 0) }
         }
         onDispose {
             // Use atomic CAS to avoid clearing the name that was already set

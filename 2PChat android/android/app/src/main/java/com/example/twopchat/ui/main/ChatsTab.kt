@@ -1,8 +1,9 @@
-
 package com.example.twopchat.ui.main
 
 import android.widget.Toast
 import android.content.Intent
+import android.content.Context
+import androidx.core.content.edit
 import android.net.VpnService
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import org.json.JSONArray
@@ -558,7 +559,10 @@ fun ChatsTab(
                         surfaceColor = surfaceColor,
                         onSurfaceColor = onSurfaceColor,
                         onSurfaceVariant = onSurfaceVariant,
-                        onClick = { onItemClick(Chat(peer.name)) },
+                        onClick = {
+                            sharedPrefs.edit { putInt("unread_count_${peer.name}", 0) }
+                            onItemClick(Chat(peer.name))
+                        },
                         onLongClick = {
                             activeMenuPeer = peer
                         }
