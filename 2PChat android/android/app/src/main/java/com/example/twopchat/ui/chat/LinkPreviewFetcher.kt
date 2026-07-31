@@ -7,10 +7,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import java.net.HttpURLConnection
+import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.URI
 import java.net.URL
+import java.net.Socket
 import java.io.ByteArrayOutputStream
 import java.util.regex.Pattern
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLSocketFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -275,31 +280,85 @@ object LinkPreviewFetcher {
         }
         if (addresses.isEmpty() || addresses.any { isPrivateOrInternalAddress(it) }) return null
 
-        val ipAddress = addresses.first().hostAddress ?: return null
+        val pinnedAddress = addresses.first()
         val port = if (urlObj.port != -1) urlObj.port else urlObj.defaultPort
         val file = urlObj.file.ifEmpty { "/" }
 
-        val ipUrlStr = if ((protocol == "http" && port == 80) || (protocol == "https" && port == 443)) {
-            "$protocol://$ipAddress$file"
-        } else {
-            "$protocol://$ipAddress:$port$file"
-        }
+        val literal = pinnedAddress.hostAddress?.let(::formatIpLiteral) ?: return null
+        val defaultPort = if (protocol == "https") 443 else 80
+        val authority = if (port == defaultPort) literal else "$literal:$port"
+        val connectionUrl = URL("$protocol://$authority$file")
 
-        val conn = (URL(ipUrlStr).openConnection() as HttpURLConnection).apply {
+        val conn = (connectionUrl.openConnection() as HttpURLConnection).apply {
             this.connectTimeout = connectTimeout
             this.readTimeout = readTimeout
             this.instanceFollowRedirects = false
             this.setRequestProperty("User-Agent", userAgent)
-            this.setRequestProperty("Host", host)
+            val hostHeader = if (port == defaultPort) host else "$host:$port"
+            this.setRequestProperty("Host", hostHeader)
         }
 
-        if (conn is javax.net.ssl.HttpsURLConnection) {
+        if (conn is HttpsURLConnection) {
+            // The URL deliberately contains the pinned IP. Restore the original
+            // TLS name for SNI and certificate verification without another DNS
+            // lookup.
+            conn.sslSocketFactory = PinnedAddressSslSocketFactory(
+                delegate = HttpsURLConnection.getDefaultSSLSocketFactory(),
+                tlsHost = host,
+                pinnedAddress = pinnedAddress,
+                connectTimeoutMs = connectTimeout,
+            )
             conn.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, session ->
-                javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier().verify(host, session)
+                HttpsURLConnection.getDefaultHostnameVerifier().verify(host, session)
             }
         }
 
         return conn
+    }
+
+    private fun formatIpLiteral(address: String): String =
+        if (address.contains(':')) "[$address]" else address
+
+    private class PinnedAddressSslSocketFactory(
+        private val delegate: SSLSocketFactory,
+        private val tlsHost: String,
+        private val pinnedAddress: InetAddress,
+        private val connectTimeoutMs: Int,
+    ) : SSLSocketFactory() {
+        override fun getDefaultCipherSuites(): Array<String> = delegate.defaultCipherSuites
+        override fun getSupportedCipherSuites(): Array<String> = delegate.supportedCipherSuites
+
+        private fun connect(port: Int, localAddress: InetAddress? = null, localPort: Int = 0): Socket {
+            val plain = Socket()
+            if (localAddress != null) plain.bind(InetSocketAddress(localAddress, localPort))
+            plain.connect(InetSocketAddress(pinnedAddress, port), connectTimeoutMs)
+            return delegate.createSocket(plain, tlsHost, port, true)
+        }
+
+        override fun createSocket(host: String, port: Int): Socket = connect(port)
+
+        override fun createSocket(
+            host: String,
+            port: Int,
+            localHost: InetAddress,
+            localPort: Int,
+        ): Socket = connect(port, localHost, localPort)
+
+        override fun createSocket(host: InetAddress, port: Int): Socket = connect(port)
+
+        override fun createSocket(
+            address: InetAddress,
+            port: Int,
+            localAddress: InetAddress,
+            localPort: Int,
+        ): Socket = connect(port, localAddress, localPort)
+
+        override fun createSocket(socket: Socket, host: String, port: Int, autoClose: Boolean): Socket {
+            // Never reuse a socket which HttpURLConnection may have opened
+            // after performing its own DNS lookup.
+            socket.close()
+            return connect(port)
+        }
     }
 
     suspend fun fetchImage(rawUrl: String): android.graphics.Bitmap? = withContext(Dispatchers.IO) {
