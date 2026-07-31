@@ -1327,7 +1327,13 @@ private fun CameraQrScannerOverlay(
         if (uri != null && !hasScanned) {
             try {
                 val inputImage = com.google.mlkit.vision.common.InputImage.fromFilePath(context, uri)
-                val scanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient()
+                val options = com.google.mlkit.vision.barcode.BarcodeScannerOptions.Builder()
+                    .setBarcodeFormats(
+                        com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE,
+                        com.google.mlkit.vision.barcode.common.Barcode.FORMAT_ALL_FORMATS,
+                    )
+                    .build()
+                val scanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient(options)
                 scanner.process(inputImage)
                     .addOnSuccessListener { barcodes ->
                         val qrText = barcodes.firstOrNull { it.rawValue?.isNotBlank() == true }?.rawValue
@@ -1336,11 +1342,33 @@ private fun CameraQrScannerOverlay(
                             haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                             onQrScanned(qrText)
                         } else {
-                            Toast.makeText(
-                                context,
-                                if (appLanguage == "Русский") "QR-код не найден на фото" else "No QR code found in photo",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            var zxingSuccess = false
+                            try {
+                                val bitmap = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                                    android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(context.contentResolver, uri))
+                                } else {
+                                    @Suppress("DEPRECATION")
+                                    android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
+                                }
+                                val intArray = IntArray(bitmap.width * bitmap.height)
+                                bitmap.getPixels(intArray, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+                                val source = com.google.zxing.RGBLuminanceSource(bitmap.width, bitmap.height, intArray)
+                                val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
+                                val result = com.google.zxing.MultiFormatReader().decode(binaryBitmap)
+                                if (result != null && result.text.isNotBlank() && !hasScanned) {
+                                    hasScanned = true
+                                    zxingSuccess = true
+                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                    onQrScanned(result.text)
+                                }
+                            } catch (_: Exception) {}
+                            if (!zxingSuccess) {
+                                Toast.makeText(
+                                    context,
+                                    if (appLanguage == "Русский") "QR-код не найден на фото" else "No QR code found in photo",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         }
                     }
                     .addOnFailureListener { e ->
@@ -1390,7 +1418,13 @@ private fun CameraQrScannerOverlay(
                             .setBackpressureStrategy(androidx.camera.core.ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .build()
 
-                        val barcodeScanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient()
+                        val options = com.google.mlkit.vision.barcode.BarcodeScannerOptions.Builder()
+                            .setBarcodeFormats(
+                                com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE,
+                                com.google.mlkit.vision.barcode.common.Barcode.FORMAT_ALL_FORMATS,
+                            )
+                            .build()
+                        val barcodeScanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient(options)
                         val zxingReader = com.google.zxing.MultiFormatReader()
 
                         imageAnalysis.setAnalyzer(java.util.concurrent.Executors.newSingleThreadExecutor()) { imageProxy ->
@@ -1417,12 +1451,23 @@ private fun CameraQrScannerOverlay(
                                         }
                                         if (!found && !hasScanned) {
                                             try {
-                                                val buffer = mediaImage.planes[0].buffer
+                                                val yPlane = mediaImage.planes[0]
+                                                val buffer = yPlane.buffer
                                                 val bytes = ByteArray(buffer.remaining())
                                                 buffer.get(bytes)
                                                 val width = mediaImage.width
                                                 val height = mediaImage.height
-                                                val source = com.google.zxing.PlanarYUVLuminanceSource(bytes, width, height, 0, 0, width, height, false)
+                                                val rowStride = yPlane.rowStride
+                                                val source = com.google.zxing.PlanarYUVLuminanceSource(
+                                                    bytes,
+                                                    rowStride,
+                                                    height,
+                                                    0,
+                                                    0,
+                                                    width,
+                                                    height,
+                                                    false
+                                                )
                                                 val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
                                                 val result = zxingReader.decode(binaryBitmap)
                                                 if (result != null && result.text.isNotBlank() && !hasScanned) {
