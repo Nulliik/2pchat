@@ -261,6 +261,7 @@ fun GroupChatScreen(
     var stickerPackRequestError by remember { mutableStateOf(StickerPackRequestError.NONE) }
     var stickerPackPreviewRevision by remember { mutableIntStateOf(0) }
     var selectedFullImagePath by remember { mutableStateOf<String?>(null) }
+    var activeFullscreenVideo by remember { mutableStateOf<String?>(null) }
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var pendingVideoPath by remember { mutableStateOf<String?>(null) }
     var isSearchMode by remember { mutableStateOf(false) }
@@ -305,6 +306,7 @@ fun GroupChatScreen(
                 showForwardDialog = false
                 messageToForward = null
             }
+            activeFullscreenVideo != null -> activeFullscreenVideo = null
             selectedFullImagePath != null -> selectedFullImagePath = null
             viewedStickerMessage != null -> viewedStickerMessage = null
             showStickerPicker -> showStickerPicker = false
@@ -848,7 +850,15 @@ fun GroupChatScreen(
                                 onEdit = { editingMessage = message },
                                 onDelete = { deletingMessage = message },
                                 onOptionsClick = { selectedMessageForOptions = message },
-                                onMediaClick = { path -> selectedFullImagePath = path },
+                                onMediaClick = { path ->
+                                    val lower = path.lowercase()
+                                    if (lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".mkv") || lower.endsWith(".avi")) {
+                                        activeFullscreenVideo = path
+                                    } else {
+                                        selectedFullImagePath = path
+                                    }
+                                },
+                                onOpenVideo = { path -> activeFullscreenVideo = path },
                                 onOpenStickerPack = { msg -> viewedStickerMessage = msg },
                                 isSelectMode = isSelectMode,
                                 isSelected = selectedMessages.any { it.messageId == message.messageId },
@@ -1066,6 +1076,14 @@ fun GroupChatScreen(
             initialIndex = startIndex,
             appLanguage = appLanguage,
             onClose = { selectedFullImagePath = null }
+        )
+    }
+
+    activeFullscreenVideo?.let { path ->
+        com.example.twopchat.ui.chat.FullscreenVideoPlayer(
+            videoPath = path,
+            appLanguage = appLanguage,
+            onClose = { activeFullscreenVideo = null }
         )
     }
 
@@ -1888,6 +1906,7 @@ private fun GroupMessageCard(
     onDelete: () -> Unit,
     onOptionsClick: () -> Unit,
     onMediaClick: (String) -> Unit = {},
+    onOpenVideo: (String) -> Unit = {},
     onOpenStickerPack: (GroupTimelineMessage) -> Unit = {},
     isSelectMode: Boolean = false,
     isSelected: Boolean = false,
@@ -2044,7 +2063,8 @@ private fun GroupMessageCard(
                 isSticker
             )
             val shouldDisplayText = message.text.isNotEmpty() && !isAttachmentPlaceholder && !isSticker
-            val isMediaOnly = attachment != null && (!shouldDisplayText || isSticker) && (isImage || isGif || isSticker)
+            val hasMediaContent = attachment != null && (isImage || isGif || isVideo)
+            val isMediaOnly = attachment != null && (!shouldDisplayText || isSticker) && (isImage || isGif || isSticker || isVideo)
 
             MediaFlags(
                 isGif = isGif,
@@ -2065,10 +2085,11 @@ private fun GroupMessageCard(
         val isAttachmentPlaceholder = mediaFlags.isAttachmentPlaceholder
         val shouldDisplayText = mediaFlags.shouldDisplayText
         val isMediaOnly = mediaFlags.isMediaOnly
+        val hasMediaContent = attachment != null && (isImage || isGif || isVideo)
 
         Surface(
             shape = if (isSticker) RoundedCornerShape(0.dp) else bubbleShape,
-            color = if (isSticker) Color.Transparent else if (isMediaOnly && (isImage || isGif)) Color.Transparent else bubbleContainerColor,
+            color = if (isSticker) Color.Transparent else if (isMediaOnly) Color.Transparent else bubbleContainerColor,
             modifier = Modifier
                 .wrapContentWidth()
                 .widthIn(max = 300.dp)
@@ -2083,14 +2104,14 @@ private fun GroupMessageCard(
                 )
         ) {
             Column(
-                modifier = if (isMediaOnly) Modifier.padding(0.dp) else Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                modifier = if (isMediaOnly || hasMediaContent) Modifier.padding(0.dp) else Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start
             ) {
                 // Header line: Author Name & Role (if not mine and not sticker/media-only)
                 if ((!message.isMine || message.replyTo != null || message.isPinned) && !isSticker) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = if (isMediaOnly) Modifier.padding(horizontal = 8.dp, vertical = 4.dp) else Modifier
+                        modifier = if (isMediaOnly || hasMediaContent) Modifier.padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 4.dp) else Modifier
                     ) {
                         Text(
                             message.authorName,
@@ -2254,6 +2275,56 @@ private fun GroupMessageCard(
                             }
                         }
 
+                        isVideo && localPath.isNotBlank() && att.isDownloaded -> {
+                            val videoThumbnail = com.example.twopchat.ui.chat.rememberVideoThumbnail(localPath)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 280.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .clickable { onOpenVideo(localPath) }
+                                    .testTag("attachment_${message.messageId}"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (videoThumbnail != null) {
+                                    Image(
+                                        bitmap = videoThumbnail.asImageBitmap(),
+                                        contentDescription = att.fileName,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.6f))
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .background(Color.Black.copy(alpha = 0.55f), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_voice_play),
+                                        contentDescription = "Play Video",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp).padding(start = 2.dp)
+                                    )
+                                }
+                                if (isMediaOnly) {
+                                    MessageTimestampBadge(
+                                        timestampLabel = message.timestampLabel,
+                                        isEdited = message.isEdited,
+                                        deliveryStatus = message.deliveryStatus,
+                                        messageId = message.messageId,
+                                        isOverlayOnImage = true,
+                                        modifier = Modifier.align(Alignment.BottomEnd)
+                                    )
+                                }
+                            }
+                        }
                         isGif && localPath.isNotBlank() -> {
                             Box(
                                 modifier = Modifier
@@ -2401,7 +2472,7 @@ private fun GroupMessageCard(
                         linkColor = if (message.isMine) Color(0xFF90CAF9) else Color(0xFF64B5F6),
                         fontSize = 14.sp,
                         lineHeight = 19.sp,
-                        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                        modifier = if (hasMediaContent) Modifier.padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 4.dp) else Modifier.padding(top = 4.dp, bottom = 2.dp)
                     )
                 }
 
@@ -2410,7 +2481,7 @@ private fun GroupMessageCard(
                     Row(
                         modifier = Modifier
                             .wrapContentWidth()
-                            .padding(horizontal = if (isMediaOnly) 6.dp else 0.dp)
+                            .padding(horizontal = if (isMediaOnly || hasMediaContent) 6.dp else 0.dp)
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
@@ -2438,14 +2509,19 @@ private fun GroupMessageCard(
 
                 // Message Footer: Timestamp & Delivery Status (Only if not already rendered as overlay on image)
                 if (!isMediaOnly) {
-                    MessageTimestampBadge(
-                        timestampLabel = message.timestampLabel,
-                        isEdited = message.isEdited,
-                        deliveryStatus = message.deliveryStatus,
-                        messageId = message.messageId,
-                        isOverlayOnImage = false,
-                        textColor = timestampColor
-                    )
+                    Box(
+                        modifier = if (hasMediaContent) Modifier.padding(end = 8.dp, bottom = 4.dp) else Modifier,
+                        contentAlignment = Alignment.CenterEnd
+                    ) {
+                        MessageTimestampBadge(
+                            timestampLabel = message.timestampLabel,
+                            isEdited = message.isEdited,
+                            deliveryStatus = message.deliveryStatus,
+                            messageId = message.messageId,
+                            isOverlayOnImage = false,
+                            textColor = timestampColor
+                        )
+                    }
                 }
 
                 // Hidden action test tags container to preserve automated test compatibility without cluttering UI
