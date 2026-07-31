@@ -44,6 +44,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import com.example.twopchat.ui.chat.MessageTimestampFormatter
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.BorderStroke
@@ -730,46 +732,94 @@ fun GroupChatScreen(
                     }
                 }
 
-                items(
+                itemsIndexed(
                     items = state.messages,
-                    key = GroupTimelineMessage::messageId,
-                    contentType = { if (it.attachment != null) "MEDIA_${it.attachment.mimeType}" else "TEXT" }
-                ) { message ->
-                    SwipeToReplyContainer(
-                        onReply = {
-                            if (message.canReply) {
-                                controller.startReply(state.groupId, message.messageId)
-                            }
-                        },
+                    key = { _, msg -> msg.messageId },
+                    contentType = { _, it -> if (it.attachment != null) "MEDIA_${it.attachment.mimeType}" else "TEXT" }
+                ) { index, message ->
+                    val previousMessage = state.messages.getOrNull(index - 1)
+                    val showDateHeader = remember(
+                        message.messageId,
+                        message.timestampEpochMs,
+                        previousMessage?.messageId,
+                        previousMessage?.timestampEpochMs,
                     ) {
-                        GroupMessageCard(
-                            groupId = state.groupId,
-                            message = message,
-                            controller = controller,
-                            onEdit = { editingMessage = message },
-                            onDelete = { deletingMessage = message },
-                            onOptionsClick = { selectedMessageForOptions = message },
-                            onMediaClick = { path -> selectedFullImagePath = path },
-                            onOpenStickerPack = { msg -> viewedStickerMessage = msg },
-                            isSelectMode = isSelectMode,
-                            isSelected = selectedMessages.any { it.messageId == message.messageId },
-                            onToggleSelect = {
-                                if (selectedMessages.any { it.messageId == message.messageId }) {
-                                    selectedMessages.removeAll { it.messageId == message.messageId }
-                                } else {
-                                    selectedMessages.add(message)
+                        if (previousMessage == null) {
+                            message.timestampEpochMs > 0L
+                        } else {
+                            MessageTimestampFormatter.isDifferentDay(
+                                previousMessage.timestampEpochMs,
+                                message.timestampEpochMs
+                            )
+                        }
+                    }
+                    val dateHeaderText = remember(message.timestampEpochMs, appLanguage) {
+                        MessageTimestampFormatter.formatDateHeader(
+                            message.timestampEpochMs,
+                            appLanguage
+                        )
+                    }
+
+                    Column {
+                        if (showDateHeader && dateHeaderText.isNotEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Surface(
+                                    color = Color.Black.copy(alpha = 0.55f),
+                                    shape = RoundedCornerShape(14.dp),
+                                    modifier = Modifier.padding(horizontal = 16.dp)
+                                ) {
+                                    Text(
+                                        text = dateHeaderText,
+                                        color = Color.White.copy(alpha = 0.92f),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                                    )
                                 }
-                                if (selectedMessages.isEmpty()) isSelectMode = false
+                            }
+                        }
+
+                        SwipeToReplyContainer(
+                            onReply = {
+                                if (message.canReply) {
+                                    controller.startReply(state.groupId, message.messageId)
+                                }
                             },
-                            onReplyQuoteClick = { targetMsgId ->
-                                val targetIndex = state.messages.indexOfFirst { it.messageId == targetMsgId }
-                                if (targetIndex != -1) {
-                                    coroutineScope.launch {
-                                        listState.animateScrollToItem(targetIndex)
+                        ) {
+                            GroupMessageCard(
+                                groupId = state.groupId,
+                                message = message,
+                                controller = controller,
+                                onEdit = { editingMessage = message },
+                                onDelete = { deletingMessage = message },
+                                onOptionsClick = { selectedMessageForOptions = message },
+                                onMediaClick = { path -> selectedFullImagePath = path },
+                                onOpenStickerPack = { msg -> viewedStickerMessage = msg },
+                                isSelectMode = isSelectMode,
+                                isSelected = selectedMessages.any { it.messageId == message.messageId },
+                                onToggleSelect = {
+                                    if (selectedMessages.any { it.messageId == message.messageId }) {
+                                        selectedMessages.removeAll { it.messageId == message.messageId }
+                                    } else {
+                                        selectedMessages.add(message)
+                                    }
+                                    if (selectedMessages.isEmpty()) isSelectMode = false
+                                },
+                                onReplyQuoteClick = { targetMsgId ->
+                                    val targetIndex = state.messages.indexOfFirst { it.messageId == targetMsgId }
+                                    if (targetIndex != -1) {
+                                        coroutineScope.launch {
+                                            listState.animateScrollToItem(targetIndex)
+                                        }
                                     }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }

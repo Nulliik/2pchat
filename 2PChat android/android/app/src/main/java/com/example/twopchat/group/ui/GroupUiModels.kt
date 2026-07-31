@@ -149,6 +149,7 @@ data class GroupTimelineMessage(
   val authorRole: GroupRole = GroupRole.MEMBER,
   val text: String,
   val timestampLabel: String,
+  val timestampEpochMs: Long = 0L,
   val isMine: Boolean = false,
   val isEdited: Boolean = false,
   val isPinned: Boolean = false,

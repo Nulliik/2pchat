@@ -4057,6 +4057,7 @@ object GroupChatCoordinator {
                     else -> message.body
                 },
                 timestampLabel = formatTime(message.createdAtMs),
+                timestampEpochMs = message.createdAtMs,
                 isMine = message.authorDeviceId == group.localDeviceId,
                 isEdited = message.edited,
                 isPinned = group.pinnedEventId == message.messageId,
