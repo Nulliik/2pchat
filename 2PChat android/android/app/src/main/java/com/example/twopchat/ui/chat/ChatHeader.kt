@@ -78,7 +78,8 @@ internal fun ChatHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(surfaceColor.copy(alpha = 0.85f))
+            .background(surfaceColor)
+            .statusBarsPadding()
             .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f))
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,

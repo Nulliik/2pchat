@@ -54,7 +54,8 @@ fun ConversationSearchHeader(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(surfaceColor.copy(alpha = 0.78f))
+            .background(surfaceColor)
+            .statusBarsPadding()
             .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f))
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
