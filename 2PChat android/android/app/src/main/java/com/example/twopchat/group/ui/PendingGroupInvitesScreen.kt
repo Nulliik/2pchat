@@ -1,6 +1,11 @@
 package com.example.twopchat.group.ui
 
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,8 +26,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,10 +39,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.io.File
 import kotlin.math.abs
 
 @Composable
@@ -48,7 +56,6 @@ fun PendingGroupInvitesScreen(
     controller: GroupUiController,
     modifier: Modifier = Modifier
 ) {
-    val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
 
@@ -74,12 +81,28 @@ fun PendingGroupInvitesScreen(
                         tint = onSurfaceColor
                     )
                 }
+                Spacer(Modifier.width(4.dp))
                 Text(
                     "Приглашения в группы",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = onSurfaceColor
                 )
+                if (state.invites.isNotEmpty()) {
+                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        color = Color(0xFF10B981).copy(alpha = 0.15f),
+                        shape = CircleShape
+                    ) {
+                        Text(
+                            text = "${state.invites.size}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF34D399),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
             }
         }
 
@@ -90,25 +113,42 @@ fun PendingGroupInvitesScreen(
             ) {
                 CircularProgressIndicator(
                     modifier = Modifier.testTag("invites_loading"),
-                    color = primaryColor
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
             state.invites.isEmpty() -> Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    "Нет входящих приглашений",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(24.dp)
+                ) {
+                    Text(
+                        text = "📩",
+                        fontSize = 44.sp
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = "Нет входящих приглашений",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = onSurfaceColor
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Когда вас пригласят в новую группу, приглашение появится здесь.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             else -> LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .testTag("pending_group_invites"),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 items(state.invites, key = PendingGroupInvite::inviteId) { invite ->
                     InviteCard(invite, controller)
@@ -120,92 +160,229 @@ fun PendingGroupInvitesScreen(
 
 @Composable
 private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController) {
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val context = LocalContext.current
 
     val initials = invite.groupTitle.take(2).uppercase().ifBlank { "GP" }
+    val inviterInitials = invite.inviterName.take(2).uppercase().ifBlank { "U" }
+
     val avatarColor = remember(invite.groupTitle) {
         val colors = listOf(
-            Color(0xFF1E88E5), Color(0xFF43A047), Color(0xFFFB8C00),
-            Color(0xFF8E24AA), Color(0xFFE53935), Color(0xFF00ACC1)
+            Color(0xFF3949AB), Color(0xFF00897B), Color(0xFFD81B60),
+            Color(0xFFF4511E), Color(0xFF7CB342), Color(0xFF00ACC1)
         )
         colors[abs(invite.groupTitle.hashCode()) % colors.size]
     }
 
-    Card(
+    val inviterAvatarColor = remember(invite.inviterName) {
+        val colors = listOf(
+            Color(0xFF1E88E5), Color(0xFF43A047), Color(0xFFFB8C00),
+            Color(0xFF8E24AA), Color(0xFFE53935), Color(0xFF00ACC1)
+        )
+        colors[abs(invite.inviterName.hashCode()) % colors.size]
+    }
+
+    val inviterAvatarBitmap = remember(invite.inviterName) {
+        com.example.twopchat.P2PMessageRelay.peerAvatars[invite.inviterName]
+    }
+    val groupAvatarBitmap = remember(invite.groupAvatarUri, invite.groupTitle) {
+        val cached = com.example.twopchat.P2PMessageRelay.peerAvatars[invite.groupTitle]
+        if (cached != null) {
+            cached
+        } else {
+            invite.groupAvatarUri?.let { uriStr ->
+                runCatching {
+                    if (uriStr.startsWith("content://")) {
+                        context.contentResolver.openInputStream(Uri.parse(uriStr))?.use { stream ->
+                            BitmapFactory.decodeStream(stream)
+                        }
+                    } else {
+                        val file = File(uriStr)
+                        if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+                    }
+                }.getOrNull()
+            }
+        }
+    }
+
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("invite_${invite.inviteId}"),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = primaryColor.copy(alpha = 0.05f))
+        shape = RoundedCornerShape(22.dp),
+        color = Color(0xFF181B22),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+        shadowElevation = 4.dp
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(avatarColor),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = initials,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    )
+                // Group Avatar with Inviter Badge
+                Box(modifier = Modifier.size(56.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(avatarColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (groupAvatarBitmap != null) {
+                            Image(
+                                bitmap = groupAvatarBitmap.asImageBitmap(),
+                                contentDescription = invite.groupTitle,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                            )
+                        } else if (inviterAvatarBitmap != null && invite.groupAvatarUri == null) {
+                            Image(
+                                bitmap = inviterAvatarBitmap.asImageBitmap(),
+                                contentDescription = invite.groupTitle,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                            )
+                        } else {
+                            Text(
+                                text = initials,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp
+                            )
+                        }
+                    }
+
+                    // Overlapping Inviter Avatar Badge
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .align(Alignment.BottomEnd)
+                            .clip(CircleShape)
+                            .border(1.5.dp, Color(0xFF181B22), CircleShape)
+                            .background(inviterAvatarColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (inviterAvatarBitmap != null) {
+                            Image(
+                                bitmap = inviterAvatarBitmap.asImageBitmap(),
+                                contentDescription = invite.inviterName,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                            )
+                        } else {
+                            Text(
+                                text = inviterInitials.take(1),
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
                 }
-                Spacer(Modifier.width(12.dp))
+
+                Spacer(Modifier.width(14.dp))
+
                 Column(Modifier.weight(1f)) {
-                    Text(invite.groupTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("Приглашение от ${invite.inviterName}", fontSize = 12.sp, color = primaryColor, fontWeight = FontWeight.Medium)
+                    Text(
+                        text = invite.groupTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Surface(
+                        color = Color(0xFF10B981).copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(6.dp)
+                    ) {
+                        Text(
+                            text = "Приглашение от ${invite.inviterName}",
+                            fontSize = 12.sp,
+                            color = Color(0xFF34D399),
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
                 }
             }
 
             if (invite.groupDescription.isNotBlank()) {
-                Text(
-                    invite.groupDescription,
-                    fontSize = 13.sp,
-                    color = onSurfaceColor.copy(alpha = 0.7f)
-                )
+                Surface(
+                    color = Color.White.copy(alpha = 0.04f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = invite.groupDescription,
+                        fontSize = 13.sp,
+                        color = Color.White.copy(alpha = 0.8f),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
             }
 
-            Text(
-                "${invite.memberCount} участников" +
-                    if (invite.receivedAtLabel.isNotBlank()) " · ${invite.receivedAtLabel}" else "",
-                fontSize = 11.sp,
-                color = onSurfaceColor.copy(alpha = 0.5f)
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "👥 ${invite.memberCount} участников",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.5f)
+                    )
+                    if (invite.receivedAtLabel.isNotBlank()) {
+                        Text(
+                            text = " · ${invite.receivedAtLabel}",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+            }
 
             Spacer(Modifier.height(4.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 OutlinedButton(
                     onClick = { controller.declineInvite(invite.inviteId) },
                     enabled = !invite.isProcessing,
-                    modifier = Modifier.testTag("decline_${invite.inviteId}"),
-                    shape = RoundedCornerShape(12.dp)
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(42.dp)
+                        .testTag("decline_${invite.inviteId}"),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White.copy(alpha = 0.8f))
                 ) {
-                    Text("Отклонить", fontSize = 13.sp)
+                    Text("Отклонить", fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 }
-                Spacer(Modifier.width(8.dp))
+
                 Button(
                     onClick = { controller.acceptInvite(invite.inviteId) },
                     enabled = !invite.isProcessing,
-                    modifier = Modifier.testTag("accept_${invite.inviteId}"),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(42.dp)
+                        .testTag("accept_${invite.inviteId}"),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF10B981)
+                    )
                 ) {
                     if (invite.isProcessing) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
                     } else {
-                        Text("Принять", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text("Принять", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }

@@ -241,7 +241,8 @@ data class PendingGroupInvite(
   val inviterName: String,
   val memberCount: Int,
   val receivedAtLabel: String = "",
-  val isProcessing: Boolean = false
+  val isProcessing: Boolean = false,
+  val groupAvatarUri: String? = null
 )
 
 @Immutable
