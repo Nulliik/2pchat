@@ -11,6 +11,7 @@ class AndroidGroupUiController(
     private val onBackNavigation: () -> Unit,
     private val onOpenGroupNavigation: (String) -> Unit,
     private val onOpenGroupInfoNavigation: (String) -> Unit,
+    private val onOpenDirectChatNavigation: (String) -> Unit = {},
 ) : GroupUiController {
     override fun onBack() = onBackNavigation()
 
@@ -20,6 +21,8 @@ class AndroidGroupUiController(
     }
 
     override fun openGroupInfo(groupId: String) = onOpenGroupInfoNavigation(groupId)
+
+    override fun openDirectChat(peerName: String) = onOpenDirectChatNavigation(peerName)
 
     override fun setGroupChatActive(groupId: String, active: Boolean) =
         GroupChatCoordinator.setGroupChatActive(groupId, active)

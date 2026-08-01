@@ -15,6 +15,7 @@ interface GroupUiController {
   fun onBack() = Unit
   fun openGroup(groupId: String) = Unit
   fun openGroupInfo(groupId: String) = Unit
+  fun openDirectChat(peerName: String) = Unit
   fun setGroupChatActive(groupId: String, active: Boolean) = Unit
   fun createGroup(title: String, description: String, contactIds: Set<String>) = Unit
   fun updateGroupInfo(groupId: String, title: String, description: String) = updateGroupInfo(groupId, title, description, null)

@@ -73,6 +73,7 @@ fun MainNavigation(
         onBackNavigation = { backStack.removeLastOrNull() },
         onOpenGroupNavigation = { groupId -> backStack.add(GroupConversation(groupId)) },
         onOpenGroupInfoNavigation = { groupId -> backStack.add(GroupInfo(groupId)) },
+        onOpenDirectChatNavigation = { peerName -> backStack.add(Chat(peerName)) },
       )
     }
 
