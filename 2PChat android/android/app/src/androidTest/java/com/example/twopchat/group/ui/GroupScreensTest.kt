@@ -144,8 +144,8 @@ class GroupScreensTest {
     composeTestRule.onNodeWithText("Медиа").performScrollTo().performClick()
     composeTestRule.waitForIdle()
 
-    composeTestRule.onNodeWithTag("group_media_media-0").assertExists()
-    composeTestRule.onNodeWithTag("group_media_media-89").assertDoesNotExist()
+    composeTestRule.onNodeWithTag("group_media_media-0_attachment-0").assertExists()
+    composeTestRule.onNodeWithTag("group_media_media-89_attachment-89").assertDoesNotExist()
   }
 
   @Test

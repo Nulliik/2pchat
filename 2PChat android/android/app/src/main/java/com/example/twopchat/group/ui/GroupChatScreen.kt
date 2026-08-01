@@ -2039,7 +2039,11 @@ private fun GroupMessageCard(
                     .size(28.dp)
                     .clip(CircleShape)
                     .background(peerAvatarColor)
-                    .clickable { controller.openDirectChat(message.authorName) },
+                    .then(
+                        if (!message.isMine && message.authorId != "SYSTEM" && message.authorName.isNotBlank()) {
+                            Modifier.clickable { controller.openDirectChat(message.authorName) }
+                        } else Modifier
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 if (peerAvatarBitmap != null) {
@@ -2157,7 +2161,9 @@ private fun GroupMessageCard(
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             color = authorNameColor,
-                            modifier = Modifier.clickable { controller.openDirectChat(message.authorName) }
+                            modifier = if (!message.isMine && message.authorId != "SYSTEM" && message.authorName.isNotBlank()) {
+                                Modifier.clickable { controller.openDirectChat(message.authorName) }
+                            } else Modifier
                         )
                         if (message.authorRole != GroupRole.MEMBER) {
                             Spacer(Modifier.width(6.dp))
