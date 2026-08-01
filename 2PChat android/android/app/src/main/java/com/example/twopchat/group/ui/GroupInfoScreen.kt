@@ -107,7 +107,14 @@ import kotlinx.coroutines.withContext
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import com.example.twopchat.group.runtime.GroupChatCoordinator
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.mutableStateListOf
+
+@Immutable
+private data class GroupMediaItem(
+    val message: GroupTimelineMessage,
+    val attachment: GroupAttachmentUi
+)
 
 @Composable
 fun GroupInfoScreen(
@@ -179,34 +186,43 @@ fun GroupInfoScreen(
         }
     }
 
-    val mediaMessages = remember(state.timelineMessages) {
-        state.timelineMessages.filter { msg ->
-            val att = msg.attachment
-            if (att == null) false else {
-                val mime = att.mimeType.lowercase()
-                val name = att.fileName.lowercase()
-                mime.startsWith("image/") || mime.startsWith("video/") ||
-                    name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") ||
-                    name.endsWith(".webp") || name.endsWith(".gif") || name.endsWith(".mp4") ||
-                    name.endsWith(".mov") || name.endsWith(".mkv")
-            }
-        }.reversed()
-    }
-    val mediaRows = remember(mediaMessages) { mediaMessages.chunked(3) }
-
-    val fileMessages = remember(state.timelineMessages) {
-        state.timelineMessages.filter { msg ->
-            val att = msg.attachment
-            if (att == null) false else {
+    val mediaItems = remember(state.timelineMessages) {
+        val list = mutableListOf<GroupMediaItem>()
+        state.timelineMessages.forEach { msg ->
+            val atts = if (msg.attachments.isNotEmpty()) msg.attachments else listOfNotNull(msg.attachment)
+            atts.forEach { att ->
                 val mime = att.mimeType.lowercase()
                 val name = att.fileName.lowercase()
                 val isMedia = mime.startsWith("image/") || mime.startsWith("video/") ||
                     name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") ||
                     name.endsWith(".webp") || name.endsWith(".gif") || name.endsWith(".mp4") ||
                     name.endsWith(".mov") || name.endsWith(".mkv")
-                !isMedia
+                if (isMedia) {
+                    list.add(GroupMediaItem(message = msg, attachment = att))
+                }
             }
-        }.reversed()
+        }
+        list.reversed()
+    }
+    val mediaRows = remember(mediaItems) { mediaItems.chunked(3) }
+
+    val fileItems = remember(state.timelineMessages) {
+        val list = mutableListOf<GroupMediaItem>()
+        state.timelineMessages.forEach { msg ->
+            val atts = if (msg.attachments.isNotEmpty()) msg.attachments else listOfNotNull(msg.attachment)
+            atts.forEach { att ->
+                val mime = att.mimeType.lowercase()
+                val name = att.fileName.lowercase()
+                val isMedia = mime.startsWith("image/") || mime.startsWith("video/") ||
+                    name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") ||
+                    name.endsWith(".webp") || name.endsWith(".gif") || name.endsWith(".mp4") ||
+                    name.endsWith(".mov") || name.endsWith(".mkv")
+                if (!isMedia) {
+                    list.add(GroupMediaItem(message = msg, attachment = att))
+                }
+            }
+        }
+        list.reversed()
     }
 
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -596,7 +612,7 @@ fun GroupInfoScreen(
                     }
                 }
                 1 -> { // Медиа вкладка (3-column photo grid like Direct Chat Profile)
-                    if (mediaMessages.isEmpty()) {
+                    if (mediaItems.isEmpty()) {
                         item(key = "empty_media") {
                             EmptyStateView(
                                 text = "Медиафайлы отсутствуют",
@@ -606,7 +622,7 @@ fun GroupInfoScreen(
                     } else {
                         items(
                             items = mediaRows,
-                            key = { row -> "media_${row.joinToString("_") { it.messageId }}" },
+                            key = { row -> "media_${row.joinToString("_") { "${it.message.messageId}_${it.attachment.attachmentId}" }}" },
                         ) { row ->
                             GroupMediaRow(
                                 rowItems = row,
@@ -620,21 +636,20 @@ fun GroupInfoScreen(
                                     }
                                     if (selectedItems.isEmpty()) isSelectMode = false
                                 },
-                                onMediaClick = { msg, path ->
-                                    val att = msg.attachment
-                                    val mime = att?.mimeType.orEmpty().lowercase()
+                                onMediaClick = { item ->
+                                    val att = item.attachment
+                                    val path = att.localPath ?: att.fileName
+                                    val mime = att.mimeType.lowercase()
                                     val isVid = mime.startsWith("video/") || path.lowercase().run { endsWith(".mp4") || endsWith(".mov") || endsWith(".mkv") }
                                     if (isVid) {
                                         activeFullscreenVideo = path
                                     } else {
-                                        val allImagePaths = mediaMessages.flatMap { m ->
-                                            val a = m.attachment
-                                            if (a == null) emptyList() else {
-                                                val p = a.localPath ?: a.fileName
-                                                val mType = a.mimeType.lowercase()
-                                                val v = mType.startsWith("video/") || p.lowercase().run { endsWith(".mp4") || endsWith(".mov") || endsWith(".mkv") }
-                                                if (p.isNotBlank() && !v) listOf(p) else emptyList()
-                                            }
+                                        val allImagePaths = mediaItems.mapNotNull { mItem ->
+                                            val a = mItem.attachment
+                                            val p = a.localPath ?: a.fileName
+                                            val mType = a.mimeType.lowercase()
+                                            val v = mType.startsWith("video/") || p.lowercase().run { endsWith(".mp4") || endsWith(".mov") || endsWith(".mkv") }
+                                            if (p.isNotBlank() && !v) p else null
                                         }
                                         val idx = allImagePaths.indexOf(path).coerceAtLeast(0)
                                         activeFullscreenImages = if (allImagePaths.isNotEmpty()) allImagePaths else listOf(path)
@@ -653,7 +668,7 @@ fun GroupInfoScreen(
                     }
                 }
                 3 -> { // Файлы вкладка
-                    if (fileMessages.isEmpty()) {
+                    if (fileItems.isEmpty()) {
                         item(key = "empty_files") {
                             EmptyStateView(
                                 text = "Файлы отсутствуют",
@@ -661,10 +676,8 @@ fun GroupInfoScreen(
                             )
                         }
                     } else {
-                        items(fileMessages, key = { it.messageId }) { msg ->
-                            msg.attachment?.let { attachment ->
-                                FileAttachmentRow(attachment = attachment, message = msg, controller = controller, groupId = state.metadata.groupId)
-                            }
+                        items(fileItems, key = { "${it.message.messageId}_${it.attachment.attachmentId}" }) { item ->
+                            FileAttachmentRow(attachment = item.attachment, message = item.message, controller = controller, groupId = state.metadata.groupId)
                         }
                     }
                 }
@@ -709,10 +722,10 @@ fun GroupInfoScreen(
             initialIndex = activeFullscreenIndex,
             appLanguage = appLanguage,
             onGoToMessage = { targetPath ->
-                val targetMsg = mediaMessages.firstOrNull { msg ->
-                    val a = msg.attachment
-                    (a?.localPath ?: a?.fileName) == targetPath
-                }
+                val targetMsg = mediaItems.firstOrNull { item ->
+                    val a = item.attachment
+                    (a.localPath ?: a.fileName) == targetPath
+                }?.message
                 if (targetMsg != null) {
                     GroupChatCoordinator.setTargetScrollMessage(state.metadata.groupId, targetMsg.messageId)
                     activeFullscreenImages = emptyList()
@@ -729,10 +742,10 @@ fun GroupInfoScreen(
             videoPath = videoPath,
             appLanguage = appLanguage,
             onGoToMessage = { targetPath ->
-                val targetMsg = mediaMessages.firstOrNull { msg ->
-                    val a = msg.attachment
-                    (a?.localPath ?: a?.fileName) == targetPath
-                }
+                val targetMsg = mediaItems.firstOrNull { item ->
+                    val a = item.attachment
+                    (a.localPath ?: a.fileName) == targetPath
+                }?.message
                 if (targetMsg != null) {
                     GroupChatCoordinator.setTargetScrollMessage(state.metadata.groupId, targetMsg.messageId)
                     activeFullscreenVideo = null
@@ -1927,11 +1940,11 @@ private fun GroupInfoDetailsCard(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GroupMediaRow(
-    rowItems: List<GroupTimelineMessage>,
+    rowItems: List<GroupMediaItem>,
     isSelectMode: Boolean,
     selectedItems: List<GroupTimelineMessage>,
     onToggleSelect: (GroupTimelineMessage) -> Unit,
-    onMediaClick: (GroupTimelineMessage, String) -> Unit,
+    onMediaClick: (GroupMediaItem) -> Unit,
     onMediaLongClick: (GroupTimelineMessage) -> Unit
 ) {
     Row(
@@ -1940,8 +1953,9 @@ private fun GroupMediaRow(
             .padding(horizontal = 16.dp, vertical = 3.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        rowItems.forEach { msg ->
-            val attachment = msg.attachment
+        rowItems.forEach { item ->
+            val msg = item.message
+            val attachment = item.attachment
             val isSelected = selectedItems.any { it.messageId == msg.messageId }
             Box(
                 modifier = Modifier
@@ -1958,22 +1972,20 @@ private fun GroupMediaRow(
                             if (isSelectMode) {
                                 onToggleSelect(msg)
                             } else {
-                                val path = attachment?.localPath ?: attachment?.fileName ?: ""
-                                onMediaClick(msg, path)
+                                onMediaClick(item)
                             }
                         },
                         onLongClick = {
                             onMediaLongClick(msg)
                         }
                     )
-                    .testTag("group_media_${msg.messageId}"),
+                    .testTag("group_media_${msg.messageId}_${attachment.attachmentId}"),
                 contentAlignment = Alignment.Center
             ) {
-                if (attachment != null) {
-                    MediaGridCell(
-                        attachment = attachment
-                    )
-                    if (isSelected) {
+                MediaGridCell(
+                    attachment = attachment
+                )
+                if (isSelected) {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -1993,7 +2005,6 @@ private fun GroupMediaRow(
                     }
                 }
             }
-        }
         repeat(3 - rowItems.size) {
             Spacer(modifier = Modifier.weight(1f))
         }
