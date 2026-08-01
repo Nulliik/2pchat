@@ -65,9 +65,13 @@ import kotlinx.coroutines.delay
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 
 
 @Composable
@@ -162,465 +166,600 @@ fun ChatsTab(
         Localizations.getString("saved_messages_desc", appLanguage)
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp),
+    val totalUnreadDirect = remember(peers) { peers.sumOf { it.unreadCount } }
+    val totalUnreadGroups = remember(groupSummaries) { groupSummaries.sumOf { it.unreadCount } }
+    val pagerState = rememberPagerState(initialPage = 0) { 2 }
+    val coroutineScope = rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier.fillMaxSize()
     ) {
-        item(key = "hero") {
-        // ─── Hero Identity Card ────────────────────────────────────
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-            shape = RoundedCornerShape(26.dp),
+        // ─── HERO CARD & STATUS PILLS (TOP HEADER) ───────────────────────────
+        Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                shape = RoundedCornerShape(26.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+                    .background(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                primaryColor.copy(alpha = 0.18f),
+                                surfaceColor.copy(alpha = 0.95f),
+                                primaryColor.copy(alpha = 0.08f)
+                            )
+                        ),
+                        shape = RoundedCornerShape(26.dp)
+                    )
+                    .border(1.dp, primaryColor.copy(alpha = 0.35f), RoundedCornerShape(26.dp))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Avatar + Name + Refresh
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(46.dp)
+                                .background(
+                                    brush = Brush.radialGradient(
+                                        colors = listOf(primaryColor.copy(alpha = 0.85f), primaryColor.copy(alpha = 0.40f))
+                                    ),
+                                    shape = CircleShape
+                                )
+                                .border(1.5.dp, primaryColor.copy(alpha = 0.55f), CircleShape)
+                        ) {
+                            val avatarBitmap = profileBitmap
+                            if (avatarBitmap != null) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = avatarBitmap.asImageBitmap(),
+                                    contentDescription = "My Profile Avatar",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(46.dp)
+                                        .clip(CircleShape)
+                                )
+                            } else {
+                                Text(
+                                    text = currentUsername.take(2).uppercase(),
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "МОЙ ПРОФИЛЬ" else "MY PROFILE",
+                                    fontSize = 9.sp, color = onSurfaceVariant,
+                                    fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp
+                                )
+                            }
+                            Text(
+                                text = currentUsername, fontSize = 19.sp, fontWeight = FontWeight.Bold,
+                                color = onSurfaceColor, maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(primaryColor.copy(alpha = 0.15f), shape = RoundedCornerShape(14.dp))
+                                .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(14.dp))
+                                .clickable(enabled = !isRefreshingAll) {
+                                    isRefreshingAll = true
+                                    val startMsg = if (appLanguage == "Русский") "Обновление всех подключений..." else "Refreshing all connections..."
+                                    val endMsg = if (appLanguage == "Русский") "Подключения успешно обновлены!" else "Connections successfully refreshed!"
+                                    Toast.makeText(context, startMsg, Toast.LENGTH_SHORT).show()
+                                    heroScope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            PythonBridge.triggerUpnpReopen()
+                                        }
+                                        P2PMessageRelay.refreshAnnouncement(context)
+                                        val stopIntent = Intent(context, PacketTunnelProvider::class.java).apply {
+                                            action = PacketTunnelProvider.ACTION_STOP
+                                        }
+                                        context.startService(stopIntent)
+                                        delay(1000)
+                                        val startIntent = Intent(context, PacketTunnelProvider::class.java).apply {
+                                            action = PacketTunnelProvider.ACTION_START
+                                        }
+                                        context.startService(startIntent)
+                                        
+                                        isRefreshingAll = false
+                                        Toast.makeText(context, endMsg, Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isRefreshingAll) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = primaryColor
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Refresh connections",
+                                    tint = primaryColor,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Status pills
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        @Composable
+                        fun StatusPill(
+                            label: String,
+                            value: String,
+                            ok: Boolean?,
+                            node: RadarNode
+                        ) {
+                            val pillColor = when (ok) {
+                                true  -> Color(0xFF10B981)
+                                false -> Color(0xFFEF4444)
+                                null  -> onSurfaceVariant
+                            }
+                            
+                            val pillInteractionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                            val isPillPressed by pillInteractionSource.collectIsPressedAsState()
+                            val pillScale by animateFloatAsState(
+                                targetValue = if (isPillPressed) 0.94f else 1.0f,
+                                animationSpec = spring(dampingRatio = 0.7f, stiffness = 500f),
+                                label = "pillScale"
+                            )
+
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .graphicsLayer {
+                                        scaleX = pillScale
+                                        scaleY = pillScale
+                                    }
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable(
+                                        interactionSource = pillInteractionSource,
+                                        indication = ripple(),
+                                        onClick = { onStatusPillClick(node) }
+                                    )
+                                    .background(pillColor.copy(alpha = 0.12f))
+                                    .border(0.75.dp, pillColor.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                                    .padding(vertical = 8.dp, horizontal = 2.dp)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.size(12.dp)
+                                ) {
+                                    if (ok != null) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .border(1.dp, pillColor.copy(alpha = 0.38f), CircleShape)
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .background(pillColor, CircleShape)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                    modifier = Modifier.padding(horizontal = 2.dp)
+                                ) {
+                                    if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "OK",
+                                            tint = pillColor,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                    } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Error",
+                                            tint = pillColor,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                    }
+                                    Text(
+                                        text = if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                            "OK"
+                                        } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                            if (appLanguage == "Русский") "Нет" else "No"
+                                        } else {
+                                            value
+                                        },
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = pillColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Text(text = label, fontSize = 9.sp, color = onSurfaceVariant, letterSpacing = 0.3.sp, maxLines = 1)
+                            }
+                        }
+
+                        StatusPill(
+                            label = "UPnP",
+                            value = "…",
+                            ok = heroUpnpOk,
+                            node = RadarNode.ROUTER
+                        )
+                        StatusPill(
+                            label = if (appLanguage == "Русский") "Трекеры" else "Trackers",
+                            value = "…",
+                            ok = heroTrackersOk,
+                            node = RadarNode.TRACKERS
+                        )
+                        StatusPill(
+                            label = "Yggdrasil",
+                            value = "…",
+                            ok = heroYggOk,
+                            node = RadarNode.YGGDRASIL
+                        )
+                        StatusPill(
+                            label = if (appLanguage == "Русский") "Пиры" else "Peers",
+                            value = if (heroActivePeers > 0) "$heroActivePeers 🟢" else "0",
+                            ok = if (heroActivePeers > 0) true else null,
+                            node = RadarNode.PEERS
+                        )
+                    }
+                }
+            }
+        }
+
+        // ─── SUB-TAB SEGMENT CONTROL (ЛИЧНЫЕ / ГРУППЫ) ──────────────────────
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 12.dp)
-                .background(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            primaryColor.copy(alpha = 0.18f),
-                            surfaceColor.copy(alpha = 0.95f),
-                            primaryColor.copy(alpha = 0.08f)
-                        )
-                    ),
-                    shape = RoundedCornerShape(26.dp)
-                )
-                .border(1.dp, primaryColor.copy(alpha = 0.35f), RoundedCornerShape(26.dp))
+                .padding(horizontal = 16.dp, vertical = 6.dp)
+                .background(surfaceColor.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                .border(1.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Column(modifier = Modifier.padding(18.dp)) {
+            val isDirectSelected = pagerState.currentPage == 0
+            val directTitle = if (appLanguage == "Русский") "Личные сообщения" else "Direct chats"
+            val groupsTitle = if (appLanguage == "Русский") "Групповые чаты" else "Group chats"
 
-                // Top row: avatar + name + share button
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    // Avatar
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(primaryColor.copy(alpha = 0.85f), primaryColor.copy(alpha = 0.40f))
-                                ),
-                                shape = CircleShape
-                            )
-                            .border(1.5.dp, primaryColor.copy(alpha = 0.55f), CircleShape)
-                    ) {
-                        val avatarBitmap = profileBitmap
-                        if (avatarBitmap != null) {
-                            androidx.compose.foundation.Image(
-                                bitmap = avatarBitmap.asImageBitmap(),
-                                contentDescription = "My Profile Avatar",
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(CircleShape)
-                            )
-                        } else {
+            // Tab 0: Direct Chats
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(38.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isDirectSelected) primaryColor else Color.Transparent)
+                    .clickable {
+                        coroutineScope.launch { pagerState.animateScrollToPage(0) }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = directTitle,
+                        fontSize = 12.5.sp,
+                        fontWeight = if (isDirectSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isDirectSelected) Color.White else onSurfaceVariant
+                    )
+                    if (totalUnreadDirect > 0) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .background(if (isDirectSelected) Color.White.copy(alpha = 0.25f) else primaryColor, CircleShape)
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text(
-                                text = currentUsername.take(2).uppercase(),
-                                fontSize = 18.sp,
+                                text = "$totalUnreadDirect",
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.width(14.dp))
-
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = if (appLanguage == "Русский") "МОЙ ПРОФИЛЬ" else "MY PROFILE",
-                                fontSize = 9.sp, color = onSurfaceVariant,
-                                fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp
-                            )
-                        }
-                        Text(
-                            text = currentUsername, fontSize = 20.sp, fontWeight = FontWeight.Bold,
-                            color = onSurfaceColor, maxLines = 1, overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    // Refresh connections button
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(primaryColor.copy(alpha = 0.15f), shape = RoundedCornerShape(14.dp))
-                            .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(14.dp))
-                            .clickable(enabled = !isRefreshingAll) {
-                                isRefreshingAll = true
-                                val startMsg = if (appLanguage == "Русский") "Обновление всех подключений..." else "Refreshing all connections..."
-                                val endMsg = if (appLanguage == "Русский") "Подключения успешно обновлены!" else "Connections successfully refreshed!"
-                                Toast.makeText(context, startMsg, Toast.LENGTH_SHORT).show()
-                                heroScope.launch {
-                                    // 1. UPnP Reopen
-                                    withContext(Dispatchers.IO) {
-                                        PythonBridge.triggerUpnpReopen()
-                                    }
-                                    // 2. Trackers Refresh
-                                    P2PMessageRelay.refreshAnnouncement(context)
-                                    // 3. Yggdrasil Restart
-                                    val stopIntent = Intent(context, PacketTunnelProvider::class.java).apply {
-                                        action = PacketTunnelProvider.ACTION_STOP
-                                    }
-                                    context.startService(stopIntent)
-                                    delay(1000)
-                                    val startIntent = Intent(context, PacketTunnelProvider::class.java).apply {
-                                        action = PacketTunnelProvider.ACTION_START
-                                    }
-                                    context.startService(startIntent)
-                                    
-                                    isRefreshingAll = false
-                                    Toast.makeText(context, endMsg, Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isRefreshingAll) {
-                            androidx.compose.material3.CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = primaryColor
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Refresh connections",
-                                tint = primaryColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Status pills
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    @Composable
-                    fun StatusPill(
-                        label: String,
-                        value: String,
-                        ok: Boolean?,
-                        node: RadarNode
-                    ) {
-                        val pillColor = when (ok) {
-                            true  -> Color(0xFF10B981)
-                            false -> Color(0xFFEF4444)
-                            null  -> onSurfaceVariant
-                        }
-                        
-                        val pillInteractionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                        val isPillPressed by pillInteractionSource.collectIsPressedAsState()
-                        val pillScale by animateFloatAsState(
-                            targetValue = if (isPillPressed) 0.94f else 1.0f,
-                            animationSpec = spring(dampingRatio = 0.7f, stiffness = 500f),
-                            label = "pillScale"
-                        )
-
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .weight(1f)
-                                .graphicsLayer {
-                                    scaleX = pillScale
-                                    scaleY = pillScale
-                                }
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable(
-                                    interactionSource = pillInteractionSource,
-                                    indication = ripple(),
-                                    onClick = { onStatusPillClick(node) }
-                                )
-                                .background(pillColor.copy(alpha = 0.12f))
-                                .border(0.75.dp, pillColor.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
-                                .padding(vertical = 10.dp, horizontal = 4.dp)
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.size(14.dp)
-                            ) {
-                                if (ok != null) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(12.dp)
-                                            .border(1.dp, pillColor.copy(alpha = 0.38f), CircleShape)
-                                    )
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .background(pillColor, CircleShape)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
-                                modifier = Modifier.padding(horizontal = 2.dp)
-                            ) {
-                                if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = "OK",
-                                        tint = pillColor,
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Error",
-                                        tint = pillColor,
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                }
-                                Text(
-                                    text = if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                        "OK"
-                                    } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                        if (appLanguage == "Русский") "Нет" else "No"
-                                    } else {
-                                        value
-                                    },
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = pillColor,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            Text(text = label, fontSize = 9.sp, color = onSurfaceVariant, letterSpacing = 0.3.sp, maxLines = 1)
-                        }
-                    }
-
-                    StatusPill(
-                        label = "UPnP",
-                        value = "…",
-                        ok = heroUpnpOk,
-                        node = RadarNode.ROUTER
-                    )
-                    StatusPill(
-                        label = if (appLanguage == "Русский") "Трекеры" else "Trackers",
-                        value = "…",
-                        ok = heroTrackersOk,
-                        node = RadarNode.TRACKERS
-                    )
-                    StatusPill(
-                        label = "Yggdrasil",
-                        value = "…",
-                        ok = heroYggOk,
-                        node = RadarNode.YGGDRASIL
-                    )
-                    StatusPill(
-                        label = if (appLanguage == "Русский") "Пиры" else "Peers",
-                        value = if (heroActivePeers > 0) "$heroActivePeers 🟢" else "0",
-                        ok = if (heroActivePeers > 0) true else null,
-                        node = RadarNode.PEERS
-                    )
                 }
             }
-        }
-        }
 
-        item(key = "hero_spacer") {
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        item(key = "group_actions") {
-            Row(
+            // Tab 1: Groups
+            val isGroupsSelected = pagerState.currentPage == 1
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .weight(1f)
+                    .height(38.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isGroupsSelected) primaryColor else Color.Transparent)
+                    .clickable {
+                        coroutineScope.launch { pagerState.animateScrollToPage(1) }
+                    },
+                contentAlignment = Alignment.Center
             ) {
-                Button(
-                    onClick = { onItemClick(CreateGroup) },
-                    modifier = Modifier.weight(1f).height(42.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
-                ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = if (appLanguage == "Русский") "Новая группа" else "New group",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
+                        text = groupsTitle,
+                        fontSize = 12.5.sp,
+                        fontWeight = if (isGroupsSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isGroupsSelected) Color.White else onSurfaceVariant
                     )
-                }
-                OutlinedButton(
-                    onClick = { onItemClick(GroupInvites) },
-                    modifier = Modifier.weight(1f).height(42.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor.copy(alpha = 0.4f))
-                ) {
-                    val count = pendingGroupInvites.invites.size
-                    Text(
-                        text = if (appLanguage == "Русский") {
-                            "Приглашения${if (count > 0) " ($count)" else ""}"
-                        } else {
-                            "Invites${if (count > 0) " ($count)" else ""}"
-                        },
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        color = primaryColor
-                    )
-                }
-            }
-        }
-
-        if (groupSummaries.isNotEmpty()) {
-            item(key = "groups_header") {
-                Text(
-                    text = if (appLanguage == "Русский") "ГРУППЫ" else "GROUPS",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = onSurfaceVariant.copy(alpha = 0.7f),
-                    letterSpacing = 1.0.sp,
-                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
-                )
-            }
-            items(
-                items = groupSummaries,
-                key = { summary -> "group:${summary.groupId}" },
-                contentType = { "group" },
-            ) { summary ->
-                val groupDraft = sharedPrefs.getString("draft_msg_group_${summary.groupId}", null)?.takeIf { it.isNotBlank() }
-                val hasGroupDraft = groupDraft != null
-                val draftPrefix = if (appLanguage == "Русский") "Черновик: " else "Draft: "
-                val lastMsgText = if (hasGroupDraft) {
-                    "$draftPrefix$groupDraft"
-                } else {
-                    summary.lastMessagePreview.ifBlank {
-                        if (appLanguage == "Русский") "Сообщений пока нет" else "No messages yet"
-                    }
-                }
-                Box(modifier = Modifier.padding(bottom = 10.dp)) {
-                    PeerRow(
-                        peer = PeerItem(
-                            name = summary.title,
-                            lastMsg = lastMsgText,
-                            transport = "${summary.memberCount} MEMBERS",
-                            isDirect = false,
-                            initials = summary.title.take(2).uppercase(),
-                            unreadCount = summary.unreadCount,
-                            hasDraft = hasGroupDraft,
-                            avatarUri = summary.avatarUri
-                        ),
-                        appLanguage = appLanguage,
-                        primaryColor = primaryColor,
-                        surfaceColor = surfaceColor,
-                        onSurfaceColor = onSurfaceColor,
-                        onSurfaceVariant = onSurfaceVariant,
-                        onClick = { onItemClick(GroupConversation(summary.groupId)) },
-                    )
-                }
-            }
-        }
-
-        // Chats Header
-        item(key = "chats_header") {
-            Text(
-                text = activeHandshakesLabel,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = onSurfaceVariant.copy(alpha = 0.7f),
-                letterSpacing = 1.0.sp,
-                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-            )
-        }
-
-        // Peers List
-        item(key = "saved_messages") {
-            Box(modifier = Modifier.padding(bottom = 10.dp)) {
-                PeerRow(
-                    peer = PeerItem(
-                        name = savedMessagesName, lastMsg = savedMessagesDesc,
-                        transport = "LOCAL RAM", isDirect = true, initials = "🔖"
-                    ),
-                    appLanguage = appLanguage, primaryColor = primaryColor, surfaceColor = surfaceColor,
-                    onSurfaceColor = onSurfaceColor, onSurfaceVariant = onSurfaceVariant,
-                    onClick = { onItemClick(Chat("Saved Messages")) }
-                )
-            }
-        }
-        items(
-            items = peers,
-            key = { peer -> peer.name },
-            contentType = { "peer" },
-        ) { peer ->
-            Box(modifier = Modifier.padding(bottom = 10.dp)) {
-                PeerRow(
-                        peer = peer,
-                        appLanguage = appLanguage,
-                        primaryColor = primaryColor,
-                        surfaceColor = surfaceColor,
-                        onSurfaceColor = onSurfaceColor,
-                        onSurfaceVariant = onSurfaceVariant,
-                        onClick = {
-                            sharedPrefs.edit { putInt("unread_count_${peer.name}", 0) }
-                            onItemClick(Chat(peer.name))
-                        },
-                        onLongClick = {
-                            activeMenuPeer = peer
-                        }
-                    )
-            }
-        }
-
-        if (peers.isEmpty()) {
-            item(key = "empty_chats") {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.5f)),
-                    shape = RoundedCornerShape(18.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp, bottom = 8.dp)
-                        .border(0.5.dp, onSurfaceColor.copy(alpha = 0.06f), RoundedCornerShape(18.dp))
-                ) {
-                    Column(
-                        modifier = Modifier.padding(20.dp).fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
+                    val groupBadge = if (totalUnreadGroups > 0) "$totalUnreadGroups" else if (groupSummaries.isNotEmpty()) "${groupSummaries.size}" else ""
+                    if (groupBadge.isNotEmpty()) {
+                        Spacer(modifier = Modifier.width(6.dp))
                         Box(
-                            contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .size(48.dp)
-                                .background(primaryColor.copy(alpha = 0.12f), shape = CircleShape)
+                                .background(if (isGroupsSelected) Color.White.copy(alpha = 0.25f) else (if (totalUnreadGroups > 0) primaryColor else onSurfaceColor.copy(alpha = 0.12f)), CircleShape)
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_saved_messages),
-                                contentDescription = "No Peers",
-                                tint = primaryColor,
-                                modifier = Modifier.size(22.dp)
+                            Text(
+                                text = groupBadge,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isGroupsSelected) Color.White else (if (totalUnreadGroups > 0) Color.White else onSurfaceColor)
                             )
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = if (appLanguage == "Русский") "Пока нет активных чатов" else "No active chats yet",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = onSurfaceColor
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (appLanguage == "Русский") 
-                                "Скопируйте ссылку на свой профиль выше или добавьте контакт во вкладке «Поиск»" 
-                            else 
-                                "Copy your profile link above or add contacts from the Search tab",
-                            fontSize = 12.sp,
-                            color = onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
                     }
                 }
             }
         }
 
-        item(key = "bottom_spacer") {
-            Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // ─── SWIPEABLE HORIZONTAL PAGER (PAGES 0 AND 1) ───────────────────────
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) { page ->
+            if (page == 0) {
+                // PAGE 0: DIRECT CHATS
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    item(key = "saved_messages") {
+                        Box(modifier = Modifier.padding(bottom = 10.dp)) {
+                            PeerRow(
+                                peer = PeerItem(
+                                    name = savedMessagesName, lastMsg = savedMessagesDesc,
+                                    transport = "LOCAL RAM", isDirect = true, initials = "🔖"
+                                ),
+                                appLanguage = appLanguage, primaryColor = primaryColor, surfaceColor = surfaceColor,
+                                onSurfaceColor = onSurfaceColor, onSurfaceVariant = onSurfaceVariant,
+                                onClick = { onItemClick(Chat("Saved Messages")) }
+                            )
+                        }
+                    }
+
+                    items(
+                        items = peers,
+                        key = { peer -> peer.name },
+                        contentType = { "peer" },
+                    ) { peer ->
+                        Box(modifier = Modifier.padding(bottom = 10.dp)) {
+                            PeerRow(
+                                peer = peer,
+                                appLanguage = appLanguage,
+                                primaryColor = primaryColor,
+                                surfaceColor = surfaceColor,
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                onClick = {
+                                    sharedPrefs.edit { putInt("unread_count_${peer.name}", 0) }
+                                    onItemClick(Chat(peer.name))
+                                },
+                                onLongClick = {
+                                    activeMenuPeer = peer
+                                }
+                            )
+                        }
+                    }
+
+                    if (peers.isEmpty()) {
+                        item(key = "empty_chats") {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp, bottom = 8.dp)
+                                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.06f), RoundedCornerShape(18.dp))
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(20.dp).fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .background(primaryColor.copy(alpha = 0.12f), shape = CircleShape)
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_saved_messages),
+                                            contentDescription = "No Peers",
+                                            tint = primaryColor,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = if (appLanguage == "Русский") "Пока нет активных чатов" else "No active chats yet",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = onSurfaceColor
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = if (appLanguage == "Русский") 
+                                            "Скопируйте ссылку на свой профиль выше или добавьте контакт во вкладке «Поиск»" 
+                                        else 
+                                            "Copy your profile link above or add contacts from the Search tab",
+                                        fontSize = 12.sp,
+                                        color = onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    item(key = "bottom_spacer_direct") {
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
+                }
+            } else {
+                // PAGE 1: GROUPS
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    item(key = "group_actions") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Button(
+                                onClick = { onItemClick(CreateGroup) },
+                                modifier = Modifier.weight(1f).height(42.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (appLanguage == "Русский") "Новая группа" else "New group",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { onItemClick(GroupInvites) },
+                                modifier = Modifier.weight(1f).height(42.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor.copy(alpha = 0.4f))
+                            ) {
+                                val count = pendingGroupInvites.invites.size
+                                Icon(
+                                    imageVector = Icons.Default.Notifications,
+                                    contentDescription = null,
+                                    tint = primaryColor,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (appLanguage == "Русский") {
+                                        "Приглашения${if (count > 0) " ($count)" else ""}"
+                                    } else {
+                                        "Invites${if (count > 0) " ($count)" else ""}"
+                                    },
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp,
+                                    color = primaryColor
+                                )
+                            }
+                        }
+                    }
+
+                    items(
+                        items = groupSummaries,
+                        key = { summary -> "group:${summary.groupId}" },
+                        contentType = { "group" },
+                    ) { summary ->
+                        val groupDraft = sharedPrefs.getString("draft_msg_group_${summary.groupId}", null)?.takeIf { it.isNotBlank() }
+                        val hasGroupDraft = groupDraft != null
+                        val draftPrefix = if (appLanguage == "Русский") "Черновик: " else "Draft: "
+                        val lastMsgText = if (hasGroupDraft) {
+                            "$draftPrefix$groupDraft"
+                        } else {
+                            summary.lastMessagePreview.ifBlank {
+                                if (appLanguage == "Русский") "Сообщений пока нет" else "No messages yet"
+                            }
+                        }
+                        Box(modifier = Modifier.padding(bottom = 10.dp)) {
+                            PeerRow(
+                                peer = PeerItem(
+                                    name = summary.title,
+                                    lastMsg = lastMsgText,
+                                    transport = "${summary.memberCount} MEMBERS",
+                                    isDirect = false,
+                                    initials = summary.title.take(2).uppercase(),
+                                    unreadCount = summary.unreadCount,
+                                    hasDraft = hasGroupDraft,
+                                    avatarUri = summary.avatarUri
+                                ),
+                                appLanguage = appLanguage,
+                                primaryColor = primaryColor,
+                                surfaceColor = surfaceColor,
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                onClick = { onItemClick(GroupConversation(summary.groupId)) },
+                            )
+                        }
+                    }
+
+                    if (groupSummaries.isEmpty()) {
+                        item(key = "empty_groups") {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp, bottom = 8.dp)
+                                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.06f), RoundedCornerShape(18.dp))
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(20.dp).fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = if (appLanguage == "Русский") "Вы пока не состоите ни в одной группе" else "You are not in any groups yet",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = onSurfaceColor
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = if (appLanguage == "Русский") 
+                                            "Создайте свою группу кнопкой выше или примите приглашение" 
+                                        else 
+                                            "Create your group using the button above or accept an invite",
+                                        fontSize = 12.sp,
+                                        color = onSurfaceVariant,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    item(key = "bottom_spacer_groups") {
+                        Spacer(modifier = Modifier.height(24.dp))
+                    }
+                }
+            }
         }
     }
 
