@@ -119,6 +119,24 @@ object P2PMessageRelay {
         }
     }
 
+    fun triggerImmediateReconnect(context: Context) {
+        val appContext = context.applicationContext
+        relayScope.launch {
+            refreshAnnouncement(appContext)
+            val prefs = P2PPreferences.prefs(appContext)
+            val chats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
+                .filterNot { it == "Saved Messages" }
+            for (peerName in chats) {
+                val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
+                    ?.takeIf { it.isNotBlank() } ?: continue
+                val endpoint = _peerEndpoints[peerName]
+                    ?: prefs.getString("last_endpoint_$peerName", null)?.takeIf { it.isNotBlank() }
+                    ?: continue
+                PythonBridge.reconnectPeerSession(peerName, endpoint, fingerprint)
+            }
+        }
+    }
+
     private const val MAX_TRACKED_PEER_ENDPOINTS = 512
     private val _peerEndpoints = mutableStateMapOf<String, String>()
     val peerEndpoints: Map<String, String> get() = _peerEndpoints

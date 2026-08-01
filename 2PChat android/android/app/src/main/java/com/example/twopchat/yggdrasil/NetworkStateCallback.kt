@@ -35,6 +35,7 @@ class NetworkStateCallback(val context: Context) : ConnectivityManager.NetworkCa
                         context.startForegroundService(intent)
                     }
                 }
+                com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(context)
             }
         }
     }

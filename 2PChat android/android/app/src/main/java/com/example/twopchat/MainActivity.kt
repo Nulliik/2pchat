@@ -109,6 +109,7 @@ class MainActivity : ComponentActivity() {
                 appContext,
                 Intent(appContext, P2PRelayService::class.java),
             )
+            P2PMessageRelay.triggerImmediateReconnect(appContext)
         }
         if (
             preferences.getBoolean("settings_yggdrasil", true) &&

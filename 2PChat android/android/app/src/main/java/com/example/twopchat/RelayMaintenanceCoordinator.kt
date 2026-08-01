@@ -109,8 +109,7 @@ internal class RelayMaintenanceCoordinator(
                         val diagnostics = PythonBridge.getYggdrasilNetworkDiagnostics()
                         val yggState = diagnostics["state"].orEmpty()
                         val yggReady = prefs.getBoolean("settings_yggdrasil", true) &&
-                            (yggState.equals("connected", ignoreCase = true) || yggState.equals("enabled", ignoreCase = true)) &&
-                            (diagnostics["routes"]?.toIntOrNull() ?: 0) >= 1
+                            (yggState.equals("connected", ignoreCase = true) || yggState.equals("enabled", ignoreCase = true))
                         val addresses = buildList {
                             if (prefs.getBoolean("settings_ipv4", true)) {
                                 addAll(PythonBridge.getLocalAddresses().filter { !it.contains(':') })
@@ -118,18 +117,17 @@ internal class RelayMaintenanceCoordinator(
                             if (yggReady) PythonBridge.getYggdrasilAddress().takeIf { it.isNotBlank() }?.let(::add)
                         }.distinct().sorted()
                         val now = System.currentTimeMillis()
-                        if (addresses == candidateAddresses) stableCandidateSamples++ else {
-                            candidateAddresses = addresses
-                            stableCandidateSamples = 1
-                        }
-                        val changedAndStable = addresses != lastAddresses && stableCandidateSamples >= 2
-                        if (lastAnnounceTime == 0L || changedAndStable || now - lastAnnounceTime >= 90_000L) {
-                            log(appContext, "Announcing self on tracker. Network changed: $changedAndStable, count: ${addresses.size}", "INFO", null)
+                        val networkChanged = addresses != lastAddresses && lastAddresses.isNotEmpty()
+                        if (lastAnnounceTime == 0L || networkChanged || now - lastAnnounceTime >= 60_000L) {
+                            log(appContext, "Announcing self on tracker. Network changed: $networkChanged, count: ${addresses.size}", "INFO", null)
                             val success = PythonBridge.announceSelf(username, fingerprint, port)
                             log(appContext, "Announce self status: $success", "INFO", null)
                             if (success) {
                                 lastAddresses = addresses
                                 lastAnnounceTime = now
+                            }
+                            if (networkChanged) {
+                                reconnectDelayMs.clear()
                             }
                         }
                     }

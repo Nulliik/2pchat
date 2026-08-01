@@ -20,11 +20,16 @@ class ConfigurationProxy(applicationContext: Context) {
         // 2026-07-09.  They are intentionally nearby (Russia/Finland) and use
         // TCP/TLS, which are supported by the bundled Android library.
         val DEFAULT_PUBLIC_PEERS = listOf(
-            "tls://ygg-msk-1.averyan.ru:8362",
-            "tls://yggno.de:18227",
             "tcp://89.44.86.85:65535",
             "tls://45.95.202.21:443",
+            "tls://yggno.de:18227",
+            "tls://ygg-msk-1.averyan.ru:8362",
             "tls://95.217.35.92:1337",
+            "tcp://51.15.204.214:18227",
+            "tls://ygg.mikaela.info:443",
+            "tcp://ygg.tomasz.fi:18227",
+            "tls://ygg.kldnet.ru:8362",
+            "tcp://ygg.t5.ru:443"
         )
 
         // Offline snapshot of every TCP/TLS endpoint marked online by the
