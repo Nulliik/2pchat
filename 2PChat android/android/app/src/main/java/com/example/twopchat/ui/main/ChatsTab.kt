@@ -436,8 +436,8 @@ fun ChatsTab(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             val isDirectSelected = pagerState.currentPage == 0
-            val directTitle = if (appLanguage == "Русский") "Личные сообщения" else "Direct chats"
-            val groupsTitle = if (appLanguage == "Русский") "Групповые чаты" else "Group chats"
+            val directTitle = if (appLanguage == "Русский") "Личные" else "Direct"
+            val groupsTitle = if (appLanguage == "Русский") "Группы" else "Groups"
 
             // Tab 0: Direct Chats
             Box(
@@ -454,7 +454,7 @@ fun ChatsTab(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = directTitle,
-                        fontSize = 12.5.sp,
+                        fontSize = 13.sp,
                         fontWeight = if (isDirectSelected) FontWeight.Bold else FontWeight.Medium,
                         color = if (isDirectSelected) Color.White else onSurfaceVariant
                     )
@@ -493,24 +493,23 @@ fun ChatsTab(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = groupsTitle,
-                        fontSize = 12.5.sp,
+                        fontSize = 13.sp,
                         fontWeight = if (isGroupsSelected) FontWeight.Bold else FontWeight.Medium,
                         color = if (isGroupsSelected) Color.White else onSurfaceVariant
                     )
-                    val groupBadge = if (totalUnreadGroups > 0) "$totalUnreadGroups" else if (groupSummaries.isNotEmpty()) "${groupSummaries.size}" else ""
-                    if (groupBadge.isNotEmpty()) {
+                    if (totalUnreadGroups > 0) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Box(
                             modifier = Modifier
-                                .background(if (isGroupsSelected) Color.White.copy(alpha = 0.25f) else (if (totalUnreadGroups > 0) primaryColor else onSurfaceColor.copy(alpha = 0.12f)), CircleShape)
+                                .background(if (isGroupsSelected) Color.White.copy(alpha = 0.25f) else primaryColor, CircleShape)
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = groupBadge,
+                                text = "$totalUnreadGroups",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isGroupsSelected) Color.White else (if (totalUnreadGroups > 0) Color.White else onSurfaceColor)
+                                color = Color.White
                             )
                         }
                     }
