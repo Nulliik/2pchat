@@ -103,6 +103,10 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import com.example.twopchat.group.runtime.GroupChatCoordinator
+import androidx.compose.runtime.mutableStateListOf
 
 @Composable
 fun GroupInfoScreen(
@@ -122,6 +126,8 @@ fun GroupInfoScreen(
     var showInviteMembers by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) } // 0: Участники, 1: Медиа, 2: Избранное, 3: Файлы
     var selectedMediaPreviewPath by remember { mutableStateOf<String?>(null) }
+    var isSelectMode by remember { mutableStateOf(false) }
+    val selectedItems = remember { mutableStateListOf<GroupTimelineMessage>() }
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
@@ -209,46 +215,94 @@ fun GroupInfoScreen(
             .background(backgroundColor)
     ) {
         // Telegram Style Top Bar
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            IconButton(onClick = controller::onBack) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_back_arrow),
-                    contentDescription = "Back",
-                    tint = onSurfaceColor
-                )
-            }
-            Row {
-                if (state.management.canEditMetadata) {
-                    IconButton(
-                        onClick = { showEditMetadata = true },
-                        modifier = Modifier.testTag("edit_group_info")
-                    ) {
+        if (isSelectMode) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = {
+                        isSelectMode = false
+                        selectedItems.clear()
+                    }) {
                         Icon(
-                            painter = painterResource(R.drawable.ic_edit),
-                            contentDescription = "Edit Group",
-                            tint = onSurfaceColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-                Box {
-                    IconButton(
-                        onClick = { showTopMenu = true },
-                        modifier = Modifier.testTag("leave_group_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "More Options",
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Cancel selection",
                             tint = onSurfaceColor
                         )
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${selectedItems.size}",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = onSurfaceColor
+                    )
+                }
+                if (selectedItems.size == 1) {
+                    IconButton(
+                        onClick = {
+                            val selectedMessage = selectedItems.first()
+                            GroupChatCoordinator.setTargetScrollMessage(state.metadata.groupId, selectedMessage.messageId)
+                            isSelectMode = false
+                            selectedItems.clear()
+                            controller.onBack()
+                        }
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_eye),
+                            contentDescription = "Go to message in chat",
+                            tint = primaryColor,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                IconButton(onClick = controller::onBack) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_back_arrow),
+                        contentDescription = "Back",
+                        tint = onSurfaceColor
+                    )
+                }
+                Row {
+                    if (state.management.canEditMetadata) {
+                        IconButton(
+                            onClick = { showEditMetadata = true },
+                            modifier = Modifier.testTag("edit_group_info")
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_edit),
+                                contentDescription = "Edit Group",
+                                tint = onSurfaceColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Box {
+                        IconButton(
+                            onClick = { showTopMenu = true },
+                            modifier = Modifier.testTag("leave_group_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "More Options",
+                                tint = onSurfaceColor
+                            )
+                        }
                     DropdownMenu(
                         expanded = showTopMenu,
                         onDismissRequest = { showTopMenu = false },
@@ -322,6 +376,7 @@ fun GroupInfoScreen(
                 }
             }
         }
+    }
 
         LazyColumn(
             modifier = Modifier
@@ -552,7 +607,24 @@ fun GroupInfoScreen(
                         ) { row ->
                             GroupMediaRow(
                                 rowItems = row,
-                                onMediaClick = { path -> selectedMediaPreviewPath = path }
+                                isSelectMode = isSelectMode,
+                                selectedItems = selectedItems,
+                                onToggleSelect = { msg ->
+                                    if (selectedItems.any { it.messageId == msg.messageId }) {
+                                        selectedItems.removeAll { it.messageId == msg.messageId }
+                                    } else {
+                                        selectedItems.add(msg)
+                                    }
+                                    if (selectedItems.isEmpty()) isSelectMode = false
+                                },
+                                onMediaClick = { msg, path -> selectedMediaPreviewPath = path },
+                                onMediaLongClick = { msg ->
+                                    if (!isSelectMode) {
+                                        isSelectMode = true
+                                        selectedItems.clear()
+                                        selectedItems.add(msg)
+                                    }
+                                }
                             )
                         }
                     }
@@ -641,6 +713,28 @@ fun GroupInfoScreen(
                         isSticker -> AnimatedStickerImage(filePath = path, fallbackEmoji = "👍", contentDescription = "Sticker", targetSizePx = 512, modifier = Modifier.size(240.dp))
                         isGif -> AnimatedGifImage(filePath = path, targetMaxDimensionPx = 1024, contentScale = GifContentScale.FIT, contentDescription = "GIF", modifier = Modifier.fillMaxSize())
                         else -> Text("Медиафайл недоступен", color = Color.White)
+                    }
+                }
+
+                // Eye icon button to jump directly to message in group chat
+                val targetMsg = mediaMessages.firstOrNull { (it.attachment?.localPath ?: it.attachment?.fileName) == path }
+                if (targetMsg != null) {
+                    IconButton(
+                        onClick = {
+                            GroupChatCoordinator.setTargetScrollMessage(state.metadata.groupId, targetMsg.messageId)
+                            selectedMediaPreviewPath = null
+                            controller.onBack()
+                        },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(16.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_eye),
+                            contentDescription = "Go to message in chat",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
                 }
             }
@@ -1828,10 +1922,15 @@ private fun GroupInfoDetailsCard(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GroupMediaRow(
     rowItems: List<GroupTimelineMessage>,
-    onMediaClick: (String) -> Unit
+    isSelectMode: Boolean,
+    selectedItems: List<GroupTimelineMessage>,
+    onToggleSelect: (GroupTimelineMessage) -> Unit,
+    onMediaClick: (GroupTimelineMessage, String) -> Unit,
+    onMediaLongClick: (GroupTimelineMessage) -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -1841,12 +1940,30 @@ private fun GroupMediaRow(
     ) {
         rowItems.forEach { msg ->
             val attachment = msg.attachment
+            val isSelected = selectedItems.any { it.messageId == msg.messageId }
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .aspectRatio(1f)
                     .clip(RoundedCornerShape(10.dp))
                     .background(Color(0xFF1C1C1E))
+                    .then(
+                        if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
+                        else Modifier
+                    )
+                    .combinedClickable(
+                        onClick = {
+                            if (isSelectMode) {
+                                onToggleSelect(msg)
+                            } else {
+                                val path = attachment?.localPath ?: attachment?.fileName ?: ""
+                                onMediaClick(msg, path)
+                            }
+                        },
+                        onLongClick = {
+                            onMediaLongClick(msg)
+                        }
+                    )
                     .testTag("group_media_${msg.messageId}"),
                 contentAlignment = Alignment.Center
             ) {
@@ -1854,10 +1971,32 @@ private fun GroupMediaRow(
                     MediaGridCell(
                         attachment = attachment,
                         onClick = {
-                            val path = attachment.localPath ?: attachment.fileName
-                            onMediaClick(path)
+                            if (isSelectMode) {
+                                onToggleSelect(msg)
+                            } else {
+                                val path = attachment.localPath ?: attachment.fileName
+                                onMediaClick(msg, path)
+                            }
                         }
                     )
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.4f)),
+                            contentAlignment = Alignment.TopEnd
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(6.dp)
+                                    .size(20.dp)
+                                    .background(MaterialTheme.colorScheme.primary, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("✓", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             }
         }

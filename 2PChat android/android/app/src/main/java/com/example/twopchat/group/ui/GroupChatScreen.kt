@@ -1869,6 +1869,7 @@ private fun MessageTimestampBadge(
     deliveryStatus: GroupDeliveryStatus,
     messageId: String,
     isOverlayOnImage: Boolean,
+    isMine: Boolean = true,
     modifier: Modifier = Modifier,
     textColor: Color = Color.Unspecified
 ) {
@@ -1886,26 +1887,49 @@ private fun MessageTimestampBadge(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                buildString {
+                text = buildString {
                     append(timestampLabel)
                     if (isEdited) append(" · изм.")
                 },
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 color = if (isOverlayOnImage) Color.White else textColor
             )
-            Spacer(Modifier.width(4.dp))
-            Text(
+            if (isMine) {
+                Spacer(Modifier.width(3.dp))
                 when (deliveryStatus) {
-                    GroupDeliveryStatus.QUEUED -> "⏳"
-                    GroupDeliveryStatus.REPLICATING -> "✔"
-                    GroupDeliveryStatus.REPLICATED, GroupDeliveryStatus.DELIVERED -> "✔✔"
-                    GroupDeliveryStatus.READ -> "✔✔"
-                    GroupDeliveryStatus.FAILED -> "❌"
-                },
-                modifier = Modifier.testTag("delivery_${messageId}"),
-                fontSize = 10.sp,
-                color = if (isOverlayOnImage) Color.White else deliveryStatusColor(deliveryStatus)
-            )
+                    GroupDeliveryStatus.QUEUED -> {
+                        Text(
+                            "⏳",
+                            fontSize = 10.sp,
+                            modifier = Modifier.testTag("delivery_${messageId}")
+                        )
+                    }
+                    GroupDeliveryStatus.FAILED -> {
+                        Text(
+                            "❌",
+                            fontSize = 10.sp,
+                            modifier = Modifier.testTag("delivery_${messageId}")
+                        )
+                    }
+                    GroupDeliveryStatus.REPLICATING -> {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_msg_single_check),
+                            contentDescription = "Sent",
+                            tint = if (isOverlayOnImage) Color.White else textColor,
+                            modifier = Modifier.size(15.dp).testTag("delivery_${messageId}")
+                        )
+                    }
+                    GroupDeliveryStatus.REPLICATED, GroupDeliveryStatus.DELIVERED, GroupDeliveryStatus.READ -> {
+                        val checkTint = if (isOverlayOnImage) Color.White else (if (deliveryStatus == GroupDeliveryStatus.READ) Color(0xFF64B5F6) else textColor)
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_msg_double_check),
+                            contentDescription = "Delivered",
+                            tint = checkTint,
+                            modifier = Modifier.size(15.dp).testTag("delivery_${messageId}")
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -2334,6 +2358,7 @@ private fun GroupMessageCard(
                                         deliveryStatus = message.deliveryStatus,
                                         messageId = message.messageId,
                                         isOverlayOnImage = true,
+                                        isMine = message.isMine,
                                         modifier = Modifier.align(Alignment.BottomEnd)
                                     )
                                 }
@@ -2362,6 +2387,7 @@ private fun GroupMessageCard(
                                         deliveryStatus = message.deliveryStatus,
                                         messageId = message.messageId,
                                         isOverlayOnImage = true,
+                                        isMine = message.isMine,
                                         modifier = Modifier.align(Alignment.BottomEnd)
                                     )
                                 }
@@ -2415,6 +2441,7 @@ private fun GroupMessageCard(
                                             deliveryStatus = message.deliveryStatus,
                                             messageId = message.messageId,
                                             isOverlayOnImage = true,
+                                            isMine = message.isMine,
                                             modifier = Modifier.align(Alignment.BottomEnd)
                                         )
                                     }
@@ -2524,8 +2551,10 @@ private fun GroupMessageCard(
                 // Message Footer: Timestamp & Delivery Status (Only if not already rendered as overlay on image)
                 if (!isMediaOnly) {
                     Box(
-                        modifier = if (hasMediaContent) Modifier.padding(end = 8.dp, bottom = 4.dp) else Modifier,
-                        contentAlignment = Alignment.CenterEnd
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 2.dp),
+                        contentAlignment = Alignment.BottomEnd
                     ) {
                         MessageTimestampBadge(
                             timestampLabel = message.timestampLabel,
@@ -2533,6 +2562,7 @@ private fun GroupMessageCard(
                             deliveryStatus = message.deliveryStatus,
                             messageId = message.messageId,
                             isOverlayOnImage = false,
+                            isMine = message.isMine,
                             textColor = timestampColor
                         )
                     }

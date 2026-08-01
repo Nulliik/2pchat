@@ -158,6 +158,16 @@ object GroupChatCoordinator {
     val createState: StateFlow<CreateGroupUiState> = _createState.asStateFlow()
     private val _pendingInvites = MutableStateFlow(PendingGroupInvitesUiState())
     val pendingInvites: StateFlow<PendingGroupInvitesUiState> = _pendingInvites.asStateFlow()
+    private val _targetScrollMessageId = MutableStateFlow<Pair<String, String>?>(null)
+    val targetScrollMessageId: StateFlow<Pair<String, String>?> = _targetScrollMessageId.asStateFlow()
+
+    fun setTargetScrollMessage(groupId: String, messageId: String) {
+        _targetScrollMessageId.value = groupId to messageId
+    }
+
+    fun clearTargetScrollMessage() {
+        _targetScrollMessageId.value = null
+    }
 
     @Volatile private var applicationContext: Context? = null
     @Volatile private var database: GroupDatabaseHelper? = null
