@@ -77,7 +77,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.window.Dialog
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import android.net.Uri
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -930,197 +941,30 @@ fun GroupInfoScreen(
         )
     }
     selectedMemberForOptions?.let { member ->
-        val memberAvatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName]
-        val memberInitials = member.displayName.take(2).uppercase().ifBlank { "M" }
-        val avatarColor = remember(member.displayName) {
-            val colors = listOf(
-                Color(0xFF3949AB), Color(0xFF00897B), Color(0xFFD81B60),
-                Color(0xFFF4511E), Color(0xFF7CB342), Color(0xFF00ACC1)
-            )
-            colors[abs(member.displayName.hashCode()) % colors.size]
-        }
-
-        AlertDialog(
-            onDismissRequest = { selectedMemberForOptions = null },
-            title = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(avatarColor),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (memberAvatarBitmap != null) {
-                            Image(
-                                bitmap = memberAvatarBitmap.asImageBitmap(),
-                                contentDescription = member.displayName,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize().clip(CircleShape)
-                            )
-                        } else {
-                            Text(
-                                text = memberInitials,
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 22.sp
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = buildString {
-                            append(member.displayName)
-                            if (member.isCurrentUser) append(" (Вы)")
-                        },
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = onSurfaceColor
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Surface(
-                        color = when (member.role) {
-                            GroupRole.OWNER -> Color(0xFFE5C158).copy(alpha = 0.15f)
-                            GroupRole.ADMIN -> Color(0xFF0A84FF).copy(alpha = 0.15f)
-                            GroupRole.MODERATOR -> Color(0xFF10B981).copy(alpha = 0.15f)
-                            GroupRole.MEMBER -> onSurfaceColor.copy(alpha = 0.06f)
-                        },
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = when (member.role) {
-                                GroupRole.OWNER -> "👑 ${member.role.label}"
-                                GroupRole.ADMIN -> "🛡️ ${member.role.label}"
-                                GroupRole.MODERATOR -> "⚡ ${member.role.label}"
-                                GroupRole.MEMBER -> member.role.label
-                            },
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = primaryColor,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                        )
-                    }
-                    if (member.statusLabel.isNotBlank()) {
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = member.statusLabel,
-                            fontSize = 12.sp,
-                            color = onSurfaceVariant
-                        )
-                    }
-                }
+        MemberProfileModal(
+            member = member,
+            management = state.management,
+            onDismiss = { selectedMemberForOptions = null },
+            onOpenDirectChat = { peerName ->
+                selectedMemberForOptions = null
+                controller.openDirectChat(peerName)
             },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (!member.isCurrentUser) {
-                        Button(
-                            onClick = {
-                                val targetPeerName = member.displayName
-                                selectedMemberForOptions = null
-                                controller.openDirectChat(targetPeerName)
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .testTag("direct_chat_${member.memberId}")
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_menu_chats),
-                                contentDescription = "Написать сообщение",
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "Написать личное сообщение",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
-                            )
-                        }
-                    }
-
-                    val hasAdminControls = (state.management.canManageRoles && member.canChangeRole && !member.isCurrentUser && member.role != GroupRole.OWNER) ||
-                        (state.management.canRestrictMembers && member.canRestrict && !member.isCurrentUser) ||
-                        (state.management.canRemoveMembers && member.canRemove && !member.isCurrentUser) ||
-                        (state.management.canBanMembers && member.canBan && !member.isCurrentUser)
-
-                    if (hasAdminControls) {
-                        HorizontalDivider(
-                            color = onSurfaceColor.copy(alpha = 0.1f),
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
-                        Text(
-                            "Управление участником",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = primaryColor
-                        )
-
-                        if (state.management.canManageRoles && member.canChangeRole && !member.isCurrentUser && member.role != GroupRole.OWNER) {
-                            if (member.role != GroupRole.ADMIN) {
-                                TextButton(onClick = {
-                                    controller.setMemberRole(state.metadata.groupId, member.memberId, GroupRole.ADMIN)
-                                    selectedMemberForOptions = null
-                                }, modifier = Modifier.fillMaxWidth()) {
-                                    Text("Назначить администратором", modifier = Modifier.fillMaxWidth())
-                                }
-                            }
-                            if (member.role != GroupRole.MODERATOR) {
-                                TextButton(onClick = {
-                                    controller.setMemberRole(state.metadata.groupId, member.memberId, GroupRole.MODERATOR)
-                                    selectedMemberForOptions = null
-                                }, modifier = Modifier.fillMaxWidth()) {
-                                    Text("Назначить модератором", modifier = Modifier.fillMaxWidth())
-                                }
-                            }
-                            if (member.role != GroupRole.MEMBER) {
-                                TextButton(onClick = {
-                                    controller.setMemberRole(state.metadata.groupId, member.memberId, GroupRole.MEMBER)
-                                    selectedMemberForOptions = null
-                                }, modifier = Modifier.fillMaxWidth()) {
-                                    Text("Снять роль", modifier = Modifier.fillMaxWidth())
-                                }
-                            }
-                        }
-                        if (state.management.canRestrictMembers && member.canRestrict && !member.isCurrentUser) {
-                            TextButton(onClick = {
-                                restrictionsFor = member
-                                selectedMemberForOptions = null
-                            }, modifier = Modifier.fillMaxWidth()) {
-                                Text("Ограничить права", modifier = Modifier.fillMaxWidth())
-                            }
-                        }
-                        if (state.management.canRemoveMembers && member.canRemove && !member.isCurrentUser) {
-                            TextButton(onClick = {
-                                removeConfirmation = member
-                                selectedMemberForOptions = null
-                            }, modifier = Modifier.fillMaxWidth()) {
-                                Text("Исключить из группы", color = Color.Red, modifier = Modifier.fillMaxWidth())
-                            }
-                        }
-                        if (state.management.canBanMembers && member.canBan && !member.isCurrentUser) {
-                            TextButton(onClick = {
-                                banConfirmation = member
-                                selectedMemberForOptions = null
-                            }, modifier = Modifier.fillMaxWidth()) {
-                                Text("Заблокировать", color = Color.Red, modifier = Modifier.fillMaxWidth())
-                            }
-                        }
-                    }
-                }
+            onSetMemberRole = { newRole ->
+                controller.setMemberRole(state.metadata.groupId, member.memberId, newRole)
+                selectedMemberForOptions = null
             },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { selectedMemberForOptions = null }) { Text("Закрыть", color = onSurfaceColor) }
+            onRestrict = {
+                restrictionsFor = member
+                selectedMemberForOptions = null
             },
-            containerColor = surfaceColor,
-            shape = RoundedCornerShape(20.dp)
+            onRemove = {
+                removeConfirmation = member
+                selectedMemberForOptions = null
+            },
+            onBan = {
+                banConfirmation = member
+                selectedMemberForOptions = null
+            }
         )
     }
 }
@@ -2505,5 +2349,379 @@ private fun GroupInviteQrModal(
                 }
             }
         )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun MemberProfileModal(
+    member: GroupMember,
+    management: GroupManagementPermissions,
+    onDismiss: () -> Unit,
+    onOpenDirectChat: (String) -> Unit,
+    onSetMemberRole: (GroupRole) -> Unit,
+    onRestrict: () -> Unit,
+    onRemove: () -> Unit,
+    onBan: () -> Unit
+) {
+    var animateIn by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { animateIn = true }
+
+    val scale by animateFloatAsState(
+        targetValue = if (animateIn) 1f else 0.88f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "dialogScale"
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (animateIn) 1f else 0f,
+        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+        label = "dialogAlpha"
+    )
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.65f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            val memberAvatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName]
+            val memberInitials = member.displayName.take(2).uppercase().ifBlank { "M" }
+            val avatarColor = remember(member.displayName) {
+                val colors = listOf(
+                    Color(0xFF3949AB), Color(0xFF00897B), Color(0xFFD81B60),
+                    Color(0xFFF4511E), Color(0xFF7CB342), Color(0xFF00ACC1)
+                )
+                colors[abs(member.displayName.hashCode()) % colors.size]
+            }
+
+            val roleColor = when (member.role) {
+                GroupRole.OWNER -> Color(0xFFFFD700)
+                GroupRole.ADMIN -> Color(0xFF0A84FF)
+                GroupRole.MODERATOR -> Color(0xFF10B981)
+                GroupRole.MEMBER -> Color(0xFF98A2B3)
+            }
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.88f)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        this.alpha = alpha
+                    }
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    ),
+                shape = RoundedCornerShape(26.dp),
+                color = Color(0xFF16181D),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                shadowElevation = 20.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(22.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Header: Avatar with Role Glow Ring
+                    Box(
+                        modifier = Modifier
+                            .size(76.dp)
+                            .clip(CircleShape)
+                            .border(2.5.dp, roleColor.copy(alpha = 0.85f), CircleShape)
+                            .background(avatarColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (memberAvatarBitmap != null) {
+                            Image(
+                                bitmap = memberAvatarBitmap.asImageBitmap(),
+                                contentDescription = member.displayName,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                            )
+                        } else {
+                            Text(
+                                text = memberInitials,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 24.sp
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Text(
+                        text = buildString {
+                            append(member.displayName)
+                            if (member.isCurrentUser) append(" (Вы)")
+                        },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Spacer(Modifier.height(6.dp))
+
+                    // Role Badge
+                    Surface(
+                        color = roleColor.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(1.dp, roleColor.copy(alpha = 0.35f))
+                    ) {
+                        Text(
+                            text = when (member.role) {
+                                GroupRole.OWNER -> "👑 ${member.role.label}"
+                                GroupRole.ADMIN -> "🛡️ ${member.role.label}"
+                                GroupRole.MODERATOR -> "⚡ ${member.role.label}"
+                                GroupRole.MEMBER -> member.role.label
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = roleColor,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
+                    }
+
+                    if (member.statusLabel.isNotBlank()) {
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF34C759))
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = member.statusLabel,
+                                fontSize = 12.sp,
+                                color = Color.White.copy(alpha = 0.65f)
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+
+                    // Primary Action: Write Direct Message
+                    if (!member.isCurrentUser) {
+                        AnimatedPressButton(
+                            onClick = { onOpenDirectChat(member.displayName) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .testTag("direct_chat_${member.memberId}")
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        brush = Brush.horizontalGradient(
+                                            colors = listOf(Color(0xFF007AFF), Color(0xFF00C6FF))
+                                        ),
+                                        shape = RoundedCornerShape(16.dp)
+                                    )
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_chats),
+                                    contentDescription = "Написать сообщение",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Написать личное сообщение",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                            }
+                        }
+                    }
+
+                    val hasAdminControls = (management.canManageRoles && member.canChangeRole && !member.isCurrentUser && member.role != GroupRole.OWNER) ||
+                        (management.canRestrictMembers && member.canRestrict && !member.isCurrentUser) ||
+                        (management.canRemoveMembers && member.canRemove && !member.isCurrentUser) ||
+                        (management.canBanMembers && member.canBan && !member.isCurrentUser)
+
+                    if (hasAdminControls) {
+                        Spacer(Modifier.height(16.dp))
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                        Spacer(Modifier.height(12.dp))
+
+                        Text(
+                            text = "Управление участником",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0A84FF),
+                            modifier = Modifier.align(Alignment.Start)
+                        )
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (management.canManageRoles && member.canChangeRole && !member.isCurrentUser && member.role != GroupRole.OWNER) {
+                                if (member.role != GroupRole.ADMIN) {
+                                    ModalActionButton(
+                                        icon = "🛡️",
+                                        title = "Назначить администратором",
+                                        titleColor = Color.White,
+                                        onClick = { onSetMemberRole(GroupRole.ADMIN) }
+                                    )
+                                }
+                                if (member.role != GroupRole.MODERATOR) {
+                                    ModalActionButton(
+                                        icon = "⚡",
+                                        title = "Назначить модератором",
+                                        titleColor = Color.White,
+                                        onClick = { onSetMemberRole(GroupRole.MODERATOR) }
+                                    )
+                                }
+                                if (member.role != GroupRole.MEMBER) {
+                                    ModalActionButton(
+                                        icon = "↩️",
+                                        title = "Снять роль",
+                                        titleColor = Color.White.copy(alpha = 0.85f),
+                                        onClick = { onSetMemberRole(GroupRole.MEMBER) }
+                                    )
+                                }
+                            }
+
+                            if (management.canRestrictMembers && member.canRestrict && !member.isCurrentUser) {
+                                ModalActionButton(
+                                    icon = "🔇",
+                                    title = "Ограничить права",
+                                    titleColor = Color.White,
+                                    onClick = onRestrict
+                                )
+                            }
+
+                            if (management.canRemoveMembers && member.canRemove && !member.isCurrentUser) {
+                                ModalActionButton(
+                                    icon = "🚪",
+                                    title = "Исключить из группы",
+                                    titleColor = Color(0xFFFF453A),
+                                    onClick = onRemove
+                                )
+                            }
+
+                            if (management.canBanMembers && member.canBan && !member.isCurrentUser) {
+                                ModalActionButton(
+                                    icon = "🚫",
+                                    title = "Заблокировать",
+                                    titleColor = Color(0xFFFF453A),
+                                    onClick = onBan
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Закрыть",
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnimatedPressButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.96f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessHigh),
+        label = "buttonPressScale"
+    )
+
+    Box(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        tryAwaitRelease()
+                        isPressed = false
+                    },
+                    onTap = { onClick() }
+                )
+            }
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun ModalActionButton(
+    icon: String,
+    title: String,
+    titleColor: Color,
+    onClick: () -> Unit
+) {
+    AnimatedPressButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Surface(
+            color = Color.White.copy(alpha = 0.05f),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 11.dp)
+            ) {
+                Text(text = icon, fontSize = 16.sp)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = title,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = titleColor,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
     }
 }
