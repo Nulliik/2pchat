@@ -214,6 +214,7 @@ fun FullscreenImageViewer(
     initialIndex: Int,
     appLanguage: String,
     bitmapOverrides: Map<String, Bitmap> = emptyMap(),
+    onGoToMessage: ((String) -> Unit)? = null,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
@@ -422,6 +423,24 @@ fun FullscreenImageViewer(
                 )
             }
         }
+
+        if (onGoToMessage != null) {
+            val hasDownload = bitmapOverrides[imagePaths[pagerState.currentPage]] == null
+            IconButton(
+                onClick = { onGoToMessage(imagePaths[pagerState.currentPage]) },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 40.dp, end = if (hasDownload) 64.dp else 16.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_eye),
+                    contentDescription = "Go to message in chat",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
     }
 }
 
@@ -456,6 +475,7 @@ fun getVerificationEmojis(localFingerprint: String, peerFingerprint: String): Li
 fun FullscreenVideoPlayer(
     videoPath: String,
     appLanguage: String,
+    onGoToMessage: ((String) -> Unit)? = null,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
@@ -565,6 +585,23 @@ fun FullscreenVideoPlayer(
                 tint = Color.White,
                 modifier = Modifier.size(20.dp)
             )
+        }
+
+        if (onGoToMessage != null) {
+            IconButton(
+                onClick = { onGoToMessage(videoPath) },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 40.dp, end = 64.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_eye),
+                    contentDescription = "Go to message in chat",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }

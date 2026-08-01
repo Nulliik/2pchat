@@ -66,6 +66,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -125,7 +126,9 @@ fun GroupInfoScreen(
     var showEditMetadata by remember { mutableStateOf(false) }
     var showInviteMembers by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) } // 0: Участники, 1: Медиа, 2: Избранное, 3: Файлы
-    var selectedMediaPreviewPath by remember { mutableStateOf<String?>(null) }
+    var activeFullscreenImages by remember { mutableStateOf<List<String>>(emptyList()) }
+    var activeFullscreenIndex by remember { mutableIntStateOf(0) }
+    var activeFullscreenVideo by remember { mutableStateOf<String?>(null) }
     var isSelectMode by remember { mutableStateOf(false) }
     val selectedItems = remember { mutableStateListOf<GroupTimelineMessage>() }
 
@@ -187,7 +190,7 @@ fun GroupInfoScreen(
                     name.endsWith(".webp") || name.endsWith(".gif") || name.endsWith(".mp4") ||
                     name.endsWith(".mov") || name.endsWith(".mkv")
             }
-        }
+        }.reversed()
     }
     val mediaRows = remember(mediaMessages) { mediaMessages.chunked(3) }
 
@@ -203,7 +206,7 @@ fun GroupInfoScreen(
                     name.endsWith(".mov") || name.endsWith(".mkv")
                 !isMedia
             }
-        }
+        }.reversed()
     }
 
     val backgroundColor = MaterialTheme.colorScheme.background
@@ -617,7 +620,27 @@ fun GroupInfoScreen(
                                     }
                                     if (selectedItems.isEmpty()) isSelectMode = false
                                 },
-                                onMediaClick = { msg, path -> selectedMediaPreviewPath = path },
+                                onMediaClick = { msg, path ->
+                                    val att = msg.attachment
+                                    val mime = att?.mimeType.orEmpty().lowercase()
+                                    val isVid = mime.startsWith("video/") || path.lowercase().run { endsWith(".mp4") || endsWith(".mov") || endsWith(".mkv") }
+                                    if (isVid) {
+                                        activeFullscreenVideo = path
+                                    } else {
+                                        val allImagePaths = mediaMessages.flatMap { m ->
+                                            val a = m.attachment
+                                            if (a == null) emptyList() else {
+                                                val p = a.localPath ?: a.fileName
+                                                val mType = a.mimeType.lowercase()
+                                                val v = mType.startsWith("video/") || p.lowercase().run { endsWith(".mp4") || endsWith(".mov") || endsWith(".mkv") }
+                                                if (p.isNotBlank() && !v) listOf(p) else emptyList()
+                                            }
+                                        }
+                                        val idx = allImagePaths.indexOf(path).coerceAtLeast(0)
+                                        activeFullscreenImages = if (allImagePaths.isNotEmpty()) allImagePaths else listOf(path)
+                                        activeFullscreenIndex = idx
+                                    }
+                                },
                                 onMediaLongClick = { msg ->
                                     if (!isSelectMode) {
                                         isSelectMode = true
@@ -679,66 +702,45 @@ fun GroupInfoScreen(
         )
     }
 
-    selectedMediaPreviewPath?.let { path ->
-        Dialog(onDismissRequest = { selectedMediaPreviewPath = null }) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black)
-                    .clickable { selectedMediaPreviewPath = null },
-                contentAlignment = Alignment.Center
-            ) {
-                val context = LocalContext.current
-                val bitmap = remember(path) {
-                    runCatching {
-                        if (path.startsWith("content://")) {
-                            context.contentResolver.openInputStream(Uri.parse(path))?.use {
-                                BitmapFactory.decodeStream(it)
-                            }
-                        } else {
-                            BitmapFactory.decodeFile(path)
-                        }
-                    }.getOrNull()
+    if (activeFullscreenImages.isNotEmpty()) {
+        val appLanguage = P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский"
+        com.example.twopchat.ui.chat.FullscreenImageViewer(
+            imagePaths = activeFullscreenImages,
+            initialIndex = activeFullscreenIndex,
+            appLanguage = appLanguage,
+            onGoToMessage = { targetPath ->
+                val targetMsg = mediaMessages.firstOrNull { msg ->
+                    val a = msg.attachment
+                    (a?.localPath ?: a?.fileName) == targetPath
                 }
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Full Media",
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    val isGif = path.lowercase().endsWith(".gif")
-                    val isSticker = StickerSupport.isStickerFileName(path)
-                    when {
-                        isSticker -> AnimatedStickerImage(filePath = path, fallbackEmoji = "👍", contentDescription = "Sticker", targetSizePx = 512, modifier = Modifier.size(240.dp))
-                        isGif -> AnimatedGifImage(filePath = path, targetMaxDimensionPx = 1024, contentScale = GifContentScale.FIT, contentDescription = "GIF", modifier = Modifier.fillMaxSize())
-                        else -> Text("Медиафайл недоступен", color = Color.White)
-                    }
-                }
-
-                // Eye icon button to jump directly to message in group chat
-                val targetMsg = mediaMessages.firstOrNull { (it.attachment?.localPath ?: it.attachment?.fileName) == path }
                 if (targetMsg != null) {
-                    IconButton(
-                        onClick = {
-                            GroupChatCoordinator.setTargetScrollMessage(state.metadata.groupId, targetMsg.messageId)
-                            selectedMediaPreviewPath = null
-                            controller.onBack()
-                        },
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(16.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_eye),
-                            contentDescription = "Go to message in chat",
-                            tint = Color.White,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
+                    GroupChatCoordinator.setTargetScrollMessage(state.metadata.groupId, targetMsg.messageId)
+                    activeFullscreenImages = emptyList()
+                    controller.onBack()
                 }
-            }
-        }
+            },
+            onClose = { activeFullscreenImages = emptyList() }
+        )
+    }
+
+    activeFullscreenVideo?.let { videoPath ->
+        val appLanguage = P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский"
+        com.example.twopchat.ui.chat.FullscreenVideoPlayer(
+            videoPath = videoPath,
+            appLanguage = appLanguage,
+            onGoToMessage = { targetPath ->
+                val targetMsg = mediaMessages.firstOrNull { msg ->
+                    val a = msg.attachment
+                    (a?.localPath ?: a?.fileName) == targetPath
+                }
+                if (targetMsg != null) {
+                    GroupChatCoordinator.setTargetScrollMessage(state.metadata.groupId, targetMsg.messageId)
+                    activeFullscreenVideo = null
+                    controller.onBack()
+                }
+            },
+            onClose = { activeFullscreenVideo = null }
+        )
     }
 
     if (showQrModal) {
@@ -1969,15 +1971,7 @@ private fun GroupMediaRow(
             ) {
                 if (attachment != null) {
                     MediaGridCell(
-                        attachment = attachment,
-                        onClick = {
-                            if (isSelectMode) {
-                                onToggleSelect(msg)
-                            } else {
-                                val path = attachment.localPath ?: attachment.fileName
-                                onMediaClick(msg, path)
-                            }
-                        }
+                        attachment = attachment
                     )
                     if (isSelected) {
                         Box(
@@ -2008,8 +2002,7 @@ private fun GroupMediaRow(
 
 @Composable
 private fun MediaGridCell(
-    attachment: GroupAttachmentUi,
-    onClick: () -> Unit
+    attachment: GroupAttachmentUi
 ) {
     val context = LocalContext.current
     val localPath = attachment.localPath ?: attachment.fileName
@@ -2027,9 +2020,7 @@ private fun MediaGridCell(
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .clickable(onClick = onClick)
+        modifier = Modifier.fillMaxSize()
     ) {
         if (thumbnail != null) {
             Image(
