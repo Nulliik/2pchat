@@ -169,6 +169,7 @@ object GroupWireProtocol {
             members = members,
             cryptoSuite = json.requiredToken("crypto_suite", 128),
             signatureBase64 = json.requiredText("signature", 256),
+            groupAvatarDataB64 = json.optString("group_avatar_data", "").ifBlank { null },
         )
     }
 
@@ -180,6 +181,7 @@ object GroupWireProtocol {
         put("title", invite.title)
         put("description", invite.description)
         put("admin_only_posting", invite.adminOnlyPosting)
+        invite.groupAvatarDataB64?.let { put("group_avatar_data", it) }
         put("epoch", invite.epoch)
         put("epoch_secret", invite.epochSecretBase64)
         put("owner_fingerprint", invite.ownerFingerprint)
@@ -425,6 +427,7 @@ data class GroupInvite(
     val cryptoSuite: String,
     val signatureBase64: String,
     val adminOnlyPosting: Boolean = false,
+    val groupAvatarDataB64: String? = null,
 ) {
     fun canonicalForSignature(): String = buildString {
         append("2pchat-group-invite-signature-v1\n")

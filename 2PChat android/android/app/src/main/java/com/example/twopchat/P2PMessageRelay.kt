@@ -844,6 +844,11 @@ object P2PMessageRelay {
                                                 } catch (saveEx: Exception) {
                                                     log(appContext, "Failed to save avatar file: ${saveEx.message}", "ERROR", saveEx)
                                                 }
+
+                                                // Respond with our own profile avatar so group members get mutual avatar sync
+                                                if (lastAvatarShareAt[sender] == null) {
+                                                    shareAvatar(appContext, sender)
+                                                }
                                             }
                                         } catch (e: Exception) {
                                             log(appContext, "Error decoding avatar: ${e.message}", "ERROR", e)
@@ -1502,7 +1507,7 @@ object P2PMessageRelay {
         }
     }
 
-    fun shareAvatar(context: Context, peerName: String, endpoint: String) {
+    fun shareAvatar(context: Context, peerName: String, endpoint: String = "") {
         val prefs = P2PPreferences.prefs(context)
         val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
         val shareKey = fingerprint ?: peerName

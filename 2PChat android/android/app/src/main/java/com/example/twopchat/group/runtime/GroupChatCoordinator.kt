@@ -1550,6 +1550,19 @@ object GroupChatCoordinator {
             owner.deviceId,
             GroupControlFrames.inviteResponseToJson(response),
         )
+        val savedAvatarPath = if (!invite.groupAvatarDataB64.isNullOrBlank() && applicationContext != null) {
+            runCatching {
+                val avatarBytes = Base64.decode(invite.groupAvatarDataB64, Base64.NO_WRAP)
+                val avatarsDir = File(applicationContext!!.filesDir, "group_avatars").also { it.mkdirs() }
+                val destFile = File(avatarsDir, "${invite.groupId}.jpg")
+                destFile.writeBytes(avatarBytes)
+                destFile.absolutePath
+            }.getOrNull()
+        } else {
+            applicationContext?.let { ctx ->
+                File(ctx.filesDir, "group_avatars/${invite.groupId}.jpg").takeIf { it.exists() }?.absolutePath
+            }
+        }
         val existingGroup = db().getGroup(invite.groupId)
         if (existingGroup == null) {
             db().createGroup(
@@ -1557,6 +1570,7 @@ object GroupChatCoordinator {
                     groupId = invite.groupId,
                     title = invite.title,
                     description = invite.description,
+                    avatarUri = savedAvatarPath,
                     adminOnlyPosting = invite.adminOnlyPosting,
                     localDeviceId = local.deviceId,
                     ownerDeviceId = owner.deviceId,
@@ -3755,11 +3769,22 @@ object GroupChatCoordinator {
                         db().nextAuthorSequence(groupId, recipient.deviceId) - 1L
                         ),
                 )
+                val groupAvatarB64 = applicationContext?.let { ctx ->
+                    val avatarFile = File(ctx.filesDir, "group_avatars/${groupId}.jpg").takeIf { it.exists() }
+                        ?: group.avatarUri?.let { File(it) }?.takeIf { it.exists() }
+                    avatarFile?.let { file ->
+                        runCatching {
+                            val bytes = file.readBytes()
+                            if (bytes.size <= 500_000) Base64.encodeToString(bytes, Base64.NO_WRAP) else null
+                        }.getOrNull()
+                    }
+                }
                 val unsigned = GroupInvite(
                     inviteId = inviteId,
                     groupId = groupId,
                     title = group.title,
                     description = group.description,
+                    groupAvatarDataB64 = groupAvatarB64,
                     adminOnlyPosting = group.adminOnlyPosting,
                     epoch = group.currentEpoch,
                     epochSecretBase64 = epochKey.keyMaterial.base64(),
@@ -4262,6 +4287,16 @@ object GroupChatCoordinator {
         val local = members.firstOrNull { it.deviceId == group.localDeviceId }
         val localPolicy = local?.takeIf { it.isParticipating() }?.toPolicyMember()
         val hasPendingInvites = members.any { it.status == "INVITED" }
+
+        applicationContext?.let { ctx ->
+            members.forEach { member ->
+                if (member.deviceId != group.localDeviceId && member.peerName.isNotBlank()) {
+                    if (P2PMessageRelay.peerAvatars[member.displayName] == null) {
+                        P2PMessageRelay.shareAvatar(ctx, member.peerName)
+                    }
+                }
+            }
+        }
         val uiMembers = members.filter { it.status != "LEFT" }.map { member ->
             val targetPolicy = member.toPolicyMember()
             com.example.twopchat.group.ui.GroupMember(
@@ -4469,11 +4504,25 @@ object GroupChatCoordinator {
                 val inviter = invite.members.firstOrNull {
                     it.fingerprint == invite.senderFingerprint
                 }
+                val avatarPath = if (!invite.groupAvatarDataB64.isNullOrBlank() && applicationContext != null) {
+                    runCatching {
+                        val avatarBytes = Base64.decode(invite.groupAvatarDataB64, Base64.NO_WRAP)
+                        val avatarsDir = File(applicationContext!!.filesDir, "group_avatars").also { it.mkdirs() }
+                        val destFile = File(avatarsDir, "${invite.groupId}.jpg")
+                        destFile.writeBytes(avatarBytes)
+                        destFile.absolutePath
+                    }.getOrNull()
+                } else {
+                    applicationContext?.let { ctx ->
+                        File(ctx.filesDir, "group_avatars/${invite.groupId}.jpg").takeIf { it.exists() }?.absolutePath
+                    }
+                }
                 PendingGroupInvite(
                     inviteId = invite.inviteId,
                     groupId = invite.groupId,
                     groupTitle = invite.title,
                     groupDescription = invite.description,
+                    groupAvatarUri = avatarPath,
                     inviterName = inviter?.peerName ?: "Contact",
                     memberCount = invite.rosterSize,
                     receivedAtLabel = formatDate(stored.createdAtMs),
