@@ -189,7 +189,7 @@ open class PacketTunnelProvider: VpnService() {
             .allowFamily(OsConstants.AF_INET6)
             .allowBypass()
             .setBlocking(true)
-            .setMtu(yggdrasil.mtu.toInt())
+            .setMtu(yggdrasil.mtu.toInt().coerceIn(1280, 1420))
             .setSession("Yggdrasil")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

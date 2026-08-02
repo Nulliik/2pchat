@@ -1110,7 +1110,8 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
             )
             return await provider.resolve(expected, expected)
         except Exception as exc:
-            print(f"[RECONNECT] Endpoint resolve failed on {tracker_name}: {exc}")
+            if not isinstance(exc, (OSError, TimeoutError, asyncio.TimeoutError)):
+                print(f"[RECONNECT] Endpoint resolve failed on {tracker_name}: {exc}")
             return []
 
     async def _query_dht():
@@ -1122,7 +1123,8 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
             )
             return await provider.resolve(expected, expected)
         except Exception as exc:
-            print(f"[RECONNECT] Endpoint resolve failed on {MAINLINE_DHT}: {exc}")
+            if not isinstance(exc, (OSError, TimeoutError, asyncio.TimeoutError)):
+                print(f"[RECONNECT] Endpoint resolve failed on {MAINLINE_DHT}: {exc}")
             return []
 
     batches = await asyncio.gather(
@@ -1980,6 +1982,14 @@ def send_p2p_message(peer_name: str, endpoint: str, body: str, expected_fingerpr
         # and two 3 s reliable-delivery attempts on both identity_info and the
         # chat frame. Keep enough headroom for that legitimate worst case.
         return future.result(timeout=45)
+    except (asyncio.TimeoutError, TimeoutError) as e:
+        future.cancel()
+        print(f"Send message to {peer_name} timed out: peer may be offline")
+        return False
+    except (ConnectionError, OSError) as e:
+        future.cancel()
+        print(f"Connection failed to {peer_name}: {e}")
+        return False
     except Exception as e:
         future.cancel()
         print(f"Failed to send message to {peer_name} via python bridge:", e)
@@ -2182,6 +2192,10 @@ async def _send_message_unlocked(peer_name: str, endpoint: str, body: str, expec
     except asyncio.CancelledError:
         await _invalidate_session(session)
         raise
+    except (ConnectionError, TimeoutError, OSError) as e:
+        await _invalidate_session(session)
+        print(f"Peer {peer_name} unreachable: {e}")
+        return False
     except Exception as e:
         await _invalidate_session(session)
         print(f"Error in _send_message_async to {peer_name}:", e)
