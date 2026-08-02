@@ -58,6 +58,7 @@ fun PendingGroupInvitesScreen(
 ) {
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val primaryColor = MaterialTheme.colorScheme.primary
 
     Column(
         modifier = modifier
@@ -122,24 +123,41 @@ fun PendingGroupInvitesScreen(
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(24.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 32.dp, vertical = 24.dp)
                 ) {
-                    Text(
-                        text = "📩",
-                        fontSize = 44.sp
-                    )
-                    Spacer(Modifier.height(12.dp))
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .size(72.dp)
+                            .background(
+                                color = primaryColor.copy(alpha = 0.12f),
+                                shape = CircleShape
+                            )
+                    ) {
+                        Icon(
+                            painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_incoming_invite),
+                            contentDescription = null,
+                            tint = primaryColor,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                    Spacer(Modifier.height(16.dp))
                     Text(
                         text = "Нет входящих приглашений",
-                        fontSize = 16.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
-                        color = onSurfaceColor
+                        color = onSurfaceColor,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(6.dp))
                     Text(
                         text = "Когда вас пригласят в новую группу, приглашение появится здесь.",
                         fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        lineHeight = 18.sp
                     )
                 }
             }

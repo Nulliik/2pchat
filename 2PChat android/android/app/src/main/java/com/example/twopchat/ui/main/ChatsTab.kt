@@ -102,7 +102,15 @@ fun ChatsTab(
     }
     var currentUsername by chatsViewModel.currentUsername
     var activeMenuPeer by remember { mutableStateOf<PeerItem?>(null) }
+    var activeMenuGroup by remember { mutableStateOf<com.example.twopchat.group.ui.GroupSummary?>(null) }
     val groupSummaries by GroupChatCoordinator.summaries.collectAsState()
+    val sortedGroupSummaries = remember(groupSummaries, chatListRevision) {
+        groupSummaries.sortedWith(
+            compareByDescending<com.example.twopchat.group.ui.GroupSummary> {
+                sharedPrefs.getBoolean("pinned_group_${it.groupId}", false)
+            }.thenBy { it.title.lowercase(java.util.Locale.ROOT) }
+        )
+    }
     val pendingGroupInvites by GroupChatCoordinator.pendingInvites.collectAsState()
     LaunchedEffect(context) {
         GroupChatCoordinator.initialize(context)
@@ -683,7 +691,7 @@ fun ChatsTab(
                     }
 
                     items(
-                        items = groupSummaries,
+                        items = sortedGroupSummaries,
                         key = { summary -> "group:${summary.groupId}" },
                         contentType = { "group" },
                     ) { summary ->
@@ -697,6 +705,7 @@ fun ChatsTab(
                                 if (appLanguage == "Русский") "Сообщений пока нет" else "No messages yet"
                             }
                         }
+                        val isGroupPinned = sharedPrefs.getBoolean("pinned_group_${summary.groupId}", false)
                         Box(modifier = Modifier.padding(bottom = 10.dp)) {
                             PeerRow(
                                 peer = PeerItem(
@@ -706,6 +715,7 @@ fun ChatsTab(
                                     isDirect = false,
                                     initials = summary.title.take(2).uppercase(),
                                     unreadCount = summary.unreadCount,
+                                    isPinned = isGroupPinned,
                                     hasDraft = hasGroupDraft,
                                     avatarUri = summary.avatarUri
                                 ),
@@ -715,6 +725,7 @@ fun ChatsTab(
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant,
                                 onClick = { onItemClick(GroupConversation(summary.groupId)) },
+                                onLongClick = { activeMenuGroup = summary }
                             )
                         }
                     }
@@ -966,6 +977,169 @@ fun ChatsTab(
                     }
                 }
             }
+    }
+
+    if (activeMenuGroup != null) {
+        val groupSummary = activeMenuGroup!!
+        val isPinned = sharedPrefs.getBoolean("pinned_group_${groupSummary.groupId}", false)
+        val isMuted = sharedPrefs.getBoolean("mute_group_${groupSummary.groupId}", false)
+
+        Dialog(
+            onDismissRequest = { activeMenuGroup = null },
+            properties = DialogProperties(usePlatformDefaultWidth = true)
+        ) {
+            var animateIn by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                animateIn = true
+            }
+
+            val scale by animateFloatAsState(
+                targetValue = if (animateIn) 1f else 0.85f,
+                animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+            )
+            val opacity by animateFloatAsState(
+                targetValue = if (animateIn) 1f else 0f,
+                animationSpec = tween(200)
+            )
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        alpha = opacity
+                    }
+                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(modifier = Modifier.size(44.dp)) {
+                                val avatarFile = remember(groupSummary.avatarUri) {
+                                    groupSummary.avatarUri?.let { java.io.File(it) }?.takeIf { it.exists() }
+                                }
+                                val avatarBitmap = remember(avatarFile) {
+                                    avatarFile?.let { android.graphics.BitmapFactory.decodeFile(it.absolutePath) }
+                                }
+                                if (avatarBitmap != null) {
+                                    Image(
+                                        bitmap = avatarBitmap.asImageBitmap(),
+                                        contentDescription = "Group Avatar",
+                                        modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                    )
+                                } else {
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(primaryColor.copy(alpha = 0.15f), shape = CircleShape)
+                                    ) {
+                                        Text(
+                                            text = groupSummary.title.take(2).uppercase(),
+                                            color = primaryColor,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = groupSummary.title,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = onSurfaceColor
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (appLanguage == "Русский") "${groupSummary.memberCount} участников" else "${groupSummary.memberCount} members",
+                                    fontSize = 12.sp,
+                                    color = primaryColor
+                                )
+                            }
+                        }
+                        IconButton(onClick = { activeMenuGroup = null }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = onSurfaceVariant)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.08f), thickness = 0.5.dp)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Menu Options
+                    DialogOptionRow(
+                        iconRes = com.example.twopchat.R.drawable.ic_pin,
+                        label = if (isPinned) {
+                            if (appLanguage == "Русский") "Открепить чат" else "Unpin Chat"
+                        } else {
+                            if (appLanguage == "Русский") "Закрепить чат" else "Pin Chat"
+                        },
+                        textColor = onSurfaceColor,
+                        iconTint = primaryColor,
+                        onClick = {
+                            sharedPrefs.edit().putBoolean("pinned_group_${groupSummary.groupId}", !isPinned).apply()
+                            chatListRevision++
+                            activeMenuGroup = null
+                        }
+                    )
+
+                    DialogOptionRow(
+                        label = if (isMuted) {
+                            if (appLanguage == "Русский") "Включить уведомления" else "Unmute Notifications"
+                        } else {
+                            if (appLanguage == "Русский") "Выключить уведомления" else "Mute Notifications"
+                        },
+                        textColor = onSurfaceColor,
+                        iconTint = primaryColor,
+                        iconRes = if (isMuted) com.example.twopchat.R.drawable.ic_notifications else com.example.twopchat.R.drawable.ic_notifications_off,
+                        onClick = {
+                            sharedPrefs.edit().putBoolean("mute_group_${groupSummary.groupId}", !isMuted).apply()
+                            chatListRevision++
+                            activeMenuGroup = null
+                        }
+                    )
+
+                    DialogOptionRow(
+                        label = if (appLanguage == "Русский") "Очистить историю" else "Clear History",
+                        textColor = Color.Red,
+                        iconTint = Color.Red,
+                        iconRes = com.example.twopchat.R.drawable.ic_broom,
+                        onClick = {
+                            GroupChatCoordinator.clearHistory(groupSummary.groupId)
+                            chatListRevision++
+                            activeMenuGroup = null
+                            Toast.makeText(context, if (appLanguage == "Русский") "История очищена" else "History cleared", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+
+                    DialogOptionRow(
+                        iconRes = com.example.twopchat.R.drawable.ic_delete,
+                        label = if (appLanguage == "Русский") "Покинуть группу" else "Leave Group",
+                        textColor = Color.Red,
+                        iconTint = Color.Red,
+                        onClick = {
+                            GroupChatCoordinator.leaveGroup(groupSummary.groupId)
+                            chatListRevision++
+                            activeMenuGroup = null
+                            Toast.makeText(context, if (appLanguage == "Русский") "Вы вышли из группы" else "Left group", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
