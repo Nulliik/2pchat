@@ -1194,9 +1194,7 @@ def announce_peer_endpoints(
                 "resolve": "SKIPPED (Yggdrasil unavailable)",
             }
 
-    loop = asyncio.new_event_loop()
     try:
-        asyncio.set_event_loop(loop)
         variants = []
         if discovery_code.strip():
             variants.append((nickname, discovery_code.strip()))
@@ -1323,10 +1321,19 @@ def announce_peer_endpoints(
 
         endpoint_strings = [_format_endpoint(ep.host, ep.port) for ep in endpoints]
         print(f"Announcing endpoints for '{nickname}': {endpoint_strings}")
-        success_count = _run_coro_safely(_announce_all(), timeout=10.0)
+        # A UDP tracker may spend up to roughly nine seconds resolving,
+        # connecting and announcing when one retry is needed. Leave enough
+        # headroom for scheduling on the long-lived listener loop.
+        success_count = _run_coro_safely(_announce_all(), timeout=15.0)
         print(f"Total successful announce registrations: {success_count}")
         return success_count > 0
     except Exception as e:
+        # _run_coro_safely cancels the aggregate task on timeout. Without
+        # converting in-flight values here the diagnostics remain PENDING
+        # forever and the UI incorrectly looks as if polling is still active.
+        for tracker_name, diagnostic in tracker_diagnostics.items():
+            if diagnostic.get("announce") == "PENDING":
+                diagnostic["announce"] = "FAIL (Timed out)"
         if isinstance(e, (urllib.error.URLError, OSError)):
             print(f"Network error announcing endpoints in discovery_bridge: {e}")
         else:
@@ -1358,8 +1365,8 @@ def get_tracker_diagnostics_json() -> str:
     for name in all_names:
         if name not in tracker_diagnostics:
             tracker_diagnostics[name] = {
-                "announce": "PENDING",
-                "resolve": "PENDING",
+                "announce": "NOT_RUN",
+                "resolve": "NOT_RUN",
             }
     return json.dumps(tracker_diagnostics, sort_keys=True)
 

@@ -1097,15 +1097,18 @@ private fun NodeDetailContent(
             val displayTrackers: Map<String, String> = if (trackerDiagnostics.isNotEmpty()) {
                 trackerDiagnostics
             } else {
-                defaultTrackerUrls.keys.associateWith { "announce=PENDING, resolve=PENDING, announce_rtt=n/ams, resolve_rtt=n/ams" }
+                defaultTrackerUrls.keys.associateWith { "announce=NOT_RUN, resolve=NOT_RUN, announce_rtt=n/ams, resolve_rtt=n/ams" }
             }
             displayTrackers.forEach { (name, status) ->
                 val ping = trackerPings[name]
                 val announceRtt = Regex("announce_rtt=(\\d+)ms").find(status)?.groupValues?.get(1)?.toLongOrNull()
+                val pending = status.contains("PENDING", ignoreCase = true)
                 val pingText = if (announceRtt != null) {
                      "RTT ${announceRtt}ms"
-                } else if (ping == null) {
+                } else if (pending) {
                     if (appLanguage == "Русский") "опрос..." else "probing..."
+                } else if (ping == null) {
+                    if (appLanguage == "Русский") "нет данных" else "not checked"
                 } else if (ping == -2L) {
                     if (appLanguage == "Русский") "Yggdrasil выкл." else "Yggdrasil off"
                 } else if (ping == -3L) {

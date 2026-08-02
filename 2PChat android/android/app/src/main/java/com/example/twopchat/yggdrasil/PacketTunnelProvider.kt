@@ -158,6 +158,19 @@ open class PacketTunnelProvider: VpnService() {
             return
         }
 
+        try {
+            startTunnel()
+        } catch (error: Throwable) {
+            // A native/config/VPN setup failure used to leave `started=true`.
+            // Every later reconnect was then ignored as an already running
+            // tunnel even though no usable TUN workers existed.
+            Log.e(TAG, "Unable to start Yggdrasil tunnel", error)
+            stop(stopService = false)
+        }
+    }
+
+    private fun startTunnel() {
+
         val notification = createServiceNotification(this, State.Enabled)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             ServiceCompat.startForeground(
@@ -241,7 +254,8 @@ open class PacketTunnelProvider: VpnService() {
     private fun stop(stopService: Boolean = true) {
         val wasStarted = started.getAndSet(false)
         if (wasStarted) {
-            yggdrasil.stop()
+            runCatching { yggdrasil.stop() }
+                .onFailure { Log.w(TAG, "Unable to stop native Yggdrasil cleanly", it) }
         }
 
         // БАГ 2 ИСПРАВЛЕН: Сначала прерываем потоки, потом закрываем стримы.
@@ -313,6 +327,7 @@ open class PacketTunnelProvider: VpnService() {
         // fresh connection look failed on phones.
         var lastStateUpdate = 0L
         val probeStartedAt = System.currentTimeMillis()
+        var wasConnected = false
         updates@ while (started.get()) {
             if (readerThread?.isAlive != true || writerThread?.isAlive != true) {
                 Log.w(TAG, "Tunnel packet worker stopped unexpectedly; rebuilding it")
@@ -353,6 +368,14 @@ open class PacketTunnelProvider: VpnService() {
                 intent.putExtra("state", state)
                 intent.setPackage(packageName)
                 sendBroadcast(intent)
+                val isConnected = state == STATE_CONNECTED && routes > 0
+                if (isConnected && !wasConnected) {
+                    // The first reconnect after an Android network change is
+                    // intentionally early and may announce IPv4 only. Publish
+                    // the Yggdrasil endpoint as soon as it is truly routable.
+                    com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(applicationContext)
+                }
+                wasConnected = isConnected
                 lastStateUpdate = curTime
             }
 

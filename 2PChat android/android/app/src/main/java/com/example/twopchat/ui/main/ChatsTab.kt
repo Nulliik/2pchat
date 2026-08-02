@@ -267,22 +267,52 @@ fun ChatsTab(
                                     val endMsg = if (appLanguage == "Русский") "Подключения успешно обновлены!" else "Connections successfully refreshed!"
                                     Toast.makeText(context, startMsg, Toast.LENGTH_SHORT).show()
                                     heroScope.launch {
-                                        withContext(Dispatchers.IO) {
-                                            PythonBridge.triggerUpnpReopen()
+                                        var refreshSucceeded = true
+                                        try {
+                                            val prefs = com.example.twopchat.P2PPreferences.prefs(context)
+                                            val yggEnabled = prefs.getBoolean("settings_yggdrasil", true)
+                                            if (yggEnabled && VpnService.prepare(context) == null) {
+                                                context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
+                                                    action = PacketTunnelProvider.ACTION_STOP
+                                                })
+                                                delay(500)
+                                                context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
+                                                    action = PacketTunnelProvider.ACTION_START
+                                                })
+                                                // Announce only after the overlay has routes. An
+                                                // early announce publishes IPv4 alone and made the
+                                                // refresh button ineffective for Yggdrasil peers.
+                                                var yggReady = false
+                                                var attempts = 0
+                                                while (!yggReady && attempts < 24) {
+                                                    delay(500)
+                                                    yggReady = prefs.getString("yggdrasil_runtime_state", "")
+                                                        .equals("CONNECTED", ignoreCase = true) &&
+                                                        prefs.getInt("yggdrasil_runtime_routes", 0) > 0
+                                                    attempts += 1
+                                                }
+                                                refreshSucceeded = yggReady
+                                            } else if (yggEnabled) {
+                                                refreshSucceeded = false
+                                            }
+                                            withContext(Dispatchers.IO) {
+                                                PythonBridge.triggerUpnpReopen()
+                                            }
+                                            P2PMessageRelay.triggerImmediateReconnect(context).join()
+                                        } catch (error: Exception) {
+                                            android.util.Log.e("ChatsTab", "Unable to refresh connections", error)
+                                            refreshSucceeded = false
+                                        } finally {
+                                            isRefreshingAll = false
                                         }
-                                        P2PMessageRelay.refreshAnnouncement(context)
-                                        val stopIntent = Intent(context, PacketTunnelProvider::class.java).apply {
-                                            action = PacketTunnelProvider.ACTION_STOP
+                                        val resultMessage = if (refreshSucceeded) {
+                                            endMsg
+                                        } else if (appLanguage == "Русский") {
+                                            "Yggdrasil не вышел на связь. Проверьте VPN и публичные пиры."
+                                        } else {
+                                            "Yggdrasil did not connect. Check VPN access and public peers."
                                         }
-                                        context.startService(stopIntent)
-                                        delay(1000)
-                                        val startIntent = Intent(context, PacketTunnelProvider::class.java).apply {
-                                            action = PacketTunnelProvider.ACTION_START
-                                        }
-                                        context.startService(startIntent)
-                                        
-                                        isRefreshingAll = false
-                                        Toast.makeText(context, endMsg, Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, resultMessage, Toast.LENGTH_SHORT).show()
                                     }
                                 },
                             contentAlignment = Alignment.Center

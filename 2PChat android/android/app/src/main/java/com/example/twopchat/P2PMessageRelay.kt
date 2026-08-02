@@ -105,24 +105,35 @@ object P2PMessageRelay {
     fun refreshAnnouncement(context: Context) {
         val appContext = context.applicationContext
         relayScope.launch {
-            val prefs = P2PPreferences.prefs(appContext)
-            val username = prefs.getString("username_profile", "").orEmpty()
-            val fingerprint = PythonBridge.getLocalFingerprint()
-            if (username.isNotBlank() && fingerprint.length >= 40) {
-                val success = PythonBridge.announceSelf(username, fingerprint, listenerPort(appContext), force = true)
-                log(appContext, "Forced announce after transport setting change: $success")
-                setLocalDiscoveryEnabled(
-                    appContext,
-                    prefs.getBoolean(P2PPreferences.WIFI_DISCOVERY, true),
-                )
-            }
+            refreshAnnouncementNow(appContext)
         }
     }
 
-    fun triggerImmediateReconnect(context: Context) {
-        val appContext = context.applicationContext
+    private suspend fun refreshAnnouncementNow(context: Context): Boolean {
+        val prefs = P2PPreferences.prefs(context)
+        val username = prefs.getString("username_profile", "").orEmpty()
+        val fingerprint = PythonBridge.getLocalFingerprint()
+        if (username.isBlank() || fingerprint.length < 40) return false
+        val success = PythonBridge.announceSelf(
+            username,
+            fingerprint,
+            listenerPort(context),
+            force = true,
+        )
+        log(context, "Forced announce after transport setting change: $success")
+        setLocalDiscoveryEnabled(
+            context,
+            prefs.getBoolean(P2PPreferences.WIFI_DISCOVERY, true),
+        )
+        return success
+    }
+
+    fun triggerImmediateReconnect(context: Context) =
         relayScope.launch {
-            refreshAnnouncement(appContext)
+            val appContext = context.applicationContext
+            // Do not reconnect with stale discovery data while a fresh
+            // announcement is still running on another coroutine.
+            refreshAnnouncementNow(appContext)
             val prefs = P2PPreferences.prefs(appContext)
             val chats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
                 .filterNot { it == "Saved Messages" }
@@ -135,7 +146,6 @@ object P2PMessageRelay {
                 PythonBridge.reconnectPeerSession(peerName, endpoint, fingerprint)
             }
         }
-    }
 
     private const val MAX_TRACKED_PEER_ENDPOINTS = 512
     private val _peerEndpoints = mutableStateMapOf<String, String>()

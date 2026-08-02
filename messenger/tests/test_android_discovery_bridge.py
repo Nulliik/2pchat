@@ -743,6 +743,45 @@ def test_disabled_announce_performs_no_network_work(monkeypatch):
     ) is True
 
 
+def test_tracker_diagnostics_do_not_report_idle_trackers_as_pending(monkeypatch):
+    bridge = _load_discovery_bridge()
+    monkeypatch.setattr(bridge, "_resolve_tracker_names", lambda *_args: ["Test tracker"])
+    monkeypatch.setattr(bridge, "_dht_enabled", False)
+
+    diagnostics = json.loads(bridge.get_tracker_diagnostics_json())
+
+    assert diagnostics["Test tracker"] == {
+        "announce": "NOT_RUN",
+        "resolve": "NOT_RUN",
+    }
+
+
+def test_announce_timeout_clears_pending_tracker_status(monkeypatch):
+    bridge = _load_discovery_bridge()
+
+    def time_out(coro, timeout):
+        assert timeout == 15.0
+        coro.close()
+        bridge.tracker_diagnostics["Test tracker"] = {
+            "announce": "PENDING",
+            "resolve": "NOT_RUN",
+        }
+        raise TimeoutError("announce deadline exceeded")
+
+    monkeypatch.setattr(bridge, "_run_coro_safely", time_out)
+    monkeypatch.setattr(bridge, "CLEARNET_TRACKERS", ("Test tracker",))
+    monkeypatch.setattr(bridge, "YGG_TRACKERS", ())
+
+    assert bridge.announce_peer_endpoints(
+        "alice",
+        "fingerprint",
+        '["192.0.2.10"]',
+        50001,
+        "shared-code",
+    ) is False
+    assert bridge.tracker_diagnostics["Test tracker"]["announce"] == "FAIL (Timed out)"
+
+
 def test_group_signature_api_is_domain_separated_and_rejects_tampering(monkeypatch):
     bridge = _load_discovery_bridge()
     signing_key = SigningKey.generate()
