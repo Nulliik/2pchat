@@ -32,7 +32,6 @@ class P2PRelayService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        GroupWorkScheduler.schedule(applicationContext)
         createChannel()
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
@@ -62,24 +61,29 @@ class P2PRelayService : Service() {
             Log.e(TAG, "Failed to start foreground service", e)
             releaseLocks()
             stopSelf()
+            return
+        }
+
+        serviceScope.launch(Dispatchers.IO) {
+            GroupWorkScheduler.schedule(applicationContext)
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val appContext = applicationContext
-        val preferences = P2PPreferences.prefs(appContext)
-        val hasLocalIdentity =
-            preferences.getBoolean("onboarding_completed", false) &&
-                !preferences.getString("username_profile", null).isNullOrBlank()
-        if (!hasLocalIdentity) {
-            Log.i(TAG, "Relay start deferred until local identity is configured")
-            stopSelf(startId)
-            return START_NOT_STICKY
-        }
-
-        acquireLocks()
         val action = intent?.action
         serviceScope.launch(Dispatchers.IO) {
+            val preferences = P2PPreferences.prefs(appContext)
+            val hasLocalIdentity =
+                preferences.getBoolean("onboarding_completed", false) &&
+                    !preferences.getString("username_profile", null).isNullOrBlank()
+            if (!hasLocalIdentity) {
+                Log.i(TAG, "Relay start deferred until local identity is configured")
+                stopSelf(startId)
+                return@launch
+            }
+
+            acquireLocks()
             PythonBridge.ensurePythonStarted(appContext)
             PythonBridge.init(appContext)
             if (action == ACTION_RESTART) {
