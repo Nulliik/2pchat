@@ -869,7 +869,11 @@ def _run_coro_safely(coro, timeout=15.0):
     active_thread = globals().get("_listener_thread")
     if active_loop and active_loop.is_running() and active_thread is not None and threading.current_thread() != active_thread:
         future = asyncio.run_coroutine_threadsafe(coro, active_loop)
-        return future.result(timeout=timeout)
+        try:
+            return future.result(timeout=timeout)
+        except Exception:
+            future.cancel()
+            raise
     else:
         temp_loop = asyncio.new_event_loop()
         try:
@@ -1201,6 +1205,7 @@ def announce_peer_endpoints(
         variants = list(dict.fromkeys(variants))
 
         async def _announce_tracker(tracker_name: str):
+            _set_tracker_diagnostic(tracker_name, "announce", "PENDING")
             started = time.monotonic()
             tracker = _configured_tracker(tracker_name)
             provider = get_discovery_provider(
@@ -1234,6 +1239,8 @@ def announce_peer_endpoints(
                     success_count += 1
             if success_count > 0:
                 _set_tracker_diagnostic(tracker_name, "announce", f"OK ({success_count})")
+            elif not tracker_diagnostics.get(tracker_name, {}).get("announce", "").startswith("FAIL"):
+                _set_tracker_diagnostic(tracker_name, "announce", "FAIL (No response)")
             return success_count
 
         async def _announce_all():
@@ -2002,6 +2009,8 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
     Only protocol V3 is accepted.
     Returns a connected Session or raises an exception.
     """
+    if not endpoint_str or ":" not in endpoint_str:
+        raise ConnectionError(f"Invalid endpoint format (missing port): {endpoint_str}")
     if not ipv4_enabled and _is_ipv4_endpoint(endpoint_str):
         raise ConnectionError("IPv4 transport is disabled in settings")
     host, port_str = endpoint_str.rsplit(":", 1)
