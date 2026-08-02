@@ -2500,13 +2500,15 @@ private fun MemberProfileModal(
                     }
 
                     if (member.statusLabel.isNotBlank()) {
+                        val isOnlineStatus = member.statusLabel.contains("В сети") || member.statusLabel.contains("Online")
+                        val dotColor = if (isOnlineStatus) Color(0xFF34C759) else Color(0xFF8E929A)
                         Spacer(Modifier.height(6.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 modifier = Modifier
                                     .size(7.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF34C759))
+                                    .background(dotColor)
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(

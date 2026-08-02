@@ -54,10 +54,10 @@ interface GroupUiController {
 }
 
 enum class GroupRole(val label: String) {
-  OWNER("Owner"),
-  ADMIN("Admin"),
-  MODERATOR("Moderator"),
-  MEMBER("Member")
+  OWNER("Создатель"),
+  ADMIN("Администратор"),
+  MODERATOR("Модератор"),
+  MEMBER("Участник")
 }
 
 enum class GroupDeliveryStatus(val label: String) {

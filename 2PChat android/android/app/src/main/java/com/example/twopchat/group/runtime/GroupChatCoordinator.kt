@@ -4256,13 +4256,19 @@ object GroupChatCoordinator {
                 displayName = member.displayName,
                 role = member.role.toUiRole(),
                 statusLabel = if (member.deviceId == group.localDeviceId) {
-                    "This device"
-                } else if (!member.isParticipating()) {
-                    member.status.lowercase().replaceFirstChar(Char::uppercase)
+                    "В сети (Это устройство)"
                 } else if (P2PMessageRelay.peerSessionStates[member.peerName] == true) {
-                    "Online"
+                    "В сети"
+                } else if (!member.isParticipating()) {
+                    when (member.status.uppercase(Locale.ROOT)) {
+                        "INVITED" -> "Приглашение отправлено"
+                        "RESTRICTED" -> "Права ограничены"
+                        "BANNED" -> "Заблокирован"
+                        "LEFT" -> "Вышел из группы"
+                        else -> "Не в сети"
+                    }
                 } else {
-                    member.status.lowercase().replaceFirstChar(Char::uppercase)
+                    "Не в сети"
                 },
                 isCurrentUser = member.deviceId == group.localDeviceId,
                 permissions = member.permissions.toUiPermissions(),
