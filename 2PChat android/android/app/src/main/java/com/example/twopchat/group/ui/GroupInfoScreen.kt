@@ -2486,12 +2486,7 @@ private fun MemberProfileModal(
                         border = BorderStroke(1.dp, roleColor.copy(alpha = 0.35f))
                     ) {
                         Text(
-                            text = when (member.role) {
-                                GroupRole.OWNER -> "👑 ${member.role.label}"
-                                GroupRole.ADMIN -> "🛡️ ${member.role.label}"
-                                GroupRole.MODERATOR -> "⚡ ${member.role.label}"
-                                GroupRole.MEMBER -> member.role.label
-                            },
+                            text = member.role.label,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = roleColor,
@@ -2586,7 +2581,6 @@ private fun MemberProfileModal(
                             if (management.canManageRoles && member.canChangeRole && !member.isCurrentUser && member.role != GroupRole.OWNER) {
                                 if (member.role != GroupRole.ADMIN) {
                                     ModalActionButton(
-                                        icon = "🛡️",
                                         title = "Назначить администратором",
                                         titleColor = Color.White,
                                         onClick = { onSetMemberRole(GroupRole.ADMIN) }
@@ -2594,7 +2588,6 @@ private fun MemberProfileModal(
                                 }
                                 if (member.role != GroupRole.MODERATOR) {
                                     ModalActionButton(
-                                        icon = "⚡",
                                         title = "Назначить модератором",
                                         titleColor = Color.White,
                                         onClick = { onSetMemberRole(GroupRole.MODERATOR) }
@@ -2602,7 +2595,6 @@ private fun MemberProfileModal(
                                 }
                                 if (member.role != GroupRole.MEMBER) {
                                     ModalActionButton(
-                                        icon = "↩️",
                                         title = "Снять роль",
                                         titleColor = Color.White.copy(alpha = 0.85f),
                                         onClick = { onSetMemberRole(GroupRole.MEMBER) }
@@ -2612,7 +2604,6 @@ private fun MemberProfileModal(
 
                             if (management.canRestrictMembers && member.canRestrict && !member.isCurrentUser) {
                                 ModalActionButton(
-                                    icon = "🔇",
                                     title = "Ограничить права",
                                     titleColor = Color.White,
                                     onClick = onRestrict
@@ -2621,7 +2612,6 @@ private fun MemberProfileModal(
 
                             if (management.canRemoveMembers && member.canRemove && !member.isCurrentUser) {
                                 ModalActionButton(
-                                    icon = "🚪",
                                     title = "Исключить из группы",
                                     titleColor = Color(0xFFFF453A),
                                     onClick = onRemove
@@ -2630,7 +2620,6 @@ private fun MemberProfileModal(
 
                             if (management.canBanMembers && member.canBan && !member.isCurrentUser) {
                                 ModalActionButton(
-                                    icon = "🚫",
                                     title = "Заблокировать",
                                     titleColor = Color(0xFFFF453A),
                                     onClick = onBan
@@ -2694,7 +2683,6 @@ private fun AnimatedPressButton(
 
 @Composable
 private fun ModalActionButton(
-    icon: String,
     title: String,
     titleColor: Color,
     onClick: () -> Unit
@@ -2712,10 +2700,8 @@ private fun ModalActionButton(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 11.dp)
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
             ) {
-                Text(text = icon, fontSize = 16.sp)
-                Spacer(Modifier.width(12.dp))
                 Text(
                     text = title,
                     fontSize = 14.sp,
