@@ -182,6 +182,7 @@ fun GroupInfoScreen(
     }
     val isSoloOwner =
         state.currentUserRole == GroupRole.OWNER && state.metadata.memberCount == 1
+    val ownerMustTransfer = state.currentUserRole == GroupRole.OWNER && !isSoloOwner
     var showQrModal by remember { mutableStateOf(false) }
 
     val wallpaperPickerLauncher = rememberLauncherForActivityResult(
@@ -834,21 +835,28 @@ fun GroupInfoScreen(
 
     if (showLeaveConfirmation) {
         ConfirmationDialog(
-            title = if (isSoloOwner) "Удалить группу?" else "Выйти из группы?",
+            title = when {
+                isSoloOwner -> "Удалить группу?"
+                ownerMustTransfer -> "Сначала передайте права"
+                else -> "Выйти из группы?"
+            },
             body = if (isSoloOwner) {
                 "Группа и история сообщений будут удалены с этого устройства."
-            } else if (state.currentUserRole == GroupRole.OWNER) {
-                "Передайте права владельца перед выходом, если в группе остаются участники."
+            } else if (ownerMustTransfer) {
+                "Владелец не может покинуть группу, пока в ней остаются другие участники."
             } else {
-                "История сообщений на устройстве сохранится."
+                "Группа будет скрыта сразу, а локальные данные удалятся после подтверждения выхода владельцем."
             },
-            confirmLabel = if (isSoloOwner) "Удалить" else "Выйти",
+            confirmLabel = when {
+                isSoloOwner -> "Удалить"
+                ownerMustTransfer -> "Понятно"
+                else -> "Выйти"
+            },
             confirmTag = "confirm_leave_group",
             onDismiss = { showLeaveConfirmation = false },
             onConfirm = {
-                controller.leaveGroup(state.metadata.groupId)
+                if (!ownerMustTransfer) controller.leaveGroup(state.metadata.groupId)
                 showLeaveConfirmation = false
-                controller.onBack()
             }
         )
     }

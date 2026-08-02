@@ -28,6 +28,8 @@ object GroupWireProtocol {
     const val MAX_SYNC_EVENTS = 100
     const val MAX_SYNC_CURSORS = 256
     const val MAX_GROUP_MEMBERS_IN_INVITE = 10_000
+    const val MAX_GROUP_AVATAR_BYTES = 500_000
+    const val MAX_GROUP_AVATAR_BASE64_CHARS = 666_668
     const val MAX_HLC_LOGICAL = HybridLogicalClock.MAX_LOGICAL_COUNTER
 
     fun isGroupFrame(json: JSONObject): Boolean =
@@ -169,8 +171,19 @@ object GroupWireProtocol {
             members = members,
             cryptoSuite = json.requiredToken("crypto_suite", 128),
             signatureBase64 = json.requiredText("signature", 256),
-            groupAvatarDataB64 = json.optString("group_avatar_data", "").ifBlank { null },
-        )
+            groupAvatarDataB64 = json.optString("group_avatar_data", "")
+                .ifBlank { null }
+                ?.also {
+                    require(it.length <= MAX_GROUP_AVATAR_BASE64_CHARS) {
+                        "group avatar payload is too large"
+                    }
+                },
+            groupAvatarSigned = json.optBoolean("group_avatar_signed", false),
+        ).also {
+            require(!it.groupAvatarSigned || it.groupAvatarDataB64 != null) {
+                "signed group avatar payload is missing"
+            }
+        }
     }
 
     fun inviteToJson(invite: GroupInvite): JSONObject = JSONObject().apply {
@@ -182,6 +195,7 @@ object GroupWireProtocol {
         put("description", invite.description)
         put("admin_only_posting", invite.adminOnlyPosting)
         invite.groupAvatarDataB64?.let { put("group_avatar_data", it) }
+        if (invite.groupAvatarSigned) put("group_avatar_signed", true)
         put("epoch", invite.epoch)
         put("epoch_secret", invite.epochSecretBase64)
         put("owner_fingerprint", invite.ownerFingerprint)
@@ -428,6 +442,7 @@ data class GroupInvite(
     val signatureBase64: String,
     val adminOnlyPosting: Boolean = false,
     val groupAvatarDataB64: String? = null,
+    val groupAvatarSigned: Boolean = false,
 ) {
     fun canonicalForSignature(): String = buildString {
         append("2pchat-group-invite-signature-v1\n")
@@ -461,6 +476,13 @@ data class GroupInvite(
             append(member.signingKey).append('|')
             append(member.role).append('|')
             append(member.status).append('\n')
+        }
+        // Legacy v1 invites did not bind avatar data. They remain verifiable, but
+        // receivers ignore their untrusted avatar unless this signed marker exists.
+        if (groupAvatarSigned) {
+            requireNotNull(groupAvatarDataB64)
+            append("group_avatar_signed=v1\n")
+            append("group_avatar_data=").append(groupAvatarDataB64).append('\n')
         }
     }
 

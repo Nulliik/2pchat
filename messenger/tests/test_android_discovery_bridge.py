@@ -21,6 +21,36 @@ def _load_discovery_bridge():
     return module
 
 
+@pytest.mark.parametrize(
+    "endpoint",
+    (
+        "<peer:id>",
+        "<peer:123>",
+        "host",
+        ":50001",
+        "host:not-a-port",
+        "host:0",
+        "host:65536",
+        "200::1:50001",
+    ),
+)
+def test_dial_endpoint_rejects_malformed_endpoint_before_connect(monkeypatch, endpoint):
+    bridge = _load_discovery_bridge()
+    connect_called = False
+
+    async def fake_connect(*_args, **_kwargs):
+        nonlocal connect_called
+        connect_called = True
+        raise AssertionError("transport_connect must not be called")
+
+    monkeypatch.setattr(bridge, "transport_connect", fake_connect)
+
+    with pytest.raises(ConnectionError):
+        asyncio.run(bridge._dial_endpoint(endpoint, object(), object(), object()))
+
+    assert connect_called is False
+
+
 def test_android_initial_announce_starts_bep5_without_waiting_for_trackers(monkeypatch):
     bridge = _load_discovery_bridge()
     events = []

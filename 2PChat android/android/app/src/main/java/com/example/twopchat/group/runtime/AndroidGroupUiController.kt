@@ -123,6 +123,7 @@ class AndroidGroupUiController(
         GroupChatCoordinator.transferOwnership(groupId, memberId)
 
     override fun leaveGroup(groupId: String) {
+        if (!GroupChatCoordinator.canLeaveGroup(groupId)) return
         GroupChatCoordinator.leaveGroup(groupId)
         onBackNavigation()
     }

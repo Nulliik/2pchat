@@ -1726,8 +1726,11 @@ fun GroupChatScreen(
                                     GroupReadReceipt(displayName = name, readTimeLabel = msg.timestampLabel)
                                 }
                             }
-                            items(receipts) { receipt ->
-                                val avatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[receipt.displayName]
+                            items(
+                                items = receipts,
+                                key = { receipt -> receipt.memberId.ifBlank { receipt.displayName } },
+                            ) { receipt ->
+                                val avatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[receipt.avatarPeerName]
                                 val initials = receipt.displayName.take(2).uppercase().ifBlank { "M" }
                                 val avatarBgColor = remember(receipt.displayName) {
                                     val colors = listOf(

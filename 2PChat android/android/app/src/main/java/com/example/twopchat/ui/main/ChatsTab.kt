@@ -108,7 +108,7 @@ fun ChatsTab(
         groupSummaries.sortedWith(
             compareByDescending<com.example.twopchat.group.ui.GroupSummary> {
                 sharedPrefs.getBoolean("pinned_group_${it.groupId}", false)
-            }.thenBy { it.title.lowercase(java.util.Locale.ROOT) }
+            }
         )
     }
     val pendingGroupInvites by GroupChatCoordinator.pendingInvites.collectAsState()
@@ -1131,10 +1131,14 @@ fun ChatsTab(
                         textColor = Color.Red,
                         iconTint = Color.Red,
                         onClick = {
-                            GroupChatCoordinator.leaveGroup(groupSummary.groupId)
-                            chatListRevision++
+                            if (GroupChatCoordinator.canLeaveGroup(groupSummary.groupId)) {
+                                GroupChatCoordinator.leaveGroup(groupSummary.groupId)
+                                chatListRevision++
+                                Toast.makeText(context, if (appLanguage == "Русский") "Вы вышли из группы" else "Left group", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, if (appLanguage == "Русский") "Сначала передайте права владельца" else "Transfer ownership first", Toast.LENGTH_LONG).show()
+                            }
                             activeMenuGroup = null
-                            Toast.makeText(context, if (appLanguage == "Русский") "Вы вышли из группы" else "Left group", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }

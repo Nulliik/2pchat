@@ -144,7 +144,9 @@ data class GroupAttachmentUi(
 
 @Immutable
 data class GroupReadReceipt(
+  val memberId: String = "",
   val displayName: String,
+  val avatarPeerName: String = displayName,
   val readTimeLabel: String = "",
   val readEpochMs: Long = 0L,
 )

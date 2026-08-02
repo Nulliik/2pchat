@@ -1,6 +1,7 @@
 package com.example.twopchat.group.runtime
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
@@ -129,6 +130,7 @@ object GroupChatCoordinator {
     private const val MAX_ATTACHMENT_MANIFEST_BYTES = 220 * 1024
     private const val ATTACHMENT_SERVE_WINDOW_MS = 60_000L
     private const val ATTACHMENT_SERVE_BYTES_PER_WINDOW = 32L * 1024L * 1024L
+    private const val PENDING_DEPARTURE_PREFIX = "pending_group_departure_"
 
     @Volatile
     private var scope = newRuntimeScope()
@@ -860,58 +862,46 @@ object GroupChatCoordinator {
         }
     }
 
+    fun canLeaveGroup(groupId: String): Boolean {
+        val storage = database ?: return false
+        val group = storage.getGroup(groupId) ?: return false
+        if (group.ownerDeviceId != group.localDeviceId) return true
+        return storage.listMembers(groupId).none {
+            it.deviceId != group.localDeviceId && it.isParticipating()
+        }
+    }
+
     fun leaveGroup(groupId: String) {
         scope.launch {
             val group = db().getGroup(groupId) ?: return@launch
+            if (!canLeaveGroup(groupId)) return@launch
 
-            // Broadcast SYSTEM "leave" event over P2P mesh
-            runCatching {
-                emitEvent(
-                    groupId,
-                    GroupEventKind.SYSTEM,
-                    JSONObject().apply {
-                        put("control_proposal", "leave")
-                        put("member_device_id", group.localDeviceId)
-                    },
-                    group.localDeviceId,
-                )
+            if (group.ownerDeviceId == group.localDeviceId) {
+                purgeLocalGroup(groupId)
+                refreshAllGroups()
+                return@launch
             }
 
-            // Delete group from local database
-            db().deleteGroup(groupId)
-
-            // Clear in-memory caches
+            // Keep the group and its durable outbox until the owner confirms the
+            // serialized removal. The pending flag hides it from the local UI.
+            val proposal = emitEvent(
+                groupId,
+                GroupEventKind.SYSTEM,
+                JSONObject().apply {
+                    put("control_proposal", "leave")
+                    put("member_device_id", group.localDeviceId)
+                },
+                group.localDeviceId,
+            ) ?: return@launch
+            applicationContext?.let { context ->
+                P2PPreferences.prefs(context).edit()
+                    .putBoolean("$PENDING_DEPARTURE_PREFIX$groupId", true)
+                    .apply()
+            }
             activeGroupChats.remove(groupId)
             timelineLimits.remove(groupId)
             lastReadReceiptTargets.remove(groupId)
-            controlAncestorCache.remove(groupId)
-            chatFlows.remove(groupId)
-            infoFlows.remove(groupId)
-            attachmentBlockStores.remove(groupId)
-            attachmentManifests.keys.removeAll {
-                it.startsWith("$groupId\u0000")
-            }
-            attachmentRequests.entries.removeAll { it.value.groupId == groupId }
-
-            // Purge local download & avatar files for this group
-            applicationContext?.filesDir?.let { filesDir ->
-                runCatching {
-                    File(
-                        File(filesDir, "group_attachment_blocks"),
-                        sha256Hex(groupId),
-                    ).deleteRecursively()
-                    File(
-                        File(filesDir, "group_downloads"),
-                        sha256Hex(groupId),
-                    ).deleteRecursively()
-                    File(
-                        File(filesDir, "group_avatars"),
-                        "${groupId}.jpg",
-                    ).delete()
-                }
-            }
-
-            // Refresh visible groups list for UI
+            Log.i(TAG, "Queued durable leave proposal ${proposal.eventId} for $groupId")
             refreshAllGroups()
         }
     }
@@ -1559,19 +1549,7 @@ object GroupChatCoordinator {
             owner.deviceId,
             GroupControlFrames.inviteResponseToJson(response),
         )
-        val savedAvatarPath = if (!invite.groupAvatarDataB64.isNullOrBlank() && applicationContext != null) {
-            runCatching {
-                val avatarBytes = Base64.decode(invite.groupAvatarDataB64, Base64.NO_WRAP)
-                val avatarsDir = File(applicationContext!!.filesDir, "group_avatars").also { it.mkdirs() }
-                val destFile = File(avatarsDir, "${invite.groupId}.jpg")
-                destFile.writeBytes(avatarBytes)
-                destFile.absolutePath
-            }.getOrNull()
-        } else {
-            applicationContext?.let { ctx ->
-                File(ctx.filesDir, "group_avatars/${invite.groupId}.jpg").takeIf { it.exists() }?.absolutePath
-            }
-        }
+        val savedAvatarPath = persistGroupInviteAvatar(invite)
         val existingGroup = db().getGroup(invite.groupId)
         if (existingGroup == null) {
             db().createGroup(
@@ -3784,7 +3762,11 @@ object GroupChatCoordinator {
                     avatarFile?.let { file ->
                         runCatching {
                             val bytes = file.readBytes()
-                            if (bytes.size <= 500_000) Base64.encodeToString(bytes, Base64.NO_WRAP) else null
+                            if (bytes.size <= GroupWireProtocol.MAX_GROUP_AVATAR_BYTES) {
+                                Base64.encodeToString(bytes, Base64.NO_WRAP)
+                            } else {
+                                null
+                            }
                         }.getOrNull()
                     }
                 }
@@ -3794,6 +3776,7 @@ object GroupChatCoordinator {
                     title = group.title,
                     description = group.description,
                     groupAvatarDataB64 = groupAvatarB64,
+                    groupAvatarSigned = groupAvatarB64 != null,
                     adminOnlyPosting = group.adminOnlyPosting,
                     epoch = group.currentEpoch,
                     epochSecretBase64 = epochKey.keyMaterial.base64(),
@@ -3998,6 +3981,7 @@ object GroupChatCoordinator {
     }
 
     private suspend fun refreshAllGroups() {
+        finalizeConfirmedDepartures()
         val groups = visibleGroups()
         groups.forEach { refreshGroup(it.groupId) }
         _summaries.value = groups.map { group ->
@@ -4041,6 +4025,11 @@ object GroupChatCoordinator {
         val members = db().listMembers(groupId)
         val memberByDevice = members.associateBy { it.deviceId }
         val localMember = memberByDevice[group.localDeviceId]
+        if (isDeparturePending(groupId) && localMember?.status == "LEFT") {
+            purgeLocalGroup(groupId)
+            refreshAllSummariesWithoutRecursion()
+            return
+        }
         val localParticipates = localMember?.isParticipating() == true
         val events = db().listRecentEvents(groupId)
         val timelineLimit = timelineLimits[groupId] ?: TIMELINE_PAGE_SIZE
@@ -4050,15 +4039,18 @@ object GroupChatCoordinator {
             messagesNewest.mapTo(hashSetOf()) { it.messageId },
         )
         val messageById = messagesNewest.associateBy { it.messageId }
-        val readHorizonByMember = db().listAllReceipts(groupId)
+        val readReceiptHorizonByMember = db().listAllReceipts(groupId)
             .asSequence()
             .filter { it.type == "READ" && it.recipientDeviceId != group.localDeviceId }
             .mapNotNull { receipt ->
                 val target = messageById[receipt.eventId] ?: db().loadMessage(groupId, receipt.eventId)
-                target?.let { receipt.recipientDeviceId to it }
+                target?.let { receipt.recipientDeviceId to (it to receipt) }
             }
             .groupBy({ it.first }, { it.second })
-            .mapValues { (_, targets) -> targets.maxWith(groupTimelineOrder) }
+            .mapValues { (_, targets) ->
+                targets.maxWith { left, right -> groupTimelineOrder.compare(left.first, right.first) }
+            }
+        val readHorizonByMember = readReceiptHorizonByMember.mapValues { it.value.first }
         val latestPollVotes = linkedMapOf<Pair<String, String>, Int>()
         events.asSequence()
             .filter { it.kind == GroupEventKind.POLL_VOTE.name && it.targetEventId != null }
@@ -4148,16 +4140,18 @@ object GroupChatCoordinator {
                 .asSequence()
                 .mapNotNull { memberId ->
                     val memberName = memberByDevice[memberId]?.displayName ?: return@mapNotNull null
-                    val horizon = readHorizonByMember[memberId]
-                    val timeLabel = horizon?.let { formatTime(it.createdAtMs) } ?: formatTime(message.createdAtMs)
-                    val epochMs = horizon?.createdAtMs ?: message.createdAtMs
+                    val member = memberByDevice[memberId] ?: return@mapNotNull null
+                    val receipt = readReceiptHorizonByMember[memberId]?.second
+                    val epochMs = receipt?.receivedAtMs ?: message.createdAtMs
                     GroupReadReceipt(
+                        memberId = memberId,
                         displayName = memberName,
-                        readTimeLabel = timeLabel,
+                        avatarPeerName = member.peerName,
+                        readTimeLabel = formatTime(epochMs),
                         readEpochMs = epochMs
                     )
                 }
-                .distinctBy { it.displayName }
+                .distinctBy { it.memberId }
                 .toList()
             val readByMembers = readReceiptsList.map { it.displayName }
             GroupTimelineMessage(
@@ -4513,19 +4507,7 @@ object GroupChatCoordinator {
                 val inviter = invite.members.firstOrNull {
                     it.fingerprint == invite.senderFingerprint
                 }
-                val avatarPath = if (!invite.groupAvatarDataB64.isNullOrBlank() && applicationContext != null) {
-                    runCatching {
-                        val avatarBytes = Base64.decode(invite.groupAvatarDataB64, Base64.NO_WRAP)
-                        val avatarsDir = File(applicationContext!!.filesDir, "group_avatars").also { it.mkdirs() }
-                        val destFile = File(avatarsDir, "${invite.groupId}.jpg")
-                        destFile.writeBytes(avatarBytes)
-                        destFile.absolutePath
-                    }.getOrNull()
-                } else {
-                    applicationContext?.let { ctx ->
-                        File(ctx.filesDir, "group_avatars/${invite.groupId}.jpg").takeIf { it.exists() }?.absolutePath
-                    }
-                }
+                val avatarPath = persistGroupInviteAvatar(invite)
                 PendingGroupInvite(
                     inviteId = invite.inviteId,
                     groupId = invite.groupId,
@@ -4544,8 +4526,77 @@ object GroupChatCoordinator {
     internal fun visibleGroups(): List<StoredGroup> {
         if (applicationContext == null) return emptyList()
         return db().listGroups().filter { group ->
-            db().getMember(group.groupId, group.localDeviceId)
-                ?.status !in setOf(null, "LEFT", "BANNED")
+            !isDeparturePending(group.groupId) &&
+                db().getMember(group.groupId, group.localDeviceId)
+                    ?.status !in setOf(null, "LEFT", "BANNED")
+        }
+    }
+
+    private fun persistGroupInviteAvatar(invite: GroupInvite): String? {
+        val context = applicationContext ?: return null
+        val avatarFile = File(context.filesDir, "group_avatars/${invite.groupId}.jpg")
+        val encoded = invite.groupAvatarDataB64?.takeIf { invite.groupAvatarSigned } ?: return avatarFile
+            .takeIf(File::exists)
+            ?.absolutePath
+        return runCatching {
+            require(encoded.length <= GroupWireProtocol.MAX_GROUP_AVATAR_BASE64_CHARS)
+            val bytes = Base64.decode(encoded, Base64.NO_WRAP)
+            require(bytes.size <= GroupWireProtocol.MAX_GROUP_AVATAR_BYTES)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            require(bounds.outMimeType?.startsWith("image/") == true)
+            require(bounds.outWidth in 1..4_096 && bounds.outHeight in 1..4_096)
+            require(bounds.outWidth.toLong() * bounds.outHeight.toLong() <= 16_000_000L)
+            avatarFile.parentFile?.mkdirs()
+            avatarFile.writeBytes(bytes)
+            avatarFile.absolutePath
+        }.getOrElse { error ->
+            Log.w(TAG, "Rejected invalid group avatar for ${invite.groupId}: ${error.message}")
+            avatarFile.takeIf(File::exists)?.absolutePath
+        }
+    }
+
+    private fun isDeparturePending(groupId: String): Boolean =
+        applicationContext?.let { context ->
+            P2PPreferences.prefs(context)
+                .getBoolean("$PENDING_DEPARTURE_PREFIX$groupId", false)
+        } == true
+
+    private fun finalizeConfirmedDepartures() {
+        db().listGroups().forEach { group ->
+            if (
+                isDeparturePending(group.groupId) &&
+                db().getMember(group.groupId, group.localDeviceId)?.status == "LEFT"
+            ) {
+                purgeLocalGroup(group.groupId)
+            }
+        }
+    }
+
+    private fun purgeLocalGroup(groupId: String) {
+        db().deleteGroup(groupId)
+        activeGroupChats.remove(groupId)
+        timelineLimits.remove(groupId)
+        lastReadReceiptTargets.remove(groupId)
+        controlAncestorCache.remove(groupId)
+        chatFlows.remove(groupId)
+        infoFlows.remove(groupId)
+        attachmentBlockStores.remove(groupId)
+        attachmentManifests.keys.removeAll { it.startsWith("$groupId\u0000") }
+        attachmentRequests.entries.removeAll { it.value.groupId == groupId }
+        applicationContext?.let { context ->
+            P2PPreferences.prefs(context).edit()
+                .remove("$PENDING_DEPARTURE_PREFIX$groupId")
+                .remove("pinned_group_$groupId")
+                .remove("mute_group_$groupId")
+                .apply()
+            runCatching {
+                File(context.filesDir, "group_attachment_blocks/${sha256Hex(groupId)}")
+                    .deleteRecursively()
+                File(context.filesDir, "group_downloads/${sha256Hex(groupId)}")
+                    .deleteRecursively()
+                File(context.filesDir, "group_avatars/$groupId.jpg").delete()
+            }
         }
     }
 

@@ -128,6 +128,8 @@ class GroupWireProtocolInstrumentedTest {
             cryptoSuite = EpochAeadGroupCrypto.suiteId,
             signatureBase64 = "",
             adminOnlyPosting = true,
+            groupAvatarDataB64 = Base64.encodeToString(byteArrayOf(1, 2, 3), Base64.NO_WRAP),
+            groupAvatarSigned = true,
         )
         val signed = unsigned.copy(
             signatureBase64 = GroupIdentitySignatures.sign(unsigned.canonicalForSignature()),
@@ -149,6 +151,13 @@ class GroupWireProtocolInstrumentedTest {
                 .canonicalForSignature(),
         )
         assertFalse(parsed.copy(title = "tampered title").verifySignature())
+        assertFalse(parsed.copy(groupAvatarDataB64 = "dGFtcGVyZWQ=").verifySignature())
+        val oversizedAvatar = JSONObject(GroupWireProtocol.inviteToJson(signed).toString()).apply {
+            put("group_avatar_data", "A".repeat(GroupWireProtocol.MAX_GROUP_AVATAR_BASE64_CHARS + 1))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            GroupWireProtocol.parseInvite(oversizedAvatar)
+        }
     }
 
     @Test

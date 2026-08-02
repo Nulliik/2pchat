@@ -2009,14 +2009,30 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
     Only protocol V3 is accepted.
     Returns a connected Session or raises an exception.
     """
-    if not endpoint_str or ":" not in endpoint_str:
-        raise ConnectionError(f"Invalid endpoint format (missing port): {endpoint_str}")
+    if not isinstance(endpoint_str, str) or not endpoint_str:
+        raise ConnectionError(f"Invalid endpoint format (missing host and port): {endpoint_str}")
+    if endpoint_str.startswith("["):
+        closing_bracket = endpoint_str.find("]")
+        if closing_bracket <= 1 or endpoint_str[closing_bracket + 1:closing_bracket + 2] != ":":
+            raise ConnectionError(f"Invalid bracketed endpoint format: {endpoint_str}")
+        host = endpoint_str[1:closing_bracket]
+        port_str = endpoint_str[closing_bracket + 2:]
+    else:
+        if endpoint_str.count(":") != 1:
+            raise ConnectionError(f"Invalid endpoint format (expected host:port): {endpoint_str}")
+        host, port_str = endpoint_str.rsplit(":", 1)
+    if (
+        not host
+        or any(char.isspace() or char in "<>" for char in host)
+        or not port_str.isascii()
+        or not port_str.isdigit()
+    ):
+        raise ConnectionError(f"Invalid endpoint host or port: {endpoint_str}")
+    port = int(port_str)
+    if port not in range(1, 65_536):
+        raise ConnectionError(f"Endpoint port is out of range: {endpoint_str}")
     if not ipv4_enabled and _is_ipv4_endpoint(endpoint_str):
         raise ConnectionError("IPv4 transport is disabled in settings")
-    host, port_str = endpoint_str.rsplit(":", 1)
-    port = int(port_str)
-    if host.startswith("[") and host.endswith("]"):
-        host = host[1:-1]
 
     async def _close_writer_safely(writer):
         if writer is None:
