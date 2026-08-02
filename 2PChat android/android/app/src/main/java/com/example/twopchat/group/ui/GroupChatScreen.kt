@@ -1769,8 +1769,6 @@ private fun GroupChatHeader(
                             overflow = TextOverflow.Ellipsis,
                             color = onSurfaceColor
                         )
-                        Spacer(Modifier.width(4.dp))
-                        Text("🛡️", fontSize = 12.sp) // P2P Security Badge
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (state.typingStatus.isNotBlank()) {
@@ -2399,17 +2397,15 @@ private fun GroupMessageCard(
                                         modifier = Modifier.size(24.dp).padding(start = 2.dp)
                                     )
                                 }
-                                if (isMediaOnly) {
-                                    MessageTimestampBadge(
-                                        timestampLabel = message.timestampLabel,
-                                        isEdited = message.isEdited,
-                                        deliveryStatus = message.deliveryStatus,
-                                        messageId = message.messageId,
-                                        isOverlayOnImage = true,
-                                        isMine = message.isMine,
-                                        modifier = Modifier.align(Alignment.BottomEnd)
-                                    )
-                                }
+                                MessageTimestampBadge(
+                                    timestampLabel = message.timestampLabel,
+                                    isEdited = message.isEdited,
+                                    deliveryStatus = message.deliveryStatus,
+                                    messageId = message.messageId,
+                                    isOverlayOnImage = true,
+                                    isMine = message.isMine,
+                                    modifier = Modifier.align(Alignment.BottomEnd)
+                                )
                             }
                         }
                         isGif && localPath.isNotBlank() -> {
@@ -2428,17 +2424,15 @@ private fun GroupMessageCard(
                                         .clip(RoundedCornerShape(16.dp))
                                         .clickable { onMediaClick(localPath) },
                                 )
-                                if (isMediaOnly) {
-                                    MessageTimestampBadge(
-                                        timestampLabel = message.timestampLabel,
-                                        isEdited = message.isEdited,
-                                        deliveryStatus = message.deliveryStatus,
-                                        messageId = message.messageId,
-                                        isOverlayOnImage = true,
-                                        isMine = message.isMine,
-                                        modifier = Modifier.align(Alignment.BottomEnd)
-                                    )
-                                }
+                                MessageTimestampBadge(
+                                    timestampLabel = message.timestampLabel,
+                                    isEdited = message.isEdited,
+                                    deliveryStatus = message.deliveryStatus,
+                                    messageId = message.messageId,
+                                    isOverlayOnImage = true,
+                                    isMine = message.isMine,
+                                    modifier = Modifier.align(Alignment.BottomEnd)
+                                )
                             }
                         }
                         else -> {
@@ -2482,17 +2476,15 @@ private fun GroupMessageCard(
                                             .clip(RoundedCornerShape(16.dp))
                                             .clickable { onMediaClick(localPath) }
                                     )
-                                    if (isMediaOnly) {
-                                        MessageTimestampBadge(
-                                            timestampLabel = message.timestampLabel,
-                                            isEdited = message.isEdited,
-                                            deliveryStatus = message.deliveryStatus,
-                                            messageId = message.messageId,
-                                            isOverlayOnImage = true,
-                                            isMine = message.isMine,
-                                            modifier = Modifier.align(Alignment.BottomEnd)
-                                        )
-                                    }
+                                    MessageTimestampBadge(
+                                        timestampLabel = message.timestampLabel,
+                                        isEdited = message.isEdited,
+                                        deliveryStatus = message.deliveryStatus,
+                                        messageId = message.messageId,
+                                        isOverlayOnImage = true,
+                                        isMine = message.isMine,
+                                        modifier = Modifier.align(Alignment.BottomEnd)
+                                    )
                                 }
                             } else {
                                 Surface(
@@ -2596,8 +2588,8 @@ private fun GroupMessageCard(
                     }
                 }
 
-                // Message Footer: Timestamp & Delivery Status (Only if not already rendered as overlay on image)
-                if (!isMediaOnly) {
+                // Message Footer: Timestamp & Delivery Status (Only for text/audio/document messages without visual media overlay)
+                if (!hasMediaContent && !isSticker) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
