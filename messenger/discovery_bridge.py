@@ -150,11 +150,16 @@ CLEARNET_TRACKERS = (
     "OpenTrackr HTTP",
     "Dler HTTP",
     "Qu.Ax HTTP",
+    "OpenTrackr HTTPS",
     "Yemekyedim HTTPS",
     "Nyacat HTTPS",
     "Torrent.eu.org UDP",
     "Open Stealth UDP",
     "Exodus UDP",
+    "OpenTrackr UDP",
+    "Dler UDP",
+    "FileBase UDP",
+    "BitSearch UDP",
 )
 YGG_TRACKERS = (
     "Yggdrasil-only HTTP",

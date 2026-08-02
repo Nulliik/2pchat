@@ -35,6 +35,34 @@ BASE_TRACKERS: tuple[TrackerSpec, ...] = (
         notes="validated 2026-07-03",
     ),
     TrackerSpec(
+        name="OpenTrackr UDP",
+        announce_url="udp://tracker.opentrackr.org:1337/announce",
+        discovery_scheme="udp-tracker",
+        protocol="udp",
+        notes="high capacity UDP tracker",
+    ),
+    TrackerSpec(
+        name="Dler UDP",
+        announce_url="udp://tracker2.dler.org:80/announce",
+        discovery_scheme="udp-tracker",
+        protocol="udp",
+        notes="public UDP tracker",
+    ),
+    TrackerSpec(
+        name="FileBase UDP",
+        announce_url="udp://tracker.filebase.online:6969/announce",
+        discovery_scheme="udp-tracker",
+        protocol="udp",
+        notes="public UDP tracker",
+    ),
+    TrackerSpec(
+        name="BitSearch UDP",
+        announce_url="udp://tracker.bitsearch.to:6969/announce",
+        discovery_scheme="udp-tracker",
+        protocol="udp",
+        notes="public UDP tracker",
+    ),
+    TrackerSpec(
         name="OpenTrackr HTTP",
         announce_url="http://tracker.opentrackr.org:1337/announce",
         discovery_scheme="http-tracker",
@@ -54,6 +82,13 @@ BASE_TRACKERS: tuple[TrackerSpec, ...] = (
         discovery_scheme="http-tracker",
         protocol="http",
         notes="unencrypted; use only when enabled by the user",
+    ),
+    TrackerSpec(
+        name="OpenTrackr HTTPS",
+        announce_url="https://tracker.opentrackr.org:443/announce",
+        discovery_scheme="http-tracker",
+        protocol="https",
+        notes="encrypted HTTPS tracker",
     ),
     TrackerSpec(
         name="Yemekyedim HTTPS",
