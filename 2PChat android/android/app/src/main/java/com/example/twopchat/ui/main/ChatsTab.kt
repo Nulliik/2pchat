@@ -466,11 +466,11 @@ fun ChatsTab(
                         fontWeight = if (isDirectSelected) FontWeight.Bold else FontWeight.Medium,
                         color = if (isDirectSelected) Color.White else onSurfaceVariant
                     )
-                    if (totalUnreadDirect > 0) {
+                    if (!isDirectSelected && totalUnreadDirect > 0) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Box(
                             modifier = Modifier
-                                .background(if (isDirectSelected) Color.White.copy(alpha = 0.25f) else primaryColor, CircleShape)
+                                .background(primaryColor, CircleShape)
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -505,11 +505,11 @@ fun ChatsTab(
                         fontWeight = if (isGroupsSelected) FontWeight.Bold else FontWeight.Medium,
                         color = if (isGroupsSelected) Color.White else onSurfaceVariant
                     )
-                    if (totalUnreadGroups > 0) {
+                    if (!isGroupsSelected && totalUnreadGroups > 0) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Box(
                             modifier = Modifier
-                                .background(if (isGroupsSelected) Color.White.copy(alpha = 0.25f) else primaryColor, CircleShape)
+                                .background(primaryColor, CircleShape)
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                             contentAlignment = Alignment.Center
                         ) {
