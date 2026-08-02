@@ -3,6 +3,7 @@ package com.example.twopchat.group.ui
 import android.widget.Toast
 import com.example.twopchat.P2PPreferences
 import com.example.twopchat.ui.chat.AlbumPreviewModal
+import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.ui.unit.sp
@@ -732,6 +733,25 @@ fun GroupChatScreen(
             }
             previousMessageCount = messageCount
         }
+
+        val targetScrollMessage by GroupChatCoordinator.targetScrollMessageId.collectAsState()
+        LaunchedEffect(targetScrollMessage, state.messages) {
+            val target = targetScrollMessage
+            if (target != null && target.first == state.groupId) {
+                val targetMsgId = target.second
+                val targetIdx = state.messages.indexOfFirst { it.messageId == targetMsgId }
+                if (targetIdx != -1) {
+                    listState.animateScrollToItem(targetIdx)
+                    highlightedMessageId = targetMsgId
+                    GroupChatCoordinator.clearTargetScrollMessage()
+                    kotlinx.coroutines.delay(2000)
+                    if (highlightedMessageId == targetMsgId) {
+                        highlightedMessageId = null
+                    }
+                }
+            }
+        }
+
         // Messages List Container
         Box(
             modifier = Modifier
@@ -873,8 +893,9 @@ fun GroupChatScreen(
                                 },
                                 onOpenVideo = { path -> activeFullscreenVideo = path },
                                 onOpenStickerPack = { msg -> viewedStickerMessage = msg },
-                                isSelectMode = isSelectMode,
+                                 isSelectMode = isSelectMode,
                                 isSelected = selectedMessages.any { it.messageId == message.messageId },
+                                isHighlighted = (highlightedMessageId == message.messageId),
                                 onToggleSelect = {
                                     if (selectedMessages.any { it.messageId == message.messageId }) {
                                         selectedMessages.removeAll { it.messageId == message.messageId }
@@ -1947,6 +1968,7 @@ private fun GroupMessageCard(
     onOpenStickerPack: (GroupTimelineMessage) -> Unit = {},
     isSelectMode: Boolean = false,
     isSelected: Boolean = false,
+    isHighlighted: Boolean = false,
     onToggleSelect: () -> Unit = {},
     onReplyQuoteClick: (String) -> Unit = {}
 ) {
@@ -2135,6 +2157,9 @@ private fun GroupMessageCard(
             modifier = Modifier
                 .wrapContentWidth()
                 .widthIn(max = 280.dp)
+                .then(
+                    if (isHighlighted) Modifier.border(2.dp, primaryColor, bubbleShape) else Modifier
+                )
                 .combinedClickable(
                     onClick = {
                         if (isSelectMode) onToggleSelect()
