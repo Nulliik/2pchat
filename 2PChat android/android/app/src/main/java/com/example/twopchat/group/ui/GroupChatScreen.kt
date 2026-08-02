@@ -1627,22 +1627,13 @@ fun GroupChatScreen(
         val primaryColor = MaterialTheme.colorScheme.primary
         val surfaceColor = MaterialTheme.colorScheme.surface
         val onSurfaceColor = MaterialTheme.colorScheme.onSurface
-        val modalGradient = Brush.linearGradient(
-            colors = listOf(
-                primaryColor.copy(alpha = 0.16f),
-                surfaceColor.copy(alpha = 0.95f),
-                primaryColor.copy(alpha = 0.06f)
-            )
-        )
         Dialog(onDismissRequest = { showSeenByDialog = null }) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
-                color = Color.Transparent,
+                color = surfaceColor,
                 border = BorderStroke(1.dp, primaryColor.copy(alpha = 0.30f)),
                 shadowElevation = 24.dp,
-                modifier = Modifier
-                    .fillMaxWidth(0.92f)
-                    .background(brush = modalGradient, shape = RoundedCornerShape(24.dp))
+                modifier = Modifier.fillMaxWidth(0.92f)
             ) {
                 Column(
                     modifier = Modifier

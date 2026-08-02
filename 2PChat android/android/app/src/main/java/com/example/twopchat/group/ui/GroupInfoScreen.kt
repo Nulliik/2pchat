@@ -2440,14 +2440,6 @@ private fun MemberProfileModal(
             val surfaceColor = MaterialTheme.colorScheme.surface
             val onSurfaceColor = MaterialTheme.colorScheme.onSurface
 
-            val modalGradient = Brush.linearGradient(
-                colors = listOf(
-                    primaryColor.copy(alpha = 0.16f),
-                    surfaceColor.copy(alpha = 0.95f),
-                    primaryColor.copy(alpha = 0.06f)
-                )
-            )
-
             Surface(
                 modifier = Modifier
                     .fillMaxWidth(0.88f)
@@ -2456,17 +2448,13 @@ private fun MemberProfileModal(
                         scaleY = scale
                         this.alpha = alpha
                     }
-                    .background(
-                        brush = modalGradient,
-                        shape = RoundedCornerShape(26.dp)
-                    )
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         onClick = {}
                     ),
                 shape = RoundedCornerShape(26.dp),
-                color = Color.Transparent,
+                color = surfaceColor,
                 border = BorderStroke(1.dp, primaryColor.copy(alpha = 0.30f)),
                 shadowElevation = 24.dp
             ) {
