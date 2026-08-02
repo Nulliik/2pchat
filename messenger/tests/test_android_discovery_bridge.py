@@ -671,6 +671,7 @@ def test_tracker_configuration_filters_protocols_presets_and_custom_trackers():
     })) is True
 
     assert bridge._resolve_tracker_names("OpenTrackr HTTP") == [
+        "OpenTrackr HTTPS",
         "Yemekyedim HTTPS",
         "custom:secure-one",
     ]
