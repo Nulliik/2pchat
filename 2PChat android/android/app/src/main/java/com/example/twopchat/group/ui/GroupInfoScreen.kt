@@ -848,6 +848,7 @@ fun GroupInfoScreen(
             onConfirm = {
                 controller.leaveGroup(state.metadata.groupId)
                 showLeaveConfirmation = false
+                controller.onBack()
             }
         )
     }

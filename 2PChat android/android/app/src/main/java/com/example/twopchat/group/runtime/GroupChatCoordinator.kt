@@ -863,24 +863,39 @@ object GroupChatCoordinator {
     fun leaveGroup(groupId: String) {
         scope.launch {
             val group = db().getGroup(groupId) ?: return@launch
-            if (group.ownerDeviceId == group.localDeviceId) {
-                val hasOtherParticipants = db().listMembers(groupId).any {
-                    it.deviceId != group.localDeviceId && it.isParticipating()
-                }
-                if (hasOtherParticipants || !db().deleteGroup(groupId)) return@launch
 
-                activeGroupChats.remove(groupId)
-                timelineLimits.remove(groupId)
-                lastReadReceiptTargets.remove(groupId)
-                controlAncestorCache.remove(groupId)
-                chatFlows.remove(groupId)
-                infoFlows.remove(groupId)
-                attachmentBlockStores.remove(groupId)
-                attachmentManifests.keys.removeAll {
-                    it.startsWith("$groupId\u0000")
-                }
-                attachmentRequests.entries.removeAll { it.value.groupId == groupId }
-                applicationContext?.filesDir?.let { filesDir ->
+            // Broadcast SYSTEM "leave" event over P2P mesh
+            runCatching {
+                emitEvent(
+                    groupId,
+                    GroupEventKind.SYSTEM,
+                    JSONObject().apply {
+                        put("control_proposal", "leave")
+                        put("member_device_id", group.localDeviceId)
+                    },
+                    group.localDeviceId,
+                )
+            }
+
+            // Delete group from local database
+            db().deleteGroup(groupId)
+
+            // Clear in-memory caches
+            activeGroupChats.remove(groupId)
+            timelineLimits.remove(groupId)
+            lastReadReceiptTargets.remove(groupId)
+            controlAncestorCache.remove(groupId)
+            chatFlows.remove(groupId)
+            infoFlows.remove(groupId)
+            attachmentBlockStores.remove(groupId)
+            attachmentManifests.keys.removeAll {
+                it.startsWith("$groupId\u0000")
+            }
+            attachmentRequests.entries.removeAll { it.value.groupId == groupId }
+
+            // Purge local download & avatar files for this group
+            applicationContext?.filesDir?.let { filesDir ->
+                runCatching {
                     File(
                         File(filesDir, "group_attachment_blocks"),
                         sha256Hex(groupId),
@@ -889,20 +904,14 @@ object GroupChatCoordinator {
                         File(filesDir, "group_downloads"),
                         sha256Hex(groupId),
                     ).deleteRecursively()
+                    File(
+                        File(filesDir, "group_avatars"),
+                        "${groupId}.jpg",
+                    ).delete()
                 }
-                refreshAllGroups()
-                return@launch
             }
-            val notice = emitEvent(
-                groupId,
-                GroupEventKind.SYSTEM,
-                JSONObject().apply {
-                    put("control_proposal", "leave")
-                    put("member_device_id", group.localDeviceId)
-                },
-                group.localDeviceId,
-            )
-            if (notice == null) return@launch
+
+            // Refresh visible groups list for UI
             refreshAllGroups()
         }
     }
