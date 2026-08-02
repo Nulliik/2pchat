@@ -55,7 +55,8 @@ internal class LocalPeerDiscovery(
 
                     override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                         resolving.remove(serviceInfo.serviceName)
-                        val fingerprint = serviceInfo.attributes[ATTRIBUTE_FINGERPRINT]
+                        val fingerprint = (serviceInfo.attributes[ATTRIBUTE_FINGERPRINT]
+                            ?: serviceInfo.attributes["fingerprint"])
                             ?.toString(Charsets.UTF_8).orEmpty()
                         if (fingerprint.isBlank() || fingerprint == localFingerprint) return
                         val peerName = serviceInfo.attributes[ATTRIBUTE_NAME]
@@ -95,6 +96,6 @@ internal class LocalPeerDiscovery(
         const val TAG = "LocalPeerDiscovery"
         const val SERVICE_TYPE = "_2pchat._tcp."
         const val ATTRIBUTE_NAME = "name"
-        const val ATTRIBUTE_FINGERPRINT = "fingerprint"
+        const val ATTRIBUTE_FINGERPRINT = "fp"
     }
 }
