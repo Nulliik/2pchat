@@ -2366,7 +2366,6 @@ private fun GroupInviteQrModal(
         )
     }
 }
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MemberProfileModal(
@@ -2428,6 +2427,18 @@ private fun MemberProfileModal(
                 GroupRole.MEMBER -> Color(0xFF98A2B3)
             }
 
+            val primaryColor = MaterialTheme.colorScheme.primary
+            val surfaceColor = MaterialTheme.colorScheme.surface
+            val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+
+            val modalGradient = Brush.linearGradient(
+                colors = listOf(
+                    primaryColor.copy(alpha = 0.16f),
+                    surfaceColor.copy(alpha = 0.95f),
+                    primaryColor.copy(alpha = 0.06f)
+                )
+            )
+
             Surface(
                 modifier = Modifier
                     .fillMaxWidth(0.88f)
@@ -2436,15 +2447,19 @@ private fun MemberProfileModal(
                         scaleY = scale
                         this.alpha = alpha
                     }
+                    .background(
+                        brush = modalGradient,
+                        shape = RoundedCornerShape(26.dp)
+                    )
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                         onClick = {}
                     ),
                 shape = RoundedCornerShape(26.dp),
-                color = Color(0xFF16181D),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-                shadowElevation = 20.dp
+                color = Color.Transparent,
+                border = BorderStroke(1.dp, primaryColor.copy(alpha = 0.30f)),
+                shadowElevation = 24.dp
             ) {
                 Column(
                     modifier = Modifier
@@ -2487,7 +2502,7 @@ private fun MemberProfileModal(
                         },
                         fontWeight = FontWeight.Bold,
                         fontSize = 20.sp,
-                        color = Color.White,
+                        color = onSurfaceColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -2524,7 +2539,7 @@ private fun MemberProfileModal(
                             Text(
                                 text = member.statusLabel,
                                 fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.65f)
+                                color = onSurfaceColor.copy(alpha = 0.65f)
                             )
                         }
                     }
@@ -2547,7 +2562,7 @@ private fun MemberProfileModal(
                                     .fillMaxSize()
                                     .background(
                                         brush = Brush.horizontalGradient(
-                                            colors = listOf(Color(0xFF007AFF), Color(0xFF00C6FF))
+                                            colors = listOf(primaryColor, primaryColor.copy(alpha = 0.85f))
                                         ),
                                         shape = RoundedCornerShape(16.dp)
                                     )
@@ -2576,14 +2591,14 @@ private fun MemberProfileModal(
 
                     if (hasAdminControls) {
                         Spacer(Modifier.height(16.dp))
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+                        HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.08f))
                         Spacer(Modifier.height(12.dp))
 
                         Text(
                             text = "Управление участником",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0A84FF),
+                            color = primaryColor,
                             modifier = Modifier.align(Alignment.Start)
                         )
 
@@ -2597,21 +2612,21 @@ private fun MemberProfileModal(
                                 if (member.role != GroupRole.ADMIN) {
                                     ModalActionButton(
                                         title = "Назначить администратором",
-                                        titleColor = Color.White,
+                                        titleColor = onSurfaceColor,
                                         onClick = { onSetMemberRole(GroupRole.ADMIN) }
                                     )
                                 }
                                 if (member.role != GroupRole.MODERATOR) {
                                     ModalActionButton(
                                         title = "Назначить модератором",
-                                        titleColor = Color.White,
+                                        titleColor = onSurfaceColor,
                                         onClick = { onSetMemberRole(GroupRole.MODERATOR) }
                                     )
                                 }
                                 if (member.role != GroupRole.MEMBER) {
                                     ModalActionButton(
                                         title = "Снять роль",
-                                        titleColor = Color.White.copy(alpha = 0.85f),
+                                        titleColor = onSurfaceColor.copy(alpha = 0.85f),
                                         onClick = { onSetMemberRole(GroupRole.MEMBER) }
                                     )
                                 }
