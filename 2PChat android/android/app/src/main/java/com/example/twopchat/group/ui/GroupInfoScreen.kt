@@ -25,6 +25,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.graphicsLayer
 import com.example.twopchat.R
@@ -1092,6 +1094,7 @@ private fun GroupQuickActionsRow(
     onQrClick: () -> Unit,
     onLeaveClick: () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1131,7 +1134,10 @@ private fun GroupQuickActionsRow(
                     .clickable(
                         interactionSource = interactionSource,
                         indication = null,
-                        onClick = onClick
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onClick()
+                        }
                     )
             ) {
                 Column(
@@ -1327,6 +1333,7 @@ private fun GroupTabNavigation(
     memberCount: Int,
     onTabSelected: (Int) -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     val tabs = listOf("Участники", "Медиа", "Избранное", "Файлы")
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -1351,7 +1358,10 @@ private fun GroupTabNavigation(
                             if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
                             else Color.Transparent
                         )
-                        .clickable { onTabSelected(index) }
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onTabSelected(index)
+                        }
                         .padding(vertical = 8.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -1388,14 +1398,18 @@ private fun GroupMemberCard(
         colors[abs(member.displayName.hashCode()) % colors.size]
     }
 
-    Surface(
-        color = Color.Transparent,
+    AnimatedPressButton(
+        onClick = onMemberClick,
+        hapticType = HapticFeedbackType.LongPress,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
-            .clickable(onClick = onMemberClick)
+            .padding(horizontal = 16.dp, vertical = 2.dp)
             .testTag("member_${member.memberId}")
     ) {
+        Surface(
+            color = Color.Transparent,
+            modifier = Modifier.fillMaxWidth()
+        ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1514,6 +1528,7 @@ private fun GroupMemberCard(
             }
         }
     }
+}
 }
 
 @Composable
@@ -2651,8 +2666,10 @@ private fun MemberProfileModal(
 private fun AnimatedPressButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    hapticType: HapticFeedbackType? = HapticFeedbackType.TextHandleMove,
     content: @Composable () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     var isPressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.96f else 1f,
@@ -2673,7 +2690,10 @@ private fun AnimatedPressButton(
                         tryAwaitRelease()
                         isPressed = false
                     },
-                    onTap = { onClick() }
+                    onTap = {
+                        hapticType?.let { haptic.performHapticFeedback(it) }
+                        onClick()
+                    }
                 )
             }
     ) {

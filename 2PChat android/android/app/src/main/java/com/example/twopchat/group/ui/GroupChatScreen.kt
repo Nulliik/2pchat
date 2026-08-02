@@ -1675,6 +1675,7 @@ private fun GroupChatHeader(
         return
     }
 
+    val hapticHeader = androidx.compose.ui.platform.LocalHapticFeedback.current
     Surface(
         color = surfaceColor,
         shadowElevation = 2.dp,
@@ -1688,7 +1689,10 @@ private fun GroupChatHeader(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (!isSearchMode) {
-                IconButton(onClick = controller::onBack) {
+                IconButton(onClick = {
+                    hapticHeader.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                    controller.onBack()
+                }) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
@@ -1723,7 +1727,10 @@ private fun GroupChatHeader(
                         .size(40.dp)
                         .clip(CircleShape)
                         .background(avatarColor)
-                        .clickable { controller.openGroupInfo(state.groupId) },
+                        .clickable {
+                            hapticHeader.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                            controller.openGroupInfo(state.groupId)
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     if (avatarBitmap != null) {
@@ -1748,7 +1755,10 @@ private fun GroupChatHeader(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .clickable { controller.openGroupInfo(state.groupId) }
+                        .clickable {
+                            hapticHeader.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                            controller.openGroupInfo(state.groupId)
+                        }
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
@@ -2151,6 +2161,7 @@ private fun GroupMessageCard(
         val isMediaOnly = mediaFlags.isMediaOnly
         val hasMediaContent = attachment != null && (isImage || isGif || isVideo)
 
+        val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
         Surface(
             shape = if (isSticker) RoundedCornerShape(0.dp) else bubbleShape,
             color = if (isSticker) Color.Transparent else if (isMediaOnly) Color.Transparent else bubbleContainerColor,
@@ -2165,6 +2176,7 @@ private fun GroupMessageCard(
                         if (isSelectMode) onToggleSelect()
                     },
                     onLongClick = {
+                        hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                         if (isSelectMode) onToggleSelect()
                         else onOptionsClick()
                     }
@@ -2187,7 +2199,10 @@ private fun GroupMessageCard(
                             fontSize = 13.sp,
                             color = authorNameColor,
                             modifier = if (!message.isMine && message.authorId != "SYSTEM" && message.authorName.isNotBlank()) {
-                                Modifier.clickable { controller.openDirectChat(message.authorName) }
+                                Modifier.clickable {
+                                    hapticFeedback.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                    controller.openDirectChat(message.authorName)
+                                }
                             } else Modifier
                         )
                         if (message.authorRole != GroupRole.MEMBER) {
