@@ -38,6 +38,7 @@ import com.example.twopchat.group.protocol.GroupAttachmentFrames
 import com.example.twopchat.group.protocol.GroupAttachmentRequest
 import com.example.twopchat.group.protocol.GroupEpochKeyPackage
 import com.example.twopchat.group.protocol.GroupEventFactory
+import com.example.twopchat.group.ui.GroupReadReceipt
 import com.example.twopchat.group.protocol.GroupEventKind
 import com.example.twopchat.group.protocol.GroupInvite
 import com.example.twopchat.group.protocol.GroupInviteMember
@@ -4109,11 +4110,22 @@ object GroupChatCoordinator {
             } else {
                 null
             }
-            val readByMembers = membersWhoReadMessage(message, readHorizonByMember)
+            val readReceiptsList = membersWhoReadMessage(message, readHorizonByMember)
                 .asSequence()
-                .mapNotNull { memberId -> memberByDevice[memberId]?.displayName }
-                .distinct()
+                .mapNotNull { memberId ->
+                    val memberName = memberByDevice[memberId]?.displayName ?: return@mapNotNull null
+                    val horizon = readHorizonByMember[memberId]
+                    val timeLabel = horizon?.let { formatTime(it.createdAtMs) } ?: formatTime(message.createdAtMs)
+                    val epochMs = horizon?.createdAtMs ?: message.createdAtMs
+                    GroupReadReceipt(
+                        displayName = memberName,
+                        readTimeLabel = timeLabel,
+                        readEpochMs = epochMs
+                    )
+                }
+                .distinctBy { it.displayName }
                 .toList()
+            val readByMembers = readReceiptsList.map { it.displayName }
             GroupTimelineMessage(
                 messageId = message.messageId,
                 authorId = message.authorDeviceId,
@@ -4146,6 +4158,7 @@ object GroupChatCoordinator {
                 canPin = localPolicy?.let(GroupRolePolicy::canPinMessage)?.allowed == true,
                 poll = poll,
                 readByMembers = readByMembers,
+                readReceipts = readReceiptsList,
             )
         }
         val activeMembers = members.count { it.isParticipating() }

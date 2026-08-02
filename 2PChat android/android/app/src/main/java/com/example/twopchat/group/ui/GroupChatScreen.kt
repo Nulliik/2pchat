@@ -12,6 +12,7 @@ import android.graphics.BitmapFactory
 import java.io.File
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.heightIn
 import androidx.activity.compose.BackHandler
@@ -883,6 +884,7 @@ fun GroupChatScreen(
                                 onEdit = { editingMessage = message },
                                 onDelete = { deletingMessage = message },
                                 onOptionsClick = { selectedMessageForOptions = message },
+                                onShowSeenBy = { showSeenByDialog = message },
                                 onMediaClick = { path ->
                                     val lower = path.lowercase()
                                     if (lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".mkv") || lower.endsWith(".avi")) {
@@ -1622,26 +1624,206 @@ fun GroupChatScreen(
     }
 
     showSeenByDialog?.let { msg ->
-        AlertDialog(
-            onDismissRequest = { showSeenByDialog = null },
-            title = { Text("Просмотры сообщения", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-            text = {
-                if (msg.readByMembers.isEmpty()) {
-                    Text("Никто пока не просмотрел это сообщение", color = Color.Gray, fontSize = 13.sp)
-                } else {
-                    LazyColumn {
-                        items(msg.readByMembers) { name ->
-                            Text("👤  $name", modifier = Modifier.padding(vertical = 6.dp), fontSize = 14.sp)
+        val primaryColor = MaterialTheme.colorScheme.primary
+        val surfaceColor = MaterialTheme.colorScheme.surface
+        val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+        val modalGradient = Brush.linearGradient(
+            colors = listOf(
+                primaryColor.copy(alpha = 0.16f),
+                surfaceColor.copy(alpha = 0.95f),
+                primaryColor.copy(alpha = 0.06f)
+            )
+        )
+        Dialog(onDismissRequest = { showSeenByDialog = null }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = Color.Transparent,
+                border = BorderStroke(1.dp, primaryColor.copy(alpha = 0.30f)),
+                shadowElevation = 24.dp,
+                modifier = Modifier
+                    .fillMaxWidth(0.92f)
+                    .background(brush = modalGradient, shape = RoundedCornerShape(24.dp))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp)
+                ) {
+                    // Title Header
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_msg_double_check),
+                                contentDescription = "Просмотрено",
+                                tint = primaryColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "Просмотрено",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 18.sp,
+                                color = onSurfaceColor
+                            )
+                        }
+                        if (msg.readByMembers.isNotEmpty()) {
+                            Surface(
+                                color = primaryColor.copy(alpha = 0.15f),
+                                shape = CircleShape,
+                                border = BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.3f))
+                            ) {
+                                Text(
+                                    text = "${msg.readByMembers.size}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryColor,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
+                                )
+                            }
                         }
                     }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    if (msg.readByMembers.isEmpty()) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_msg_single_check),
+                                    contentDescription = null,
+                                    tint = onSurfaceColor.copy(alpha = 0.35f),
+                                    modifier = Modifier.size(36.dp)
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "Никто пока не просмотрел это сообщение",
+                                    color = onSurfaceColor.copy(alpha = 0.6f),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 280.dp)
+                        ) {
+                            val receipts = if (msg.readReceipts.isNotEmpty()) {
+                                msg.readReceipts
+                            } else {
+                                msg.readByMembers.map { name ->
+                                    GroupReadReceipt(displayName = name, readTimeLabel = msg.timestampLabel)
+                                }
+                            }
+                            items(receipts) { receipt ->
+                                val avatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[receipt.displayName]
+                                val initials = receipt.displayName.take(2).uppercase().ifBlank { "M" }
+                                val avatarBgColor = remember(receipt.displayName) {
+                                    val colors = listOf(
+                                        Color(0xFF3949AB), Color(0xFF00897B), Color(0xFFD81B60),
+                                        Color(0xFFF4511E), Color(0xFF7CB342), Color(0xFF00ACC1)
+                                    )
+                                    colors[kotlin.math.abs(receipt.displayName.hashCode()) % colors.size]
+                                }
+
+                                Surface(
+                                    color = surfaceColor.copy(alpha = 0.4f),
+                                    shape = RoundedCornerShape(14.dp),
+                                    border = BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.15f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                                    ) {
+                                        // Avatar
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier
+                                                .size(38.dp)
+                                                .clip(CircleShape)
+                                                .background(avatarBgColor)
+                                        ) {
+                                            if (avatarBitmap != null) {
+                                                Image(
+                                                    bitmap = avatarBitmap.asImageBitmap(),
+                                                    contentDescription = receipt.displayName,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = initials,
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(Modifier.width(12.dp))
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = receipt.displayName,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 14.sp,
+                                                color = onSurfaceColor
+                                            )
+                                        }
+
+                                        if (receipt.readTimeLabel.isNotBlank()) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = receipt.readTimeLabel,
+                                                    fontSize = 12.sp,
+                                                    color = primaryColor,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                                Spacer(Modifier.width(4.dp))
+                                                Icon(
+                                                    painter = painterResource(id = R.drawable.ic_msg_double_check),
+                                                    contentDescription = "Read",
+                                                    tint = Color(0xFF64B5F6),
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    TextButton(
+                        onClick = { showSeenByDialog = null },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Закрыть",
+                            color = onSurfaceColor.copy(alpha = 0.7f),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp
+                        )
+                    }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { showSeenByDialog = null }) { Text("Закрыть") }
-            },
-            containerColor = surfaceColor,
-            shape = RoundedCornerShape(20.dp)
-        )
+            }
+        }
     }
 }
 
@@ -1900,12 +2082,19 @@ private fun MessageTimestampBadge(
     isOverlayOnImage: Boolean,
     isMine: Boolean = true,
     modifier: Modifier = Modifier,
-    textColor: Color = Color.Unspecified
+    textColor: Color = Color.Unspecified,
+    onClick: (() -> Unit)? = null
 ) {
     Surface(
         color = if (isOverlayOnImage) Color.Black.copy(alpha = 0.55f) else Color.Transparent,
         shape = RoundedCornerShape(10.dp),
-        modifier = modifier.padding(if (isOverlayOnImage) 6.dp else 0.dp)
+        modifier = modifier
+            .padding(if (isOverlayOnImage) 6.dp else 0.dp)
+            .then(
+                if (onClick != null) {
+                    Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick)
+                } else Modifier
+            )
     ) {
         Row(
             modifier = Modifier.padding(
@@ -1971,6 +2160,7 @@ private fun GroupMessageCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onOptionsClick: () -> Unit,
+    onShowSeenBy: (GroupTimelineMessage) -> Unit = {},
     onMediaClick: (String) -> Unit = {},
     onOpenVideo: (String) -> Unit = {},
     onOpenStickerPack: (GroupTimelineMessage) -> Unit = {},
@@ -2404,7 +2594,8 @@ private fun GroupMessageCard(
                                     messageId = message.messageId,
                                     isOverlayOnImage = true,
                                     isMine = message.isMine,
-                                    modifier = Modifier.align(Alignment.BottomEnd)
+                                    modifier = Modifier.align(Alignment.BottomEnd),
+                                    onClick = { onShowSeenBy(message) }
                                 )
                             }
                         }
@@ -2431,7 +2622,8 @@ private fun GroupMessageCard(
                                     messageId = message.messageId,
                                     isOverlayOnImage = true,
                                     isMine = message.isMine,
-                                    modifier = Modifier.align(Alignment.BottomEnd)
+                                    modifier = Modifier.align(Alignment.BottomEnd),
+                                    onClick = { onShowSeenBy(message) }
                                 )
                             }
                         }
@@ -2483,7 +2675,8 @@ private fun GroupMessageCard(
                                         messageId = message.messageId,
                                         isOverlayOnImage = true,
                                         isMine = message.isMine,
-                                        modifier = Modifier.align(Alignment.BottomEnd)
+                                        modifier = Modifier.align(Alignment.BottomEnd),
+                                        onClick = { onShowSeenBy(message) }
                                     )
                                 }
                             } else {
@@ -2603,7 +2796,8 @@ private fun GroupMessageCard(
                             messageId = message.messageId,
                             isOverlayOnImage = false,
                             isMine = message.isMine,
-                            textColor = timestampColor
+                            textColor = timestampColor,
+                            onClick = { onShowSeenBy(message) }
                         )
                     }
                 }

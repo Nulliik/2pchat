@@ -143,6 +143,13 @@ data class GroupAttachmentUi(
 )
 
 @Immutable
+data class GroupReadReceipt(
+  val displayName: String,
+  val readTimeLabel: String = "",
+  val readEpochMs: Long = 0L,
+)
+
+@Immutable
 data class GroupTimelineMessage(
   val messageId: String,
   val authorId: String,
@@ -165,7 +172,8 @@ data class GroupTimelineMessage(
   val canReact: Boolean = true,
   val canPin: Boolean = false,
   val poll: GroupPollUi? = null,
-  val readByMembers: List<String> = emptyList()
+  val readByMembers: List<String> = emptyList(),
+  val readReceipts: List<GroupReadReceipt> = emptyList()
 )
 
 @Immutable
