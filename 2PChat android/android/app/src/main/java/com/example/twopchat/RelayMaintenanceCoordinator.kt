@@ -37,8 +37,12 @@ internal class RelayMaintenanceCoordinator(
                         P2PRelayService.refreshWakeLock()
                     }
                     val prefs = P2PPreferences.prefs(appContext)
-                    val chats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
+                    val oneOnOneChats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
                         .filterNot { it == "Saved Messages" || isPlaceholderPeerName(it) }
+                    val groupMemberPeers = com.example.twopchat.group.runtime.GroupChatCoordinator
+                        .listActiveGroupMemberPeerNames(appContext)
+                        .filterNot { isPlaceholderPeerName(it) }
+                    val chats = (oneOnOneChats + groupMemberPeers).distinct()
                     // Capture this before the blocking Python heartbeat probe.
                     // Any callback received while it is running makes the
                     // corresponding result stale.

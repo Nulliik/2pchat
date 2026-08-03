@@ -987,6 +987,18 @@ object GroupChatCoordinator {
         }
     }
 
+    fun listActiveGroupMemberPeerNames(context: Context): Set<String> {
+        return runCatching {
+            initialize(context)
+            val groups = db().listGroups()
+            groups.flatMap { group ->
+                db().listMembers(group.groupId)
+                    .filter { it.isParticipating() && it.deviceId != group.localDeviceId }
+                    .map { it.peerName }
+            }.filter { it.isNotBlank() }.toSet()
+        }.getOrDefault(emptySet())
+    }
+
     suspend fun runAntiEntropy(): Int {
         if (recoveryNeeded.get()) {
             runCatching { reconcileDurableState() }
