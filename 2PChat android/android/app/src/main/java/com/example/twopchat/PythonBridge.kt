@@ -782,8 +782,19 @@ object PythonBridge {
         }
     }
 
-    fun reconnectPeerSession(peerName: String, endpoint: String, expectedFingerprint: String? = null): Boolean {
+    fun isLoopRunning(): Boolean {
         if (!isInitialized) return false
+        return try {
+            val bridge = getDiscoveryBridgeModule() ?: return false
+            val loopObj = bridge.get("loop")
+            loopObj != null && loopObj.toString() != "None"
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun reconnectPeerSession(peerName: String, endpoint: String, expectedFingerprint: String? = null): Boolean {
+        if (!isInitialized || !isLoopRunning()) return false
         return try {
             val bridge = getDiscoveryBridgeModule() ?: return false
             val success = bridge.callAttr("reconnect_peer_session", peerName, endpoint, expectedFingerprint)

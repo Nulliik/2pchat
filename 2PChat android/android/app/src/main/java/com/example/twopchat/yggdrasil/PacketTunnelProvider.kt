@@ -88,7 +88,11 @@ open class PacketTunnelProvider: VpnService() {
                 if (!enabled) {
                     preferences.edit().putBoolean(PREF_KEY_ENABLED, true).apply()
                 }
-                start()
+                if (started.get() && isTunnelHealthy()) {
+                    Log.d(TAG, "Tunnel already started and healthy; skipping redundant start")
+                } else {
+                    start()
+                }
                 START_STICKY
             }
             ACTION_CONNECT -> {

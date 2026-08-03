@@ -2730,7 +2730,7 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
     Closes any existing session for the peer, and starts a new connection attempt in the background/asyncio loop.
     """
     global loop, active_sessions
-    if not loop:
+    if not loop or not getattr(loop, "is_running", lambda: True)():
         print("Cannot reconnect: loop is not running")
         return False
     

@@ -24,6 +24,9 @@ internal class P2POutboundMessenger(
     private val scope = CoroutineScope(Dispatchers.IO)
     private val pinnedStateScope = CoroutineScope(Dispatchers.IO.limitedParallelism(1))
 
+    private val peerFailureBackoffMs = ConcurrentHashMap<String, Long>()
+    private val lastPeerFailureAt = ConcurrentHashMap<String, Long>()
+
     private fun isPaused(context: Context, peerName: String): Boolean =
         peerName != "Direct Peer" && P2PPreferences.isPeerIdentityChangePending(context, peerName)
 
@@ -31,6 +34,12 @@ internal class P2POutboundMessenger(
         val peerName = peerEndpoints.entries.firstOrNull { it.value == endpoint }?.key ?: "Direct Peer"
         if (isPaused(context, peerName)) {
             log(context, "Blocked message to $peerName while its identity change awaits confirmation", "ERROR", null)
+            return postResult(onResult, false)
+        }
+        val lastFail = lastPeerFailureAt[peerName] ?: 0L
+        val backoff = peerFailureBackoffMs[peerName] ?: 0L
+        val now = System.currentTimeMillis()
+        if (now - lastFail < backoff) {
             return postResult(onResult, false)
         }
         scope.launch {
@@ -41,6 +50,8 @@ internal class P2POutboundMessenger(
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
                 val success = PythonBridge.sendP2pMessage(peerName, endpoint, text, fingerprint)
                 if (success) {
+                    peerFailureBackoffMs.remove(peerName)
+                    lastPeerFailureAt.remove(peerName)
                     NetworkTrafficStats.recordMessage(
                         context,
                         peerName,
@@ -48,6 +59,10 @@ internal class P2POutboundMessenger(
                         text,
                         TrafficDirection.SENT,
                     )
+                } else {
+                    val currentBackoff = peerFailureBackoffMs[peerName] ?: 1000L
+                    lastPeerFailureAt[peerName] = System.currentTimeMillis()
+                    peerFailureBackoffMs[peerName] = (currentBackoff * 2).coerceAtMost(30_000L)
                 }
                 log(context, "Secure message send: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
                 postResult(onResult, success)
