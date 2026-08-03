@@ -7,7 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PersistableBundle
 
-private const val CLIPBOARD_CLEAR_DELAY_MS = 60_000L
+private const val CLIPBOARD_CLEAR_DELAY_MS = 30_000L
 private const val EXTRA_IS_SENSITIVE = "android.content.extra.IS_SENSITIVE"
 private val clipboardTokenLock = Any()
 private val clipboardClearTokens = java.util.WeakHashMap<ClipboardManager, Any>()

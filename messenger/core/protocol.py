@@ -111,7 +111,16 @@ def encode_message(message: Dict[str, Any], encoding: str = DEFAULT_FORMAT) -> b
     raise ValueError(f"Unsupported encoding: {encoding}")
 
 
+MAX_ALLOWED_PAYLOAD_SIZE = 10 * 1024 * 1024  # 10 MB limit
+
+
 def decode_message(payload: bytes, encoding: str = DEFAULT_FORMAT) -> Dict[str, Any]:
+    if not isinstance(payload, (bytes, bytearray)):
+        raise TypeError("payload must be bytes")
+    if len(payload) > MAX_ALLOWED_PAYLOAD_SIZE:
+        raise ValueError(
+            f"message payload size ({len(payload)} bytes) exceeds the maximum allowed limit of {MAX_ALLOWED_PAYLOAD_SIZE} bytes"
+        )
     if payload and payload[0] == FILE_CHUNK_FRAME_TYPE:
         return decode_file_chunk(payload)
     if encoding == "json":
