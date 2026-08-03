@@ -203,6 +203,18 @@ class GroupDatabaseHelper(
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
         db.execSQL("PRAGMA foreign_keys=ON")
+        try {
+            db.rawQuery("PRAGMA quick_check", null).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val result = cursor.getString(0)
+                    if (!result.equals("ok", ignoreCase = true)) {
+                        android.util.Log.e("GroupDatabaseHelper", "Database integrity check failed: $result")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("GroupDatabaseHelper", "Failed to run quick_check on group database", e)
+        }
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -2404,7 +2416,7 @@ class GroupDatabaseHelper(
                 put("author_seq", base.authorSeq)
                 put("hlc_physical_ms", base.hlcPhysicalMs)
                 put("hlc_logical", base.hlcLogical)
-                put("body", body)
+                put("body", enc(body))
                 put("edited", edited.asInt())
                 put("deleted", deleted.asInt())
                 put("unread", (newMessageUnread ?: previousUnread).asInt())
@@ -2478,7 +2490,7 @@ class GroupDatabaseHelper(
         put("hlc_physical_ms", event.hlcPhysicalMs)
         put("hlc_logical", event.hlcLogical)
         put("kind", event.kind)
-        put("body", event.body)
+        put("body", event.body?.let { enc(it) })
         put("target_event_id", event.targetEventId)
         put("control_head", event.controlHead)
         put("payload", event.payload)
@@ -2580,7 +2592,7 @@ class GroupDatabaseHelper(
         hlcPhysicalMs = long("hlc_physical_ms"),
         hlcLogical = int("hlc_logical"),
         kind = string("kind"),
-        body = nullableString("body"),
+        body = nullableString("body")?.let { dec(it) },
         targetEventId = nullableString("target_event_id"),
         controlHead = nullableString("control_head"),
         payload = nullableBlob("payload"),
@@ -2595,7 +2607,7 @@ class GroupDatabaseHelper(
         authorSeq = long("author_seq"),
         hlcPhysicalMs = long("hlc_physical_ms"),
         hlcLogical = int("hlc_logical"),
-        body = string("body"),
+        body = string("body").let { dec(it).orEmpty() },
         edited = int("edited") != 0,
         deleted = int("deleted") != 0,
         unread = int("unread") != 0,
@@ -2659,6 +2671,9 @@ class GroupDatabaseHelper(
     }
 
     private fun Boolean.asInt(): Int = if (this) 1 else 0
+
+    private fun enc(value: String) = SecureStorage.encrypt(value)
+    private fun dec(value: String?) = SecureStorage.decrypt(value)
 
     private fun SQLiteDatabase.execUpdate(sql: String, bindArgs: Array<out Any?>): Int {
         compileStatement(sql).use { statement ->

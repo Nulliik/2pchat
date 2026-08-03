@@ -121,6 +121,22 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             return readableDatabase
         }
 
+    override fun onConfigure(db: SQLiteDatabase) {
+        super.onConfigure(db)
+        try {
+            db.rawQuery("PRAGMA quick_check", null).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val result = cursor.getString(0)
+                    if (!result.equals("ok", ignoreCase = true)) {
+                        Log.e(TAG, "Database integrity check failed: $result")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to run quick_check on database", e)
+        }
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
         val createTable = ("CREATE TABLE " + TABLE_MESSAGES + "("
                 + KEY_ID + " TEXT PRIMARY KEY,"
@@ -298,7 +314,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             put(KEY_REPLY_TO_TEXT, encNullable(msg.replyToText))
             put(KEY_REPLY_TO_NAME, encNullable(msg.replyToName))
             put(KEY_STATUS, msg.status)
-            put(KEY_REACTIONS, serializeReactions(msg.reactions))
+            put(KEY_REACTIONS, encNullable(serializeReactions(msg.reactions)))
             put(KEY_SENT_AT_MS, msg.sentAtEpochMs)
             put(KEY_IS_PINNED, if (msg.isPinned) 1 else 0)
             put(KEY_ALBUM_URIS, encNullable(if (msg.albumMediaUris.isNotEmpty()) msg.albumMediaUris.joinToString("|||") else null))
@@ -342,7 +358,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val replyToText = if (indexReplyToText != -1) stringCipher.decrypt(cursor.getString(indexReplyToText)) else null
         val replyToName = if (indexReplyToName != -1) stringCipher.decrypt(cursor.getString(indexReplyToName)) else null
         val status = if (indexStatus != -1) cursor.getString(indexStatus) else null
-        val reactions = if (indexReactions != -1) deserializeReactions(cursor.getString(indexReactions)) else emptyMap()
+        val reactions = if (indexReactions != -1) deserializeReactions(stringCipher.decrypt(cursor.getString(indexReactions))) else emptyMap()
         val id = if (indexId != -1) cursor.getString(indexId) else java.util.UUID.randomUUID().toString()
         val sentAtEpochMs = if (indexSentAtMs != -1) cursor.getLong(indexSentAtMs) else 0L
         val isPinned = if (indexIsPinned != -1) cursor.getInt(indexIsPinned) == 1 else false
@@ -618,7 +634,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         try {
             val db = this.safeWritableDatabase
             val values = ContentValues().apply {
-                put(KEY_REACTIONS, serializeReactions(reactions))
+                put(KEY_REACTIONS, encNullable(serializeReactions(reactions)))
             }
             db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
         } catch (e: Exception) {
@@ -889,6 +905,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         // destination so the final rename is on the same filesystem and always clean it.
         val tempFile = java.io.File(dbFile.parentFile, "$DATABASE_NAME.encrypted.tmp")
         if (tempFile.exists()) tempFile.delete()
+        require(pass.matches(Regex("^[A-Za-z0-9+/=]+$"))) { "Invalid passphrase format" }
         var source: SQLiteDatabase? = null
         try {
             val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null as String?, null, SQLiteDatabase.OPEN_READWRITE, null)
