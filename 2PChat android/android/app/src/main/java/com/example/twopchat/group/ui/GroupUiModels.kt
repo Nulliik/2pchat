@@ -277,7 +277,7 @@ data class GroupChatUiState(
   val composerEnabled: Boolean = true,
   val textComposerEnabled: Boolean = true,
   val mediaComposerEnabled: Boolean = true,
-  val composerPlaceholder: String = "Message",
+  val composerPlaceholder: String = "",
   val readOnlyReason: String = "",
   val isSending: Boolean = false,
   val typingStatus: String = "",

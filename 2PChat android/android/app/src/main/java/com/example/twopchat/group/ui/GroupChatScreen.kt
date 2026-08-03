@@ -2,6 +2,7 @@ package com.example.twopchat.group.ui
 
 import android.widget.Toast
 import com.example.twopchat.P2PPreferences
+import com.example.twopchat.data.Localizations
 import com.example.twopchat.ui.chat.AlbumPreviewModal
 import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.CircularProgressIndicator
@@ -1854,27 +1855,36 @@ private fun GroupChatHeader(
     val hapticHeader = androidx.compose.ui.platform.LocalHapticFeedback.current
     Surface(
         color = surfaceColor,
-        shadowElevation = 2.dp,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (!isSearchMode) {
-                IconButton(onClick = {
-                    hapticHeader.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
-                    controller.onBack()
-                }) {
+                IconButton(
+                    onClick = {
+                        hapticHeader.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                        controller.onBack()
+                    },
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(onSurfaceColor.copy(alpha = 0.04f), CircleShape)
+                ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        painterResource(R.drawable.ic_back_arrow),
                         contentDescription = "Back",
-                        tint = onSurfaceColor
+                        tint = onSurfaceColor,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
+
+                Spacer(Modifier.width(8.dp))
 
                 // Group Avatar
                 val initials = state.title.take(2).uppercase().ifBlank { "GP" }
@@ -1900,7 +1910,7 @@ private fun GroupChatHeader(
 
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(43.dp)
                         .clip(CircleShape)
                         .background(avatarColor)
                         .clickable {
@@ -1921,7 +1931,7 @@ private fun GroupChatHeader(
                             text = initials,
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
+                            fontSize = 14.sp
                         )
                     }
                 }
@@ -1939,8 +1949,8 @@ private fun GroupChatHeader(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             state.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             color = onSurfaceColor
@@ -1950,7 +1960,7 @@ private fun GroupChatHeader(
                         if (state.typingStatus.isNotBlank()) {
                             Text(
                                 state.typingStatus,
-                                fontSize = 12.sp,
+                                fontSize = 13.sp,
                                 color = Color(0xFF43A047),
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -1979,7 +1989,7 @@ private fun GroupChatHeader(
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Search",
-                        tint = primaryColor
+                        tint = onSurfaceColor
                     )
                 }
 
@@ -2844,6 +2854,8 @@ private fun GroupComposer(
     val surfaceColor = MaterialTheme.colorScheme.surface
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    val context = LocalContext.current
+    val appLanguage = remember(context) { P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
 
     Column(
         modifier = Modifier
@@ -2906,7 +2918,11 @@ private fun GroupComposer(
             recordingElapsedMs = recordingElapsedMs,
             isEditing = false,
             inputText = draft,
-            placeholder = state.composerPlaceholder.ifBlank { "Сообщение..." },
+            placeholder = if (state.composerPlaceholder.isBlank() || state.composerPlaceholder == "Message") {
+                Localizations.getString("write_placeholder", appLanguage)
+            } else {
+                state.composerPlaceholder
+            },
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
             onSurfaceColor = onSurfaceColor,
