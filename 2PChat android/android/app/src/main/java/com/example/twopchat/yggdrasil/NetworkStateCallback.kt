@@ -50,6 +50,9 @@ class NetworkStateCallback(val context: Context) : ConnectivityManager.NetworkCa
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
             .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
+            // A VPN inherits its underlying WIFI/CELLULAR transport. Without
+            // this capability our own tun1 can trigger another reconnect cycle.
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
             .build()
 
         val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager

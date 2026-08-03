@@ -1103,10 +1103,13 @@ private fun NodeDetailContent(
                 val ping = trackerPings[name]
                 val announceRtt = Regex("announce_rtt=(\\d+)ms").find(status)?.groupValues?.get(1)?.toLongOrNull()
                 val pending = status.contains("PENDING", ignoreCase = true)
+                val failed = status.contains("FAIL", ignoreCase = true)
                 val pingText = if (announceRtt != null) {
                      "RTT ${announceRtt}ms"
                 } else if (pending) {
                     if (appLanguage == "Русский") "опрос..." else "probing..."
+                } else if (failed) {
+                    if (appLanguage == "Русский") "ошибка" else "failed"
                 } else if (ping == null) {
                     if (appLanguage == "Русский") "нет данных" else "not checked"
                 } else if (ping == -2L) {

@@ -169,6 +169,53 @@ def test_qr_and_classic_name_code_round_trip_through_tracker(monkeypatch):
     assert result[0]["verified"] is True
 
 
+def test_announce_returns_completed_success_when_another_channel_hangs(monkeypatch):
+    bridge = _load_discovery_bridge()
+
+    class FakeProvider:
+        observed_addresses = ()
+
+        def __init__(self, hangs=False):
+            self.hangs = hangs
+
+        async def announce(self, *_args, **_kwargs):
+            if self.hangs:
+                await asyncio.Event().wait()
+            return object()
+
+    monkeypatch.setattr(bridge, "CLEARNET_TRACKERS", ("Fast", "Slow"))
+    monkeypatch.setattr(bridge, "YGG_TRACKERS", ())
+    monkeypatch.setattr(bridge, "_dht_enabled", False)
+    monkeypatch.setattr(bridge, "ANNOUNCE_BATCH_TIMEOUT_SECONDS", 0.1)
+    monkeypatch.setattr(
+        bridge,
+        "get_tracker_by_name",
+        lambda name: SimpleNamespace(
+            discovery_scheme="http-tracker",
+            announce_url=f"https://{name.lower()}.invalid/announce",
+        ),
+    )
+    monkeypatch.setattr(
+        bridge,
+        "get_discovery_provider",
+        lambda _scheme, **kwargs: FakeProvider("slow.invalid" in kwargs["tracker_url"]),
+    )
+    monkeypatch.setattr(bridge, "_discover_public_ipv4_stun", lambda: None)
+    assert bridge._announce_tracker_names([
+        SimpleNamespace(host="192.0.2.10", port=50001),
+    ]) == ["Fast", "Slow"]
+
+    assert bridge.announce_peer_endpoints(
+        "alice",
+        "short-fingerprint",
+        '["192.0.2.10"]',
+        50001,
+        "shared-code",
+    ) is True
+    assert bridge.tracker_diagnostics["Fast"]["announce"].startswith("OK")
+    assert bridge.tracker_diagnostics["Slow"]["announce"] == "FAIL (Timed out)"
+
+
 def test_qr_candidates_are_verified_sequentially_in_the_supplied_order(monkeypatch):
     bridge = _load_discovery_bridge()
     attempted = []
@@ -492,6 +539,35 @@ def test_background_reconnect_sends_identity_before_session_callback(monkeypatch
 
     asyncio.run(scenario())
     assert events[:2] == ["identity_info", "callback"]
+
+
+def test_background_reconnect_deduplicates_an_in_flight_peer(monkeypatch):
+    bridge = _load_discovery_bridge()
+    scheduled = []
+
+    class FakeFuture:
+        def __init__(self):
+            self.callback = None
+
+        def add_done_callback(self, callback):
+            self.callback = callback
+
+    def fake_schedule(coro, _loop):
+        coro.close()
+        future = FakeFuture()
+        scheduled.append(future)
+        return future
+
+    bridge.loop = object()
+    monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", fake_schedule)
+
+    assert bridge.reconnect_peer_session("foxy", "192.0.2.20:50001", "remote-fp") is True
+    assert bridge.reconnect_peer_session("foxy", "192.0.2.20:50001", "remote-fp") is True
+    assert len(scheduled) == 1
+
+    scheduled[0].callback(scheduled[0])
+    assert bridge.reconnect_peer_session("foxy", "192.0.2.20:50001", "remote-fp") is True
+    assert len(scheduled) == 2
 
 
 def test_account_shutdown_closes_sessions_and_stops_identity_listener(monkeypatch):

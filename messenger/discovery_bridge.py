@@ -59,6 +59,8 @@ outgoing_file_futures = {}
 cancelled_outgoing_message_ids = set()
 _outgoing_file_lock = threading.Lock()
 peer_operation_locks = {}
+_reconnect_lock = threading.Lock()
+_reconnect_in_flight = set()
 peer_fingerprint_to_name = {}
 incoming_files = {}
 incoming_file_starts = {}
@@ -73,6 +75,7 @@ INCOMING_FILE_RATE_WINDOW_SECONDS = 60
 MAX_INCOMING_FILE_STARTS_PER_WINDOW = 8
 INCOMING_FILE_TTL_SECONDS = 120
 MAX_ENCRYPTED_CHUNK_SIZE = MAX_FILE_CHUNK_PAYLOAD_SIZE
+ANNOUNCE_BATCH_TIMEOUT_SECONDS = 12.0
 MAX_CONCURRENT_HANDSHAKES = 10
 MAX_FILE_PREVIEW_BASE64_CHARS = 96 * 1024
 MAX_FILE_PREVIEW_BYTES = 64 * 1024
@@ -1248,6 +1251,7 @@ def announce_peer_endpoints(
                 if not _dht_enabled:
                     _set_tracker_diagnostic(MAINLINE_DHT, "announce", "DISABLED BY USER")
                     return 0
+                _set_tracker_diagnostic(MAINLINE_DHT, "announce", "PENDING")
                 dht_started = time.monotonic()
                 try:
                     dht = get_discovery_provider(
@@ -1298,24 +1302,42 @@ def announce_peer_endpoints(
             # Launch STUN discovery in background without blocking tracker announcements
             asyncio.create_task(asyncio.to_thread(_discover_public_ipv4_stun))
 
-            combined_results = await asyncio.gather(
-                *[_announce_tracker(tracker_name) for tracker_name in tracker_names],
-                _announce_dht(),
-                return_exceptions=True,
+            tracker_tasks = {
+                tracker_name: asyncio.create_task(_announce_tracker(tracker_name))
+                for tracker_name in tracker_names
+            }
+            dht_task = asyncio.create_task(_announce_dht())
+            all_tasks = [*tracker_tasks.values(), dht_task]
+            done, pending = await asyncio.wait(
+                all_tasks,
+                timeout=ANNOUNCE_BATCH_TIMEOUT_SECONDS,
             )
-            tracker_results = combined_results[:len(tracker_names)]
-            dht_result = combined_results[len(tracker_names)]
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
             total_success = 0
-            for tracker_name, result in zip(tracker_names, tracker_results):
-                if isinstance(result, Exception):
-                    print(f"Tracker announce task crashed for {tracker_name}: {result}")
+            for tracker_name, task in tracker_tasks.items():
+                if task in pending:
+                    _set_tracker_diagnostic(tracker_name, "announce", "FAIL (Timed out)")
+                    continue
+                try:
+                    result = task.result()
+                except Exception as exc:
+                    _set_tracker_diagnostic(tracker_name, "announce", f"FAIL ({exc})")
+                    print(f"Tracker announce task crashed for {tracker_name}: {exc}")
                     continue
                 total_success += result
                 print(f"Tracker {tracker_name} accepted {result} announce registrations.")
-            if not isinstance(dht_result, Exception):
-                total_success += dht_result
+            if dht_task in pending:
+                _set_tracker_diagnostic(MAINLINE_DHT, "announce", "FAIL (Timed out)")
             else:
-                print(f"Mainline DHT announce task crashed: {dht_result}")
+                dht_result = dht_task.result()
+                if not isinstance(dht_result, Exception):
+                    total_success += dht_result
+                else:
+                    print(f"Mainline DHT announce task crashed: {dht_result}")
 
             return total_success
 
@@ -2508,6 +2530,8 @@ def _clear_account_runtime_state():
         outgoing_file_futures.clear()
         cancelled_outgoing_message_ids.clear()
     peer_operation_locks.clear()
+    with _reconnect_lock:
+        _reconnect_in_flight.clear()
     peer_fingerprint_to_name.clear()
     incoming_file_starts.clear()
     for transfer_key in list(incoming_files):
@@ -2714,6 +2738,17 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
         print(f"[RECONNECT] Suppressing reconnect to '{peer_name}' (fingerprint change pending approval)")
         return False
 
+    reconnect_key = expected_fingerprint or peer_name.casefold()
+    with _reconnect_lock:
+        if reconnect_key in _reconnect_in_flight:
+            print(f"[RECONNECT] Reconnect to '{peer_name}' is already in progress")
+            return True
+        _reconnect_in_flight.add(reconnect_key)
+
+    def _finish_reconnect(_future=None):
+        with _reconnect_lock:
+            _reconnect_in_flight.discard(reconnect_key)
+
     # Close old session or verify health
     session = _session_for_peer(peer_name, expected_fingerprint)
     if session and session.is_online:
@@ -2721,6 +2756,7 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
             probe_fut = asyncio.run_coroutine_threadsafe(session.send_reliable({"type": "heartbeat"}), loop)
             probe_fut.result(timeout=3.0)
             print(f"[RECONNECT] Session with {peer_name} is healthy and responsive; keeping it")
+            _finish_reconnect()
             return True
         except Exception as probe_err:
             print(f"[RECONNECT] Session with {peer_name} failed health probe ({probe_err}); replacing stale session")
@@ -2788,8 +2824,13 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
             print(f"[RECONNECT] Error during reconnect sequence: {e}")
             return False
 
-    asyncio.run_coroutine_threadsafe(_reconnect_async(), loop)
-    return True
+    try:
+        reconnect_future = asyncio.run_coroutine_threadsafe(_reconnect_async(), loop)
+        reconnect_future.add_done_callback(_finish_reconnect)
+        return True
+    except Exception:
+        _finish_reconnect()
+        raise
 
 def is_upnp_mapped() -> bool:
     try:

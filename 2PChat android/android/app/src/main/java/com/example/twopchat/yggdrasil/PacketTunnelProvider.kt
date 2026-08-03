@@ -19,8 +19,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 private const val TAG = "PacketTunnelProvider"
-const val KEY_ENABLE_CHROME_FIX = "enable_chrome_fix"
-const val KEY_DNS_SERVERS = "dns_servers"
 private const val PREF_YGG_RUNTIME_IP = "yggdrasil_runtime_ip"
 private const val PREF_YGG_RUNTIME_STATE = "yggdrasil_runtime_state"
 private const val PREF_YGG_RUNTIME_PEERS = "yggdrasil_runtime_peers"
@@ -209,21 +207,11 @@ open class PacketTunnelProvider: VpnService() {
             builder.setMetered(false)
         }
 
-        val preferences = yggdrasilPrefs(this)
-        val serverString = preferences.getString(KEY_DNS_SERVERS, "")
-        val dnsServers = if (serverString.isNullOrBlank()) {
-            // Fallback to standard public DNS servers so DNS queries don't fail when VPN is running
-            listOf("1.1.1.1", "8.8.8.8", "2001:4860:4860::8888", "2606:4700:4700::1111")
-        } else {
-            serverString.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        }
-        dnsServers.forEach {
-            Log.i(TAG, "Using DNS server $it")
-            builder.addDnsServer(it)
-        }
-        if (preferences.getBoolean(KEY_ENABLE_CHROME_FIX, false)) {
-            builder.addRoute("2001:4860:4860::8888", 128)
-        }
+        // This is a split tunnel which only owns 200::/7. Advertising public
+        // DNS servers on this VPN makes Android bind resolver traffic to tun1,
+        // even though those addresses cannot be carried by Yggdrasil. Keep DNS
+        // on the underlying Wi-Fi/mobile network instead. Device logs showed
+        // the previous setup breaking every tracker lookup after tun1 started.
 
         parcel = builder.establish()
         val parcel = parcel
