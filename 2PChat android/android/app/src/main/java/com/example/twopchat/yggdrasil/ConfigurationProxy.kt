@@ -29,7 +29,9 @@ class ConfigurationProxy(applicationContext: Context) {
             "tls://ygg.mikaela.info:443",
             "tcp://ygg.tomasz.fi:18227",
             "tls://ygg.kldnet.ru:8362",
-            "tcp://ygg.t5.ru:443"
+            "tcp://ygg.t5.ru:443",
+            "tls://ygg.losiy.ru:443",
+            "tcp://ygg.in.tula.ru:65535"
         )
 
         // Offline snapshot of every TCP/TLS endpoint marked online by the
