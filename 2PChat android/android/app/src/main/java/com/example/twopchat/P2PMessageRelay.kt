@@ -128,8 +128,17 @@ object P2PMessageRelay {
         return success
     }
 
+    @Volatile
+    private var lastManualRefreshAt = 0L
+
     fun triggerImmediateReconnect(context: Context) =
         relayScope.launch {
+            val now = System.currentTimeMillis()
+            if (now - lastManualRefreshAt < 1000L) {
+                log(context, "Debounced rapid manual refresh click", "INFO")
+                return@launch
+            }
+            lastManualRefreshAt = now
             val appContext = context.applicationContext
             // Do not reconnect with stale discovery data while a fresh
             // announcement is still running on another coroutine.
@@ -667,7 +676,7 @@ object P2PMessageRelay {
             }
             GroupChatCoordinator.initialize(appContext)
             // Start the Python P2P listener
-            PythonBridge.startP2pListener(port)
+            PythonBridge.startP2pListener(port, P2PPreferences.isUpnpEnabled(appContext))
             startLocalDiscovery(appContext, port)
             
             // Register incoming message callback from Python
@@ -1573,6 +1582,11 @@ object P2PMessageRelay {
 
                         if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
                             log(context, "Blocked avatar share while a peer identity change awaits confirmation", "ERROR")
+                            return@launch
+                        }
+
+                        if (!PythonBridge.isPeerOnline(peerName, expectedFingerprint)) {
+                            log(context, "Peer $peerName is offline; skipping avatar share")
                             return@launch
                         }
                         

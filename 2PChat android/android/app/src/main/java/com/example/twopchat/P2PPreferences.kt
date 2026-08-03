@@ -16,7 +16,11 @@ object P2PPreferences {
     const val LISTENER_PORT = "listener_port"
     const val WIFI_DISCOVERY = "settings_wifi"
     const val STICKER_CACHE_LIMIT_MB = "settings_sticker_cache_limit_mb"
+    const val UPNP_ENABLED = "settings_upnp"
     const val DEFAULT_LISTENER_PORT = 50001
+
+    fun isUpnpEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(UPNP_ENABLED, false)
     const val DEFAULT_STICKER_CACHE_LIMIT_MB = 100
     val STICKER_CACHE_LIMIT_OPTIONS_MB = listOf(50, 100, 250, 500)
     const val MIN_LISTENER_PORT = 1024

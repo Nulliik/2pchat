@@ -64,6 +64,39 @@ _reconnect_in_flight = set()
 peer_fingerprint_to_name = {}
 incoming_files = {}
 incoming_file_starts = {}
+_banned_ips = {}
+_noisy_ip_counts = {}
+_ip_ban_lock = threading.Lock()
+
+def is_ip_banned(ip_str: str) -> bool:
+    if not ip_str:
+        return False
+    now = time.time()
+    with _ip_ban_lock:
+        banned_until = _banned_ips.get(ip_str, 0)
+        if now < banned_until:
+            return True
+        if banned_until > 0 and now >= banned_until:
+            _banned_ips.pop(ip_str, None)
+        return False
+
+def record_noisy_ip(ip_str: str):
+    if not ip_str or ip_str in ("127.0.0.1", "::1", "localhost"):
+        return
+    now = time.time()
+    with _ip_ban_lock:
+        count, first_time = _noisy_ip_counts.get(ip_str, (0, now))
+        if now - first_time > 60:
+            count, first_time = 0, now
+        count += 1
+        _noisy_ip_counts[ip_str] = (count, first_time)
+        if count >= 3:
+            _banned_ips[ip_str] = now + 900  # Ban noisy IP for 15 minutes
+            print(f"[SECURITY] Banned noisy scanner IP {ip_str} for 15 minutes due to corrupt frame headers")
+
+def is_peer_online(peer_name: str, expected_fingerprint=None) -> bool:
+    session = _session_for_peer(peer_name, expected_fingerprint)
+    return session is not None and getattr(session, "is_online", False)
 MOBILE_ACK_TIMEOUT = 3.0
 MOBILE_MAX_RETRIES = 1
 MAX_CONSECUTIVE_SESSION_PROBE_FAILURES = 2
@@ -1430,10 +1463,11 @@ def _notify_session_established(peer_name, peer_fingerprint, endpoint, transport
         print("Error invoking session listener callback:", callback_error)
         return False
 
-def start_p2p_listener(port=50001):
+def start_p2p_listener(port=50001, enable_upnp=False):
     """
     Start the background asyncio event loop and dual-stack listener thread.
     Listens on both 0.0.0.0 (IPv4) and :: (IPv6/Yggdrasil) simultaneously.
+    UPnP port mapping is disabled by default and only enabled if enable_upnp is True.
     """
     global loop, listener_port, _listener_thread, _listener_task, _listener_stopped
     global _runtime_shutdown_requested
@@ -1444,11 +1478,12 @@ def start_p2p_listener(port=50001):
             return True
         _runtime_shutdown_requested = False
 
-    try:
-        from messenger.core.upnp import setup_upnp_in_background
-        setup_upnp_in_background(port)
-    except Exception as upnp_err:
-        print("[UPNP] Failed to trigger background setup:", upnp_err)
+    if enable_upnp:
+        try:
+            from messenger.core.upnp import setup_upnp_in_background
+            setup_upnp_in_background(port)
+        except Exception as upnp_err:
+            print("[UPNP] Failed to trigger background setup:", upnp_err)
 
     ready = threading.Event()
     stopped = threading.Event()
@@ -1541,12 +1576,18 @@ async def _listen_loop_dual(port: int):
 
 async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_store):
     session = None
+    ip_str = ""
     try:
         peername = writer.get_extra_info("peername")
-        if not ipv4_enabled and peername and ":" not in str(peername[0]):
+        ip_str = str(peername[0]) if peername else ""
+        if ip_str and is_ip_banned(ip_str):
             writer.close()
             await writer.wait_closed()
-            print(f"Rejected incoming IPv4 connection from {peername[0]}: IPv4 is disabled")
+            return
+        if not ipv4_enabled and peername and ":" not in ip_str:
+            writer.close()
+            await writer.wait_closed()
+            print(f"Rejected incoming IPv4 connection from {ip_str}: IPv4 is disabled")
             return
         _setup_socket_keepalive(writer)
         session = Session(
@@ -1598,6 +1639,8 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
             or "refusing self connection" in str(e).lower()
         )
         if is_network_noise:
+            if ip_str:
+                record_noisy_ip(ip_str)
             peername_str = f" from {peername}" if 'peername' in locals() and peername else ""
             print(f"Closed invalid or noisy incoming connection{peername_str}: {e}")
         else:

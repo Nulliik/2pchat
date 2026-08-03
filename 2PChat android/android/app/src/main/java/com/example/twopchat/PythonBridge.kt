@@ -635,13 +635,24 @@ object PythonBridge {
         }
     }
 
-    fun startP2pListener(port: Int = 50001) {
+    fun startP2pListener(port: Int, enableUpnp: Boolean = false) {
         if (!isInitialized) return
         try {
             val bridge = getDiscoveryBridgeModule() ?: return
-            bridge.callAttr("start_p2p_listener", port)
+            bridge.callAttr("start_p2p_listener", port, enableUpnp)
         } catch (e: Exception) {
             Log.e(TAG, "Error starting P2P listener", e)
+        }
+    }
+
+    fun isPeerOnline(peerName: String, expectedFingerprint: String? = null): Boolean {
+        if (!isInitialized) return false
+        return try {
+            val bridge = getDiscoveryBridgeModule() ?: return false
+            val isOnline = bridge.callAttr("is_peer_online", peerName, expectedFingerprint)
+            isOnline.toBoolean()
+        } catch (_: Exception) {
+            false
         }
     }
 
