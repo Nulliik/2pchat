@@ -217,10 +217,20 @@ open class PacketTunnelProvider: VpnService() {
         // on the underlying Wi-Fi/mobile network instead. Device logs showed
         // the previous setup breaking every tracker lookup after tun1 started.
 
-        parcel = builder.establish()
+        var establishedParcel: ParcelFileDescriptor? = null
+        for (attempt in 1..3) {
+            establishedParcel = builder.establish()
+            if (establishedParcel != null && establishedParcel.fileDescriptor.valid()) {
+                break
+            }
+            Log.w(TAG, "VPN establish returned null on attempt $attempt/3, waiting for kernel FD release...")
+            try { Thread.sleep(350L) } catch (_: InterruptedException) {}
+        }
+        parcel = establishedParcel
         val parcel = parcel
         if (parcel == null || !parcel.fileDescriptor.valid()) {
-            stop()
+            Log.e(TAG, "VPN establishment failed after 3 attempts")
+            stop(stopService = false)
             return
         }
 
@@ -325,6 +335,7 @@ open class PacketTunnelProvider: VpnService() {
                 Log.w(TAG, "Tunnel packet worker stopped unexpectedly; rebuilding it")
                 if (started.get()) {
                     stop(stopService = false)
+                    try { Thread.sleep(500L) } catch (_: InterruptedException) {}
                     start()
                 }
                 return
