@@ -109,18 +109,37 @@ object P2PMessageRelay {
         }
     }
 
+    private data class TransportAnnounceState(
+        val username: String,
+        val fingerprint: String,
+        val port: Int,
+        val ipv4Enabled: Boolean,
+        val upnpEnabled: Boolean
+    )
+
+    @Volatile
+    private var lastAnnouncedTransportState: TransportAnnounceState? = null
+
     private suspend fun refreshAnnouncementNow(context: Context): Boolean {
         val prefs = P2PPreferences.prefs(context)
         val username = prefs.getString("username_profile", "").orEmpty()
         val fingerprint = PythonBridge.getLocalFingerprint()
         if (username.isBlank() || fingerprint.length < 40) return false
+        val port = listenerPort(context)
+        val ipv4Enabled = prefs.getBoolean("settings_ipv4", true)
+        val upnpEnabled = P2PPreferences.isUpnpEnabled(context)
+        val newState = TransportAnnounceState(username, fingerprint, port, ipv4Enabled, upnpEnabled)
+        val isChanged = lastAnnouncedTransportState != newState
         val success = PythonBridge.announceSelf(
             username,
             fingerprint,
-            listenerPort(context),
-            force = true,
+            port,
+            force = isChanged,
         )
-        log(context, "Forced announce after transport setting change: $success")
+        if (success) {
+            lastAnnouncedTransportState = newState
+        }
+        log(context, "Announce self (forced=$isChanged): $success")
         setLocalDiscoveryEnabled(
             context,
             prefs.getBoolean(P2PPreferences.WIFI_DISCOVERY, true),

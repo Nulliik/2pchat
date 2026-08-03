@@ -44,10 +44,13 @@ internal class P2POutboundMessenger(
         }
         scope.launch {
             try {
-                if (isPaused(context, peerName)) return@launch postResult(onResult, false)
-                log(context, "Sending secure message via Python transport", "INFO", null)
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
+                if (peerName != "Direct Peer" && !PythonBridge.isPeerOnline(peerName, fingerprint)) {
+                    log(context, "Peer $peerName is offline; message will be delivered via offline queue when connected", "INFO", null)
+                    return@launch postResult(onResult, false)
+                }
+                log(context, "Sending secure message via Python transport", "INFO", null)
                 val success = PythonBridge.sendP2pMessage(peerName, endpoint, text, fingerprint)
                 if (success) {
                     peerFailureBackoffMs.remove(peerName)
@@ -317,6 +320,10 @@ internal class P2POutboundMessenger(
                 }
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
+                if (pending.isNotEmpty() && !PythonBridge.isPeerOnline(peerName, fingerprint)) {
+                    log(context, "Peer $peerName is offline; keeping ${pending.size} pending messages in offline queue", "INFO", null)
+                    return@launch
+                }
                 for (message in pending) {
                     if (isPaused(context, peerName)) {
                         log(context, "Paused offline queue for $peerName after an identity change", "ERROR", null)
