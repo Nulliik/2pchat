@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -176,8 +177,14 @@ fun ChatsTab(
 
     val totalUnreadDirect = remember(peers) { peers.sumOf { it.unreadCount } }
     val totalUnreadGroups = remember(groupSummaries) { groupSummaries.sumOf { it.unreadCount } }
-    val pagerState = rememberPagerState(initialPage = 0) { 2 }
+    var lastSelectedChatsTab by rememberSaveable { mutableIntStateOf(com.example.twopchat.group.runtime.GroupChatCoordinator.activeChatsSubTab) }
+    val pagerState = rememberPagerState(initialPage = lastSelectedChatsTab) { 2 }
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(pagerState.currentPage) {
+        lastSelectedChatsTab = pagerState.currentPage
+        com.example.twopchat.group.runtime.GroupChatCoordinator.activeChatsSubTab = pagerState.currentPage
+    }
 
     Column(
         modifier = Modifier.fillMaxSize()

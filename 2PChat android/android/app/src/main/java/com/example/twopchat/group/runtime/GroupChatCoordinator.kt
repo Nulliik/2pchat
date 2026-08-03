@@ -133,6 +133,9 @@ object GroupChatCoordinator {
     private const val PENDING_DEPARTURE_PREFIX = "pending_group_departure_"
 
     @Volatile
+    var activeChatsSubTab: Int = 0
+
+    @Volatile
     private var scope = newRuntimeScope()
     private val emitMutex = Mutex()
     private val controlMutex = Mutex()

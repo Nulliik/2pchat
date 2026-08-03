@@ -16,6 +16,7 @@ class AndroidGroupUiController(
     override fun onBack() = onBackNavigation()
 
     override fun openGroup(groupId: String) {
+        GroupChatCoordinator.activeChatsSubTab = 1
         GroupChatCoordinator.chatState(groupId)
         onOpenGroupNavigation(groupId)
     }
