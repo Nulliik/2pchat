@@ -635,7 +635,7 @@ object PythonBridge {
         }
     }
 
-    fun startP2pListener(port: Int, enableUpnp: Boolean = false) {
+    fun startP2pListener(port: Int = 50001, enableUpnp: Boolean = false) {
         if (!isInitialized) return
         try {
             val bridge = getDiscoveryBridgeModule() ?: return

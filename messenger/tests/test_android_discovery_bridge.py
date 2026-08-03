@@ -913,3 +913,35 @@ def test_group_signature_api_bounds_and_malformed_inputs(monkeypatch):
         "payload",
         base64.b64encode(b"short").decode("ascii"),
     )
+
+
+def test_noisy_ip_banning_mechanism():
+    bridge = _load_discovery_bridge()
+    test_ip = "198.51.100.42"
+    assert bridge.is_ip_banned(test_ip) is False
+    
+    bridge.record_noisy_ip(test_ip)
+    bridge.record_noisy_ip(test_ip)
+    assert bridge.is_ip_banned(test_ip) is False
+    
+    bridge.record_noisy_ip(test_ip)
+    assert bridge.is_ip_banned(test_ip) is True
+
+
+def test_is_peer_online_query():
+    bridge = _load_discovery_bridge()
+    class FakeOnlineSession:
+        is_online = True
+        peer_label = "alice"
+    class FakeOfflineSession:
+        is_online = False
+        peer_label = "bob"
+        
+    bridge.active_sessions["fp-alice"] = FakeOnlineSession()
+    bridge.peer_fingerprint_to_name["fp-alice"] = "alice"
+    bridge.active_sessions["fp-bob"] = FakeOfflineSession()
+    bridge.peer_fingerprint_to_name["fp-bob"] = "bob"
+    
+    assert bridge.is_peer_online("alice") is True
+    assert bridge.is_peer_online("bob") is False
+    assert bridge.is_peer_online("charlie") is False
