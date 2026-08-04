@@ -77,6 +77,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
@@ -3427,11 +3428,18 @@ private fun GroupPollCard(
             color = Color.White,
         )
         poll.options.forEach { option ->
-            val progress = if (poll.totalVotes == 0) {
+            val targetProgress = if (poll.totalVotes == 0) {
                 0f
             } else {
                 option.voteCount.toFloat() / poll.totalVotes.toFloat()
             }
+            val animatedProgress by animateFloatAsState(
+                targetValue = targetProgress,
+                animationSpec = MotionTokens.ResponsiveSpring,
+                label = "pollProgress_${option.id}"
+            )
+            val percentInt = (targetProgress * 100).toInt()
+
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3446,7 +3454,7 @@ private fun GroupPollCard(
                 border = if (option.isVotedByMe) {
                     BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
                 } else {
-                    null
+                    BorderStroke(0.5.dp, Color.White.copy(alpha = 0.06f))
                 },
             ) {
                 Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
@@ -3455,23 +3463,37 @@ private fun GroupPollCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (option.isVotedByMe) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Voted",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Text(
+                                text = option.text,
+                                fontSize = 13.sp,
+                                fontWeight = if (option.isVotedByMe) FontWeight.SemiBold else FontWeight.Normal,
+                                color = Color.White,
+                            )
+                        }
                         Text(
-                            text = option.text,
-                            modifier = Modifier.weight(1f),
-                            fontSize = 13.sp,
-                            color = Color.White,
-                        )
-                        Text(
-                            text = "${option.voteCount}",
+                            text = if (poll.totalVotes > 0) "$percentInt% (${option.voteCount})" else "${option.voteCount}",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White.copy(alpha = 0.75f),
+                            color = if (option.isVotedByMe) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.75f),
                         )
                     }
-                    Spacer(Modifier.height(5.dp))
+                    Spacer(Modifier.height(6.dp))
                     LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier.fillMaxWidth().height(3.dp),
+                        progress = { animatedProgress },
+                        modifier = Modifier.fillMaxWidth().height(4.dp),
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = Color.White.copy(alpha = 0.12f),
                     )

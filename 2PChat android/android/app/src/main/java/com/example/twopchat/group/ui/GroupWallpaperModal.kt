@@ -23,6 +23,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -398,13 +400,13 @@ fun GroupWallpaperModal(
                             val isSelected = selectedPreset == preset
                             Box(
                                 modifier = Modifier
-                                    .size(width = 72.dp, height = 52.dp)
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .size(width = 76.dp, height = 98.dp)
+                                    .clip(RoundedCornerShape(14.dp))
                                     .background(Brush.linearGradient(preset.colors))
                                     .border(
                                         width = if (isSelected) 2.5.dp else 1.dp,
-                                        color = if (isSelected) primaryColor else Color.White.copy(alpha = 0.2f),
-                                        shape = RoundedCornerShape(12.dp)
+                                        color = if (isSelected) primaryColor else Color.White.copy(alpha = 0.25f),
+                                        shape = RoundedCornerShape(14.dp)
                                     )
                                     .clickable {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -413,21 +415,59 @@ fun GroupWallpaperModal(
                                         scale = 1f
                                         offset = Offset.Zero
                                         previewBitmap = createPresetBitmap(preset)
-                                    },
-                                contentAlignment = Alignment.BottomCenter
+                                    }
                             ) {
-                                Surface(
-                                    color = Color.Black.copy(alpha = 0.6f),
-                                    modifier = Modifier.fillMaxWidth()
+                                // Mini mock chat bubbles inside thumbnail preview
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 6.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Text(
-                                        text = if (appLanguage == "Русский") preset.titleRu else preset.titleEn,
-                                        color = Color.White,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.padding(vertical = 2.dp)
+                                    Box(
+                                        modifier = Modifier
+                                            .width(42.dp)
+                                            .height(14.dp)
+                                            .background(Color(0xFF1E2732), RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomEnd = 6.dp, bottomStart = 2.dp))
                                     )
+                                    Box(
+                                        modifier = Modifier
+                                            .width(42.dp)
+                                            .height(14.dp)
+                                            .align(Alignment.End)
+                                            .background(primaryColor, RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 6.dp, bottomEnd = 2.dp))
+                                    )
+                                }
+
+                                Surface(
+                                    color = Color.Black.copy(alpha = 0.65f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .align(Alignment.BottomCenter)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 3.dp, horizontal = 2.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = primaryColor,
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                            Spacer(Modifier.width(2.dp))
+                                        }
+                                        Text(
+                                            text = if (appLanguage == "Русский") preset.titleRu else preset.titleEn,
+                                            color = Color.White,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 1
+                                        )
+                                    }
                                 }
                             }
                         }

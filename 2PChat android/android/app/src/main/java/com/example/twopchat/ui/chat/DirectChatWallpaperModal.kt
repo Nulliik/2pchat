@@ -16,6 +16,8 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -390,16 +392,16 @@ fun DirectChatWallpaperModal(
                             val isSelected = selectedPreset == preset && previewBitmap != null
                             Box(
                                 modifier = Modifier
-                                    .size(width = 72.dp, height = 48.dp)
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .size(width = 76.dp, height = 98.dp)
+                                    .clip(RoundedCornerShape(14.dp))
                                     .background(
                                         brush = Brush.linearGradient(preset.colors),
-                                        shape = RoundedCornerShape(12.dp)
+                                        shape = RoundedCornerShape(14.dp)
                                     )
                                     .border(
-                                        width = if (isSelected) 2.dp else 1.dp,
-                                        color = if (isSelected) primaryColor else Color.White.copy(alpha = 0.3f),
-                                        shape = RoundedCornerShape(12.dp)
+                                        width = if (isSelected) 2.5.dp else 1.dp,
+                                        color = if (isSelected) primaryColor else Color.White.copy(alpha = 0.25f),
+                                        shape = RoundedCornerShape(14.dp)
                                     )
                                     .clickable {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -409,19 +411,60 @@ fun DirectChatWallpaperModal(
                                         val targetW = containerSize.width.coerceAtLeast(720)
                                         val targetH = containerSize.height.coerceAtLeast(1280)
                                         previewBitmap = createPresetBitmap(preset, targetW, targetH)
-                                    },
-                                contentAlignment = Alignment.Center
+                                    }
                             ) {
-                                Text(
-                                    text = if (appLanguage == "Русский") preset.titleRu else preset.titleEn,
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    textAlign = TextAlign.Center,
+                                // Mini mock chat bubbles inside thumbnail preview
+                                Column(
                                     modifier = Modifier
-                                        .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
-                                        .padding(horizontal = 5.dp, vertical = 2.dp)
-                                )
+                                        .fillMaxSize()
+                                        .padding(horizontal = 6.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .width(42.dp)
+                                            .height(14.dp)
+                                            .background(Color(0xFF1E2732), RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomEnd = 6.dp, bottomStart = 2.dp))
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .width(42.dp)
+                                            .height(14.dp)
+                                            .align(Alignment.End)
+                                            .background(primaryColor, RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 6.dp, bottomEnd = 2.dp))
+                                    )
+                                }
+
+                                Surface(
+                                    color = Color.Black.copy(alpha = 0.65f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .align(Alignment.BottomCenter)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 3.dp, horizontal = 2.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = primaryColor,
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                            Spacer(Modifier.width(2.dp))
+                                        }
+                                        Text(
+                                            text = if (appLanguage == "Русский") preset.titleRu else preset.titleEn,
+                                            color = Color.White,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
