@@ -29,6 +29,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -159,6 +160,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -1128,141 +1130,377 @@ fun GroupChatScreen(
         )
     }
 
-    // Message Actions Options Dialog (for long press or extra menu)
+    // Message Actions Options Dialog (matching Direct Chat Screenshot 1)
     selectedMessageForOptions?.let { message ->
         AlertDialog(
             onDismissRequest = { selectedMessageForOptions = null },
-            title = { Text("Действия с сообщением", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            confirmButton = {},
+            dismissButton = {},
+            containerColor = surfaceColor,
+            shape = RoundedCornerShape(24.dp),
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = "Действия с сообщением",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryColor,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+
+                    // Quick Emoji Reactions
                     if (message.canReact) {
-                        Text("Быстрые реакции", fontSize = 12.sp, color = primaryColor, fontWeight = FontWeight.Bold)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .horizontalScroll(rememberScrollState()),
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            val quickEmojis = listOf("❤️", "👍", "🔥", "😂", "😮", "😢", "🎉")
+                            val quickEmojis = listOf("👍", "❤️", "🔥", "😂", "😮", "😢", "👏", "💩", "🎉", "💯")
                             quickEmojis.forEach { emoji ->
+                                val userReaction = message.reactions.find { it.emoji == emoji }
+                                val isSelected = userReaction?.reactedByMe == true
+                                val bgColor = if (isSelected) primaryColor else primaryColor.copy(alpha = 0.12f)
+
                                 Surface(
-                                    onClick = {
-                                        controller.toggleReaction(state.groupId, message.messageId, emoji)
-                                        selectedMessageForOptions = null
-                                    },
-                                    shape = CircleShape,
-                                    color = primaryColor.copy(alpha = 0.12f),
-                                    modifier = Modifier.size(40.dp)
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = bgColor,
+                                    border = if (isSelected) BorderStroke(1.5.dp, primaryColor) else null,
+                                    modifier = Modifier
+                                        .height(40.dp)
+                                        .clickable {
+                                            controller.toggleReaction(state.groupId, message.messageId, emoji)
+                                            selectedMessageForOptions = null
+                                        }
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(emoji, fontSize = 18.sp)
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(text = emoji, fontSize = 20.sp)
+                                        if (userReaction != null && userReaction.count > 0) {
+                                            Text(
+                                                text = "${userReaction.count}",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSelected) Color.White else primaryColor
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
-                        HorizontalDivider(color = primaryColor.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 4.dp))
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            color = onSurfaceColor.copy(alpha = 0.08f)
+                        )
                     }
 
+                    // 1. Reply / Ответить
                     if (message.canReply) {
-                        TextButton(
-                            onClick = {
-                                controller.startReply(state.groupId, message.messageId)
-                                selectedMessageForOptions = null
-                            },
-                            modifier = Modifier.fillMaxWidth().testTag("reply_${message.messageId}")
-                        ) { Text("Ответить", modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold) }
-                    }
-                    TextButton(
-                        onClick = {
-                            messageToForward = message
-                            showForwardDialog = true
-                            selectedMessageForOptions = null
-                        },
-                        modifier = Modifier.fillMaxWidth().testTag("forward_${message.messageId}")
-                    ) { Text("Переслать", modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold) }
-                    if (message.text.isNotEmpty()) {
-                        TextButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                val clip = android.content.ClipData.newPlainText("Message Text", message.text)
-                                clipboard.setPrimaryClip(clip)
-                                android.widget.Toast.makeText(context, "Текст скопирован", android.widget.Toast.LENGTH_SHORT).show()
-                                selectedMessageForOptions = null
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text("Скопировать текст", modifier = Modifier.fillMaxWidth()) }
-                    }
-                    message.attachment?.let { att ->
-                        val filePath = att.localPath ?: att.fileName
-                        if (filePath.isNotBlank() && java.io.File(filePath).exists()) {
-                            TextButton(
-                                onClick = {
-                                    val savedUri = com.example.twopchat.ui.chat.saveFileToPublicDownloads(context, filePath, att.fileName)
-                                    if (savedUri != null) {
-                                        android.widget.Toast.makeText(context, if (appLanguage == "Русский") "Файл сохранён в Загрузки" else "File saved to Downloads", android.widget.Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        android.widget.Toast.makeText(context, if (appLanguage == "Русский") "Ошибка сохранения" else "Save failed", android.widget.Toast.LENGTH_SHORT).show()
-                                    }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    controller.startReply(state.groupId, message.messageId)
                                     selectedMessageForOptions = null
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) { Text(if (appLanguage == "Русский") "Сохранить в Загрузки" else "Save to Downloads", modifier = Modifier.fillMaxWidth()) }
+                                }
+                                .padding(vertical = 12.dp, horizontal = 12.dp)
+                                .testTag("reply_${message.messageId}"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_reply),
+                                contentDescription = "Reply",
+                                tint = onSurfaceColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = "Ответить",
+                                fontSize = 15.sp,
+                                color = onSurfaceColor
+                            )
                         }
                     }
-                    TextButton(
-                        onClick = {
-                            isSelectMode = true
-                            if (!selectedMessages.any { it.messageId == message.messageId }) {
-                                selectedMessages.add(message)
-                            }
-                            selectedMessageForOptions = null
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Выбрать", modifier = Modifier.fillMaxWidth()) }
+
+                    // 2. Pin / Закрепить or Открепить
                     if (message.canPin) {
-                        TextButton(
-                            onClick = {
-                                if (message.isPinned) controller.unpinMessage(state.groupId, message.messageId)
-                                else controller.pinMessage(state.groupId, message.messageId)
-                                selectedMessageForOptions = null
-                            },
-                            modifier = Modifier.fillMaxWidth().testTag("pin_${message.messageId}")
-                        ) { Text(if (message.isPinned) "Открепить" else "Закрепить", modifier = Modifier.fillMaxWidth()) }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    if (message.isPinned) controller.unpinMessage(state.groupId, message.messageId)
+                                    else controller.pinMessage(state.groupId, message.messageId)
+                                    selectedMessageForOptions = null
+                                }
+                                .padding(vertical = 12.dp, horizontal = 12.dp)
+                                .testTag("pin_${message.messageId}"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_pin),
+                                contentDescription = "Pin",
+                                tint = onSurfaceColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = if (message.isPinned) "Открепить" else "Закрепить",
+                                fontSize = 15.sp,
+                                color = onSurfaceColor
+                            )
+                        }
                     }
-                    TextButton(
-                        onClick = {
-                            showSeenByDialog = message
-                            selectedMessageForOptions = null
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Просмотрено (${message.readByMembers.size})", modifier = Modifier.fillMaxWidth()) }
+
+                    // 3. Edit / Редактировать
                     if (message.canEdit && message.isMine) {
-                        TextButton(
-                            onClick = {
-                                editingMessage = message
-                                selectedMessageForOptions = null
-                            },
-                            modifier = Modifier.fillMaxWidth().testTag("edit_${message.messageId}")
-                        ) { Text("Редактировать", modifier = Modifier.fillMaxWidth()) }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    editingMessage = message
+                                    selectedMessageForOptions = null
+                                }
+                                .padding(vertical = 12.dp, horizontal = 12.dp)
+                                .testTag("edit_${message.messageId}"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_edit),
+                                contentDescription = "Edit",
+                                tint = onSurfaceColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = "Редактировать",
+                                fontSize = 15.sp,
+                                color = onSurfaceColor
+                            )
+                        }
                     }
-                    if (message.canDelete) {
-                        TextButton(
-                            onClick = {
-                                deletingMessage = message
+
+                    // 4. Copy Text / Копировать текст
+                    if (message.text.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                    val clip = android.content.ClipData.newPlainText("Message Text", message.text)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Текст скопирован", Toast.LENGTH_SHORT).show()
+                                    selectedMessageForOptions = null
+                                }
+                                .padding(vertical = 12.dp, horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_copy),
+                                contentDescription = "Copy",
+                                tint = onSurfaceColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = "Скопировать текст",
+                                fontSize = 15.sp,
+                                color = onSurfaceColor
+                            )
+                        }
+                    }
+
+                    // 5. Save GIF / Save File
+                    message.attachment?.let { att ->
+                        val filePath = att.localPath ?: att.fileName
+                        val isGif = att.mimeType.contains("gif", ignoreCase = true) || filePath.endsWith(".gif", ignoreCase = true)
+                        if (isGif && filePath.isNotBlank() && java.io.File(filePath).exists()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        com.example.twopchat.GifStorageManager.save(context, java.io.File(filePath))
+                                        Toast.makeText(context, "Сохранено в Мои GIF", Toast.LENGTH_SHORT).show()
+                                        selectedMessageForOptions = null
+                                    }
+                                    .padding(vertical = 12.dp, horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_add_photo_smiley),
+                                    contentDescription = "Save GIF",
+                                    tint = onSurfaceColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Text(
+                                    text = "Сохранить в Мои GIF",
+                                    fontSize = 15.sp,
+                                    color = onSurfaceColor
+                                )
+                            }
+                        }
+                        if (filePath.isNotBlank() && java.io.File(filePath).exists()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        val savedUri = com.example.twopchat.ui.chat.saveFileToPublicDownloads(context, filePath, att.fileName)
+                                        if (savedUri != null) {
+                                            Toast.makeText(context, "Файл сохранён в Загрузки", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "Ошибка сохранения", Toast.LENGTH_SHORT).show()
+                                        }
+                                        selectedMessageForOptions = null
+                                    }
+                                    .padding(vertical = 12.dp, horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_download),
+                                    contentDescription = "Download",
+                                    tint = onSurfaceColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(14.dp))
+                                Text(
+                                    text = "Скачать файл",
+                                    fontSize = 15.sp,
+                                    color = onSurfaceColor
+                                )
+                            }
+                        }
+                    }
+
+                    // 6. Forward / Переслать
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                messageToForward = message
+                                showForwardDialog = true
                                 selectedMessageForOptions = null
-                            },
-                            modifier = Modifier.fillMaxWidth().testTag("delete_${message.messageId}")
-                        ) { Text("Удалить", color = Color.Red, modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.Bold) }
+                            }
+                            .padding(vertical = 12.dp, horizontal = 12.dp)
+                            .testTag("forward_${message.messageId}"),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_forward),
+                            contentDescription = "Forward",
+                            tint = onSurfaceColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = "Переслать",
+                            fontSize = 15.sp,
+                            color = onSurfaceColor
+                        )
+                    }
+
+                    // 7. Seen By / Просмотрено
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                showSeenByDialog = message
+                                selectedMessageForOptions = null
+                            }
+                            .padding(vertical = 12.dp, horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_msg_single_check),
+                            contentDescription = "Seen By",
+                            tint = onSurfaceColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = "Просмотрено (${message.readByMembers.size})",
+                            fontSize = 15.sp,
+                            color = onSurfaceColor
+                        )
+                    }
+
+                    // 8. Delete / Удалить (Red)
+                    if (message.canDelete) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    deletingMessage = message
+                                    selectedMessageForOptions = null
+                                }
+                                .padding(vertical = 12.dp, horizontal = 12.dp)
+                                .testTag("delete_${message.messageId}"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_delete),
+                                contentDescription = "Delete",
+                                tint = Color.Red,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = "Удалить",
+                                fontSize = 15.sp,
+                                color = Color.Red,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // 9. Select / Выделить
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                isSelectMode = true
+                                if (!selectedMessages.any { it.messageId == message.messageId }) {
+                                    selectedMessages.add(message)
+                                }
+                                selectedMessageForOptions = null
+                            }
+                            .padding(vertical = 12.dp, horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_select),
+                            contentDescription = "Select",
+                            tint = onSurfaceColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = "Выделить",
+                            fontSize = 15.sp,
+                            color = onSurfaceColor
+                        )
                     }
                 }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { selectedMessageForOptions = null }) { Text("Отмена") }
-            },
-            containerColor = surfaceColor,
-            shape = RoundedCornerShape(20.dp)
+            }
         )
     }
 
@@ -2648,7 +2886,10 @@ private fun GroupMessageCard(
                                     .fillMaxWidth()
                                     .heightIn(max = 280.dp)
                                     .clip(RoundedCornerShape(16.dp))
-                                    .clickable { onOpenVideo(localPath) }
+                                    .combinedClickable(
+                                        onClick = { onOpenVideo(localPath) },
+                                        onLongClick = onOptionsClick
+                                    )
                                     .testTag("attachment_${message.messageId}"),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -2705,7 +2946,10 @@ private fun GroupMessageCard(
                                     modifier = Modifier
                                         .size(width = 260.dp, height = 220.dp)
                                         .clip(RoundedCornerShape(16.dp))
-                                        .clickable { onMediaClick(localPath) },
+                                        .combinedClickable(
+                                            onClick = { onMediaClick(localPath) },
+                                            onLongClick = onOptionsClick
+                                        ),
                                 )
                                 MessageTimestampBadge(
                                     timestampLabel = message.timestampLabel,
@@ -2758,7 +3002,10 @@ private fun GroupMessageCard(
                                             .fillMaxWidth()
                                             .heightIn(max = 280.dp)
                                             .clip(RoundedCornerShape(16.dp))
-                                            .clickable { onMediaClick(localPath) }
+                                            .combinedClickable(
+                                                onClick = { onMediaClick(localPath) },
+                                                onLongClick = onOptionsClick
+                                            )
                                     )
                                     MessageTimestampBadge(
                                         timestampLabel = message.timestampLabel,
