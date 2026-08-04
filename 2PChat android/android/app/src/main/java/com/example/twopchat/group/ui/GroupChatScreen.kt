@@ -1884,7 +1884,7 @@ private fun GroupChatHeader(
                     )
                 }
 
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(12.dp))
 
                 // Group Avatar
                 val initials = state.title.take(2).uppercase().ifBlank { "GP" }

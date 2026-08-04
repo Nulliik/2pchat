@@ -276,7 +276,7 @@ fun ConversationComposerRow(
                     ),
             )
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(10.dp))
         if (!isRecordingVoice) {
             IconButton(
                 onClick = onOpenStickerPicker,
@@ -293,7 +293,7 @@ fun ConversationComposerRow(
                     modifier = Modifier.size(25.dp),
                 )
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
         }
         IconButton(
             onClick = onActionClick,

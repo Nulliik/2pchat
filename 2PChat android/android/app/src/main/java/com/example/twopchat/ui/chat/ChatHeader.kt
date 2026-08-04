@@ -102,7 +102,7 @@ internal fun ChatHeader(
                 modifier = Modifier.size(18.dp),
             )
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(12.dp))
         val savedMessages = peerName == "Saved Messages"
         val displayName = if (savedMessages) Localizations.getString("saved_messages_title", appLanguage) else peerName
         val initials = when {
