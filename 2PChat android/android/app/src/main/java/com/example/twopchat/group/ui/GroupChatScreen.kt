@@ -7,6 +7,7 @@ import com.example.twopchat.ui.chat.AlbumPreviewModal
 import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
+import com.example.twopchat.theme.MotionTokens
 import androidx.compose.ui.unit.sp
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -3283,8 +3284,8 @@ private fun GroupComposer(
 
         AnimatedVisibility(
             visible = isAttachmentPanelOpen,
-            enter = expandVertically(expandFrom = Alignment.Bottom, animationSpec = spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) + fadeIn(animationSpec = tween(150)),
-            exit = shrinkVertically(shrinkTowards = Alignment.Bottom, animationSpec = tween(160)) + fadeOut(animationSpec = tween(120)),
+            enter = expandVertically(expandFrom = Alignment.Bottom, animationSpec = MotionTokens.ResponsiveIntSizeSpring) + fadeIn(animationSpec = MotionTokens.FastTween),
+            exit = shrinkVertically(shrinkTowards = Alignment.Bottom, animationSpec = MotionTokens.ResponsiveIntSizeSpring) + fadeOut(animationSpec = MotionTokens.FastTween),
         ) {
             AttachmentPanel(
                 primaryColor = primaryColor,

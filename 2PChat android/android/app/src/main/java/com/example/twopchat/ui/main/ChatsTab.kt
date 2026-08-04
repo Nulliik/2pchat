@@ -43,6 +43,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import com.example.twopchat.theme.MotionTokens
 import com.example.twopchat.data.ChatDatabaseHelper
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -828,11 +829,11 @@ fun ChatsTab(
 
                 val scale by animateFloatAsState(
                     targetValue = if (animateIn) 1f else 0.85f,
-                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                    animationSpec = MotionTokens.ResponsiveSpring
                 )
                 val opacity by animateFloatAsState(
                     targetValue = if (animateIn) 1f else 0f,
-                    animationSpec = tween(200)
+                    animationSpec = MotionTokens.FastTween
                 )
 
                 Card(
@@ -1033,11 +1034,11 @@ fun ChatsTab(
 
             val scale by animateFloatAsState(
                 targetValue = if (animateIn) 1f else 0.85f,
-                animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f)
+                animationSpec = MotionTokens.ResponsiveSpring
             )
             val opacity by animateFloatAsState(
                 targetValue = if (animateIn) 1f else 0f,
-                animationSpec = tween(200)
+                animationSpec = MotionTokens.FastTween
             )
 
             Card(
