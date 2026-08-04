@@ -72,9 +72,8 @@ internal fun ChatInputBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(surfaceColor.copy(alpha = 0.85f))
+            .background(surfaceColor)
             .navigationBarsPadding()
-            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f))
             .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
         StickerSuggestionBar(

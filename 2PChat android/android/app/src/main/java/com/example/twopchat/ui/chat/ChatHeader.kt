@@ -76,12 +76,16 @@ internal fun ChatHeader(
         return
     }
 
+    Surface(
+        color = surfaceColor,
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f))
+    ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(surfaceColor)
             .statusBarsPadding()
-            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f))
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -300,7 +304,8 @@ internal fun ChatHeader(
                 }
             }
         }
-    }
+    } // end Row
+    } // end Surface
 
     if (showDeleteDialog) {
         val dangerRed = Color(0xFFE53935)
