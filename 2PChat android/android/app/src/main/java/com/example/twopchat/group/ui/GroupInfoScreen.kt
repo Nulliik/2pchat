@@ -184,6 +184,8 @@ fun GroupInfoScreen(
         state.currentUserRole == GroupRole.OWNER && state.metadata.memberCount == 1
     val ownerMustTransfer = state.currentUserRole == GroupRole.OWNER && !isSoloOwner
     var showQrModal by remember { mutableStateOf(false) }
+    var showWallpaperModal by remember { mutableStateOf(false) }
+    val appLanguage = remember(context) { P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
 
     val wallpaperPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -538,7 +540,7 @@ fun GroupInfoScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 4.dp)
-                            .clickable { wallpaperPickerLauncher.launch(arrayOf("image/*")) }
+                            .clickable { showWallpaperModal = true }
                             .testTag("group_wallpaper_setting")
                     ) {
                         Row(
@@ -777,6 +779,47 @@ fun GroupInfoScreen(
             inviteToken = state.metadata.inviteToken,
             candidates = state.inviteCandidates,
             onDismiss = { showQrModal = false },
+        )
+    }
+
+    if (showWallpaperModal) {
+        val currentPath = P2PPreferences.prefs(context).getString("group_wallpaper_${state.metadata.groupId}", null)
+        val currentDimming = P2PPreferences.prefs(context).getInt("group_wallpaper_dimming_${state.metadata.groupId}", 45)
+        val currentBlur = P2PPreferences.prefs(context).getBoolean("group_wallpaper_blur_${state.metadata.groupId}", false)
+
+        GroupWallpaperModal(
+            groupTitle = state.metadata.title,
+            currentWallpaperPath = currentPath,
+            currentDimming = currentDimming,
+            currentBlur = currentBlur,
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
+            onDismiss = { showWallpaperModal = false },
+            onApply = { selectedBitmap, dimming, isBlur ->
+                showWallpaperModal = false
+                val dir = java.io.File(context.filesDir, "group_wallpapers").also { it.mkdirs() }
+                val targetFile = java.io.File(dir, "wallpaper_${state.metadata.groupId}.jpg")
+                if (selectedBitmap != null) {
+                    try {
+                        java.io.FileOutputStream(targetFile).use { out ->
+                            selectedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
+                        }
+                        P2PPreferences.prefs(context).edit().apply {
+                            putString("group_wallpaper_${state.metadata.groupId}", targetFile.absolutePath)
+                            putInt("group_wallpaper_dimming_${state.metadata.groupId}", dimming)
+                            putBoolean("group_wallpaper_blur_${state.metadata.groupId}", isBlur)
+                            apply()
+                        }
+                        controller.updateGroupWallpaper(state.metadata.groupId, targetFile.absolutePath)
+                        android.widget.Toast.makeText(context, if (appLanguage == "Русский") "Обои установлены для всех участников" else "Wallpaper updated for all members", android.widget.Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
         )
     }
 

@@ -1,0 +1,647 @@
+package com.example.twopchat.group.ui
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Matrix
+import android.graphics.Paint
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.example.twopchat.R
+import com.example.twopchat.theme.MintGreen
+import com.example.twopchat.theme.StealthBlack
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GroupWallpaperModal(
+    groupTitle: String,
+    currentWallpaperPath: String?,
+    currentDimming: Int = 45,
+    currentBlur: Boolean = false,
+    appLanguage: String,
+    primaryColor: Color,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
+    onSurfaceVariant: Color,
+    onDismiss: () -> Unit,
+    onApply: (selectedBitmap: Bitmap?, dimming: Int, isBlur: Boolean) -> Unit
+) {
+    val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    var selectedUri by remember { mutableStateOf<Uri?>(null) }
+    var dimming by remember { mutableFloatStateOf(currentDimming.toFloat().coerceIn(0f, 80f)) }
+    var isBlur by remember { mutableStateOf(currentBlur) }
+    var selectedPreset by remember { mutableStateOf<GroupWallpaperPreset?>(null) }
+
+    val animatedBlurRadius by animateDpAsState(
+        targetValue = if (isBlur) 12.dp else 0.dp,
+        animationSpec = tween(300),
+        label = "groupBlurAnimation"
+    )
+    val animatedDimmingAlpha by animateFloatAsState(
+        targetValue = dimming / 100f,
+        animationSpec = tween(150),
+        label = "groupDimmingAnimation"
+    )
+
+    // Gesture Transform States (Scale & Offset for panning/zooming)
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    var containerSize by remember { mutableStateOf(IntSize.Zero) }
+
+    var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            selectedUri = uri
+            selectedPreset = null
+            scale = 1f
+            offset = Offset.Zero
+        }
+    }
+
+    fun clampOffset(currentOffset: Offset, currentScale: Float, size: IntSize): Offset {
+        if (size.width <= 0 || size.height <= 0) return currentOffset
+        val maxX = (size.width * (currentScale - 1f)) / 2f
+        val maxY = (size.height * (currentScale - 1f)) / 2f
+        return Offset(
+            currentOffset.x.coerceIn(-maxX, maxX),
+            currentOffset.y.coerceIn(-maxY, maxY)
+        )
+    }
+
+    LaunchedEffect(selectedUri, currentWallpaperPath) {
+        if (selectedPreset != null) return@LaunchedEffect
+        previewBitmap = withContext(Dispatchers.IO) {
+            try {
+                if (selectedUri != null) {
+                    decodeSampledBitmapFromUri(context, selectedUri!!)
+                } else if (!currentWallpaperPath.isNullOrBlank()) {
+                    decodeSampledBitmapFromFile(currentWallpaperPath)
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    fun prepareFinalBitmap(): Bitmap? {
+        val src = previewBitmap ?: return null
+        return if (scale != 1f || offset != Offset.Zero) {
+            transformBitmap(src, containerSize, scale, offset)
+        } else {
+            src
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0F172A))
+                .onSizeChanged { containerSize = it }
+        ) {
+            // Live Preview Background with Pinch-to-Zoom & Pan Gesture Support
+            if (previewBitmap != null) {
+                Image(
+                    bitmap = previewBitmap!!.asImageBitmap(),
+                    contentDescription = "Group Wallpaper Preview",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                val newScale = (scale * zoom).coerceIn(1f, 5f)
+                                scale = newScale
+                                offset = clampOffset(offset + pan, newScale, containerSize)
+                            }
+                        }
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offset.x,
+                            translationY = offset.y
+                        )
+                        .then(if (animatedBlurRadius > 0.dp) Modifier.blur(animatedBlurRadius) else Modifier)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF1E293B))
+                )
+            }
+
+            // Dimming Overlay
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = animatedDimmingAlpha))
+            )
+
+            // Top Section Column: Top Header Bar + Compact Dimming Slider Row
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+            ) {
+                // Top Header Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_back_arrow),
+                            contentDescription = "Back",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = if (appLanguage == "Русский") "Обои группы" else "Group Wallpaper",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = { imagePickerLauncher.launch("image/*") },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_attach_gallery),
+                            contentDescription = "Gallery",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // Compact Dimming Slider Bar
+                Surface(
+                    color = Color.Black.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Затемнение" else "Dimming",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Slider(
+                            value = dimming,
+                            onValueChange = { dimming = it },
+                            valueRange = 0f..80f,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(32.dp),
+                            colors = SliderDefaults.colors(
+                                thumbColor = primaryColor,
+                                activeTrackColor = primaryColor,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.25f)
+                            )
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "${dimming.toInt()}%",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            // Center Content: Telegram-style Mock Group Chat Bubbles
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.Center)
+                    .padding(horizontal = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Info notice pill
+                Surface(
+                    color = Color.Black.copy(alpha = 0.65f),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.3f))
+                ) {
+                    Text(
+                        text = if (appLanguage == "Русский") "Обои будут установлены у всех участников группы" else "Wallpaper will be applied for all group members",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                    )
+                }
+
+                // Sample Incoming Bubble in Group
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Start
+                ) {
+                    Surface(
+                        color = Color(0xFF1E2732),
+                        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 4.dp),
+                        modifier = Modifier.widthIn(max = 280.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = "Алексей",
+                                color = primaryColor,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = if (appLanguage == "Русский") "Как вам новые обои в нашей группе?" else "How do you like the new wallpaper in our group?",
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "18:42",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 10.sp,
+                                modifier = Modifier.align(Alignment.End)
+                            )
+                        }
+                    }
+                }
+
+                // Sample Outgoing Bubble in Group
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Surface(
+                        color = primaryColor,
+                        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp),
+                        modifier = Modifier.widthIn(max = 280.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                text = if (appLanguage == "Русский") "Супер, стильно смотрится!" else "Awesome, looks very stylish!",
+                                color = if (primaryColor == MintGreen) StealthBlack else Color.White,
+                                fontSize = 14.sp
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = "18:43 ✓✓",
+                                color = (if (primaryColor == MintGreen) StealthBlack else Color.White).copy(alpha = 0.7f),
+                                fontSize = 10.sp,
+                                modifier = Modifier.align(Alignment.End)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Bottom Controls Area
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Presets Gallery Selector Row
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = if (appLanguage == "Русский") "Готовые темы" else "Preset Wallpapers",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 18.dp)
+                    )
+
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(GroupWallpaperPreset.values()) { preset ->
+                            val isSelected = selectedPreset == preset
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 72.dp, height = 52.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Brush.linearGradient(preset.colors))
+                                    .border(
+                                        width = if (isSelected) 2.5.dp else 1.dp,
+                                        color = if (isSelected) primaryColor else Color.White.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        selectedPreset = preset
+                                        selectedUri = null
+                                        scale = 1f
+                                        offset = Offset.Zero
+                                        previewBitmap = createPresetBitmap(preset)
+                                    },
+                                contentAlignment = Alignment.BottomCenter
+                            ) {
+                                Surface(
+                                    color = Color.Black.copy(alpha = 0.6f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = if (appLanguage == "Русский") preset.titleRu else preset.titleEn,
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Blur Toggle Card Row
+                Surface(
+                    color = Color.Black.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_chat_wallpaper),
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                text = if (appLanguage == "Русский") "Размытие" else "Blur",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                        Switch(
+                            checked = isBlur,
+                            onCheckedChange = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                isBlur = it
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = primaryColor,
+                                uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                                uncheckedTrackColor = Color.White.copy(alpha = 0.2f)
+                            )
+                        )
+                    }
+                }
+
+                // Pick from Gallery Button
+                Button(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        imagePickerLauncher.launch("image/*")
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.16f)),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_attach_gallery),
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (appLanguage == "Русский") "Выбрать из галереи" else "Pick from gallery",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+
+                // Single Apply Button for Group Chat (Applied to ALL group members)
+                Button(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        val finalBmp = prepareFinalBitmap()
+                        onApply(finalBmp, dimming.toInt(), isBlur)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Text(
+                        text = if (appLanguage == "Русский") "Установить обои" else "Set wallpaper",
+                        color = if (primaryColor == MintGreen) StealthBlack else Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun transformBitmap(
+    source: Bitmap,
+    containerSize: IntSize,
+    scale: Float,
+    offset: Offset
+): Bitmap {
+    if (containerSize.width <= 0 || containerSize.height <= 0) return source
+    val output = Bitmap.createBitmap(containerSize.width, containerSize.height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(output)
+
+    val scaleX = containerSize.width.toFloat() / source.width.toFloat()
+    val scaleY = containerSize.height.toFloat() / source.height.toFloat()
+    val baseScale = maxOf(scaleX, scaleY)
+
+    val baseWidth = source.width * baseScale
+    val baseHeight = source.height * baseScale
+    val baseTranslateX = (containerSize.width - baseWidth) / 2f
+    val baseTranslateY = (containerSize.height - baseHeight) / 2f
+
+    val matrix = Matrix().apply {
+        postScale(baseScale, baseScale)
+        postTranslate(baseTranslateX, baseTranslateY)
+        postScale(scale, scale, containerSize.width / 2f, containerSize.height / 2f)
+        postTranslate(offset.x, offset.y)
+    }
+
+    val paint = Paint().apply {
+        isAntiAlias = true
+        isFilterBitmap = true
+    }
+
+    canvas.drawBitmap(source, matrix, paint)
+    return output
+}
+
+enum class GroupWallpaperPreset(
+    val titleRu: String,
+    val titleEn: String,
+    val colors: List<Color>
+) {
+    NEBULA("Небула", "Nebula", listOf(Color(0xFF0F172A), Color(0xFF3B0764), Color(0xFF1E1B4B))),
+    EMERALD("Изумруд", "Emerald", listOf(Color(0xFF064E3B), Color(0xFF022C22), Color(0xFF065F46))),
+    SUNSET("Закат", "Sunset", listOf(Color(0xFF4C1D95), Color(0xFF831843), Color(0xFF9A3412))),
+    CYBER("Кибер", "Cyber", listOf(Color(0xFF0F172A), Color(0xFF0891B2), Color(0xFF155E75))),
+    MINIMAL("Тёмный", "Minimal", listOf(Color(0xFF1E293B), Color(0xFF0F172A), Color(0xFF334155)))
+}
+
+private fun createPresetBitmap(preset: GroupWallpaperPreset, width: Int = 720, height: Int = 1280): Bitmap {
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val colorsInt = preset.colors.map { 
+        android.graphics.Color.argb(
+            (it.alpha * 255).toInt(), 
+            (it.red * 255).toInt(), 
+            (it.green * 255).toInt(), 
+            (it.blue * 255).toInt()
+        ) 
+    }.toIntArray()
+    val shader = android.graphics.LinearGradient(
+        0f, 0f, width.toFloat(), height.toFloat(),
+        colorsInt, null, android.graphics.Shader.TileMode.CLAMP
+    )
+    val paint = Paint().apply {
+        isAntiAlias = true
+        this.shader = shader
+    }
+    canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+    return bitmap
+}
+
+private fun decodeSampledBitmapFromUri(context: Context, uri: Uri, maxDim: Int = 1920): Bitmap? {
+    return try {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, options)
+        }
+        var sampleSize = 1
+        val w = options.outWidth
+        val h = options.outHeight
+        if (w > maxDim || h > maxDim) {
+            val halfW = w / 2
+            val halfH = h / 2
+            while ((halfW / sampleSize) >= maxDim && (halfH / sampleSize) >= maxDim) {
+                sampleSize *= 2
+            }
+        }
+        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, decodeOptions)
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
+private fun decodeSampledBitmapFromFile(path: String, maxDim: Int = 1920): Bitmap? {
+    return try {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, options)
+        var sampleSize = 1
+        val w = options.outWidth
+        val h = options.outHeight
+        if (w > maxDim || h > maxDim) {
+            val halfW = w / 2
+            val halfH = h / 2
+            while ((halfW / sampleSize) >= maxDim && (halfH / sampleSize) >= maxDim) {
+                sampleSize *= 2
+            }
+        }
+        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        BitmapFactory.decodeFile(path, decodeOptions)
+    } catch (e: Exception) {
+        null
+    }
+}

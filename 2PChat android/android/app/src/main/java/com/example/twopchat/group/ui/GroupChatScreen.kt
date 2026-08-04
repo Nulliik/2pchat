@@ -158,6 +158,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -278,6 +279,7 @@ fun GroupChatScreen(
     var selectedDateFilterMs by remember { mutableStateOf<Long?>(null) }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var showPinnedSheet by remember { mutableStateOf(false) }
+    var showWallpaperModal by remember { mutableStateOf(false) }
     var currentMatchIndex by remember { mutableIntStateOf(0) }
     var messageToForward by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var showForwardDialog by remember { mutableStateOf(false) }
@@ -299,6 +301,12 @@ fun GroupChatScreen(
 
     val wallpaperUriStr = remember(state.groupId) {
         P2PPreferences.prefs(context).getString("group_wallpaper_${state.groupId}", null)
+    }
+    val wallpaperDimming = remember(state.groupId, wallpaperUriStr) {
+        P2PPreferences.prefs(context).getInt("group_wallpaper_dimming_${state.groupId}", 45)
+    }
+    val wallpaperBlur = remember(state.groupId, wallpaperUriStr) {
+        P2PPreferences.prefs(context).getBoolean("group_wallpaper_blur_${state.groupId}", false)
     }
     val wallpaperBitmap = rememberGroupBitmap(
         cacheKey = wallpaperUriStr?.let { "wallpaper:${state.groupId}:$it" },
@@ -603,12 +611,14 @@ fun GroupChatScreen(
                 bitmap = wallpaperBitmap.asImageBitmap(),
                 contentDescription = "Chat Wallpaper",
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (wallpaperBlur) Modifier.blur(12.dp) else Modifier)
             )
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.45f))
+                    .background(Color.Black.copy(alpha = wallpaperDimming / 100f))
             )
         } else {
             Box(
@@ -696,7 +706,8 @@ fun GroupChatScreen(
                     isSearchMode = isSearchMode,
                     searchQuery = searchQuery,
                     onSearchModeChange = { isSearchMode = it },
-                    onSearchQueryChange = { searchQuery = it }
+                    onSearchQueryChange = { searchQuery = it },
+                    onOpenWallpaper = { showWallpaperModal = true }
                 )
             }
 
@@ -2104,6 +2115,43 @@ fun GroupChatScreen(
             }
         )
     }
+
+    if (showWallpaperModal) {
+        GroupWallpaperModal(
+            groupTitle = state.title,
+            currentWallpaperPath = wallpaperUriStr,
+            currentDimming = wallpaperDimming,
+            currentBlur = wallpaperBlur,
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
+            onDismiss = { showWallpaperModal = false },
+            onApply = { selectedBitmap, dimming, isBlur ->
+                showWallpaperModal = false
+                val dir = java.io.File(context.filesDir, "group_wallpapers").also { it.mkdirs() }
+                val targetFile = java.io.File(dir, "wallpaper_${state.groupId}.jpg")
+                if (selectedBitmap != null) {
+                    try {
+                        java.io.FileOutputStream(targetFile).use { out ->
+                            selectedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
+                        }
+                        com.example.twopchat.P2PPreferences.prefs(context).edit().apply {
+                            putString("group_wallpaper_${state.groupId}", targetFile.absolutePath)
+                            putInt("group_wallpaper_dimming_${state.groupId}", dimming)
+                            putBoolean("group_wallpaper_blur_${state.groupId}", isBlur)
+                            apply()
+                        }
+                        controller.updateGroupWallpaper(state.groupId, targetFile.absolutePath)
+                        Toast.makeText(context, if (appLanguage == "Русский") "Обои установлены для всех участников" else "Wallpaper updated for all members", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -2113,7 +2161,8 @@ private fun GroupChatHeader(
     isSearchMode: Boolean,
     searchQuery: String,
     onSearchModeChange: (Boolean) -> Unit,
-    onSearchQueryChange: (String) -> Unit
+    onSearchQueryChange: (String) -> Unit,
+    onOpenWallpaper: () -> Unit
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
@@ -2331,6 +2380,21 @@ private fun GroupChatHeader(
                                 Icon(
                                     imageVector = Icons.Default.Info,
                                     contentDescription = "Info",
+                                    tint = onSurfaceColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Обои чата", color = onSurfaceColor) },
+                            onClick = {
+                                showHeaderMenu = false
+                                onOpenWallpaper()
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_chat_wallpaper),
+                                    contentDescription = "Wallpaper",
                                     tint = onSurfaceColor,
                                     modifier = Modifier.size(20.dp)
                                 )
