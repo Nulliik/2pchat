@@ -350,6 +350,9 @@ fun ConversationPinnedMessageBar(
     onClick: () -> Unit,
     onUnpin: () -> Unit,
     modifier: Modifier = Modifier,
+    pinnedCount: Int = 1,
+    currentIndex: Int = 1,
+    onOpenSheet: (() -> Unit)? = null,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -360,7 +363,7 @@ fun ConversationPinnedMessageBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(surfaceColor.copy(alpha = 0.92f))
+                .background(surfaceColor.copy(alpha = 0.95f))
                 .clickable(onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -376,7 +379,10 @@ fun ConversationPinnedMessageBar(
                         modifier = Modifier.size(13.dp),
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = primaryColor)
+                    val titleText = if (pinnedCount > 1) {
+                        "$title ($currentIndex/$pinnedCount)"
+                    } else title
+                    Text(titleText, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = primaryColor)
                 }
                 Text(
                     preview,
@@ -385,6 +391,17 @@ fun ConversationPinnedMessageBar(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            if (onOpenSheet != null) {
+                IconButton(onClick = onOpenSheet, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        painterResource(R.drawable.ic_pin),
+                        contentDescription = "All Pinned Messages",
+                        tint = primaryColor,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
             }
             IconButton(onClick = onUnpin, modifier = Modifier.size(28.dp)) {
                 Text("×", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = onSurfaceVariant)

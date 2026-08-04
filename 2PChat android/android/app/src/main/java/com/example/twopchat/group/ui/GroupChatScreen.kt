@@ -109,6 +109,8 @@ import com.example.twopchat.ui.chat.ChatAttachmentAction
 import com.example.twopchat.ui.chat.ConversationComposerRow
 import com.example.twopchat.ui.chat.ConversationMessagePreviewBar
 import com.example.twopchat.ui.chat.ConversationPinnedMessageBar
+import com.example.twopchat.ui.chat.PinnedItemModel
+import com.example.twopchat.ui.chat.PinnedMessagesSheet
 import com.example.twopchat.ui.chat.ConversationReplyQuote
 import com.example.twopchat.ui.chat.ConversationSearchHeader
 import com.example.twopchat.ui.chat.StickerPickerBottomSheet
@@ -273,6 +275,7 @@ fun GroupChatScreen(
     var selectedCategoryFilter by remember { mutableStateOf(SearchCategoryFilter.ALL) }
     var selectedDateFilterMs by remember { mutableStateOf<Long?>(null) }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+    var showPinnedSheet by remember { mutableStateOf(false) }
     var currentMatchIndex by remember { mutableIntStateOf(0) }
     var messageToForward by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var showForwardDialog by remember { mutableStateOf(false) }
@@ -716,6 +719,7 @@ fun GroupChatScreen(
                         }
                 },
                 onUnpin = { controller.unpinMessage(state.groupId, pinned.messageId) },
+                onOpenSheet = { showPinnedSheet = true },
                 modifier = Modifier.testTag("pinned_message"),
             )
         }
@@ -1819,6 +1823,48 @@ fun GroupChatScreen(
                 }
             }
         }
+    }
+
+    if (showPinnedSheet) {
+        val pinnedItems = remember(state.pinnedMessage, state.messages) {
+            state.pinnedMessage?.let { pinned ->
+                val msg = state.messages.find { it.messageId == pinned.messageId }
+                listOf(
+                    PinnedItemModel(
+                        id = pinned.messageId,
+                        senderName = msg?.authorName ?: "Участник",
+                        text = pinned.text,
+                        timestamp = msg?.timestampLabel ?: "",
+                    )
+                )
+            } ?: emptyList()
+        }
+        PinnedMessagesSheet(
+            pinnedItems = pinnedItems,
+            appLanguage = "Русский",
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
+            onDismiss = { showPinnedSheet = false },
+            onSelectPinnedMessage = { item ->
+                val targetIdx = state.messages.indexOfFirst { it.messageId == item.id }
+                if (targetIdx != -1) {
+                    coroutineScope.launch {
+                        listState.animateScrollToItem(targetIdx)
+                        highlightedMessageId = item.id
+                    }
+                }
+            },
+            onUnpinMessage = { item ->
+                controller.unpinMessage(state.groupId, item.id)
+            },
+            onUnpinAll = {
+                state.pinnedMessage?.let { pinned ->
+                    controller.unpinMessage(state.groupId, pinned.messageId)
+                }
+            }
+        )
     }
 }
 

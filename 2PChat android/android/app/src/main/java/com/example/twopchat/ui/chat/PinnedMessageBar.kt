@@ -41,7 +41,10 @@ internal fun PinnedMessageBar(
     onSurfaceColor: Color,
     onSurfaceVariant: Color,
     onPinnedClick: (Message) -> Unit,
-    onUnpinClick: (Message) -> Unit
+    onUnpinClick: (Message) -> Unit,
+    pinnedCount: Int = 1,
+    currentIndex: Int = 1,
+    onOpenSheet: (() -> Unit)? = null,
 ) {
     val previewText = pinnedMessage?.let { message ->
         when {
@@ -64,5 +67,8 @@ internal fun PinnedMessageBar(
         onSurfaceVariant = onSurfaceVariant,
         onClick = { pinnedMessage?.let(onPinnedClick) },
         onUnpin = { pinnedMessage?.let(onUnpinClick) },
+        pinnedCount = pinnedCount,
+        currentIndex = currentIndex,
+        onOpenSheet = onOpenSheet,
     )
 }

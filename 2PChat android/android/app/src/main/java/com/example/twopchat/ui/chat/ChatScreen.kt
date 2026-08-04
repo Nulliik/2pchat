@@ -319,6 +319,7 @@ fun ChatScreen(
     var pinnedMsgText by remember(peerName, isActive) { mutableStateOf(SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
     var pinnedMsgSender by remember(peerName, isActive) { mutableStateOf(sharedPrefs.getString("pinned_msg_sender_${peerName}", null)) }
     var pinnedBy by remember(peerName, isActive) { mutableStateOf(sharedPrefs.getString("pinned_by_${peerName}", null)) }
+    var showPinnedSheet by remember { mutableStateOf(false) }
     var isMuted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("mute_notifications_${peerName}", false)) }
     var isBlocked by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("blocked_peer_${peerName}", false)) }
     var isForwardingRestricted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("restrict_forwarding_${peerName}", false)) }
@@ -1958,6 +1959,7 @@ fun ChatScreen(
                             if (idx != -1) {
                                 coroutineScope.launch {
                                     listState.animateScrollToItem(idx)
+                                    highlightedMessageId = pinnedMsgId
                                 }
                             }
                         }
@@ -1992,6 +1994,18 @@ fun ChatScreen(
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
+                    IconButton(
+                        onClick = { showPinnedSheet = true },
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_pin),
+                            contentDescription = "Show All Pinned",
+                            tint = primaryColor,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(6.dp))
                     IconButton(
                         onClick = {
                             sharedPrefs.edit {
@@ -3662,6 +3676,68 @@ remove("pinned_msg_id_${peerName}")
                 videoPath = activeFullscreenVideo!!,
                 appLanguage = appLanguage,
                 onClose = { activeFullscreenVideo = null }
+            )
+        }
+
+        if (showPinnedSheet) {
+            val pinnedItems = remember(pinnedMsgId, pinnedMsgText, pinnedMsgSender, initialMessages) {
+                if (pinnedMsgId != null && pinnedMsgText != null) {
+                    val targetMsg = initialMessages.find { it.id == pinnedMsgId }
+                    listOf(
+                        PinnedItemModel(
+                            id = pinnedMsgId!!,
+                            senderName = pinnedMsgSender ?: (if (pinnedBy == "You") "Вы" else peerName),
+                            text = pinnedMsgText!!,
+                            timestamp = targetMsg?.timestamp ?: "",
+                            attachmentType = targetMsg?.attachmentType,
+                            attachmentName = targetMsg?.attachmentName,
+                        )
+                    )
+                } else emptyList()
+            }
+            PinnedMessagesSheet(
+                pinnedItems = pinnedItems,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                onDismiss = { showPinnedSheet = false },
+                onSelectPinnedMessage = { item ->
+                    val idx = initialMessages.indexOfFirst { it.id == item.id }
+                    if (idx != -1) {
+                        coroutineScope.launch {
+                            listState.animateScrollToItem(idx)
+                            highlightedMessageId = item.id
+                        }
+                    }
+                },
+                onUnpinMessage = {
+                    sharedPrefs.edit {
+                        remove("pinned_msg_id_${peerName}")
+                        remove("pinned_msg_text_${peerName}")
+                        remove("pinned_msg_sender_${peerName}")
+                        remove("pinned_by_${peerName}")
+                    }
+                    pinnedMsgId = null
+                    pinnedMsgText = null
+                    pinnedMsgSender = null
+                    pinnedBy = null
+                    P2PMessageRelay.sendUnpinMessage(context, peerName)
+                },
+                onUnpinAll = {
+                    sharedPrefs.edit {
+                        remove("pinned_msg_id_${peerName}")
+                        remove("pinned_msg_text_${peerName}")
+                        remove("pinned_msg_sender_${peerName}")
+                        remove("pinned_by_${peerName}")
+                    }
+                    pinnedMsgId = null
+                    pinnedMsgText = null
+                    pinnedMsgSender = null
+                    pinnedBy = null
+                    P2PMessageRelay.sendUnpinMessage(context, peerName)
+                }
             )
         }
     }
