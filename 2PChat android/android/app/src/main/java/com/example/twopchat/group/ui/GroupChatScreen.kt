@@ -1960,10 +1960,10 @@ fun GroupChatScreen(
                                     GroupReadReceipt(displayName = name, readTimeLabel = msg.timestampLabel)
                                 }
                             }
-                            items(
+                            itemsIndexed(
                                 items = receipts,
-                                key = { receipt -> receipt.memberId.ifBlank { receipt.displayName } },
-                            ) { receipt ->
+                                key = { index, receipt -> if (receipt.memberId.isNotBlank()) receipt.memberId else "${receipt.displayName}_$index" },
+                            ) { _, receipt ->
                                 val avatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[receipt.avatarPeerName]
                                 val initials = receipt.displayName.take(2).uppercase().ifBlank { "M" }
                                 val avatarBgColor = remember(receipt.displayName) {
