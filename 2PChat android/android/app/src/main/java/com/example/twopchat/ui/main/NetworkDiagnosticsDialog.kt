@@ -2,6 +2,7 @@ package com.example.twopchat.ui.main
 
 import android.widget.Toast
 import android.content.Context
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,6 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -137,6 +141,98 @@ private fun shareLogFile(context: Context) {
     }
 }
 
+private suspend fun runConnectionDiagnosticsTest(context: Context): String = withContext(Dispatchers.IO) {
+    val sb = java.lang.StringBuilder()
+    val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+    sb.appendLine("=========================================")
+    sb.appendLine("⚡ [DIAGNOSTICS_TEST] P2P CONNECTION SWEEP AT $timeStr")
+    sb.appendLine("=========================================")
+
+    // 1. P2P Local Server Listener Port
+    val port = P2PMessageRelay.listenerPort(context)
+    val isLoopRunning = runCatching { PythonBridge.isLoopRunning() }.getOrDefault(false)
+    val portOk = port > 0 && isLoopRunning
+    sb.appendLine("1. P2P Server: Port $port | EventLoop Active: $isLoopRunning -> ${if (portOk) "OK" else "WARN"}")
+
+    // 2. Yggdrasil IPv6 Interface
+    val yggAddr = PythonBridge.getYggdrasilAddress()
+    val yggDiag = runCatching { PythonBridge.getYggdrasilNetworkDiagnostics() }.getOrDefault(emptyMap())
+    val yggState = yggDiag["state"] ?: "disabled"
+    val yggOk = yggAddr.isNotBlank() && yggState in setOf("enabled", "connected")
+    sb.appendLine("2. Yggdrasil IPv6: ${if (yggAddr.isNotBlank()) yggAddr else "Not Active"} | State: $yggState -> ${if (yggOk) "OK" else "OFFLINE"}")
+
+    // 3. UPnP Gateway Status
+    val upnp = runCatching { PythonBridge.getUpnpDetails() }.getOrDefault(emptyMap())
+    val upnpMapped = upnp["mapped"] == "true"
+    val upnpError = upnp["error"] ?: ""
+    sb.appendLine("3. UPnP Port Mapping: ${if (upnpMapped) "MAPPED (OK)" else if (upnpError.isNotBlank()) "DISABLED ($upnpError)" else "OFF"}")
+
+    // 4. BitTorrent Trackers Health
+    val trackers = runCatching { PythonBridge.getTrackerDiagnostics() }.getOrDefault(emptyMap())
+    val okCount = trackers.values.count { it.contains("announce=ok", ignoreCase = true) }
+    sb.appendLine("4. BitTorrent Trackers: $okCount / ${trackers.size} Accepted -> ${if (okCount > 0) "ONLINE" else "WAITING"}")
+
+    // 5. Active Peer Sessions
+    val activePeers = runCatching { PythonBridge.getActivePeers() }.getOrDefault(emptyList())
+    val registeredEndpoints = P2PMessageRelay.peerEndpoints.size
+    sb.appendLine("5. Active Double Ratchet Sessions: ${activePeers.size} active (${registeredEndpoints} endpoints registered)")
+
+    sb.appendLine("=========================================")
+    sb.appendLine("⚡ [DIAGNOSTICS_TEST] SWEEP FINISHED: ${if (portOk && okCount > 0) "ALL SYSTEMS OPERATIONAL" else "PARTIAL CONNECTIVITY"}")
+    sb.appendLine("=========================================")
+
+    val resultLog = sb.toString()
+    try {
+        val logFile = File(File(context.filesDir, "config"), "app.log")
+        logFile.appendText("\n" + resultLog)
+    } catch (_: Exception) {}
+
+    return@withContext resultLog
+}
+
+@Composable
+private fun CustomCopyIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val strokeW = (w * 0.10f).coerceAtLeast(1.5f)
+        // Background card
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.28f, h * 0.08f),
+            size = Size(w * 0.62f, h * 0.62f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.12f, h * 0.12f),
+            style = Stroke(width = strokeW)
+        )
+        // Foreground card
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.08f, h * 0.28f),
+            size = Size(w * 0.62f, h * 0.62f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.12f, h * 0.12f),
+            style = Stroke(width = strokeW)
+        )
+    }
+}
+
+@Composable
+private fun CustomLightningIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val path = Path().apply {
+            moveTo(w * 0.55f, h * 0.05f)
+            lineTo(w * 0.15f, h * 0.55f)
+            lineTo(w * 0.48f, h * 0.55f)
+            lineTo(w * 0.42f, h * 0.95f)
+            lineTo(w * 0.85f, h * 0.45f)
+            lineTo(w * 0.52f, h * 0.45f)
+            close()
+        }
+        drawPath(path, color = tint)
+    }
+}
+
 @Composable
 private fun formatLogs(
     logsText: String,
@@ -151,7 +247,7 @@ private fun formatLogs(
                 if (line.isBlank()) return@forEachIndexed
 
                 val matchesLevel = when (levelFilter) {
-                    "ERRORS" -> line.contains("[ERROR]") || line.contains("[PYTHON_ERR]") || line.contains("FAILED") || line.contains("timed out") || line.contains("Exception") || line.contains("Error")
+                    "ERRORS" -> (line.contains("[ERROR]") || line.contains("[PYTHON_ERR]") || line.contains("FAILED") || line.contains("timed out") || line.contains("Exception") || line.contains("Error")) && !line.contains("[INFO]") && !line.contains("accepted") && !line.contains("Announce self status")
                     "P2P" -> line.contains("P2PMessageRelay") || line.contains("p2p") || line.contains("PythonBridge") || line.contains("OutboundMessenger")
                     "YGG" -> line.contains("PacketTunnelProvider") || line.contains("Yggdrasil") || line.contains("GoLog") || line.contains("TUN")
                     "TRACKERS" -> line.contains("Tracker") || line.contains("announce") || line.contains("discovery")
@@ -170,15 +266,17 @@ private fun formatLogs(
                     val warnIndex = line.indexOf("[WARNING]")
                     val debugIndex = line.indexOf("[DEBUG]")
 
-                    val isError = pythonErrIndex != -1 || errIndex != -1 || line.contains("FAILED") || line.contains("timed out")
+                    val isTestLog = line.contains("[DIAGNOSTICS_TEST]")
+                    val isInfo = infoIndex != -1 || line.contains("Announce self status") || line.contains("accepted") || kotlinInfoIndex != -1
                     val isWarn = warnIndex != -1 || line.contains("Debounced") || line.contains("retry")
-                    val isSuccess = line.contains("SUCCESS") || line.contains("established") || line.contains("accepted")
+                    val isError = (pythonErrIndex != -1 || errIndex != -1 || line.contains("FAILED") || line.contains("timed out")) && !isInfo
+                    val isSuccess = line.contains("SUCCESS") || line.contains("established") || line.contains("OPERATIONAL")
 
                     when {
+                        isTestLog -> pushStyle(SpanStyle(color = Color(0xFFFFD54F), fontWeight = FontWeight.Bold)) // Vivid Gold Test Header
                         isError -> pushStyle(SpanStyle(color = Color(0xFFFF5252))) // Coral Red
                         isSuccess -> pushStyle(SpanStyle(color = Color(0xFF69F0AE))) // Bright Mint
-                        kotlinInfoIndex != -1 -> pushStyle(SpanStyle(color = Color(0xFF40C4FF))) // Electric Blue
-                        pythonOutIndex != -1 || infoIndex != -1 -> pushStyle(SpanStyle(color = Color(0xFF81C784))) // Light Green
+                        isInfo -> pushStyle(SpanStyle(color = Color(0xFF81C784))) // Light Green Info
                         isWarn -> pushStyle(SpanStyle(color = Color(0xFFFFD740))) // Amber Yellow
                         debugIndex != -1 -> pushStyle(SpanStyle(color = Color(0xFF90A4AE))) // Slate Gray
                         else -> pushStyle(SpanStyle(color = Color(0xFFECEFF1))) // Warm White
@@ -226,6 +324,7 @@ fun NetworkDiagnosticsDialog(
         var showSummaryDetails by remember { mutableStateOf(false) }
         var levelFilter by remember { mutableStateOf("ALL") }
         var searchQuery by remember { mutableStateOf("") }
+        var isTestingConnection by remember { mutableStateOf(false) }
 
         val applySnapshot: (DiagnosticsSnapshot) -> Unit = { snapshot ->
             logsText = snapshot.logs
@@ -268,7 +367,7 @@ fun NetworkDiagnosticsDialog(
                         .fillMaxSize()
                         .padding(16.dp)
                 ) {
-                    // Header Row: Title & Actions
+                    // Header Row: Title & Action Buttons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -295,6 +394,29 @@ fun NetworkDiagnosticsDialog(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            // Test Connections Button
+                            IconButton(
+                                onClick = {
+                                    if (!isTestingConnection) {
+                                        isTestingConnection = true
+                                        diagnosticsScope.launch {
+                                            runConnectionDiagnosticsTest(context)
+                                            applySnapshot(withContext(Dispatchers.IO) { readDiagnosticsSnapshot(context) })
+                                            isTestingConnection = false
+                                            Toast.makeText(context, if (appLanguage == "Русский") "Тест связи завершен!" else "Connection test complete!", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .background(primaryColor.copy(alpha = 0.15f), shape = CircleShape)
+                            ) {
+                                if (isTestingConnection) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = primaryColor, strokeWidth = 2.dp)
+                                } else {
+                                    CustomLightningIcon(tint = primaryColor, modifier = Modifier.size(16.dp))
+                                }
+                            }
                             // Refresh
                             IconButton(
                                 onClick = { refreshDiagnostics() },
@@ -315,7 +437,7 @@ fun NetworkDiagnosticsDialog(
                                 },
                                 modifier = Modifier.size(34.dp).background(onSurfaceColor.copy(alpha = 0.05f), shape = CircleShape)
                             ) {
-                                Text("📋", fontSize = 14.sp)
+                                CustomCopyIcon(tint = primaryColor, modifier = Modifier.size(15.dp))
                             }
                             // Share
                             IconButton(
@@ -638,18 +760,57 @@ fun NetworkDiagnosticsDialog(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Close Action Button
-                    Button(
-                        onClick = { onDismissRequest() },
-                        colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                    // Action Buttons Row: Test Connection & Close
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = Localizations.getString("close", appLanguage),
-                            color = if (primaryColor == MintGreen) StealthBlack else Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Button(
+                            onClick = {
+                                if (!isTestingConnection) {
+                                    isTestingConnection = true
+                                    diagnosticsScope.launch {
+                                        runConnectionDiagnosticsTest(context)
+                                        applySnapshot(withContext(Dispatchers.IO) { readDiagnosticsSnapshot(context) })
+                                        isTestingConnection = false
+                                        Toast.makeText(context, if (appLanguage == "Русский") "Тест связи завершен!" else "Connection test complete!", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = surfaceVariant),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(0.4f)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (isTestingConnection) {
+                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), color = primaryColor, strokeWidth = 2.dp)
+                                } else {
+                                    CustomLightningIcon(tint = primaryColor, modifier = Modifier.size(14.dp))
+                                }
+                                Text(
+                                    text = if (appLanguage == "Русский") "Тест связи" else "Test Sweep",
+                                    color = onSurfaceColor,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = { onDismissRequest() },
+                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(0.6f)
+                        ) {
+                            Text(
+                                text = Localizations.getString("close", appLanguage),
+                                color = if (primaryColor == MintGreen) StealthBlack else Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
