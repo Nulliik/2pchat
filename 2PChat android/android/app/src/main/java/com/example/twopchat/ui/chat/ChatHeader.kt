@@ -53,6 +53,7 @@ internal fun ChatHeader(
     onToggleMuted: (Boolean) -> Unit,
     onClearHistory: () -> Unit,
     onDeleteChat: () -> Unit,
+    onSetWallpaper: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -259,6 +260,18 @@ internal fun ChatHeader(
                         }
                     )
                 }
+                DropdownMenuItem(
+                    text = { Text(if (appLanguage == "Русский") "Установить обои" else "Set Wallpaper", color = onSurfaceColor) },
+                    onClick = { showMenu = false; onSetWallpaper() },
+                    leadingIcon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_chat_wallpaper),
+                            contentDescription = "Set Wallpaper",
+                            tint = onSurfaceColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                )
                 DropdownMenuItem(
                     text = { Text(if (appLanguage == "Русский") "Очистить историю" else "Clear History", color = Color.Red) },
                     onClick = { showMenu = false; onClearHistory() },

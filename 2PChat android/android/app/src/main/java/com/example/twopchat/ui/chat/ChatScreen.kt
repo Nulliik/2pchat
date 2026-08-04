@@ -446,6 +446,29 @@ fun ChatScreen(
     var selectedDateFilterMs by remember { mutableStateOf<Long?>(null) }
     var showDatePickerDialog by remember { mutableStateOf(false) }
 
+    var showWallpaperModal by remember { mutableStateOf(false) }
+    var wallpaperPath by remember(peerName) {
+        mutableStateOf(sharedPrefs.getString("direct_wallpaper_$peerName", null))
+    }
+    var wallpaperDimming by remember(peerName) {
+        mutableIntStateOf(sharedPrefs.getInt("direct_wallpaper_dimming_$peerName", 30))
+    }
+    var wallpaperBitmap by remember(wallpaperPath) {
+        mutableStateOf<Bitmap?>(null)
+    }
+
+    LaunchedEffect(wallpaperPath) {
+        wallpaperBitmap = withContext(Dispatchers.IO) {
+            wallpaperPath?.let { path ->
+                try {
+                    BitmapFactory.decodeFile(path)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+        }
+    }
+
     val searchMatchedIndices by remember(initialMessages, searchQuery, selectedCategoryFilter, selectedDateFilterMs) {
         derivedStateOf {
             if (searchQuery.isBlank() && selectedCategoryFilter == SearchCategoryFilter.ALL && selectedDateFilterMs == null) {
@@ -1794,11 +1817,25 @@ fun ChatScreen(
     Box(
         modifier = modifier.fillMaxSize()
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(backgroundColor)
-        )
+        if (wallpaperBitmap != null) {
+            Image(
+                bitmap = wallpaperBitmap!!.asImageBitmap(),
+                contentDescription = "Wallpaper",
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = wallpaperDimming / 100f))
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(backgroundColor)
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1812,6 +1849,7 @@ fun ChatScreen(
                 isVerified = isVerified,
                 isMuted = isMuted,
                 isForwardingRestricted = isForwardingRestricted,
+                onSetWallpaper = { showWallpaperModal = true },
                 onToggleForwardingRestriction = { restricted ->
                     isForwardingRestricted = restricted
                     forwardingNotificationPill = if (restricted) {
@@ -2348,6 +2386,65 @@ fun ChatScreen(
                 },
             )
             }
+        }
+
+        if (showWallpaperModal) {
+            DirectChatWallpaperModal(
+                peerName = peerName,
+                currentWallpaperPath = wallpaperPath,
+                currentDimming = wallpaperDimming,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                onDismiss = { showWallpaperModal = false },
+                onApply = { bitmap, dimming, isBlur, isMotion, applyToPeer ->
+                    showWallpaperModal = false
+                    val dir = File(context.filesDir, "direct_wallpapers").also { it.mkdirs() }
+                    val targetFile = File(dir, "wallpaper_$peerName.jpg")
+                    if (bitmap != null) {
+                        try {
+                            FileOutputStream(targetFile).use { out ->
+                                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                            }
+                            sharedPrefs.edit {
+                                putString("direct_wallpaper_$peerName", targetFile.absolutePath)
+                                putInt("direct_wallpaper_dimming_$peerName", dimming)
+                            }
+                            wallpaperPath = targetFile.absolutePath
+                            wallpaperDimming = dimming
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    } else {
+                        targetFile.delete()
+                        sharedPrefs.edit {
+                            remove("direct_wallpaper_$peerName")
+                            remove("direct_wallpaper_dimming_$peerName")
+                        }
+                        wallpaperPath = null
+                    }
+
+                    if (applyToPeer) {
+                        P2PMessageRelay.sendDirectWallpaperUpdate(context, peerName, bitmap, dimming)
+                        val textRu = "Вы установили новые обои для этого чата"
+                        val textEn = "You set a new wallpaper for this chat"
+                        val sysMsg = Message(
+                            id = newMessageId(),
+                            text = if (appLanguage == "Русский") textRu else textEn,
+                            isMe = true,
+                            timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
+                            attachmentType = "SYSTEM"
+                        )
+                        persistDatabase { db.saveMessage(peerName, sysMsg) }
+                        initialMessages.add(sysMsg)
+                        Toast.makeText(context, if (appLanguage == "Русский") "Обои применены у вас и отправлены $peerName" else "Wallpaper set for you and $peerName", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(context, if (appLanguage == "Русский") "Обои применены у вас" else "Wallpaper applied", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
         }
 
         // Message Options Overlay Panel

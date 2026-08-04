@@ -894,7 +894,38 @@ object P2PMessageRelay {
 
                                     }
                                     return
+                                }
+                                "direct_wallpaper_update" -> {
+                                    val b64 = json.optString("wallpaper_data", "")
+                                    val dimming = json.optInt("dimming", 30)
+                                    if (b64.isNotBlank() && b64.length <= 6_000_000) {
+                                        try {
+                                            val bytes = Base64.decode(b64, Base64.DEFAULT)
+                                            val dir = File(appContext.filesDir, "direct_wallpapers").also { it.mkdirs() }
+                                            val destFile = File(dir, "wallpaper_$sender.jpg")
+                                            destFile.writeBytes(bytes)
 
+                                            P2PPreferences.prefs(appContext).edit()
+                                                .putString("direct_wallpaper_$sender", destFile.absolutePath)
+                                                .putInt("direct_wallpaper_dimming_$sender", dimming)
+                                                .apply()
+
+                                            val lang = P2PPreferences.prefs(appContext).getString("settings_language", "English") ?: "English"
+                                            val textRu = "Собеседник установил(а) новые обои для этого чата"
+                                            val textEn = "Your peer set a new wallpaper for this chat"
+                                            val sysMsg = Message(
+                                                id = UUID.randomUUID().toString(),
+                                                text = if (lang == "Русский") textRu else textEn,
+                                                isMe = false,
+                                                timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
+                                                attachmentType = "SYSTEM"
+                                            )
+                                            persistAndDispatchIncoming(appContext, sender, sysMsg, notificationText = if (lang == "Русский") textRu else textEn, countAsNew = false)
+                                        } catch (e: Exception) {
+                                            log(appContext, "Failed to apply incoming wallpaper: ${e.message}", "ERROR", e)
+                                        }
+                                    }
+                                    return
                                 }
                                 "sticker_pack_request" -> {
                                     val packId = StickerSupport.safeId(json.optString("pack_id"))
@@ -1644,6 +1675,39 @@ object P2PMessageRelay {
         outboundMessenger.sendControlMessage(context, peerName, JSONObject().apply {
             put("type", "verification_request")
         }, onResult)
+    }
+
+    fun sendDirectWallpaperUpdate(context: Context, peerName: String, wallpaperBitmap: Bitmap?, dimming: Int) {
+        relayScope.launch(Dispatchers.IO) {
+            try {
+                val b64 = if (wallpaperBitmap != null) {
+                    val maxDimension = 1080
+                    val scaled = if (wallpaperBitmap.width > maxDimension || wallpaperBitmap.height > maxDimension) {
+                        val aspectRatio = wallpaperBitmap.width.toFloat() / wallpaperBitmap.height.toFloat()
+                        val width = if (aspectRatio > 1) maxDimension else (maxDimension * aspectRatio).toInt()
+                        val height = if (aspectRatio > 1) (maxDimension / aspectRatio).toInt() else maxDimension
+                        Bitmap.createScaledBitmap(wallpaperBitmap, width, height, true)
+                    } else {
+                        wallpaperBitmap
+                    }
+                    val outputStream = ByteArrayOutputStream()
+                    scaled.compress(Bitmap.CompressFormat.JPEG, 75, outputStream)
+                    val bytes = outputStream.toByteArray()
+                    Base64.encodeToString(bytes, Base64.NO_WRAP)
+                } else ""
+
+                val payload = JSONObject().apply {
+                    put("type", "direct_wallpaper_update")
+                    put("wallpaper_data", b64)
+                    put("dimming", dimming)
+                }
+
+                outboundMessenger.sendControlMessage(context, peerName, payload)
+                log(context, "Sent direct_wallpaper_update to $peerName")
+            } catch (e: Exception) {
+                log(context, "Failed to send direct_wallpaper_update to $peerName: ${e.message}", "ERROR", e)
+            }
+        }
     }
 
     fun sendVerificationResponse(context: Context, peerName: String, success: Boolean, onResult: (Boolean) -> Unit = {}) {
