@@ -25,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -197,9 +199,13 @@ fun ConversationComposerRow(
     inputTestTag: String? = null,
     actionTestTag: String? = null,
 ) {
+    val haptic = LocalHapticFeedback.current
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         IconButton(
-            onClick = onToggleAttachments,
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onToggleAttachments()
+            },
             enabled = attachEnabled || isRecordingVoice,
             modifier = Modifier
                 .size(42.dp)
@@ -279,7 +285,10 @@ fun ConversationComposerRow(
         Spacer(Modifier.width(10.dp))
         if (!isRecordingVoice) {
             IconButton(
-                onClick = onOpenStickerPicker,
+                onClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onOpenStickerPicker()
+                },
                 enabled = attachEnabled,
                 modifier = Modifier
                     .size(42.dp)
@@ -296,7 +305,10 @@ fun ConversationComposerRow(
             Spacer(Modifier.width(12.dp))
         }
         IconButton(
-            onClick = onActionClick,
+            onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onActionClick()
+            },
             enabled = (
                 if (isRecordingVoice || inputText.isBlank()) voiceActionEnabled else actionEnabled
                 ) && !actionLoading,

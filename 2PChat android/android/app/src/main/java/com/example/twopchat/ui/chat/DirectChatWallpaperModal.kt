@@ -39,6 +39,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.border
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.example.twopchat.R
 import com.example.twopchat.theme.MintGreen
 import com.example.twopchat.theme.StealthBlack
@@ -60,9 +69,22 @@ fun DirectChatWallpaperModal(
     onApply: (selectedBitmap: Bitmap?, dimming: Int, isBlur: Boolean, isMotion: Boolean, applyToPeer: Boolean) -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
     var dimming by remember { mutableFloatStateOf(currentDimming.toFloat().coerceIn(0f, 80f)) }
     var isBlur by remember { mutableStateOf(false) }
+    var selectedPreset by remember { mutableStateOf<WallpaperPreset?>(null) }
+
+    val animatedBlurRadius by animateDpAsState(
+        targetValue = if (isBlur) 12.dp else 0.dp,
+        animationSpec = tween(300),
+        label = "blurAnimation"
+    )
+    val animatedDimmingAlpha by animateFloatAsState(
+        targetValue = dimming / 100f,
+        animationSpec = tween(150),
+        label = "dimmingAnimation"
+    )
 
     // Gesture Transform States (Scale & Offset for panning/zooming)
     var scale by remember { mutableFloatStateOf(1f) }
@@ -76,6 +98,7 @@ fun DirectChatWallpaperModal(
     ) { uri: Uri? ->
         if (uri != null) {
             selectedUri = uri
+            selectedPreset = null
             // Reset transform gestures when picking a new image
             scale = 1f
             offset = Offset.Zero
@@ -93,6 +116,7 @@ fun DirectChatWallpaperModal(
     }
 
     LaunchedEffect(selectedUri, currentWallpaperPath) {
+        if (selectedPreset != null) return@LaunchedEffect
         previewBitmap = withContext(Dispatchers.IO) {
             try {
                 if (selectedUri != null) {
@@ -149,7 +173,7 @@ fun DirectChatWallpaperModal(
                             translationX = offset.x,
                             translationY = offset.y
                         )
-                        .then(if (isBlur) Modifier.blur(12.dp) else Modifier)
+                        .then(if (animatedBlurRadius > 0.dp) Modifier.blur(animatedBlurRadius) else Modifier)
                 )
             } else {
                 Box(
@@ -163,7 +187,7 @@ fun DirectChatWallpaperModal(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = dimming / 100f))
+                    .background(Color.Black.copy(alpha = animatedDimmingAlpha))
             )
 
             // Top Section Column: Top Header Bar + Compact Dimming Slider Row
@@ -345,6 +369,62 @@ fun DirectChatWallpaperModal(
                     .padding(bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // Presets Gallery Selector Row
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = if (appLanguage == "Русский") "Готовые темы" else "Preset Wallpapers",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 18.dp)
+                    )
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        items(WallpaperPreset.values()) { preset ->
+                            val isSelected = selectedPreset == preset && previewBitmap != null
+                            Box(
+                                modifier = Modifier
+                                    .size(width = 72.dp, height = 48.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        brush = Brush.linearGradient(preset.colors),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .border(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) primaryColor else Color.White.copy(alpha = 0.3f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        selectedPreset = preset
+                                        scale = 1f
+                                        offset = Offset.Zero
+                                        previewBitmap = createPresetBitmap(preset)
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (appLanguage == "Русский") preset.titleRu else preset.titleEn,
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier
+                                        .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Centered "Размытие" (Blur) Toggle Button
                 Surface(
                     color = if (isBlur) primaryColor.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.55f),
@@ -353,7 +433,10 @@ fun DirectChatWallpaperModal(
                     modifier = Modifier
                         .align(Alignment.CenterHorizontally)
                         .clip(RoundedCornerShape(20.dp))
-                        .clickable { isBlur = !isBlur }
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            isBlur = !isBlur
+                        }
                 ) {
                     Row(
                         modifier = Modifier.padding(vertical = 6.dp, horizontal = 20.dp),
@@ -377,7 +460,10 @@ fun DirectChatWallpaperModal(
 
                 // Pick / Change Image Button with Vector Icon
                 Button(
-                    onClick = { imagePickerLauncher.launch("image/*") },
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        imagePickerLauncher.launch("image/*")
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.16f)),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
@@ -409,6 +495,7 @@ fun DirectChatWallpaperModal(
                     // Apply for me only
                     Button(
                         onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             val finalBmp = prepareFinalBitmap()
                             onApply(finalBmp, dimming.toInt(), isBlur, false, false)
                         },
@@ -427,6 +514,7 @@ fun DirectChatWallpaperModal(
                     // Apply for me AND peer
                     Button(
                         onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             val finalBmp = prepareFinalBitmap()
                             onApply(finalBmp, dimming.toInt(), isBlur, false, true)
                         },
@@ -454,28 +542,67 @@ private fun transformBitmap(
     offset: Offset
 ): Bitmap {
     if (containerSize.width <= 0 || containerSize.height <= 0) return source
-    val targetWidth = containerSize.width
-    val targetHeight = containerSize.height
+    val output = Bitmap.createBitmap(containerSize.width, containerSize.height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(output)
 
-    val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(result)
-    val matrix = Matrix()
+    val scaleX = containerSize.width.toFloat() / source.width.toFloat()
+    val scaleY = containerSize.height.toFloat() / source.height.toFloat()
+    val baseScale = maxOf(scaleX, scaleY)
 
-    val srcWidth = source.width.toFloat()
-    val srcHeight = source.height.toFloat()
-    val baseScale = maxOf(targetWidth.toFloat() / srcWidth, targetHeight.toFloat() / srcHeight)
-    val baseDx = (targetWidth - srcWidth * baseScale) / 2f
-    val baseDy = (targetHeight - srcHeight * baseScale) / 2f
+    val baseWidth = source.width * baseScale
+    val baseHeight = source.height * baseScale
+    val baseTranslateX = (containerSize.width - baseWidth) / 2f
+    val baseTranslateY = (containerSize.height - baseHeight) / 2f
 
-    matrix.postScale(baseScale, baseScale)
-    matrix.postTranslate(baseDx, baseDy)
+    val matrix = Matrix().apply {
+        postScale(baseScale, baseScale)
+        postTranslate(baseTranslateX, baseTranslateY)
+        postScale(scale, scale, containerSize.width / 2f, containerSize.height / 2f)
+        postTranslate(offset.x, offset.y)
+    }
 
-    matrix.postScale(scale, scale, targetWidth / 2f, targetHeight / 2f)
-    matrix.postTranslate(offset.x, offset.y)
+    val paint = Paint().apply {
+        isAntiAlias = true
+        isFilterBitmap = true
+    }
 
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     canvas.drawBitmap(source, matrix, paint)
-    return result
+    return output
+}
+
+enum class WallpaperPreset(
+    val titleRu: String,
+    val titleEn: String,
+    val colors: List<Color>
+) {
+    NEBULA("Небула", "Nebula", listOf(Color(0xFF0F172A), Color(0xFF3B0764), Color(0xFF1E1B4B))),
+    EMERALD("Изумруд", "Emerald", listOf(Color(0xFF064E3B), Color(0xFF022C22), Color(0xFF065F46))),
+    SUNSET("Закат", "Sunset", listOf(Color(0xFF4C1D95), Color(0xFF831843), Color(0xFF9A3412))),
+    CYBER("Кибер", "Cyber", listOf(Color(0xFF0F172A), Color(0xFF0891B2), Color(0xFF155E75))),
+    MINIMAL("Тёмный", "Minimal", listOf(Color(0xFF1E293B), Color(0xFF0F172A), Color(0xFF334155)))
+}
+
+private fun createPresetBitmap(preset: WallpaperPreset, width: Int = 720, height: Int = 1280): Bitmap {
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val colorsInt = preset.colors.map { 
+        android.graphics.Color.argb(
+            (it.alpha * 255).toInt(), 
+            (it.red * 255).toInt(), 
+            (it.green * 255).toInt(), 
+            (it.blue * 255).toInt()
+        ) 
+    }.toIntArray()
+    val shader = android.graphics.LinearGradient(
+        0f, 0f, width.toFloat(), height.toFloat(),
+        colorsInt, null, android.graphics.Shader.TileMode.CLAMP
+    )
+    val paint = Paint().apply {
+        isAntiAlias = true
+        this.shader = shader
+    }
+    canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+    return bitmap
 }
 
 private fun decodeSampledBitmapFromUri(context: Context, uri: Uri, maxDim: Int = 1920): Bitmap? {
