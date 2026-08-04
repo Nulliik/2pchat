@@ -386,7 +386,7 @@ fun DirectChatWallpaperModal(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        items(WallpaperPreset.values()) { preset ->
+                        items(WallpaperPreset.entries, key = { it.name }) { preset ->
                             val isSelected = selectedPreset == preset && previewBitmap != null
                             Box(
                                 modifier = Modifier
@@ -406,7 +406,9 @@ fun DirectChatWallpaperModal(
                                         selectedPreset = preset
                                         scale = 1f
                                         offset = Offset.Zero
-                                        previewBitmap = createPresetBitmap(preset)
+                                        val targetW = containerSize.width.coerceAtLeast(720)
+                                        val targetH = containerSize.height.coerceAtLeast(1280)
+                                        previewBitmap = createPresetBitmap(preset, targetW, targetH)
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
