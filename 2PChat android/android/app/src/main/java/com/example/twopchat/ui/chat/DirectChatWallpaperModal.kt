@@ -75,11 +75,9 @@ fun DirectChatWallpaperModal(
         previewBitmap = withContext(Dispatchers.IO) {
             try {
                 if (selectedUri != null) {
-                    context.contentResolver.openInputStream(selectedUri!!)?.use { stream ->
-                        BitmapFactory.decodeStream(stream)
-                    }
+                    decodeSampledBitmapFromUri(context, selectedUri!!)
                 } else if (!currentWallpaperPath.isNullOrBlank()) {
-                    BitmapFactory.decodeFile(currentWallpaperPath)
+                    decodeSampledBitmapFromFile(currentWallpaperPath)
                 } else {
                     null
                 }
@@ -418,5 +416,51 @@ fun DirectChatWallpaperModal(
                 }
             }
         }
+    }
+}
+
+private fun decodeSampledBitmapFromUri(context: Context, uri: Uri, maxDim: Int = 1920): Bitmap? {
+    return try {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, options)
+        }
+        var sampleSize = 1
+        val w = options.outWidth
+        val h = options.outHeight
+        if (w > maxDim || h > maxDim) {
+            val halfW = w / 2
+            val halfH = h / 2
+            while ((halfW / sampleSize) >= maxDim && (halfH / sampleSize) >= maxDim) {
+                sampleSize *= 2
+            }
+        }
+        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, decodeOptions)
+        }
+    } catch (e: Exception) {
+        null
+    }
+}
+
+private fun decodeSampledBitmapFromFile(path: String, maxDim: Int = 1920): Bitmap? {
+    return try {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, options)
+        var sampleSize = 1
+        val w = options.outWidth
+        val h = options.outHeight
+        if (w > maxDim || h > maxDim) {
+            val halfW = w / 2
+            val halfH = h / 2
+            while ((halfW / sampleSize) >= maxDim && (halfH / sampleSize) >= maxDim) {
+                sampleSize *= 2
+            }
+        }
+        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        BitmapFactory.decodeFile(path, decodeOptions)
+    } catch (e: Exception) {
+        null
     }
 }

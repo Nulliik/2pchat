@@ -924,6 +924,18 @@ object P2PMessageRelay {
                                         } catch (e: Exception) {
                                             log(appContext, "Failed to apply incoming wallpaper: ${e.message}", "ERROR", e)
                                         }
+                                    } else if (b64.isBlank()) {
+                                        try {
+                                            val dir = File(appContext.filesDir, "direct_wallpapers")
+                                            val destFile = File(dir, "wallpaper_$sender.jpg")
+                                            if (destFile.exists()) destFile.delete()
+                                            P2PPreferences.prefs(appContext).edit()
+                                                .remove("direct_wallpaper_$sender")
+                                                .remove("direct_wallpaper_dimming_$sender")
+                                                .apply()
+                                        } catch (e: Exception) {
+                                            log(appContext, "Failed to clear wallpaper: ${e.message}", "ERROR", e)
+                                        }
                                     }
                                     return
                                 }
