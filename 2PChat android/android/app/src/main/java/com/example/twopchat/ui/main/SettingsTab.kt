@@ -161,6 +161,7 @@ fun SettingsTab(
     }
     var yggdrasilRouting by remember { mutableStateOf(sharedPrefs.getBoolean("settings_yggdrasil", true)) }
     var ipv4Routing by remember { mutableStateOf(sharedPrefs.getBoolean("settings_ipv4", true)) }
+    var upnpEnabled by remember { mutableStateOf(P2PPreferences.isUpnpEnabled(context)) }
     var persistChatHistory by remember { mutableStateOf(sharedPrefs.getBoolean("persist_chat_history", true)) }
     var linkPreviewsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_link_previews", false)) }
     var hapticFeedbackEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_haptic_feedback", true)) }
@@ -1394,6 +1395,59 @@ fun SettingsTab(
                                             ipv4Routing = enabled
                                             sharedPrefs.edit().putBoolean("settings_ipv4", enabled).apply()
                                             com.example.twopchat.PythonBridge.setIpv4Enabled(enabled)
+                                            com.example.twopchat.P2PMessageRelay.refreshAnnouncement(context)
+                                        },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = primaryColor,
+                                            checkedTrackColor = primaryColor.copy(alpha = 0.3f)
+                                        )
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                // UPnP Port Mapping
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            if (appLanguage == "Русский") "Проброс портов UPnP (Авто-NAT)" else "UPnP Port Mapping",
+                                            fontWeight = FontWeight.Medium,
+                                            color = onSurfaceColor
+                                        )
+                                        Text(
+                                            if (appLanguage == "Русский") {
+                                                "Автоматический проброс порта на роутере. По умолчанию выключен для повышенной безопасности."
+                                            } else {
+                                                "Automatically map port on router. Disabled by default for enhanced security."
+                                            },
+                                            fontSize = 12.sp,
+                                            color = onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = upnpEnabled,
+                                        onCheckedChange = { enabled ->
+                                            upnpEnabled = enabled
+                                            sharedPrefs.edit().putBoolean(P2PPreferences.UPNP_ENABLED, enabled).apply()
+                                            if (enabled) {
+                                                com.example.twopchat.PythonBridge.triggerUpnpReopen()
+                                                Toast.makeText(
+                                                    context,
+                                                    if (appLanguage == "Русский") "UPnP включён. Выполняется проброс порта..." else "UPnP enabled. Attempting port mapping...",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            } else {
+                                                Toast.makeText(
+                                                    context,
+                                                    if (appLanguage == "Русский") "UPnP выключён." else "UPnP disabled.",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
                                             com.example.twopchat.P2PMessageRelay.refreshAnnouncement(context)
                                         },
                                         colors = SwitchDefaults.colors(
