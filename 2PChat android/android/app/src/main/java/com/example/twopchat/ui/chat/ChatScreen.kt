@@ -1839,7 +1839,7 @@ fun ChatScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .safeDrawingPadding()
+                .imePadding()
         ) {
             ChatHeader(
                 peerName = peerName,
