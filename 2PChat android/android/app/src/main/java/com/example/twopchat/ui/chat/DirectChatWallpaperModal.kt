@@ -185,7 +185,12 @@ fun DirectChatWallpaperModal(
                             .size(36.dp)
                             .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
                     ) {
-                        Text("←", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_back_arrow),
+                            contentDescription = "Back",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                     Spacer(Modifier.width(12.dp))
                     Text(
@@ -288,7 +293,7 @@ fun DirectChatWallpaperModal(
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
                             Text(
-                                text = if (appLanguage == "Русский") "Как насчёт новых обоев для этого чата?" else "How about a new wallpaper for this chat?",
+                                text = if (appLanguage == "Русский") "Посмотри, как тебе такой вариант оформления?" else "Look, how do you like this design?",
                                 color = Color.White,
                                 fontSize = 14.sp
                             )
@@ -315,7 +320,7 @@ fun DirectChatWallpaperModal(
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
                             Text(
-                                text = if (appLanguage == "Русский") "Отличная идея." else "Great idea.",
+                                text = if (appLanguage == "Русский") "Выглядит отлично, оставляем!" else "Looks great, let's keep it!",
                                 color = if (primaryColor == MintGreen) StealthBlack else Color.White,
                                 fontSize = 14.sp
                             )
@@ -340,30 +345,6 @@ fun DirectChatWallpaperModal(
                     .padding(bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Pick / Change Image Button with Vector Icon
-                Button(
-                    onClick = { imagePickerLauncher.launch("image/*") },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.16f)),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_attach_gallery),
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = if (appLanguage == "Русский") "Выбрать из галереи" else "Pick from gallery",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp
-                    )
-                }
-
                 // Centered "Размытие" (Blur) Toggle Button
                 Surface(
                     color = if (isBlur) primaryColor.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.55f),
@@ -392,6 +373,30 @@ fun DirectChatWallpaperModal(
                             fontWeight = FontWeight.Medium
                         )
                     }
+                }
+
+                // Pick / Change Image Button with Vector Icon
+                Button(
+                    onClick = { imagePickerLauncher.launch("image/*") },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.16f)),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_attach_gallery),
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (appLanguage == "Русский") "Выбрать из галереи" else "Pick from gallery",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
                 }
 
                 // Action Buttons Row (Apply for me & Apply for me and Peer)
