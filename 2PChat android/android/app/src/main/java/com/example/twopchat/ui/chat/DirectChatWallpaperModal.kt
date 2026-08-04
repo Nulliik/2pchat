@@ -10,9 +10,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
@@ -28,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.Image
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -83,6 +82,16 @@ fun DirectChatWallpaperModal(
         }
     }
 
+    fun clampOffset(currentOffset: Offset, currentScale: Float, size: IntSize): Offset {
+        if (size.width <= 0 || size.height <= 0) return currentOffset
+        val maxX = (size.width * (currentScale - 1f)) / 2f
+        val maxY = (size.height * (currentScale - 1f)) / 2f
+        return Offset(
+            currentOffset.x.coerceIn(-maxX, maxX),
+            currentOffset.y.coerceIn(-maxY, maxY)
+        )
+    }
+
     LaunchedEffect(selectedUri, currentWallpaperPath) {
         previewBitmap = withContext(Dispatchers.IO) {
             try {
@@ -128,8 +137,10 @@ fun DirectChatWallpaperModal(
                         .fillMaxSize()
                         .pointerInput(Unit) {
                             detectTransformGestures { _, pan, zoom, _ ->
-                                scale = (scale * zoom).coerceIn(1f, 5f)
-                                offset += pan
+                                val newScale = (scale * zoom).coerceIn(1f, 5f)
+                                scale = newScale
+                                // Clamp offset so the image cannot be dragged beyond its scaled bounds
+                                offset = clampOffset(offset + pan, newScale, containerSize)
                             }
                         }
                         .graphicsLayer(
