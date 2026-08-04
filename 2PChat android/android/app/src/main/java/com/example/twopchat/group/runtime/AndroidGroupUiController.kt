@@ -129,6 +129,11 @@ class AndroidGroupUiController(
         onBackNavigation()
     }
 
+    override fun deleteGroup(groupId: String) {
+        GroupChatCoordinator.deleteGroup(groupId)
+        onBackNavigation()
+    }
+
     override fun acceptInvite(inviteId: String) = GroupChatCoordinator.acceptInvite(inviteId)
 
     override fun declineInvite(inviteId: String) = GroupChatCoordinator.declineInvite(inviteId)

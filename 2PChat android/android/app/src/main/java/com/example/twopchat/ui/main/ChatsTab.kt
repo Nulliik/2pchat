@@ -104,6 +104,7 @@ fun ChatsTab(
     var currentUsername by chatsViewModel.currentUsername
     var activeMenuPeer by remember { mutableStateOf<PeerItem?>(null) }
     var activeMenuGroup by remember { mutableStateOf<com.example.twopchat.group.ui.GroupSummary?>(null) }
+    var groupToDelete by remember { mutableStateOf<com.example.twopchat.group.ui.GroupSummary?>(null) }
     val groupSummaries by GroupChatCoordinator.summaries.collectAsState()
     val sortedGroupSummaries = remember(groupSummaries, chatListRevision) {
         groupSummaries.sortedWith(
@@ -1178,9 +1179,74 @@ fun ChatsTab(
                             activeMenuGroup = null
                         }
                     )
+
+                    DialogOptionRow(
+                        iconRes = com.example.twopchat.R.drawable.ic_delete,
+                        label = if (appLanguage == "Русский") "Удалить группу" else "Delete Group",
+                        textColor = Color.Red,
+                        iconTint = Color.Red,
+                        onClick = {
+                            groupToDelete = groupSummary
+                            activeMenuGroup = null
+                        }
+                    )
                 }
             }
         }
+    }
+
+    groupToDelete?.let { targetGroup ->
+        AlertDialog(
+            onDismissRequest = { groupToDelete = null },
+            title = {
+                Text(
+                    text = if (appLanguage == "Русский") "Удалить группу?" else "Delete Group?",
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor
+                )
+            },
+            text = {
+                Text(
+                    text = if (appLanguage == "Русский") {
+                        "Вы уверены, что хотите полностью удалить группу «${targetGroup.title}» и всю её историю?"
+                    } else {
+                        "Are you sure you want to delete the group \"${targetGroup.title}\" and all its history?"
+                    },
+                    color = onSurfaceVariant,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        GroupChatCoordinator.deleteGroup(targetGroup.groupId)
+                        chatListRevision++
+                        groupToDelete = null
+                        Toast.makeText(
+                            context,
+                            if (appLanguage == "Русский") "Группа «${targetGroup.title}» удалена" else "Group \"${targetGroup.title}\" deleted",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                ) {
+                    Text(
+                        text = if (appLanguage == "Русский") "Удалить" else "Delete",
+                        color = Color.Red,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { groupToDelete = null }) {
+                    Text(
+                        text = Localizations.getString("cancel", appLanguage),
+                        color = onSurfaceColor
+                    )
+                }
+            },
+            containerColor = surfaceColor,
+            shape = RoundedCornerShape(20.dp)
+        )
     }
 }
 

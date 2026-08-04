@@ -47,6 +47,7 @@ interface GroupUiController {
   fun banMember(groupId: String, memberId: String) = Unit
   fun transferOwnership(groupId: String, memberId: String) = Unit
   fun leaveGroup(groupId: String) = Unit
+  fun deleteGroup(groupId: String) = Unit
   fun acceptInvite(inviteId: String) = Unit
   fun declineInvite(inviteId: String) = Unit
   fun createPoll(groupId: String, question: String, options: List<String>, isAnonymous: Boolean) = Unit

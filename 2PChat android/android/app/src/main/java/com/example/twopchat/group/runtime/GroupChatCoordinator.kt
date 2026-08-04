@@ -874,6 +874,13 @@ object GroupChatCoordinator {
         }
     }
 
+    fun deleteGroup(groupId: String) {
+        scope.launch {
+            purgeLocalGroup(groupId)
+            refreshAllGroups()
+        }
+    }
+
     fun leaveGroup(groupId: String) {
         scope.launch {
             val group = db().getGroup(groupId) ?: return@launch

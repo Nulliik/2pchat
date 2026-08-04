@@ -1994,6 +1994,33 @@ private fun GroupChatHeader(
                 }
 
                 var showHeaderMenu by remember { mutableStateOf(false) }
+                var showDeleteGroupConfirmation by remember { mutableStateOf(false) }
+
+                if (showDeleteGroupConfirmation) {
+                    AlertDialog(
+                        onDismissRequest = { showDeleteGroupConfirmation = false },
+                        title = { Text("Удалить группу?", fontWeight = FontWeight.Bold, color = onSurfaceColor) },
+                        text = { Text("Вы уверены, что хотите полностью удалить группу «${state.title}» и всю её историю?", color = onSurfaceColor.copy(alpha = 0.7f)) },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    showDeleteGroupConfirmation = false
+                                    controller.deleteGroup(state.groupId)
+                                }
+                            ) {
+                                Text("Удалить", color = Color.Red, fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showDeleteGroupConfirmation = false }) {
+                                Text("Отмена", color = onSurfaceColor)
+                            }
+                        },
+                        containerColor = surfaceColor,
+                        shape = RoundedCornerShape(20.dp)
+                    )
+                }
+
                 Box {
                     IconButton(
                         onClick = { showHeaderMenu = true },
@@ -2065,6 +2092,21 @@ private fun GroupChatHeader(
                                 Icon(
                                     imageVector = Icons.Default.Delete,
                                     contentDescription = "Leave",
+                                    tint = Color.Red,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Удалить группу", color = Color.Red) },
+                            onClick = {
+                                showHeaderMenu = false
+                                showDeleteGroupConfirmation = true
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete",
                                     tint = Color.Red,
                                     modifier = Modifier.size(20.dp)
                                 )
