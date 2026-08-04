@@ -3,6 +3,9 @@ package com.example.twopchat.ui.chat
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Matrix
+import android.graphics.Paint
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,24 +14,28 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -38,8 +45,6 @@ import com.example.twopchat.theme.MintGreen
 import com.example.twopchat.theme.StealthBlack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,7 +64,11 @@ fun DirectChatWallpaperModal(
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
     var dimming by remember { mutableFloatStateOf(currentDimming.toFloat().coerceIn(0f, 80f)) }
     var isBlur by remember { mutableStateOf(false) }
-    var isMotion by remember { mutableStateOf(false) }
+
+    // Gesture Transform States (Scale & Offset for panning/zooming)
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    var containerSize by remember { mutableStateOf(IntSize.Zero) }
 
     var previewBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
@@ -68,6 +77,9 @@ fun DirectChatWallpaperModal(
     ) { uri: Uri? ->
         if (uri != null) {
             selectedUri = uri
+            // Reset transform gestures when picking a new image
+            scale = 1f
+            offset = Offset.Zero
         }
     }
 
@@ -87,6 +99,15 @@ fun DirectChatWallpaperModal(
         }
     }
 
+    fun prepareFinalBitmap(): Bitmap? {
+        val src = previewBitmap ?: return null
+        return if (scale != 1f || offset != Offset.Zero) {
+            transformBitmap(src, containerSize, scale, offset)
+        } else {
+            src
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -95,8 +116,9 @@ fun DirectChatWallpaperModal(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF0F172A))
+                .onSizeChanged { containerSize = it }
         ) {
-            // Live Preview Background
+            // Live Preview Background with Pinch-to-Zoom & Pan Gesture Support
             if (previewBitmap != null) {
                 Image(
                     bitmap = previewBitmap!!.asImageBitmap(),
@@ -104,6 +126,18 @@ fun DirectChatWallpaperModal(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                scale = (scale * zoom).coerceIn(1f, 5f)
+                                offset += pan
+                            }
+                        }
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offset.x,
+                            translationY = offset.y
+                        )
                         .then(if (isBlur) Modifier.blur(12.dp) else Modifier)
                 )
             } else {
@@ -121,42 +155,90 @@ fun DirectChatWallpaperModal(
                     .background(Color.Black.copy(alpha = dimming / 100f))
             )
 
-            // Top Header Bar
-            Row(
+            // Top Section Column: Top Header Bar + Compact Dimming Slider Row
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onDismiss,
+                // Top Header Bar
+                Row(
                     modifier = Modifier
-                        .size(36.dp)
-                        .background(Color.Black.copy(alpha = 0.4f), shape = CircleShape)
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("←", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.width(12.dp))
-                Text(
-                    text = if (appLanguage == "Русский") "Обои" else "Wallpaper",
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    onClick = { imagePickerLauncher.launch("image/*") },
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(Color.Black.copy(alpha = 0.4f), shape = CircleShape)
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_chat_wallpaper),
-                        contentDescription = "Gallery",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
+                    ) {
+                        Text("←", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = if (appLanguage == "Русский") "Обои" else "Wallpaper",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
                     )
+                    IconButton(
+                        onClick = { imagePickerLauncher.launch("image/*") },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_attach_gallery),
+                            contentDescription = "Gallery",
+                            tint = Color.White,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // Compact Dimming Slider Bar (Relocated to Top)
+                Surface(
+                    color = Color.Black.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Затемнение" else "Dimming",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Slider(
+                            value = dimming,
+                            onValueChange = { dimming = it },
+                            valueRange = 0f..80f,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(32.dp),
+                            colors = SliderDefaults.colors(
+                                thumbColor = primaryColor,
+                                activeTrackColor = primaryColor,
+                                inactiveTrackColor = Color.White.copy(alpha = 0.25f)
+                            )
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = "${dimming.toInt()}%",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 
@@ -171,7 +253,7 @@ fun DirectChatWallpaperModal(
             ) {
                 // Info notice pill
                 Surface(
-                    color = Color.Black.copy(alpha = 0.5f),
+                    color = Color.Black.copy(alpha = 0.55f),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Text(
@@ -245,131 +327,59 @@ fun DirectChatWallpaperModal(
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Pick / Change Image Button if no image currently selected
-                if (previewBitmap == null) {
-                    Button(
-                        onClick = { imagePickerLauncher.launch("image/*") },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.15f)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp)
-                    ) {
-                        Text(
-                            text = if (appLanguage == "Русский") "🖼 Выбрать из галереи" else "🖼 Pick from gallery",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                // Dimming Slider Card
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.5f)),
+                // Pick / Change Image Button with Vector Icon
+                Button(
+                    onClick = { imagePickerLauncher.launch("image/*") },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.16f)),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                 ) {
-                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (appLanguage == "Русский") "Затемнение" else "Dimming",
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp
-                            )
-                            Text(
-                                text = "${dimming.toInt()}%",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp
-                            )
-                        }
-                        Slider(
-                            value = dimming,
-                            onValueChange = { dimming = it },
-                            valueRange = 0f..80f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = primaryColor,
-                                activeTrackColor = primaryColor,
-                                inactiveTrackColor = Color.White.copy(alpha = 0.2f)
-                            )
-                        )
-                    }
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_attach_gallery),
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (appLanguage == "Русский") "Выбрать из галереи" else "Pick from gallery",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
                 }
 
-                // Toggles Row (Blur & Motion)
-                Row(
+                // Centered "Размытие" (Blur) Toggle Button
+                Surface(
+                    color = if (isBlur) primaryColor.copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, if (isBlur) primaryColor else Color.White.copy(alpha = 0.25f)),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        .align(Alignment.CenterHorizontally)
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable { isBlur = !isBlur }
                 ) {
-                    // Blur Toggle
-                    Surface(
-                        color = if (isBlur) primaryColor.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.5f),
-                        shape = RoundedCornerShape(20.dp),
-                        border = BorderStroke(1.dp, if (isBlur) primaryColor else Color.White.copy(alpha = 0.2f)),
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(20.dp))
-                            .clickable { isBlur = !isBlur }
+                    Row(
+                        modifier = Modifier.padding(vertical = 6.dp, horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            RadioButton(
-                                selected = isBlur,
-                                onClick = null,
-                                colors = RadioButtonDefaults.colors(selectedColor = primaryColor)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = if (appLanguage == "Русский") "Размытие" else "Blur",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-
-                    // Motion Toggle
-                    Surface(
-                        color = if (isMotion) primaryColor.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.5f),
-                        shape = RoundedCornerShape(20.dp),
-                        border = BorderStroke(1.dp, if (isMotion) primaryColor else Color.White.copy(alpha = 0.2f)),
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(20.dp))
-                            .clickable { isMotion = !isMotion }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            RadioButton(
-                                selected = isMotion,
-                                onClick = null,
-                                colors = RadioButtonDefaults.colors(selectedColor = primaryColor)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = if (appLanguage == "Русский") "Движение" else "Motion",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
+                        RadioButton(
+                            selected = isBlur,
+                            onClick = null,
+                            colors = RadioButtonDefaults.colors(selectedColor = primaryColor),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = if (appLanguage == "Русский") "Размытие" else "Blur",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                 }
 
@@ -383,7 +393,8 @@ fun DirectChatWallpaperModal(
                     // Apply for me only
                     Button(
                         onClick = {
-                            onApply(previewBitmap, dimming.toInt(), isBlur, isMotion, false)
+                            val finalBmp = prepareFinalBitmap()
+                            onApply(finalBmp, dimming.toInt(), isBlur, false, false)
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color.White.copy(alpha = 0.18f)),
                         shape = RoundedCornerShape(14.dp),
@@ -400,7 +411,8 @@ fun DirectChatWallpaperModal(
                     // Apply for me AND peer
                     Button(
                         onClick = {
-                            onApply(previewBitmap, dimming.toInt(), isBlur, isMotion, true)
+                            val finalBmp = prepareFinalBitmap()
+                            onApply(finalBmp, dimming.toInt(), isBlur, false, true)
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
                         shape = RoundedCornerShape(14.dp),
@@ -417,6 +429,37 @@ fun DirectChatWallpaperModal(
             }
         }
     }
+}
+
+private fun transformBitmap(
+    source: Bitmap,
+    containerSize: IntSize,
+    scale: Float,
+    offset: Offset
+): Bitmap {
+    if (containerSize.width <= 0 || containerSize.height <= 0) return source
+    val targetWidth = containerSize.width
+    val targetHeight = containerSize.height
+
+    val result = Bitmap.createBitmap(targetWidth, targetHeight, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(result)
+    val matrix = Matrix()
+
+    val srcWidth = source.width.toFloat()
+    val srcHeight = source.height.toFloat()
+    val baseScale = maxOf(targetWidth.toFloat() / srcWidth, targetHeight.toFloat() / srcHeight)
+    val baseDx = (targetWidth - srcWidth * baseScale) / 2f
+    val baseDy = (targetHeight - srcHeight * baseScale) / 2f
+
+    matrix.postScale(baseScale, baseScale)
+    matrix.postTranslate(baseDx, baseDy)
+
+    matrix.postScale(scale, scale, targetWidth / 2f, targetHeight / 2f)
+    matrix.postTranslate(offset.x, offset.y)
+
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    canvas.drawBitmap(source, matrix, paint)
+    return result
 }
 
 private fun decodeSampledBitmapFromUri(context: Context, uri: Uri, maxDim: Int = 1920): Bitmap? {
