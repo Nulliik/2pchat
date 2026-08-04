@@ -34,6 +34,8 @@ import com.example.twopchat.VoiceMessageSupport
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.theme.StealthBlack
 
+import androidx.compose.foundation.layout.navigationBarsPadding
+
 @Composable
 internal fun ChatInputBar(
     showAttachments: Boolean,
@@ -70,7 +72,8 @@ internal fun ChatInputBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(surfaceColor.copy(alpha = 0.65f))
+            .background(surfaceColor.copy(alpha = 0.85f))
+            .navigationBarsPadding()
             .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f))
             .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {

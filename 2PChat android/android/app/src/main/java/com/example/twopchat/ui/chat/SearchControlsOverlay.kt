@@ -139,6 +139,7 @@ internal fun SearchBottomBarPill(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(vertical = 6.dp)
         ) {
             // Category & Date Filter Bar
