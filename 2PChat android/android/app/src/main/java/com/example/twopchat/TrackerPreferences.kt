@@ -23,6 +23,9 @@ data class CustomTracker(
 object TrackerPreferences {
     const val ANNOUNCE_ENABLED = "tracker_announce_enabled"
     const val DHT_ENABLED = "tracker_dht_enabled"
+    const val CLEARNET_TRACKERS_ENABLED = "tracker_clearnet_enabled"
+    const val YGG_TRACKERS_ENABLED = "tracker_ygg_enabled"
+    const val IPV4_ANNOUNCE_MODE = "tracker_ipv4_announce_mode"
     const val ENABLED_PROTOCOLS = "tracker_enabled_protocols"
     const val DISABLED_BUILTINS = "tracker_disabled_builtins"
     const val CUSTOM_TRACKERS_JSON = "tracker_custom_json"
@@ -59,6 +62,27 @@ object TrackerPreferences {
 
     fun setAnnounceEnabled(context: Context, enabled: Boolean) {
         P2PPreferences.prefs(context).edit().putBoolean(ANNOUNCE_ENABLED, enabled).apply()
+    }
+
+    fun clearnetTrackersEnabled(context: Context): Boolean =
+        P2PPreferences.prefs(context).getBoolean(CLEARNET_TRACKERS_ENABLED, true)
+
+    fun setClearnetTrackersEnabled(context: Context, enabled: Boolean) {
+        P2PPreferences.prefs(context).edit().putBoolean(CLEARNET_TRACKERS_ENABLED, enabled).apply()
+    }
+
+    fun yggTrackersEnabled(context: Context): Boolean =
+        P2PPreferences.prefs(context).getBoolean(YGG_TRACKERS_ENABLED, true)
+
+    fun setYggTrackersEnabled(context: Context, enabled: Boolean) {
+        P2PPreferences.prefs(context).edit().putBoolean(YGG_TRACKERS_ENABLED, enabled).apply()
+    }
+
+    fun ipv4AnnounceMode(context: Context): String =
+        P2PPreferences.prefs(context).getString(IPV4_ANNOUNCE_MODE, "auto") ?: "auto"
+
+    fun setIpv4AnnounceMode(context: Context, mode: String) {
+        P2PPreferences.prefs(context).edit().putString(IPV4_ANNOUNCE_MODE, mode).apply()
     }
 
     fun dhtEnabled(context: Context): Boolean =
@@ -153,6 +177,9 @@ object TrackerPreferences {
         P2PPreferences.prefs(context).edit()
             .remove(ANNOUNCE_ENABLED)
             .remove(DHT_ENABLED)
+            .remove(CLEARNET_TRACKERS_ENABLED)
+            .remove(YGG_TRACKERS_ENABLED)
+            .remove(IPV4_ANNOUNCE_MODE)
             .remove(ENABLED_PROTOCOLS)
             .remove(DISABLED_BUILTINS)
             .remove(CUSTOM_TRACKERS_JSON)
@@ -162,6 +189,9 @@ object TrackerPreferences {
     fun configJson(context: Context): String = JSONObject().apply {
         put("announce_enabled", announceEnabled(context))
         put("dht_enabled", dhtEnabled(context))
+        put("clearnet_trackers_enabled", clearnetTrackersEnabled(context))
+        put("ygg_trackers_enabled", yggTrackersEnabled(context))
+        put("ipv4_announce_mode", ipv4AnnounceMode(context))
         put("enabled_protocols", JSONArray(enabledProtocols(context).sorted()))
         put("disabled_builtin_trackers", JSONArray(disabledBuiltIns(context).sorted()))
         put("custom_trackers", JSONArray().apply {

@@ -210,6 +210,9 @@ _disabled_builtin_trackers = {"FileBase UDP"}
 _custom_trackers = {}
 _dht_enabled = True
 _announce_enabled = True
+_clearnet_trackers_enabled = True
+_ygg_trackers_enabled = True
+_ipv4_announce_mode = "auto"
 
 
 def _tracker_spec_from_custom(item):
@@ -277,20 +280,32 @@ def configure_trackers(config_json: str) -> bool:
             custom[key] = (spec, enabled)
         dht_enabled = config.get("dht_enabled", True)
         announce_enabled = config.get("announce_enabled", True)
+        clearnet_enabled = config.get("clearnet_trackers_enabled", True)
+        ygg_enabled = config.get("ygg_trackers_enabled", True)
+        ipv4_mode = str(config.get("ipv4_announce_mode", "auto")).lower()
         if not isinstance(dht_enabled, bool) or not isinstance(announce_enabled, bool):
             raise ValueError("DHT and announce flags must be boolean")
+        if not isinstance(clearnet_enabled, bool) or not isinstance(ygg_enabled, bool):
+            raise ValueError("clearnet_trackers_enabled and ygg_trackers_enabled must be boolean")
+        if ipv4_mode not in ("auto", "never", "always"):
+            raise ValueError("ipv4_announce_mode must be auto, never, or always")
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
         print(f"Rejected tracker configuration: {exc}")
         return False
 
     global _enabled_tracker_protocols, _disabled_builtin_trackers
     global _custom_trackers, _dht_enabled, _announce_enabled
+    global _clearnet_trackers_enabled, _ygg_trackers_enabled, _ipv4_announce_mode
     with _tracker_config_lock:
         _enabled_tracker_protocols = protocol_set
         _disabled_builtin_trackers = disabled_set
         _custom_trackers = custom
         _dht_enabled = dht_enabled
         _announce_enabled = announce_enabled
+        _clearnet_trackers_enabled = clearnet_enabled
+        _ygg_trackers_enabled = ygg_enabled
+        _ipv4_announce_mode = ipv4_mode
+    return True
     return True
 
 
@@ -308,10 +323,16 @@ def _filter_enabled_trackers(names):
         protocols = set(_enabled_tracker_protocols)
         disabled = set(_disabled_builtin_trackers)
         custom = dict(_custom_trackers)
+        clearnet_ok = _clearnet_trackers_enabled
+        ygg_ok = _ygg_trackers_enabled
     for name in names:
         if not name:
             continue
         if name in result or name in disabled:
+            continue
+        if not clearnet_ok and name in CLEARNET_TRACKERS:
+            continue
+        if not ygg_ok and name in YGG_TRACKERS:
             continue
         custom_item = custom.get(name)
         if custom_item is not None:
@@ -540,11 +561,16 @@ def _resolve_tracker_names(primary_tracker: str | None = None) -> list[str]:
 
 
 def _announce_tracker_names(endpoints: list[PeerEndpoint]) -> list[str]:
-    names = list(CLEARNET_TRACKERS)
-    if _has_ipv6_endpoint(endpoints):
-        names.extend(YGG_TRACKERS)
+    names = []
     with _tracker_config_lock:
-        names.extend(_custom_trackers)
+        clearnet_ok = _clearnet_trackers_enabled
+        ygg_ok = _ygg_trackers_enabled
+        custom_names = tuple(_custom_trackers)
+    if clearnet_ok:
+        names.extend(CLEARNET_TRACKERS)
+    if ygg_ok and _has_ipv6_endpoint(endpoints):
+        names.extend(YGG_TRACKERS)
+    names.extend(custom_names)
     return _filter_enabled_trackers(names)
 
 
@@ -1229,9 +1255,20 @@ def announce_peer_endpoints(
                 "announce": "SKIPPED (Yggdrasil unavailable)",
                 "resolve": "SKIPPED (Yggdrasil unavailable)",
             }
-    else:
-        # When Yggdrasil IPv6 is available, do not leak IPv4 endpoints to trackers or DHT
+
+    with _tracker_config_lock:
+        ipv4_policy = _ipv4_announce_mode
+
+    if ipv4_policy == "never":
+        # Never announce IPv4 endpoints
         endpoints = [ep for ep in endpoints if ":" in ep.host]
+    elif ipv4_policy == "always":
+        # Always include all available endpoints
+        pass
+    else:
+        # Default "auto": omit IPv4 if Yggdrasil IPv6 is available
+        if local_yggdrasil_available:
+            endpoints = [ep for ep in endpoints if ":" in ep.host]
 
     try:
         variants = []

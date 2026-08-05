@@ -900,6 +900,67 @@ def test_announce_filters_ipv4_when_yggdrasil_is_available(monkeypatch):
     assert "192.0.2.10" not in hosts
 
 
+def test_tracker_category_toggles(monkeypatch):
+    bridge = _load_discovery_bridge()
+
+    # Disable clearnet trackers and enable Yggdrasil trackers
+    config = {
+        "clearnet_trackers_enabled": False,
+        "ygg_trackers_enabled": True,
+        "ipv4_announce_mode": "auto",
+    }
+    assert bridge.configure_trackers(json.dumps(config)) is True
+
+    endpoints = [bridge.PeerEndpoint(host="200:1234::1", port=50001)]
+    tracker_names = bridge._announce_tracker_names(endpoints)
+
+    # Clearnet trackers should be omitted
+    for clearnet_name in bridge.CLEARNET_TRACKERS:
+        assert clearnet_name not in tracker_names
+
+    # Yggdrasil trackers should be present
+    assert "Yggdrasil-only HTTP" in tracker_names or "Yggdrasil-only UDP" in tracker_names
+
+
+def test_ipv4_announce_mode_policies(monkeypatch):
+    bridge = _load_discovery_bridge()
+    passed_endpoints = []
+
+    class FakeTrackerProvider:
+        observed_addresses = ()
+
+        async def announce(self, nickname, shared_code, endpoints=None, **kwargs):
+            passed_endpoints.extend(endpoints or [])
+            return SimpleNamespace()
+
+    monkeypatch.setattr(bridge, "CLEARNET_TRACKERS", ("Test tracker",))
+    monkeypatch.setattr(bridge, "YGG_TRACKERS", ())
+    monkeypatch.setattr(bridge, "_dht_enabled", False)
+    monkeypatch.setattr(
+        bridge,
+        "get_tracker_by_name",
+        lambda _name: SimpleNamespace(
+            discovery_scheme="http-tracker",
+            announce_url="https://tracker.invalid/announce",
+            protocol="https",
+        ),
+    )
+    monkeypatch.setattr(bridge, "get_discovery_provider", lambda *_args, **_kwargs: FakeTrackerProvider())
+    monkeypatch.setattr(bridge, "_discover_public_ipv4_stun", lambda: None)
+
+    # Policy "always": keep IPv4 even when Yggdrasil IPv6 is present
+    config = {"ipv4_announce_mode": "always"}
+    assert bridge.configure_trackers(json.dumps(config)) is True
+
+    endpoints_json = json.dumps(["192.0.2.10", "200:1234::1"])
+    assert bridge.announce_peer_endpoints("alice", "fingerprint", endpoints_json, 50001, "code") is True
+
+    hosts = [ep.host for ep in passed_endpoints]
+    assert "192.0.2.10" in hosts
+    assert "200:1234::1" in hosts
+
+
+
 
 def test_group_signature_api_is_domain_separated_and_rejects_tampering(monkeypatch):
     bridge = _load_discovery_bridge()
