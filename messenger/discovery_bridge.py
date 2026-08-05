@@ -1229,6 +1229,9 @@ def announce_peer_endpoints(
                 "announce": "SKIPPED (Yggdrasil unavailable)",
                 "resolve": "SKIPPED (Yggdrasil unavailable)",
             }
+    else:
+        # When Yggdrasil IPv6 is available, do not leak IPv4 endpoints to trackers or DHT
+        endpoints = [ep for ep in endpoints if ":" in ep.host]
 
     try:
         variants = []

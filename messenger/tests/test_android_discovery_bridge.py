@@ -858,6 +858,49 @@ def test_announce_timeout_clears_pending_tracker_status(monkeypatch):
     assert bridge.tracker_diagnostics["Test tracker"]["announce"] == "FAIL (Timed out)"
 
 
+def test_announce_filters_ipv4_when_yggdrasil_is_available(monkeypatch):
+    bridge = _load_discovery_bridge()
+    passed_endpoints = []
+
+    class FakeTrackerProvider:
+        observed_addresses = ()
+
+        async def announce(self, nickname, shared_code, endpoints=None, **kwargs):
+            passed_endpoints.extend(endpoints or [])
+            return SimpleNamespace()
+
+    monkeypatch.setattr(bridge, "CLEARNET_TRACKERS", ("Test tracker",))
+    monkeypatch.setattr(bridge, "YGG_TRACKERS", ())
+    monkeypatch.setattr(bridge, "_dht_enabled", False)
+    monkeypatch.setattr(
+        bridge,
+        "get_tracker_by_name",
+        lambda _name: SimpleNamespace(
+            discovery_scheme="http-tracker",
+            announce_url="https://tracker.invalid/announce",
+            protocol="https",
+        ),
+    )
+    monkeypatch.setattr(bridge, "get_discovery_provider", lambda *_args, **_kwargs: FakeTrackerProvider())
+    monkeypatch.setattr(bridge, "_discover_public_ipv4_stun", lambda: None)
+
+    # Announce with both IPv4 and Yggdrasil IPv6 endpoints
+    endpoints_json = json.dumps(["192.0.2.10", "200:1234::1"])
+    assert bridge.announce_peer_endpoints(
+        "alice",
+        "fingerprint",
+        endpoints_json,
+        50001,
+        "shared-code",
+    ) is True
+
+    # Check that only the IPv6 endpoint was passed to the tracker
+    hosts = [ep.host for ep in passed_endpoints]
+    assert "200:1234::1" in hosts
+    assert "192.0.2.10" not in hosts
+
+
+
 def test_group_signature_api_is_domain_separated_and_rejects_tampering(monkeypatch):
     bridge = _load_discovery_bridge()
     signing_key = SigningKey.generate()
