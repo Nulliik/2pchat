@@ -190,6 +190,48 @@ internal fun StickerPackManagerPage(
         }
     }
 
+    var packToExport by remember { mutableStateOf<BuiltinStickerPack?>(null) }
+    val exportFileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream"),
+    ) { uri ->
+        val pack = packToExport
+        packToExport = null
+        if (uri == null || pack == null) return@rememberLauncherForActivityResult
+        operationRunning = true
+        scope.launch {
+            val success = withContext(Dispatchers.IO) {
+                try {
+                    val tempArchive = StickerSupport.createPackArchive(context, pack.id)
+                        ?: return@withContext false
+                    context.contentResolver.openOutputStream(uri)?.use { output ->
+                        tempArchive.inputStream().use { input ->
+                            input.copyTo(output)
+                        }
+                    }
+                    true
+                } catch (e: Exception) {
+                    false
+                }
+            }
+            operationRunning = false
+            if (success) {
+                notify(
+                    "Стикерпак сохранён в память устройства",
+                    "Sticker pack saved to device storage",
+                )
+            } else {
+                notify("Не удалось сохранить файл", "Could not save file")
+            }
+        }
+    }
+
+    fun exportPack(pack: BuiltinStickerPack) {
+        packToExport = pack
+        val safeName = pack.title.replace(Regex("[^a-zA-Z0-9А-Яа-я_ -]"), "_").trim()
+            .ifEmpty { "sticker_pack" } + ".2psticker"
+        exportFileLauncher.launch(safeName)
+    }
+
     fun sharePack(pack: BuiltinStickerPack) {
         operationRunning = true
         scope.launch {
@@ -274,6 +316,7 @@ internal fun StickerPackManagerPage(
                 onRename = { showRenameDialog = true },
                 onCopy = { showCopyDialog = true },
                 onShare = { sharePack(selectedPack) },
+                onExport = { exportPack(selectedPack) },
                 onDelete = { showDeleteDialog = true },
                 onMoveSticker = { offset ->
                     val stickerId = selectedStickerId ?: return@PackEditor
@@ -673,6 +716,7 @@ private fun PackEditor(
     onRename: () -> Unit,
     onCopy: () -> Unit,
     onShare: () -> Unit,
+    onExport: () -> Unit,
     onDelete: () -> Unit,
     onMoveSticker: (Int) -> Unit,
     onRemoveSticker: () -> Unit,
@@ -727,6 +771,9 @@ private fun PackEditor(
                         FilledTonalButton(onClick = onCopy, contentPadding = compactPadding) {
                             Text(if (appLanguage == "Русский") "Создать копию" else "Make a copy", maxLines = 1, softWrap = false)
                         }
+                    }
+                    OutlinedButton(onClick = onExport, contentPadding = compactPadding) {
+                        Text(if (appLanguage == "Русский") "Экспорт" else "Export", maxLines = 1, softWrap = false)
                     }
                     OutlinedButton(onClick = onShare, contentPadding = compactPadding) {
                         Text(if (appLanguage == "Русский") "Поделиться" else "Share", maxLines = 1, softWrap = false)
