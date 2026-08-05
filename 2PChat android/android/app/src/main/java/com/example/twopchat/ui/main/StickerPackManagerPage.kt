@@ -30,12 +30,22 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.Canvas
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
@@ -67,7 +77,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -889,37 +898,85 @@ private fun PackEditor(
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val compactPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     if (pack.isOwned) {
-                        FilledTonalButton(onClick = onAdd, contentPadding = compactPadding) {
-                            Text(if (appLanguage == "Русский") "＋ Стикеры" else "＋ Stickers", maxLines = 1, softWrap = false)
+                        Button(
+                            onClick = onAdd,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (appLanguage == "Русский") "Стикеры" else "Stickers", maxLines = 1, fontSize = 13.sp)
                         }
-                        OutlinedButton(onClick = onRename, contentPadding = compactPadding) {
-                            Text(if (appLanguage == "Русский") "Переименовать" else "Rename", maxLines = 1, softWrap = false)
+
+                        IconButton(
+                            onClick = onRename,
+                            modifier = Modifier
+                                .size(38.dp)
+                                .background(onSurfaceColor.copy(alpha = 0.07f), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = if (appLanguage == "Русский") "Переименовать" else "Rename",
+                                tint = primaryColor,
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                     } else {
-                        FilledTonalButton(onClick = onCopy, contentPadding = compactPadding) {
-                            Text(if (appLanguage == "Русский") "Создать копию" else "Make a copy", maxLines = 1, softWrap = false)
+                        Button(
+                            onClick = onCopy,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(if (appLanguage == "Русский") "Создать копию" else "Make a copy", maxLines = 1, fontSize = 13.sp)
                         }
                     }
-                    OutlinedButton(onClick = onExport, contentPadding = compactPadding) {
-                        Text(if (appLanguage == "Русский") "Экспорт" else "Export", maxLines = 1, softWrap = false)
+
+                    // Export
+                    IconButton(
+                        onClick = onExport,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(onSurfaceColor.copy(alpha = 0.07f), CircleShape)
+                    ) {
+                        CustomExportIcon(tint = primaryColor, modifier = Modifier.size(17.dp))
                     }
-                    OutlinedButton(onClick = onShare, contentPadding = compactPadding) {
-                        Text(if (appLanguage == "Русский") "Поделиться" else "Share", maxLines = 1, softWrap = false)
+
+                    // Share
+                    IconButton(
+                        onClick = onShare,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(onSurfaceColor.copy(alpha = 0.07f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = if (appLanguage == "Русский") "Поделиться" else "Share",
+                            tint = primaryColor,
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
-                    TextButton(onClick = onDelete, contentPadding = compactPadding) {
-                        Text(
-                            if (appLanguage == "Русский") "Удалить пак" else "Delete pack",
-                            color = MaterialTheme.colorScheme.error,
-                            maxLines = 1,
-                            softWrap = false
+
+                    // Delete
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = if (appLanguage == "Русский") "Удалить пак" else "Delete pack",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
@@ -1129,4 +1186,34 @@ private fun PackNameDialog(
             }
         },
     )
+}
+
+@Composable
+private fun CustomExportIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val strokeWidth = w * 0.12f
+        drawPath(
+            path = Path().apply {
+                moveTo(w * 0.18f, h * 0.65f)
+                lineTo(w * 0.18f, h * 0.85f)
+                lineTo(w * 0.82f, h * 0.85f)
+                lineTo(w * 0.82f, h * 0.65f)
+            },
+            color = tint,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+        drawPath(
+            path = Path().apply {
+                moveTo(w * 0.5f, h * 0.15f)
+                lineTo(w * 0.5f, h * 0.62f)
+                moveTo(w * 0.3f, h * 0.44f)
+                lineTo(w * 0.5f, h * 0.64f)
+                lineTo(w * 0.7f, h * 0.44f)
+            },
+            color = tint,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+    }
 }
