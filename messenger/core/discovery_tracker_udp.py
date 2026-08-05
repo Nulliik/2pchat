@@ -83,16 +83,19 @@ class UdpTrackerDiscovery(DiscoveryProvider):
 
     async def _tracker_endpoints(self) -> list[tuple[int, int, int, tuple]]:
         loop = asyncio.get_running_loop()
-        infos = await asyncio.wait_for(
-            loop.getaddrinfo(
-                self._tracker_host,
-                self._tracker_port,
-                type=socket.SOCK_DGRAM,
-                proto=socket.IPPROTO_UDP,
-            ),
-            timeout=self._timeout,
-        )
-        return [(family, socktype, proto, sockaddr) for family, socktype, proto, _, sockaddr in infos]
+        try:
+            infos = await asyncio.wait_for(
+                loop.getaddrinfo(
+                    self._tracker_host,
+                    self._tracker_port,
+                    type=socket.SOCK_DGRAM,
+                    proto=socket.IPPROTO_UDP,
+                ),
+                timeout=self._timeout,
+            )
+            return [(family, socktype, proto, sockaddr) for family, socktype, proto, _, sockaddr in infos]
+        except (socket.gaierror, OSError, asyncio.TimeoutError) as exc:
+            raise RuntimeError(f"Failed to resolve tracker host '{self._tracker_host}': {exc}") from exc
 
     async def _tracker_roundtrip(
         self,

@@ -118,13 +118,10 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         last_error = None
         for _attempt in range(self._retries):
             try:
-                resp = urllib.request.urlopen(request, timeout=self._timeout)
-                try:
+                with urllib.request.urlopen(request, timeout=self._timeout) as resp:
                     payload = resp.read()
                     self._record_observed_addresses(payload)
                     return payload
-                finally:
-                    resp.close()
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
         if last_error:
