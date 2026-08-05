@@ -319,6 +319,7 @@ fun ChatScreen(
     var pinnedMsgText by remember(peerName, isActive) { mutableStateOf(SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
     var pinnedMsgSender by remember(peerName, isActive) { mutableStateOf(sharedPrefs.getString("pinned_msg_sender_${peerName}", null)) }
     var pinnedBy by remember(peerName, isActive) { mutableStateOf(sharedPrefs.getString("pinned_by_${peerName}", null)) }
+    var activePinnedIndex by remember(peerName) { mutableIntStateOf(0) }
     var showPinnedSheet by remember { mutableStateOf(false) }
     var isMuted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("mute_notifications_${peerName}", false)) }
     var isBlocked by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("blocked_peer_${peerName}", false)) }
@@ -443,6 +444,26 @@ fun ChatScreen(
     val persistEnabled = remember(context) { sharedPrefs.getBoolean("persist_chat_history", true) }
     val chatViewModel: ChatScreenViewModel = viewModel(key = "chat:$peerName")
     val initialMessages = chatViewModel.messages
+    val pinnedMessagesList = remember(initialMessages, pinnedMsgId, pinnedMsgText) {
+        val dbPinned = initialMessages.filter { it.isPinned }
+        if (dbPinned.isNotEmpty()) {
+            dbPinned
+        } else if (pinnedMsgId != null && pinnedMsgText != null) {
+            val found = initialMessages.find { it.id == pinnedMsgId }
+            if (found != null) listOf(found)
+            else listOf(
+                Message(
+                    id = pinnedMsgId!!,
+                    text = pinnedMsgText!!,
+                    isMe = pinnedMsgSender == "You",
+                    timestamp = "",
+                    isPinned = true
+                )
+            )
+        } else {
+            emptyList()
+        }
+    }
     var selectedCategoryFilter by remember { mutableStateOf(SearchCategoryFilter.ALL) }
     var selectedDateFilterMs by remember { mutableStateOf<Long?>(null) }
     var showDatePickerDialog by remember { mutableStateOf(false) }
@@ -1944,70 +1965,60 @@ fun ChatScreen(
             }
 
             // Pinned Message Bar
-            AnimatedVisibility(
-                visible = pinnedMsgId != null && pinnedMsgText != null,
-                enter = expandVertically(animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(160)),
-                exit = shrinkVertically(animationSpec = tween(180, easing = FastOutLinearInEasing)) + fadeOut(animationSpec = tween(140))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(surfaceColor.copy(alpha = 0.95f))
-                        .border(width = 0.5.dp, color = onSurfaceColor.copy(alpha = 0.05f))
-                        .clickable {
-                            val idx = initialMessages.indexOfFirst { it.id == pinnedMsgId }
-                            if (idx != -1) {
-                                coroutineScope.launch {
-                                    listState.animateScrollToItem(idx)
-                                    highlightedMessageId = pinnedMsgId
-                                }
+
+            val currentPinnedMsg = if (pinnedMessagesList.isNotEmpty()) {
+                pinnedMessagesList[activePinnedIndex % pinnedMessagesList.size]
+            } else null
+
+            val currentPinnedPreview = when {
+                currentPinnedMsg == null -> ""
+                currentPinnedMsg.text.isNotBlank() -> currentPinnedMsg.text
+                currentPinnedMsg.attachmentType == "IMAGE" -> if (appLanguage == "Русский") "📷 Фотография" else "📷 Photo"
+                currentPinnedMsg.attachmentType == "VIDEO" -> if (appLanguage == "Русский") "🎥 Видеозапись" else "🎥 Video"
+                currentPinnedMsg.attachmentType == "VOICE" -> if (appLanguage == "Русский") "🎤 Голосовое сообщение" else "🎤 Voice Message"
+                currentPinnedMsg.attachmentType == "FILE" -> "📁 ${currentPinnedMsg.attachmentName ?: "File"}"
+                else -> if (appLanguage == "Русский") "Вложение" else "Attachment"
+            }
+
+            val currentPinnedTitle = if (currentPinnedMsg != null) {
+                if (currentPinnedMsg.isMe) {
+                    if (appLanguage == "Русский") "Вы закрепили сообщение" else "You pinned a message"
+                } else {
+                    if (appLanguage == "Русский") "$peerName закрепил(а) сообщение" else "$peerName pinned a message"
+                }
+            } else ""
+
+            ConversationPinnedMessageBar(
+                visible = currentPinnedMsg != null,
+                title = currentPinnedTitle,
+                preview = currentPinnedPreview,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                pinnedCount = pinnedMessagesList.size,
+                currentIndex = if (pinnedMessagesList.isNotEmpty()) (activePinnedIndex % pinnedMessagesList.size) + 1 else 1,
+                onClick = {
+                    if (currentPinnedMsg != null && pinnedMessagesList.isNotEmpty()) {
+                        val idx = initialMessages.indexOfFirst { it.id == currentPinnedMsg.id }
+                        if (idx != -1) {
+                            coroutineScope.launch {
+                                listState.animateScrollToItem(idx)
+                                highlightedMessageId = currentPinnedMsg.id
                             }
                         }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_pin),
-                        contentDescription = "Pinned",
-                        tint = primaryColor,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        val pinnedByText = if (pinnedBy == "You") {
-                            if (appLanguage == "Русский") "Вы закрепили сообщение" else "You pinned a message"
-                        } else {
-                            val name = pinnedBy ?: peerName
-                            if (appLanguage == "Русский") "$name закрепил(а) сообщение" else "$name pinned a message"
+                        activePinnedIndex = (activePinnedIndex + 1) % pinnedMessagesList.size
+                    }
+                },
+                onUnpin = {
+                    if (currentPinnedMsg != null) {
+                        val targetId = currentPinnedMsg.id
+                        val msgIndex = initialMessages.indexOfFirst { it.id == targetId }
+                        if (msgIndex != -1) {
+                            initialMessages[msgIndex] = initialMessages[msgIndex].copy(isPinned = false)
                         }
-                        Text(
-                            text = pinnedByText,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = primaryColor
-                        )
-                        Text(
-                            text = pinnedMsgText ?: "",
-                            fontSize = 12.sp,
-                            color = onSurfaceColor,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                        )
-                    }
-                    IconButton(
-                        onClick = { showPinnedSheet = true },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_pin),
-                            contentDescription = "Show All Pinned",
-                            tint = primaryColor,
-                            modifier = Modifier.size(15.dp)
-                        )
-                    }
-                    Spacer(Modifier.width(6.dp))
-                    IconButton(
-                        onClick = {
+                        ChatDatabaseHelper.getInstance(context).updateMessagePinned(targetId, false)
+                        if (pinnedMessagesList.size <= 1) {
                             sharedPrefs.edit {
                                 remove("pinned_msg_id_${peerName}")
                                 remove("pinned_msg_text_${peerName}")
@@ -2018,14 +2029,12 @@ fun ChatScreen(
                             pinnedMsgText = null
                             pinnedMsgSender = null
                             pinnedBy = null
-                            P2PMessageRelay.sendUnpinMessage(context, peerName)
-                        },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Text("×", fontSize = 18.sp, color = onSurfaceVariant, fontWeight = FontWeight.Bold)
+                        }
+                        P2PMessageRelay.sendUnpinMessage(context, peerName)
                     }
-                }
-            }
+                },
+                onOpenSheet = { showPinnedSheet = true }
+            )
 
             Box(modifier = Modifier.weight(1f)) {
                 val hasSearchActive = isSearchMode && (searchQuery.isNotEmpty() || selectedCategoryFilter != SearchCategoryFilter.ALL || selectedDateFilterMs != null)
@@ -3680,20 +3689,17 @@ remove("pinned_msg_id_${peerName}")
         }
 
         if (showPinnedSheet) {
-            val pinnedItems = remember(pinnedMsgId, pinnedMsgText, pinnedMsgSender, initialMessages) {
-                if (pinnedMsgId != null && pinnedMsgText != null) {
-                    val targetMsg = initialMessages.find { it.id == pinnedMsgId }
-                    listOf(
-                        PinnedItemModel(
-                            id = pinnedMsgId!!,
-                            senderName = pinnedMsgSender ?: (if (pinnedBy == "You") "Вы" else peerName),
-                            text = pinnedMsgText!!,
-                            timestamp = targetMsg?.timestamp ?: "",
-                            attachmentType = targetMsg?.attachmentType,
-                            attachmentName = targetMsg?.attachmentName,
-                        )
+            val pinnedItems = remember(pinnedMessagesList) {
+                pinnedMessagesList.map { msg ->
+                    PinnedItemModel(
+                        id = msg.id,
+                        senderName = if (msg.isMe) (if (appLanguage == "Русский") "Вы" else "You") else peerName,
+                        text = msg.text,
+                        timestamp = msg.timestamp,
+                        attachmentType = msg.attachmentType,
+                        attachmentName = msg.attachmentName,
                     )
-                } else emptyList()
+                }
             }
             PinnedMessagesSheet(
                 pinnedItems = pinnedItems,
@@ -3706,26 +3712,42 @@ remove("pinned_msg_id_${peerName}")
                 onSelectPinnedMessage = { item ->
                     val idx = initialMessages.indexOfFirst { it.id == item.id }
                     if (idx != -1) {
+                        val pinIdx = pinnedMessagesList.indexOfFirst { it.id == item.id }
+                        if (pinIdx != -1) activePinnedIndex = pinIdx
                         coroutineScope.launch {
                             listState.animateScrollToItem(idx)
                             highlightedMessageId = item.id
                         }
                     }
                 },
-                onUnpinMessage = {
-                    sharedPrefs.edit {
-                        remove("pinned_msg_id_${peerName}")
-                        remove("pinned_msg_text_${peerName}")
-                        remove("pinned_msg_sender_${peerName}")
-                        remove("pinned_by_${peerName}")
+                onUnpinMessage = { item ->
+                    val msgIndex = initialMessages.indexOfFirst { it.id == item.id }
+                    if (msgIndex != -1) {
+                        initialMessages[msgIndex] = initialMessages[msgIndex].copy(isPinned = false)
                     }
-                    pinnedMsgId = null
-                    pinnedMsgText = null
-                    pinnedMsgSender = null
-                    pinnedBy = null
+                    ChatDatabaseHelper.getInstance(context).updateMessagePinned(item.id, false)
+                    if (pinnedItems.size <= 1) {
+                        sharedPrefs.edit {
+                            remove("pinned_msg_id_${peerName}")
+                            remove("pinned_msg_text_${peerName}")
+                            remove("pinned_msg_sender_${peerName}")
+                            remove("pinned_by_${peerName}")
+                        }
+                        pinnedMsgId = null
+                        pinnedMsgText = null
+                        pinnedMsgSender = null
+                        pinnedBy = null
+                    }
                     P2PMessageRelay.sendUnpinMessage(context, peerName)
                 },
                 onUnpinAll = {
+                    pinnedItems.forEach { item ->
+                        val msgIndex = initialMessages.indexOfFirst { it.id == item.id }
+                        if (msgIndex != -1) {
+                            initialMessages[msgIndex] = initialMessages[msgIndex].copy(isPinned = false)
+                        }
+                        ChatDatabaseHelper.getInstance(context).updateMessagePinned(item.id, false)
+                    }
                     sharedPrefs.edit {
                         remove("pinned_msg_id_${peerName}")
                         remove("pinned_msg_text_${peerName}")

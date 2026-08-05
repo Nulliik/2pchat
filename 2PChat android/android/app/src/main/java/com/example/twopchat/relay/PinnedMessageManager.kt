@@ -41,6 +41,7 @@ internal class PinnedMessageManager {
                 .findMessageForReaction(sender, msgId, "")
                 ?.text
                 ?: text
+            ChatDatabaseHelper.getInstance(context).updateMessagePinned(msgId, true)
             stateHandled = prefs.edit()
                 .putString(P2PPreferences.pinnedMessageId(sender), msgId)
                 .putString(

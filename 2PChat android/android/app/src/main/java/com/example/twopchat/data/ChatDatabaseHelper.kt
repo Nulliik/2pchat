@@ -299,6 +299,35 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
     }
 
+    fun getPinnedMessagesForPeer(peerName: String): List<Message> {
+        val messages = mutableListOf<Message>()
+        val db = this.safeReadableDatabase
+        val cursor = db.query(
+            TABLE_MESSAGES,
+            null,
+            "$KEY_PEER_NAME = ? AND $KEY_IS_PINNED = 1",
+            arrayOf(peerName),
+            null,
+            null,
+            "rowid ASC"
+        )
+        cursor.use {
+            val stringCipher = SecureStorage.newStringCipher()
+            while (it.moveToNext()) {
+                messages.add(readMessageFromCursor(it, stringCipher))
+            }
+        }
+        return messages
+    }
+
+    fun unpinAllMessagesForPeer(peerName: String) {
+        val db = this.safeWritableDatabase
+        val values = ContentValues().apply {
+            put(KEY_IS_PINNED, 0)
+        }
+        db.update(TABLE_MESSAGES, values, "$KEY_PEER_NAME = ?", arrayOf(peerName))
+    }
+
     fun saveMessage(peerName: String, msg: Message) {
         val db = this.safeWritableDatabase
         val values = ContentValues().apply {

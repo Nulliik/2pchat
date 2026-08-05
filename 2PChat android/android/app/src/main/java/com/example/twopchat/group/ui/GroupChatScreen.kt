@@ -281,6 +281,15 @@ fun GroupChatScreen(
     var selectedDateFilterMs by remember { mutableStateOf<Long?>(null) }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var showPinnedSheet by remember { mutableStateOf(false) }
+    var activePinnedIndex by remember(state.groupId) { mutableIntStateOf(0) }
+    val pinnedGroupMessages = remember(state.messages, state.pinnedMessage) {
+        val list = state.messages.filter { it.isPinned }
+        if (list.isNotEmpty()) list
+        else state.pinnedMessage?.let { pinned ->
+            val found = state.messages.find { it.messageId == pinned.messageId }
+            if (found != null) listOf(found) else emptyList()
+        } ?: emptyList()
+    }
     var showWallpaperModal by remember { mutableStateOf(false) }
     var currentMatchIndex by remember { mutableIntStateOf(0) }
     var messageToForward by remember { mutableStateOf<GroupTimelineMessage?>(null) }
@@ -714,26 +723,45 @@ fun GroupChatScreen(
             }
 
         // Pinned Message Bar matching Screenshot 2
-        state.pinnedMessage?.let { pinned ->
+
+        if (pinnedGroupMessages.isNotEmpty()) {
+            val currentPinnedMsg = pinnedGroupMessages[activePinnedIndex % pinnedGroupMessages.size]
+            val previewText = when {
+                currentPinnedMsg.text.isNotBlank() -> currentPinnedMsg.text
+                currentPinnedMsg.attachment?.mimeType?.startsWith("image/") == true -> if (appLanguage == "Русский") "📷 Фотография" else "📷 Photo"
+                currentPinnedMsg.attachment?.mimeType?.startsWith("video/") == true -> if (appLanguage == "Русский") "🎥 Видеозапись" else "🎥 Video"
+                currentPinnedMsg.attachment?.mimeType?.startsWith("audio/") == true -> if (appLanguage == "Русский") "🎤 Голосовое сообщение" else "🎤 Voice Message"
+                currentPinnedMsg.attachment != null -> "📁 ${currentPinnedMsg.attachment.fileName}"
+                else -> if (appLanguage == "Русский") "Вложение" else "Attachment"
+            }
+            val titleText = if (currentPinnedMsg.authorName.isNotBlank()) {
+                if (appLanguage == "Русский") "${currentPinnedMsg.authorName} закрепил(а) сообщение" else "${currentPinnedMsg.authorName} pinned a message"
+            } else {
+                if (appLanguage == "Русский") "Закреплённое сообщение" else "Pinned message"
+            }
+
             ConversationPinnedMessageBar(
                 visible = true,
-                title = "Закреплённое сообщение",
-                preview = pinned.text,
+                title = titleText,
+                preview = previewText,
                 primaryColor = primaryColor,
                 surfaceColor = surfaceColor,
                 onSurfaceColor = onSurfaceColor,
                 onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
+                pinnedCount = pinnedGroupMessages.size,
+                currentIndex = (activePinnedIndex % pinnedGroupMessages.size) + 1,
                 onClick = {
-                        val pinnedId = pinned.messageId
-                        val targetIdx = state.messages.indexOfFirst { it.messageId == pinnedId }
-                        if (targetIdx != -1) {
-                            coroutineScope.launch {
-                                listState.animateScrollToItem(targetIdx)
-                                highlightedMessageId = pinnedId
-                            }
+                    val pinnedId = currentPinnedMsg.messageId
+                    val targetIdx = state.messages.indexOfFirst { it.messageId == pinnedId }
+                    if (targetIdx != -1) {
+                        coroutineScope.launch {
+                            listState.animateScrollToItem(targetIdx)
+                            highlightedMessageId = pinnedId
                         }
+                    }
+                    activePinnedIndex = (activePinnedIndex + 1) % pinnedGroupMessages.size
                 },
-                onUnpin = { controller.unpinMessage(state.groupId, pinned.messageId) },
+                onUnpin = { controller.unpinMessage(state.groupId, currentPinnedMsg.messageId) },
                 onOpenSheet = { showPinnedSheet = true },
                 modifier = Modifier.testTag("pinned_message"),
             )
@@ -2077,22 +2105,38 @@ fun GroupChatScreen(
     }
 
     if (showPinnedSheet) {
-        val pinnedItems = remember(state.pinnedMessage, state.messages) {
-            state.pinnedMessage?.let { pinned ->
-                val msg = state.messages.find { it.messageId == pinned.messageId }
-                listOf(
+        val pinnedItems = remember(state.messages, state.pinnedMessage) {
+            val list = state.messages.filter { it.isPinned }
+            if (list.isNotEmpty()) {
+                list.map { msg ->
                     PinnedItemModel(
-                        id = pinned.messageId,
-                        senderName = msg?.authorName ?: "Участник",
-                        text = pinned.text,
-                        timestamp = msg?.timestampLabel ?: "",
+                        id = msg.messageId,
+                        senderName = msg.authorName.ifBlank { "Участник" },
+                        text = msg.text,
+                        timestamp = msg.timestampLabel,
+                        attachmentType = msg.attachment?.mimeType,
+                        attachmentName = msg.attachment?.fileName,
                     )
-                )
-            } ?: emptyList()
+                }
+            } else {
+                state.pinnedMessage?.let { pinned ->
+                    val msg = state.messages.find { it.messageId == pinned.messageId }
+                    listOf(
+                        PinnedItemModel(
+                            id = pinned.messageId,
+                            senderName = msg?.authorName?.ifBlank { "Участник" } ?: "Участник",
+                            text = pinned.text,
+                            timestamp = msg?.timestampLabel ?: "",
+                            attachmentType = msg?.attachment?.mimeType,
+                            attachmentName = msg?.attachment?.fileName,
+                        )
+                    )
+                } ?: emptyList()
+            }
         }
         PinnedMessagesSheet(
             pinnedItems = pinnedItems,
-            appLanguage = "Русский",
+            appLanguage = appLanguage,
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
             onSurfaceColor = onSurfaceColor,
@@ -2101,6 +2145,8 @@ fun GroupChatScreen(
             onSelectPinnedMessage = { item ->
                 val targetIdx = state.messages.indexOfFirst { it.messageId == item.id }
                 if (targetIdx != -1) {
+                    val pinIdx = pinnedGroupMessages.indexOfFirst { it.messageId == item.id }
+                    if (pinIdx != -1) activePinnedIndex = pinIdx
                     coroutineScope.launch {
                         listState.animateScrollToItem(targetIdx)
                         highlightedMessageId = item.id
@@ -2111,8 +2157,8 @@ fun GroupChatScreen(
                 controller.unpinMessage(state.groupId, item.id)
             },
             onUnpinAll = {
-                state.pinnedMessage?.let { pinned ->
-                    controller.unpinMessage(state.groupId, pinned.messageId)
+                pinnedItems.forEach { item ->
+                    controller.unpinMessage(state.groupId, item.id)
                 }
             }
         )
