@@ -52,6 +52,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import com.example.twopchat.R
 import com.example.twopchat.theme.MintGreen
+import com.example.twopchat.theme.MintGreenLight
 import com.example.twopchat.theme.StealthBlack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -150,7 +151,7 @@ fun DirectChatWallpaperModal(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0F172A))
+                .background(MaterialTheme.colorScheme.background)
                 .onSizeChanged { containerSize = it }
         ) {
             // Live Preview Background with Pinch-to-Zoom & Pan Gesture Support
@@ -181,7 +182,7 @@ fun DirectChatWallpaperModal(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color(0xFF1E293B))
+                        .background(MaterialTheme.colorScheme.background)
                 )
             }
 
@@ -192,7 +193,7 @@ fun DirectChatWallpaperModal(
                     .background(Color.Black.copy(alpha = animatedDimmingAlpha))
             )
 
-            // Top Section Column: Top Header Bar + Compact Dimming Slider Row
+            // Top Section Column: Top Header Bar + Compact Dimming Slider + High Dialogue Preview
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -241,7 +242,7 @@ fun DirectChatWallpaperModal(
                     }
                 }
 
-                // Compact Dimming Slider Bar (Relocated to Top)
+                // Compact Dimming Slider Bar
                 Surface(
                     color = Color.Black.copy(alpha = 0.6f),
                     shape = RoundedCornerShape(20.dp),
@@ -282,81 +283,82 @@ fun DirectChatWallpaperModal(
                         )
                     }
                 }
-            }
 
-            // Center Content: Telegram-style Message Preview Bubbles
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.Center)
-                    .padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Info notice pill
-                Surface(
-                    color = Color.Black.copy(alpha = 0.55f),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text(
-                        text = if (appLanguage == "Русский") "$peerName также сможет установить эти обои" else "$peerName will also be able to set this wallpaper",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                    )
-                }
+                Spacer(Modifier.height(10.dp))
 
-                // Sample Incoming Bubble
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start
+                // High Dialogue Preview Section (Positioned high up so it's readable and doesn't overlap preset cards)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Info notice pill
                     Surface(
-                        color = Color(0xFF1E2732),
-                        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 4.dp),
-                        modifier = Modifier.widthIn(max = 280.dp)
+                        color = Color.Black.copy(alpha = 0.55f),
+                        shape = RoundedCornerShape(16.dp)
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text(
-                                text = if (appLanguage == "Русский") "Посмотри, как тебе такой вариант оформления?" else "Look, how do you like this design?",
-                                color = Color.White,
-                                fontSize = 14.sp
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = "04:25",
-                                color = Color.White.copy(alpha = 0.6f),
-                                fontSize = 10.sp,
-                                modifier = Modifier.align(Alignment.End)
-                            )
+                        Text(
+                            text = if (appLanguage == "Русский") "$peerName также сможет установить эти обои" else "$peerName will also be able to set this wallpaper",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                        )
+                    }
+
+                    // Sample Incoming Bubble
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Surface(
+                            color = if (previewBitmap != null) Color(0xFF1E2732).copy(alpha = 0.95f) else MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 4.dp),
+                            modifier = Modifier.widthIn(max = 280.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Посмотри, как тебе такой вариант оформления?" else "Look, how do you like this design?",
+                                    color = if (previewBitmap != null) Color.White else MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 14.sp
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = "04:25",
+                                    color = (if (previewBitmap != null) Color.White else MaterialTheme.colorScheme.onSurface).copy(alpha = 0.6f),
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.align(Alignment.End)
+                                )
+                            }
                         }
                     }
-                }
 
-                // Sample Outgoing Bubble
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Surface(
-                        color = primaryColor,
-                        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp),
-                        modifier = Modifier.widthIn(max = 280.dp)
+                    // Sample Outgoing Bubble
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text(
-                                text = if (appLanguage == "Русский") "Выглядит отлично, оставляем!" else "Looks great, let's keep it!",
-                                color = if (primaryColor == MintGreen) StealthBlack else Color.White,
-                                fontSize = 14.sp
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = "04:25 ✓✓",
-                                color = (if (primaryColor == MintGreen) StealthBlack else Color.White).copy(alpha = 0.7f),
-                                fontSize = 10.sp,
-                                modifier = Modifier.align(Alignment.End)
-                            )
+                        Surface(
+                            color = primaryColor,
+                            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp),
+                            modifier = Modifier.widthIn(max = 280.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Выглядит отлично, оставляем!" else "Looks great, let's keep it!",
+                                    color = if (primaryColor == MintGreen || primaryColor == MintGreenLight) StealthBlack else Color.White,
+                                    fontSize = 14.sp
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = "04:25 ✓✓",
+                                    color = (if (primaryColor == MintGreen || primaryColor == MintGreenLight) StealthBlack else Color.White).copy(alpha = 0.7f),
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.align(Alignment.End)
+                                )
+                            }
                         }
                     }
                 }

@@ -52,6 +52,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.twopchat.R
 import com.example.twopchat.theme.MintGreen
+import com.example.twopchat.theme.MintGreenLight
 import com.example.twopchat.theme.StealthBlack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -150,7 +151,7 @@ fun GroupWallpaperModal(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0F172A))
+                .background(MaterialTheme.colorScheme.background)
                 .onSizeChanged { containerSize = it }
         ) {
             // Live Preview Background with Pinch-to-Zoom & Pan Gesture Support
@@ -180,7 +181,7 @@ fun GroupWallpaperModal(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color(0xFF1E293B))
+                        .background(MaterialTheme.colorScheme.background)
                 )
             }
 
@@ -191,7 +192,7 @@ fun GroupWallpaperModal(
                     .background(Color.Black.copy(alpha = animatedDimmingAlpha))
             )
 
-            // Top Section Column: Top Header Bar + Compact Dimming Slider Row
+            // Top Section Column: Top Header Bar + Compact Dimming Slider + High Dialogue Preview
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -281,90 +282,91 @@ fun GroupWallpaperModal(
                         )
                     }
                 }
-            }
 
-            // Center Content: Telegram-style Mock Group Chat Bubbles
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.Center)
-                    .padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // Info notice pill
-                Surface(
-                    color = Color.Black.copy(alpha = 0.65f),
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.3f))
-                ) {
-                    Text(
-                        text = if (appLanguage == "Русский") "Обои будут установлены у всех участников группы" else "Wallpaper will be applied for all group members",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
-                    )
-                }
+                Spacer(Modifier.height(10.dp))
 
-                // Sample Incoming Bubble in Group
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start
+                // High Dialogue Preview Section (Positioned high up so it's readable and doesn't overlap preset cards)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    // Info notice pill
                     Surface(
-                        color = Color(0xFF1E2732),
-                        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 4.dp),
-                        modifier = Modifier.widthIn(max = 280.dp)
+                        color = Color.Black.copy(alpha = 0.65f),
+                        shape = RoundedCornerShape(16.dp),
+                        border = BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.3f))
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text(
-                                text = "Алексей",
-                                color = primaryColor,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = if (appLanguage == "Русский") "Как вам новые обои в нашей группе?" else "How do you like the new wallpaper in our group?",
-                                color = Color.White,
-                                fontSize = 14.sp
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = "18:42",
-                                color = Color.White.copy(alpha = 0.6f),
-                                fontSize = 10.sp,
-                                modifier = Modifier.align(Alignment.End)
-                            )
+                        Text(
+                            text = if (appLanguage == "Русский") "Обои будут установлены у всех участников группы" else "Wallpaper will be applied for all group members",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                        )
+                    }
+
+                    // Sample Incoming Bubble in Group
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        Surface(
+                            color = if (previewBitmap != null) Color(0xFF1E2732).copy(alpha = 0.95f) else MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 16.dp, bottomStart = 4.dp),
+                            modifier = Modifier.widthIn(max = 280.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = "Алексей",
+                                    color = primaryColor,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = if (appLanguage == "Русский") "Как вам новые обои в нашей группе?" else "How do you like the new wallpaper in our group?",
+                                    color = if (previewBitmap != null) Color.White else MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 14.sp
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = "18:42",
+                                    color = (if (previewBitmap != null) Color.White else MaterialTheme.colorScheme.onSurface).copy(alpha = 0.6f),
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.align(Alignment.End)
+                                )
+                            }
                         }
                     }
-                }
 
-                // Sample Outgoing Bubble in Group
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    Surface(
-                        color = primaryColor,
-                        shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp),
-                        modifier = Modifier.widthIn(max = 280.dp)
+                    // Sample Outgoing Bubble in Group
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text(
-                                text = if (appLanguage == "Русский") "Супер, стильно смотрится!" else "Awesome, looks very stylish!",
-                                color = if (primaryColor == MintGreen) StealthBlack else Color.White,
-                                fontSize = 14.sp
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = "18:43 ✓✓",
-                                color = (if (primaryColor == MintGreen) StealthBlack else Color.White).copy(alpha = 0.7f),
-                                fontSize = 10.sp,
-                                modifier = Modifier.align(Alignment.End)
-                            )
+                        Surface(
+                            color = primaryColor,
+                            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 4.dp),
+                            modifier = Modifier.widthIn(max = 280.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Супер, стильно смотрится!" else "Awesome, looks very stylish!",
+                                    color = if (primaryColor == MintGreen || primaryColor == MintGreenLight) StealthBlack else Color.White,
+                                    fontSize = 14.sp
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = "18:43 ✓✓",
+                                    color = (if (primaryColor == MintGreen || primaryColor == MintGreenLight) StealthBlack else Color.White).copy(alpha = 0.7f),
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.align(Alignment.End)
+                                )
+                            }
                         }
                     }
                 }
