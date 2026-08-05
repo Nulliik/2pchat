@@ -425,292 +425,278 @@ fun SettingsTab(
                         }
                     }
 
+                    val isRu = appLanguage == "Русский"
                     val trimmedQuery = settingsSearchQuery.trim().lowercase()
 
-                    if (isSearchingSettings && trimmedQuery.isNotEmpty()) {
-                        fun matches(vararg phrases: String): Boolean {
-                            return phrases.any { it.lowercase().contains(trimmedQuery) }
-                        }
+                    val hasPasscode = remember(showSetPasscodeDialog, showDisablePasscodeDialog) { sharedPrefs.contains("passcode_value") }
+                    val hasDuressPIN = remember(showSetDuressDialog) { sharedPrefs.contains("passcode_duress_value") }
+                    val allowScreenshots = remember { sharedPrefs.getBoolean("allow_screenshots", false) }
 
-                        val matchChatSettings = matches(
-                            "настройки чатов и оформление", "тема", "цвет акцента", "иконка приложения",
-                            "chat settings & theme", "launcher icon", "accent"
-                        )
-                        val matchStickers = matches("стикерпаки", "стикеры", "наклейки", "паки", "sticker packs", "stickers")
-                        val matchSecurity = matches("конфиденциальность и сеть", "код-пароль", "пароль", "скриншоты", "порты", "маршруты", "privacy & security", "passcode", "screenshots", "ports")
-                        val matchTrackers = matches("трекеры и обнаружение", "типы", "announce", "пользовательские трекеры", "trackers & discovery")
-                        val matchYggdrasil = matches("пиры yggdrasil", "публичные пиры", "yggdrasil peers")
-                        val matchNotifications = matches("уведомления и звуки", "превью сообщений", "notifications", "previews")
-                        val matchStorage = matches("данные и память", "использование памяти", "очистка кэша", "кэш", "data & storage", "cache")
-                        val matchNetworkUsage = matches("использование сети", "трафик direct p2p", "yggdrasil", "network usage", "traffic")
-                        val matchLanguage = matches("язык", "language", appLanguage)
-                        val matchHelp = matches("справка и руководства", "help & reference")
-                        val matchLogs = matches("сетевой отладчик и логи", "network diagnostics & logs")
-                        val matchExportLogs = matches("экспорт логов приложения", "export app logs")
-                        val matchDelete = matches("удаление аккаунта", "delete account")
-
-                        val hasAnyMatch = matchChatSettings || matchStickers || matchSecurity || matchTrackers ||
-                                matchYggdrasil || matchNotifications || matchStorage || matchNetworkUsage ||
-                                matchLanguage || matchHelp || matchLogs || matchExportLogs || matchDelete
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        if (hasAnyMatch) {
-                            SettingsSectionHeader(
-                                if (appLanguage == "Русский") "РЕЗУЛЬТАТЫ ПОИСКА" else "SEARCH RESULTS",
-                                primaryColor
-                            )
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = surfaceColor),
-                                shape = RoundedCornerShape(20.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
-                            ) {
-                                 Column {
-                                    var showDivider = false
-
-                                    if (matchChatSettings) {
-                                        if (showDivider) HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                                        showDivider = true
-                                        SettingsRow(
-                                            title = if (appLanguage == "Русский") "Настройки чатов и Оформление" else "Chat Settings & Theme",
-                                            subtitle = if (appLanguage == "Русский") "Тема, цвет акцента, иконка приложения" else "Theme, accent color, launcher icon",
-                                            iconRes = com.example.twopchat.R.drawable.ic_menu_chats,
-                                            iconColor = Color(0xFFFFA726),
-                                            onSurfaceColor = onSurfaceColor,
-                                            onSurfaceVariant = onSurfaceVariant,
-                                            primaryColor = primaryColor,
-                                            onClick = { activeSubPage = "chat_settings" }
-                                        )
-                                    }
-                                    if (matchStickers) {
-                                        if (showDivider) HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                                        showDivider = true
-                                        SettingsRow(
-                                            title = if (appLanguage == "Русский") "Стикерпаки" else "Sticker packs",
-                                            subtitle = if (appLanguage == "Русский") "Создание, импорт и управление своими паками" else "Create, import and manage your packs",
-                                            iconRes = com.example.twopchat.R.drawable.ic_sticker_smile,
-                                            iconColor = Color(0xFFFF7043),
-                                            onSurfaceColor = onSurfaceColor,
-                                            onSurfaceVariant = onSurfaceVariant,
-                                            primaryColor = primaryColor,
-                                            onClick = { activeSubPage = "sticker_packs" }
-                                        )
-                                    }
-                                    if (matchSecurity) {
-                                        if (showDivider) HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                                        showDivider = true
-                                        SettingsRow(
-                                            title = if (appLanguage == "Русский") "Конфиденциальность и Сеть" else "Privacy & Security",
-                                            subtitle = if (appLanguage == "Русский") "Код-пароль, скриншоты, порты и маршруты" else "Passcode, screenshots, ports and routes",
-                                            iconRes = com.example.twopchat.R.drawable.ic_shield_status,
-                                            iconColor = Color(0xFF66BB6A),
-                                            onSurfaceColor = onSurfaceColor,
-                                            onSurfaceVariant = onSurfaceVariant,
-                                            primaryColor = primaryColor,
-                                            onClick = { activeSubPage = "security" }
-                                        )
-                                    }
-                                    if (matchTrackers) {
-                                        if (showDivider) HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                                        showDivider = true
-                                        SettingsRow(
-                                            title = if (appLanguage == "Русский") "Трекеры и обнаружение" else "Trackers & Discovery",
-                                            subtitle = if (appLanguage == "Русский") "Типы, announce и пользовательские трекеры" else "Types, announces and custom trackers",
-                                            iconRes = com.example.twopchat.R.drawable.ic_menu_search,
-                                            iconColor = Color(0xFF29B6F6),
-                                            onSurfaceColor = onSurfaceColor,
-                                            onSurfaceVariant = onSurfaceVariant,
-                                            primaryColor = primaryColor,
-                                            onClick = { activeSubPage = "trackers" }
-                                        )
-                                    }
-                                    if (matchYggdrasil) {
-                                        if (showDivider) HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                                        showDivider = true
-                                        SettingsRow(
-                                            title = if (appLanguage == "Русский") "Пиры Yggdrasil" else "Yggdrasil Peers",
-                                            subtitle = if (appLanguage == "Русский") "Публичные и пользовательские пиры, включение и сортировка" else "Public and custom peers, toggles and sorting",
-                                            iconRes = com.example.twopchat.R.drawable.ic_quick_link,
-                                            iconColor = Color(0xFFAB47BC),
-                                            onSurfaceColor = onSurfaceColor,
-                                            onSurfaceVariant = onSurfaceVariant,
-                                            primaryColor = primaryColor,
-                                            onClick = { activeSubPage = "yggdrasil_peers" }
-                                        )
-                                    }
-                                    if (matchNotifications) {
-                                        if (showDivider) HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                                        showDivider = true
-                                        SettingsRow(
-                                            title = if (appLanguage == "Русский") "Уведомления и звуки" else "Notifications",
-                                            subtitle = if (appLanguage == "Русский") "Включение уведомлений, превью сообщений" else "Toggles, previews",
-                                            iconRes = com.example.twopchat.R.drawable.ic_notifications,
-                                            iconColor = Color(0xFFEF5350),
-                                            onSurfaceColor = onSurfaceColor,
-                                            onSurfaceVariant = onSurfaceVariant,
-                                            primaryColor = primaryColor,
-                                            onClick = { activeSubPage = "notifications" }
-                                        )
-                                    }
-                                    if (matchStorage) {
-                                        if (showDivider) HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                                        showDivider = true
-                                        SettingsRow(
-                                            title = if (appLanguage == "Русский") "Данные и память" else "Data & Storage",
-                                            subtitle = if (appLanguage == "Русский") "Использование памяти и очистка кэша" else "Storage usage & cache cleanup",
-                                            iconRes = com.example.twopchat.R.drawable.ic_database_storage,
-                                            iconColor = Color(0xFF26A69A),
-                                            onSurfaceColor = onSurfaceColor,
-                                            onSurfaceVariant = onSurfaceVariant,
-                                            primaryColor = primaryColor,
-                                            onClick = { activeSubPage = "storage" }
-                                        )
-                                    }
-                                    if (matchNetworkUsage) {
-                                        if (showDivider) HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                                        showDivider = true
-                                        SettingsRow(
-                                            title = if (appLanguage == "Русский") "Использование сети" else "Network Usage",
-                                            subtitle = if (appLanguage == "Русский") "Трафик Direct P2P и Yggdrasil по типам данных" else "Direct P2P and Yggdrasil traffic by data type",
-                                            iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
-                                            iconColor = Color(0xFF42A5F5),
-                                            onSurfaceColor = onSurfaceColor,
-                                            onSurfaceVariant = onSurfaceVariant,
-                                            primaryColor = primaryColor,
-                                            onClick = { activeSubPage = "network_usage" }
-                                        )
-                                    }
-                                    if (matchLanguage) {
-                                        if (showDivider) HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                                        showDivider = true
-                                        SettingsRow(
-                                            title = Localizations.getString("language", appLanguage),
-                                            subtitle = if (appLanguage == "Русский") "Выбор языка приложения" else "Choose app language",
-                                            value = appLanguage,
-                                            iconRes = com.example.twopchat.R.drawable.ic_quick_link,
-                                            iconColor = Color(0xFFEC407A),
-                                            onSurfaceColor = onSurfaceColor,
-                                            onSurfaceVariant = onSurfaceVariant,
-                                            primaryColor = primaryColor,
-                                            onClick = { showLanguageDialog = true }
-                                        )
-                                    }
-                                    if (matchHelp) {
-                                        if (showDivider) HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                                        showDivider = true
-                                        SettingsRow(
-                                            title = Localizations.getString("help_reference", appLanguage),
-                                            subtitle = Localizations.getString("help_reference_desc", appLanguage),
-                                            iconRes = com.example.twopchat.R.drawable.ic_help_question,
-                                            iconColor = Color(0xFF7E57C2),
-                                            onSurfaceColor = onSurfaceColor,
-                                            onSurfaceVariant = onSurfaceVariant,
-                                            primaryColor = primaryColor,
-                                            onClick = { activeSubPage = "help_reference" }
-                                        )
-                                    }
-                                    if (matchLogs) {
-                                        if (showDivider) HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                                        showDivider = true
-                                        SettingsRow(
-                                            title = if (appLanguage == "Русский") "Сетевой отладчик и Логи" else "Network Diagnostics & Logs",
-                                            iconRes = com.example.twopchat.R.drawable.ic_menu_settings,
-                                            iconColor = Color(0xFF78909C),
-                                            onSurfaceColor = onSurfaceColor,
-                                            onSurfaceVariant = onSurfaceVariant,
-                                            primaryColor = primaryColor,
-                                            onClick = { onShowLogs() }
-                                        )
-                                    }
-                                    if (matchExportLogs) {
-                                        if (showDivider) HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                                        showDivider = true
-                                        SettingsRow(
-                                            title = if (appLanguage == "Русский") "Экспорт логов приложения" else "Export App Logs",
-                                            iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
-                                            iconColor = Color(0xFF8D6E63),
-                                            onSurfaceColor = onSurfaceColor,
-                                            onSurfaceVariant = onSurfaceVariant,
-                                            primaryColor = primaryColor,
-                                            onClick = {
-                                                val logFile = java.io.File(java.io.File(context.filesDir, "config"), "app.log")
-                                                if (logFile.exists() && logFile.length() > 0) {
-                                                    try {
-                                                        val authority = "${context.packageName}.fileprovider"
-                                                        val fileUri: android.net.Uri = androidx.core.content.FileProvider.getUriForFile(context, authority, logFile)
-                                                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                                            type = "text/plain"
-                                                            putExtra(android.content.Intent.EXTRA_STREAM, fileUri)
-                                                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                                        }
-                                                        context.startActivity(android.content.Intent.createChooser(shareIntent, if (appLanguage == "Русский") "Поделиться логами" else "Share Logs"))
-                                                    } catch (e: Exception) {
-                                                        Toast.makeText(context, "Error sharing logs: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                    }
-                                                } else {
-                                                    Toast.makeText(context, if (appLanguage == "Русский") "Лог-файл пуст или еще не создан" else "Log file is empty or not created yet", Toast.LENGTH_SHORT).show()
-                                                }
+                    val deepSettingsList = remember(appLanguage, hasPasscode, hasDuressPIN, allowScreenshots) {
+                        listOf(
+                            DeepSettingItem(
+                                category = if (isRu) "Оформление" else "Appearance",
+                                categoryColor = Color(0xFFFFA726),
+                                title = if (isRu) "Тема приложения" else "App Theme",
+                                subtitle = if (isRu) "Светлая тема, цвет акцента, AMOLED" else "Light mode, accent color, AMOLED",
+                                valueBadge = if (isRu) "Настройки" else "Light",
+                                keywords = listOf("app theme", "theme", "тема", "оформление", "light", "dark", "amoled", "stealth", "акцент", "цвет"),
+                                onClick = { activeSubPage = "chat_settings" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Оформление" else "Appearance",
+                                categoryColor = Color(0xFFFFA726),
+                                title = if (isRu) "Иконка приложения" else "App Launcher Icon",
+                                subtitle = if (isRu) "Выберите стиль иконки на рабочем столе" else "Select a style for your home screen app icon",
+                                valueBadge = if (isRu) "Выбрать" else "Mint Classic",
+                                keywords = listOf("app launcher icon", "app icon", "icon", "иконка", "значок", "mint classic", "launcher", "иконки"),
+                                onClick = { activeSubPage = "chat_settings" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Оформление" else "Appearance",
+                                categoryColor = Color(0xFFFF7043),
+                                title = if (isRu) "Стикерпаки" else "Sticker Packs",
+                                subtitle = if (isRu) "Создание, импорт из Telegram и управление наклейками" else "Create, import from Telegram & manage sticker packs",
+                                keywords = listOf("sticker", "stickers", "стикерпак", "стикеры", "паки", "наклейки", "telegram"),
+                                onClick = { activeSubPage = "sticker_packs" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Безопасность" else "Security",
+                                categoryColor = Color(0xFF66BB6A),
+                                title = if (isRu) "Код-пароль приложения" else "App Passcode Lock",
+                                subtitle = if (isRu) "4-значный PIN-код для защиты доступа к чатам" else "4-digit PIN for securing app access",
+                                valueBadge = if (hasPasscode) (if (isRu) "Включен" else "ON") else (if (isRu) "Выключен" else "OFF"),
+                                keywords = listOf("passcode", "pin", "lock", "пароль", "код", "код-пароль", "пин", "защита", "блокировка"),
+                                onClick = { activeSubPage = "security" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Безопасность" else "Security",
+                                categoryColor = Color(0xFF66BB6A),
+                                title = if (isRu) "Тревожный PIN-код (Duress)" else "Duress Emergency PIN",
+                                subtitle = if (isRu) "Экстренный код для стирания данных при принуждении" else "Emergency PIN for forced data wipe",
+                                valueBadge = if (hasDuressPIN) (if (isRu) "Задан" else "Set") else (if (isRu) "Не задан" else "Not set"),
+                                keywords = listOf("duress", "emergency", "тревожный", "экстренный", "паника", "сброс"),
+                                onClick = { activeSubPage = "security" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Безопасность" else "Security",
+                                categoryColor = Color(0xFF66BB6A),
+                                title = if (isRu) "Разрешить скриншоты" else "Allow Screenshots",
+                                subtitle = if (isRu) "Запрет создания снимков экрана и превью" else "Block screen capture and task switcher preview",
+                                valueBadge = if (allowScreenshots) "ON" else "OFF",
+                                keywords = listOf("screenshot", "screenshots", "скриншот", "скриншоты", "снимок", "экран", "capture"),
+                                onClick = { activeSubPage = "security" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Сеть" else "Network",
+                                categoryColor = Color(0xFF66BB6A),
+                                title = if (isRu) "Входящий порт Direct P2P" else "Direct P2P Listening Port",
+                                subtitle = if (isRu) "Сетевой порт для принятия входящих P2P соединений" else "Inbound network port for direct P2P connections",
+                                valueBadge = "27271",
+                                keywords = listOf("port", "p2p port", "direct p2p", "порт", "прямое соединение", "27271"),
+                                onClick = { activeSubPage = "security" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Сеть" else "Network",
+                                categoryColor = Color(0xFFAB47BC),
+                                title = if (isRu) "Порт Yggdrasil Mesh" else "Yggdrasil Mesh Port",
+                                subtitle = if (isRu) "Виртуальный порт оверлейной P2P сети Yggdrasil" else "Virtual listening port for overlay mesh network",
+                                valueBadge = "9001",
+                                keywords = listOf("yggdrasil port", "mesh port", "порт yggdrasil", "9001", "mesh"),
+                                onClick = { activeSubPage = "security" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Сеть" else "Network",
+                                categoryColor = Color(0xFF29B6F6),
+                                title = if (isRu) "Трекеры и P2P обнаружение" else "Trackers & Peer Discovery",
+                                subtitle = if (isRu) "DHT, mDNS локальная сеть и список трекеров" else "DHT, local mDNS discovery & tracker servers",
+                                keywords = listOf("tracker", "trackers", "dht", "mdns", "announce", "трекер", "трекеры", "обнаружение"),
+                                onClick = { activeSubPage = "trackers" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Сеть" else "Network",
+                                categoryColor = Color(0xFFAB47BC),
+                                title = if (isRu) "Пиры сети Yggdrasil" else "Yggdrasil Peers List",
+                                subtitle = if (isRu) "Публичные и пользовательские пиры, автосортировка" else "Public and custom peers, ping latency sorting",
+                                keywords = listOf("yggdrasil", "peers", "nodes", "пиры", "узлы", "сортировка", "пинг"),
+                                onClick = { activeSubPage = "yggdrasil_peers" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Уведомления" else "Notifications",
+                                categoryColor = Color(0xFFEF5350),
+                                title = if (isRu) "Уведомления и звуки" else "Notifications & Sounds",
+                                subtitle = if (isRu) "Звуковые сигналы, вибрация и превью сообщений" else "Sounds, vibration & message previews",
+                                keywords = listOf("notification", "notifications", "sound", "sounds", "vibration", "preview", "уведомление", "уведомления", "звуки", "превью"),
+                                onClick = { activeSubPage = "notifications" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Память" else "Storage",
+                                categoryColor = Color(0xFF26A69A),
+                                title = if (isRu) "Данные и память (Кэш)" else "Data & Storage (Cache)",
+                                subtitle = if (isRu) "Использование памяти и очистка кэша файлов" else "Storage usage & clearing media cache",
+                                keywords = listOf("data", "storage", "cache", "memory", "кэш", "память", "данные", "очистить", "медиа"),
+                                onClick = { activeSubPage = "storage" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Статистика" else "Stats",
+                                categoryColor = Color(0xFF42A5F5),
+                                title = if (isRu) "Использование сети (Трафик)" else "Network Data Usage",
+                                subtitle = if (isRu) "Статистика входящего и исходящего P2P трафика" else "Inbound and outbound P2P traffic statistics",
+                                keywords = listOf("network usage", "traffic", "bytes", "трафик", "сеть", "байты", "статистика"),
+                                onClick = { activeSubPage = "network_usage" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Система" else "System",
+                                categoryColor = Color(0xFFEC407A),
+                                title = if (isRu) "Язык приложения" else "App Language",
+                                subtitle = if (isRu) "Переключение между Русским и English" else "Switch between Russian and English",
+                                valueBadge = appLanguage,
+                                keywords = listOf("language", "ru", "en", "язык", "русский", "английский", "english"),
+                                onClick = { showLanguageDialog = true }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Справка" else "Help",
+                                categoryColor = Color(0xFF7E57C2),
+                                title = if (isRu) "Справка и руководства" else "Help & Reference",
+                                subtitle = if (isRu) "Ответы на частые вопросы и руководства P2P" else "FAQ & P2P protocol reference guides",
+                                keywords = listOf("help", "reference", "faq", "справка", "помощь", "вопросы", "руководство"),
+                                onClick = { activeSubPage = "help_reference" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Отладка" else "Debug",
+                                categoryColor = Color(0xFF78909C),
+                                title = if (isRu) "Сетевой отладчик и Логи" else "Network Diagnostics & Logs",
+                                subtitle = if (isRu) "Мониторинг событий сети и соединений live" else "Live monitoring of P2P network events",
+                                keywords = listOf("log", "logs", "debugger", "diagnostics", "логи", "отладчик", "отладка"),
+                                onClick = { onShowLogs() }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Отладка" else "Debug",
+                                categoryColor = Color(0xFF8D6E63),
+                                title = if (isRu) "Экспорт логов приложения" else "Export App Logs",
+                                subtitle = if (isRu) "Поделиться файлом логов app.log" else "Share app.log file",
+                                keywords = listOf("export", "share", "file", "экспорт", "поделиться", "лог-файл", "app.log"),
+                                onClick = {
+                                    val logFile = java.io.File(java.io.File(context.filesDir, "config"), "app.log")
+                                    if (logFile.exists() && logFile.length() > 0) {
+                                        try {
+                                            val authority = "${context.packageName}.fileprovider"
+                                            val fileUri: android.net.Uri = androidx.core.content.FileProvider.getUriForFile(context, authority, logFile)
+                                            val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(android.content.Intent.EXTRA_STREAM, fileUri)
+                                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                             }
-                                        )
-                                    }
-                                    if (matchDelete) {
-                                        val dangerRed = Color(0xFFFF5252)
-                                        if (showDivider) HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                                        showDivider = true
-                                        SettingsRow(
-                                            title = Localizations.getString("delete_account", appLanguage),
-                                            iconRes = com.example.twopchat.R.drawable.ic_delete,
-                                            iconColor = dangerRed,
-                                            onSurfaceColor = dangerRed,
-                                            onSurfaceVariant = onSurfaceVariant,
-                                            primaryColor = primaryColor,
-                                            isWarning = true,
-                                            onClick = { showDeleteAccountDialog = true }
-                                        )
+                                            context.startActivity(android.content.Intent.createChooser(shareIntent, if (isRu) "Поделиться логами" else "Share Logs"))
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Error sharing logs: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        Toast.makeText(context, if (isRu) "Лог-файл пуст или еще не создан" else "Log file is empty or not created yet", Toast.LENGTH_SHORT).show()
                                     }
                                 }
-                            }
-                        } else {
-                            // Empty Search State
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = surfaceColor),
-                                shape = RoundedCornerShape(20.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp)
-                                    .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
-                            ) {
-                                Column(
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Опасная зона" else "Danger Zone",
+                                categoryColor = Color(0xFFFF5252),
+                                title = if (isRu) "Удалить аккаунт и данные" else "Delete Account & Data",
+                                subtitle = if (isRu) "Полное удаление ключей и истории сообщений" else "Permanently wipe identity keys and history",
+                                keywords = listOf("delete", "wipe", "remove", "account", "удалить", "стереть", "аккаунт"),
+                                onClick = { showDeleteAccountDialog = true }
+                            )
+                        )
+                    }
+
+                    val matchingDeepResults = remember(trimmedQuery, deepSettingsList) {
+                        if (trimmedQuery.isEmpty()) emptyList()
+                        else deepSettingsList.filter { item ->
+                            item.title.lowercase().contains(trimmedQuery) ||
+                                    item.subtitle.lowercase().contains(trimmedQuery) ||
+                                    item.category.lowercase().contains(trimmedQuery) ||
+                                    item.keywords.any { it.lowercase().contains(trimmedQuery) }
+                        }
+                    }
+
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = isSearchingSettings && trimmedQuery.isNotEmpty(),
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
+                        Column {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            if (matchingDeepResults.isNotEmpty()) {
+                                SettingsSectionHeader(
+                                    if (isRu) "НАЙДЕННЫЕ НАСТРОЙКИ (${matchingDeepResults.size})" else "SEARCH RESULTS (${matchingDeepResults.size})",
+                                    primaryColor
+                                )
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                                    shape = RoundedCornerShape(20.dp),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(24.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                                        .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
                                 ) {
-                                    Icon(
-                                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_search),
-                                        contentDescription = null,
-                                        tint = onSurfaceVariant.copy(alpha = 0.4f),
-                                        modifier = Modifier.size(36.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text(
-                                        text = if (appLanguage == "Русский") "Ничего не найдено" else "No settings found",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                        color = onSurfaceColor
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = if (appLanguage == "Русский") "Попробуйте изменить поисковый запрос" else "Try changing your search query",
-                                        fontSize = 12.sp,
-                                        color = onSurfaceVariant.copy(alpha = 0.7f)
-                                    )
+                                    Column {
+                                        matchingDeepResults.forEachIndexed { index, item ->
+                                            if (index > 0) {
+                                                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+                                            }
+                                            DeepSearchResultRow(
+                                                category = item.category,
+                                                categoryColor = item.categoryColor,
+                                                title = item.title,
+                                                subtitle = item.subtitle,
+                                                valueBadge = item.valueBadge,
+                                                onSurfaceColor = onSurfaceColor,
+                                                onSurfaceVariant = onSurfaceVariant,
+                                                primaryColor = primaryColor,
+                                                onClick = item.onClick
+                                            )
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Empty Search State
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                                    shape = RoundedCornerShape(20.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp)
+                                        .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_search),
+                                            contentDescription = null,
+                                            tint = onSurfaceVariant.copy(alpha = 0.4f),
+                                            modifier = Modifier.size(36.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Text(
+                                            text = if (isRu) "Ничего не найдено" else "No settings found",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp,
+                                            color = onSurfaceColor
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = if (isRu) "Попробуйте изменить поисковый запрос" else "Try changing your search query",
+                                            fontSize = 12.sp,
+                                            color = onSurfaceVariant.copy(alpha = 0.7f)
+                                        )
+                                    }
                                 }
                             }
                         }
-                    } else {
+                    }
+
+                    if (!isSearchingSettings || trimmedQuery.isEmpty()) {
                         // Hero Profile Card with interactive photo selector & identity copy action
                         val discoveryCode = remember { PythonBridge.getOrCreateDiscoveryCode() }
                         val contactAddress = remember(username, discoveryCode) { "$username#$discoveryCode" }
@@ -3577,3 +3563,80 @@ fun SubPageLayout(
         content()
     }
 }
+
+data class DeepSettingItem(
+    val category: String,
+    val categoryColor: Color,
+    val title: String,
+    val subtitle: String,
+    val valueBadge: String? = null,
+    val keywords: List<String>,
+    val onClick: () -> Unit
+)
+
+@Composable
+fun DeepSearchResultRow(
+    category: String,
+    categoryColor: Color,
+    title: String,
+    subtitle: String,
+    valueBadge: String? = null,
+    onSurfaceColor: Color,
+    onSurfaceVariant: Color,
+    primaryColor: Color,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = category.uppercase(),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.6.sp,
+                color = categoryColor
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = onSurfaceColor
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                color = onSurfaceVariant.copy(alpha = 0.78f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!valueBadge.isNullOrEmpty()) {
+                Text(
+                    text = valueBadge,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = primaryColor
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Text(
+                text = "›",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (!valueBadge.isNullOrEmpty()) primaryColor else onSurfaceVariant.copy(alpha = 0.35f)
+            )
+        }
+    }
+}
+
