@@ -86,7 +86,8 @@ internal fun invitePeerSearchRequest(
     code: String?,
     fingerprint: String?,
 ): PeerSearchRequest? {
-    val nickname = name?.let(::validatedSearchNickname) ?: return null
+    val rawName = name?.trim()?.removePrefix("@")
+    val nickname = rawName?.let(::validatedSearchNickname) ?: return null
     val sharedCode = code?.trim().orEmpty()
     if (sharedCode.isEmpty()) return null
     return PeerSearchRequest(
@@ -145,7 +146,7 @@ internal fun isConnectablePeerSearchResult(
 }
 
 internal fun parsePeerSearchAddress(value: String): PeerSearchAddress? {
-    val trimmed = value.trim()
+    val trimmed = value.trim().removePrefix("@")
     val separator = trimmed.lastIndexOf('#')
     if (separator <= 0 || separator == trimmed.lastIndex) return null
 
@@ -1440,12 +1441,12 @@ private fun CameraQrScannerOverlay(
                                 imageProxy.close()
                                 return@setAnalyzer
                             }
-                            isProcessingFrame = true
-                            val bitmap = runCatching { imageProxy.toBitmap() }.getOrNull()
-                            imageProxy.close()
-
-                            if (bitmap != null && !hasScanned) {
-                                val inputImage = com.google.mlkit.vision.common.InputImage.fromBitmap(bitmap, 0)
+                            @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
+                            val mediaImage = imageProxy.image
+                            if (mediaImage != null && !hasScanned) {
+                                isProcessingFrame = true
+                                val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                                val inputImage = com.google.mlkit.vision.common.InputImage.fromMediaImage(mediaImage, rotationDegrees)
                                 barcodeScanner.process(inputImage)
                                     .addOnSuccessListener { barcodes ->
                                         var found = false
@@ -1462,10 +1463,13 @@ private fun CameraQrScannerOverlay(
                                             }
                                         }
                                         if (!found && !hasScanned) {
-                                            try {
-                                                val intArray = IntArray(bitmap.width * bitmap.height)
-                                                bitmap.getPixels(intArray, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-                                                val source = com.google.zxing.RGBLuminanceSource(bitmap.width, bitmap.height, intArray)
+                                            runCatching {
+                                                val rawBitmap = imageProxy.toBitmap()
+                                                val matrix = android.graphics.Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+                                                val rotatedBitmap = android.graphics.Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
+                                                val intArray = IntArray(rotatedBitmap.width * rotatedBitmap.height)
+                                                rotatedBitmap.getPixels(intArray, 0, rotatedBitmap.width, 0, 0, rotatedBitmap.width, rotatedBitmap.height)
+                                                val source = com.google.zxing.RGBLuminanceSource(rotatedBitmap.width, rotatedBitmap.height, intArray)
                                                 val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
                                                 val result = zxingReader.decode(binaryBitmap)
                                                 if (result != null && result.text.isNotBlank() && !hasScanned) {
@@ -1475,14 +1479,15 @@ private fun CameraQrScannerOverlay(
                                                         onQrScanned(result.text)
                                                     }
                                                 }
-                                            } catch (_: Exception) {}
+                                            }
                                         }
                                     }
                                     .addOnCompleteListener {
+                                        imageProxy.close()
                                         isProcessingFrame = false
                                     }
                             } else {
-                                isProcessingFrame = false
+                                imageProxy.close()
                             }
                         }
 

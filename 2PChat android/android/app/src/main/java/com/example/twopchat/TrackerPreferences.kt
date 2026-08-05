@@ -79,7 +79,7 @@ object TrackerPreferences {
     }
 
     fun ipv4AnnounceMode(context: Context): String =
-        P2PPreferences.prefs(context).getString(IPV4_ANNOUNCE_MODE, "auto") ?: "auto"
+        P2PPreferences.prefs(context).getString(IPV4_ANNOUNCE_MODE, "always") ?: "always"
 
     fun setIpv4AnnounceMode(context: Context, mode: String) {
         P2PPreferences.prefs(context).edit().putString(IPV4_ANNOUNCE_MODE, mode).apply()
