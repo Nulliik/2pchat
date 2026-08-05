@@ -233,6 +233,7 @@ Android_App/android/local.properties
 
 # Android build outputs and machine-local configuration
 2PChat android/android/.gradle/
+2PChat android/android/.kotlin/
 2PChat android/android/**/build/
 2PChat android/android/local.properties
 2PChat android/android/**/.cxx/
