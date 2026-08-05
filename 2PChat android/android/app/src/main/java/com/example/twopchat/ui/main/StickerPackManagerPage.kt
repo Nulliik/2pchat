@@ -899,7 +899,7 @@ private fun PackEditor(
                 Spacer(Modifier.height(10.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (pack.isOwned) {
@@ -915,17 +915,19 @@ private fun PackEditor(
                             Text(if (appLanguage == "Русский") "Стикеры" else "Stickers", maxLines = 1, fontSize = 13.sp)
                         }
 
-                        IconButton(
-                            onClick = onRename,
+                        Box(
                             modifier = Modifier
-                                .size(38.dp)
-                                .background(onSurfaceColor.copy(alpha = 0.07f), CircleShape)
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(onSurfaceColor.copy(alpha = 0.08f))
+                                .clickable { onRename() },
+                            contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Edit,
                                 contentDescription = if (appLanguage == "Русский") "Переименовать" else "Rename",
                                 tint = primaryColor,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                         }
                     } else {
@@ -941,42 +943,48 @@ private fun PackEditor(
                     }
 
                     // Export
-                    IconButton(
-                        onClick = onExport,
+                    Box(
                         modifier = Modifier
-                            .size(38.dp)
-                            .background(onSurfaceColor.copy(alpha = 0.07f), CircleShape)
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(onSurfaceColor.copy(alpha = 0.08f))
+                            .clickable { onExport() },
+                        contentAlignment = Alignment.Center
                     ) {
-                        CustomExportIcon(tint = primaryColor, modifier = Modifier.size(17.dp))
+                        CustomExportIcon(tint = primaryColor, modifier = Modifier.size(16.dp))
                     }
 
                     // Share
-                    IconButton(
-                        onClick = onShare,
+                    Box(
                         modifier = Modifier
-                            .size(38.dp)
-                            .background(onSurfaceColor.copy(alpha = 0.07f), CircleShape)
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(onSurfaceColor.copy(alpha = 0.08f))
+                            .clickable { onShare() },
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Share,
                             contentDescription = if (appLanguage == "Русский") "Поделиться" else "Share",
                             tint = primaryColor,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
 
                     // Delete
-                    IconButton(
-                        onClick = onDelete,
+                    Box(
                         modifier = Modifier
-                            .size(38.dp)
-                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f), CircleShape)
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.14f))
+                            .clickable { onDelete() },
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
                             contentDescription = if (appLanguage == "Русский") "Удалить пак" else "Delete pack",
                             tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
