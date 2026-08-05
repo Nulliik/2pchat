@@ -394,7 +394,7 @@ object P2PMessageRelay {
 
     private fun showNotification(context: Context, sender: String, message: Message, text: String) {
         try {
-            notificationService.show(context, sender, text, message.id)
+            MessageNotificationService.show(context, sender, text, message.id)
         } catch (e: Exception) {
             log(context, "Failed to show message notification: ${e.message}", "ERROR", e)
         }
@@ -464,10 +464,14 @@ object P2PMessageRelay {
         }
         serviceScope.launch(Dispatchers.Main) {
             messageListeners.forEach { it.onMessageReceived(sender, message) }
-            if (countAsNew && activeChatPeer.get() != sender) {
+            val currentActivePeer = activeChatPeer.get()
+            val isChatOpenWithSender = currentActivePeer != null && currentActivePeer.equals(sender, ignoreCase = true)
+            if (countAsNew && !isChatOpenWithSender) {
                 val unreadKey = P2PPreferences.unreadCount(sender)
                 prefs.edit { putInt(unreadKey, prefs.getInt(unreadKey, 0) + 1) }
                 showNotification(context, sender, message, notificationText)
+            } else {
+                MessageNotificationService.cancelNotificationForPeer(context, sender)
             }
         }
     }

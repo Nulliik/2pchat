@@ -250,9 +250,8 @@ internal class MessageNotificationService {
 
             return androidx.core.graphics.drawable.IconCompat.createWithBitmap(bitmap)
         }
-    }
 
-    fun show(context: Context, sender: String, text: String, messageId: String) {
+        fun show(context: Context, sender: String, text: String, messageId: String) {
         val settings = P2PPreferences.prefs(context)
         if (!settings.getBoolean("settings_notifications", true)) return
 
@@ -388,4 +387,16 @@ internal class MessageNotificationService {
 
         manager.notify(id, notification)
     }
+
+    fun cancelNotificationForPeer(context: Context, sender: String) {
+        try {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val id = notificationId(context, sender)
+            manager.cancel(id)
+            clearHistory(context, sender)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+}
 }

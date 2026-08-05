@@ -1004,6 +1004,7 @@ fun ChatScreen(
             P2PMessageRelay.activeChatPeerName = peerName
             P2PMessageRelay.registerMessageListener(messageListener)
             sharedPrefs.edit { putInt("unread_count_$peerName", 0) }
+            com.example.twopchat.MessageNotificationService.cancelNotificationForPeer(context, peerName)
         }
         onDispose {
             // Use atomic CAS to avoid clearing the name that was already set

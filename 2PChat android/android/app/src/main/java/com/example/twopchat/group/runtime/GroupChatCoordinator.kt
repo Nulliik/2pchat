@@ -2120,17 +2120,21 @@ object GroupChatCoordinator {
             )
         ) {
             applicationContext?.let { context ->
-                GroupNotificationService.show(
-                    context,
-                    group.groupId,
-                    group.title,
-                    author.displayName,
-                    if (event.kind == GroupEventKind.POLL) {
-                        "Опрос: ${payload.optString("question")}"
-                    } else {
-                        payload.optString("text")
-                    },
-                )
+                if (group.groupId !in activeGroupChats) {
+                    GroupNotificationService.show(
+                        context,
+                        group.groupId,
+                        group.title,
+                        author.displayName,
+                        if (event.kind == GroupEventKind.POLL) {
+                            "Опрос: ${payload.optString("question")}"
+                        } else {
+                            payload.optString("text")
+                        },
+                    )
+                } else {
+                    GroupNotificationService.cancelNotificationForGroup(context, group.groupId)
+                }
             }
         }
         if (inserted) replicateStoredEvent(group, event, json, senderPeerName)

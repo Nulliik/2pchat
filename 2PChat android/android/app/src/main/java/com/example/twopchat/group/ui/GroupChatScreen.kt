@@ -307,6 +307,7 @@ fun GroupChatScreen(
 
     DisposableEffect(state.groupId, controller) {
         controller.setGroupChatActive(state.groupId, true)
+        com.example.twopchat.group.runtime.GroupNotificationService.cancelNotificationForGroup(context, state.groupId)
         onDispose { controller.setGroupChatActive(state.groupId, false) }
     }
 

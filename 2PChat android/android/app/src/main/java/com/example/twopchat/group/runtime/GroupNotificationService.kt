@@ -84,4 +84,14 @@ internal object GroupNotificationService {
             else -> trimmed.take(500)
         }
     }
+
+    fun cancelNotificationForGroup(context: Context, groupId: String) {
+        try {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            val notificationId = (groupId.hashCode() and 0x3fffffff) + 20_000
+            manager?.cancel(notificationId)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 }
