@@ -1333,10 +1333,9 @@ def announce_peer_endpoints(
                         str(round((time.monotonic() - dht_started) * 1000)),
                     )
 
-            # Start every discovery channel immediately. Previously BEP 5 was
-            # delayed until even the slowest tracker request had completed.
-            # Launch STUN discovery in background without blocking tracker announcements
-            asyncio.create_task(asyncio.to_thread(_discover_public_ipv4_stun))
+            # Launch STUN discovery in background without blocking tracker announcements (only when Yggdrasil is unavailable)
+            if not local_yggdrasil_available:
+                asyncio.create_task(asyncio.to_thread(_discover_public_ipv4_stun))
 
             tracker_tasks = {
                 tracker_name: asyncio.create_task(_announce_tracker(tracker_name))
