@@ -31,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -130,6 +131,45 @@ internal fun ChatMessageBubble(
             onHighlightFinished()
         }
     }
+    val isSystemNotification = remember(msg.attachmentType, msg.text) {
+        msg.attachmentType?.equals("SYSTEM", ignoreCase = true) == true ||
+                msg.text.contains("установили новые обои", ignoreCase = true) ||
+                msg.text.contains("установил новые обои", ignoreCase = true) ||
+                msg.text.contains("установил(а) новые обои", ignoreCase = true) ||
+                msg.text.contains("set a new wallpaper", ignoreCase = true) ||
+                msg.text.contains("удалили обои", ignoreCase = true) ||
+                msg.text.contains("удалил обои", ignoreCase = true) ||
+                msg.text.contains("removed the wallpaper", ignoreCase = true) ||
+                msg.text.contains("запретили пересылку", ignoreCase = true) ||
+                msg.text.contains("запретил пересылку", ignoreCase = true) ||
+                msg.text.contains("disabled forwarding", ignoreCase = true)
+    }
+
+    if (isSystemNotification) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.60f),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.padding(horizontal = 24.dp)
+            ) {
+                Text(
+                    text = msg.text,
+                    color = Color.White.copy(alpha = 0.92f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                )
+            }
+        }
+        return
+    }
+
     val context = androidx.compose.ui.platform.LocalContext.current
     val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
     val linkPreviewsEnabled = remember(sharedPrefs) { sharedPrefs.getBoolean("settings_link_previews", false) }

@@ -910,7 +910,10 @@ object P2PMessageRelay {
                                                 .putInt("direct_wallpaper_dimming_$sender", dimming)
                                                 .apply()
 
-                                            val lang = P2PPreferences.prefs(appContext).getString("settings_language", "English") ?: "English"
+                                            val defaultLang = if (Locale.getDefault().language == "ru") "Русский" else "English"
+                                            val lang = P2PPreferences.prefs(appContext).getString("settings_language", defaultLang)
+                                                ?: P2PPreferences.prefs(appContext).getString("app_language", defaultLang)
+                                                ?: defaultLang
                                             val textRu = "Собеседник установил(а) новые обои для этого чата"
                                             val textEn = "Your peer set a new wallpaper for this chat"
                                             val sysMsg = Message(
@@ -933,6 +936,21 @@ object P2PMessageRelay {
                                                 .remove("direct_wallpaper_$sender")
                                                 .remove("direct_wallpaper_dimming_$sender")
                                                 .apply()
+
+                                            val defaultLang = if (Locale.getDefault().language == "ru") "Русский" else "English"
+                                            val lang = P2PPreferences.prefs(appContext).getString("settings_language", defaultLang)
+                                                ?: P2PPreferences.prefs(appContext).getString("app_language", defaultLang)
+                                                ?: defaultLang
+                                            val textRu = "Собеседник удалил(а) обои для этого чата"
+                                            val textEn = "Your peer removed the wallpaper for this chat"
+                                            val sysMsg = Message(
+                                                id = UUID.randomUUID().toString(),
+                                                text = if (lang == "Русский") textRu else textEn,
+                                                isMe = false,
+                                                timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
+                                                attachmentType = "SYSTEM"
+                                            )
+                                            persistAndDispatchIncoming(appContext, sender, sysMsg, notificationText = if (lang == "Русский") textRu else textEn, countAsNew = false)
                                         } catch (e: Exception) {
                                             log(appContext, "Failed to clear wallpaper: ${e.message}", "ERROR", e)
                                         }

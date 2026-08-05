@@ -2451,8 +2451,8 @@ fun ChatScreen(
 
                     if (applyToPeer) {
                         P2PMessageRelay.sendDirectWallpaperUpdate(context, peerName, bitmap, dimming)
-                        val textRu = "Вы установили новые обои для этого чата"
-                        val textEn = "You set a new wallpaper for this chat"
+                        val textRu = if (bitmap != null) "Вы установили новые обои для этого чата" else "Вы удалили обои для этого чата"
+                        val textEn = if (bitmap != null) "You set a new wallpaper for this chat" else "You removed the wallpaper for this chat"
                         val sysMsg = Message(
                             id = newMessageId(),
                             text = if (appLanguage == "Русский") textRu else textEn,
