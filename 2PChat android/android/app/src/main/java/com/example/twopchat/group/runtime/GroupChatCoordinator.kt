@@ -4401,10 +4401,11 @@ object GroupChatCoordinator {
             ),
             currentUserRole = local?.role.toUiRole(),
             members = uiMembers,
-            inviteCandidates = _createState.value.knownContacts.filter { candidate ->
-                members.none {
-                    it.peerName == candidate.contactId &&
-                        it.status !in setOf("LEFT", "BANNED")
+            inviteCandidates = getKnownContacts().filter { candidate ->
+                members.none { member ->
+                    (member.peerName.equals(candidate.contactId, ignoreCase = true) ||
+                     member.displayName.equals(candidate.displayName, ignoreCase = true)) &&
+                     (member.isParticipating() || member.status.uppercase(Locale.ROOT) in setOf("ACTIVE", "INVITED", "JOINING", "RESTRICTED"))
                 }
             },
             management = GroupManagementPermissions(
@@ -4500,13 +4501,24 @@ object GroupChatCoordinator {
         )
     }
 
-    private fun refreshCreateState() {
-        val context = applicationContext ?: return
+    private fun getKnownContacts(): List<GroupContactSummary> {
+        val context = applicationContext ?: return emptyList()
         val prefs = P2PPreferences.prefs(context)
-        val contacts = prefs.getStringSet("active_chats", emptySet()).orEmpty()
+        val contactNames = mutableSetOf<String>()
+        prefs.getStringSet("active_chats", emptySet())?.let { contactNames.addAll(it) }
+        prefs.all.keys.forEach { key ->
+            if (key.startsWith("peer_fingerprint_")) {
+                val peerName = key.removePrefix("peer_fingerprint_")
+                if (peerName.isNotBlank() && peerName != "Saved Messages") {
+                    contactNames.add(peerName)
+                }
+            }
+        }
+        contactNames.remove("Saved Messages")
+
+        return contactNames
             .asSequence()
-            .filter { it != "Saved Messages" }
-            .map { peerName ->
+            .mapNotNull { peerName ->
                 val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
                 GroupContactSummary(
                     contactId = peerName,
@@ -4517,7 +4529,10 @@ object GroupChatCoordinator {
             }
             .sortedBy { it.displayName.lowercase(Locale.ROOT) }
             .toList()
-        _createState.value = _createState.value.copy(knownContacts = contacts)
+    }
+
+    private fun refreshCreateState() {
+        _createState.value = _createState.value.copy(knownContacts = getKnownContacts())
     }
 
     private fun refreshPendingInvites() {
