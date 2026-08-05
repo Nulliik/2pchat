@@ -342,145 +342,207 @@ fun SettingsTab(
                         .padding(horizontal = 20.dp)
                         .verticalScroll(scrollState)
                 ) {
-                    // Visual Profile Card with interactive photo selector
+                    // Hero Profile Card with interactive photo selector & identity copy action
+                    val discoveryCode = remember { PythonBridge.getOrCreateDiscoveryCode() }
+                    val contactAddress = remember(username, discoveryCode) { "$username#$discoveryCode" }
+
                     Card(
                         colors = CardDefaults.cardColors(containerColor = surfaceColor),
                         shape = RoundedCornerShape(24.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 12.dp)
+                            .padding(top = 8.dp, bottom = 12.dp)
                             .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(16.dp)
                         ) {
-                            // Profile Photo container (clickable)
-                            Box(
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clickable {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Profile Photo container (clickable)
+                                Box(
+                                    modifier = Modifier
+                                        .size(68.dp)
+                                        .clickable {
+                                            if (profileBitmap != null) {
+                                                showAvatarOptions = true
+                                            } else {
+                                                imagePickerLauncher.launch("image/*")
+                                            }
+                                        }
+                                ) {
+                                    // Avatar circle
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(CircleShape)
+                                            .background(primaryColor.copy(alpha = 0.15f), shape = CircleShape)
+                                            .border(1.5.dp, primaryColor, CircleShape)
+                                    ) {
                                         if (profileBitmap != null) {
-                                            showAvatarOptions = true
+                                            Image(
+                                                bitmap = profileBitmap!!.asImageBitmap(),
+                                                contentDescription = "Profile Photo",
+                                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                            )
                                         } else {
-                                            imagePickerLauncher.launch("image/*")
+                                            Icon(
+                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_add_photo_smiley),
+                                                contentDescription = "No Profile Photo",
+                                                tint = primaryColor,
+                                                modifier = Modifier.size(26.dp)
+                                            )
                                         }
                                     }
-                            ) {
-                                // Avatar circle
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clip(CircleShape)
-                                        .background(primaryColor.copy(alpha = 0.15f), shape = CircleShape)
-                                        .border(1.dp, primaryColor, CircleShape)
-                                ) {
-                                    if (profileBitmap != null) {
-                                        Image(
-                                            bitmap = profileBitmap!!.asImageBitmap(),
-                                            contentDescription = "Profile Photo",
-                                            modifier = Modifier.fillMaxSize().clip(CircleShape)
-                                        )
-                                    } else {
+                                    // Camera badge — bottom-right corner
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(22.dp)
+                                            .align(Alignment.BottomEnd)
+                                            .background(primaryColor, shape = CircleShape)
+                                            .border(1.5.dp, surfaceColor, CircleShape)
+                                    ) {
                                         Icon(
-                                            painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_add_photo_smiley),
-                                            contentDescription = "No Profile Photo",
-                                            tint = primaryColor,
-                                            modifier = Modifier.size(24.dp)
+                                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_attach_camera),
+                                            contentDescription = "Change photo",
+                                            tint = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White,
+                                            modifier = Modifier.size(12.dp)
                                         )
                                     }
                                 }
-                                // Camera badge — bottom-right corner
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(20.dp)
-                                        .align(Alignment.BottomEnd)
-                                        .background(primaryColor, shape = CircleShape)
-                                        .border(1.5.dp, surfaceColor, CircleShape)
+
+                                Spacer(modifier = Modifier.width(16.dp))
+
+                                Column(
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Icon(
-                                        painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_attach_camera),
-                                        contentDescription = "Change photo",
-                                        tint = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else androidx.compose.ui.graphics.Color.White,
-                                        modifier = Modifier.size(11.dp)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = username,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 19.sp,
+                                            color = onSurfaceColor
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        // P2P Verified pill badge
+                                        Surface(
+                                            color = primaryColor.copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "P2P",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = primaryColor,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = contactAddress,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = onSurfaceVariant.copy(alpha = 0.8f)
                                     )
+                                }
+
+                                // Quick Address Copy Button
+                                Surface(
+                                    color = primaryColor.copy(alpha = 0.12f),
+                                    shape = CircleShape,
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clickable {
+                                            com.example.twopchat.copyTextToClipboard(context, "Contact Address", contactAddress)
+                                            Toast.makeText(
+                                                context,
+                                                if (appLanguage == "Русский") "Адрес контакта скопирован" else "Contact address copied",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                ) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                        Icon(
+                                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_copy_key),
+                                            contentDescription = "Copy address",
+                                            tint = primaryColor,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
 
-                            Spacer(modifier = Modifier.width(16.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
 
-                            Column(
-                                modifier = Modifier.weight(1f)
+                            // Interactive Bio Card Pill
+                            Surface(
+                                color = onSurfaceColor.copy(alpha = 0.04f),
+                                shape = RoundedCornerShape(14.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showEditAboutMeDialog = true }
+                                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(14.dp))
                             ) {
-                                Text(
-                                    text = username,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 18.sp,
-                                    color = onSurfaceColor
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "Your Identity",
-                                    fontSize = 12.sp,
-                                    color = onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
                                 Row(
-                                    verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
-                                        .clickable { showEditAboutMeDialog = true }
-                                        .padding(vertical = 2.dp)
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
-                                        painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_edit),
+                                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_edit),
                                         contentDescription = "Edit bio",
                                         tint = primaryColor,
-                                        modifier = Modifier.size(12.dp)
+                                        modifier = Modifier.size(14.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = if (aboutMeText.isEmpty()) {
                                             if (appLanguage == "Русский") "О себе: Нажмите, чтобы добавить..." else "About me: Tap to add..."
                                         } else {
                                             if (appLanguage == "Русский") "О себе: $aboutMeText" else "About me: $aboutMeText"
                                         },
-                                        fontSize = 13.sp,
-                                        color = if (aboutMeText.isEmpty()) onSurfaceVariant.copy(alpha = 0.6f) else onSurfaceColor.copy(alpha = 0.8f),
+                                        fontSize = 12.sp,
+                                        color = if (aboutMeText.isEmpty()) onSurfaceVariant.copy(alpha = 0.7f) else onSurfaceColor.copy(alpha = 0.9f),
                                         maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
                                     )
                                 }
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Categories Group Card
+                    // Section 1: Appearance & Personalization
+                    SettingsSectionHeader(if (appLanguage == "Русский") "ПЕРСОНАЛИЗАЦИЯ И ЧАТЫ" else "APPEARANCE & CHATS", primaryColor)
                     Card(
                         colors = CardDefaults.cardColors(containerColor = surfaceColor),
                         shape = RoundedCornerShape(20.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
+                            .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
                     ) {
                         Column {
-                            // Category: Chat Settings / Оформление
                             SettingsRow(
                                 title = if (appLanguage == "Русский") "Настройки чатов и Оформление" else "Chat Settings & Theme",
                                 subtitle = if (appLanguage == "Русский") "Тема, цвет акцента, иконка приложения" else "Theme, accent color, launcher icon",
                                 iconRes = com.example.twopchat.R.drawable.ic_menu_chats,
-                                iconColor = Color(0xFFF5B041),
+                                iconColor = Color(0xFFFFA726),
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant,
                                 primaryColor = primaryColor,
                                 onClick = { activeSubPage = "chat_settings" }
                             )
-                            
+
                             HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                             SettingsRow(
@@ -491,27 +553,36 @@ fun SettingsTab(
                                     "Create, import and manage your packs"
                                 },
                                 iconRes = com.example.twopchat.R.drawable.ic_sticker_smile,
-                                iconColor = Color(0xFFFF8A65),
+                                iconColor = Color(0xFFFF7043),
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant,
                                 primaryColor = primaryColor,
                                 onClick = { activeSubPage = "sticker_packs" }
                             )
+                        }
+                    }
 
-                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-
-                            // Category: Privacy & Security / Конфиденциальность
+                    // Section 2: Privacy & Network
+                    SettingsSectionHeader(if (appLanguage == "Русский") "БЕЗОПАСНОСТЬ И СЕТЬ" else "SECURITY & NETWORK", primaryColor)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                    ) {
+                        Column {
                             SettingsRow(
                                 title = if (appLanguage == "Русский") "Конфиденциальность и Сеть" else "Privacy & Security",
                                 subtitle = if (appLanguage == "Русский") "Код-пароль, скриншоты, порты и маршруты" else "Passcode, screenshots, ports and routes",
                                 iconRes = com.example.twopchat.R.drawable.ic_shield_status,
-                                iconColor = Color(0xFF4CAF50),
+                                iconColor = Color(0xFF66BB6A),
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant,
                                 primaryColor = primaryColor,
                                 onClick = { activeSubPage = "security" }
                             )
-                            
+
                             HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                             SettingsRow(
@@ -535,35 +606,43 @@ fun SettingsTab(
                                     "Public and custom peers, toggles and sorting"
                                 },
                                 iconRes = com.example.twopchat.R.drawable.ic_quick_link,
-                                iconColor = Color(0xFF7E57C2),
+                                iconColor = Color(0xFFAB47BC),
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant,
                                 primaryColor = primaryColor,
                                 onClick = { activeSubPage = "yggdrasil_peers" }
                             )
+                        }
+                    }
 
-                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                            
-                            // Category: Notifications / Уведомления
+                    // Section 3: Data & Notifications
+                    SettingsSectionHeader(if (appLanguage == "Русский") "УВЕДОМЛЕНИЯ И ДАННЫЕ" else "NOTIFICATIONS & DATA", primaryColor)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                    ) {
+                        Column {
                             SettingsRow(
                                 title = if (appLanguage == "Русский") "Уведомления и звуки" else "Notifications",
                                 subtitle = if (appLanguage == "Русский") "Включение уведомлений, превью сообщений" else "Toggles, previews",
                                 iconRes = com.example.twopchat.R.drawable.ic_notifications,
-                                iconColor = Color(0xFFE57373),
+                                iconColor = Color(0xFFEF5350),
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant,
                                 primaryColor = primaryColor,
                                 onClick = { activeSubPage = "notifications" }
                             )
-                            
+
                             HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
-                            // Category: Data & Storage / Данные и память
                             SettingsRow(
                                 title = if (appLanguage == "Русский") "Данные и память" else "Data & Storage",
                                 subtitle = if (appLanguage == "Русский") "Использование памяти и очистка кэша" else "Storage usage & cache cleanup",
                                 iconRes = com.example.twopchat.R.drawable.ic_database_storage,
-                                iconColor = Color(0xFF66BB6A),
+                                iconColor = Color(0xFF26A69A),
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant,
                                 primaryColor = primaryColor,
@@ -580,7 +659,7 @@ fun SettingsTab(
                                     "Direct P2P and Yggdrasil traffic by data type"
                                 },
                                 iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
-                                iconColor = Color(0xFF26A69A),
+                                iconColor = Color(0xFF42A5F5),
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant,
                                 primaryColor = primaryColor,
@@ -588,48 +667,44 @@ fun SettingsTab(
                             )
 
                             HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                            
-                            // Category: Language / Язык
+
                             SettingsRow(
                                 title = Localizations.getString("language", appLanguage),
                                 subtitle = if (appLanguage == "Русский") "Выбор языка приложения" else "Choose app language",
                                 value = appLanguage,
                                 iconRes = com.example.twopchat.R.drawable.ic_quick_link,
-                                iconColor = Color(0xFF29B6F6),
+                                iconColor = Color(0xFFEC407A),
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant,
                                 primaryColor = primaryColor,
                                 onClick = { showLanguageDialog = true }
                             )
-
-                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-
-                            // Category: Help & Reference / Справка
-                            SettingsRow(
-                                title = Localizations.getString("help_reference", appLanguage),
-                                subtitle = Localizations.getString("help_reference_desc", appLanguage),
-                                iconRes = com.example.twopchat.R.drawable.ic_help_question,
-                                iconColor = Color(0xFFAB47BC),
-                                onSurfaceColor = onSurfaceColor,
-                                onSurfaceVariant = onSurfaceVariant,
-                                primaryColor = primaryColor,
-                                onClick = { activeSubPage = "help_reference" }
-                            )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // System Group Card
+                    // Section 4: System & Help
+                    SettingsSectionHeader(if (appLanguage == "Русский") "СИСТЕМА И СПРАВКА" else "SYSTEM & HELP", primaryColor)
                     Card(
                         colors = CardDefaults.cardColors(containerColor = surfaceColor),
                         shape = RoundedCornerShape(20.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
+                            .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
                     ) {
                         Column {
-                            // Network Diagnostics & Logs
+                            SettingsRow(
+                                title = Localizations.getString("help_reference", appLanguage),
+                                subtitle = Localizations.getString("help_reference_desc", appLanguage),
+                                iconRes = com.example.twopchat.R.drawable.ic_help_question,
+                                iconColor = Color(0xFF7E57C2),
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                primaryColor = primaryColor,
+                                onClick = { activeSubPage = "help_reference" }
+                            )
+
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
                             SettingsRow(
                                 title = if (appLanguage == "Русский") "Сетевой отладчик и Логи" else "Network Diagnostics & Logs",
                                 iconRes = com.example.twopchat.R.drawable.ic_menu_settings,
@@ -639,10 +714,9 @@ fun SettingsTab(
                                 primaryColor = primaryColor,
                                 onClick = { onShowLogs() }
                             )
-                            
+
                             HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-                            
-                            // Export Logs
+
                             SettingsRow(
                                 title = if (appLanguage == "Русский") "Экспорт логов приложения" else "Export App Logs",
                                 iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
@@ -673,7 +747,7 @@ fun SettingsTab(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // Delete Account (Separate Standalone Card)
                     val dangerRed = Color(0xFFFF5252)
@@ -682,7 +756,7 @@ fun SettingsTab(
                         shape = RoundedCornerShape(20.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .border(0.5.dp, dangerRed.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
+                            .border(0.75.dp, dangerRed.copy(alpha = 0.25f), RoundedCornerShape(20.dp))
                     ) {
                         SettingsRow(
                             title = Localizations.getString("delete_account", appLanguage),
@@ -696,15 +770,15 @@ fun SettingsTab(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
                     Text(
-                        text = "v 0.0.6",
+                        text = "2PChat • v0.0.6 P2P Network",
                         fontSize = 12.sp,
-                        color = onSurfaceVariant.copy(alpha = 0.5f),
+                        color = onSurfaceVariant.copy(alpha = 0.6f),
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     )
-                    Spacer(modifier = Modifier.height(40.dp))
+                    Spacer(modifier = Modifier.height(36.dp))
                 }
             }
             "sticker_packs" -> StickerPackManagerPage(
@@ -2995,6 +3069,18 @@ fun SettingsTab(
 
 
 @Composable
+fun SettingsSectionHeader(title: String, primaryColor: Color) {
+    Text(
+        text = title,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.8.sp,
+        color = primaryColor,
+        modifier = Modifier.padding(start = 12.dp, top = 14.dp, bottom = 6.dp)
+    )
+}
+
+@Composable
 fun SettingsRow(
     title: String,
     subtitle: String? = null,
@@ -3021,18 +3107,21 @@ fun SettingsRow(
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(36.dp)
-                .background(color = if (isWarning) warningRed.copy(alpha = 0.15f) else iconColor.copy(alpha = 0.15f), shape = CircleShape)
+                .size(38.dp)
+                .background(
+                    color = if (isWarning) warningRed.copy(alpha = 0.16f) else iconColor.copy(alpha = 0.16f),
+                    shape = RoundedCornerShape(12.dp)
+                )
         ) {
             Icon(
                 painter = painterResource(id = iconRes),
                 contentDescription = null,
                 tint = effectiveIconColor,
-                modifier = Modifier.size(18.dp)
+                modifier = Modifier.size(19.dp)
             )
         }
         
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(modifier = Modifier.width(14.dp))
         
         Column(
             modifier = Modifier.weight(1f)
@@ -3048,7 +3137,7 @@ fun SettingsRow(
                 Text(
                     text = subtitle,
                     fontSize = 12.sp,
-                    color = onSurfaceVariant.copy(alpha = 0.6f)
+                    color = onSurfaceVariant.copy(alpha = 0.78f)
                 )
             }
         }
@@ -3056,9 +3145,19 @@ fun SettingsRow(
         if (value != null) {
             Text(
                 text = value,
-                fontSize = 14.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-                color = primaryColor
+                color = primaryColor,
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
+        if (!isWarning) {
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "›",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = onSurfaceVariant.copy(alpha = 0.35f)
             )
         }
     }
