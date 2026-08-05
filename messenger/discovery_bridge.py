@@ -306,7 +306,6 @@ def configure_trackers(config_json: str) -> bool:
         _ygg_trackers_enabled = ygg_enabled
         _ipv4_announce_mode = ipv4_mode
     return True
-    return True
 
 
 def _configured_tracker(name: str):
@@ -1370,8 +1369,15 @@ def announce_peer_endpoints(
                         str(round((time.monotonic() - dht_started) * 1000)),
                     )
 
-            # Launch STUN discovery in background without blocking tracker announcements (only when Yggdrasil is unavailable)
-            if not local_yggdrasil_available:
+            # Launch STUN discovery in background according to IPv4 policy
+            with _tracker_config_lock:
+                stun_policy = _ipv4_announce_mode
+
+            should_stun = (
+                stun_policy == "always"
+                or (stun_policy == "auto" and not local_yggdrasil_available)
+            )
+            if should_stun:
                 asyncio.create_task(asyncio.to_thread(_discover_public_ipv4_stun))
 
             tracker_tasks = {
