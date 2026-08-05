@@ -14,14 +14,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.clickable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -162,50 +160,53 @@ fun TrackerSettingsPage(
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
             )
             TrackerSectionCard(surfaceColor, onSurfaceColor) {
-                RadioOptionRow(
+                TrackerToggleRow(
                     title = if (isRussian) "Авто (Рекомендуется)" else "Auto (Recommended)",
                     subtitle = if (isRussian) {
                         "Скрывать IPv4 адрес при активном Yggdrasil IPv6"
                     } else {
                         "Hide IPv4 address when Yggdrasil IPv6 is active"
                     },
-                    selected = ipv4Mode == "auto",
+                    checked = ipv4Mode == "auto",
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariant = onSurfaceVariant,
-                    onClick = {
-                        TrackerPreferences.setIpv4AnnounceMode(context, "auto")
+                    onCheckedChange = { checked ->
+                        val targetMode = if (checked) "auto" else "never"
+                        TrackerPreferences.setIpv4AnnounceMode(context, targetMode)
                         settingsChanged()
                     },
                 )
                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
-                RadioOptionRow(
+                TrackerToggleRow(
                     title = if (isRussian) "Никогда не публиковать IPv4" else "Never announce IPv4",
                     subtitle = if (isRussian) {
                         "Анонсировать только IPv6 / Yggdrasil (максимальная анонимность)"
                     } else {
                         "Announce IPv6 / Yggdrasil only (maximum anonymity)"
                     },
-                    selected = ipv4Mode == "never",
+                    checked = ipv4Mode == "never",
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariant = onSurfaceVariant,
-                    onClick = {
-                        TrackerPreferences.setIpv4AnnounceMode(context, "never")
+                    onCheckedChange = { checked ->
+                        val targetMode = if (checked) "never" else "auto"
+                        TrackerPreferences.setIpv4AnnounceMode(context, targetMode)
                         settingsChanged()
                     },
                 )
                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
-                RadioOptionRow(
+                TrackerToggleRow(
                     title = if (isRussian) "Всегда публиковать IPv4" else "Always announce IPv4",
                     subtitle = if (isRussian) {
                         "Публиковать IPv4 и IPv6 всегда (максимальная P2P-связность)"
                     } else {
                         "Always publish IPv4 and IPv6 (maximum P2P connectivity)"
                     },
-                    selected = ipv4Mode == "always",
+                    checked = ipv4Mode == "always",
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariant = onSurfaceVariant,
-                    onClick = {
-                        TrackerPreferences.setIpv4AnnounceMode(context, "always")
+                    onCheckedChange = { checked ->
+                        val targetMode = if (checked) "always" else "auto"
+                        TrackerPreferences.setIpv4AnnounceMode(context, targetMode)
                         settingsChanged()
                     },
                 )
@@ -481,32 +482,4 @@ private fun AddTrackerDialog(
             TextButton(onClick = onDismiss) { Text(if (isRussian) "Отмена" else "Cancel") }
         },
     )
-}
-
-@Composable
-private fun RadioOptionRow(
-    title: String,
-    subtitle: String,
-    selected: Boolean,
-    onSurfaceColor: Color,
-    onSurfaceVariant: Color,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RadioButton(
-            selected = selected,
-            onClick = onClick,
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = onSurfaceColor, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-            Text(subtitle, color = onSurfaceVariant, fontSize = 12.sp)
-        }
-    }
 }
