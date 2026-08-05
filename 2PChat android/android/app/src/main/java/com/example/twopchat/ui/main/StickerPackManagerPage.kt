@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Icon
@@ -48,11 +49,16 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -149,7 +155,13 @@ internal fun StickerPackManagerPage(
             operationRunning = false
             if (result.pack != null) {
                 selectedPackId = result.pack.id
-                selectedStickerId = null
+                val newlyAdded = result.pack.stickers.lastOrNull()
+                if (newlyAdded != null) {
+                    selectedStickerId = newlyAdded.stickerId
+                    showEmojiDialog = true
+                } else {
+                    selectedStickerId = null
+                }
                 refreshKey += 1
                 notify(
                     "Добавлено стикеров: ${result.addedCount}",
@@ -478,59 +490,183 @@ internal fun StickerPackManagerPage(
         it.stickerId == selectedStickerId
     }
     if (showEmojiDialog && selectedPack != null && selectedSticker != null) {
-        var emoji by remember(selectedPack.id, selectedSticker.stickerId) {
-            mutableStateOf(selectedSticker.emoji.ifBlank { "🎭" })
-        }
-        AlertDialog(
-            onDismissRequest = { showEmojiDialog = false },
-            title = {
-                Text(if (appLanguage == "Русский") "Эмодзи стикера" else "Sticker emoji")
+        EmojiAssignDialog(
+            sticker = selectedSticker,
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = onSurfaceVariant,
+            onDismiss = { showEmojiDialog = false },
+            onConfirm = { newEmoji ->
+                showEmojiDialog = false
+                operationRunning = true
+                scope.launch {
+                    val updated = withContext(Dispatchers.IO) {
+                        StickerSupport.updateStickerEmoji(
+                            context,
+                            selectedPack.id,
+                            selectedSticker.stickerId,
+                            newEmoji,
+                        )
+                    }
+                    operationRunning = false
+                    if (updated != null) refreshKey += 1
+                }
             },
-            text = {
+        )
+    }
+}
+
+@Composable
+private fun EmojiAssignDialog(
+    sticker: BuiltinSticker,
+    appLanguage: String,
+    primaryColor: Color,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
+    onSurfaceVariant: Color,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var emoji by remember(sticker.stickerId) {
+        mutableStateOf(sticker.emoji.ifBlank { "" })
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = surfaceColor,
+            tonalElevation = 8.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.88f)
+                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.12f), RoundedCornerShape(24.dp)),
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                // Sticker Thumbnail Preview
+                StickerThumbnail(sticker = sticker, size = 76)
+
+                Spacer(Modifier.height(14.dp))
+
+                Text(
+                    text = if (appLanguage == "Русский") "Эмодзи стикера" else "Sticker Emoji",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor,
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                Text(
+                    text = if (appLanguage == "Русский") {
+                        "Выберите или введите эмодзи для быстрой отправки"
+                    } else {
+                        "Select or type an emoji for quick search"
+                    },
+                    fontSize = 12.sp,
+                    color = onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+
+                Spacer(Modifier.height(14.dp))
+
+                // Quick Tap Emoji Row
+                val popularEmojis = listOf("😀", "😂", "❤️", "🔥", "👍", "🎉", "😎", "😍", "✨", "🙏", "💯", "🥳")
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    items(popularEmojis) { itemEmoji ->
+                        val isSelected = emoji == itemEmoji
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isSelected) primaryColor.copy(alpha = 0.22f)
+                                    else onSurfaceColor.copy(alpha = 0.05f),
+                                )
+                                .border(
+                                    width = if (isSelected) 1.5.dp else 0.dp,
+                                    color = if (isSelected) primaryColor else Color.Transparent,
+                                    shape = CircleShape,
+                                )
+                                .clickable { emoji = itemEmoji },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(itemEmoji, fontSize = 20.sp)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                // Custom Input Field (No "🎭" fallback!)
                 OutlinedTextField(
                     value = emoji,
                     onValueChange = { emoji = it.take(16) },
                     singleLine = true,
-                    supportingText = {
+                    placeholder = {
                         Text(
-                            if (appLanguage == "Русский") {
-                                "Используется для поиска и как запасной значок"
-                            } else {
-                                "Used for search and as a fallback icon"
-                            },
+                            text = if (appLanguage == "Русский") "Выберите или введите эмодзи..." else "Type emoji...",
+                            fontSize = 13.sp,
+                            color = onSurfaceVariant.copy(alpha = 0.5f),
                         )
                     },
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = emoji.isNotBlank(),
-                    onClick = {
-                        showEmojiDialog = false
-                        operationRunning = true
-                        scope.launch {
-                            val updated = withContext(Dispatchers.IO) {
-                                StickerSupport.updateStickerEmoji(
-                                    context,
-                                    selectedPack.id,
-                                    selectedSticker.stickerId,
-                                    emoji,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = primaryColor,
+                        unfocusedBorderColor = onSurfaceColor.copy(alpha = 0.15f),
+                        focusedContainerColor = onSurfaceColor.copy(alpha = 0.03f),
+                        unfocusedContainerColor = onSurfaceColor.copy(alpha = 0.02f),
+                    ),
+                    trailingIcon = {
+                        if (emoji.isNotEmpty()) {
+                            IconButton(onClick = { emoji = "" }, modifier = Modifier.size(24.dp)) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    tint = onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
                                 )
                             }
-                            operationRunning = false
-                            if (updated != null) refreshKey += 1
                         }
                     },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Spacer(Modifier.height(20.dp))
+
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text(if (appLanguage == "Русский") "Сохранить" else "Save")
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text(if (appLanguage == "Русский") "Пропустить" else "Skip")
+                    }
+
+                    Button(
+                        onClick = { onConfirm(emoji) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text(if (appLanguage == "Русский") "Сохранить" else "Save")
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEmojiDialog = false }) {
-                    Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
-                }
-            },
-        )
+            }
+        }
     }
 }
 
