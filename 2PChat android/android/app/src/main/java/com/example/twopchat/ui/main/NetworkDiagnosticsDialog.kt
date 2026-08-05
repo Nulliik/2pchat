@@ -573,7 +573,7 @@ fun NetworkDiagnosticsDialog(
                             .fillMaxSize()
                             .padding(16.dp)
                     ) {
-                        // Header Row: Title & Action Buttons
+                        // Header Row: Title & Standalone Close Button
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -581,7 +581,7 @@ fun NetworkDiagnosticsDialog(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Box(
@@ -591,7 +591,7 @@ fun NetworkDiagnosticsDialog(
                                 )
                                 Text(
                                     text = if (appLanguage == "Русский") "Сетевой отладчик" else "Network Debugger",
-                                    fontSize = 17.sp,
+                                    fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = onSurfaceColor,
                                     maxLines = 1,
@@ -599,71 +599,21 @@ fun NetworkDiagnosticsDialog(
                                 )
                             }
 
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            // Standalone Close Button
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(onSurfaceColor.copy(alpha = 0.08f))
+                                    .clickable { onDismissRequest() },
+                                contentAlignment = Alignment.Center
                             ) {
-                                // Refresh
-                                IconButton(
-                                    onClick = { refreshDiagnostics() },
-                                    modifier = Modifier.size(30.dp).background(onSurfaceColor.copy(alpha = 0.05f), shape = CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = "Refresh",
-                                        tint = primaryColor,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                }
-                                // Copy
-                                IconButton(
-                                    onClick = {
-                                        clipboardManager.setText(AnnotatedString(formattedLogs.text))
-                                        Toast.makeText(context, if (appLanguage == "Русский") "Логи скопированы" else "Logs copied", Toast.LENGTH_SHORT).show()
-                                    },
-                                    modifier = Modifier.size(30.dp).background(onSurfaceColor.copy(alpha = 0.05f), shape = CircleShape)
-                                ) {
-                                    CustomCopyIcon(tint = primaryColor, modifier = Modifier.size(14.dp))
-                                }
-                                // Share
-                                IconButton(
-                                    onClick = { shareLogFile(context) },
-                                    modifier = Modifier.size(30.dp).background(onSurfaceColor.copy(alpha = 0.05f), shape = CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Share,
-                                        contentDescription = "Share",
-                                        tint = primaryColor,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                }
-                                // Clear
-                                IconButton(
-                                    onClick = {
-                                        clearLogFile(context)
-                                        logsText = readLogFile(context)
-                                    },
-                                    modifier = Modifier.size(30.dp).background(onSurfaceColor.copy(alpha = 0.05f), shape = CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Clear",
-                                        tint = Color(0xFFFF5252),
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                }
-                                // Close
-                                IconButton(
-                                    onClick = { onDismissRequest() },
-                                    modifier = Modifier.size(30.dp).background(onSurfaceColor.copy(alpha = 0.05f), shape = CircleShape)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Close",
-                                        tint = onSurfaceVariant,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                }
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close",
+                                    tint = onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
                             }
                         }
 
@@ -851,24 +801,101 @@ fun NetworkDiagnosticsDialog(
 
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        // Log Stats Bar
+                        // Log Stats & Action Toolbar Row
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = if (appLanguage == "Русский") "СИСТЕМНЫЙ ЛОГ (app.log)" else "SYSTEM LOG (app.log)",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = onSurfaceVariant
-                            )
-                            Text(
-                                text = if (appLanguage == "Русский") "Строк: $lineCount" else "Lines: $lineCount",
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = primaryColor
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "СИСТЕМНЫЙ ЛОГ" else "SYSTEM LOG",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = onSurfaceVariant
+                                )
+                                Text(
+                                    text = "($lineCount ${if (appLanguage == "Русский") "строк" else "lines"})",
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = primaryColor
+                                )
+                            }
+
+                            // Log Actions Toolbar (Refresh, Copy, Share, Clear)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Refresh
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(onSurfaceColor.copy(alpha = 0.06f))
+                                        .clickable { refreshDiagnostics() },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Refresh",
+                                        tint = primaryColor,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                                // Copy
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(onSurfaceColor.copy(alpha = 0.06f))
+                                        .clickable {
+                                            clipboardManager.setText(AnnotatedString(formattedLogs.text))
+                                            Toast.makeText(context, if (appLanguage == "Русский") "Логи скопированы" else "Logs copied", Toast.LENGTH_SHORT).show()
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CustomCopyIcon(tint = primaryColor, modifier = Modifier.size(13.dp))
+                                }
+                                // Share
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(onSurfaceColor.copy(alpha = 0.06f))
+                                        .clickable { shareLogFile(context) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = "Share",
+                                        tint = primaryColor,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                                // Clear
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(CircleShape)
+                                        .background(onSurfaceColor.copy(alpha = 0.06f))
+                                        .clickable {
+                                            clearLogFile(context)
+                                            logsText = readLogFile(context)
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Clear",
+                                        tint = Color(0xFFFF5252),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(4.dp))
