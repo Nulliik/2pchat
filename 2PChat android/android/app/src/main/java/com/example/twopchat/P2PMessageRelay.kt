@@ -462,8 +462,7 @@ object P2PMessageRelay {
                 putString(P2PPreferences.lastMessage(sender), SecureStorage.encrypt(notificationText))
             }
         }
-        serviceScope.launch(Dispatchers.Main) {
-            messageListeners.forEach { it.onMessageReceived(sender, message) }
+        serviceScope.launch(Dispatchers.Default) {
             val currentActivePeer = activeChatPeer.get()
             val isChatOpenWithSender = currentActivePeer != null && currentActivePeer.equals(sender, ignoreCase = true)
             if (countAsNew && !isChatOpenWithSender) {
@@ -472,6 +471,9 @@ object P2PMessageRelay {
                 showNotification(context, sender, message, notificationText)
             } else {
                 MessageNotificationService.cancelNotificationForPeer(context, sender)
+            }
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                messageListeners.forEach { it.onMessageReceived(sender, message) }
             }
         }
     }

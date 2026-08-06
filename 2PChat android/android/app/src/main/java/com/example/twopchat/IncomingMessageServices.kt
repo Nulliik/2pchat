@@ -115,6 +115,11 @@ internal class MessageNotificationService {
         private const val CHANNEL_ID = "p2p_chat_messages"
         private const val PREFS_NAME = "2pchat_notification_ids"
         private const val NEXT_ID_KEY = "next_id"
+        private val avatarIconCache = android.util.LruCache<String, androidx.core.graphics.drawable.IconCompat>(50)
+
+        fun clearAvatarCache() {
+            avatarIconCache.evictAll()
+        }
 
         @Synchronized
         private fun notificationId(context: Context, sender: String): Int {
@@ -191,10 +196,16 @@ internal class MessageNotificationService {
         }
 
         fun getPeerAvatarIcon(context: Context, sender: String): androidx.core.graphics.drawable.IconCompat {
+            // 0. Try IconCompat LRU Cache
+            val cachedIcon = avatarIconCache.get(sender)
+            if (cachedIcon != null) return cachedIcon
+
             // 1. Try RAM cache
             val cached = P2PMessageRelay.peerAvatars[sender]
             if (cached != null) {
-                return androidx.core.graphics.drawable.IconCompat.createWithBitmap(cached)
+                val icon = androidx.core.graphics.drawable.IconCompat.createWithBitmap(cached)
+                avatarIconCache.put(sender, icon)
+                return icon
             }
 
             // 2. Try encrypted avatar storage on disk
@@ -214,7 +225,9 @@ internal class MessageNotificationService {
                                     val bmp = android.graphics.BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.size)
                                     if (bmp != null) {
                                         P2PMessageRelay.peerAvatars[sender] = bmp
-                                        return androidx.core.graphics.drawable.IconCompat.createWithBitmap(bmp)
+                                        val icon = androidx.core.graphics.drawable.IconCompat.createWithBitmap(bmp)
+                                        avatarIconCache.put(sender, icon)
+                                        return icon
                                     }
                                 }
                             }
@@ -248,7 +261,9 @@ internal class MessageNotificationService {
             val textY = (sizePx / 2f) - ((textPaint.descent() + textPaint.ascent()) / 2f)
             canvas.drawText(initial, sizePx / 2f, textY, textPaint)
 
-            return androidx.core.graphics.drawable.IconCompat.createWithBitmap(bitmap)
+            val icon = androidx.core.graphics.drawable.IconCompat.createWithBitmap(bitmap)
+            avatarIconCache.put(sender, icon)
+            return icon
         }
 
         fun show(context: Context, sender: String, text: String, messageId: String) {

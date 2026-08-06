@@ -65,7 +65,9 @@ internal class P2POutboundMessenger(
                 } else {
                     val currentBackoff = peerFailureBackoffMs[peerName] ?: 1000L
                     lastPeerFailureAt[peerName] = System.currentTimeMillis()
-                    peerFailureBackoffMs[peerName] = (currentBackoff * 2).coerceAtMost(30_000L)
+                    val nextBackoff = (currentBackoff * 2).coerceAtMost(30_000L)
+                    val jitterFactor = java.util.concurrent.ThreadLocalRandom.current().nextDouble(0.85, 1.15)
+                    peerFailureBackoffMs[peerName] = (nextBackoff * jitterFactor).toLong()
                 }
                 log(context, "Secure message send: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
                 postResult(onResult, success)
