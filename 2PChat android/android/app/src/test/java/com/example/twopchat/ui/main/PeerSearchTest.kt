@@ -72,6 +72,12 @@ class PeerSearchTest {
     }
 
     @Test
+    fun `contact invite scheme is whitespace and case tolerant`() {
+        assertTrue(isContactInviteLink("  2PCHAT://CONNECT?name=Alice&code=abcd  "))
+        assertFalse(isContactInviteLink("https://example.test/2pchat://connect"))
+    }
+
+    @Test
     fun `QR request requires both nickname and connection code`() {
         assertNull(invitePeerSearchRequest(null, "code", null))
         assertNull(invitePeerSearchRequest("Alice", " ", null))

@@ -983,12 +983,21 @@ object GroupChatCoordinator {
     fun onPeerConnected(context: Context, peerName: String) {
         initialize(context)
         scope.launch {
-            flushDueOutbox()
             val groups = db().listGroups()
-            groups.forEach { group ->
+            val memberships = groups.mapNotNull { group ->
                 val member = db().listMembers(group.groupId)
                     .firstOrNull { it.peerName == peerName && it.isParticipating() }
-                    ?: return@forEach
+                    ?: return@mapNotNull null
+                group to member
+            }
+            val now = System.currentTimeMillis()
+            memberships.forEach { (group, member) ->
+                db().requeueOutboxForRecipient(group.groupId, member.deviceId, now)
+            }
+            // Key packages and roster controls must be replayed before sync can
+            // successfully ingest ciphertext from epochs created while offline.
+            flushDueOutbox()
+            memberships.forEach { (group, member) ->
                 sendSyncRequests(group, member)
             }
         }

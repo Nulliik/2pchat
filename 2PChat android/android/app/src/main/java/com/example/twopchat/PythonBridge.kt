@@ -174,6 +174,14 @@ object PythonBridge {
         expectedFingerprint: String? = null,
         sharedCode: String = query,
     ): List<Map<String, Any>> {
+        // Search can be opened immediately after process recreation, before the
+        // activity's normal bootstrap has finished.  Treat that as a recoverable
+        // startup race instead of reporting a misleading empty search result.
+        if (!isInitialized) {
+            val context = appContext ?: return emptyList()
+            ensurePythonStarted(context)
+            init(context)
+        }
         if (!isInitialized) return emptyList()
         return try {
             val bridge = getDiscoveryBridgeModule() ?: return emptyList()

@@ -22,6 +22,11 @@ class PeerSearchInstrumentedTest {
     }
 
     @Test
+    fun qrSchemeIsAcceptedCaseInsensitivelyOnDevice() {
+        assertTrue(isContactInviteLink("2PCHAT://CONNECT?name=Anne_Marie&code=abcd-2345"))
+    }
+
+    @Test
     fun qrDirectCandidatesFormatIpv4AndYggdrasilEndpoints() {
         assertEquals("192.0.2.10:50001", formatInviteEndpoint("192.0.2.10"))
         assertEquals("[200:db8::10]:50001", formatInviteEndpoint("200:db8::10"))

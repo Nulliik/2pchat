@@ -35,7 +35,6 @@ object GroupWorkScheduler {
     private const val IMMEDIATE_WORK = "twopchat-group-outbox-now"
     private val connected = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
-        .setRequiresBatteryNotLow(true)
         .build()
 
     fun schedule(context: Context) {

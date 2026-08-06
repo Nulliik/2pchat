@@ -61,8 +61,11 @@ import com.example.twopchat.validatedSearchNickname
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.material.icons.Icons
@@ -166,6 +169,9 @@ internal fun classicPeerSearchRequest(value: String): PeerSearchRequest? {
     )
 }
 
+internal fun isContactInviteLink(value: String): Boolean =
+    value.trim().startsWith("2pchat://connect", ignoreCase = true)
+
 internal fun contactFromPeerSearchResult(
     peer: Map<String, Any>,
     appLanguage: String,
@@ -227,6 +233,8 @@ fun ContactsTab(
     var searchProgress by remember { mutableStateOf("") }
     var searchSummary by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
+    var searchJob by remember { mutableStateOf<Job?>(null) }
+    var searchGeneration by remember { mutableIntStateOf(0) }
     var inviteLinkState by remember { mutableStateOf("") }
     var showInvitePanel by remember { mutableStateOf(false) }
     var showQrPanel by remember { mutableStateOf(false) }
@@ -280,11 +288,26 @@ fun ContactsTab(
     // hard-coded demo directory made fictional users look searchable/online.
     val filteredContacts = emptyList<ContactItem>()
 
+    val updateSearchQuery = { value: String ->
+        if (value != searchQuery) {
+            searchGeneration++
+            searchJob?.cancel()
+            isSearching = false
+            isResolvingInvite = false
+            searchProgress = ""
+            searchSummary = ""
+            searchResults = emptyList()
+        }
+        searchQuery = value
+    }
+
     // Reusable search execution lambda (used by search button & QR scanner)
     val performSearch = { query: String ->
         if (query.isNotBlank()) {
+            val generation = ++searchGeneration
+            searchJob?.cancel()
             val trimmed = query.trim()
-            if (trimmed.startsWith("2pchat://connect")) {
+            if (isContactInviteLink(trimmed)) {
                 try {
                     val uri = android.net.Uri.parse(trimmed)
                     val parsedName = uri.getQueryParameter("name")
@@ -314,20 +337,23 @@ fun ContactsTab(
                         }
                         isResolvingInvite = true
                         resolveInviteStatus = if (appLanguage == "Русский") "Мгновенное подключение к собеседнику..." else "Connecting to peer..."
-                        coroutineScope.launch(Dispatchers.IO) {
-                            val peers = PythonBridge.searchPeers(
-                                query = request.lookupNickname,
-                                expectedLiveName = request.expectedLiveName,
-                                expectedFingerprint = request.expectedFingerprint,
-                                sharedCode = request.sharedCode,
-                            )
-                            val resolvedPeer = peers.firstOrNull {
-                                isConnectablePeerSearchResult(it, request.expectedFingerprint)
-                            }
-                            val endpoints = resolvedPeer?.get("endpoints") as? List<*>
-                            val endpointStr = if (endpoints != null && endpoints.isNotEmpty()) endpoints.joinToString(",") { it.toString() } else ""
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                isResolvingInvite = false
+                        searchJob = coroutineScope.launch(Dispatchers.IO) {
+                            try {
+                                val peers = withTimeout(30_000L) {
+                                    PythonBridge.searchPeers(
+                                        query = request.lookupNickname,
+                                        expectedLiveName = request.expectedLiveName,
+                                        expectedFingerprint = request.expectedFingerprint,
+                                        sharedCode = request.sharedCode,
+                                    )
+                                }
+                                val resolvedPeer = peers.firstOrNull {
+                                    isConnectablePeerSearchResult(it, request.expectedFingerprint)
+                                }
+                                val endpoints = resolvedPeer?.get("endpoints") as? List<*>
+                                val endpointStr = if (endpoints != null && endpoints.isNotEmpty()) endpoints.joinToString(",") { it.toString() } else ""
+                                withContext(Dispatchers.Main) {
+                                    if (generation != searchGeneration) return@withContext
                                 if (endpointStr.isNotEmpty()) {
                                     val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                                     if (!activeSet.contains(request.expectedLiveName)) {
@@ -350,6 +376,23 @@ fun ContactsTab(
                                     onItemClick(Chat(request.expectedLiveName))
                                 } else {
                                     resolveInviteStatus = if (appLanguage == "Русский") "Собеседник не найден. Попробуйте снова." else "Peer not found. Please try again."
+                                }
+                                }
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (error: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    if (generation == searchGeneration) {
+                                        resolveInviteStatus = if (appLanguage == "Русский") {
+                                            "Не удалось завершить поиск. Проверьте сеть и повторите попытку."
+                                        } else {
+                                            "Search could not be completed. Check the network and try again."
+                                        }
+                                    }
+                                }
+                            } finally {
+                                withContext(Dispatchers.Main) {
+                                    if (generation == searchGeneration) isResolvingInvite = false
                                 }
                             }
                         }
@@ -375,7 +418,7 @@ fun ContactsTab(
                     } else {
                         "1/3 · Querying trackers and Mainline DHT…"
                     }
-                    coroutineScope.launch(Dispatchers.IO) {
+                    searchJob = coroutineScope.launch(Dispatchers.IO) {
                         val progressJob = launch {
                             kotlinx.coroutines.delay(1200)
                             withContext(Dispatchers.Main) {
@@ -395,16 +438,17 @@ fun ContactsTab(
                             }
                         }
 
-                        val results = PythonBridge.searchPeers(
-                            query = request.lookupNickname,
-                            expectedLiveName = request.expectedLiveName,
-                            sharedCode = request.sharedCode,
-                        )
-                        progressJob.cancel()
+                        try {
+                            val results = withTimeout(30_000L) {
+                                PythonBridge.searchPeers(
+                                    query = request.lookupNickname,
+                                    expectedLiveName = request.expectedLiveName,
+                                    sharedCode = request.sharedCode,
+                                )
+                            }
 
-                        withContext(Dispatchers.Main) {
-                            isSearching = false
-                            searchProgress = ""
+                            withContext(Dispatchers.Main) {
+                                if (generation != searchGeneration) return@withContext
                             val list = results.map { contactFromPeerSearchResult(it, appLanguage) }
                             val verifiedCount = list.count { it.verified }
                             val unverifiedCount = list.size - verifiedCount
@@ -423,11 +467,37 @@ fun ContactsTab(
                                     "Search complete: $verifiedCount verified, $unverifiedCount found without live verification"
                                 }
                             }
+                            }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            withContext(Dispatchers.Main) {
+                                if (generation == searchGeneration) {
+                                    searchResults = emptyList()
+                                    searchSummary = if (appLanguage == "Русский") {
+                                        "Не удалось завершить поиск. Проверьте сеть и повторите попытку."
+                                    } else {
+                                        "Search could not be completed. Check the network and try again."
+                                    }
+                                }
+                            }
+                        } finally {
+                            progressJob.cancel()
+                            withContext(Dispatchers.Main) {
+                                if (generation == searchGeneration) {
+                                    isSearching = false
+                                    searchProgress = ""
+                                }
+                            }
                         }
                     }
                 }
             }
         } else {
+            searchGeneration++
+            searchJob?.cancel()
+            isSearching = false
+            isResolvingInvite = false
             searchResults = emptyList()
             searchProgress = ""
             searchSummary = ""
@@ -480,7 +550,7 @@ fun ContactsTab(
                     }
                     BasicTextField(
                         value = searchQuery,
-                        onValueChange = { searchQuery = it },
+                        onValueChange = updateSearchQuery,
                         singleLine = true,
                         cursorBrush = SolidColor(primaryColor),
                         textStyle = TextStyle(
@@ -498,7 +568,7 @@ fun ContactsTab(
                     Box(
                         modifier = Modifier
                             .size(28.dp)
-                            .clickable { searchQuery = "" },
+                            .clickable { updateSearchQuery("") },
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -514,7 +584,7 @@ fun ContactsTab(
                             .size(28.dp)
                             .clickable {
                                 val pasted = readTextFromClipboard(context).trim()
-                                if (pasted.startsWith("2pchat://connect") || pasted.contains('#')) {
+                                if (isContactInviteLink(pasted) || pasted.contains('#')) {
                                     searchQuery = pasted
                                     performSearch(pasted)
                                 } else {
@@ -717,7 +787,7 @@ fun ContactsTab(
             }
         }
 
-        if (searchQuery.trim().startsWith("2pchat://connect")) {
+        if (isContactInviteLink(searchQuery)) {
             Text(
                 text = if (appLanguage == "Русский") {
                     "Ссылка приглашения распознана. Нажмите поиск для защищённого подключения."
@@ -1321,6 +1391,22 @@ private fun CameraQrScannerOverlay(
     var hasScanned by remember { mutableStateOf(false) }
     var isTorchEnabled by remember { mutableStateOf(false) }
     var cameraControl by remember { mutableStateOf<androidx.camera.core.CameraControl?>(null) }
+    val liveScannerOptions = remember {
+        com.google.mlkit.vision.barcode.BarcodeScannerOptions.Builder()
+            .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
+            .build()
+    }
+    val liveBarcodeScanner = remember {
+        com.google.mlkit.vision.barcode.BarcodeScanning.getClient(liveScannerOptions)
+    }
+    val analysisExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            liveBarcodeScanner.close()
+            analysisExecutor.shutdownNow()
+        }
+    }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -1329,10 +1415,7 @@ private fun CameraQrScannerOverlay(
             try {
                 val inputImage = com.google.mlkit.vision.common.InputImage.fromFilePath(context, uri)
                 val options = com.google.mlkit.vision.barcode.BarcodeScannerOptions.Builder()
-                    .setBarcodeFormats(
-                        com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE,
-                        com.google.mlkit.vision.barcode.common.Barcode.FORMAT_ALL_FORMATS,
-                    )
+                    .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
                     .build()
                 val scanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient(options)
                 scanner.process(inputImage)
@@ -1375,6 +1458,7 @@ private fun CameraQrScannerOverlay(
                     .addOnFailureListener { e ->
                         Toast.makeText(context, e.message ?: "Failed to read image", Toast.LENGTH_SHORT).show()
                     }
+                    .addOnCompleteListener { scanner.close() }
             } catch (e: Exception) {
                 Toast.makeText(context, e.message ?: "Failed to load image", Toast.LENGTH_SHORT).show()
             }
@@ -1419,13 +1503,6 @@ private fun CameraQrScannerOverlay(
                             .setBackpressureStrategy(androidx.camera.core.ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                             .build()
 
-                        val options = com.google.mlkit.vision.barcode.BarcodeScannerOptions.Builder()
-                            .setBarcodeFormats(
-                                com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE,
-                                com.google.mlkit.vision.barcode.common.Barcode.FORMAT_ALL_FORMATS,
-                            )
-                            .build()
-                        val barcodeScanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient(options)
                         val zxingReader = com.google.zxing.MultiFormatReader().apply {
                             setHints(
                                 mapOf(
@@ -1436,7 +1513,7 @@ private fun CameraQrScannerOverlay(
                         }
                         var isProcessingFrame = false
 
-                        imageAnalysis.setAnalyzer(java.util.concurrent.Executors.newSingleThreadExecutor()) { imageProxy ->
+                        imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
                             if (hasScanned || isProcessingFrame) {
                                 imageProxy.close()
                                 return@setAnalyzer
@@ -1447,7 +1524,7 @@ private fun CameraQrScannerOverlay(
                                 isProcessingFrame = true
                                 val rotationDegrees = imageProxy.imageInfo.rotationDegrees
                                 val inputImage = com.google.mlkit.vision.common.InputImage.fromMediaImage(mediaImage, rotationDegrees)
-                                barcodeScanner.process(inputImage)
+                                liveBarcodeScanner.process(inputImage)
                                     .addOnSuccessListener { barcodes ->
                                         var found = false
                                         for (barcode in barcodes) {

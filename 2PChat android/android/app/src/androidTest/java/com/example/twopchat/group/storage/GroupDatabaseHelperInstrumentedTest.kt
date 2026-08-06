@@ -132,6 +132,33 @@ class GroupDatabaseHelperInstrumentedTest {
     }
 
     @Test
+    fun reconnectMakesBackedOffRecipientFramesImmediatelyDue() {
+        createGroup()
+        val event = messageEvent("event-reconnect", "local-device", 1, 1_000, "queued")
+        assertTrue(helper.ingestEvent(event, countAsUnread = false))
+        assertTrue(
+            helper.enqueueOutbox(
+                StoredOutboxTask(
+                    taskId = "task-reconnect",
+                    groupId = GROUP_ID,
+                    eventId = event.eventId,
+                    recipientDeviceId = "bob-device",
+                    payload = byteArrayOf(4, 5, 6),
+                    nextAttemptMs = 5_000,
+                ),
+            ),
+        )
+        assertTrue(helper.retryOutbox("task-reconnect", 900_000, "peer offline", updatedAtMs = 6_000))
+        assertTrue(helper.loadDueOutbox(nowMs = 10_000, limit = 10).isEmpty())
+
+        assertEquals(1, helper.requeueOutboxForRecipient(GROUP_ID, "bob-device", nowMs = 10_000))
+        val due = helper.loadDueOutbox(nowMs = 10_000, limit = 10).single()
+        assertEquals("task-reconnect", due.taskId)
+        assertEquals(1, due.attempts)
+        assertEquals(null, due.lastError)
+    }
+
+    @Test
     fun delayedArrivalUsesDeterministicHlcOrderingAndCursorPaging() {
         createGroup()
         val later = messageEvent("event-later", "bob-device", 1, 20_000, "later")

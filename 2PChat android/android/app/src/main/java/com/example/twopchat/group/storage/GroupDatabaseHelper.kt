@@ -1601,6 +1601,34 @@ class GroupDatabaseHelper(
         ),
     )
 
+    /**
+     * Makes durable frames for a peer immediately eligible after reconnect.
+     *
+     * Offline exponential backoff is useful while a peer is unreachable, but
+     * retaining that future deadline after an authenticated session comes back
+     * can strand epoch key packages for up to the periodic worker interval.
+     */
+    fun requeueOutboxForRecipient(
+        groupId: String,
+        recipientDeviceId: String,
+        nowMs: Long = System.currentTimeMillis(),
+    ): Int = writableDatabase.execUpdate(
+        """
+        UPDATE $TABLE_OUTBOX
+        SET state = ?, next_attempt_ms = ?, last_error = NULL, updated_at_ms = ?
+        WHERE group_id = ? AND recipient_device_id = ? AND state IN (?, ?)
+        """.trimIndent(),
+        arrayOf<Any?>(
+            StoredOutboxState.PENDING.name,
+            nowMs,
+            nowMs,
+            groupId,
+            recipientDeviceId,
+            StoredOutboxState.PENDING.name,
+            StoredOutboxState.RETRY.name,
+        ),
+    )
+
     fun listReceipts(groupId: String, eventId: String): List<StoredReceipt> {
         val result = mutableListOf<StoredReceipt>()
         readableDatabase.query(
