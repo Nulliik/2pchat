@@ -18,6 +18,7 @@ class GroupSyncWorker(
     parameters: WorkerParameters,
 ) : CoroutineWorker(appContext, parameters) {
     override suspend fun doWork(): Result = try {
+        runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND) }
         PythonBridge.ensurePythonStarted(applicationContext)
         PythonBridge.init(applicationContext)
         check(PythonBridge.isInitialized) { "cryptographic identity bridge is unavailable" }
@@ -34,6 +35,7 @@ object GroupWorkScheduler {
     private const val IMMEDIATE_WORK = "twopchat-group-outbox-now"
     private val connected = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
+        .setRequiresBatteryNotLow(true)
         .build()
 
     fun schedule(context: Context) {

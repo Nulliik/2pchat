@@ -1007,6 +1007,7 @@ object GroupChatCoordinator {
     }
 
     suspend fun runAntiEntropy(): Int {
+        runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND) }
         if (recoveryNeeded.get()) {
             runCatching { reconcileDurableState() }
                 .onSuccess { recoveryNeeded.set(false) }
