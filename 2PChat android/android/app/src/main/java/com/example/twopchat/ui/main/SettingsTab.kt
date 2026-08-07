@@ -1543,12 +1543,12 @@ fun SettingsTab(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = if (appLanguage == "Русский") "Сворачивать виджет статуса по умолчанию" else "Collapse Status Widget by Default",
+                                        text = if (appLanguage == "Русский") "Сворачивать NexusTab по умолчанию" else "Collapse NexusTab by Default",
                                         fontWeight = FontWeight.Medium,
                                         color = onSurfaceColor
                                     )
                                     Text(
-                                        text = if (appLanguage == "Русский") "Компактный режим профиля на экране чатов" else "Compact profile status bar on chats tab",
+                                        text = if (appLanguage == "Русский") "Компактный режим виджета статуса на экране чатов" else "Compact NexusTab status bar on chats tab",
                                         fontSize = 12.sp,
                                         color = onSurfaceVariant
                                     )

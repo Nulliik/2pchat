@@ -219,306 +219,351 @@ fun ChatsTab(
                     )
                     .border(1.dp, primaryColor.copy(alpha = 0.35f), RoundedCornerShape(26.dp))
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // Avatar + Name + Refresh
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size(46.dp)
-                                .background(
-                                    brush = Brush.radialGradient(
-                                        colors = listOf(primaryColor.copy(alpha = 0.85f), primaryColor.copy(alpha = 0.40f))
-                                    ),
-                                    shape = CircleShape
-                                )
-                                .border(1.5.dp, primaryColor.copy(alpha = 0.55f), CircleShape)
-                        ) {
-                            val avatarBitmap = profileBitmap
-                            if (avatarBitmap != null) {
-                                androidx.compose.foundation.Image(
-                                    bitmap = avatarBitmap.asImageBitmap(),
-                                    contentDescription = "My Profile Avatar",
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(46.dp)
-                                        .clip(CircleShape)
-                                )
-                            } else {
-                                Text(
-                                    text = currentUsername.take(2).uppercase(),
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "МОЙ ПРОФИЛЬ" else "MY PROFILE",
-                                    fontSize = 9.sp, color = onSurfaceVariant,
-                                    fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp
-                                )
-                            }
-                            Text(
-                                text = currentUsername, fontSize = 19.sp, fontWeight = FontWeight.Bold,
-                                color = onSurfaceColor, maxLines = 1, overflow = TextOverflow.Ellipsis
-                            )
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .background(primaryColor.copy(alpha = 0.15f), shape = RoundedCornerShape(14.dp))
-                                .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(14.dp))
-                                .clickable(enabled = !isRefreshingAll) {
-                                    isRefreshingAll = true
-                                    val startMsg = if (appLanguage == "Русский") "Обновление всех подключений..." else "Refreshing all connections..."
-                                    val endMsg = if (appLanguage == "Русский") "Подключения успешно обновлены!" else "Connections successfully refreshed!"
-                                    Toast.makeText(context, startMsg, Toast.LENGTH_SHORT).show()
-                                    heroScope.launch {
-                                        var refreshSucceeded = true
-                                        try {
-                                            val prefs = com.example.twopchat.P2PPreferences.prefs(context)
-                                            val yggEnabled = prefs.getBoolean("settings_yggdrasil", true)
-                                            if (yggEnabled && VpnService.prepare(context) == null) {
-                                                context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
-                                                    action = PacketTunnelProvider.ACTION_STOP
-                                                })
-                                                delay(500)
-                                                context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
-                                                    action = PacketTunnelProvider.ACTION_START
-                                                })
-                                                var yggReady = false
-                                                var attempts = 0
-                                                while (!yggReady && attempts < 24) {
-                                                    delay(500)
-                                                    yggReady = prefs.getString("yggdrasil_runtime_state", "")
-                                                        .equals("CONNECTED", ignoreCase = true) &&
-                                                        prefs.getInt("yggdrasil_runtime_routes", 0) > 0
-                                                    attempts += 1
-                                                }
-                                                refreshSucceeded = yggReady
-                                            } else if (yggEnabled) {
-                                                refreshSucceeded = false
-                                            }
-                                            withContext(Dispatchers.IO) {
-                                                PythonBridge.triggerUpnpReopen()
-                                            }
-                                            P2PMessageRelay.triggerImmediateReconnect(context).join()
-                                        } catch (error: Exception) {
-                                            android.util.Log.e("ChatsTab", "Unable to refresh connections", error)
-                                            refreshSucceeded = false
-                                        } finally {
-                                            isRefreshingAll = false
-                                        }
-                                        val resultMessage = if (refreshSucceeded) {
-                                            endMsg
-                                        } else if (appLanguage == "Русский") {
-                                            "Yggdrasil не вышел на связь. Проверьте VPN и публичные пиры."
-                                        } else {
-                                            "Yggdrasil did not connect. Check VPN access and public peers."
-                                        }
-                                        Toast.makeText(context, resultMessage, Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isRefreshingAll) {
-                                androidx.compose.material3.CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = primaryColor
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Refresh connections",
-                                    tint = primaryColor,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .background(primaryColor.copy(alpha = 0.15f), shape = RoundedCornerShape(14.dp))
-                                .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(14.dp))
-                                .clickable {
-                                    isHeroCollapsed = !isHeroCollapsed
-                                    heroPrefs.edit().putBoolean("settings_hero_widget_collapsed", isHeroCollapsed).apply()
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = if (isHeroCollapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                                contentDescription = if (isHeroCollapsed) "Expand status widget" else "Collapse status widget",
-                                tint = primaryColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-
-                    @Composable
-                    fun StatusPill(
-                        label: String,
-                        value: String,
-                        ok: Boolean?,
-                        node: RadarNode,
-                        modifier: Modifier = Modifier
-                    ) {
-                        val pillColor = when (ok) {
-                            true  -> Color(0xFF10B981)
-                            false -> Color(0xFFEF4444)
-                            null  -> onSurfaceVariant
-                        }
-                        
-                        val pillInteractionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                        val isPillPressed by pillInteractionSource.collectIsPressedAsState()
-                        val pillScale by animateFloatAsState(
-                            targetValue = if (isPillPressed) 0.94f else 1.0f,
-                            animationSpec = spring(dampingRatio = 0.7f, stiffness = 500f),
-                            label = "pillScale"
-                        )
-
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = modifier
-                                .graphicsLayer {
-                                    scaleX = pillScale
-                                    scaleY = pillScale
-                                }
-                                .clip(RoundedCornerShape(14.dp))
-                                .clickable(
-                                    interactionSource = pillInteractionSource,
-                                    indication = ripple(),
-                                    onClick = { onStatusPillClick(node) }
-                                )
-                                .background(pillColor.copy(alpha = 0.12f))
-                                .border(0.75.dp, pillColor.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-                                .padding(vertical = 8.dp, horizontal = 2.dp)
-                        ) {
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier.size(12.dp)
-                            ) {
-                                if (ok != null) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(10.dp)
-                                            .border(1.dp, pillColor.copy(alpha = 0.38f), CircleShape)
-                                    )
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .size(5.dp)
-                                        .background(pillColor, CircleShape)
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(3.dp))
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
-                                modifier = Modifier.padding(horizontal = 2.dp)
-                            ) {
-                                if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = "OK",
-                                        tint = pillColor,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Error",
-                                        tint = pillColor,
-                                        modifier = Modifier.size(12.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                }
-                                Text(
-                                    text = if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                        "OK"
-                                    } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                        if (appLanguage == "Русский") "Нет" else "No"
-                                    } else {
-                                        value
-                                    },
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = pillColor,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            Text(text = label, fontSize = 9.sp, color = onSurfaceVariant, letterSpacing = 0.3.sp, maxLines = 1)
-                        }
-                    }
-
-                    @Composable
-                    fun CompactStatusDot(
-                        label: String,
-                        valText: String,
-                        ok: Boolean?,
-                        node: RadarNode,
-                        modifier: Modifier = Modifier
-                    ) {
-                        val dotColor = when (ok) {
-                            true  -> Color(0xFF10B981)
-                            false -> Color(0xFFEF4444)
-                            null  -> onSurfaceVariant
-                        }
-                        Row(
-                            modifier = modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onStatusPillClick(node) }
-                                .background(dotColor.copy(alpha = 0.12f))
-                                .border(0.5.dp, dotColor.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
-                                .padding(vertical = 5.dp, horizontal = 4.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .background(dotColor, CircleShape)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "$label $valText".trim(),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = dotColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-
+                Column(modifier = Modifier.padding(if (isHeroCollapsed) 10.dp else 16.dp)) {
                     if (isHeroCollapsed) {
-                        Spacer(modifier = Modifier.height(10.dp))
+                        // COMPACT NEXUSTAB (No Avatar, No Profile Header - Just 4 status indicators + expand toggle)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            CompactStatusDot("UPnP", if (heroUpnpOk == true) "OK" else if (heroUpnpOk == false) "x" else "…", heroUpnpOk, RadarNode.ROUTER, Modifier.weight(1f))
-                            CompactStatusDot(if (appLanguage == "Русский") "Трекеры" else "Trackers", if (heroTrackersOk == true) "OK" else if (heroTrackersOk == false) "x" else "…", heroTrackersOk, RadarNode.TRACKERS, Modifier.weight(1f))
-                            CompactStatusDot("Ygg", if (heroYggOk == true) "OK" else if (heroYggOk == false) "x" else "…", heroYggOk, RadarNode.YGGDRASIL, Modifier.weight(1f))
-                            CompactStatusDot(if (appLanguage == "Русский") "Пиры" else "Peers", "$heroActivePeers", if (heroActivePeers > 0) true else null, RadarNode.PEERS, Modifier.weight(1f))
+                            @Composable
+                            fun NexusCompactPill(
+                                label: String,
+                                valText: String,
+                                ok: Boolean?,
+                                node: RadarNode,
+                                modifier: Modifier = Modifier
+                            ) {
+                                val pillColor = when (ok) {
+                                    true  -> Color(0xFF10B981)
+                                    false -> Color(0xFFEF4444)
+                                    null  -> onSurfaceVariant
+                                }
+                                Row(
+                                    modifier = modifier
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .clickable { onStatusPillClick(node) }
+                                        .background(pillColor.copy(alpha = 0.12f))
+                                        .border(0.8.dp, pillColor.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                                        .padding(vertical = 9.dp, horizontal = 4.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .background(pillColor, CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "$label $valText".trim(),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = pillColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            NexusCompactPill(
+                                "UPnP",
+                                if (heroUpnpOk == true) "OK" else if (heroUpnpOk == false) "x" else "…",
+                                heroUpnpOk,
+                                RadarNode.ROUTER,
+                                Modifier.weight(1.1f)
+                            )
+                            NexusCompactPill(
+                                if (appLanguage == "Русский") "Трекеры" else "Trackers",
+                                if (heroTrackersOk == true) "OK" else if (heroTrackersOk == false) "x" else "…",
+                                heroTrackersOk,
+                                RadarNode.TRACKERS,
+                                Modifier.weight(1.25f)
+                            )
+                            NexusCompactPill(
+                                "Ygg",
+                                if (heroYggOk == true) "OK" else if (heroYggOk == false) "x" else "…",
+                                heroYggOk,
+                                RadarNode.YGGDRASIL,
+                                Modifier.weight(1f)
+                            )
+                            NexusCompactPill(
+                                if (appLanguage == "Русский") "Пиры" else "Peers",
+                                "$heroActivePeers",
+                                if (heroActivePeers > 0) true else null,
+                                RadarNode.PEERS,
+                                Modifier.weight(1f)
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .background(primaryColor.copy(alpha = 0.15f), shape = RoundedCornerShape(10.dp))
+                                    .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        isHeroCollapsed = false
+                                        heroPrefs.edit().putBoolean("settings_hero_widget_collapsed", false).apply()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Expand NexusTab",
+                                    tint = primaryColor,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
                     } else {
+                        // EXPANDED NEXUSTAB
+                        // Avatar + Name + Refresh + Chevron Up
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .background(
+                                        brush = Brush.radialGradient(
+                                            colors = listOf(primaryColor.copy(alpha = 0.85f), primaryColor.copy(alpha = 0.40f))
+                                        ),
+                                        shape = CircleShape
+                                    )
+                                    .border(1.5.dp, primaryColor.copy(alpha = 0.55f), CircleShape)
+                            ) {
+                                val avatarBitmap = profileBitmap
+                                if (avatarBitmap != null) {
+                                    androidx.compose.foundation.Image(
+                                        bitmap = avatarBitmap.asImageBitmap(),
+                                        contentDescription = "My Profile Avatar",
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .clip(CircleShape)
+                                    )
+                                } else {
+                                    Text(
+                                        text = currentUsername.take(2).uppercase(),
+                                        fontSize = 17.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = if (appLanguage == "Русский") "МОЙ ПРОФИЛЬ" else "MY PROFILE",
+                                        fontSize = 9.sp, color = onSurfaceVariant,
+                                        fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp
+                                    )
+                                }
+                                Text(
+                                    text = currentUsername, fontSize = 19.sp, fontWeight = FontWeight.Bold,
+                                    color = onSurfaceColor, maxLines = 1, overflow = TextOverflow.Ellipsis
+                                )
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .background(primaryColor.copy(alpha = 0.15f), shape = RoundedCornerShape(14.dp))
+                                    .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(14.dp))
+                                    .clickable(enabled = !isRefreshingAll) {
+                                        isRefreshingAll = true
+                                        val startMsg = if (appLanguage == "Русский") "Обновление всех подключений..." else "Refreshing all connections..."
+                                        val endMsg = if (appLanguage == "Русский") "Подключения успешно обновлены!" else "Connections successfully refreshed!"
+                                        Toast.makeText(context, startMsg, Toast.LENGTH_SHORT).show()
+                                        heroScope.launch {
+                                            var refreshSucceeded = true
+                                            try {
+                                                val prefs = com.example.twopchat.P2PPreferences.prefs(context)
+                                                val yggEnabled = prefs.getBoolean("settings_yggdrasil", true)
+                                                if (yggEnabled && VpnService.prepare(context) == null) {
+                                                    context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
+                                                        action = PacketTunnelProvider.ACTION_STOP
+                                                    })
+                                                    delay(500)
+                                                    context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
+                                                        action = PacketTunnelProvider.ACTION_START
+                                                    })
+                                                    var yggReady = false
+                                                    var attempts = 0
+                                                    while (!yggReady && attempts < 24) {
+                                                        delay(500)
+                                                        yggReady = prefs.getString("yggdrasil_runtime_state", "")
+                                                            .equals("CONNECTED", ignoreCase = true) &&
+                                                            prefs.getInt("yggdrasil_runtime_routes", 0) > 0
+                                                        attempts += 1
+                                                    }
+                                                    refreshSucceeded = yggReady
+                                                } else if (yggEnabled) {
+                                                    refreshSucceeded = false
+                                                }
+                                                withContext(Dispatchers.IO) {
+                                                    PythonBridge.triggerUpnpReopen()
+                                                }
+                                                P2PMessageRelay.triggerImmediateReconnect(context).join()
+                                            } catch (error: Exception) {
+                                                android.util.Log.e("ChatsTab", "Unable to refresh connections", error)
+                                                refreshSucceeded = false
+                                            } finally {
+                                                isRefreshingAll = false
+                                            }
+                                            val resultMessage = if (refreshSucceeded) {
+                                                endMsg
+                                            } else if (appLanguage == "Русский") {
+                                                "Yggdrasil не вышел на связь. Проверьте VPN и публичные пиры."
+                                            } else {
+                                                "Yggdrasil did not connect. Check VPN access and public peers."
+                                            }
+                                            Toast.makeText(context, resultMessage, Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isRefreshingAll) {
+                                    androidx.compose.material3.CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = primaryColor
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Refresh connections",
+                                        tint = primaryColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .background(primaryColor.copy(alpha = 0.15f), shape = RoundedCornerShape(14.dp))
+                                    .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(14.dp))
+                                    .clickable {
+                                        isHeroCollapsed = true
+                                        heroPrefs.edit().putBoolean("settings_hero_widget_collapsed", true).apply()
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowUp,
+                                    contentDescription = "Collapse NexusTab",
+                                    tint = primaryColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        @Composable
+                        fun StatusPill(
+                            label: String,
+                            value: String,
+                            ok: Boolean?,
+                            node: RadarNode,
+                            modifier: Modifier = Modifier
+                        ) {
+                            val pillColor = when (ok) {
+                                true  -> Color(0xFF10B981)
+                                false -> Color(0xFFEF4444)
+                                null  -> onSurfaceVariant
+                            }
+                            
+                            val pillInteractionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                            val isPillPressed by pillInteractionSource.collectIsPressedAsState()
+                            val pillScale by animateFloatAsState(
+                                targetValue = if (isPillPressed) 0.94f else 1.0f,
+                                animationSpec = spring(dampingRatio = 0.7f, stiffness = 500f),
+                                label = "pillScale"
+                            )
+
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = modifier
+                                    .graphicsLayer {
+                                        scaleX = pillScale
+                                        scaleY = pillScale
+                                    }
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable(
+                                        interactionSource = pillInteractionSource,
+                                        indication = ripple(),
+                                        onClick = { onStatusPillClick(node) }
+                                    )
+                                    .background(pillColor.copy(alpha = 0.12f))
+                                    .border(0.75.dp, pillColor.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                                    .padding(vertical = 8.dp, horizontal = 2.dp)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.size(12.dp)
+                                ) {
+                                    if (ok != null) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .border(1.dp, pillColor.copy(alpha = 0.38f), CircleShape)
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .background(pillColor, CircleShape)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center,
+                                    modifier = Modifier.padding(horizontal = 2.dp)
+                                ) {
+                                    if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "OK",
+                                            tint = pillColor,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                    } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Error",
+                                            tint = pillColor,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                    }
+                                    Text(
+                                        text = if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                            "OK"
+                                        } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                            if (appLanguage == "Русский") "Нет" else "No"
+                                        } else {
+                                            value
+                                        },
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = pillColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Text(text = label, fontSize = 9.sp, color = onSurfaceVariant, letterSpacing = 0.3.sp, maxLines = 1)
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(14.dp))
+
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             StatusPill(
                                 label = "UPnP",
