@@ -82,8 +82,9 @@ class MessageTest {
         )
 
         assertEquals("14:05", MessageTimestampFormatter.format(messageAt(13, 14), "English", now, utc))
-        assertEquals("вчера", MessageTimestampFormatter.format(messageAt(12, 14), "Русский", now, utc))
-        assertEquals("10 Jul", MessageTimestampFormatter.format(messageAt(10, 14), "English", now, utc))
+        assertEquals("14:05", MessageTimestampFormatter.format(messageAt(12, 14), "Русский", now, utc))
+        assertEquals("14:05", MessageTimestampFormatter.format(messageAt(10, 14), "English", now, utc))
+        assertEquals("Вчера", MessageTimestampFormatter.formatDateHeader(epoch(12, 14, 5), "Русский", now, utc))
     }
 
     @Test
