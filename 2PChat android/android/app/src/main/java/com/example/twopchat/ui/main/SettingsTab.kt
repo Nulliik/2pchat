@@ -3009,7 +3009,7 @@ fun SettingsTab(
 
     // Language Selector dialog
     if (showLanguageDialog) {
-        val languages = listOf("English", "Русский")
+        val languages = listOf("Русский", "English", "Deutsch", "Español", "Français", "Português")
         AlertDialog(
             onDismissRequest = { showLanguageDialog = false },
             confirmButton = {},
@@ -3847,8 +3847,7 @@ fun LanguageSettingsPage(
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             items(filteredLanguages) { (nativeName, englishName) ->
-                val isSelected = (nativeName == "Русский" && appLanguage == "Русский") ||
-                        (nativeName == "English" && appLanguage == "English")
+                val isSelected = appLanguage == nativeName
                 val activeGreen = Color(0xFF00E676)
 
                 Row(
@@ -3856,13 +3855,17 @@ fun LanguageSettingsPage(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
                         .clickable {
-                            val selectedLang = if (nativeName == "Русский") "Русский" else "English"
+                            val selectedLang = nativeName
                             onLanguageChanged(selectedLang)
-                            Toast.makeText(
-                                context,
-                                if (selectedLang == "Русский") "Язык изменен на Русский" else "Language changed to English",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            val toastMsg = when (selectedLang) {
+                                "Русский" -> "Язык изменен на Русский"
+                                "Deutsch" -> "Sprache auf Deutsch geändert"
+                                "Español" -> "Idioma cambiado a Español"
+                                "Français" -> "Langue changée en Français"
+                                "Português" -> "Idioma alterado para Português"
+                                else -> "Language changed to $englishName"
+                            }
+                            Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
                         }
                         .padding(vertical = 12.dp, horizontal = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
