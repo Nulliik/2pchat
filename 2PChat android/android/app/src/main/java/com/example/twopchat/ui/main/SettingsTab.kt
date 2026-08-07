@@ -355,7 +355,7 @@ fun SettingsTab(
                     ) {
                         if (!isSearchingSettings) {
                             Text(
-                                text = if (appLanguage == "Русский") "Настройки" else "Settings",
+                                text = Localizations.tr(appLanguage, "Настройки", "Settings", "Einstellungen", "Ajustes", "Paramètres", "Configurações"),
                                 fontSize = 24.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = onSurfaceColor,
@@ -383,7 +383,7 @@ fun SettingsTab(
                                 onValueChange = { settingsSearchQuery = it },
                                 placeholder = {
                                     Text(
-                                        if (appLanguage == "Русский") "Поиск по настройкам..." else "Search settings...",
+                                        Localizations.tr(appLanguage, "Поиск по настройкам...", "Search settings...", "Einstellungen suchen...", "Buscar ajustes...", "Rechercher dans les paramètres...", "Buscar configurações..."),
                                         fontSize = 14.sp,
                                         color = onSurfaceVariant.copy(alpha = 0.6f)
                                     )
@@ -880,7 +880,7 @@ fun SettingsTab(
                         }
 
                         // Section 1: Appearance & Personalization
-                        SettingsSectionHeader(if (appLanguage == "Русский") "ПЕРСОНАЛИЗАЦИЯ И ЧАТЫ" else "APPEARANCE & CHATS", primaryColor)
+                        SettingsSectionHeader(Localizations.getString("sec_appearance_chats", appLanguage), primaryColor)
                         Card(
                             colors = CardDefaults.cardColors(containerColor = surfaceColor),
                             shape = RoundedCornerShape(20.dp),
@@ -890,8 +890,8 @@ fun SettingsTab(
                         ) {
                             Column {
                                 SettingsRow(
-                                    title = if (appLanguage == "Русский") "Настройки чатов и Оформление" else "Chat Settings & Theme",
-                                    subtitle = if (appLanguage == "Русский") "Тема, цвет акцента, иконка приложения" else "Theme, accent color, launcher icon",
+                                    title = Localizations.getString("chat_settings_theme_title", appLanguage),
+                                    subtitle = Localizations.getString("chat_settings_theme_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_menu_chats,
                                     iconColor = Color(0xFFFFA726),
                                     onSurfaceColor = onSurfaceColor,
@@ -903,12 +903,8 @@ fun SettingsTab(
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 SettingsRow(
-                                    title = if (appLanguage == "Русский") "Стикерпаки" else "Sticker packs",
-                                    subtitle = if (appLanguage == "Русский") {
-                                        "Создание, импорт и управление своими паками"
-                                    } else {
-                                        "Create, import and manage your packs"
-                                    },
+                                    title = Localizations.getString("sticker_packs_title", appLanguage),
+                                    subtitle = Localizations.getString("sticker_packs_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_sticker_smile,
                                     iconColor = Color(0xFFFF7043),
                                     onSurfaceColor = onSurfaceColor,
@@ -920,7 +916,7 @@ fun SettingsTab(
                         }
 
                         // Section 2: Privacy & Network
-                        SettingsSectionHeader(if (appLanguage == "Русский") "БЕЗОПАСНОСТЬ И СЕТЬ" else "SECURITY & NETWORK", primaryColor)
+                        SettingsSectionHeader(Localizations.getString("sec_security_network", appLanguage), primaryColor)
                         Card(
                             colors = CardDefaults.cardColors(containerColor = surfaceColor),
                             shape = RoundedCornerShape(20.dp),
@@ -930,8 +926,8 @@ fun SettingsTab(
                         ) {
                             Column {
                                 SettingsRow(
-                                    title = if (appLanguage == "Русский") "Конфиденциальность и Сеть" else "Privacy & Security",
-                                    subtitle = if (appLanguage == "Русский") "Код-пароль, скриншоты, порты и маршруты" else "Passcode, screenshots, ports and routes",
+                                    title = Localizations.getString("privacy_security_title", appLanguage),
+                                    subtitle = Localizations.getString("privacy_security_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_shield_status,
                                     iconColor = Color(0xFF66BB6A),
                                     onSurfaceColor = onSurfaceColor,
@@ -943,8 +939,8 @@ fun SettingsTab(
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 SettingsRow(
-                                    title = if (appLanguage == "Русский") "Трекеры и обнаружение" else "Trackers & Discovery",
-                                    subtitle = if (appLanguage == "Русский") "Типы, announce и пользовательские трекеры" else "Types, announces and custom trackers",
+                                    title = Localizations.getString("trackers_discovery_title", appLanguage),
+                                    subtitle = Localizations.getString("trackers_discovery_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_menu_search,
                                     iconColor = Color(0xFF29B6F6),
                                     onSurfaceColor = onSurfaceColor,
@@ -956,12 +952,8 @@ fun SettingsTab(
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 SettingsRow(
-                                    title = if (appLanguage == "Русский") "Пиры Yggdrasil" else "Yggdrasil Peers",
-                                    subtitle = if (appLanguage == "Русский") {
-                                        "Публичные и пользовательские пиры, включение и сортировка"
-                                    } else {
-                                        "Public and custom peers, toggles and sorting"
-                                    },
+                                    title = Localizations.getString("yggdrasil_peers_title", appLanguage),
+                                    subtitle = Localizations.getString("yggdrasil_peers_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_quick_link,
                                     iconColor = Color(0xFFAB47BC),
                                     onSurfaceColor = onSurfaceColor,
@@ -973,7 +965,7 @@ fun SettingsTab(
                         }
 
                         // Section 3: Data & Notifications
-                        SettingsSectionHeader(if (appLanguage == "Русский") "УВЕДОМЛЕНИЯ И ДАННЫЕ" else "NOTIFICATIONS & DATA", primaryColor)
+                        SettingsSectionHeader(Localizations.getString("sec_notifications_data", appLanguage), primaryColor)
                         Card(
                             colors = CardDefaults.cardColors(containerColor = surfaceColor),
                             shape = RoundedCornerShape(20.dp),
@@ -983,8 +975,8 @@ fun SettingsTab(
                         ) {
                             Column {
                                 SettingsRow(
-                                    title = if (appLanguage == "Русский") "Уведомления и звуки" else "Notifications",
-                                    subtitle = if (appLanguage == "Русский") "Включение уведомлений, превью сообщений" else "Toggles, previews",
+                                    title = Localizations.getString("notifications_sounds_title", appLanguage),
+                                    subtitle = Localizations.getString("notifications_sounds_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_notifications,
                                     iconColor = Color(0xFFEF5350),
                                     onSurfaceColor = onSurfaceColor,
@@ -996,8 +988,8 @@ fun SettingsTab(
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 SettingsRow(
-                                    title = if (appLanguage == "Русский") "Данные и память" else "Data & Storage",
-                                    subtitle = if (appLanguage == "Русский") "Использование памяти и очистка кэша" else "Storage usage & cache cleanup",
+                                    title = Localizations.getString("data_storage_title", appLanguage),
+                                    subtitle = Localizations.getString("data_storage_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_database_storage,
                                     iconColor = Color(0xFF26A69A),
                                     onSurfaceColor = onSurfaceColor,
@@ -1009,12 +1001,8 @@ fun SettingsTab(
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 SettingsRow(
-                                    title = if (appLanguage == "Русский") "Использование сети" else "Network Usage",
-                                    subtitle = if (appLanguage == "Русский") {
-                                        "Трафик Direct P2P и Yggdrasil по типам данных"
-                                    } else {
-                                        "Direct P2P and Yggdrasil traffic by data type"
-                                    },
+                                    title = Localizations.getString("network_usage_title", appLanguage),
+                                    subtitle = Localizations.getString("network_usage_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
                                     iconColor = Color(0xFF42A5F5),
                                     onSurfaceColor = onSurfaceColor,
@@ -1027,7 +1015,7 @@ fun SettingsTab(
 
                                 SettingsRow(
                                     title = Localizations.getString("language", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "Выбор языка приложения" else "Choose app language",
+                                    subtitle = Localizations.getString("choose_app_language", appLanguage),
                                     value = appLanguage,
                                     iconRes = com.example.twopchat.R.drawable.ic_quick_link,
                                     iconColor = Color(0xFFEC407A),
@@ -1040,7 +1028,7 @@ fun SettingsTab(
                         }
 
                         // Section 4: System & Help
-                        SettingsSectionHeader(if (appLanguage == "Русский") "СИСТЕМА И СПРАВКА" else "SYSTEM & HELP", primaryColor)
+                        SettingsSectionHeader(Localizations.getString("sec_system_help", appLanguage), primaryColor)
                         Card(
                             colors = CardDefaults.cardColors(containerColor = surfaceColor),
                             shape = RoundedCornerShape(20.dp),
@@ -1063,7 +1051,7 @@ fun SettingsTab(
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 SettingsRow(
-                                    title = if (appLanguage == "Русский") "Сетевой отладчик и Логи" else "Network Diagnostics & Logs",
+                                    title = Localizations.getString("net_diag_logs", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_menu_settings,
                                     iconColor = Color(0xFF78909C),
                                     onSurfaceColor = onSurfaceColor,
@@ -1075,7 +1063,7 @@ fun SettingsTab(
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 SettingsRow(
-                                    title = if (appLanguage == "Русский") "Экспорт логов приложения" else "Export App Logs",
+                                    title = Localizations.getString("export_app_logs", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
                                     iconColor = Color(0xFF8D6E63),
                                     onSurfaceColor = onSurfaceColor,
@@ -1172,7 +1160,7 @@ fun SettingsTab(
                         .verticalScroll(rememberScrollState())
                 ) {
                     SubPageLayout(
-                        title = if (appLanguage == "Русский") "Настройки чатов" else "Chat Settings",
+                        title = Localizations.tr(appLanguage, "Настройки чатов", "Chat Settings", "Chat-Einstellungen", "Ajustes de chat", "Paramètres de chat", "Configurações de chat"),
                         appLanguage = appLanguage,
                         onBackClick = { activeSubPage = null },
                         surfaceColor = surfaceColor,
@@ -1606,7 +1594,7 @@ fun SettingsTab(
                         .verticalScroll(rememberScrollState())
                 ) {
                     SubPageLayout(
-                        title = if (appLanguage == "Русский") "Конфиденциальность" else "Privacy & Security",
+                        title = Localizations.tr(appLanguage, "Конфиденциальность и Сеть", "Privacy & Security", "Datenschutz & Sicherheit", "Privacidad y Seguridad", "Confidentialité & Sécurité", "Privacidade e Segurança"),
                         appLanguage = appLanguage,
                         onBackClick = { activeSubPage = null },
                         surfaceColor = surfaceColor,
@@ -2048,7 +2036,7 @@ fun SettingsTab(
                         .verticalScroll(rememberScrollState())
                 ) {
                     SubPageLayout(
-                        title = if (appLanguage == "Русский") "Уведомления" else "Notifications",
+                        title = Localizations.tr(appLanguage, "Уведомления", "Notifications", "Benachrichtigungen", "Notificaciones", "Notifications", "Notificações"),
                         appLanguage = appLanguage,
                         onBackClick = { activeSubPage = null },
                         surfaceColor = surfaceColor,
@@ -2427,19 +2415,7 @@ fun SettingsTab(
                                             selectedMediaCategories = emptySet()
                                             val message = if (appLanguage == "Русский") {
                                                 buildString {
-                                                    append("Удалено: ${result.deletedFiles}")
-                                                    if (result.skippedActiveTransfers > 0) {
-                                                        append(". Активные передачи пропущены")
-                                                    }
-                                                }
-                                            } else {
-                                                buildString {
-                                                    append("Deleted: ${result.deletedFiles}")
-                                                    if (result.skippedActiveTransfers > 0) {
-                                                        append(". Active transfers were skipped")
-                                                    }
-                                                }
-                                            }
+                                            val message = Localizations.tr(appLanguage, "Удалено: ${result.deletedFiles}" + if (result.skippedActiveTransfers > 0) ". Активные передачи пропущены" else "", "Deleted: ${result.deletedFiles}" + if (result.skippedActiveTransfers > 0) ". Active transfers were skipped" else "")
                                             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                                         } catch (error: Exception) {
                                             error.printStackTrace()
@@ -3632,7 +3608,7 @@ fun SubPageLayout(
             ) {
                 Icon(
                     painter = painterResource(id = com.example.twopchat.R.drawable.ic_back_arrow),
-                    contentDescription = if (appLanguage == "Русский") "Назад" else "Back",
+                    contentDescription = Localizations.tr(appLanguage, "Назад", "Back", "Zurück", "Atrás", "Retour", "Voltar"),
                     tint = onSurfaceColor,
                     modifier = Modifier.size(20.dp)
                 )
