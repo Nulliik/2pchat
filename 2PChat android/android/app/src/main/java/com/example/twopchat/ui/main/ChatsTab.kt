@@ -72,6 +72,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 
@@ -188,6 +190,11 @@ fun ChatsTab(
         com.example.twopchat.group.runtime.GroupChatCoordinator.activeChatsSubTab = pagerState.currentPage
     }
 
+    val heroPrefs = remember { com.example.twopchat.P2PPreferences.prefs(context) }
+    var isHeroCollapsed by remember {
+        mutableStateOf(heroPrefs.getBoolean("settings_hero_widget_collapsed", false))
+    }
+
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
@@ -199,6 +206,7 @@ fun ChatsTab(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 8.dp)
+                    .animateContentSize(animationSpec = spring(dampingRatio = 0.8f, stiffness = 450f))
                     .background(
                         brush = Brush.linearGradient(
                             colors = listOf(
@@ -288,9 +296,6 @@ fun ChatsTab(
                                                 context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
                                                     action = PacketTunnelProvider.ACTION_START
                                                 })
-                                                // Announce only after the overlay has routes. An
-                                                // early announce publishes IPv4 alone and made the
-                                                // refresh button ineffective for Yggdrasil peers.
                                                 var yggReady = false
                                                 var attempts = 0
                                                 while (!yggReady && attempts < 24) {
@@ -339,134 +344,211 @@ fun ChatsTab(
                                 )
                             }
                         }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(primaryColor.copy(alpha = 0.15f), shape = RoundedCornerShape(14.dp))
+                                .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(14.dp))
+                                .clickable {
+                                    isHeroCollapsed = !isHeroCollapsed
+                                    heroPrefs.edit().putBoolean("settings_hero_widget_collapsed", isHeroCollapsed).apply()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isHeroCollapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                                contentDescription = if (isHeroCollapsed) "Expand status widget" else "Collapse status widget",
+                                tint = primaryColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    @Composable
+                    fun StatusPill(
+                        label: String,
+                        value: String,
+                        ok: Boolean?,
+                        node: RadarNode,
+                        modifier: Modifier = Modifier
+                    ) {
+                        val pillColor = when (ok) {
+                            true  -> Color(0xFF10B981)
+                            false -> Color(0xFFEF4444)
+                            null  -> onSurfaceVariant
+                        }
+                        
+                        val pillInteractionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+                        val isPillPressed by pillInteractionSource.collectIsPressedAsState()
+                        val pillScale by animateFloatAsState(
+                            targetValue = if (isPillPressed) 0.94f else 1.0f,
+                            animationSpec = spring(dampingRatio = 0.7f, stiffness = 500f),
+                            label = "pillScale"
+                        )
 
-                    // Status pills
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        @Composable
-                        fun StatusPill(
-                            label: String,
-                            value: String,
-                            ok: Boolean?,
-                            node: RadarNode
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = modifier
+                                .graphicsLayer {
+                                    scaleX = pillScale
+                                    scaleY = pillScale
+                                }
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable(
+                                    interactionSource = pillInteractionSource,
+                                    indication = ripple(),
+                                    onClick = { onStatusPillClick(node) }
+                                )
+                                .background(pillColor.copy(alpha = 0.12f))
+                                .border(0.75.dp, pillColor.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                                .padding(vertical = 8.dp, horizontal = 2.dp)
                         ) {
-                            val pillColor = when (ok) {
-                                true  -> Color(0xFF10B981)
-                                false -> Color(0xFFEF4444)
-                                null  -> onSurfaceVariant
-                            }
-                            
-                            val pillInteractionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                            val isPillPressed by pillInteractionSource.collectIsPressedAsState()
-                            val pillScale by animateFloatAsState(
-                                targetValue = if (isPillPressed) 0.94f else 1.0f,
-                                animationSpec = spring(dampingRatio = 0.7f, stiffness = 500f),
-                                label = "pillScale"
-                            )
-
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .graphicsLayer {
-                                        scaleX = pillScale
-                                        scaleY = pillScale
-                                    }
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .clickable(
-                                        interactionSource = pillInteractionSource,
-                                        indication = ripple(),
-                                        onClick = { onStatusPillClick(node) }
-                                    )
-                                    .background(pillColor.copy(alpha = 0.12f))
-                                    .border(0.75.dp, pillColor.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-                                    .padding(vertical = 8.dp, horizontal = 2.dp)
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.size(12.dp)
                             ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.size(12.dp)
-                                ) {
-                                    if (ok != null) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(10.dp)
-                                                .border(1.dp, pillColor.copy(alpha = 0.38f), CircleShape)
-                                        )
-                                    }
+                                if (ok != null) {
                                     Box(
                                         modifier = Modifier
-                                            .size(5.dp)
-                                            .background(pillColor, CircleShape)
+                                            .size(10.dp)
+                                            .border(1.dp, pillColor.copy(alpha = 0.38f), CircleShape)
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                    modifier = Modifier.padding(horizontal = 2.dp)
-                                ) {
-                                    if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = "OK",
-                                            tint = pillColor,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                    } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "Error",
-                                            tint = pillColor,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                    }
-                                    Text(
-                                        text = if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                            "OK"
-                                        } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                            if (appLanguage == "Русский") "Нет" else "No"
-                                        } else {
-                                            value
-                                        },
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = pillColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                Text(text = label, fontSize = 9.sp, color = onSurfaceVariant, letterSpacing = 0.3.sp, maxLines = 1)
+                                Box(
+                                    modifier = Modifier
+                                        .size(5.dp)
+                                        .background(pillColor, CircleShape)
+                                )
                             }
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(horizontal = 2.dp)
+                            ) {
+                                if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "OK",
+                                        tint = pillColor,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Error",
+                                        tint = pillColor,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                }
+                                Text(
+                                    text = if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                        "OK"
+                                    } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
+                                        if (appLanguage == "Русский") "Нет" else "No"
+                                    } else {
+                                        value
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = pillColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Text(text = label, fontSize = 9.sp, color = onSurfaceVariant, letterSpacing = 0.3.sp, maxLines = 1)
                         }
+                    }
 
-                        StatusPill(
-                            label = "UPnP",
-                            value = "…",
-                            ok = heroUpnpOk,
-                            node = RadarNode.ROUTER
-                        )
-                        StatusPill(
-                            label = if (appLanguage == "Русский") "Трекеры" else "Trackers",
-                            value = "…",
-                            ok = heroTrackersOk,
-                            node = RadarNode.TRACKERS
-                        )
-                        StatusPill(
-                            label = "Yggdrasil",
-                            value = "…",
-                            ok = heroYggOk,
-                            node = RadarNode.YGGDRASIL
-                        )
-                        StatusPill(
-                            label = if (appLanguage == "Русский") "Пиры" else "Peers",
-                            value = if (heroActivePeers > 0) "$heroActivePeers 🟢" else "0",
-                            ok = if (heroActivePeers > 0) true else null,
-                            node = RadarNode.PEERS
-                        )
+                    @Composable
+                    fun CompactStatusDot(
+                        label: String,
+                        valText: String,
+                        ok: Boolean?,
+                        node: RadarNode,
+                        modifier: Modifier = Modifier
+                    ) {
+                        val dotColor = when (ok) {
+                            true  -> Color(0xFF10B981)
+                            false -> Color(0xFFEF4444)
+                            null  -> onSurfaceVariant
+                        }
+                        Row(
+                            modifier = modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { onStatusPillClick(node) }
+                                .background(dotColor.copy(alpha = 0.12f))
+                                .border(0.5.dp, dotColor.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
+                                .padding(vertical = 5.dp, horizontal = 4.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(dotColor, CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "$label $valText".trim(),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = dotColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    if (isHeroCollapsed) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CompactStatusDot("UPnP", if (heroUpnpOk == true) "OK" else if (heroUpnpOk == false) "x" else "…", heroUpnpOk, RadarNode.ROUTER, Modifier.weight(1f))
+                            CompactStatusDot(if (appLanguage == "Русский") "Трекеры" else "Trackers", if (heroTrackersOk == true) "OK" else if (heroTrackersOk == false) "x" else "…", heroTrackersOk, RadarNode.TRACKERS, Modifier.weight(1f))
+                            CompactStatusDot("Ygg", if (heroYggOk == true) "OK" else if (heroYggOk == false) "x" else "…", heroYggOk, RadarNode.YGGDRASIL, Modifier.weight(1f))
+                            CompactStatusDot(if (appLanguage == "Русский") "Пиры" else "Peers", "$heroActivePeers", if (heroActivePeers > 0) true else null, RadarNode.PEERS, Modifier.weight(1f))
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            StatusPill(
+                                label = "UPnP",
+                                value = "…",
+                                ok = heroUpnpOk,
+                                node = RadarNode.ROUTER,
+                                modifier = Modifier.weight(1f)
+                            )
+                            StatusPill(
+                                label = if (appLanguage == "Русский") "Трекеры" else "Trackers",
+                                value = "…",
+                                ok = heroTrackersOk,
+                                node = RadarNode.TRACKERS,
+                                modifier = Modifier.weight(1f)
+                            )
+                            StatusPill(
+                                label = "Yggdrasil",
+                                value = "…",
+                                ok = heroYggOk,
+                                node = RadarNode.YGGDRASIL,
+                                modifier = Modifier.weight(1f)
+                            )
+                            StatusPill(
+                                label = if (appLanguage == "Русский") "Пиры" else "Peers",
+                                value = if (heroActivePeers > 0) "$heroActivePeers 🟢" else "0",
+                                ok = if (heroActivePeers > 0) true else null,
+                                node = RadarNode.PEERS,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
             }

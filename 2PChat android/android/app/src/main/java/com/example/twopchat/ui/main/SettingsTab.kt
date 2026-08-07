@@ -166,6 +166,7 @@ fun SettingsTab(
     var linkPreviewsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_link_previews", false)) }
     var hapticFeedbackEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_haptic_feedback", true)) }
     var reduceMotion by remember { mutableStateOf(sharedPrefs.getBoolean(com.example.twopchat.REDUCE_MOTION_SETTING, false)) }
+    var heroWidgetCollapsed by remember { mutableStateOf(sharedPrefs.getBoolean("settings_hero_widget_collapsed", false)) }
     var stealthDisguise by remember { mutableStateOf(sharedPrefs.getBoolean("settings_stealth_disguise", false)) }
     var showDisguiseInstructionDialog by remember { mutableStateOf(false) }
     
@@ -1521,7 +1522,52 @@ fun SettingsTab(
                                 }
                             }
                         }
-                        
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Hero Widget Collapsed Setting
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.6f)),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .border(1.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (appLanguage == "Русский") "Сворачивать виджет статуса по умолчанию" else "Collapse Status Widget by Default",
+                                        fontWeight = FontWeight.Medium,
+                                        color = onSurfaceColor
+                                    )
+                                    Text(
+                                        text = if (appLanguage == "Русский") "Компактный режим профиля на экране чатов" else "Compact profile status bar on chats tab",
+                                        fontSize = 12.sp,
+                                        color = onSurfaceVariant
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Switch(
+                                    checked = heroWidgetCollapsed,
+                                    onCheckedChange = {
+                                        heroWidgetCollapsed = it
+                                        sharedPrefs.edit().putBoolean("settings_hero_widget_collapsed", it).apply()
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = primaryColor,
+                                        checkedTrackColor = primaryColor.copy(alpha = 0.3f)
+                                    )
+                                )
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(40.dp))
                     }
                 }
