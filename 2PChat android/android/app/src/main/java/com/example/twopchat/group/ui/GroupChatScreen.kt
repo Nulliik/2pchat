@@ -2430,7 +2430,7 @@ private fun GroupChatHeader(
                         modifier = Modifier.background(surfaceColor)
                     ) {
                         DropdownMenuItem(
-                            text = { Text(if (appLanguage == "Русский") "Информация о группе" else "Group Info", color = onSurfaceColor) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Информация о группе", "Group Info", "Gruppeninfo", "Información del grupo", "Infos sur le groupe", "Informações do grupo"), color = onSurfaceColor) },
                             onClick = {
                                 showHeaderMenu = false
                                 controller.openGroupInfo(state.groupId)
@@ -2445,7 +2445,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(if (appLanguage == "Русский") "Обои чата" else "Chat Wallpaper", color = onSurfaceColor) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Обои чата", "Chat Wallpaper", "Chat-Hintergrund", "Fondo del chat", "Fond d'écran du chat", "Papel de parede do chat"), color = onSurfaceColor) },
                             onClick = {
                                 showHeaderMenu = false
                                 onOpenWallpaper()
@@ -2460,10 +2460,10 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(if (appLanguage == "Русский") "Переподключить соединение" else "Reconnect Connection", color = onSurfaceColor) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Переподключить соединение", "Reconnect Connection", "Verbindung neu herstellen", "Reconectar conexión", "Reconnecter la connexion", "Reconectar conexão"), color = onSurfaceColor) },
                             onClick = {
                                 showHeaderMenu = false
-                                android.widget.Toast.makeText(context, if (appLanguage == "Русский") "Синхронизация группы..." else "Synchronizing group...", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, com.example.twopchat.data.Localizations.tr(appLanguage, "Синхронизация группы...", "Synchronizing group...", "Gruppe wird synchronisiert...", "Sincronizando grupo...", "Synchronisation du groupe...", "Sincronizando grupo..."), android.widget.Toast.LENGTH_SHORT).show()
                             },
                             leadingIcon = {
                                 Icon(
@@ -2475,7 +2475,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(if (appLanguage == "Русский") "Очистить историю" else "Clear History", color = Color.Red) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить историю", "Clear History", "Verlauf löschen", "Borrar historial", "Effacer l'historique", "Limpar histórico"), color = Color.Red) },
                             onClick = {
                                 showHeaderMenu = false
                                 controller.clearHistory(state.groupId)
@@ -2490,7 +2490,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(if (appLanguage == "Русский") "Покинуть группу" else "Leave Group", color = Color.Red) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Покинуть группу", "Leave Group", "Gruppe verlassen", "Salir del grupo", "Quitter le groupe", "Sair do grupo"), color = Color.Red) },
                             onClick = {
                                 showHeaderMenu = false
                                 controller.openGroupInfo(state.groupId)
@@ -2505,7 +2505,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(if (appLanguage == "Русский") "Удалить группу" else "Delete Group", color = Color.Red) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Удалить группу", "Delete Group", "Gruppe löschen", "Eliminar grupo", "Supprimer le groupe", "Excluir grupo"), color = Color.Red) },
                             onClick = {
                                 showHeaderMenu = false
                                 showDeleteGroupConfirmation = true
