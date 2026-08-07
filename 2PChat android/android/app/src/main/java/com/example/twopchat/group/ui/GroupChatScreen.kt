@@ -853,14 +853,22 @@ fun GroupChatScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(40.dp),
+                                .padding(vertical = 120.dp, horizontal = 24.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = "Сообщений пока нет. Начните общение в группе!",
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Surface(
+                                color = surfaceColor.copy(alpha = 0.85f),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Сообщений пока нет. Начните общение в группе!" else "No messages yet. Start chatting in the group!",
+                                    fontSize = 14.sp,
+                                    textAlign = TextAlign.Center,
+                                    color = onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -1602,7 +1610,7 @@ fun GroupChatScreen(
 
     if (showStickerPicker) {
         StickerPickerBottomSheet(
-            appLanguage = "Русский",
+            appLanguage = appLanguage,
             primaryColor = primaryColor,
             onDismiss = { showStickerPicker = false },
             onStickerSelected = { sticker ->
@@ -1701,7 +1709,7 @@ fun GroupChatScreen(
         GifLibraryBottomSheet(
             gifs = gifList,
             isLoading = false,
-            appLanguage = "Русский",
+            appLanguage = appLanguage,
             primaryColor = primaryColor,
             onDismiss = { showGifLibrary = false },
             onImport = {
@@ -1719,7 +1727,7 @@ fun GroupChatScreen(
         PhotoEditorModal(
             imageUri = uri,
             imagePath = null,
-            appLanguage = "Русский",
+            appLanguage = appLanguage,
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
             onSurfaceColor = onSurfaceColor,
@@ -1740,7 +1748,7 @@ fun GroupChatScreen(
     pendingVideoPath?.let { path ->
         VideoEditorModal(
             videoPath = path,
-            appLanguage = "Русский",
+            appLanguage = appLanguage,
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
             onSurfaceColor = onSurfaceColor,
@@ -1762,7 +1770,7 @@ fun GroupChatScreen(
     if (pendingAlbumFiles != null) {
         AlbumPreviewModal(
             files = pendingAlbumFiles!!,
-            appLanguage = "Русский",
+            appLanguage = appLanguage,
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
             onSurfaceColor = onSurfaceColor,
@@ -2343,11 +2351,15 @@ private fun GroupChatHeader(
                                 fontWeight = FontWeight.SemiBold
                             )
                         } else {
-                            val membersWord = when {
-                                state.memberCount % 100 in 11..19 -> "участников"
-                                state.memberCount % 10 == 1 -> "участник"
-                                state.memberCount % 10 in 2..4 -> "участника"
-                                else -> "участников"
+                            val membersWord = if (appLanguage == "Русский") {
+                                when {
+                                    state.memberCount % 100 in 11..19 -> "участников"
+                                    state.memberCount % 10 == 1 -> "участник"
+                                    state.memberCount % 10 in 2..4 -> "участника"
+                                    else -> "участников"
+                                }
+                            } else {
+                                if (state.memberCount == 1) "member" else "members"
                             }
                             Text(
                                 "${state.memberCount} $membersWord",
@@ -2377,8 +2389,8 @@ private fun GroupChatHeader(
                 if (showDeleteGroupConfirmation) {
                     AlertDialog(
                         onDismissRequest = { showDeleteGroupConfirmation = false },
-                        title = { Text("Удалить группу?", fontWeight = FontWeight.Bold, color = onSurfaceColor) },
-                        text = { Text("Вы уверены, что хотите полностью удалить группу «${state.title}» и всю её историю?", color = onSurfaceColor.copy(alpha = 0.7f)) },
+                        title = { Text(if (appLanguage == "Русский") "Удалить группу?" else "Delete group?", fontWeight = FontWeight.Bold, color = onSurfaceColor) },
+                        text = { Text(if (appLanguage == "Русский") "Вы уверены, что хотите полностью удалить группу «${state.title}» и всю её историю?" else "Are you sure you want to permanently delete group \"${state.title}\" and all its history?", color = onSurfaceColor.copy(alpha = 0.7f)) },
                         confirmButton = {
                             TextButton(
                                 onClick = {
@@ -2386,12 +2398,12 @@ private fun GroupChatHeader(
                                     controller.deleteGroup(state.groupId)
                                 }
                             ) {
-                                Text("Удалить", color = Color.Red, fontWeight = FontWeight.Bold)
+                                Text(if (appLanguage == "Русский") "Удалить" else "Delete", color = Color.Red, fontWeight = FontWeight.Bold)
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { showDeleteGroupConfirmation = false }) {
-                                Text("Отмена", color = onSurfaceColor)
+                                Text(if (appLanguage == "Русский") "Отмена" else "Cancel", color = onSurfaceColor)
                             }
                         },
                         containerColor = surfaceColor,
@@ -2416,7 +2428,7 @@ private fun GroupChatHeader(
                         modifier = Modifier.background(surfaceColor)
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Информация о группе", color = onSurfaceColor) },
+                            text = { Text(if (appLanguage == "Русский") "Информация о группе" else "Group Info", color = onSurfaceColor) },
                             onClick = {
                                 showHeaderMenu = false
                                 controller.openGroupInfo(state.groupId)
@@ -2431,7 +2443,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Обои чата", color = onSurfaceColor) },
+                            text = { Text(if (appLanguage == "Русский") "Обои чата" else "Chat Wallpaper", color = onSurfaceColor) },
                             onClick = {
                                 showHeaderMenu = false
                                 onOpenWallpaper()
@@ -2446,10 +2458,10 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Переподключить соединение", color = onSurfaceColor) },
+                            text = { Text(if (appLanguage == "Русский") "Переподключить соединение" else "Reconnect Connection", color = onSurfaceColor) },
                             onClick = {
                                 showHeaderMenu = false
-                                android.widget.Toast.makeText(context, "Синхронизация группы...", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, if (appLanguage == "Русский") "Синхронизация группы..." else "Synchronizing group...", android.widget.Toast.LENGTH_SHORT).show()
                             },
                             leadingIcon = {
                                 Icon(
@@ -2461,7 +2473,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Очистить историю", color = Color.Red) },
+                            text = { Text(if (appLanguage == "Русский") "Очистить историю" else "Clear History", color = Color.Red) },
                             onClick = {
                                 showHeaderMenu = false
                                 controller.clearHistory(state.groupId)
@@ -2476,7 +2488,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Покинуть группу", color = Color.Red) },
+                            text = { Text(if (appLanguage == "Русский") "Покинуть группу" else "Leave Group", color = Color.Red) },
                             onClick = {
                                 showHeaderMenu = false
                                 controller.openGroupInfo(state.groupId)
@@ -2491,7 +2503,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Удалить группу", color = Color.Red) },
+                            text = { Text(if (appLanguage == "Русский") "Удалить группу" else "Delete Group", color = Color.Red) },
                             onClick = {
                                 showHeaderMenu = false
                                 showDeleteGroupConfirmation = true
