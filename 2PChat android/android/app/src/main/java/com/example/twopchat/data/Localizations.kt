@@ -736,21 +736,393 @@ object Localizations {
         "reset_link" to "Restablecer"
     )
 
+    private val frStrings = mapOf(
+        // Onboarding
+        "welcome_title" to "Bienvenue sur 2PChat",
+        "welcome_desc" to "Une plateforme de messagerie sécurisée, décentralisée et peer-to-peer. Sans serveurs centraux. Sans traqueurs. Uniquement une communication chiffrée directe.",
+        "get_started" to "Commencer",
+        "continue" to "Continuer",
+        "back" to "Retour",
+        "enter" to "Entrer",
+        "create_profile" to "Créer un profil",
+        "profile_desc" to "Choisissez votre nom d'utilisateur et ajoutez une photo de profil optionnelle.",
+        "placeholder_username" to "Entrez votre nom d'utilisateur...",
+        "add_photo" to "Ajouter une photo",
+        "keys_generated" to "Clés locales générées",
+        "keys_desc" to "Vos clés de session privées Double Ratchet ont été initialisées localement. Ci-dessous votre empreinte de clé publique :",
+        "crypto_active" to "🔒 CHIFFREMENT DE BOUT EN BOUT ACTIF",
+        "welcome_aboard" to "Bienvenue à bord, %s",
+        "finalize_desc" to "Configuration de 2PChat terminée. Les connexions directes entre pairs sont entièrement sécurisées. Aucun compte distant ni base de données requis.",
+
+        // 5-Step Micro-Learning Onboarding
+        "step1_title" to "Zéro serveur central",
+        "step1_desc" to "2PChat n'a aucun serveur cloud ni base de données stockant vos messages. Tous les messages sont transmis directement entre pairs ou via le réseau mesh Yggdrasil.",
+        "step2_title" to "Sécurité des clés et données",
+        "step2_desc" to "Vos clés cryptographiques sont générées directement sur votre appareil. Ne supprimez jamais les données de l'application sans sauvegarde.",
+        "step3_title" to "Confidentialité et protection",
+        "step3_desc" to "Configurez le blocage des captures d'écran, le code PIN et le PIN d'urgence dans les paramètres pour une sécurité maximale. L'historique reste strictement chiffré.",
+        "step4_title" to "Créer un profil",
+        "step4_desc" to "Choisissez votre nom d'affichage local et votre avatar. Aucune inscription ni numéro de téléphone requis.",
+        "step5_title" to "Réseau Mesh Yggdrasil & Configuration",
+        "step5_desc" to "Votre identité cryptographique est initialisée. Activez ensuite le VPN mesh Yggdrasil pour une joignabilité globale.",
+        "enable_yggdrasil_prompt_title" to "Activer le VPN Mesh Yggdrasil",
+        "enable_yggdrasil_prompt_desc" to "Pour établir une connexion via le réseau mesh chiffré P2P, Android requiert la confirmation du VPN système. Cliquez ci-dessous pour activer.",
+        "enable_vpn_btn" to "Activer le VPN Yggdrasil",
+        "skip_for_now" to "Ignorer pour l'instant",
+
+        // Tabs
+        "tab_chats" to "Discussions",
+        "tab_contacts" to "Recherche",
+        "tab_settings" to "Paramètres",
+
+        // Chats Tab
+        "my_fingerprint" to "MON EMPREINTE CRYPTOGRAPHIQUE",
+        "ram_info" to "L'historique des messages est conservé strictement en RAM pour une confidentialité maximale.",
+        "active_handshakes" to "Connexions actives",
+        "direct_p2p" to "P2P DIRECT",
+        "yggdrasil" to "YGGDRASIL",
+
+        // Contacts Tab
+        "search_placeholder" to "Rechercher des pairs directs...",
+        "secure_directory" to "Annuaire sécurisé de pairs",
+        "peers_count" to "%d pairs",
+        "connect_action" to "⚡ Connecter",
+        "online" to "En ligne",
+        "offline" to "Hors ligne",
+        "active_m" to "Actif il y a %s",
+
+        // Settings Tab
+        "edit_photo" to "Modifier",
+        "username_profile" to "Profil utilisateur",
+        "user_identity" to "Identité utilisateur",
+        "appearance" to "Apparence",
+        "light_theme" to "Mode thème clair",
+        "light_theme_desc" to "Passer du thème sombre au thème clair",
+        "amoled_theme" to "Mode noir AMOLED",
+        "amoled_theme_desc" to "Utiliser un fond noir pur pour écrans OLED",
+        "cerulean_blue" to "Couleur Bleu Céruléen",
+        "cerulean_blue_desc" to "Basculer du vert menthe au bleu céruléen",
+        "notifications" to "Notifications",
+        "push_notifications" to "Notifications push",
+        "push_notifications_desc" to "Activer les connexions instantanées",
+        "message_previews" to "Aperçu des messages",
+        "message_previews_desc" to "Afficher le contenu dans les notifications",
+        "security_network" to "Sécurité & Réseau",
+        "stealth_disguise" to "Mode camouflage",
+        "stealth_disguise_desc" to "Dissimuler l'application en convertisseur de devises",
+        "block_screenshots" to "Bloquer les captures d'écran",
+        "block_screenshots_desc" to "Empêcher la capture d'écran (Strict)",
+        "passcode_lock" to "Verrouillage par code",
+        "passcode_lock_desc" to "Exiger le code au démarrage",
+        "wifi_discovery" to "Détection WiFi Direct",
+        "wifi_discovery_desc" to "Scanner le sous-réseau local pour trouver des pairs",
+        "yggdrasil_routing" to "Routage Yggdrasil",
+        "yggdrasil_routing_desc" to "Acheminer via le réseau mesh IPv6",
+
+        // Passcode Translation Strings
+        "set_passcode_title" to "Définir le code",
+        "enter_passcode" to "Entrez un nouveau code à 4 chiffres",
+        "confirm_passcode" to "Confirmez le nouveau code",
+        "passcodes_dont_match" to "Les codes ne correspondent pas !",
+        "passcode_disabled" to "Verrouillage par code désactivé",
+        "passcode_enabled" to "Verrouillage par code activé",
+        "disable_passcode_title" to "Désactiver le code",
+        "enter_current_passcode" to "Entrez le code actuel",
+        "invalid_passcode" to "Code invalide !",
+        "autolock_title" to "Verrouillage automatique",
+        "autolock_desc" to "Verrouiller l'application après inactivité",
+        "minutes_1" to "1 minute",
+        "minutes_5" to "5 minutes",
+        "minutes_10" to "10 minutes",
+        "minutes_30" to "30 minutes",
+        "unlock_app" to "Déverrouiller 2PChat",
+        "enter_pin_to_unlock" to "Entrez le code PIN pour déverrouiller",
+        "wrong_pin" to "Code PIN incorrect. Réessayez.",
+
+        // Account Deletion Translations
+        "delete_account" to "Supprimer le compte",
+        "delete_account_title" to "Supprimer le compte ?",
+        "delete_account_desc" to "Ceci supprimera définitivement votre profil, vos clés sécurisées, vos paramètres et tout l'historique de discussion. Cette action est irréversible.",
+        "delete" to "Supprimer",
+        "cancel" to "Annuler",
+
+        // Duress PIN Translations
+        "duress_pin_title" to "PIN d'urgence",
+        "duress_pin_desc" to "Efface instantanément votre compte s'il est saisi sur l'écran de verrouillage.",
+        "enabled" to "Activé",
+        "disabled" to "Désactivé",
+        "set_duress_title" to "Définir le PIN d'urgence",
+        "enter_duress_pin" to "Entrez un PIN d'urgence (4 chiffres)",
+        "confirm_duress_pin" to "Confirmez le PIN d'urgence",
+        "duress_matches_main_error" to "Le PIN d'urgence ne peut pas être identique au code principal.",
+        "duress_enabled" to "PIN d'urgence activé",
+        "duress_disabled" to "PIN d'urgence désactivé",
+        "disable" to "Désactiver",
+
+        // Saved Messages / Notes Translations
+        "saved_messages_title" to "Messages enregistrés",
+        "saved_messages_desc" to "Notes personnelles, fichiers et brouillons",
+        "saved_messages_welcome" to "Bienvenue dans vos notes personnelles. Enregistrez ici des messages, des fichiers ou des emplacements.",
+        "local_storage" to "Stockage local",
+
+        "language" to "Langue",
+        "app_language" to "Langue de l'application",
+        "app_language_desc" to "Choisir la localisation de l'interface",
+        "link_previews" to "Aperçu des liens",
+        "link_previews_desc" to "Obtenir les titres et aperçus des liens web",
+        "haptic_feedback" to "Retour haptique",
+        "haptic_feedback_desc" to "Vibrer lors des actions et de l'envoi de messages",
+        "premium_icons" to "Icônes d'application premium",
+        "select_icons_desc" to "Choisissez parmi 4 styles personnalisés :",
+        "help_reference" to "Aide & Référence",
+        "help_reference_desc" to "Conditions, guide réseau et explications de confidentialité",
+        "help_yggdrasil_title" to "Qu'est-ce que le Mesh Yggdrasil ?",
+        "help_yggdrasil_desc" to "Yggdrasil est un réseau mesh chiffré sur IPv6. Il achemine automatiquement les paquets de pair à pair sans serveurs centraux.",
+        "help_e2ee_title" to "Chiffrement E2EE Double Ratchet",
+        "help_e2ee_desc" to "Chaque conversation utilise le chiffrement de bout en bout Double Ratchet. Les clés changent après chaque message.",
+        "help_privacy_title" to "Confidentialité sans trace",
+        "help_privacy_desc" to "2PChat fonctionne sans comptes, bases de données centrales ni télémétrie. Vos clés restent strictement sur votre appareil.",
+        "help_duress_title" to "PIN d'urgence & Effacement",
+        "help_duress_desc" to "Définir un PIN d'urgence vous permet d'effacer immédiatement toutes les données depuis l'écran de verrouillage.",
+        "help_relay_title" to "Fonctionnement du routage P2P Relay",
+        "help_relay_desc" to "2PChat n'a pas de serveurs centraux. Les messages sont transmis via 3 couches de transport dynamiques.",
+
+        // Chat Screen
+        "secure_badge" to "SÉCURISÉ",
+        "write_placeholder" to "Message...",
+        "send" to "Envoyer",
+        "typing" to "Écrit...",
+        "msg_options" to "Options du message",
+        "copy_text" to "📋 Copier le texte",
+        "reply_msg" to "💬 Répondre",
+        "delete_msg" to "🗑️ Supprimer (de la RAM)",
+        "close" to "Fermer",
+        "you_disabled_forwarding" to "Vous avez désactivé le transfert dans ce chat",
+        "you_enabled_forwarding" to "Vous avez activé le transfert dans ce chat",
+        "peer_disabled_forwarding" to "%s a désactivé le transfert dans ce chat",
+        "peer_enabled_forwarding" to "%s a activé le transfert dans ce chat",
+
+        // Verification System
+        "verify_peer" to "Vérifier l'identité du pair",
+        "verify_desc" to "Comparez cette empreinte avec celle affichée sur l'écran de votre contact. Si elles correspondent, vérifiez.",
+        "verify_btn" to "Vérifier l'identité",
+        "unverify_btn" to "Révoquer la vérification",
+        "verified_badge" to "VÉRIFIÉ",
+        "fingerprint_label" to "Empreinte cryptographique",
+
+        // Invitation system
+        "create_invite" to "Lien d'invitation à usage unique",
+        "invite_desc" to "Générez un jeton sécurisé à usage unique. Une fois le pair connecté, le lien expirera.",
+        "gen_link" to "Générer un lien d'invitation",
+        "copy_link" to "Copier",
+        "share_link" to "Partager",
+        "waiting_peer" to "En attente de connexion...",
+        "reset_link" to "Réinitialiser"
+    )
+
+    private val ptStrings = mapOf(
+        // Onboarding
+        "welcome_title" to "Bem-vindo ao 2PChat",
+        "welcome_desc" to "Uma plataforma de mensagens segura, descentralizada e ponto a ponto. Sem servidores centrais. Sem rastreadores. Apenas comunicação direta e criptografada.",
+        "get_started" to "Começar",
+        "continue" to "Continuar",
+        "back" to "Voltar",
+        "enter" to "Entrar",
+        "create_profile" to "Criar Perfil",
+        "profile_desc" to "Escolha seu nome de usuário e adicione uma foto de perfil opcional.",
+        "placeholder_username" to "Digite seu nome de usuário...",
+        "add_photo" to "Adicionar Foto",
+        "keys_generated" to "Chaves Locais Geradas",
+        "keys_desc" to "Suas chaves de sessão privadas Double Ratchet foram inicializadas localmente. Abaixo está sua impressão digital de chave pública:",
+        "crypto_active" to "🔒 CRIPTOGRAFIA PONTA A PONTA ATIVA",
+        "welcome_aboard" to "Bem-vindo a bordo, %s",
+        "finalize_desc" to "Configuração do 2PChat concluída. As conexões diretas entre pares estão totalmente seguras. Nenhuma conta remota ou banco de dados necessário.",
+
+        // 5-Step Micro-Learning Onboarding
+        "step1_title" to "Zero Servidores Centrais",
+        "step1_desc" to "O 2PChat não armazena suas mensagens em servidores na nuvem ou bancos de dados. Todas as mensagens são transmitidas diretamente entre pares ou pela rede mesh Yggdrasil.",
+        "step2_title" to "Segurança de Chaves e Dados",
+        "step2_desc" to "Suas chaves criptográficas são geradas diretamente no seu dispositivo. Nunca apague os dados do aplicativo sem um backup.",
+        "step3_title" to "Privacidade e Proteção",
+        "step3_desc" to "Configure o bloqueio de captura de tela, código PIN e PIN de emergência nas Configurações para máxima segurança. O histórico permanece estritamente criptografado.",
+        "step4_title" to "Criar Perfil",
+        "step4_desc" to "Escolha seu nome de exibição local e foto de perfil. Sem necessidade de registro ou número de telefone.",
+        "step5_title" to "Rede Mesh Yggdrasil & Configuração",
+        "step5_desc" to "Sua identidade criptográfica foi inicializada. Em seguida, ative a VPN mesh Yggdrasil para alcance global.",
+        "enable_yggdrasil_prompt_title" to "Ativar VPN Mesh Yggdrasil",
+        "enable_yggdrasil_prompt_desc" to "Para estabelecer conexão através da rede mesh criptografada P2P, o Android exige confirmação da VPN do sistema. Clique abaixo para ativar.",
+        "enable_vpn_btn" to "Ativar VPN Yggdrasil",
+        "skip_for_now" to "Ignorar por enquanto",
+
+        // Tabs
+        "tab_chats" to "Conversas",
+        "tab_contacts" to "Buscar",
+        "tab_settings" to "Configurações",
+
+        // Chats Tab
+        "my_fingerprint" to "MINHA IMPRESSÃO DIGITAL CRIPTOGRÁFICA",
+        "ram_info" to "O histórico de mensagens é mantido estritamente na RAM para máxima privacidade.",
+        "active_handshakes" to "Conexões Ativas",
+        "direct_p2p" to "P2P DIRETO",
+        "yggdrasil" to "YGGDRASIL",
+
+        // Contacts Tab
+        "search_placeholder" to "Buscar pares diretos...",
+        "secure_directory" to "Diretório Seguro de Pares",
+        "peers_count" to "%d pares",
+        "connect_action" to "⚡ Conectar",
+        "online" to "Online",
+        "offline" to "Offline",
+        "active_m" to "Ativo há %s",
+
+        // Settings Tab
+        "edit_photo" to "Editar",
+        "username_profile" to "Perfil de Usuário",
+        "user_identity" to "Identidade de Usuário",
+        "appearance" to "Aparência",
+        "light_theme" to "Modo Tema Claro",
+        "light_theme_desc" to "Alternar do tema escuro para o claro",
+        "amoled_theme" to "Modo Preto AMOLED",
+        "amoled_theme_desc" to "Usar fundo preto puro para telas OLED",
+        "cerulean_blue" to "Cor de Marca Azul Cerúleo",
+        "cerulean_blue_desc" to "Alternar de verde menta para azul cerúleo",
+        "notifications" to "Notificações",
+        "push_notifications" to "Notificações Push",
+        "push_notifications_desc" to "Ativar conexões instantâneas de pares",
+        "message_previews" to "Pré-visualização de Mensagens",
+        "message_previews_desc" to "Mostrar conteúdo nas notificações",
+        "security_network" to "Segurança & Rede",
+        "stealth_disguise" to "Modo Disfarçado",
+        "stealth_disguise_desc" to "Disfarçar o aplicativo como conversor de moedas",
+        "block_screenshots" to "Bloquear Capturas de Tela",
+        "block_screenshots_desc" to "Impedir capturas de tela (Estrito)",
+        "passcode_lock" to "Bloqueio por Código",
+        "passcode_lock_desc" to "Exigir código ao iniciar o aplicativo",
+        "wifi_discovery" to "Descoberta WiFi Direct",
+        "wifi_discovery_desc" to "Escanear sub-rede local em busca de pares",
+        "yggdrasil_routing" to "Roteamento Yggdrasil",
+        "yggdrasil_routing_desc" to "Rotear através da rede mesh IPv6",
+
+        // Passcode Translation Strings
+        "set_passcode_title" to "Definir Código",
+        "enter_passcode" to "Digite um novo código de 4 dígitos",
+        "confirm_passcode" to "Confirme o novo código",
+        "passcodes_dont_match" to "Os códigos não coincidem!",
+        "passcode_disabled" to "Bloqueio por código desativado",
+        "passcode_enabled" to "Bloqueio por código ativado",
+        "disable_passcode_title" to "Desativar Código",
+        "enter_current_passcode" to "Digite o código atual",
+        "invalid_passcode" to "Código inválido!",
+        "autolock_title" to "Bloqueio Automático",
+        "autolock_desc" to "Bloquear aplicativo após inatividade",
+        "minutes_1" to "1 minuto",
+        "minutes_5" to "5 minutos",
+        "minutes_10" to "10 minutos",
+        "minutes_30" to "30 minutos",
+        "unlock_app" to "Desbloquear 2PChat",
+        "enter_pin_to_unlock" to "Digite o PIN para desbloquear",
+        "wrong_pin" to "PIN incorreto. Tente novamente.",
+
+        // Account Deletion Translations
+        "delete_account" to "Excluir Conta",
+        "delete_account_title" to "Excluir Conta?",
+        "delete_account_desc" to "Isso excluirá permanentemente seu perfil, chaves seguras, configurações e todo o histórico de conversas. Esta ação não pode ser desfeita.",
+        "delete" to "Excluir",
+        "cancel" to "Cancelar",
+
+        // Duress PIN Translations
+        "duress_pin_title" to "PIN de Emergência",
+        "duress_pin_desc" to "Apaga sua conta instantaneamente se digitado na tela de bloqueio.",
+        "enabled" to "Ativado",
+        "disabled" to "Desativado",
+        "set_duress_title" to "Definir PIN de Emergência",
+        "enter_duress_pin" to "Digite o PIN de emergência (4 dígitos)",
+        "confirm_duress_pin" to "Confirme o PIN de emergência",
+        "duress_matches_main_error" to "O PIN de emergência não pode ser igual ao código principal.",
+        "duress_enabled" to "PIN de emergência ativado",
+        "duress_disabled" to "PIN de emergência desativado",
+        "disable" to "Desativar",
+
+        // Saved Messages / Notes Translations
+        "saved_messages_title" to "Mensagens Salvas",
+        "saved_messages_desc" to "Notas pessoais, arquivos e rascunhos",
+        "saved_messages_welcome" to "Bem-vindo às suas notas pessoais. Salve mensagens, arquivos ou localizações aqui.",
+        "local_storage" to "Armazenamento Local",
+
+        "language" to "Idioma",
+        "app_language" to "Idioma do Aplicativo",
+        "app_language_desc" to "Escolher localização da interface",
+        "link_previews" to "Pré-visualização de Links",
+        "link_previews_desc" to "Obter títulos e prévias para links da web",
+        "haptic_feedback" to "Resposta Háptica",
+        "haptic_feedback_desc" to "Vibrar em ações e envio de mensagens",
+        "premium_icons" to "Ícones Premium do Aplicativo",
+        "select_icons_desc" to "Escolha entre 4 estilos personalizados:",
+        "help_reference" to "Ajuda & Referência",
+        "help_reference_desc" to "Termos, guia de rede e explicação de privacidade",
+        "help_yggdrasil_title" to "O que é a Mesh Yggdrasil?",
+        "help_yggdrasil_desc" to "Yggdrasil é uma rede mesh criptografada sobre IPv6. Roteia pacotes de par a par sem servidores centrais.",
+        "help_e2ee_title" to "Criptografia E2EE Double Ratchet",
+        "help_e2ee_desc" to "Cada conversa usa criptografia Double Ratchet de ponta a ponta. As chaves mudam a cada mensagem.",
+        "help_privacy_title" to "Privacidade Sem Rastros",
+        "help_privacy_desc" to "O 2PChat funciona sem contas, bancos de dados centrais ou telemetria. Suas chaves permanecem no seu dispositivo.",
+        "help_duress_title" to "PIN de Emergência & Apagamento",
+        "help_duress_desc" to "Definir um PIN de emergência permite apagar todos os dados diretamente da tela de bloqueio.",
+        "help_relay_title" to "Como funciona o Roteamento P2P Relay",
+        "help_relay_desc" to "O 2PChat não possui servidores centrais. As mensagens são entregues através de 3 camadas de transporte dinâmicas.",
+
+        // Chat Screen
+        "secure_badge" to "SEGURO",
+        "write_placeholder" to "Mensagem...",
+        "send" to "Enviar",
+        "typing" to "Digitando...",
+        "msg_options" to "Opções da mensagem",
+        "copy_text" to "📋 Copiar texto",
+        "reply_msg" to "💬 Responder",
+        "delete_msg" to "🗑️ Excluir (da RAM)",
+        "close" to "Fechar",
+        "you_disabled_forwarding" to "Você desativou o encaminhamento neste chat",
+        "you_enabled_forwarding" to "Você ativou o encaminhamento neste chat",
+        "peer_disabled_forwarding" to "%s desativou o encaminhamento neste chat",
+        "peer_enabled_forwarding" to "%s ativou o encaminhamento neste chat",
+
+        // Verification System
+        "verify_peer" to "Verificar identidade do par",
+        "verify_desc" to "Compare esta impressão digital com a exibida na tela do seu contato. Se coincidirem, verifique.",
+        "verify_btn" to "Verificar identidade",
+        "unverify_btn" to "Revogar verificação",
+        "verified_badge" to "VERIFICADO",
+        "fingerprint_label" to "Impressão digital criptográfica",
+
+        // Invitation system
+        "create_invite" to "Link de convite de uso único",
+        "invite_desc" to "Gere um token seguro de uso único. Assim que o par se conectar, o link expirará.",
+        "gen_link" to "Gerar link de convite",
+        "copy_link" to "Copiar",
+        "share_link" to "Compartilhar",
+        "waiting_peer" to "Aguardando conexão...",
+        "reset_link" to "Redefinir"
+    )
+
     fun getString(key: String, language: String): String {
         val strings = when (language) {
             "Русский" -> ruStrings
             "Deutsch" -> deStrings
             "Español" -> esStrings
+            "Français" -> frStrings
+            "Português" -> ptStrings
             else -> enStrings
         }
         return strings[key] ?: enStrings[key] ?: key
     }
 
-    fun tr(language: String, ru: String, en: String, de: String = en, es: String = en): String {
+    fun tr(language: String, ru: String, en: String, de: String = en, es: String = en, fr: String = en, pt: String = en): String {
         return when (language) {
             "Русский" -> ru
             "Deutsch" -> de
             "Español" -> es
+            "Français" -> fr
+            "Português" -> pt
             else -> en
         }
     }

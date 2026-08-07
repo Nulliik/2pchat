@@ -3747,7 +3747,9 @@ fun LanguageSettingsPage(
             Pair("Русский", "Russian"),
             Pair("English", "English"),
             Pair("Deutsch", "German"),
-            Pair("Español", "Spanish")
+            Pair("Español", "Spanish"),
+            Pair("Français", "French"),
+            Pair("Português", "Portuguese")
         )
     }
 
