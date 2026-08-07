@@ -1901,9 +1901,7 @@ private fun GroupInfoDetailsCard(
                 )
                 IconButton(
                     onClick = {
-                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        val clip = android.content.ClipData.newPlainText("Group ID", "group#${metadata.groupId}")
-                        clipboard.setPrimaryClip(clip)
+                        com.example.twopchat.copyTextToClipboard(context, "Group ID", "group#${metadata.groupId}")
                         android.widget.Toast.makeText(context, "Адрес группы скопирован", android.widget.Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.size(28.dp)
@@ -2300,8 +2298,7 @@ private fun GroupInviteQrModal(
                         )
                         IconButton(
                             onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("Group Invite", inviteLink))
+                                com.example.twopchat.copyTextToClipboard(context, "Group Invite", inviteLink)
                                 Toast.makeText(context, "Ссылка скопирована!", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.size(28.dp)
@@ -2369,8 +2366,7 @@ private fun GroupInviteQrModal(
 
                     OutlinedButton(
                         onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Group Invite", inviteLink))
+                            com.example.twopchat.copyTextToClipboard(context, "Group Invite", inviteLink)
                             Toast.makeText(context, "Ссылка скопирована в буфер!", Toast.LENGTH_SHORT).show()
                         },
                         shape = RoundedCornerShape(14.dp),

@@ -678,9 +678,7 @@ fun GroupChatScreen(
                             IconButton(onClick = {
                                 val combinedText = selectedMessages.mapNotNull { it.text.takeIf { t -> t.isNotBlank() } }.joinToString("\n")
                                 if (combinedText.isNotBlank()) {
-                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    val clip = android.content.ClipData.newPlainText("Messages", combinedText)
-                                    clipboard.setPrimaryClip(clip)
+                                    com.example.twopchat.copyTextToClipboard(context, "Messages", combinedText)
                                     android.widget.Toast.makeText(context, "Текст скопирован", android.widget.Toast.LENGTH_SHORT).show()
                                 }
                                 isSelectMode = false
@@ -1341,9 +1339,7 @@ fun GroupChatScreen(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable {
-                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                    val clip = android.content.ClipData.newPlainText("Message Text", message.text)
-                                    clipboard.setPrimaryClip(clip)
+                                    com.example.twopchat.copyTextToClipboard(context, "Message Text", message.text)
                                     Toast.makeText(context, "Текст скопирован", Toast.LENGTH_SHORT).show()
                                     selectedMessageForOptions = null
                                 }
