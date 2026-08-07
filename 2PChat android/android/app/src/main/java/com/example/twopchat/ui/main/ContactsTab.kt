@@ -1493,6 +1493,7 @@ private fun CameraQrScannerOverlay(
                     val previewView = androidx.camera.view.PreviewView(ctx).apply {
                         scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_CENTER
                     }
+                    val mainExecutor = ContextCompat.getMainExecutor(ctx)
                     val cameraProviderFuture = androidx.camera.lifecycle.ProcessCameraProvider.getInstance(ctx)
                     cameraProviderFuture.addListener({
                         val cameraProvider = cameraProviderFuture.get()
@@ -1532,7 +1533,7 @@ private fun CameraQrScannerOverlay(
                                             if (rawValue.isNotBlank() && !hasScanned) {
                                                 hasScanned = true
                                                 found = true
-                                                (ctx as? android.app.Activity)?.runOnUiThread {
+                                                mainExecutor.execute {
                                                     haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                                     onQrScanned(rawValue)
                                                 }
@@ -1551,7 +1552,7 @@ private fun CameraQrScannerOverlay(
                                                 val result = zxingReader.decode(binaryBitmap)
                                                 if (result != null && result.text.isNotBlank() && !hasScanned) {
                                                     hasScanned = true
-                                                    (ctx as? android.app.Activity)?.runOnUiThread {
+                                                    mainExecutor.execute {
                                                         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                                                         onQrScanned(result.text)
                                                     }
@@ -1576,7 +1577,7 @@ private fun CameraQrScannerOverlay(
                         } catch (e: Exception) {
                             android.util.Log.e("CameraQrScanner", "Camera bind failed", e)
                         }
-                    }, ContextCompat.getMainExecutor(ctx))
+                    }, mainExecutor)
                     previewView
                 },
                 modifier = Modifier.fillMaxSize()
