@@ -368,7 +368,7 @@ class MainActivity : ComponentActivity() {
                                     appLanguage = appLanguage,
                                     onLanguageChanged = { lang ->
                                         appLanguage = lang
-                                        sharedPrefs.edit().putString("settings_language", lang).apply()
+                                        sharedPrefs.edit().putString("settings_language", lang).putString("app_language", lang).apply()
                                     },
                                     onIconChanged = { aliasName ->
                                         setAppIconAlias(aliasName)

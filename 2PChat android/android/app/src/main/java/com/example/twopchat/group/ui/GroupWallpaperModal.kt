@@ -1,5 +1,7 @@
 package com.example.twopchat.group.ui
 
+import com.example.twopchat.data.Localizations
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -220,7 +222,7 @@ fun GroupWallpaperModal(
                     }
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        text = if (appLanguage == "Русский") "Обои группы" else "Group Wallpaper",
+                        text = Localizations.tr(appLanguage, "Обои группы", "Group Wallpaper", "Gruppenhintergrund", "Fondo del grupo", "Fond de groupe", "Papel de parede do grupo"),
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
@@ -254,7 +256,7 @@ fun GroupWallpaperModal(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (appLanguage == "Русский") "Затемнение" else "Dimming",
+                            text = Localizations.tr(appLanguage, "Затемнение", "Dimming", "Abdunkelung", "Oscurecimiento", "Assombrissement", "Escurecimento"),
                             color = Color.White,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
@@ -300,7 +302,7 @@ fun GroupWallpaperModal(
                         border = BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.3f))
                     ) {
                         Text(
-                            text = if (appLanguage == "Русский") "Обои будут установлены у всех участников группы" else "Wallpaper will be applied for all group members",
+                            text = Localizations.tr(appLanguage, "Обои будут установлены у всех участников группы", "Wallpaper will be applied for all group members", "Hintergrundbild wird für alle Gruppenmitglieder übernommen", "El fondo se aplicará a todos los miembros del grupo", "Le fond d'écran sera appliqué à tous les membres du groupe", "O papel de parede será aplicado para todos os membros do grupo"),
                             color = Color.White,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
@@ -328,7 +330,7 @@ fun GroupWallpaperModal(
                                 )
                                 Spacer(Modifier.height(2.dp))
                                 Text(
-                                    text = if (appLanguage == "Русский") "Как вам новые обои в нашей группе?" else "How do you like the new wallpaper in our group?",
+                                    text = Localizations.tr(appLanguage, "Как вам новые обои в нашей группе?", "How do you like the new wallpaper in our group?", "Wie gefällt euch das neue Gruppenbild?", "¿Qué os parece el nuevo fondo del grupo?", "Que pensez-vous du nouveau fond d'écran ?", "O que acharam do novo papel de parede do grupo?"),
                                     color = if (previewBitmap != null) Color.White else MaterialTheme.colorScheme.onSurface,
                                     fontSize = 14.sp
                                 )
@@ -355,7 +357,7 @@ fun GroupWallpaperModal(
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
                                 Text(
-                                    text = if (appLanguage == "Русский") "Супер, стильно смотрится!" else "Awesome, looks very stylish!",
+                                    text = Localizations.tr(appLanguage, "Супер, стильно смотрится!", "Awesome, looks very stylish!", "Super, sieht sehr stylish aus!", "¡Genial, se vede muy elegante!", "Super, très élégant !", "Incrível, ficou muito estiloso!"),
                                     color = if (primaryColor == MintGreen || primaryColor == MintGreenLight) StealthBlack else Color.White,
                                     fontSize = 14.sp
                                 )
@@ -387,7 +389,7 @@ fun GroupWallpaperModal(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = if (appLanguage == "Русский") "Готовые темы" else "Preset Wallpapers",
+                        text = Localizations.tr(appLanguage, "Готовые темы", "Preset Wallpapers", "Vorgefertigte Hintergründe", "Fondos predeterminados", "Thèmes prédéfinis", "Temas predefinidos"),
                         color = Color.White.copy(alpha = 0.85f),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -498,7 +500,7 @@ fun GroupWallpaperModal(
                             )
                             Spacer(Modifier.width(12.dp))
                             Text(
-                                text = if (appLanguage == "Русский") "Размытие" else "Blur",
+                                text = Localizations.tr(appLanguage, "Размытие", "Blur", "Unschärfe", "Desenfoque", "Flou", "Desfoque"),
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp
@@ -540,7 +542,7 @@ fun GroupWallpaperModal(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = if (appLanguage == "Русский") "Выбрать из галереи" else "Pick from gallery",
+                        text = Localizations.tr(appLanguage, "Выбрать из галереи", "Pick from gallery", "Aus Galerie wählen", "Elegir de la galería", "Choisir depuis la galerie", "Escolher da galeria"),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
@@ -561,7 +563,7 @@ fun GroupWallpaperModal(
                         .padding(horizontal = 16.dp)
                 ) {
                     Text(
-                        text = if (appLanguage == "Русский") "Установить обои" else "Set wallpaper",
+                        text = Localizations.tr(appLanguage, "Установить обои", "Set wallpaper", "Hintergrund festlegen", "Establecer fondo", "Définir le fond d'écran", "Definir papel de parede"),
                         color = if (primaryColor == MintGreen) StealthBlack else Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp

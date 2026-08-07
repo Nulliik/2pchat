@@ -541,7 +541,7 @@ fun ContactsTab(
                 ) {
                     if (searchQuery.isEmpty()) {
                         Text(
-                            text = if (appLanguage == "Русский") "Имя#код или ссылка 2PChat" else "Name#code or 2PChat link",
+                            text = Localizations.tr(appLanguage, "Имя#код или ссылка 2PChat", "Name#code or 2PChat link", "Name#Code oder 2PChat-Link", "Nombre#código o enlace 2PChat", "Nom#code ou lien 2PChat", "Nome#código ou link 2PChat"),
                             color = onSurfaceVariant.copy(alpha = 0.5f),
                             fontSize = 13.sp,
                             maxLines = 1,
@@ -645,7 +645,7 @@ fun ContactsTab(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (appLanguage == "Русский") "Ссылка" else "Link",
+                        text = Localizations.tr(appLanguage, "Ссылка", "Link", "Link", "Enlace", "Lien", "Link"),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = onSurfaceColor
@@ -683,7 +683,7 @@ fun ContactsTab(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (appLanguage == "Русский") "QR-код" else "QR Code",
+                        text = Localizations.tr(appLanguage, "QR-код", "QR Code", "QR-Code", "Código QR", "Code QR", "Código QR"),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = onSurfaceColor
@@ -719,7 +719,7 @@ fun ContactsTab(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (appLanguage == "Русский") "Найти" else "Search",
+                        text = Localizations.tr(appLanguage, "Найти", "Search", "Suchen", "Buscar", "Rechercher", "Buscar"),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (isSearchActive) (if (primaryColor == MintGreen) StealthBlack else Color.White) else primaryColor
@@ -746,7 +746,7 @@ fun ContactsTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (appLanguage == "Русский") "Ваш адрес для поиска" else "Your search address",
+                            text = Localizations.tr(appLanguage, "Ваш адрес для поиска", "Your search address", "Deine Suchadresse", "Tu dirección de búsqueda", "Votre adresse de recherche", "Seu endereço de busca"),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = onSurfaceVariant,
@@ -776,7 +776,7 @@ fun ContactsTab(
                             .border(0.5.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
                     ) {
                         Text(
-                            text = if (appLanguage == "Русский") "Копировать" else "Copy",
+                            text = Localizations.tr(appLanguage, "Копировать", "Copy", "Kopieren", "Copiar", "Copier", "Copiar"),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = primaryColor,
@@ -1044,17 +1044,14 @@ fun ContactsTab(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = if (appLanguage == "Русский") "Личный QR-код" else "Personal QR Code",
+                        text = Localizations.tr(appLanguage, "Личный QR-код", "Personal QR Code", "Persönlicher QR-Code", "Código QR personal", "Code QR personnel", "Código QR pessoal"),
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = onSurfaceColor
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = if (appLanguage == "Русский")
-                            "Покажите этот QR другу — пусть отсканирует"
-                        else
-                            "Show this QR to a friend to connect securely",
+                        text = Localizations.tr(appLanguage, "Покажите этот QR другу — пусть отсканирует", "Show this QR to a friend to connect securely", "Zeige diesen QR-Code einem Freund für eine sichere Verbindung", "Muestra este QR a un amigo para conectarte de forma segura", "Montrez ce QR à un ami pour vous connecter en toute sécurité", "Mostre este QR para um amigo para se conectar com segurança"),
                         fontSize = 12.sp,
                         color = onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -1113,7 +1110,7 @@ fun ContactsTab(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (appLanguage == "Русский") "Сканировать QR" else "Scan QR Code",
+                            text = Localizations.tr(appLanguage, "Сканировать QR", "Scan QR Code", "QR-Code scannen", "Escanear código QR", "Scanner le code QR", "Escanear código QR"),
                             color = if (primaryColor == MintGreen) StealthBlack else Color.White,
                             fontWeight = FontWeight.Bold
                         )
@@ -1342,9 +1339,9 @@ fun ContactsTab(
                         Spacer(modifier = Modifier.height(14.dp))
                         Text(
                             text = if (searchQuery.isNotBlank()) {
-                                if (appLanguage == "Русский") "Пользователь не найден" else "User not found"
+                                Localizations.tr(appLanguage, "Пользователь не найден", "User not found", "Benutzer nicht gefunden", "Usuario no encontrado", "Utilisateur non trouvé", "Usuário não encontrado")
                             } else {
-                                if (appLanguage == "Русский") "Поиск пиров в сети 2PChat" else "P2P Network Search"
+                                Localizations.tr(appLanguage, "Поиск пиров в сети 2PChat", "P2P Network Search", "P2P-Netzwerksuche", "Búsqueda en red P2P", "Recherche réseau P2P", "Busca na rede P2P")
                             },
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
@@ -1353,17 +1350,9 @@ fun ContactsTab(
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             text = if (searchQuery.isNotBlank()) {
-                                if (appLanguage == "Русский") {
-                                    "Проверьте правильность написания имени#кода и убедитесь, что собеседник находится в сети."
-                                } else {
-                                    "Check the name#code format and make sure your peer is online."
-                                }
+                                Localizations.tr(appLanguage, "Проверьте правильность написания имени#кода и убедитесь, что собеседник находится в сети.", "Check the name#code format and make sure your peer is online.", "Überprüfe das Format Name#Code und stelle sicher, dass der Kontakt online ist.", "Comprueba el formato nombre#código y asegúrate de que tu contacto esté en línea.", "Vérifiez le format nom#code et assurez-vous que votre contact est en ligne.", "Verifique o formato nome#código e certifique-se de que o contato esteja online.")
                             } else {
-                                if (appLanguage == "Русский") {
-                                    "Введите имя собеседника с хэш-кодом (например, user#1234) или вставьте P2P-ссылку приглашения."
-                                } else {
-                                    "Enter user name with hash code (e.g. user#1234) or paste P2P invite link."
-                                }
+                                Localizations.tr(appLanguage, "Введите имя собеседника с хэш-кодом (например, user#1234) или вставьте P2P-ссылку приглашения.", "Enter user name with hash code (e.g. user#1234) or paste P2P invite link.", "Gib den Benutzernamen mit Hashcode ein (z. B. user#1234) oder füge einen P2P-Einladungslink ein.", "Introduce el nombre de usuario con código hash (ej. usuario#1234) o pega el enlace de invitación P2P.", "Entrez le nom d'utilisateur avec le code de hachage (ex. util#1234) ou collez le lien d'invitation P2P.", "Insira o nome de usuário com o código hash (ex. usuario#1234) ou cole o link de convite P2P.")
                             },
                             fontSize = 12.sp,
                             color = onSurfaceVariant,

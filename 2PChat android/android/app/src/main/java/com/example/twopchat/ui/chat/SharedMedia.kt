@@ -126,10 +126,10 @@ fun SharedMediaScreen(
     }
 
     val tabs = listOf(
-        if (appLanguage == "Русский") "Медиа" else "Media",
-        if (appLanguage == "Русский") "Файлы" else "Files",
-        if (appLanguage == "Русский") "Ссылки" else "Links",
-        if (appLanguage == "Русский") "Голосовые" else "Voice"
+        Localizations.tr(appLanguage, "Медиа", "Media", "Medien", "Multimedia", "Média", "Mídia"),
+        Localizations.tr(appLanguage, "Файлы", "Files", "Dateien", "Archivos", "Fichiers", "Arquivos"),
+        Localizations.tr(appLanguage, "Ссылки", "Links", "Links", "Enlaces", "Liens", "Links"),
+        Localizations.tr(appLanguage, "Голосовые", "Voice", "Sprachnachrichten", "Voz", "Vocal", "Voz")
     )
 
     // Initials helper
@@ -212,7 +212,7 @@ fun SharedMediaScreen(
                 }
                 Spacer(modifier = Modifier.width(16.dp))
                 Text(
-                    text = if (appLanguage == "Русский") "Профиль" else "Profile",
+                    text = Localizations.tr(appLanguage, "Профиль", "Profile", "Profil", "Perfil", "Profil", "Perfil"),
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = onSurfaceColor
@@ -307,9 +307,9 @@ fun SharedMediaScreen(
                                     endpoint = P2PMessageRelay.peerEndpoints[peerName],
                                     appLanguage = appLanguage,
                                 )
-                                if (appLanguage == "Русский") "В сети • $transportName" else "Online • $transportName"
+                                Localizations.tr(appLanguage, "В сети • $transportName", "Online • $transportName", "Online • $transportName", "En línea • $transportName", "En ligne • $transportName", "Online • $transportName")
                             } else {
-                                if (appLanguage == "Русский") "Не в сети" else "Offline"
+                                Localizations.tr(appLanguage, "Не в сети", "Offline", "Offline", "Desconectado", "Hors ligne", "Offline")
                             }
                             Text(
                                 text = statusText,
@@ -327,7 +327,7 @@ fun SharedMediaScreen(
                                 // Chat button
                                 ProfileActionButton(
                                     iconRes = R.drawable.ic_menu_chats,
-                                    label = if (appLanguage == "Русский") "Чат" else "Chat",
+                                    label = Localizations.tr(appLanguage, "Чат", "Chat", "Chat", "Chat", "Discussion", "Conversar"),
                                     primaryColor = primaryColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     onClick = onBack
@@ -338,9 +338,9 @@ fun SharedMediaScreen(
                                     ProfileActionButton(
                                         iconRes = if (isMuted) R.drawable.ic_notifications_off else R.drawable.ic_notifications,
                                         label = if (isMuted) {
-                                            if (appLanguage == "Русский") "Вкл. звук" else "Unmute"
+                                            Localizations.tr(appLanguage, "Вкл. звук", "Unmute", "Stumm aus", "Sonido", "Réactiver", "Som ligado")
                                         } else {
-                                            if (appLanguage == "Русский") "Выкл. звук" else "Mute"
+                                            Localizations.tr(appLanguage, "Выкл. звук", "Mute", "Stummschalten", "Silenciar", "Masquer", "Silenciar")
                                         },
                                         primaryColor = primaryColor,
                                         onSurfaceVariant = onSurfaceVariant,
@@ -379,7 +379,7 @@ fun SharedMediaScreen(
                             .padding(16.dp)
                     ) {
                         Text(
-                            text = if (appLanguage == "Русский") "Информация" else "Information",
+                            text = Localizations.tr(appLanguage, "Информация", "Information", "Informationen", "Información", "Informations", "Informações"),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = primaryColor,
@@ -411,7 +411,7 @@ fun SharedMediaScreen(
                         }
 
                         InfoDetailRow(
-                            label = if (appLanguage == "Русский") "Личный адрес" else "Personal address",
+                            label = Localizations.tr(appLanguage, "Личный адрес", "Personal address", "Persönliche Adresse", "Dirección personal", "Adresse personnelle", "Endereço pessoal"),
                             value = searchAddress,
                             onSurfaceColor = onSurfaceColor,
                             onSurfaceVariant = onSurfaceVariant,
@@ -433,7 +433,7 @@ fun SharedMediaScreen(
                         if (peerAboutMe.isNotEmpty()) {
                             HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
                             InfoDetailRow(
-                                label = if (appLanguage == "Русский") "О себе" else "About me",
+                                label = Localizations.tr(appLanguage, "О себе", "About me", "Über mich", "Sobre mí", "À propos", "Sobre mim"),
                                 value = peerAboutMe,
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant
@@ -457,15 +457,15 @@ fun SharedMediaScreen(
                                 Spacer(modifier = Modifier.width(16.dp))
                                 Column {
                                     Text(
-                                        text = if (appLanguage == "Русский") "Статус верификации" else "Verification Status",
+                                        text = Localizations.tr(appLanguage, "Статус верификации", "Verification Status", "Verifizierungsstatus", "Estado de verificación", "Statut de vérification", "Status de verificação"),
                                         fontSize = 11.sp,
                                         color = onSurfaceVariant
                                     )
                                     Text(
                                         text = if (isVerified) {
-                                            if (appLanguage == "Русский") "Личность подтверждена" else "Identity Verified"
+                                            Localizations.tr(appLanguage, "Личность подтверждена", "Identity Verified", "Identität verifiziert", "Identidad verificada", "Identité vérifiée", "Identidade verificada")
                                         } else {
-                                            if (appLanguage == "Русский") "Личность не подтверждена" else "Identity Not Verified"
+                                            Localizations.tr(appLanguage, "Личность не подтверждена", "Identity Not Verified", "Identität nicht verifiziert", "Identidad no verificada", "Identité non vérifiée", "Identidade não verificada")
                                         },
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Medium,
@@ -529,7 +529,7 @@ fun SharedMediaScreen(
                     if (mediaList.isEmpty()) {
                         item {
                             EmptyStateView(
-                                text = if (appLanguage == "Русский") "Медиафайлов нет" else "No media shared",
+                                text = Localizations.tr(appLanguage, "Медиафайлов нет", "No media shared", "Keine Medien vorhanden", "Sin archivos multimedia", "Aucun média partagé", "Nenhuma mídia compartilhada"),
                                 onSurfaceVariant = onSurfaceVariant
                             )
                         }
@@ -673,7 +673,7 @@ fun SharedMediaScreen(
                     if (filesList.isEmpty()) {
                         item {
                             EmptyStateView(
-                                text = if (appLanguage == "Русский") "Файлов нет" else "No files shared",
+                                text = Localizations.tr(appLanguage, "Файлов нет", "No files shared", "Keine Dateien vorhanden", "Sin archivos compartidos", "Aucun fichier partagé", "Nenhum arquivo compartilhado"),
                                 onSurfaceVariant = onSurfaceVariant
                             )
                         }
@@ -799,7 +799,7 @@ fun SharedMediaScreen(
                     if (linksList.isEmpty()) {
                         item {
                             EmptyStateView(
-                                text = if (appLanguage == "Русский") "Ссылок нет" else "No links shared",
+                                text = Localizations.tr(appLanguage, "Ссылок нет", "No links shared", "Keine Links vorhanden", "Sin enlaces compartidos", "Aucun lien partagé", "Nenhum link compartilhado"),
                                 onSurfaceVariant = onSurfaceVariant
                             )
                         }
@@ -911,7 +911,7 @@ fun SharedMediaScreen(
                     if (voiceList.isEmpty()) {
                         item {
                             EmptyStateView(
-                                text = if (appLanguage == "Русский") "Голосовых сообщений нет" else "No voice messages shared",
+                                text = Localizations.tr(appLanguage, "Голосовых сообщений нет", "No voice messages shared", "Keine Sprachnachrichten", "Sin mensajes de voz", "Aucun message vocal", "Nenhum áudio compartilhado"),
                                 onSurfaceVariant = onSurfaceVariant
                             )
                         }

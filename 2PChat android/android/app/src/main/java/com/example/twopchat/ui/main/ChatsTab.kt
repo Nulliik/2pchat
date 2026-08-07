@@ -359,7 +359,7 @@ fun ChatsTab(
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = if (appLanguage == "Русский") "МОЙ ПРОФИЛЬ" else "MY PROFILE",
+                                        text = Localizations.tr(appLanguage, "МОЙ ПРОФИЛЬ", "MY PROFILE", "MEIN PROFIL", "MI PERFIL", "MON PROFIL", "MEU PERFIL"),
                                         fontSize = 9.sp, color = onSurfaceVariant,
                                         fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp
                                     )
@@ -377,8 +377,8 @@ fun ChatsTab(
                                     .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(14.dp))
                                     .clickable(enabled = !isRefreshingAll) {
                                         isRefreshingAll = true
-                                        val startMsg = if (appLanguage == "Русский") "Обновление всех подключений..." else "Refreshing all connections..."
-                                        val endMsg = if (appLanguage == "Русский") "Подключения успешно обновлены!" else "Connections successfully refreshed!"
+                                        val startMsg = Localizations.tr(appLanguage, "Обновление всех подключений...", "Refreshing all connections...", "Verbindungen werden aktualisiert...", "Actualizando todas las conexiones...", "Actualisation de toutes les connexions...", "Atualizando todas as conexões...")
+                                        val endMsg = Localizations.tr(appLanguage, "Подключения успешно обновлены!", "Connections successfully refreshed!", "Verbindungen erfolgreich aktualisiert!", "¡Conexiones actualizadas con éxito!", "Connexions actualisées avec succès !", "Conexões atualizadas com sucesso!")
                                         Toast.makeText(context, startMsg, Toast.LENGTH_SHORT).show()
                                         heroScope.launch {
                                             var refreshSucceeded = true
@@ -547,7 +547,7 @@ fun ChatsTab(
                                         text = if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
                                             "OK"
                                         } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                            if (appLanguage == "Русский") "Нет" else "No"
+                                            Localizations.tr(appLanguage, "Нет", "No", "Nein", "No", "Non", "Não")
                                         } else {
                                             value
                                         },
@@ -573,7 +573,7 @@ fun ChatsTab(
                                 modifier = Modifier.weight(1f)
                             )
                             StatusPill(
-                                label = if (appLanguage == "Русский") "Трекеры" else "Trackers",
+                                label = Localizations.tr(appLanguage, "Трекеры", "Trackers", "Tracker", "Rastreadores", "Traqueurs", "Rastreadores"),
                                 value = "…",
                                 ok = heroTrackersOk,
                                 node = RadarNode.TRACKERS,
@@ -587,7 +587,7 @@ fun ChatsTab(
                                 modifier = Modifier.weight(1f)
                             )
                             StatusPill(
-                                label = if (appLanguage == "Русский") "Пиры" else "Peers",
+                                label = Localizations.tr(appLanguage, "Пиры", "Peers", "Peers", "Pares", "Pairs", "Pares"),
                                 value = if (heroActivePeers > 0) "$heroActivePeers 🟢" else "0",
                                 ok = if (heroActivePeers > 0) true else null,
                                 node = RadarNode.PEERS,
@@ -610,8 +610,8 @@ fun ChatsTab(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             val isDirectSelected = pagerState.currentPage == 0
-            val directTitle = if (appLanguage == "Русский") "Личные" else "Direct"
-            val groupsTitle = if (appLanguage == "Русский") "Группы" else "Groups"
+            val directTitle = Localizations.tr(appLanguage, "Личные", "Direct", "Direkt", "Directos", "Directs", "Diretas")
+            val groupsTitle = Localizations.tr(appLanguage, "Группы", "Groups", "Gruppen", "Grupos", "Groupes", "Grupos")
 
             // Tab 0: Direct Chats
             Box(

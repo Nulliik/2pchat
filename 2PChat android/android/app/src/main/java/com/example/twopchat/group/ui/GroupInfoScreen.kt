@@ -345,7 +345,7 @@ fun GroupInfoScreen(
                     ) {
                         if (state.management.canEditMetadata) {
                             DropdownMenuItem(
-                                text = { Text("Редактировать группу", color = onSurfaceColor) },
+                                text = { Text(if (appLanguage == "Русский") "Редактировать группу" else "Edit Group", color = onSurfaceColor) },
                                 onClick = {
                                     showTopMenu = false
                                     showEditMetadata = true
@@ -361,7 +361,7 @@ fun GroupInfoScreen(
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text(if (isMuted) "Включить уведомления" else "Выключить уведомления", color = onSurfaceColor) },
+                            text = { Text(if (isMuted) (if (appLanguage == "Русский") "Включить уведомления" else "Unmute Notifications") else (if (appLanguage == "Русский") "Выключить уведомления" else "Mute Notifications"), color = onSurfaceColor) },
                             onClick = {
                                 showTopMenu = false
                                 val newMuted = !isMuted
@@ -378,7 +378,7 @@ fun GroupInfoScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Очистить историю", color = Color.Red) },
+                            text = { Text(if (appLanguage == "Русский") "Очистить историю" else "Clear History", color = Color.Red) },
                             onClick = {
                                 showTopMenu = false
                                 showClearHistoryConfirmation = true
@@ -393,7 +393,7 @@ fun GroupInfoScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(if (isSoloOwner) "Удалить группу" else "Покинуть группу", color = Color.Red) },
+                            text = { Text(if (isSoloOwner) (if (appLanguage == "Русский") "Удалить группу" else "Delete Group") else (if (appLanguage == "Русский") "Покинуть группу" else "Leave Group"), color = Color.Red) },
                             onClick = {
                                 showTopMenu = false
                                 showLeaveConfirmation = true
@@ -423,6 +423,7 @@ fun GroupInfoScreen(
             item(key = "hero_header") {
                 GroupHeroHeader(
                     metadata = state.metadata,
+                    appLanguage = appLanguage,
                     canEditAvatar = state.management.canEditMetadata,
                     onAvatarClick = {
                         if (state.management.canEditMetadata) {
@@ -436,14 +437,15 @@ fun GroupInfoScreen(
             item(key = "quick_actions") {
                 GroupQuickActionsRow(
                     isMuted = isMuted,
+                    appLanguage = appLanguage,
                     canInviteByLink = state.metadata.inviteToken.isNotBlank(),
-                    leaveLabel = if (isSoloOwner) "Удалить" else "Покинуть",
+                    leaveLabel = if (isSoloOwner) (if (appLanguage == "Русский") "Удалить" else "Delete") else (if (appLanguage == "Русский") "Покинуть" else "Leave"),
                     onChatClick = controller::onBack,
                     onToggleMuteClick = {
                         val newMuted = !isMuted
                         P2PPreferences.prefs(context).edit().putBoolean("mute_group_${state.metadata.groupId}", newMuted).apply()
                         isMuted = newMuted
-                        android.widget.Toast.makeText(context, if (newMuted) "Уведомления группы отключены" else "Уведомления группы включены", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, if (newMuted) (if (appLanguage == "Русский") "Уведомления группы отключены" else "Group notifications disabled") else (if (appLanguage == "Русский") "Уведомления группы включены" else "Group notifications enabled"), android.widget.Toast.LENGTH_SHORT).show()
                     },
                     onQrClick = { showQrModal = true },
                     onLeaveClick = { showLeaveConfirmation = true }
@@ -452,7 +454,7 @@ fun GroupInfoScreen(
 
             // Group Info Card (Адрес группы, Описание, Статус верификации) - Matching Direct Chat Profile
             item(key = "info_details_card") {
-                GroupInfoDetailsCard(state.metadata)
+                GroupInfoDetailsCard(state.metadata, appLanguage)
             }
 
             if (state.management.canEditMetadata) {
@@ -471,14 +473,14 @@ fun GroupInfoScreen(
                         ) {
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    "Только администраторы могут писать",
+                                    if (appLanguage == "Русский") "Только администраторы могут писать" else "Only admins can send messages",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = onSurfaceColor,
                                 )
                                 Spacer(Modifier.height(2.dp))
                                 Text(
-                                    "Участники и модераторы смогут читать, голосовать и оставлять реакции.",
+                                    if (appLanguage == "Русский") "Участники и модераторы смогут читать, голосовать и оставлять реакции." else "Members and moderators can read, vote, and react.",
                                     fontSize = 12.sp,
                                     color = onSurfaceVariant,
                                 )
@@ -520,7 +522,7 @@ fun GroupInfoScreen(
                             )
                             Spacer(Modifier.width(14.dp))
                             Text(
-                                "Добавить участников",
+                                if (appLanguage == "Русский") "Добавить участников" else "Add Members",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = onSurfaceColor
@@ -549,13 +551,13 @@ fun GroupInfoScreen(
                         ) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_chat_wallpaper),
-                                contentDescription = "Обои чата",
+                                contentDescription = if (appLanguage == "Русский") "Обои чата" else "Chat Wallpaper",
                                 tint = onSurfaceColor,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(Modifier.width(14.dp))
                             Text(
-                                "Обои чата",
+                                if (appLanguage == "Русский") "Обои чата" else "Chat Wallpaper",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = onSurfaceColor
@@ -582,13 +584,13 @@ fun GroupInfoScreen(
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_broom),
-                            contentDescription = "Очистить историю",
+                            contentDescription = if (appLanguage == "Русский") "Очистить историю" else "Clear History",
                             tint = Color(0xFFE53935),
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(Modifier.width(14.dp))
                         Text(
-                            "Очистить историю",
+                            if (appLanguage == "Русский") "Очистить историю" else "Clear History",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color(0xFFE53935)
@@ -602,7 +604,8 @@ fun GroupInfoScreen(
                 GroupTabNavigation(
                     selectedTab = selectedTab,
                     memberCount = state.members.size,
-                    onTabSelected = { selectedTab = it }
+                    onTabSelected = { selectedTab = it },
+                    appLanguage = appLanguage
                 )
             }
 
@@ -615,6 +618,7 @@ fun GroupInfoScreen(
                             member = member,
                             management = state.management,
                             controller = controller,
+                            appLanguage = appLanguage,
                             onMemberClick = { selectedMemberForOptions = member },
                             onRestrict = { restrictionsFor = member },
                             onRemove = { removeConfirmation = member },
@@ -631,7 +635,7 @@ fun GroupInfoScreen(
                     if (mediaItems.isEmpty()) {
                         item(key = "empty_media") {
                             EmptyStateView(
-                                text = "Медиафайлы отсутствуют",
+                                text = if (appLanguage == "Русский") "Медиафайлы отсутствуют" else "No media files",
                                 onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -687,7 +691,7 @@ fun GroupInfoScreen(
                     if (fileItems.isEmpty()) {
                         item(key = "empty_files") {
                             EmptyStateView(
-                                text = "Файлы отсутствуют",
+                                text = if (appLanguage == "Русский") "Файлы отсутствуют" else "No files",
                                 onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -700,7 +704,7 @@ fun GroupInfoScreen(
                 else -> { // Избранное
                     item(key = "tab_empty_state") {
                         EmptyStateView(
-                            text = "Избранные сообщения отсутствуют",
+                            text = if (appLanguage == "Русский") "Избранные сообщения отсутствуют" else "No favorite messages",
                             onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -712,19 +716,19 @@ fun GroupInfoScreen(
     if (showClearHistoryConfirmation) {
         AlertDialog(
             onDismissRequest = { showClearHistoryConfirmation = false },
-            title = { Text("Очистить историю?", fontWeight = FontWeight.Bold, color = Color.White) },
-            text = { Text("Все сообщения этой группы будут удалены с вашего устройства.", color = Color.White.copy(alpha = 0.7f)) },
+            title = { Text(if (appLanguage == "Русский") "Очистить историю?" else "Clear history?", fontWeight = FontWeight.Bold, color = Color.White) },
+            text = { Text(if (appLanguage == "Русский") "Все сообщения этой группы будут удалены с вашего устройства." else "All messages in this group will be deleted from your device.", color = Color.White.copy(alpha = 0.7f)) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         controller.clearHistory(state.metadata.groupId)
                         showClearHistoryConfirmation = false
-                        android.widget.Toast.makeText(context, "История очищена", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, if (appLanguage == "Русский") "История очищена" else "History cleared", android.widget.Toast.LENGTH_SHORT).show()
                     }
-                ) { Text("Очистить", color = Color(0xFFE53935)) }
+                ) { Text(if (appLanguage == "Русский") "Очистить" else "Clear", color = Color(0xFFE53935)) }
             },
             dismissButton = {
-                TextButton(onClick = { showClearHistoryConfirmation = false }) { Text("Отмена", color = Color.White) }
+                TextButton(onClick = { showClearHistoryConfirmation = false }) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel", color = Color.White) }
             },
             containerColor = Color(0xFF1C1C1E),
             shape = RoundedCornerShape(20.dp)
@@ -836,9 +840,9 @@ fun GroupInfoScreen(
 
     removeConfirmation?.let { member ->
         ConfirmationDialog(
-            title = "Удалить ${member.displayName}?",
-            body = "Участник потеряет доступ к будущим эпохам шифрования группы.",
-            confirmLabel = "Удалить",
+            title = if (appLanguage == "Русский") "Удалить ${member.displayName}?" else "Remove ${member.displayName}?",
+            body = if (appLanguage == "Русский") "Участник потеряет доступ к будущим эпохам шифрования группы." else "Member will lose access to future group encryption epochs.",
+            confirmLabel = if (appLanguage == "Русский") "Удалить" else "Remove",
             confirmTag = "confirm_remove_member",
             onDismiss = { removeConfirmation = null },
             onConfirm = {
@@ -850,9 +854,9 @@ fun GroupInfoScreen(
 
     banConfirmation?.let { member ->
         ConfirmationDialog(
-            title = "Заблокировать ${member.displayName}?",
-            body = "Участник будет исключен из состава группы и заблокирован.",
-            confirmLabel = "Заблокировать",
+            title = if (appLanguage == "Русский") "Заблокировать ${member.displayName}?" else "Ban ${member.displayName}?",
+            body = if (appLanguage == "Русский") "Участник будет исключен из состава группы и заблокирован." else "Member will be excluded from the group and banned.",
+            confirmLabel = if (appLanguage == "Русский") "Заблокировать" else "Ban",
             confirmTag = "confirm_ban_member",
             onDismiss = { banConfirmation = null },
             onConfirm = {
@@ -864,9 +868,9 @@ fun GroupInfoScreen(
 
     transferConfirmation?.let { member ->
         ConfirmationDialog(
-            title = "Передать права владельца?",
-            body = "${member.displayName} станет главным владельцем группы.",
-            confirmLabel = "Передать",
+            title = if (appLanguage == "Русский") "Передать права владельца?" else "Transfer Ownership?",
+            body = if (appLanguage == "Русский") "${member.displayName} станет главным владельцем группы." else "${member.displayName} will become the primary group owner.",
+            confirmLabel = if (appLanguage == "Русский") "Передать" else "Transfer",
             confirmTag = "confirm_transfer_ownership",
             onDismiss = { transferConfirmation = null },
             onConfirm = {
@@ -879,21 +883,21 @@ fun GroupInfoScreen(
     if (showLeaveConfirmation) {
         ConfirmationDialog(
             title = when {
-                isSoloOwner -> "Удалить группу?"
-                ownerMustTransfer -> "Сначала передайте права"
-                else -> "Выйти из группы?"
+                isSoloOwner -> if (appLanguage == "Русский") "Удалить группу?" else "Delete group?"
+                ownerMustTransfer -> if (appLanguage == "Русский") "Сначала передайте права" else "Transfer ownership first"
+                else -> if (appLanguage == "Русский") "Выйти из группы?" else "Leave group?"
             },
             body = if (isSoloOwner) {
-                "Группа и история сообщений будут удалены с этого устройства."
+                if (appLanguage == "Русский") "Группа и история сообщений будут удалены с этого устройства." else "Group and message history will be deleted from this device."
             } else if (ownerMustTransfer) {
-                "Владелец не может покинуть группу, пока в ней остаются другие участники."
+                if (appLanguage == "Русский") "Владелец не может покинуть группу, пока в ней остаются другие участники." else "Owner cannot leave group while other members remain."
             } else {
-                "Группа будет скрыта сразу, а локальные данные удалятся после подтверждения выхода владельцем."
+                if (appLanguage == "Русский") "Группа будет скрыта сразу, а локальные данные удалятся после подтверждения выхода владельцем." else "Group will be hidden immediately and local data removed."
             },
             confirmLabel = when {
-                isSoloOwner -> "Удалить"
-                ownerMustTransfer -> "Понятно"
-                else -> "Выйти"
+                isSoloOwner -> if (appLanguage == "Русский") "Удалить" else "Delete"
+                ownerMustTransfer -> if (appLanguage == "Русский") "Понятно" else "Got it"
+                else -> if (appLanguage == "Русский") "Выйти" else "Leave"
             },
             confirmTag = "confirm_leave_group",
             onDismiss = { showLeaveConfirmation = false },
@@ -909,13 +913,13 @@ fun GroupInfoScreen(
         var description by remember(state.metadata.groupId) { mutableStateOf(state.metadata.description) }
         AlertDialog(
             onDismissRequest = { showEditMetadata = false },
-            title = { Text("Редактировать группу", fontWeight = FontWeight.Bold) },
+            title = { Text(if (appLanguage == "Русский") "Редактировать группу" else "Edit Group", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it.take(160) },
-                        label = { Text("Название") },
+                        label = { Text(if (appLanguage == "Русский") "Название" else "Title") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("edit_group_title"),
@@ -924,7 +928,7 @@ fun GroupInfoScreen(
                     OutlinedTextField(
                         value = description,
                         onValueChange = { description = it.take(2_000) },
-                        label = { Text("Описание (опционально)") },
+                        label = { Text(if (appLanguage == "Русский") "Описание (опционально)" else "Description (optional)") },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
                     )
@@ -941,10 +945,10 @@ fun GroupInfoScreen(
                         )
                         showEditMetadata = false
                     }
-                ) { Text("Сохранить", fontWeight = FontWeight.Bold) }
+                ) { Text(if (appLanguage == "Русский") "Сохранить" else "Save", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
-                TextButton(onClick = { showEditMetadata = false }) { Text("Отмена") }
+                TextButton(onClick = { showEditMetadata = false }) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
             },
             containerColor = surfaceColor,
             shape = RoundedCornerShape(20.dp)
@@ -955,7 +959,7 @@ fun GroupInfoScreen(
         var selected by remember(state.metadata.groupId) { mutableStateOf<Set<String>>(emptySet()) }
         AlertDialog(
             onDismissRequest = { showInviteMembers = false },
-            title = { Text("Добавить участников", fontWeight = FontWeight.Bold) },
+            title = { Text(if (appLanguage == "Русский") "Добавить участников" else "Add Members", fontWeight = FontWeight.Bold) },
             text = {
                 Column {
                     state.inviteCandidates.forEach { contact ->
@@ -985,19 +989,21 @@ fun GroupInfoScreen(
                         controller.inviteMembers(state.metadata.groupId, selected)
                         showInviteMembers = false
                     }
-                ) { Text("Пригласить", fontWeight = FontWeight.Bold) }
+                ) { Text(if (appLanguage == "Русский") "Пригласить" else "Invite", fontWeight = FontWeight.Bold) }
             },
             dismissButton = {
-                TextButton(onClick = { showInviteMembers = false }) { Text("Отмена") }
+                TextButton(onClick = { showInviteMembers = false }) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
             },
             containerColor = surfaceColor,
             shape = RoundedCornerShape(20.dp)
         )
     }
+
     selectedMemberForOptions?.let { member ->
         MemberProfileModal(
             member = member,
             management = state.management,
+            appLanguage = appLanguage,
             onDismiss = { selectedMemberForOptions = null },
             onOpenDirectChat = { peerName ->
                 selectedMemberForOptions = null
@@ -1026,6 +1032,7 @@ fun GroupInfoScreen(
 @Composable
 private fun GroupHeroHeader(
     metadata: GroupMetadata,
+    appLanguage: String = "Русский",
     canEditAvatar: Boolean = false,
     onAvatarClick: () -> Unit
 ) {
@@ -1129,7 +1136,7 @@ private fun GroupHeroHeader(
 
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "${metadata.memberCount} участников",
+            text = if (appLanguage == "Русский") "${metadata.memberCount} участников" else if (metadata.memberCount == 1) "1 member" else "${metadata.memberCount} members",
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1139,6 +1146,7 @@ private fun GroupHeroHeader(
 @Composable
 private fun GroupQuickActionsRow(
     isMuted: Boolean,
+    appLanguage: String = "Русский",
     canInviteByLink: Boolean,
     leaveLabel: String,
     onChatClick: () -> Unit,
@@ -1154,10 +1162,10 @@ private fun GroupQuickActionsRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         val actions = buildList {
-            add(Triple("Чат", R.drawable.ic_menu_chats, onChatClick))
-            add(Triple(if (isMuted) "Вкл. звук" else "Звук", R.drawable.ic_notifications, onToggleMuteClick))
+            add(Triple(if (appLanguage == "Русский") "Чат" else "Chat", R.drawable.ic_menu_chats, onChatClick))
+            add(Triple(if (isMuted) (if (appLanguage == "Русский") "Вкл. звук" else "Unmute") else (if (appLanguage == "Русский") "Звук" else "Mute"), R.drawable.ic_notifications, onToggleMuteClick))
             if (canInviteByLink) {
-                add(Triple("QR код", R.drawable.ic_qr_code, onQrClick))
+                add(Triple(if (appLanguage == "Русский") "QR код" else "QR code", R.drawable.ic_qr_code, onQrClick))
             }
             add(Triple(leaveLabel, R.drawable.ic_delete, onLeaveClick))
         }
@@ -1383,10 +1391,11 @@ private fun FileAttachmentRow(
 private fun GroupTabNavigation(
     selectedTab: Int,
     memberCount: Int,
-    onTabSelected: (Int) -> Unit
+    onTabSelected: (Int) -> Unit,
+    appLanguage: String = "Русский"
 ) {
     val haptic = LocalHapticFeedback.current
-    val tabs = listOf("Участники", "Медиа", "Избранное", "Файлы")
+    val tabs = if (appLanguage == "Русский") listOf("Участники", "Медиа", "Избранное", "Файлы") else listOf("Members", "Media", "Favorites", "Files")
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(20.dp),
@@ -1435,6 +1444,7 @@ private fun GroupMemberCard(
     member: GroupMember,
     management: GroupManagementPermissions,
     controller: GroupUiController,
+    appLanguage: String = "Русский",
     onMemberClick: () -> Unit,
     onRestrict: () -> Unit,
     onRemove: () -> Unit,
@@ -1500,7 +1510,7 @@ private fun GroupMemberCard(
                     Text(
                         text = buildString {
                             append(member.displayName)
-                            if (member.isCurrentUser) append(" (Вы)")
+                            if (member.isCurrentUser) append(if (appLanguage == "Русский") " (Вы)" else " (You)")
                         },
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
@@ -1514,7 +1524,7 @@ private fun GroupMemberCard(
                     }
                 }
                 Text(
-                    text = member.statusLabel.ifBlank { "офлайн ?" },
+                    text = formatMemberStatus(member.statusLabel, appLanguage),
                     fontSize = 12.sp,
                     color = Color.Gray
                 )
@@ -1529,12 +1539,18 @@ private fun GroupMemberCard(
                 },
                 shape = RoundedCornerShape(8.dp)
             ) {
+                val roleStr = when (member.role) {
+                    GroupRole.OWNER -> if (appLanguage == "Русский") "Создатель" else "Owner"
+                    GroupRole.ADMIN -> if (appLanguage == "Русский") "Администратор" else "Admin"
+                    GroupRole.MODERATOR -> if (appLanguage == "Русский") "Модератор" else "Moderator"
+                    GroupRole.MEMBER -> if (appLanguage == "Русский") "Участник" else "Member"
+                }
                 Text(
                     text = when (member.role) {
-                        GroupRole.OWNER -> "👑 ${member.role.label}"
-                        GroupRole.ADMIN -> "🛡️ ${member.role.label}"
-                        GroupRole.MODERATOR -> "⚡ ${member.role.label}"
-                        GroupRole.MEMBER -> member.role.label
+                        GroupRole.OWNER -> "👑 $roleStr"
+                        GroupRole.ADMIN -> "🛡️ $roleStr"
+                        GroupRole.MODERATOR -> "⚡ $roleStr"
+                        GroupRole.MEMBER -> roleStr
                     },
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                     fontSize = 11.sp,
@@ -1852,9 +1868,22 @@ private fun ConfirmationDialog(
     )
 }
 
+private fun formatMemberStatus(status: String, appLanguage: String): String {
+    if (appLanguage == "Русский") return status.ifBlank { "офлайн ?" }
+    return when {
+        status.contains("В сети (Это устройство)") -> "Online (This device)"
+        status.contains("В сети") -> "Online"
+        status.contains("Приглашение отправлено") -> "Invite sent"
+        status.contains("Не в сети") || status.contains("офлайн") -> "Offline"
+        status.isBlank() -> "Offline"
+        else -> status
+    }
+}
+
 @Composable
 private fun GroupInfoDetailsCard(
-    metadata: GroupMetadata
+    metadata: GroupMetadata,
+    appLanguage: String = "Русский"
 ) {
     val context = LocalContext.current
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -1871,7 +1900,7 @@ private fun GroupInfoDetailsCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Информация",
+                text = if (appLanguage == "Русский") "Информация" else "Information",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = primaryColor
@@ -1881,7 +1910,7 @@ private fun GroupInfoDetailsCard(
 
             // Group P2P Address
             Text(
-                text = "Личный адрес группы",
+                text = if (appLanguage == "Русский") "Личный адрес группы" else "Group Personal Address",
                 fontSize = 12.sp,
                 color = onSurfaceVariant
             )
@@ -1902,7 +1931,7 @@ private fun GroupInfoDetailsCard(
                 IconButton(
                     onClick = {
                         com.example.twopchat.copyTextToClipboard(context, "Group ID", "group#${metadata.groupId}")
-                        android.widget.Toast.makeText(context, "Адрес группы скопирован", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, if (appLanguage == "Русский") "Адрес группы скопирован" else "Group address copied", android.widget.Toast.LENGTH_SHORT).show()
                     },
                     modifier = Modifier.size(28.dp)
                 ) {
@@ -1922,13 +1951,13 @@ private fun GroupInfoDetailsCard(
 
             // Group Description
             Text(
-                text = "О себе / Описание",
+                text = if (appLanguage == "Русский") "О себе / Описание" else "About / Description",
                 fontSize = 12.sp,
                 color = onSurfaceVariant
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                text = metadata.description.ifBlank { "P2P децентрализованный групповой чат" },
+                text = metadata.description.ifBlank { if (appLanguage == "Русский") "P2P децентрализованный групповой чат" else "P2P decentralized group chat" },
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Normal,
                 color = onSurfaceColor
@@ -1958,12 +1987,12 @@ private fun GroupInfoDetailsCard(
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
-                        text = "Статус верификации",
+                        text = if (appLanguage == "Русский") "Статус верификации" else "Verification Status",
                         fontSize = 12.sp,
                         color = onSurfaceVariant
                     )
                     Text(
-                        text = "Группа верифицирована (Double Ratchet)",
+                        text = if (appLanguage == "Русский") "Группа верифицирована (Double Ratchet)" else "Group verified (Double Ratchet)",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = onSurfaceColor
@@ -2419,6 +2448,7 @@ private fun GroupInviteQrModal(
 private fun MemberProfileModal(
     member: GroupMember,
     management: GroupManagementPermissions,
+    appLanguage: String = "Русский",
     onDismiss: () -> Unit,
     onOpenDirectChat: (String) -> Unit,
     onSetMemberRole: (GroupRole) -> Unit,
@@ -2534,16 +2564,14 @@ private fun MemberProfileModal(
                     Text(
                         text = buildString {
                             append(member.displayName)
-                            if (member.isCurrentUser) append(" (Вы)")
+                            if (member.isCurrentUser) append(if (appLanguage == "Русский") " (Вы)" else " (You)")
                         },
                         fontWeight = FontWeight.Bold,
                         fontSize = 20.sp,
-                        color = onSurfaceColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        color = onSurfaceColor
                     )
 
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(4.dp))
 
                     // Role Badge
                     Surface(
@@ -2551,8 +2579,14 @@ private fun MemberProfileModal(
                         shape = RoundedCornerShape(20.dp),
                         border = BorderStroke(1.dp, roleColor.copy(alpha = 0.35f))
                     ) {
+                        val roleStr = when (member.role) {
+                            GroupRole.OWNER -> if (appLanguage == "Русский") "Создатель" else "Owner"
+                            GroupRole.ADMIN -> if (appLanguage == "Русский") "Администратор" else "Admin"
+                            GroupRole.MODERATOR -> if (appLanguage == "Русский") "Модератор" else "Moderator"
+                            GroupRole.MEMBER -> if (appLanguage == "Русский") "Участник" else "Member"
+                        }
                         Text(
-                            text = member.role.label,
+                            text = roleStr,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = roleColor,
@@ -2573,7 +2607,7 @@ private fun MemberProfileModal(
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                text = member.statusLabel,
+                                text = formatMemberStatus(member.statusLabel, appLanguage),
                                 fontSize = 12.sp,
                                 color = onSurfaceColor.copy(alpha = 0.65f)
                             )
@@ -2605,13 +2639,13 @@ private fun MemberProfileModal(
                             ) {
                                 Icon(
                                     painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_chats),
-                                    contentDescription = "Написать сообщение",
+                                    contentDescription = "Message",
                                     tint = Color.White,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    "Написать личное сообщение",
+                                    if (appLanguage == "Русский") "Написать личное сообщение" else "Send Direct Message",
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp
@@ -2631,7 +2665,7 @@ private fun MemberProfileModal(
                         Spacer(Modifier.height(12.dp))
 
                         Text(
-                            text = "Управление участником",
+                            text = if (appLanguage == "Русский") "Управление участником" else "Member Management",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = primaryColor,
@@ -2647,14 +2681,14 @@ private fun MemberProfileModal(
                             if (management.canManageRoles && member.canChangeRole && !member.isCurrentUser && member.role != GroupRole.OWNER) {
                                 if (member.role != GroupRole.ADMIN) {
                                     ModalActionButton(
-                                        title = "Назначить администратором",
+                                        title = if (appLanguage == "Русский") "Назначить администратором" else "Make Administrator",
                                         titleColor = onSurfaceColor,
                                         onClick = { onSetMemberRole(GroupRole.ADMIN) }
                                     )
                                 }
                                 if (member.role != GroupRole.MODERATOR) {
                                     ModalActionButton(
-                                        title = "Назначить модератором",
+                                        title = if (appLanguage == "Русский") "Назначить модератором" else "Make Moderator",
                                         titleColor = onSurfaceColor,
                                         onClick = { onSetMemberRole(GroupRole.MODERATOR) }
                                     )

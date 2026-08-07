@@ -837,10 +837,10 @@ fun GroupChatScreen(
                                 },
                                 modifier = Modifier.testTag("load_older_messages")
                             ) {
-                                Text("Загрузить ранние сообщения", fontSize = 12.sp)
+                                Text(if (appLanguage == "Русский") "Загрузить ранние сообщения" else "Load earlier messages", fontSize = 12.sp)
                             }
                             state.messages.isNotEmpty() -> Text(
-                                "Начало истории группы",
+                                if (appLanguage == "Русский") "Начало истории группы" else "Beginning of group history",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             )
@@ -853,14 +853,22 @@ fun GroupChatScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(40.dp),
+                                .padding(vertical = 120.dp, horizontal = 24.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = "Сообщений пока нет. Начните общение в группе!",
-                                fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Surface(
+                                color = surfaceColor.copy(alpha = 0.85f),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Сообщений пока нет. Начните общение в группе!" else "No messages yet. Start chatting in the group!",
+                                    fontSize = 14.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -1546,7 +1554,7 @@ fun GroupChatScreen(
         var editedText by remember(message.messageId) { mutableStateOf(message.text) }
         AlertDialog(
             onDismissRequest = { editingMessage = null },
-            title = { Text("Редактировать сообщение", fontWeight = FontWeight.Bold) },
+            title = { Text(if (appLanguage == "Русский") "Редактировать сообщение" else "Edit Message", fontWeight = FontWeight.Bold) },
             text = {
                 OutlinedTextField(
                     value = editedText,
@@ -1565,11 +1573,11 @@ fun GroupChatScreen(
                         editingMessage = null
                     }
                 ) {
-                    Text("Сохранить", fontWeight = FontWeight.Bold)
+                    Text(if (appLanguage == "Русский") "Сохранить" else "Save", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { editingMessage = null }) { Text("Отмена") }
+                TextButton(onClick = { editingMessage = null }) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
             },
             containerColor = surfaceColor,
             shape = RoundedCornerShape(20.dp)
@@ -1579,8 +1587,8 @@ fun GroupChatScreen(
     deletingMessage?.let { message ->
         AlertDialog(
             onDismissRequest = { deletingMessage = null },
-            title = { Text("Удалить сообщение?", fontWeight = FontWeight.Bold) },
-            text = { Text("Это действие зафиксируется в журнале событий группы.") },
+            title = { Text(if (appLanguage == "Русский") "Удалить сообщение?" else "Delete Message?", fontWeight = FontWeight.Bold) },
+            text = { Text(if (appLanguage == "Русский") "Это действие зафиксируется в журнале событий группы." else "This action will be logged in the group audit event log.") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -1589,11 +1597,11 @@ fun GroupChatScreen(
                     },
                     modifier = Modifier.testTag("confirm_delete_message")
                 ) {
-                    Text("Удалить", color = Color.Red, fontWeight = FontWeight.Bold)
+                    Text(if (appLanguage == "Русский") "Удалить" else "Delete", color = Color.Red, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deletingMessage = null }) { Text("Отмена") }
+                TextButton(onClick = { deletingMessage = null }) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
             },
             containerColor = surfaceColor,
             shape = RoundedCornerShape(20.dp)
@@ -1602,7 +1610,7 @@ fun GroupChatScreen(
 
     if (showStickerPicker) {
         StickerPickerBottomSheet(
-            appLanguage = "Русский",
+            appLanguage = appLanguage,
             primaryColor = primaryColor,
             onDismiss = { showStickerPicker = false },
             onStickerSelected = { sticker ->
@@ -1701,7 +1709,7 @@ fun GroupChatScreen(
         GifLibraryBottomSheet(
             gifs = gifList,
             isLoading = false,
-            appLanguage = "Русский",
+            appLanguage = appLanguage,
             primaryColor = primaryColor,
             onDismiss = { showGifLibrary = false },
             onImport = {
@@ -1719,7 +1727,7 @@ fun GroupChatScreen(
         PhotoEditorModal(
             imageUri = uri,
             imagePath = null,
-            appLanguage = "Русский",
+            appLanguage = appLanguage,
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
             onSurfaceColor = onSurfaceColor,
@@ -1740,7 +1748,7 @@ fun GroupChatScreen(
     pendingVideoPath?.let { path ->
         VideoEditorModal(
             videoPath = path,
-            appLanguage = "Русский",
+            appLanguage = appLanguage,
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
             onSurfaceColor = onSurfaceColor,
@@ -1762,7 +1770,7 @@ fun GroupChatScreen(
     if (pendingAlbumFiles != null) {
         AlbumPreviewModal(
             files = pendingAlbumFiles!!,
-            appLanguage = "Русский",
+            appLanguage = appLanguage,
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
             onSurfaceColor = onSurfaceColor,
@@ -2209,6 +2217,8 @@ private fun GroupChatHeader(
     onSearchQueryChange: (String) -> Unit,
     onOpenWallpaper: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
@@ -2343,11 +2353,15 @@ private fun GroupChatHeader(
                                 fontWeight = FontWeight.SemiBold
                             )
                         } else {
-                            val membersWord = when {
-                                state.memberCount % 100 in 11..19 -> "участников"
-                                state.memberCount % 10 == 1 -> "участник"
-                                state.memberCount % 10 in 2..4 -> "участника"
-                                else -> "участников"
+                            val membersWord = if (appLanguage == "Русский") {
+                                when {
+                                    state.memberCount % 100 in 11..19 -> "участников"
+                                    state.memberCount % 10 == 1 -> "участник"
+                                    state.memberCount % 10 in 2..4 -> "участника"
+                                    else -> "участников"
+                                }
+                            } else {
+                                if (state.memberCount == 1) "member" else "members"
                             }
                             Text(
                                 "${state.memberCount} $membersWord",
@@ -2377,8 +2391,8 @@ private fun GroupChatHeader(
                 if (showDeleteGroupConfirmation) {
                     AlertDialog(
                         onDismissRequest = { showDeleteGroupConfirmation = false },
-                        title = { Text("Удалить группу?", fontWeight = FontWeight.Bold, color = onSurfaceColor) },
-                        text = { Text("Вы уверены, что хотите полностью удалить группу «${state.title}» и всю её историю?", color = onSurfaceColor.copy(alpha = 0.7f)) },
+                        title = { Text(if (appLanguage == "Русский") "Удалить группу?" else "Delete group?", fontWeight = FontWeight.Bold, color = onSurfaceColor) },
+                        text = { Text(if (appLanguage == "Русский") "Вы уверены, что хотите полностью удалить группу «${state.title}» и всю её историю?" else "Are you sure you want to permanently delete group \"${state.title}\" and all its history?", color = onSurfaceColor.copy(alpha = 0.7f)) },
                         confirmButton = {
                             TextButton(
                                 onClick = {
@@ -2386,12 +2400,12 @@ private fun GroupChatHeader(
                                     controller.deleteGroup(state.groupId)
                                 }
                             ) {
-                                Text("Удалить", color = Color.Red, fontWeight = FontWeight.Bold)
+                                Text(if (appLanguage == "Русский") "Удалить" else "Delete", color = Color.Red, fontWeight = FontWeight.Bold)
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { showDeleteGroupConfirmation = false }) {
-                                Text("Отмена", color = onSurfaceColor)
+                                Text(if (appLanguage == "Русский") "Отмена" else "Cancel", color = onSurfaceColor)
                             }
                         },
                         containerColor = surfaceColor,
@@ -2416,7 +2430,7 @@ private fun GroupChatHeader(
                         modifier = Modifier.background(surfaceColor)
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Информация о группе", color = onSurfaceColor) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Информация о группе", "Group Info", "Gruppeninfo", "Información del grupo", "Infos sur le groupe", "Informações do grupo"), color = onSurfaceColor) },
                             onClick = {
                                 showHeaderMenu = false
                                 controller.openGroupInfo(state.groupId)
@@ -2431,7 +2445,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Обои чата", color = onSurfaceColor) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Обои чата", "Chat Wallpaper", "Chat-Hintergrund", "Fondo del chat", "Fond d'écran du chat", "Papel de parede do chat"), color = onSurfaceColor) },
                             onClick = {
                                 showHeaderMenu = false
                                 onOpenWallpaper()
@@ -2446,10 +2460,10 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Переподключить соединение", color = onSurfaceColor) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Переподключить соединение", "Reconnect Connection", "Verbindung neu herstellen", "Reconectar conexión", "Reconnecter la connexion", "Reconectar conexão"), color = onSurfaceColor) },
                             onClick = {
                                 showHeaderMenu = false
-                                android.widget.Toast.makeText(context, "Синхронизация группы...", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, com.example.twopchat.data.Localizations.tr(appLanguage, "Синхронизация группы...", "Synchronizing group...", "Gruppe wird synchronisiert...", "Sincronizando grupo...", "Synchronisation du groupe...", "Sincronizando grupo..."), android.widget.Toast.LENGTH_SHORT).show()
                             },
                             leadingIcon = {
                                 Icon(
@@ -2461,7 +2475,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Очистить историю", color = Color.Red) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить историю", "Clear History", "Verlauf löschen", "Borrar historial", "Effacer l'historique", "Limpar histórico"), color = Color.Red) },
                             onClick = {
                                 showHeaderMenu = false
                                 controller.clearHistory(state.groupId)
@@ -2476,7 +2490,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Покинуть группу", color = Color.Red) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Покинуть группу", "Leave Group", "Gruppe verlassen", "Salir del grupo", "Quitter le groupe", "Sair do grupo"), color = Color.Red) },
                             onClick = {
                                 showHeaderMenu = false
                                 controller.openGroupInfo(state.groupId)
@@ -2491,7 +2505,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Удалить группу", color = Color.Red) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Удалить группу", "Delete Group", "Gruppe löschen", "Eliminar grupo", "Supprimer le groupe", "Excluir grupo"), color = Color.Red) },
                             onClick = {
                                 showHeaderMenu = false
                                 showDeleteGroupConfirmation = true
@@ -3559,40 +3573,42 @@ private fun CreatePollDialog(
     onDismiss: () -> Unit,
     onCreatePoll: (question: String, options: List<String>, isAnonymous: Boolean) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
     var question by remember { mutableStateOf("") }
     var options by remember { mutableStateOf(listOf("", "")) }
     var isAnonymous by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Создать опрос", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        title = { Text(if (appLanguage == "Русский") "Создать опрос" else "Create Poll", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = question,
                     onValueChange = { question = it },
-                    placeholder = { Text("Задайте вопрос...") },
+                    placeholder = { Text(if (appLanguage == "Русский") "Задайте вопрос..." else "Ask a question...") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text("Варианты ответов:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(if (appLanguage == "Русский") "Варианты ответов:" else "Options:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 options.forEachIndexed { index, opt ->
                     OutlinedTextField(
                         value = opt,
                         onValueChange = { newText ->
                             options = options.toMutableList().also { it[index] = newText }
                         },
-                        placeholder = { Text("Вариант ${index + 1}") },
+                        placeholder = { Text(if (appLanguage == "Русский") "Вариант ${index + 1}" else "Option ${index + 1}") },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
                 if (options.size < 6) {
                     TextButton(onClick = { options = options + "" }) {
-                        Text("+ Добавить вариант")
+                        Text(if (appLanguage == "Русский") "+ Добавить вариант" else "+ Add option")
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = isAnonymous, onCheckedChange = { isAnonymous = it })
-                    Text("Анонимный опрос", fontSize = 13.sp)
+                    Text(if (appLanguage == "Русский") "Анонимный опрос" else "Anonymous poll", fontSize = 13.sp)
                 }
             }
         },
@@ -3605,10 +3621,10 @@ private fun CreatePollDialog(
                         onDismiss()
                     }
                 }
-            ) { Text("Создать") }
+            ) { Text(if (appLanguage == "Русский") "Создать" else "Create") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
         }
     )
 }

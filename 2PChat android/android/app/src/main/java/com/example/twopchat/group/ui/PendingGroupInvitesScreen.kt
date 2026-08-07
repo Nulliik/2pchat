@@ -56,6 +56,8 @@ fun PendingGroupInvitesScreen(
     controller: GroupUiController,
     modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -84,7 +86,7 @@ fun PendingGroupInvitesScreen(
                 }
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    "Приглашения в группы",
+                    if (appLanguage == "Русский") "Приглашения в группы" else "Group Invitations",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = onSurfaceColor
@@ -114,7 +116,7 @@ fun PendingGroupInvitesScreen(
             ) {
                 CircularProgressIndicator(
                     modifier = Modifier.testTag("invites_loading"),
-                    color = MaterialTheme.colorScheme.primary
+                    color = primaryColor
                 )
             }
             state.invites.isEmpty() -> Box(
@@ -145,7 +147,7 @@ fun PendingGroupInvitesScreen(
                     }
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        text = "Нет входящих приглашений",
+                        text = com.example.twopchat.data.Localizations.tr(appLanguage, "Нет входящих приглашений", "No incoming invitations", "Keine eingehenden Einladungen", "No hay invitaciones entrantes"),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = onSurfaceColor,
@@ -153,7 +155,7 @@ fun PendingGroupInvitesScreen(
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "Когда вас пригласят в новую группу, приглашение появится здесь.",
+                        text = com.example.twopchat.data.Localizations.tr(appLanguage, "Когда вас пригласят в новую группу, приглашение появится здесь.", "When you are invited to a new group, the invitation will appear here.", "Wenn Sie zu einer neuen Gruppe eingeladen werden, erscheint die Einladung hier.", "Cuando te inviten a un nuevo grupo, la invitación aparecerá aquí."),
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -179,6 +181,7 @@ fun PendingGroupInvitesScreen(
 @Composable
 private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController) {
     val context = LocalContext.current
+    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
 
     val initials = invite.groupTitle.take(2).uppercase().ifBlank { "GP" }
     val inviterInitials = invite.inviterName.take(2).uppercase().ifBlank { "U" }
@@ -315,7 +318,7 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
-                            text = "Приглашение от ${invite.inviterName}",
+                            text = com.example.twopchat.data.Localizations.tr(appLanguage, "Приглашение от ${invite.inviterName}", "Invitation from ${invite.inviterName}", "Einladung von ${invite.inviterName}", "Invitación de ${invite.inviterName}"),
                             fontSize = 12.sp,
                             color = Color(0xFF34D399),
                             fontWeight = FontWeight.SemiBold,
@@ -347,7 +350,7 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "👥 ${invite.memberCount} участников",
+                        text = "👥 ${invite.memberCount} " + com.example.twopchat.data.Localizations.tr(appLanguage, "участников", "members", "Mitglieder", "miembros"),
                         fontSize = 12.sp,
                         color = Color.White.copy(alpha = 0.5f)
                     )
@@ -378,7 +381,7 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White.copy(alpha = 0.8f))
                 ) {
-                    Text("Отклонить", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Отклонить", "Decline", "Ablehnen", "Rechazar"), fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 }
 
                 Button(
@@ -400,7 +403,7 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
                             color = Color.White
                         )
                     } else {
-                        Text("Принять", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Принять", "Accept", "Annehmen", "Aceptar"), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }
