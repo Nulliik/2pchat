@@ -50,8 +50,14 @@ object SecureStorage {
     ) {
         fun encrypt(value: String): String {
             cipher.init(Cipher.ENCRYPT_MODE, secretKey)
-            val packed = cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-            return PREFIX + Base64.encodeToString(packed, Base64.NO_WRAP)
+            val valueBytes = value.toByteArray(Charsets.UTF_8)
+            val cipherBytes = cipher.doFinal(valueBytes)
+            val packed = cipher.iv + cipherBytes
+            val result = PREFIX + Base64.encodeToString(packed, Base64.NO_WRAP)
+            SecurityUtils.zeroize(valueBytes)
+            SecurityUtils.zeroize(cipherBytes)
+            SecurityUtils.zeroize(packed)
+            return result
         }
 
         fun decrypt(value: String?): String? {
@@ -63,10 +69,11 @@ object SecureStorage {
                 secretKey,
                 GCMParameterSpec(128, packed, 0, 12),
             )
-            return String(
-                cipher.doFinal(packed, 12, packed.size - 12),
-                Charsets.UTF_8,
-            )
+            val plainBytes = cipher.doFinal(packed, 12, packed.size - 12)
+            val result = String(plainBytes, Charsets.UTF_8)
+            SecurityUtils.zeroize(packed)
+            SecurityUtils.zeroize(plainBytes)
+            return result
         }
     }
 

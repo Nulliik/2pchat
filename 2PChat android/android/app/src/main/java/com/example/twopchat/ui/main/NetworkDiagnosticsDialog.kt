@@ -245,6 +245,10 @@ private suspend fun runConnectionDiagnosticsTest(context: Context): String = wit
     val registeredEndpoints = P2PMessageRelay.peerEndpoints.size
     sb.appendLine("5. Active Double Ratchet Sessions: ${activePeers.size} active (${registeredEndpoints} endpoints registered)")
 
+    // 6. Security & System Integrity Check
+    val isRooted = com.example.twopchat.security.RootDetectionHelper.isRooted()
+    sb.appendLine("6. System Integrity: ${if (isRooted) "ROOT DETECTED (RAM Security Reduced)" else "OK (No Root Detected)"}")
+
     sb.appendLine("=========================================")
     sb.appendLine("⚡ [DIAGNOSTICS_TEST] SWEEP FINISHED: ${if (portOk && okCount > 0) "ALL SYSTEMS OPERATIONAL" else "PARTIAL CONNECTIVITY"}")
     sb.appendLine("=========================================")

@@ -1758,6 +1758,38 @@ fun SettingsTab(
                                     }
                                 }
 
+                                val isRootedDevice = remember { com.example.twopchat.security.RootDetectionHelper.isRooted() }
+                                if (isRootedDevice) {
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = Color(0xFFEF5350).copy(alpha = 0.12f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF5350).copy(alpha = 0.3f))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("⚠️", fontSize = 20.sp)
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column {
+                                                Text(
+                                                    text = if (appLanguage == "Русский") "Обнаружены ROOT-права" else "ROOT Privileges Detected",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = Color(0xFFEF5350)
+                                                )
+                                                Text(
+                                                    text = if (appLanguage == "Русский") "Безопасность оперативной памяти (RAM) снижена. Рекомендуем включить Блокировку кодом." else "In-memory security is reduced. Enabling Passcode Lock is strongly recommended.",
+                                                    fontSize = 11.sp,
+                                                    color = onSurfaceColor.copy(alpha = 0.8f)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 // Direct WiFi discovery

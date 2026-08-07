@@ -10,26 +10,45 @@ object SecurityUtils {
     private const val ITERATIONS = 200000
     private const val KEY_LENGTH = 256 // bits
 
+    /** Zeroize byte array in RAM to prevent memory inspection attacks. */
+    fun zeroize(bytes: ByteArray?) {
+        bytes?.fill(0.toByte())
+    }
+
+    /** Zeroize char array in RAM. */
+    fun zeroize(chars: CharArray?) {
+        chars?.fill('\u0000')
+    }
+
     /**
      * Compute PBKDF2-HMAC-SHA256 hash of a string with a secure random salt.
      * Output format: pbkdf2_sha256$iterations$saltHex$hashHex
      */
     fun hashPasscode(pin: String): String {
         if (pin.isEmpty()) return ""
+        var salt: ByteArray? = null
+        var pinChars: CharArray? = null
+        var hash: ByteArray? = null
         return try {
             val random = SecureRandom()
-            val salt = ByteArray(16)
+            salt = ByteArray(16)
             random.nextBytes(salt)
             val saltHex = salt.joinToString("") { "%02x".format(it) }
 
-            val spec = PBEKeySpec(pin.toCharArray(), salt, ITERATIONS, KEY_LENGTH)
+            pinChars = pin.toCharArray()
+            val spec = PBEKeySpec(pinChars, salt, ITERATIONS, KEY_LENGTH)
             val skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-            val hash = skf.generateSecret(spec).encoded
+            hash = skf.generateSecret(spec).encoded
             val hashHex = hash.joinToString("") { "%02x".format(it) }
+            spec.clearPassword()
 
             "pbkdf2_sha256\$$ITERATIONS\$$saltHex\$$hashHex"
         } catch (e: Exception) {
             throw RuntimeException("Could not hash passcode securely", e)
+        } finally {
+            zeroize(salt)
+            zeroize(pinChars)
+            zeroize(hash)
         }
     }
 
@@ -52,6 +71,10 @@ object SecurityUtils {
      * Verify a PBKDF2-HMAC-SHA256 hash against entered PIN.
      */
     private fun verifyPbkdf2(enteredPin: String, storedValue: String): Boolean {
+        var salt: ByteArray? = null
+        var pinChars: CharArray? = null
+        var hash: ByteArray? = null
+        var expected: ByteArray? = null
         return try {
             val parts = storedValue.split("$")
             if (parts.size == 4) {
@@ -59,17 +82,24 @@ object SecurityUtils {
                 val saltHex = parts[2]
                 val hashHex = parts[3]
 
-                val salt = hexToBytes(saltHex)
-                val spec = PBEKeySpec(enteredPin.toCharArray(), salt, iterations, KEY_LENGTH)
+                salt = hexToBytes(saltHex)
+                pinChars = enteredPin.toCharArray()
+                val spec = PBEKeySpec(pinChars, salt, iterations, KEY_LENGTH)
                 val skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-                val hash = skf.generateSecret(spec).encoded
-                val expected = hexToBytes(hashHex)
+                hash = skf.generateSecret(spec).encoded
+                expected = hexToBytes(hashHex)
+                spec.clearPassword()
                 MessageDigest.isEqual(hash, expected)
             } else {
                 false
             }
         } catch (e: Exception) {
             false
+        } finally {
+            zeroize(salt)
+            zeroize(pinChars)
+            zeroize(hash)
+            zeroize(expected)
         }
     }
 

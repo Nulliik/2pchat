@@ -43,9 +43,14 @@ object IdentityKeyStore {
     @JvmStatic
     fun encrypt(plaintext: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key()) }
-        val ciphertext = cipher.doFinal(plaintext.toByteArray(Charsets.UTF_8))
+        val plainBytes = plaintext.toByteArray(Charsets.UTF_8)
+        val ciphertext = cipher.doFinal(plainBytes)
         val payload = byteArrayOf(cipher.iv.size.toByte()) + cipher.iv + ciphertext
-        return Base64.encodeToString(payload, Base64.NO_WRAP)
+        val result = Base64.encodeToString(payload, Base64.NO_WRAP)
+        com.example.twopchat.SecurityUtils.zeroize(plainBytes)
+        com.example.twopchat.SecurityUtils.zeroize(ciphertext)
+        com.example.twopchat.SecurityUtils.zeroize(payload)
+        return result
     }
 
     @JvmStatic
@@ -59,7 +64,13 @@ object IdentityKeyStore {
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
             init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, iv))
         }
-        return cipher.doFinal(ciphertext).toString(Charsets.UTF_8)
+        val plainBytes = cipher.doFinal(ciphertext)
+        val result = plainBytes.toString(Charsets.UTF_8)
+        com.example.twopchat.SecurityUtils.zeroize(payload)
+        com.example.twopchat.SecurityUtils.zeroize(iv)
+        com.example.twopchat.SecurityUtils.zeroize(ciphertext)
+        com.example.twopchat.SecurityUtils.zeroize(plainBytes)
+        return result
     }
 
     @JvmStatic
