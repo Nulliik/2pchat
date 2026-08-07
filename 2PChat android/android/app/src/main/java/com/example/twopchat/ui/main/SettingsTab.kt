@@ -3745,17 +3745,7 @@ fun LanguageSettingsPage(
     val languageList = remember {
         listOf(
             Pair("Русский", "Russian"),
-            Pair("English", "English"),
-            Pair("Ирон æвзаг", "Ossetian"),
-            Pair("日本語", "Japanese"),
-            Pair("العربية", "Arabic"),
-            Pair("Беларуская", "Belarusian"),
-            Pair("Català", "Catalan"),
-            Pair("简体中文", "Chinese (Simplified)"),
-            Pair("繁體中文", "Chinese (Traditional)"),
-            Pair("Hrvatski", "Croatian"),
-            Pair("Čeština", "Czech"),
-            Pair("Nederlands", "Dutch")
+            Pair("English", "English")
         )
     }
 
