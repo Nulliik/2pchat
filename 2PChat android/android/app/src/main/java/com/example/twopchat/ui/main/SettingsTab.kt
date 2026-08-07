@@ -3745,7 +3745,9 @@ fun LanguageSettingsPage(
     val languageList = remember {
         listOf(
             Pair("Русский", "Russian"),
-            Pair("English", "English")
+            Pair("English", "English"),
+            Pair("Deutsch", "German"),
+            Pair("Español", "Spanish")
         )
     }
 
