@@ -218,7 +218,7 @@ internal fun ChatHeader(
             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, modifier = Modifier.background(surfaceColor)) {
                 if (!savedMessages) {
                     DropdownMenuItem(
-                        text = { Text(if (appLanguage == "Русский") "Переподключить соединение" else "Reconnect Connection", color = onSurfaceColor) },
+                        text = { Text(Localizations.tr(appLanguage, "Переподключить соединение", "Reconnect Connection", "Verbindung neu herstellen", "Reconectar conexión", "Reconnecter la connexion", "Reconectar conexão"), color = onSurfaceColor) },
                         onClick = { showMenu = false; onReconnect() },
                         leadingIcon = {
                             Icon(
@@ -232,8 +232,10 @@ internal fun ChatHeader(
                     DropdownMenuItem(
                         text = { Text(
                             if (isMuted) {
-                                if (appLanguage == "Русский") "Включить уведомления" else "Unmute Notifications"
-                            } else if (appLanguage == "Русский") "Выключить уведомления" else "Mute Notifications",
+                                Localizations.tr(appLanguage, "Включить уведомления", "Unmute Notifications", "Stummschaltung aufheben", "Reactivar notificaciones", "Réactiver les notifications", "Desativar mudo")
+                            } else {
+                                Localizations.tr(appLanguage, "Выключить уведомления", "Mute Notifications", "Stummschalten", "Silenciar notificaciones", "Masquer les notifications", "Silenciar notificação")
+                            },
                             color = onSurfaceColor,
                         ) },
                         onClick = { showMenu = false; onToggleMuted(!isMuted) },
@@ -249,8 +251,10 @@ internal fun ChatHeader(
                     DropdownMenuItem(
                         text = { Text(
                             if (isForwardingRestricted) {
-                                if (appLanguage == "Русский") "Разрешить пересылку" else "Allow Forwarding"
-                            } else if (appLanguage == "Русский") "Запретить пересылку" else "Restrict Forwarding",
+                                Localizations.tr(appLanguage, "Разрешить пересылку", "Allow Forwarding", "Weiterleiten erlauben", "Permitir reenvío", "Autoriser le transfert", "Permitir encaminhamento")
+                            } else {
+                                Localizations.tr(appLanguage, "Запретить пересылку", "Restrict Forwarding", "Weiterleitung einschränken", "Restringir reenvío", "Restreindre le transfert", "Restringir encaminhamento")
+                            },
                             color = onSurfaceColor,
                         ) },
                         onClick = { showMenu = false; onToggleForwardingRestriction(!isForwardingRestricted) },
@@ -265,7 +269,7 @@ internal fun ChatHeader(
                     )
                 }
                 DropdownMenuItem(
-                    text = { Text(if (appLanguage == "Русский") "Установить обои" else "Set Wallpaper", color = onSurfaceColor) },
+                    text = { Text(Localizations.tr(appLanguage, "Установить обои", "Set Wallpaper", "Hintergrund festlegen", "Establecer fondo", "Définir le fond d'écran", "Definir papel de parede"), color = onSurfaceColor) },
                     onClick = { showMenu = false; onSetWallpaper() },
                     leadingIcon = {
                         Icon(
@@ -277,7 +281,7 @@ internal fun ChatHeader(
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text(if (appLanguage == "Русский") "Очистить историю" else "Clear History", color = Color.Red) },
+                    text = { Text(Localizations.tr(appLanguage, "Очистить историю", "Clear History", "Verlauf löschen", "Borrar historial", "Effacer l'historique", "Limpar histórico"), color = Color.Red) },
                     onClick = { showMenu = false; onClearHistory() },
                     leadingIcon = {
                         Icon(
@@ -290,7 +294,7 @@ internal fun ChatHeader(
                 )
                 if (!savedMessages) {
                     DropdownMenuItem(
-                        text = { Text(if (appLanguage == "Русский") "Удалить чат" else "Delete Chat", color = Color.Red) },
+                        text = { Text(Localizations.tr(appLanguage, "Удалить чат", "Delete Chat", "Chat löschen", "Eliminar chat", "Supprimer le chat", "Excluir conversa"), color = Color.Red) },
                         onClick = { showMenu = false; showDeleteDialog = true },
                         leadingIcon = {
                             Icon(
