@@ -61,6 +61,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.activity.compose.BackHandler
 
 private fun calculateDirSize(file: java.io.File?): Long {
