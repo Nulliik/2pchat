@@ -3808,7 +3808,7 @@ fun LanguageSettingsPage(
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
-                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_close),
+                        imageVector = androidx.compose.material.icons.Icons.Default.Close,
                         contentDescription = "Close",
                         tint = onSurfaceColor,
                         modifier = Modifier.size(18.dp)
@@ -3827,7 +3827,7 @@ fun LanguageSettingsPage(
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
-                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_search),
+                        imageVector = androidx.compose.material.icons.Icons.Default.Search,
                         contentDescription = "Search",
                         tint = onSurfaceColor,
                         modifier = Modifier.size(20.dp)

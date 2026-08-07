@@ -998,10 +998,7 @@ fun GroupInfoScreen(
             shape = RoundedCornerShape(20.dp)
         )
     }
-            containerColor = surfaceColor,
-            shape = RoundedCornerShape(20.dp)
-        )
-    }
+
     selectedMemberForOptions?.let { member ->
         MemberProfileModal(
             member = member,
@@ -1871,7 +1868,18 @@ private fun ConfirmationDialog(
     )
 }
 
-@Composable
+private fun formatMemberStatus(status: String, appLanguage: String): String {
+    if (appLanguage == "Русский") return status.ifBlank { "офлайн ?" }
+    return when {
+        status.contains("В сети (Это устройство)") -> "Online (This device)"
+        status.contains("В сети") -> "Online"
+        status.contains("Приглашение отправлено") -> "Invite sent"
+        status.contains("Не в сети") || status.contains("офлайн") -> "Offline"
+        status.isBlank() -> "Offline"
+        else -> status
+    }
+}
+
 @Composable
 private fun GroupInfoDetailsCard(
     metadata: GroupMetadata,

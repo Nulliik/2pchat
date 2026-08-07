@@ -864,8 +864,8 @@ fun GroupChatScreen(
                                 Text(
                                     text = if (appLanguage == "Русский") "Сообщений пока нет. Начните общение в группе!" else "No messages yet. Start chatting in the group!",
                                     fontSize = 14.sp,
-                                    textAlign = TextAlign.Center,
-                                    color = onSurfaceVariant,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp)
                                 )
                             }
@@ -2217,6 +2217,8 @@ private fun GroupChatHeader(
     onSearchQueryChange: (String) -> Unit,
     onOpenWallpaper: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
@@ -3566,7 +3568,6 @@ private fun GroupPollCard(
     }
 }
 
-@Composable
 @Composable
 private fun CreatePollDialog(
     onDismiss: () -> Unit,

@@ -181,6 +181,7 @@ fun PendingGroupInvitesScreen(
 @Composable
 private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController) {
     val context = LocalContext.current
+    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
 
     val initials = invite.groupTitle.take(2).uppercase().ifBlank { "GP" }
     val inviterInitials = invite.inviterName.take(2).uppercase().ifBlank { "U" }
