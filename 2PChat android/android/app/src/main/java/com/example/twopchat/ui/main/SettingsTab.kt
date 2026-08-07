@@ -2413,8 +2413,6 @@ fun SettingsTab(
                                             AttachmentImageCache.clear()
                                             showMediaCleanupDialog = false
                                             selectedMediaCategories = emptySet()
-                                            val message = if (appLanguage == "Русский") {
-                                                buildString {
                                             val message = Localizations.tr(appLanguage, "Удалено: ${result.deletedFiles}" + if (result.skippedActiveTransfers > 0) ". Активные передачи пропущены" else "", "Deleted: ${result.deletedFiles}" + if (result.skippedActiveTransfers > 0) ". Active transfers were skipped" else "")
                                             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                                         } catch (error: Exception) {

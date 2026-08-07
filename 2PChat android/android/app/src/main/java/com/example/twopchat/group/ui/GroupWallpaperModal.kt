@@ -1,5 +1,7 @@
 package com.example.twopchat.group.ui
 
+import com.example.twopchat.data.Localizations
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
