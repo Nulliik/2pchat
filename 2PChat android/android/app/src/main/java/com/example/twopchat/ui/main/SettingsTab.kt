@@ -553,7 +553,7 @@ fun SettingsTab(
                                 subtitle = if (isRu) "Переключение между Русским и English" else "Switch between Russian and English",
                                 valueBadge = appLanguage,
                                 keywords = listOf("language", "ru", "en", "язык", "русский", "английский", "english"),
-                                onClick = { showLanguageDialog = true }
+                                onClick = { activeSubPage = "language" }
                             ),
                             DeepSettingItem(
                                 category = if (isRu) "Справка" else "Help",
@@ -1033,7 +1033,7 @@ fun SettingsTab(
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     primaryColor = primaryColor,
-                                    onClick = { showLanguageDialog = true }
+                                    onClick = { activeSubPage = "language" }
                                 )
                             }
                         }
@@ -1138,6 +1138,15 @@ fun SettingsTab(
                     }
                 }
             }
+            "language" -> LanguageSettingsPage(
+                appLanguage = appLanguage,
+                onLanguageChanged = onLanguageChanged,
+                onBackClick = { activeSubPage = null },
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                primaryColor = primaryColor
+            )
             "sticker_packs" -> StickerPackManagerPage(
                 appLanguage = appLanguage,
                 onBackClick = { activeSubPage = null },
@@ -3717,4 +3726,192 @@ fun DeepSearchResultRow(
         }
     }
 }
+
+@Composable
+fun LanguageSettingsPage(
+    appLanguage: String,
+    onLanguageChanged: (String) -> Unit,
+    onBackClick: () -> Unit,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
+    onSurfaceVariant: Color,
+    primaryColor: Color
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    var isSearching by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    val languageList = remember {
+        listOf(
+            Pair("Русский", "Russian"),
+            Pair("English", "English"),
+            Pair("Ирон æвзаг", "Ossetian"),
+            Pair("日本語", "Japanese"),
+            Pair("العربية", "Arabic"),
+            Pair("Беларуская", "Belarusian"),
+            Pair("Català", "Catalan"),
+            Pair("简体中文", "Chinese (Simplified)"),
+            Pair("繁體中文", "Chinese (Traditional)"),
+            Pair("Hrvatski", "Croatian"),
+            Pair("Čeština", "Czech"),
+            Pair("Nederlands", "Dutch")
+        )
+    }
+
+    val filteredLanguages = remember(searchQuery) {
+        if (searchQuery.isBlank()) languageList
+        else languageList.filter {
+            it.first.contains(searchQuery, ignoreCase = true) || it.second.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+    ) {
+        // Top Bar Header: Back button, Title, and Search icon
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = onBackClick,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_back_arrow),
+                    contentDescription = if (appLanguage == "Русский") "Назад" else "Back",
+                    tint = onSurfaceColor,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            if (isSearching) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text(if (appLanguage == "Русский") "Поиск языка..." else "Search language...", fontSize = 14.sp) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true
+                )
+                IconButton(
+                    onClick = {
+                        isSearching = false
+                        searchQuery = ""
+                    },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_close),
+                        contentDescription = "Close",
+                        tint = onSurfaceColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            } else {
+                Text(
+                    text = if (appLanguage == "Русский") "Язык" else "Language",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(
+                    onClick = { isSearching = true },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_search),
+                        contentDescription = "Search",
+                        tint = onSurfaceColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Section Title: "Язык" / "Language"
+        Text(
+            text = if (appLanguage == "Русский") "Язык" else "Language",
+            color = Color(0xFF00E676),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+        )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            items(filteredLanguages) { (nativeName, englishName) ->
+                val isSelected = (nativeName == "Русский" && appLanguage == "Русский") ||
+                        (nativeName == "English" && appLanguage == "English")
+                val activeGreen = Color(0xFF00E676)
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable {
+                            val selectedLang = if (nativeName == "Русский") "Русский" else "English"
+                            onLanguageChanged(selectedLang)
+                            Toast.makeText(
+                                context,
+                                if (selectedLang == "Русский") "Язык изменен на Русский" else "Language changed to English",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        .padding(vertical = 12.dp, horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Radio button matching design
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .border(
+                                width = 2.dp,
+                                color = if (isSelected) activeGreen else onSurfaceVariant.copy(alpha = 0.45f),
+                                shape = CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(activeGreen, CircleShape)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    Column {
+                        Text(
+                            text = nativeName,
+                            fontSize = 16.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = onSurfaceColor
+                        )
+                        Spacer(modifier = Modifier.height(1.dp))
+                        Text(
+                            text = englishName,
+                            fontSize = 12.sp,
+                            color = onSurfaceVariant.copy(alpha = 0.65f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 

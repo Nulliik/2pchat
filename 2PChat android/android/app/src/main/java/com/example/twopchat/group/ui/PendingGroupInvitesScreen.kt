@@ -56,6 +56,8 @@ fun PendingGroupInvitesScreen(
     controller: GroupUiController,
     modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -84,7 +86,7 @@ fun PendingGroupInvitesScreen(
                 }
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    "Приглашения в группы",
+                    if (appLanguage == "Русский") "Приглашения в группы" else "Group Invitations",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = onSurfaceColor
@@ -145,7 +147,7 @@ fun PendingGroupInvitesScreen(
                     }
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        text = "Нет входящих приглашений",
+                        text = if (appLanguage == "Русский") "Нет входящих приглашений" else "No incoming invitations",
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = onSurfaceColor,
@@ -153,7 +155,7 @@ fun PendingGroupInvitesScreen(
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "Когда вас пригласят в новую группу, приглашение появится здесь.",
+                        text = if (appLanguage == "Русский") "Когда вас пригласят в новую группу, приглашение появится здесь." else "When you are invited to a new group, the invitation will appear here.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -378,7 +380,7 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White.copy(alpha = 0.8f))
                 ) {
-                    Text("Отклонить", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(if (appLanguage == "Русский") "Отклонить" else "Decline", fontSize = 13.sp, fontWeight = FontWeight.Medium)
                 }
 
                 Button(
@@ -400,7 +402,7 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
                             color = Color.White
                         )
                     } else {
-                        Text("Принять", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(if (appLanguage == "Русский") "Принять" else "Accept", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
             }

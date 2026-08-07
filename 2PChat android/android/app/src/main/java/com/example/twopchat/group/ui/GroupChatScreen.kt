@@ -837,10 +837,10 @@ fun GroupChatScreen(
                                 },
                                 modifier = Modifier.testTag("load_older_messages")
                             ) {
-                                Text("Загрузить ранние сообщения", fontSize = 12.sp)
+                                Text(if (appLanguage == "Русский") "Загрузить ранние сообщения" else "Load earlier messages", fontSize = 12.sp)
                             }
                             state.messages.isNotEmpty() -> Text(
-                                "Начало истории группы",
+                                if (appLanguage == "Русский") "Начало истории группы" else "Beginning of group history",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             )
@@ -1554,7 +1554,7 @@ fun GroupChatScreen(
         var editedText by remember(message.messageId) { mutableStateOf(message.text) }
         AlertDialog(
             onDismissRequest = { editingMessage = null },
-            title = { Text("Редактировать сообщение", fontWeight = FontWeight.Bold) },
+            title = { Text(if (appLanguage == "Русский") "Редактировать сообщение" else "Edit Message", fontWeight = FontWeight.Bold) },
             text = {
                 OutlinedTextField(
                     value = editedText,
@@ -1573,11 +1573,11 @@ fun GroupChatScreen(
                         editingMessage = null
                     }
                 ) {
-                    Text("Сохранить", fontWeight = FontWeight.Bold)
+                    Text(if (appLanguage == "Русский") "Сохранить" else "Save", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { editingMessage = null }) { Text("Отмена") }
+                TextButton(onClick = { editingMessage = null }) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
             },
             containerColor = surfaceColor,
             shape = RoundedCornerShape(20.dp)
@@ -1587,8 +1587,8 @@ fun GroupChatScreen(
     deletingMessage?.let { message ->
         AlertDialog(
             onDismissRequest = { deletingMessage = null },
-            title = { Text("Удалить сообщение?", fontWeight = FontWeight.Bold) },
-            text = { Text("Это действие зафиксируется в журнале событий группы.") },
+            title = { Text(if (appLanguage == "Русский") "Удалить сообщение?" else "Delete Message?", fontWeight = FontWeight.Bold) },
+            text = { Text(if (appLanguage == "Русский") "Это действие зафиксируется в журнале событий группы." else "This action will be logged in the group audit event log.") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -1597,11 +1597,11 @@ fun GroupChatScreen(
                     },
                     modifier = Modifier.testTag("confirm_delete_message")
                 ) {
-                    Text("Удалить", color = Color.Red, fontWeight = FontWeight.Bold)
+                    Text(if (appLanguage == "Русский") "Удалить" else "Delete", color = Color.Red, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deletingMessage = null }) { Text("Отмена") }
+                TextButton(onClick = { deletingMessage = null }) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
             },
             containerColor = surfaceColor,
             shape = RoundedCornerShape(20.dp)
@@ -3567,44 +3567,47 @@ private fun GroupPollCard(
 }
 
 @Composable
+@Composable
 private fun CreatePollDialog(
     onDismiss: () -> Unit,
     onCreatePoll: (question: String, options: List<String>, isAnonymous: Boolean) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
     var question by remember { mutableStateOf("") }
     var options by remember { mutableStateOf(listOf("", "")) }
     var isAnonymous by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Создать опрос", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        title = { Text(if (appLanguage == "Русский") "Создать опрос" else "Create Poll", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = question,
                     onValueChange = { question = it },
-                    placeholder = { Text("Задайте вопрос...") },
+                    placeholder = { Text(if (appLanguage == "Русский") "Задайте вопрос..." else "Ask a question...") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text("Варианты ответов:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(if (appLanguage == "Русский") "Варианты ответов:" else "Options:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 options.forEachIndexed { index, opt ->
                     OutlinedTextField(
                         value = opt,
                         onValueChange = { newText ->
                             options = options.toMutableList().also { it[index] = newText }
                         },
-                        placeholder = { Text("Вариант ${index + 1}") },
+                        placeholder = { Text(if (appLanguage == "Русский") "Вариант ${index + 1}" else "Option ${index + 1}") },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
                 if (options.size < 6) {
                     TextButton(onClick = { options = options + "" }) {
-                        Text("+ Добавить вариант")
+                        Text(if (appLanguage == "Русский") "+ Добавить вариант" else "+ Add option")
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = isAnonymous, onCheckedChange = { isAnonymous = it })
-                    Text("Анонимный опрос", fontSize = 13.sp)
+                    Text(if (appLanguage == "Русский") "Анонимный опрос" else "Anonymous poll", fontSize = 13.sp)
                 }
             }
         },
@@ -3617,10 +3620,10 @@ private fun CreatePollDialog(
                         onDismiss()
                     }
                 }
-            ) { Text("Создать") }
+            ) { Text(if (appLanguage == "Русский") "Создать" else "Create") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
         }
     )
 }

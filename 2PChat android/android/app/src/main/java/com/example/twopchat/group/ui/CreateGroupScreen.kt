@@ -55,6 +55,8 @@ fun CreateGroupScreen(
     controller: GroupUiController,
     modifier: Modifier = Modifier
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
     var title by rememberSaveable { mutableStateOf("") }
     var description by rememberSaveable { mutableStateOf("") }
     var selectedContactIds by remember(state.knownContacts) {
@@ -103,7 +105,7 @@ fun CreateGroupScreen(
                         )
                     }
                     Text(
-                        text = "Новая группа",
+                        text = if (appLanguage == "Русский") "Новая группа" else "New Group",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = onSurfaceColor
@@ -123,10 +125,10 @@ fun CreateGroupScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("group_title_input"),
-                    label = { Text("Название группы") },
-                    placeholder = { Text("Например: Команда 2PChat") },
+                    label = { Text(if (appLanguage == "Русский") "Название группы" else "Group Title") },
+                    placeholder = { Text(if (appLanguage == "Русский") "Например: Команда 2PChat" else "Example: 2PChat Team") },
                     supportingText = {
-                        if (cleanTitle.isEmpty() && title.isNotEmpty()) Text("Название не может быть пустым")
+                        if (cleanTitle.isEmpty() && title.isNotEmpty()) Text(if (appLanguage == "Русский") "Название не может быть пустым" else "Title cannot be empty")
                     },
                     isError = cleanTitle.isEmpty() && title.isNotEmpty(),
                     singleLine = true,
@@ -145,8 +147,8 @@ fun CreateGroupScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("group_description_input"),
-                    label = { Text("Описание (опционально)") },
-                    placeholder = { Text("О чем эта группа...") },
+                    label = { Text(if (appLanguage == "Русский") "Описание (опционально)" else "Description (optional)") },
+                    placeholder = { Text(if (appLanguage == "Русский") "О чем эта группа..." else "What is this group about...") },
                     minLines = 2,
                     maxLines = 3,
                     shape = RoundedCornerShape(14.dp),
@@ -159,13 +161,13 @@ fun CreateGroupScreen(
                 Spacer(Modifier.height(16.dp))
 
                 Text(
-                    text = "Участники · Выбрано: ${selectedContactIds.size}",
+                    text = if (appLanguage == "Русский") "Участники · Выбрано: ${selectedContactIds.size}" else "Members · Selected: ${selectedContactIds.size}",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = primaryColor
                 )
                 Text(
-                    text = "Это необязательно: участников можно добавить после создания. Вы станете владельцем группы.",
+                    text = if (appLanguage == "Русский") "Это необязательно: участников можно добавить после создания. Вы станете владельцем группы." else "Optional: members can be added after creation. You will become the group owner.",
                     fontSize = 12.sp,
                     color = onSurfaceColor.copy(alpha = 0.6f)
                 )
@@ -251,7 +253,7 @@ fun CreateGroupScreen(
                             Column(Modifier.weight(1f)) {
                                 Text(contact.displayName, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                                 val detail = contact.secondaryText.ifBlank {
-                                    if (contact.isOnline) "В сети" else "Не в сети"
+                                    if (contact.isOnline) (if (appLanguage == "Русский") "В сети" else "Online") else (if (appLanguage == "Русский") "Не в сети" else "Offline")
                                 }
                                 Text(
                                     detail,
@@ -300,7 +302,7 @@ fun CreateGroupScreen(
                             color = Color.White
                         )
                     } else {
-                        Text("Создать группу", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(if (appLanguage == "Русский") "Создать группу" else "Create Group", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                 }
             }
