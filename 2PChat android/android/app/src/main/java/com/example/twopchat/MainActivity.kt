@@ -129,6 +129,7 @@ class MainActivity : ComponentActivity() {
                 android.util.Log.w("MainActivity", "Could not heal Yggdrasil on resume", it)
             }
         }
+        com.example.twopchat.security.TemporaryCacheSanitizer.sanitizeTempCache(appContext)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -389,6 +390,7 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         lastStopTime = System.currentTimeMillis()
+        com.example.twopchat.security.TemporaryCacheSanitizer.sanitizeTempCache(applicationContext)
     }
 
     override fun onStart() {
