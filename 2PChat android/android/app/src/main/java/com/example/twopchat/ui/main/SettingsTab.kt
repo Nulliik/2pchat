@@ -133,12 +133,15 @@ fun SettingsTab(
     // Profile photo states
     var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
     var profileBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var fullProfileBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var pendingCropUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showAvatarOptions by remember { mutableStateOf(false) }
+    var showFullScreenAvatar by remember { mutableStateOf(false) }
 
     LaunchedEffect(profilePhotoUri) {
-        profileBitmap = withContext(Dispatchers.IO) {
-            com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)
+        withContext(Dispatchers.IO) {
+            profileBitmap = com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri, maxDimension = 256)
+            fullProfileBitmap = com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri, maxDimension = 2048)
         }
     }
 
@@ -2916,6 +2919,16 @@ fun SettingsTab(
     }
 
 
+    if (showFullScreenAvatar) {
+        com.example.twopchat.ui.common.FullScreenAvatarViewer(
+            title = username,
+            bitmap = fullProfileBitmap ?: profileBitmap,
+            initials = username.take(2).uppercase(),
+            avatarColor = primaryColor,
+            onDismiss = { showFullScreenAvatar = false }
+        )
+    }
+
     if (showAvatarOptions) {
         AlertDialog(
             onDismissRequest = { showAvatarOptions = false },
@@ -2941,6 +2954,19 @@ fun SettingsTab(
                     TextButton(
                         onClick = {
                             showAvatarOptions = false
+                            showFullScreenAvatar = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Просмотреть фото" else "View Photo",
+                            color = primaryColor,
+                            fontSize = 15.sp
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            showAvatarOptions = false
                             imagePickerLauncher.launch("image/*")
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -2956,6 +2982,7 @@ fun SettingsTab(
                             showAvatarOptions = false
                             profilePhotoUri = null
                             profileBitmap = null
+                            fullProfileBitmap = null
                             sharedPrefs.edit().remove("profile_photo_uri").apply()
                             try {
                                 val file = java.io.File(context.filesDir, "profile_avatar.jpg")

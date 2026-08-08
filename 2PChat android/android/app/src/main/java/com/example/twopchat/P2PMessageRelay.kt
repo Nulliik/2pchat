@@ -190,6 +190,10 @@ object P2PMessageRelay {
     // Maps peer name to their profile avatar bitmap in RAM
     val peerAvatars = avatarCache.avatars
 
+    fun getOriginalAvatar(context: Context, peerName: String): Bitmap? {
+        return avatarCache.getOriginalAvatar(context, peerName, maxDimension = 2048)
+    }
+
     // Maps peer name to typing state
     val peerTypingStates = mutableStateMapOf<String, Boolean>()
 

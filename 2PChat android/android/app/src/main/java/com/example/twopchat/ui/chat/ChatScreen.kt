@@ -3567,8 +3567,9 @@ remove("pinned_msg_id_${peerName}")
                     sharedPrefs.edit().putBoolean("mute_notifications_$peerName", newMuted).apply()
                 },
                 onAvatarClick = { avatarBitmap ->
+                    val highRes = P2PMessageRelay.getOriginalAvatar(context, peerName) ?: avatarBitmap
                     val avatarKey = "avatar:$peerName"
-                    activeFullscreenBitmapOverrides = mapOf(avatarKey to avatarBitmap)
+                    activeFullscreenBitmapOverrides = mapOf(avatarKey to highRes)
                     activeFullscreenImages = listOf(avatarKey)
                     activeFullscreenImageIndex = 0
                 },

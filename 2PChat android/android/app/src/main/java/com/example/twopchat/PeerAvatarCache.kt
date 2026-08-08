@@ -124,6 +124,36 @@ internal class PeerAvatarCache(
             ?.delete()
     }
 
+    fun getOriginalAvatar(context: Context, peerName: String, maxDimension: Int = 2048): Bitmap? {
+        if (peerName.isBlank()) return null
+        val directory = File(context.filesDir, AVATAR_DIRECTORY)
+        val file = avatarFile(directory, peerName)
+        if (!file.isFile) return null
+        return try {
+            val clear = SecureStorage.decryptBytes(file.readBytes())
+            DataInputStream(ByteArrayInputStream(clear)).use { input ->
+                val nameLength = input.readInt()
+                if (nameLength !in 1..MAX_PEER_NAME_BYTES) return null
+                input.skipBytes(nameLength)
+                val image = input.readBytes()
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(image, 0, image.size, bounds)
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+                var sample = 1
+                while (bounds.outWidth / sample > maxDimension || bounds.outHeight / sample > maxDimension) {
+                    sample *= 2
+                }
+                val options = BitmapFactory.Options().apply {
+                    inSampleSize = sample
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                }
+                BitmapFactory.decodeByteArray(image, 0, image.size, options)
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun loadEncrypted(file: File): Pair<String, Bitmap>? {
         val clear = SecureStorage.decryptBytes(file.readBytes())
         return DataInputStream(ByteArrayInputStream(clear)).use { input ->

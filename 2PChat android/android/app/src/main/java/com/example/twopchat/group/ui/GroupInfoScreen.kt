@@ -2487,8 +2487,26 @@ private fun MemberProfileModal(
                     onClick = onDismiss
                 ),
             contentAlignment = Alignment.Center
-        ) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            var showFullMemberAvatar by remember { mutableStateOf(false) }
+            var fullMemberAvatarBitmap by remember(member.displayName) { mutableStateOf<Bitmap?>(null) }
             val memberAvatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName]
+            
+            LaunchedEffect(member.displayName) {
+                withContext(Dispatchers.IO) {
+                    fullMemberAvatarBitmap = com.example.twopchat.P2PMessageRelay.getOriginalAvatar(context, member.displayName)
+                }
+            }
+
+            if (showFullMemberAvatar) {
+                com.example.twopchat.ui.common.FullScreenAvatarViewer(
+                    title = member.displayName,
+                    bitmap = fullMemberAvatarBitmap ?: memberAvatarBitmap,
+                    initials = member.displayName.take(2).uppercase().ifBlank { "M" },
+                    onDismiss = { showFullMemberAvatar = false }
+                )
+            }
+
             val memberInitials = member.displayName.take(2).uppercase().ifBlank { "M" }
             val avatarColor = remember(member.displayName) {
                 val colors = listOf(
@@ -2539,12 +2557,13 @@ private fun MemberProfileModal(
                             .size(76.dp)
                             .clip(CircleShape)
                             .border(2.5.dp, roleColor.copy(alpha = 0.85f), CircleShape)
-                            .background(avatarColor),
+                            .background(avatarColor)
+                            .clickable { showFullMemberAvatar = true },
                         contentAlignment = Alignment.Center
                     ) {
-                        if (memberAvatarBitmap != null) {
+                        if ((fullMemberAvatarBitmap ?: memberAvatarBitmap) != null) {
                             Image(
-                                bitmap = memberAvatarBitmap.asImageBitmap(),
+                                bitmap = (fullMemberAvatarBitmap ?: memberAvatarBitmap)!!.asImageBitmap(),
                                 contentDescription = member.displayName,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize().clip(CircleShape)

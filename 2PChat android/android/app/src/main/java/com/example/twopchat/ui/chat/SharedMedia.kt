@@ -252,7 +252,14 @@ fun SharedMediaScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                             // Large Avatar Box
-                            val avatarBitmap = P2PMessageRelay.peerAvatars[peerName]
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            var highResAvatarBitmap by remember(peerName) { mutableStateOf<Bitmap?>(null) }
+                            LaunchedEffect(peerName) {
+                                withContext(Dispatchers.IO) {
+                                    highResAvatarBitmap = P2PMessageRelay.getOriginalAvatar(context, peerName)
+                                }
+                            }
+                            val avatarBitmap = highResAvatarBitmap ?: P2PMessageRelay.peerAvatars[peerName]
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
