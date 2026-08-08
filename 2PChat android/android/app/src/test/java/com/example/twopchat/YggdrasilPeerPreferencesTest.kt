@@ -95,4 +95,15 @@ class YggdrasilPeerPreferencesTest {
             ),
         )
     }
+
+    @Test
+    fun tlsBypassPeersListContainsValidTlsEndpoints() {
+        val peers = YggdrasilPeerPreferences.TLS_BYPASS_PEERS
+        assert(peers.isNotEmpty())
+        peers.forEach { uri ->
+            val normalized = YggdrasilPeerPreferences.normalizedPeerUri(uri)
+            assertEquals(uri, normalized)
+            assert(uri.startsWith("tls://"))
+        }
+    }
 }

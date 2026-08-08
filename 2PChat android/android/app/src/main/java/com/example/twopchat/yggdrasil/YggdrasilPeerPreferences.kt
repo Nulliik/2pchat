@@ -35,6 +35,20 @@ object YggdrasilPeerPreferences {
     private const val MAX_PUBLIC_PEERS = 256
     private val supportedProtocols = setOf("tcp", "tls")
 
+    val TLS_BYPASS_PEERS = listOf(
+        "tls://45.95.202.21:443",
+        "tls://ygg.mikaela.info:443",
+        "tls://ygg-msk-1.averyan.ru:8362",
+        "tls://yggno.de:18227",
+        "tls://95.217.35.92:1337",
+    )
+
+    fun applyDpiBypassPeers(context: Context) {
+        setPublicPeersEnabled(context, true)
+        replacePublicPeers(context, TLS_BYPASS_PEERS)
+        P2PPreferences.prefs(context).edit().remove(DISABLED_PUBLIC_PEERS).apply()
+    }
+
     fun publicPeersEnabled(context: Context): Boolean =
         P2PPreferences.prefs(context).getBoolean(PUBLIC_PEERS_ENABLED, true)
 

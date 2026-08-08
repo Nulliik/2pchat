@@ -315,13 +315,31 @@ fun YggdrasilPeerSettingsPage(
                     }
                 }
 
+                item(key = "dpi_bypass") {
+                    Button(
+                        onClick = {
+                            YggdrasilPeerPreferences.applyDpiBypassPeers(context)
+                            applyPeerSettings()
+                        },
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = primaryColor,
+                        ),
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                    ) {
+                        Text(
+                            text = if (isRussian) "⚡ Обход блокировок портов (TLS 443)" else "⚡ Bypass Port Blocking (TLS 443)",
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+
                 item(key = "reset") {
                     Button(
                         onClick = {
                             YggdrasilPeerPreferences.resetDefaults(context)
                             applyPeerSettings()
                         },
-                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 40.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 40.dp),
                     ) {
                         Text(if (isRussian) "Вернуть значения по умолчанию" else "Restore defaults")
                     }
