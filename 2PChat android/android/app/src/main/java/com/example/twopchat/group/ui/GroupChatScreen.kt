@@ -15,6 +15,7 @@ import android.graphics.BitmapFactory
 import java.io.File
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.heightIn
@@ -1253,7 +1254,7 @@ fun GroupChatScreen(
                 StickerSupport.isStickerFileName(msg.text) ||
                 (msg.text.lowercase().contains("sticker") && msg.text.lowercase().endsWith(".webp"))
 
-            val checkAtt: (com.example.twopchat.group.model.GroupAttachment) -> Unit = { att ->
+            val checkAtt: (GroupAttachmentUi) -> Unit = { att ->
                 val p = att.localPath ?: att.fileName
                 val isGif = att.mimeType == "image/gif" || p.lowercase().endsWith(".gif")
                 val isSticker = textIsSticker ||
