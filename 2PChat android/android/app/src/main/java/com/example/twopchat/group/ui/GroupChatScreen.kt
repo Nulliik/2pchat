@@ -312,10 +312,18 @@ fun GroupChatScreen(
         onDispose { controller.setGroupChatActive(state.groupId, false) }
     }
 
-    val wallpaperUriStr = state.wallpaperUri
+    val rawWallpaperUri = state.wallpaperUri
         ?: remember(state.groupId) {
             P2PPreferences.prefs(context).getString("group_wallpaper_${state.groupId}", null)
         }
+    val wallpaperUriStr = remember(state.groupId, rawWallpaperUri) {
+        if (!rawWallpaperUri.isNullOrBlank() && java.io.File(rawWallpaperUri).exists()) {
+            rawWallpaperUri
+        } else {
+            val fallbackFile = java.io.File(context.filesDir, "group_wallpapers/${state.groupId}.jpg")
+            if (fallbackFile.exists()) fallbackFile.absolutePath else null
+        }
+    }
     val wallpaperDimming = remember(state.groupId, wallpaperUriStr) {
         P2PPreferences.prefs(context).getInt("group_wallpaper_dimming_${state.groupId}", 45)
     }
@@ -1211,7 +1219,9 @@ fun GroupChatScreen(
             onSend = {
                 val text = draft.trim()
                 if (text.isNotEmpty()) {
-                    controller.sendMessage(state.groupId, text, state.currentReply?.messageId)
+                    val replyToId = state.currentReply?.messageId
+                    if (state.currentReply != null) controller.cancelReply(state.groupId)
+                    controller.sendMessage(state.groupId, text, replyToId)
                     draft = ""
                 }
             },
@@ -1237,21 +1247,35 @@ fun GroupChatScreen(
     val allGroupImages = remember(state.messages) {
         state.messages.flatMap { msg ->
             val list = mutableListOf<String>()
+            val textIsSticker = msg.text.startsWith("2psticker:", ignoreCase = true) ||
+                msg.text.startsWith("2psticker_", ignoreCase = true) ||
+                msg.text.startsWith("sticker:", ignoreCase = true) ||
+                StickerSupport.isStickerFileName(msg.text) ||
+                (msg.text.lowercase().contains("sticker") && msg.text.lowercase().endsWith(".webp"))
+
+            val checkAtt: (com.example.twopchat.group.model.GroupAttachment) -> Unit = { att ->
+                val p = att.localPath ?: att.fileName
+                val isGif = att.mimeType == "image/gif" || p.lowercase().endsWith(".gif")
+                val isSticker = textIsSticker ||
+                    att.mimeType.contains("sticker") ||
+                    att.fileName.lowercase().contains("sticker") ||
+                    StickerSupport.isStickerFileName(att.fileName) ||
+                    att.localPath?.lowercase()?.contains("sticker") == true
+
+                if (!isGif && !isSticker && p.isNotBlank()) {
+                    val isImage = att.mimeType.startsWith("image/") ||
+                        p.endsWith(".jpg", true) || p.endsWith(".jpeg", true) ||
+                        p.endsWith(".png", true) || p.endsWith(".webp", true)
+                    if (isImage) {
+                        list.add(p)
+                    }
+                }
+            }
+
             if (msg.attachments.size > 1) {
-                msg.attachments.forEach { att ->
-                    val p = att.localPath ?: att.fileName
-                    if (p.isNotBlank() && (att.mimeType.startsWith("image/") || p.endsWith(".jpg", true) || p.endsWith(".jpeg", true) || p.endsWith(".png", true) || p.endsWith(".webp", true))) {
-                        list.add(p)
-                    }
-                }
+                msg.attachments.forEach(checkAtt)
             } else {
-                val att = msg.attachment
-                if (att != null) {
-                    val p = att.localPath ?: att.fileName
-                    if (p.isNotBlank() && (att.mimeType.startsWith("image/") || p.endsWith(".jpg", true) || p.endsWith(".jpeg", true) || p.endsWith(".png", true) || p.endsWith(".webp", true))) {
-                        list.add(p)
-                    }
-                }
+                msg.attachment?.let(checkAtt)
             }
             list
         }
@@ -2732,14 +2756,23 @@ private fun GroupMessageCard(
         RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp)
     }
 
+    val isLight = surfaceColor.luminance() > 0.5f
     val bubbleContainerColor = if (message.isMine) {
         primaryColor
     } else {
-        Color(0xFF1E1E24)
+        if (isLight) surfaceColor else Color(0xFF1E1E24)
     }
 
-    val messageTextColor = Color.White
-    val timestampColor = if (message.isMine) Color.White.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.5f)
+    val messageTextColor = if (message.isMine) {
+        if (primaryColor.luminance() > 0.4f) Color(0xFF1A1A1A) else Color.White
+    } else {
+        onSurfaceColor
+    }
+    val timestampColor = if (message.isMine) {
+        if (primaryColor.luminance() > 0.4f) Color(0xFF1A1A1A).copy(alpha = 0.7f) else Color.White.copy(alpha = 0.8f)
+    } else {
+        onSurfaceColor.copy(alpha = 0.6f)
+    }
 
     if (message.authorId == "SYSTEM" || message.authorName == "System") {
         Box(
@@ -2966,8 +2999,8 @@ private fun GroupMessageCard(
                         text = reply.text,
                         accentColor = primaryColor,
                         titleColor = primaryColor,
-                        textColor = onSurfaceColor.copy(alpha = 0.7f),
-                        backgroundColor = surfaceColor.copy(alpha = 0.6f),
+                        textColor = if (isLight && !message.isMine) onSurfaceColor.copy(alpha = 0.8f) else onSurfaceColor.copy(alpha = 0.7f),
+                        backgroundColor = if (isLight && !message.isMine) onSurfaceColor.copy(alpha = 0.08f) else surfaceColor.copy(alpha = 0.6f),
                         onClick = { onReplyQuoteClick(reply.messageId) },
                         modifier = Modifier
                             .fillMaxWidth()

@@ -486,6 +486,7 @@ object GroupChatCoordinator {
         ) {
             return
         }
+        cancelReply(groupId)
         scope.launch {
             emitEvent(
                 groupId = groupId,
@@ -3307,7 +3308,9 @@ object GroupChatCoordinator {
                     } else if (wallpaperUriInPayload.isBlank() && ctx != null) {
                         P2PPreferences.prefs(ctx).edit().remove("group_wallpaper_${current.groupId}").apply()
                     } else if (wallpaperUriInPayload.isNotBlank() && ctx != null) {
-                        P2PPreferences.prefs(ctx).edit().putString("group_wallpaper_${current.groupId}", wallpaperUriInPayload).apply()
+                        if (File(wallpaperUriInPayload).exists()) {
+                            P2PPreferences.prefs(ctx).edit().putString("group_wallpaper_${current.groupId}", wallpaperUriInPayload).apply()
+                        }
                     }
                 }
                 if (payload.has("admin_only_posting")) {
