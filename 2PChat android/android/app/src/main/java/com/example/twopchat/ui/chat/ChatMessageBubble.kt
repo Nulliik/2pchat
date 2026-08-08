@@ -1138,7 +1138,6 @@ internal fun ChatMessageBubble(
                             }
                             if (msg.attachmentType != "IMAGE" && msg.attachmentType != "VIDEO" && msg.attachmentType != "ALBUM" && msg.albumMediaUris.isEmpty()) {
                                 Spacer(modifier = Modifier.height(4.dp))
-                                val formattedTime = remember(msg.timestamp, appLanguage) { MessageTimestampFormatter.format(msg, appLanguage) }
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.align(Alignment.End)
