@@ -3,6 +3,9 @@ import sys
 import threading
 import json
 import traceback
+import warnings
+
+warnings.filterwarnings("ignore", category=ResourceWarning)
 import uuid
 import re
 import time
@@ -1175,7 +1178,7 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
             )
             return await provider.resolve(expected, expected)
         except Exception as exc:
-            if not isinstance(exc, (OSError, TimeoutError, asyncio.TimeoutError)):
+            if not isinstance(exc, (OSError, TimeoutError, asyncio.TimeoutError, RuntimeError, socket.gaierror)):
                 print(f"[RECONNECT] Endpoint resolve failed on {tracker_name}: {exc}")
             return []
 
@@ -1188,7 +1191,7 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
             )
             return await provider.resolve(expected, expected)
         except Exception as exc:
-            if not isinstance(exc, (OSError, TimeoutError, asyncio.TimeoutError)):
+            if not isinstance(exc, (OSError, TimeoutError, asyncio.TimeoutError, RuntimeError, socket.gaierror)):
                 print(f"[RECONNECT] Endpoint resolve failed on {MAINLINE_DHT}: {exc}")
             return []
 

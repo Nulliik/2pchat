@@ -94,8 +94,8 @@ class UdpTrackerDiscovery(DiscoveryProvider):
                 timeout=self._timeout,
             )
             return [(family, socktype, proto, sockaddr) for family, socktype, proto, _, sockaddr in infos]
-        except (socket.gaierror, OSError, asyncio.TimeoutError) as exc:
-            raise RuntimeError(f"Failed to resolve tracker host '{self._tracker_host}': {exc}") from exc
+        except (socket.gaierror, OSError, asyncio.TimeoutError):
+            return []
 
     async def _tracker_roundtrip(
         self,
