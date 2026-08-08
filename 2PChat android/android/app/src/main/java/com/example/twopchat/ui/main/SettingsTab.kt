@@ -35,6 +35,8 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.painterResource
@@ -3759,15 +3761,29 @@ fun LanguageSettingsPage(
             }
             Spacer(modifier = Modifier.width(12.dp))
             if (isSearching) {
-                OutlinedTextField(
+                BasicTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text(if (appLanguage == "Русский") "Поиск языка..." else "Search language...", fontSize = 14.sp) },
+                    textStyle = TextStyle(fontSize = 15.sp, color = onSurfaceColor),
+                    singleLine = true,
                     modifier = Modifier
                         .weight(1f)
-                        .height(48.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    singleLine = true
+                        .height(44.dp)
+                        .background(surfaceColor, shape = RoundedCornerShape(12.dp))
+                        .border(1.5.dp, primaryColor, shape = RoundedCornerShape(12.dp))
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    decorationBox = { innerTextField ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    text = if (appLanguage == "Русский") "Поиск языка..." else "Search language...",
+                                    fontSize = 14.sp,
+                                    color = onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
                 )
                 IconButton(
                     onClick = {
