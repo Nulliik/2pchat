@@ -247,13 +247,15 @@ object P2PPreferences {
         if (trimmed.isEmpty()) {
             prefs.edit().remove("draft_$chatId").apply()
         } else {
-            prefs.edit().putString("draft_$chatId", text).apply()
+            val encrypted = SecureStorage.encrypt(text)
+            prefs.edit().putString("draft_$chatId", encrypted).apply()
         }
     }
 
     fun getDraft(context: Context, chatId: String): String? {
         if (chatId.isBlank()) return null
-        return prefs(context).getString("draft_$chatId", null)
+        val stored = prefs(context).getString("draft_$chatId", null) ?: return null
+        return SecureStorage.decrypt(stored) ?: stored
     }
 
     fun rejectPendingPeerIdentity(context: Context, peerName: String): Boolean =

@@ -412,7 +412,7 @@ object PythonBridge {
 
             Log.i(
                 TAG,
-                "Announcing self on trackers. IPv4=$ipv4Addresses Yggdrasil=$yggdrasilAddress port=$port"
+                "Announcing self on trackers (port=$port)"
             )
             val endpointsJson = JSONArray(addresses).toString()
             val success = bridge.callAttr(

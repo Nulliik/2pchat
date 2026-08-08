@@ -310,7 +310,12 @@ class MainActivity : ComponentActivity() {
                             "disguise" -> {
                                 CurrencyRatesScreen(
                                     appLanguage = appLanguage,
-                                    onUnlock = { isStealthDisguiseLocked = false }
+                                    onUnlock = {
+                                        isStealthDisguiseLocked = false
+                                        if (passcodeVal.isNotEmpty()) {
+                                            isAppLocked = true
+                                        }
+                                    }
                                 )
                             }
                             "unlock" -> {

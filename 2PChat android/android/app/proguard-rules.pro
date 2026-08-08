@@ -21,3 +21,10 @@
 # Keep P2P Models
 -keep class com.example.twopchat.data.** { *; }
 -keep class com.example.twopchat.group.ui.** { *; }
+
+# Strip raw android.util.Log in release builds
+-assumenosideeffects class android.util.Log {
+    public static *** v(...);
+    public static *** d(...);
+    public static *** i(...);
+}
