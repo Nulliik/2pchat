@@ -2456,7 +2456,18 @@ private fun MemberProfileModal(
     onRemove: () -> Unit,
     onBan: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var animateIn by remember { mutableStateOf(false) }
+    var showFullMemberAvatar by remember { mutableStateOf(false) }
+    var fullMemberAvatarBitmap by remember(member.displayName) { mutableStateOf<Bitmap?>(null) }
+    val memberAvatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName]
+
+    LaunchedEffect(member.displayName) {
+        withContext(Dispatchers.IO) {
+            fullMemberAvatarBitmap = com.example.twopchat.P2PMessageRelay.getOriginalAvatar(context, member.displayName)
+        }
+    }
+
     LaunchedEffect(Unit) { animateIn = true }
 
     val scale by animateFloatAsState(
@@ -2473,6 +2484,15 @@ private fun MemberProfileModal(
         label = "dialogAlpha"
     )
 
+    if (showFullMemberAvatar) {
+        com.example.twopchat.ui.common.FullScreenAvatarViewer(
+            title = member.displayName,
+            bitmap = fullMemberAvatarBitmap ?: memberAvatarBitmap,
+            initials = member.displayName.take(2).uppercase().ifBlank { "M" },
+            onDismiss = { showFullMemberAvatar = false }
+        )
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -2487,25 +2507,7 @@ private fun MemberProfileModal(
                     onClick = onDismiss
                 ),
             contentAlignment = Alignment.Center
-            val context = androidx.compose.ui.platform.LocalContext.current
-            var showFullMemberAvatar by remember { mutableStateOf(false) }
-            var fullMemberAvatarBitmap by remember(member.displayName) { mutableStateOf<Bitmap?>(null) }
-            val memberAvatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName]
-            
-            LaunchedEffect(member.displayName) {
-                withContext(Dispatchers.IO) {
-                    fullMemberAvatarBitmap = com.example.twopchat.P2PMessageRelay.getOriginalAvatar(context, member.displayName)
-                }
-            }
-
-            if (showFullMemberAvatar) {
-                com.example.twopchat.ui.common.FullScreenAvatarViewer(
-                    title = member.displayName,
-                    bitmap = fullMemberAvatarBitmap ?: memberAvatarBitmap,
-                    initials = member.displayName.take(2).uppercase().ifBlank { "M" },
-                    onDismiss = { showFullMemberAvatar = false }
-                )
-            }
+        ) {
 
             val memberInitials = member.displayName.take(2).uppercase().ifBlank { "M" }
             val avatarColor = remember(member.displayName) {
