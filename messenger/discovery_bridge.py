@@ -37,6 +37,7 @@ from messenger.core.protocol import (
     MAX_FILE_CHUNK_PAYLOAD_SIZE,
 )
 from messenger.core.identity import (
+    Outbox,
     TrustStore,
     fingerprint,
     load_or_create_identity,
@@ -122,6 +123,89 @@ def _is_endpoint_in_cooldown(endpoint: str) -> bool:
             return False
         return True
 
+
+# Exponential reconnect backoff per peer
+_reconnect_backoff: dict = {}  # key -> (next_allowed_monotonic_time, delay_seconds)
+_reconnect_backoff_lock = threading.Lock()
+_RECONNECT_BASE_DELAY = 30.0
+_RECONNECT_MAX_DELAY = 600.0  # 10 minutes max
+
+
+def _is_reconnect_in_backoff(key: str) -> tuple[bool, float]:
+    now = time.monotonic()
+    with _reconnect_backoff_lock:
+        next_allowed, _ = _reconnect_backoff.get(key, (0.0, _RECONNECT_BASE_DELAY))
+        if now < next_allowed:
+            return True, next_allowed - now
+        return False, 0.0
+
+
+def _record_reconnect_failure(key: str) -> None:
+    now = time.monotonic()
+    with _reconnect_backoff_lock:
+        _, current_delay = _reconnect_backoff.get(key, (0.0, _RECONNECT_BASE_DELAY))
+        next_delay = min(current_delay * 2.0, _RECONNECT_MAX_DELAY)
+        _reconnect_backoff[key] = (now + current_delay, next_delay)
+        print(f"[RECONNECT] Backoff for '{key}' set to {current_delay:.1f}s delay before next attempt")
+
+
+def _record_reconnect_success(key: str) -> None:
+    with _reconnect_backoff_lock:
+        _reconnect_backoff.pop(key, None)
+
+
+_global_outbox = None
+
+
+def _get_outbox() -> Outbox:
+    global _global_outbox
+    if _global_outbox is None:
+        config_dir = os.environ.get("P2PCHAT_CONFIG_DIR")
+        outbox_path = Path(config_dir) / "outbox.json" if config_dir else None
+        try:
+            _global_outbox = Outbox(str(outbox_path) if outbox_path else None)
+        except Exception as e:
+            print("Failed to initialize persistent Outbox:", e)
+            _global_outbox = Outbox(str(Path(tempfile.gettempdir()) / "p2p_outbox.json"))
+    return _global_outbox
+
+
+async def _flush_outbox_for_session(session, peer_name: str, fp: str):
+    try:
+        ob = _get_outbox()
+        for msg in list(ob.pending()):
+            msg_fp = msg.get("peer_fp")
+            msg_nick = msg.get("nickname")
+            if (msg_fp and msg_fp == fp) or (msg_nick and msg_nick.casefold() == peer_name.casefold()):
+                body = msg.get("body", "")
+                if body:
+                    await session.send_chat(body)
+                    ob.mark_sent(msg["id"])
+                    print(f"Flushed buffered Outbox message ({msg['id'][:8]}) to {peer_name}")
+    except Exception as err:
+        print(f"Error flushing outbox for {peer_name}: {err}")
+
+
+async def _session_keepalive_loop(session, peer_name: str, fp: str):
+    """Periodic application-level ping every 25s to keep NAT mappings active."""
+    _KEEPALIVE_INTERVAL = 25.0
+    try:
+        while session.is_online:
+            await asyncio.sleep(_KEEPALIVE_INTERVAL)
+            if not session.is_online:
+                break
+            try:
+                await asyncio.wait_for(
+                    session.send_reliable({"type": "ping"}),
+                    timeout=6.0
+                )
+            except (asyncio.TimeoutError, ConnectionError, OSError):
+                break
+            except Exception:
+                pass
+    except asyncio.CancelledError:
+        pass
+
 def is_ip_banned(ip_str: str) -> bool:
     if not ip_str:
         return False
@@ -151,8 +235,8 @@ def record_noisy_ip(ip_str: str):
 def is_peer_online(peer_name: str, expected_fingerprint=None) -> bool:
     session = _session_for_peer(peer_name, expected_fingerprint)
     return session is not None and getattr(session, "is_online", False)
-MOBILE_ACK_TIMEOUT = 3.0
-MOBILE_MAX_RETRIES = 1
+MOBILE_ACK_TIMEOUT = 5.0
+MOBILE_MAX_RETRIES = 2
 MAX_CONSECUTIVE_SESSION_PROBE_FAILURES = 2
 MAX_INCOMING_FILES = 16
 MAX_INCOMING_FILES_PER_PEER = 4
@@ -1756,17 +1840,17 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
 
 async def _read_loop(session, peer_name, fp):
     global message_listener_callback
+    keepalive_task = asyncio.create_task(_session_keepalive_loop(session, peer_name, fp))
+    asyncio.create_task(_flush_outbox_for_session(session, peer_name, fp))
     try:
         while True:
             msg = await session.receive_message()
-            # Kotlin may restore a canonical name from its persisted,
-            # authenticated fingerprint mapping before identity_info arrives.
-            # Always use the freshest mapping for application callbacks; the
-            # name captured when the read loop was created may be Peer (...).
             mapped_name = peer_fingerprint_to_name.get(fp)
             if mapped_name and not mapped_name.startswith("Peer ("):
                 peer_name = mapped_name
             mtype = msg.get("type")
+            if mtype in ("ping", "heartbeat"):
+                continue
             if mtype == "status" and msg.get("state") == "offline":
                 print(
                     f"Session with {peer_name} went offline: "
@@ -2096,6 +2180,8 @@ async def _read_loop(session, peer_name, fp):
     except Exception as e:
         print(f"Session with {peer_name} read loop error:", e)
     finally:
+        if keepalive_task and not keepalive_task.done():
+            keepalive_task.cancel()
         interrupted_transfers = []
         for transfer_key, transfer_state in list(incoming_files.items()):
             if not isinstance(transfer_key, tuple) or transfer_key[0] != fp:
@@ -2309,6 +2395,67 @@ async def _invalidate_session(session) -> None:
         pass
 
 
+async def _dial_fastest_endpoint(
+    endpoints: list[str],
+    identity_priv,
+    signing_key,
+    trust_store,
+    expected_fingerprint=None,
+) -> tuple["Session", str]:
+    """
+    Concurrently dial candidate endpoints (Happy Eyeballs pattern).
+    Returns (connected_session, connected_endpoint).
+    """
+    valid_eps = [ep for ep in endpoints if not _is_endpoint_in_cooldown(ep)]
+    if not valid_eps:
+        raise ConnectionError(f"All candidate endpoints are in cooldown: {endpoints}")
+
+    if len(valid_eps) == 1:
+        ep = valid_eps[0]
+        sess = await _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+        return sess, ep
+
+    tasks = {
+        asyncio.create_task(
+            _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+        ): ep
+        for ep in valid_eps
+    }
+
+    winning_session = None
+    winning_ep = ""
+    last_error = None
+
+    try:
+        pending = set(tasks.keys())
+        while pending:
+            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                ep = tasks[task]
+                try:
+                    res = task.result()
+                    if winning_session is None:
+                        winning_session = res
+                        winning_ep = ep
+                    else:
+                        asyncio.create_task(_invalidate_session(res))
+                except Exception as err:
+                    last_error = err
+
+            if winning_session is not None:
+                break
+    finally:
+        for t in tasks.keys():
+            if not t.done():
+                t.cancel()
+
+    if winning_session is not None:
+        print(f"Happy Eyeballs dial connected via {winning_ep}")
+        return winning_session, winning_ep
+
+    raise ConnectionError(f"All candidate endpoints failed for {expected_fingerprint or valid_eps}. Last error: {last_error}")
+
+
 async def _establish_session_async(peer_name: str, endpoint: str, expected_fingerprint=None) -> "Session":
     identity_priv = load_or_create_identity()
     signing_key = load_or_create_signing_identity()
@@ -2319,25 +2466,27 @@ async def _establish_session_async(peer_name: str, endpoint: str, expected_finge
     session = None
     connected_endpoint = ""
 
-    for ep in endpoints:
+    if endpoints:
         try:
-            session = await _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
-            connected_endpoint = ep
-            print(f"Connected to {peer_name} via {ep}")
-            break
+            session, connected_endpoint = await _dial_fastest_endpoint(
+                endpoints, identity_priv, signing_key, trust_store, expected_fingerprint
+            )
+            print(f"Connected to {peer_name} via {connected_endpoint}")
         except Exception as err:
-            print(f"Failed to connect to {peer_name} via {ep}: {err}")
+            print(f"Failed to connect to {peer_name} via initial endpoints {endpoints}: {err}")
             last_err = err
 
     if session is None and expected_fingerprint:
-        for ep in await _resolve_peer_endpoints_async(expected_fingerprint):
-            if ep in endpoints:
-                continue
+        fresh_eps = [
+            ep for ep in await _resolve_peer_endpoints_async(expected_fingerprint)
+            if ep not in endpoints
+        ]
+        if fresh_eps:
             try:
-                session = await _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
-                connected_endpoint = ep
-                print(f"Reconnected to {peer_name} via fresh discovery endpoint {ep}")
-                break
+                session, connected_endpoint = await _dial_fastest_endpoint(
+                    fresh_eps, identity_priv, signing_key, trust_store, expected_fingerprint
+                )
+                print(f"Reconnected to {peer_name} via fresh discovery endpoint {connected_endpoint}")
             except Exception as err:
                 last_err = err
                 
@@ -2397,12 +2546,22 @@ async def _send_message_unlocked(peer_name: str, endpoint: str, body: str, expec
         raise
     except (ConnectionError, TimeoutError, OSError) as e:
         await _invalidate_session(session)
-        print(f"Peer {peer_name} unreachable: {e}")
+        print(f"Peer {peer_name} unreachable ({e}); storing message in persistent Outbox")
+        try:
+            ob = _get_outbox()
+            ob.add_chat(body, time.time(), nickname=peer_name, peer_fp=expected_fingerprint)
+        except Exception as ob_err:
+            print("Outbox error:", ob_err)
         return False
     except Exception as e:
         await _invalidate_session(session)
         print(f"Error in _send_message_async to {peer_name}:", e)
         traceback.print_exc()
+        try:
+            ob = _get_outbox()
+            ob.add_chat(body, time.time(), nickname=peer_name, peer_fp=expected_fingerprint)
+        except Exception:
+            pass
         return False
 
 
@@ -2888,6 +3047,11 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
         return False
 
     reconnect_key = expected_fingerprint or peer_name.casefold()
+    in_backoff, wait_sec = _is_reconnect_in_backoff(reconnect_key)
+    if in_backoff:
+        print(f"[RECONNECT] Suppressing reconnect to '{peer_name}' (backoff active for {wait_sec:.1f}s)")
+        return False
+
     with _reconnect_lock:
         if reconnect_key in _reconnect_in_flight:
             print(f"[RECONNECT] Reconnect to '{peer_name}' is already in progress")
@@ -2905,6 +3069,7 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
             probe_fut = asyncio.run_coroutine_threadsafe(session.send_reliable({"type": "heartbeat"}), loop)
             probe_fut.result(timeout=3.0)
             print(f"[RECONNECT] Session with {peer_name} is healthy and responsive; keeping it")
+            _record_reconnect_success(reconnect_key)
             _finish_reconnect()
             return True
         except Exception as probe_err:
@@ -2929,34 +3094,31 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
             
             connected_session = None
             connected_endpoint = ""
-            for ep in endpoints:
-                if _is_endpoint_in_cooldown(ep):
-                    print(f"[RECONNECT] Skipping {ep} for {peer_name} (stale endpoint in cooldown)")
-                    continue
+            if endpoints:
                 try:
-                    connected_session = await _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
-                    connected_endpoint = ep
-                    print(f"[RECONNECT] Successfully connected to {peer_name} via {ep}")
-                    break
+                    connected_session, connected_endpoint = await _dial_fastest_endpoint(
+                        endpoints, identity_priv, signing_key, trust_store, expected_fingerprint
+                    )
+                    print(f"[RECONNECT] Successfully connected to {peer_name} via {connected_endpoint}")
                 except Exception as err:
-                    print(f"[RECONNECT] Failed to connect to {peer_name} via {ep}: {err}")
+                    print(f"[RECONNECT] Failed to connect to {peer_name} via endpoints {endpoints}: {err}")
             
             if connected_session is None and expected_fingerprint:
-                # Try fresh endpoints from the tracker – these are NOT in
-                # cooldown since they were just resolved.
-                fresh_eps = await _resolve_peer_endpoints_async(expected_fingerprint)
-                for ep in fresh_eps:
-                    if ep in endpoints:
-                        continue
+                fresh_eps = [
+                    ep for ep in await _resolve_peer_endpoints_async(expected_fingerprint)
+                    if ep not in endpoints
+                ]
+                if fresh_eps:
                     try:
-                        connected_session = await _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
-                        connected_endpoint = ep
-                        print(f"[RECONNECT] Reconnected to {peer_name} via fresh discovery endpoint {ep}")
-                        break
-                    except Exception:
-                        pass
+                        connected_session, connected_endpoint = await _dial_fastest_endpoint(
+                            fresh_eps, identity_priv, signing_key, trust_store, expected_fingerprint
+                        )
+                        print(f"[RECONNECT] Reconnected to {peer_name} via fresh discovery endpoint {connected_endpoint}")
+                    except Exception as err:
+                        print(f"[RECONNECT] Fresh tracker endpoints failed for {peer_name}: {err}")
 
             if connected_session:
+                _record_reconnect_success(reconnect_key)
                 fp = connected_session.peer_fingerprint
                 peer_fingerprint_to_name[fp] = peer_name
                 registered = await _register_authenticated_session(
@@ -2972,10 +3134,13 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
                 ):
                     await _invalidate_session(connected_session)
                     print(f"Android rejected fingerprint {fp} for nickname '{peer_name}'")
-                    return
+                    return False
                 return True
+
+            _record_reconnect_failure(reconnect_key)
             return False
         except Exception as e:
+            _record_reconnect_failure(reconnect_key)
             print(f"[RECONNECT] Error during reconnect sequence: {e}")
             return False
 
