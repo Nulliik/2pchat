@@ -909,15 +909,19 @@ fun GroupChatScreen(
                                     Spacer(modifier = Modifier.height(6.dp))
 
                                     Text(
-                                        text = Localizations.tr(
-                                            appLanguage,
-                                            "Сообщений пока нет. Начните общение в группе!",
-                                            "No messages yet. Start chatting in the group!",
-                                            "Keine Nachrichten vorhanden. Starte die Unterhaltung in der Gruppe!",
-                                            "¡Aún no hay mensajes. Comienza a chatear en el grupo!",
-                                            "Pas encore de messages. Commencez à discuter dans le groupe !",
-                                            "Nenhuma mensagem ainda. Comece a conversar no grupo!"
-                                        ),
+                                        text = if (state.readOnlyReason.isNotBlank()) {
+                                            state.readOnlyReason
+                                        } else {
+                                            Localizations.tr(
+                                                appLanguage,
+                                                "Сообщений пока нет. Начните общение в группе!",
+                                                "No messages yet. Start chatting in the group!",
+                                                "Keine Nachrichten vorhanden. Starte die Unterhaltung in der Gruppe!",
+                                                "¡Aún no hay mensajes. Comienza a chatear en el grupo!",
+                                                "Pas encore de messages. Commencez à discuter dans le groupe !",
+                                                "Nenhuma mensagem ainda. Comece a conversar no grupo!"
+                                            )
+                                        },
                                         fontSize = 13.sp,
                                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant

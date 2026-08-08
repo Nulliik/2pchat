@@ -4295,13 +4295,13 @@ object GroupChatCoordinator {
             readOnlyReason = if (canPost || canPostMedia) {
                 ""
             } else if (localMember?.status == "JOINING") {
-                "Waiting for the group owner to confirm membership"
+                "Ожидание подтверждения членства владельцем группы"
             } else if (localParticipates && !hasCurrentEpochKey) {
-                "Waiting for the current group encryption key"
+                "Ожидание получения текущего ключа шифрования группы"
             } else if (!groupPostingAllowed && group.adminOnlyPosting) {
                 "Только администраторы могут отправлять сообщения"
             } else {
-                "Posting is restricted by a group administrator"
+                "Отправка сообщений ограничена администратором"
             },
             wallpaperUri = applicationContext?.let { ctx ->
                 P2PPreferences.prefs(ctx).getString("group_wallpaper_${group.groupId}", null)
