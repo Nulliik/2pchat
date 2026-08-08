@@ -1017,7 +1017,7 @@ fun SettingsTab(
                                     title = Localizations.getString("language", appLanguage),
                                     subtitle = Localizations.getString("choose_app_language", appLanguage),
                                     value = appLanguage,
-                                    iconRes = com.example.twopchat.R.drawable.ic_quick_link,
+                                    iconRes = com.example.twopchat.R.drawable.ic_language_translate,
                                     iconColor = Color(0xFFEC407A),
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
