@@ -63,6 +63,7 @@ fun DirectChatWallpaperModal(
     peerName: String,
     currentWallpaperPath: String?,
     currentDimming: Int,
+    currentBlur: Boolean = false,
     appLanguage: String,
     primaryColor: Color,
     surfaceColor: Color,
@@ -75,7 +76,7 @@ fun DirectChatWallpaperModal(
     val haptic = LocalHapticFeedback.current
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
     var dimming by remember { mutableFloatStateOf(currentDimming.toFloat().coerceIn(0f, 80f)) }
-    var isBlur by remember { mutableStateOf(false) }
+    var isBlur by remember { mutableStateOf(currentBlur) }
     var selectedPreset by remember { mutableStateOf<WallpaperPreset?>(null) }
 
     val animatedBlurRadius by animateDpAsState(

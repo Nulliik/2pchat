@@ -908,6 +908,7 @@ object P2PMessageRelay {
                                 "direct_wallpaper_update" -> {
                                     val b64 = json.optString("wallpaper_data", "")
                                     val dimming = json.optInt("dimming", 30)
+                                    val isBlur = json.optBoolean("is_blur", false)
                                     if (b64.isNotBlank() && b64.length <= 6_000_000) {
                                         try {
                                             val bytes = Base64.decode(b64, Base64.DEFAULT)
@@ -918,6 +919,7 @@ object P2PMessageRelay {
                                             P2PPreferences.prefs(appContext).edit()
                                                 .putString("direct_wallpaper_$sender", destFile.absolutePath)
                                                 .putInt("direct_wallpaper_dimming_$sender", dimming)
+                                                .putBoolean("direct_wallpaper_blur_$sender", isBlur)
                                                 .apply()
 
                                             val defaultLang = if (Locale.getDefault().language == "ru") "Русский" else "English"
@@ -945,6 +947,7 @@ object P2PMessageRelay {
                                             P2PPreferences.prefs(appContext).edit()
                                                 .remove("direct_wallpaper_$sender")
                                                 .remove("direct_wallpaper_dimming_$sender")
+                                                .remove("direct_wallpaper_blur_$sender")
                                                 .apply()
 
                                             val defaultLang = if (Locale.getDefault().language == "ru") "Русский" else "English"
@@ -1717,7 +1720,7 @@ object P2PMessageRelay {
         }, onResult)
     }
 
-    fun sendDirectWallpaperUpdate(context: Context, peerName: String, wallpaperBitmap: Bitmap?, dimming: Int) {
+    fun sendDirectWallpaperUpdate(context: Context, peerName: String, wallpaperBitmap: Bitmap?, dimming: Int, isBlur: Boolean = false) {
         relayScope.launch(Dispatchers.IO) {
             try {
                 val b64 = if (wallpaperBitmap != null) {
@@ -1740,6 +1743,7 @@ object P2PMessageRelay {
                     put("type", "direct_wallpaper_update")
                     put("wallpaper_data", b64)
                     put("dimming", dimming)
+                    put("is_blur", isBlur)
                 }
 
                 outboundMessenger.sendControlMessage(context, peerName, payload)

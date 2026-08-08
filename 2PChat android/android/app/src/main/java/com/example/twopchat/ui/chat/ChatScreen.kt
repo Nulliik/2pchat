@@ -72,6 +72,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
@@ -474,6 +475,9 @@ fun ChatScreen(
     }
     var wallpaperDimming by remember(peerName) {
         mutableIntStateOf(sharedPrefs.getInt("direct_wallpaper_dimming_$peerName", 30))
+    }
+    var wallpaperBlur by remember(peerName) {
+        mutableStateOf(sharedPrefs.getBoolean("direct_wallpaper_blur_$peerName", false))
     }
     var wallpaperBitmap by remember(wallpaperPath) {
         mutableStateOf<Bitmap?>(null)
@@ -1845,7 +1849,9 @@ fun ChatScreen(
                 bitmap = wallpaperBitmap!!.asImageBitmap(),
                 contentDescription = "Wallpaper",
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (wallpaperBlur) Modifier.blur(12.dp) else Modifier)
             )
             Box(
                 modifier = Modifier
@@ -2417,6 +2423,7 @@ fun ChatScreen(
                 peerName = peerName,
                 currentWallpaperPath = wallpaperPath,
                 currentDimming = wallpaperDimming,
+                currentBlur = wallpaperBlur,
                 appLanguage = appLanguage,
                 primaryColor = primaryColor,
                 surfaceColor = surfaceColor,
@@ -2435,9 +2442,11 @@ fun ChatScreen(
                             sharedPrefs.edit {
                                 putString("direct_wallpaper_$peerName", targetFile.absolutePath)
                                 putInt("direct_wallpaper_dimming_$peerName", dimming)
+                                putBoolean("direct_wallpaper_blur_$peerName", isBlur)
                             }
                             wallpaperPath = targetFile.absolutePath
                             wallpaperDimming = dimming
+                            wallpaperBlur = isBlur
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
@@ -2446,12 +2455,14 @@ fun ChatScreen(
                         sharedPrefs.edit {
                             remove("direct_wallpaper_$peerName")
                             remove("direct_wallpaper_dimming_$peerName")
+                            remove("direct_wallpaper_blur_$peerName")
                         }
                         wallpaperPath = null
+                        wallpaperBlur = false
                     }
 
                     if (applyToPeer) {
-                        P2PMessageRelay.sendDirectWallpaperUpdate(context, peerName, bitmap, dimming)
+                        P2PMessageRelay.sendDirectWallpaperUpdate(context, peerName, bitmap, dimming, isBlur)
                         val textRu = if (bitmap != null) "Вы установили новые обои для этого чата" else "Вы удалили обои для этого чата"
                         val textEn = if (bitmap != null) "You set a new wallpaper for this chat" else "You removed the wallpaper for this chat"
                         val sysMsg = Message(
