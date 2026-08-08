@@ -940,55 +940,6 @@ fun ContactsTab(
                                     )
                                 }
 
-                                // Connect Peer — look up an incoming session via the token
-                                IconButton(
-                                    onClick = {
-                                        val guestName = if (appLanguage == "Русский") "Приглашенный гость" else "Guest Peer"
-                                        val currentLink = inviteLinkState
-                                        if (currentLink.isNotEmpty()) {
-                                            val uri = android.net.Uri.parse(currentLink)
-                                            val token = uri.getQueryParameter("token") ?: ""
-                                            if (token.isNotEmpty()) {
-                                                isResolvingInvite = true
-                                                resolveInviteStatus = if (appLanguage == "Русский") "Поиск собеседника..." else "Looking for guest peer..."
-                                                coroutineScope.launch(Dispatchers.IO) {
-                                                    val peers = PythonBridge.searchPeers(token)
-                                                    val endpoints = if (peers.isNotEmpty()) peers[0]["endpoints"] as? List<*> else null
-                                                    val endpointStr = if (endpoints != null && endpoints.isNotEmpty()) endpoints.joinToString(",") { it.toString() } else ""
-                                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                                        isResolvingInvite = false
-                                                        if (endpointStr.isNotEmpty()) {
-                                                            val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-                                                            if (!activeSet.contains(guestName)) {
-                                                                val newSet = activeSet.toMutableSet()
-                                                                newSet.add(guestName)
-                                                                sharedPrefs.edit().putStringSet("active_chats", newSet).apply()
-                                                                sharedPrefs.edit().putString("transport_$guestName", "DIRECT P2P").apply()
-                                                            }
-                                                            com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(guestName, endpointStr)
-                                                            resolveInviteStatus = ""
-                                                            inviteLinkState = ""
-                                                            onItemClick(Chat(guestName))
-                                                        } else {
-                                                            resolveInviteStatus = if (appLanguage == "Русский") "Гость ещё не подсоединился." else "Guest has not connected yet."
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .background(Color(0xFF4CAF50), shape = RoundedCornerShape(12.dp))
-                                ) {
-                                    Icon(
-                                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_quick_link),
-                                        contentDescription = "Connect",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-
                                 // Reset Link
                                 IconButton(
                                     onClick = { inviteLinkState = "" },

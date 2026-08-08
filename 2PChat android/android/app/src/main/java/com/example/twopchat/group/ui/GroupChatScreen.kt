@@ -854,8 +854,9 @@ fun GroupChatScreen(
                     item(key = "empty") {
                         Box(
                             modifier = Modifier
+                                .fillParentMaxHeight(0.72f)
                                 .fillMaxWidth()
-                                .padding(vertical = 80.dp, horizontal = 24.dp),
+                                .padding(horizontal = 24.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Surface(
@@ -910,7 +911,15 @@ fun GroupChatScreen(
 
                                     Text(
                                         text = if (state.readOnlyReason.isNotBlank()) {
-                                            state.readOnlyReason
+                                            Localizations.tr(
+                                                appLanguage,
+                                                "Ожидание подтверждения членства владельцем группы",
+                                                "Waiting for group owner to confirm membership",
+                                                "Warten auf Bestätigung der Mitgliedschaft durch den Gruppenbesitzer",
+                                                "Esperando la confirmación de membresía por parte del propietario del grupo",
+                                                "En attente de la confirmation de l'appartenance par le propriétaire du groupe",
+                                                "Aguardando confirmação de associação pelo proprietário do grupo"
+                                            )
                                         } else {
                                             Localizations.tr(
                                                 appLanguage,
@@ -3421,7 +3430,15 @@ private fun GroupComposer(
                     .testTag("read_only_composer")
             ) {
                 Text(
-                    text = state.readOnlyReason.ifBlank { "Вы не можете отправлять сообщения в этой группе" },
+                    text = Localizations.tr(
+                        appLanguage,
+                        "Вы пока не можете писать в эту группу",
+                        "You cannot post in this group yet",
+                        "Du kannst noch nicht in dieser Gruppe schreiben",
+                        "Aún no puedes escribir en este grupo",
+                        "Vous ne pouvez pas encore écrire dans ce groupe",
+                        "Você ainda não pode escrever neste grupo"
+                    ),
                     modifier = Modifier.padding(14.dp),
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
