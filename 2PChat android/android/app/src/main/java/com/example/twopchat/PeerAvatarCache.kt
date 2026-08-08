@@ -17,8 +17,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 internal class PeerAvatarCache(
-    private val maxBytes: Long = 16L * 1024L * 1024L,
-    private val maxCachedDimensionPx: Int = 128,
+    private val maxBytes: Long = 6L * 1024L * 1024L,
+    private val maxCachedDimensionPx: Int = 96,
 ) {
     val avatars = mutableStateMapOf<String, Bitmap>()
     private val order = ArrayDeque<String>()
@@ -26,23 +26,39 @@ internal class PeerAvatarCache(
 
     fun put(peerName: String, bitmap: Bitmap) {
         val cachedBitmap = bitmap.scaledForCache(maxCachedDimensionPx)
-        avatars.remove(peerName)?.let { sizeBytes -= it.allocationByteCount.toLong() }
+        avatars.remove(peerName)?.let { old ->
+            sizeBytes -= old.allocationByteCount.toLong()
+            if (old !== cachedBitmap && !old.isRecycled) {
+                old.recycle()
+            }
+        }
         order.remove(peerName)
         avatars[peerName] = cachedBitmap
         order.addLast(peerName)
         sizeBytes += cachedBitmap.allocationByteCount.toLong()
         while (sizeBytes > maxBytes && order.size > 1) {
             val oldestPeer = order.removeFirst()
-            avatars.remove(oldestPeer)?.let { sizeBytes -= it.allocationByteCount.toLong() }
+            avatars.remove(oldestPeer)?.let { evicted ->
+                sizeBytes -= evicted.allocationByteCount.toLong()
+                if (!evicted.isRecycled) {
+                    evicted.recycle()
+                }
+            }
         }
     }
 
     fun remove(peerName: String) {
         order.remove(peerName)
-        avatars.remove(peerName)?.let { sizeBytes -= it.allocationByteCount.toLong() }
+        avatars.remove(peerName)?.let { old ->
+            sizeBytes -= old.allocationByteCount.toLong()
+            if (!old.isRecycled) {
+                old.recycle()
+            }
+        }
     }
 
     fun clear() {
+        avatars.values.forEach { if (!it.isRecycled) it.recycle() }
         avatars.clear()
         order.clear()
         sizeBytes = 0L
@@ -62,7 +78,10 @@ internal class PeerAvatarCache(
                         }
                     } else if (file.name.endsWith(LEGACY_EXTENSION)) {
                         // One-time migration from old plaintext avatar files.
-                        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: continue
+                        val options = BitmapFactory.Options().apply {
+                            inPreferredConfig = Bitmap.Config.RGB_565
+                        }
+                        val bitmap = BitmapFactory.decodeFile(file.absolutePath, options) ?: continue
                         val peerName = file.name.removeSuffix(LEGACY_EXTENSION)
                         savePersisted(appContext, peerName, bitmap)
                         if (!file.delete()) onError(IllegalStateException("Could not remove legacy avatar"))
@@ -112,7 +131,10 @@ internal class PeerAvatarCache(
             require(nameLength in 1..MAX_PEER_NAME_BYTES) { "Invalid encrypted avatar name" }
             val peerName = String(ByteArray(nameLength).also(input::readFully), Charsets.UTF_8)
             val image = input.readBytes()
-            val bitmap = BitmapFactory.decodeByteArray(image, 0, image.size) ?: return null
+            val options = BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            val bitmap = BitmapFactory.decodeByteArray(image, 0, image.size, options) ?: return null
             peerName to bitmap
         }
     }
@@ -133,7 +155,11 @@ internal class PeerAvatarCache(
         )
         val targetWidth = (width * scale).toInt().coerceAtLeast(1)
         val targetHeight = (height * scale).toInt().coerceAtLeast(1)
-        return Bitmap.createScaledBitmap(this, targetWidth, targetHeight, true)
+        val scaled = Bitmap.createScaledBitmap(this, targetWidth, targetHeight, true)
+        if (scaled !== this && !this.isRecycled) {
+            this.recycle()
+        }
+        return scaled
     }
 
     private companion object {

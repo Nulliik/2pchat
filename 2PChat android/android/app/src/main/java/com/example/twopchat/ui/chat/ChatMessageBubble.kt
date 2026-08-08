@@ -119,6 +119,9 @@ internal fun ChatMessageBubble(
 ) {
     val isHighlighted = msg.id == highlightedMessageId
     var highlightAlpha by remember(msg.id, isHighlighted) { mutableStateOf(if (isHighlighted) 0.5f else 0.0f) }
+    val formattedTime = remember(msg.id, msg.status, msg.sentAtEpochMs, appLanguage) {
+        MessageTimestampFormatter.format(msg, appLanguage)
+    }
     if (isHighlighted && highlightAlpha > 0f) {
         LaunchedEffect(msg.id) {
             androidx.compose.animation.core.animate(
@@ -581,7 +584,7 @@ internal fun ChatMessageBubble(
                                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                     ) {
                                                         Text(
-                                                            text = MessageTimestampFormatter.format(msg, appLanguage),
+                                                            text = formattedTime,
                                                             fontSize = 10.sp,
                                                             color = Color.White.copy(alpha = 0.95f),
                                                             fontWeight = FontWeight.Medium
@@ -629,7 +632,7 @@ internal fun ChatMessageBubble(
                                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                     ) {
                                                         Text(
-                                                            text = MessageTimestampFormatter.format(msg, appLanguage),
+                                                            text = formattedTime,
                                                             fontSize = 10.sp,
                                                             color = textColor.copy(alpha = 0.75f),
                                                             fontWeight = FontWeight.Medium
@@ -863,7 +866,7 @@ internal fun ChatMessageBubble(
                                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                 ) {
                                                     Text(
-                                                        text = MessageTimestampFormatter.format(msg, appLanguage),
+                                                        text = formattedTime,
                                                         fontSize = 10.sp,
                                                         color = Color.White.copy(alpha = 0.95f),
                                                         fontWeight = FontWeight.Medium
@@ -911,7 +914,7 @@ internal fun ChatMessageBubble(
                                                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                 ) {
                                                     Text(
-                                                        text = MessageTimestampFormatter.format(msg, appLanguage),
+                                                        text = formattedTime,
                                                         fontSize = 10.sp,
                                                         color = textColor.copy(alpha = 0.75f),
                                                         fontWeight = FontWeight.Medium
@@ -1135,12 +1138,13 @@ internal fun ChatMessageBubble(
                             }
                             if (msg.attachmentType != "IMAGE" && msg.attachmentType != "VIDEO" && msg.attachmentType != "ALBUM" && msg.albumMediaUris.isEmpty()) {
                                 Spacer(modifier = Modifier.height(4.dp))
+                                val formattedTime = remember(msg.timestamp, appLanguage) { MessageTimestampFormatter.format(msg, appLanguage) }
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.align(Alignment.End)
                                 ) {
                                     Text(
-                                        text = MessageTimestampFormatter.format(msg, appLanguage),
+                                        text = formattedTime,
                                         color = (if (isOnlyEmoji || isSticker || isGif) {
                                             onSurfaceColor.copy(alpha = 0.5f)
                                         } else if (msg.isMe) {
@@ -1870,7 +1874,7 @@ private fun MediaAlbumGridBubble(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = MessageTimestampFormatter.format(msg, appLanguage),
+                        text = formattedTime,
                         fontSize = 10.sp,
                         color = Color.White.copy(alpha = 0.95f),
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
@@ -1917,7 +1921,7 @@ private fun MediaAlbumGridBubble(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = MessageTimestampFormatter.format(msg, appLanguage),
+                        text = formattedTime,
                         fontSize = 11.sp,
                         color = textColor.copy(alpha = 0.6f)
                     )

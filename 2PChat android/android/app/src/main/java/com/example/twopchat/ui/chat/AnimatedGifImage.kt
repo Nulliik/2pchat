@@ -127,7 +127,12 @@ internal fun AnimatedGifImage(
         } else {
             (drawable as? Animatable)?.stop()
         }
-        onDispose { (drawable as? Animatable)?.stop() }
+        onDispose {
+            (drawable as? Animatable)?.stop()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                (drawable as? AnimatedImageDrawable)?.clearAnimationCallbacks()
+            }
+        }
     }
 
     var frameTimeMs by remember(movie) { mutableLongStateOf(0L) }
