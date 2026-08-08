@@ -5,7 +5,14 @@ import json
 import traceback
 import warnings
 
-warnings.filterwarnings("ignore", category=ResourceWarning)
+# Do NOT suppress ResourceWarning globally – we rely on it to detect unclosed
+# sockets.  Only suppress the noisy asyncio internal pipe-close warnings that
+# fire legitimately on every server shutdown.
+warnings.filterwarnings(
+    "ignore",
+    message="Enable tracemalloc",
+    category=ResourceWarning,
+)
 import uuid
 import re
 import time
@@ -70,6 +77,50 @@ incoming_file_starts = {}
 _banned_ips = {}
 _noisy_ip_counts = {}
 _ip_ban_lock = threading.Lock()
+
+# Tracks consecutive connection failures per endpoint string.
+# Format: {endpoint_str: (failure_count, first_failure_monotonic_time)}
+# After _STALE_EP_THRESHOLD consecutive failures the endpoint is put into a
+# _STALE_EP_COOLDOWN-second cooldown so we stop hammering a dead address.
+_stale_endpoint_failures: dict = {}
+_stale_ep_lock = threading.Lock()
+_STALE_EP_THRESHOLD = 4       # failures before cooldown
+_STALE_EP_COOLDOWN  = 300     # seconds (5 min) to skip a stale endpoint
+
+
+def _record_endpoint_failure(endpoint: str) -> None:
+    """Record one consecutive connection failure for *endpoint*."""
+    now = time.monotonic()
+    with _stale_ep_lock:
+        count, first = _stale_endpoint_failures.get(endpoint, (0, now))
+        _stale_endpoint_failures[endpoint] = (count + 1, first)
+        if count + 1 >= _STALE_EP_THRESHOLD:
+            print(
+                f"[ENDPOINT] {endpoint} has failed {count + 1} times in a row; "
+                f"entering {_STALE_EP_COOLDOWN}s cooldown"
+            )
+
+
+def _record_endpoint_success(endpoint: str) -> None:
+    """Clear failure counter for *endpoint* after a successful connection."""
+    with _stale_ep_lock:
+        _stale_endpoint_failures.pop(endpoint, None)
+
+
+def _is_endpoint_in_cooldown(endpoint: str) -> bool:
+    """Return True if *endpoint* is currently in its stale cooldown window."""
+    now = time.monotonic()
+    with _stale_ep_lock:
+        count, first = _stale_endpoint_failures.get(endpoint, (0, now))
+        if count < _STALE_EP_THRESHOLD:
+            return False
+        # Cooldown expires after _STALE_EP_COOLDOWN seconds since the LAST
+        # failure (approximated by now - first + small margin).
+        if now - first >= _STALE_EP_COOLDOWN:
+            # Cooldown expired – give it another chance
+            _stale_endpoint_failures.pop(endpoint, None)
+            return False
+        return True
 
 def is_ip_banned(ip_str: str) -> bool:
     if not ip_str:
@@ -2188,14 +2239,21 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
             await session.close()
             raise ValueError("refusing self connection")
         session._start_reader()
+        _record_endpoint_success(endpoint_str)
         return session
     except BaseException:
+        # Record the failure so that persistently-dead endpoints enter cooldown.
+        _record_endpoint_failure(endpoint_str)
         if session is not None:
             try:
                 await session.close()
             except Exception:
                 pass
-        await _close_writer_safely(writer)
+        else:
+            # session was never created – close the raw writer explicitly so
+            # the underlying SSL/TCP socket is released immediately instead of
+            # waiting for GC (fixes "unclosed ssl.SSLSocket" ResourceWarning).
+            await _close_writer_safely(writer)
         raise
 
 
@@ -2872,6 +2930,9 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
             connected_session = None
             connected_endpoint = ""
             for ep in endpoints:
+                if _is_endpoint_in_cooldown(ep):
+                    print(f"[RECONNECT] Skipping {ep} for {peer_name} (stale endpoint in cooldown)")
+                    continue
                 try:
                     connected_session = await _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
                     connected_endpoint = ep
@@ -2881,7 +2942,10 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
                     print(f"[RECONNECT] Failed to connect to {peer_name} via {ep}: {err}")
             
             if connected_session is None and expected_fingerprint:
-                for ep in await _resolve_peer_endpoints_async(expected_fingerprint):
+                # Try fresh endpoints from the tracker – these are NOT in
+                # cooldown since they were just resolved.
+                fresh_eps = await _resolve_peer_endpoints_async(expected_fingerprint)
+                for ep in fresh_eps:
                     if ep in endpoints:
                         continue
                     try:

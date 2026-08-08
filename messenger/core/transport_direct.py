@@ -3,6 +3,13 @@ from typing import AsyncIterator, Tuple
 
 from .transport_base import Transport
 
+# Safe fixed backlog value that does not require reading /proc/net/somaxconn.
+# Android's SELinux policy (API 34+) denies that read for untrusted apps, so
+# relying on the OS default (which internally reads somaxconn) triggers an AVC
+# denial.  128 is the POSIX-minimum guaranteed value and is sufficient for P2P
+# traffic.
+_SERVER_BACKLOG = 128
+
 
 class DirectTransport(Transport):
     """IPv4/IPv6 direct transport using asyncio streams."""
@@ -33,7 +40,10 @@ class DirectTransport(Transport):
                 except (ConnectionError, OSError):
                     pass
 
-        server = await asyncio.start_server(_handler, host, port)
+        # Explicit backlog avoids the implicit /proc/net/somaxconn read that
+        # asyncio performs when backlog is omitted (default=100 on CPython but
+        # the kernel call path triggers an SELinux denial on Android 17).
+        server = await asyncio.start_server(_handler, host, port, backlog=_SERVER_BACKLOG)
 
         try:
             async with server:
@@ -41,6 +51,12 @@ class DirectTransport(Transport):
                     reader, writer = await queue.get()
                     yield reader, writer
         finally:
+            # Drain any connections that arrived after the consumer stopped
+            # so their sockets are not left unclosed.
             while not queue.empty():
                 _reader, writer = queue.get_nowait()
                 writer.close()
+                try:
+                    await writer.wait_closed()
+                except (ConnectionError, OSError):
+                    pass
