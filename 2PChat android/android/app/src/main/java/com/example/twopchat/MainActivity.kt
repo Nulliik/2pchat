@@ -57,7 +57,7 @@ import com.example.twopchat.ui.disguise.CurrencyRatesScreen
 class MainActivity : ComponentActivity() {
     private var lastInteractionTime = System.currentTimeMillis()
     private var lastStopTime = System.currentTimeMillis()
-    private val triggerLockCheckState = mutableStateOf(0)
+    private val triggerLockCheckState = mutableIntStateOf(0)
     private val reduceMotionState = mutableStateOf(false)
     private val appMotionDurationScale = AppMotionDurationScale()
     private lateinit var appPreferences: SharedPreferences

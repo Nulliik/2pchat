@@ -53,8 +53,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -145,7 +143,7 @@ fun GroupInfoScreen(
     var showTopMenu by remember { mutableStateOf(false) }
     var showEditMetadata by remember { mutableStateOf(false) }
     var showInviteMembers by remember { mutableStateOf(false) }
-    var selectedTab by remember { mutableStateOf(0) } // 0: Участники, 1: Медиа, 2: Избранное, 3: Файлы
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Участники, 1: Медиа, 2: Избранное, 3: Файлы
     var activeFullscreenImages by remember { mutableStateOf<List<String>>(emptyList()) }
     var activeFullscreenIndex by remember { mutableIntStateOf(0) }
     var activeFullscreenVideo by remember { mutableStateOf<String?>(null) }

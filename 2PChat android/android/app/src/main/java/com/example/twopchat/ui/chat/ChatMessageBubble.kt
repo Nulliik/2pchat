@@ -1688,6 +1688,9 @@ private fun MediaAlbumGridBubble(
     val onToggleSelection = { onSelectionChange(msg, !isSelected) }
     val uris = msg.albumMediaUris
     val types = msg.albumMediaTypes
+    val formattedTime = remember(msg.id, msg.status, msg.sentAtEpochMs, appLanguage) {
+        MessageTimestampFormatter.format(msg, appLanguage)
+    }
     val hasCaption = msg.text.isNotBlank() &&
             !msg.text.startsWith("Sent an album") &&
             !msg.text.startsWith("Album") &&
