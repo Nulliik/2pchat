@@ -232,7 +232,8 @@ data class GroupMetadata(
   val replicationLabel: String = "",
   val isPublic: Boolean = false,
   val inviteToken: String = "",
-  val adminOnlyPosting: Boolean = false
+  val adminOnlyPosting: Boolean = false,
+  val wallpaperUri: String? = null
 )
 
 @Immutable
@@ -282,7 +283,8 @@ data class GroupChatUiState(
   val readOnlyReason: String = "",
   val isSending: Boolean = false,
   val typingStatus: String = "",
-  val isMuted: Boolean = false
+  val isMuted: Boolean = false,
+  val wallpaperUri: String? = null
 )
 
 @Immutable

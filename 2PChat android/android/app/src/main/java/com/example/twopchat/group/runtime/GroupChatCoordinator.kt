@@ -402,7 +402,7 @@ object GroupChatCoordinator {
                         if (f.exists()) android.graphics.BitmapFactory.decodeFile(f.absolutePath) else null
                     }
                     if (bmp != null) {
-                        val maxDim = 1080
+                        val maxDim = 1280
                         val scaledBmp = if (bmp.width > maxDim || bmp.height > maxDim) {
                             val scale = maxDim.toFloat() / Math.max(bmp.width, bmp.height)
                             android.graphics.Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true)
@@ -412,7 +412,7 @@ object GroupChatCoordinator {
                         val dir = File(context.filesDir, "group_wallpapers").also { it.mkdirs() }
                         val destFile = File(dir, "${groupId}.jpg")
                         val out = java.io.ByteArrayOutputStream()
-                        scaledBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, out)
+                        scaledBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
                         val compressed = out.toByteArray()
                         destFile.writeBytes(compressed)
                         val b64 = Base64.encodeToString(compressed, Base64.NO_WRAP)
@@ -465,7 +465,15 @@ object GroupChatCoordinator {
                         put("peer_name", peerName.take(160))
                     },
                 )
+                val peerEndpoint = prefs.getString(P2PPreferences.lastEndpoint(peerName), null)
+                    ?: P2PMessageRelay.peerEndpoints[peerName]
+                if (!peerEndpoint.isNullOrBlank()) {
+                    P2PMessageRelay.processOfflineQueue(context, peerName, peerEndpoint)
+                }
             }
+            enqueuePendingMemberInvites(groupId)
+            flushDueOutbox()
+            refreshGroup(groupId)
         }
     }
 
@@ -3194,8 +3202,9 @@ object GroupChatCoordinator {
         proposalEventId: String?,
     ) {
         val group = db().getGroup(groupId) ?: return
-        if (group.localDeviceId != group.ownerDeviceId) return
         val local = localIdentity()
+        val localMember = db().getMember(groupId, local.deviceId) ?: return
+        if (!GroupRolePolicy.canPerform(localMember.toPolicyMember(), GroupAction.INVITE_MEMBER).allowed) return
         val deviceId = payload.optString("member_device_id")
         val fingerprint = payload.optString("fingerprint")
         val peerName = payload.optString("peer_name").take(160)
@@ -3766,7 +3775,8 @@ object GroupChatCoordinator {
         onlyRecipientDeviceId: String? = null,
     ) {
         val group = db().getGroup(groupId) ?: return
-        if (group.localDeviceId != group.ownerDeviceId) return
+        val localMember = db().getMember(groupId, group.localDeviceId) ?: return
+        if (!localMember.isParticipating()) return
         val owner = db().getMember(groupId, group.ownerDeviceId) ?: return
         val epochKey = db().getEpochKey(groupId, group.currentEpoch) ?: return
         val ownerLineage = currentOwnerLineage(group)
@@ -4293,6 +4303,9 @@ object GroupChatCoordinator {
             } else {
                 "Posting is restricted by a group administrator"
             },
+            wallpaperUri = applicationContext?.let { ctx ->
+                P2PPreferences.prefs(ctx).getString("group_wallpaper_${group.groupId}", null)
+            },
         )
         infoFlows.computeIfAbsent(groupId) {
             MutableStateFlow(emptyInfoState(groupId))
@@ -4412,6 +4425,9 @@ object GroupChatCoordinator {
                     ""
                 },
                 adminOnlyPosting = group.adminOnlyPosting,
+                wallpaperUri = applicationContext?.let { ctx ->
+                    P2PPreferences.prefs(ctx).getString("group_wallpaper_${group.groupId}", null)
+                }
             ),
             currentUserRole = local?.role.toUiRole(),
             members = uiMembers,

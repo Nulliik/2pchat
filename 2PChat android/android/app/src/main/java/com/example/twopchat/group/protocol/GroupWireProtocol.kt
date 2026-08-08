@@ -23,8 +23,8 @@ object GroupWireProtocol {
     const val TYPE_ATTACHMENT_BLOCK = "group_attachment_block_v1"
     const val TYPE_JOIN_REQUEST = "group_join_request_v1"
 
-    const val MAX_WIRE_BYTES = 768 * 1024
-    const val MAX_EVENT_CIPHERTEXT_CHARS = 512 * 1024
+    const val MAX_WIRE_BYTES = 1536 * 1024
+    const val MAX_EVENT_CIPHERTEXT_CHARS = 1024 * 1024
     const val MAX_SYNC_EVENTS = 100
     const val MAX_SYNC_CURSORS = 256
     const val MAX_GROUP_MEMBERS_IN_INVITE = 10_000

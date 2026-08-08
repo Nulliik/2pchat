@@ -3,6 +3,7 @@ package com.example.twopchat.group.ui
 import android.widget.Toast
 import com.example.twopchat.P2PPreferences
 import com.example.twopchat.data.Localizations
+import androidx.compose.ui.draw.shadow
 import com.example.twopchat.ui.chat.AlbumPreviewModal
 import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.CircularProgressIndicator
@@ -311,9 +312,10 @@ fun GroupChatScreen(
         onDispose { controller.setGroupChatActive(state.groupId, false) }
     }
 
-    val wallpaperUriStr = remember(state.groupId) {
-        P2PPreferences.prefs(context).getString("group_wallpaper_${state.groupId}", null)
-    }
+    val wallpaperUriStr = state.wallpaperUri
+        ?: remember(state.groupId) {
+            P2PPreferences.prefs(context).getString("group_wallpaper_${state.groupId}", null)
+        }
     val wallpaperDimming = remember(state.groupId, wallpaperUriStr) {
         P2PPreferences.prefs(context).getInt("group_wallpaper_dimming_${state.groupId}", 45)
     }
@@ -853,21 +855,105 @@ fun GroupChatScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 120.dp, horizontal = 24.dp),
+                                .padding(vertical = 80.dp, horizontal = 24.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Surface(
-                                color = surfaceColor.copy(alpha = 0.85f),
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.padding(16.dp)
+                                color = surfaceColor.copy(alpha = 0.88f),
+                                shape = RoundedCornerShape(22.dp),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    0.5.dp,
+                                    primaryColor.copy(alpha = 0.35f)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth(0.92f)
+                                    .shadow(12.dp, RoundedCornerShape(22.dp))
                             ) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Сообщений пока нет. Начните общение в группе!" else "No messages yet. Start chatting in the group!",
-                                    fontSize = 14.sp,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp)
-                                )
+                                Column(
+                                    modifier = Modifier.padding(20.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(52.dp)
+                                            .background(primaryColor.copy(alpha = 0.15f), shape = CircleShape)
+                                            .border(1.dp, primaryColor.copy(alpha = 0.35f), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_menu_chats),
+                                            contentDescription = null,
+                                            tint = primaryColor,
+                                            modifier = Modifier.size(26.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    Text(
+                                        text = Localizations.tr(
+                                            appLanguage,
+                                            "История сообщений пуста",
+                                            "No messages yet",
+                                            "Keine Nachrichten vorhanden",
+                                            "Sin mensajes aún",
+                                            "Aucun message pour le moment",
+                                            "Nenhuma mensagem ainda"
+                                        ),
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = onSurfaceColor
+                                    )
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    Text(
+                                        text = Localizations.tr(
+                                            appLanguage,
+                                            "Сообщений пока нет. Начните общение в группе!",
+                                            "No messages yet. Start chatting in the group!",
+                                            "Keine Nachrichten vorhanden. Starte die Unterhaltung in der Gruppe!",
+                                            "¡Aún no hay mensajes. Comienza a chatear en el grupo!",
+                                            "Pas encore de messages. Commencez à discuter dans le groupe !",
+                                            "Nenhuma mensagem ainda. Comece a conversar no grupo!"
+                                        ),
+                                        fontSize = 13.sp,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    Surface(
+                                        color = primaryColor.copy(alpha = 0.12f),
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = androidx.compose.foundation.BorderStroke(
+                                            0.5.dp,
+                                            primaryColor.copy(alpha = 0.25f)
+                                        )
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "🔒 " + Localizations.tr(
+                                                    appLanguage,
+                                                    "Сквозное шифрование (Double Ratchet)",
+                                                    "End-to-End Encrypted (Double Ratchet)",
+                                                    "Ende-zu-Ende verschlüsselt (Double Ratchet)",
+                                                    "Cifrado de extremo a extremo (Double Ratchet)",
+                                                    "Chiffrement de bout en bout (Double Ratchet)",
+                                                    "Criptografia de ponta a ponta (Double Ratchet)"
+                                                ),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = primaryColor
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
