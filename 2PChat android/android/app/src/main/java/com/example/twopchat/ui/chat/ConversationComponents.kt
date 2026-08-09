@@ -180,6 +180,7 @@ fun ConversationComposerRow(
     attachmentsOpen: Boolean,
     isRecordingVoice: Boolean,
     recordingElapsedMs: Int,
+    recordingAmplitudes: List<Float> = emptyList(),
     isEditing: Boolean,
     inputText: String,
     placeholder: String,
@@ -251,10 +252,11 @@ fun ConversationComposerRow(
                 Spacer(Modifier.width(10.dp))
                 RecordingLiveWaveform(
                     recordingElapsedMs = recordingElapsedMs,
+                    recordingAmplitudes = recordingAmplitudes,
                     activeColor = primaryColor,
                     modifier = Modifier
                         .weight(1f)
-                        .height(20.dp)
+                        .height(22.dp)
                 )
             }
         } else {
@@ -416,15 +418,23 @@ fun ConversationPinnedMessageBar(
 @Composable
 private fun RecordingLiveWaveform(
     recordingElapsedMs: Int,
+    recordingAmplitudes: List<Float>,
     activeColor: Color,
     modifier: Modifier = Modifier
 ) {
-    val barCount = 20
-    val sampleHeights = remember(recordingElapsedMs) {
-        List(barCount) { idx ->
-            val phase = (recordingElapsedMs / 100 + idx * 8) % 360
-            val norm = Math.abs(Math.sin(Math.toRadians(phase.toDouble()))).toFloat()
-            0.2f + (norm * 0.8f)
+    val barCount = 24
+    val displayAmplitudes = remember(recordingAmplitudes, recordingElapsedMs) {
+        if (recordingAmplitudes.isNotEmpty()) {
+            val list = recordingAmplitudes.takeLast(barCount)
+            if (list.size < barCount) {
+                List(barCount - list.size) { 0.08f } + list
+            } else list
+        } else {
+            List(barCount) { idx ->
+                val phase = (recordingElapsedMs / 50 + idx * 15) % 360
+                val norm = Math.abs(Math.sin(Math.toRadians(phase.toDouble()))).toFloat()
+                0.08f + (norm * 0.92f)
+            }
         }
     }
     Row(
@@ -432,9 +442,9 @@ private fun RecordingLiveWaveform(
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        sampleHeights.forEach { heightRatio ->
-            val minHeight = 4.dp
-            val maxHeight = 18.dp
+        displayAmplitudes.forEach { heightRatio ->
+            val minHeight = 3.dp
+            val maxHeight = 22.dp
             val barHeight = minHeight + ((maxHeight - minHeight) * heightRatio)
             Box(
                 modifier = Modifier

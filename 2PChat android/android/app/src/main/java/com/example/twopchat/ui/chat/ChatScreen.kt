@@ -386,8 +386,10 @@ fun ChatScreen(
     var isRecordingVoice by remember { mutableStateOf(false) }
     var recordingElapsedMs by remember { mutableIntStateOf(0) }
     var recordingStartedAt by remember { mutableLongStateOf(0L) }
+    var recordingAmplitudes by remember { mutableStateOf<List<Float>>(emptyList()) }
 
     fun beginVoiceRecording() {
+        recordingAmplitudes = emptyList()
         if (voiceRecorder.start()) {
             recordingStartedAt = android.os.SystemClock.elapsedRealtime()
             recordingElapsedMs = 0
@@ -408,9 +410,13 @@ fun ChatScreen(
     }
 
     LaunchedEffect(isRecordingVoice) {
+        val currentAmps = mutableListOf<Float>()
         while (isRecordingVoice) {
             recordingElapsedMs = (android.os.SystemClock.elapsedRealtime() - recordingStartedAt).toInt()
-            delay(100)
+            val amp = voiceRecorder.sampleAmplitude()
+            currentAmps.add(amp)
+            recordingAmplitudes = currentAmps.takeLast(24).toList()
+            delay(50)
         }
     }
 
@@ -2207,6 +2213,7 @@ fun ChatScreen(
                 isIdentityPaused = isIdentityPaused,
                 isRecordingVoice = isRecordingVoice,
                 recordingElapsedMs = recordingElapsedMs,
+                recordingAmplitudes = recordingAmplitudes,
                 inputText = inputText,
                 peerName = peerName,
                 appLanguage = appLanguage,

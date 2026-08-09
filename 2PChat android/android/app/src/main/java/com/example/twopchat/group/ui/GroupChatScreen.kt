@@ -378,8 +378,10 @@ fun GroupChatScreen(
     var isRecordingVoice by remember { mutableStateOf(false) }
     var recordingElapsedMs by remember { mutableIntStateOf(0) }
     var recordingStartedAt by remember { mutableLongStateOf(0L) }
+    var recordingAmplitudes by remember { mutableStateOf<List<Float>>(emptyList()) }
 
     fun beginVoiceRecording() {
+        recordingAmplitudes = emptyList()
         if (voiceRecorder.start()) {
             recordingStartedAt = android.os.SystemClock.elapsedRealtime()
             recordingElapsedMs = 0
@@ -409,9 +411,13 @@ fun GroupChatScreen(
     }
 
     LaunchedEffect(isRecordingVoice) {
+        val currentAmps = mutableListOf<Float>()
         while (isRecordingVoice) {
             recordingElapsedMs = (android.os.SystemClock.elapsedRealtime() - recordingStartedAt).toInt()
-            kotlinx.coroutines.delay(100)
+            val amp = voiceRecorder.sampleAmplitude()
+            currentAmps.add(amp)
+            recordingAmplitudes = currentAmps.takeLast(24).toList()
+            kotlinx.coroutines.delay(50)
         }
     }
 
@@ -1241,6 +1247,7 @@ fun GroupChatScreen(
             },
             isRecordingVoice = isRecordingVoice,
             recordingElapsedMs = recordingElapsedMs,
+            recordingAmplitudes = recordingAmplitudes,
             onStartVoiceRecord = {
                 if (
                     androidx.core.content.ContextCompat.checkSelfPermission(
@@ -3459,6 +3466,7 @@ private fun GroupComposer(
     onSend: () -> Unit,
     isRecordingVoice: Boolean = false,
     recordingElapsedMs: Int = 0,
+    recordingAmplitudes: List<Float> = emptyList(),
     onStartVoiceRecord: () -> Unit = {},
     onStopVoiceRecord: (send: Boolean) -> Unit = {}
 ) {

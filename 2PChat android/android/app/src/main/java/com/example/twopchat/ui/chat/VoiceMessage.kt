@@ -33,17 +33,24 @@ import com.example.twopchat.theme.StealthBlack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 
-data class VoiceRecording(val file: File, val durationMs: Int)
+data class VoiceRecording(
+    val file: File,
+    val durationMs: Int,
+    val waveform: List<Float> = emptyList()
+)
 
 class VoiceRecorder(private val context: Context) {
     private var recorder: MediaRecorder? = null
     private var outputFile: File? = null
     private var startedAt = 0L
+    private val amplitudeHistory = mutableListOf<Float>()
 
     @Suppress("DEPRECATION")
     fun start(): Boolean {
         cancel()
+        amplitudeHistory.clear()
         val directory = File(context.filesDir, "attachments").apply { mkdirs() }
         val file = File(directory, "voice_${System.currentTimeMillis()}.m4a")
         val instance = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -71,17 +78,29 @@ class VoiceRecorder(private val context: Context) {
         }
     }
 
+    fun sampleAmplitude(): Float {
+        val raw = runCatching { recorder?.maxAmplitude ?: 0 }.getOrDefault(0)
+        // MediaRecorder maxAmplitude returns 0..32767
+        val norm = (raw / 20000f).coerceIn(0.08f, 1.0f)
+        amplitudeHistory.add(norm)
+        return norm
+    }
+
     fun stop(): VoiceRecording? {
         val instance = recorder ?: return null
         val file = outputFile
         val duration = (SystemClock.elapsedRealtime() - startedAt).toInt()
+        val historyCopy = amplitudeHistory.toList()
         recorder = null
         outputFile = null
+        amplitudeHistory.clear()
         return try {
             instance.stop()
             instance.release()
             if (file != null && duration >= 500 && file.length() > 0) {
-                VoiceRecording(file, duration)
+                val quantized = quantizeWaveform(historyCopy, 28)
+                saveWaveformFile(file, quantized)
+                VoiceRecording(file, duration, quantized)
             } else {
                 file?.delete()
                 null
@@ -100,10 +119,36 @@ class VoiceRecorder(private val context: Context) {
         runCatching { instance?.release() }
         outputFile?.delete()
         outputFile = null
+        amplitudeHistory.clear()
     }
 
     fun getMaxAmplitude(): Int {
         return runCatching { recorder?.maxAmplitude ?: 0 }.getOrDefault(0)
+    }
+}
+
+private fun quantizeWaveform(raw: List<Float>, targetCount: Int = 28): List<Float> {
+    if (raw.isEmpty()) return List(targetCount) { 0.35f }
+    if (raw.size <= targetCount) {
+        val padCount = targetCount - raw.size
+        return raw + List(padCount) { 0.08f }
+    }
+    val step = raw.size.toFloat() / targetCount.toFloat()
+    return List(targetCount) { i ->
+        val startIdx = (i * step).toInt().coerceIn(0, raw.size - 1)
+        val endIdx = ((i + 1) * step).toInt().coerceIn(startIdx + 1, raw.size)
+        var maxVal = 0.08f
+        for (j in startIdx until endIdx) {
+            maxVal = maxOf(maxVal, raw[j])
+        }
+        maxVal
+    }
+}
+
+private fun saveWaveformFile(audioFile: File, samples: List<Float>) {
+    runCatching {
+        val waveFile = File("${audioFile.absolutePath}.wave")
+        waveFile.writeText(samples.joinToString(",") { String.format(Locale.US, "%.2f", it) })
     }
 }
 
@@ -127,34 +172,43 @@ private suspend fun extractWaveformSamples(filePath: String?, sampleCount: Int =
         if (!file.exists() || file.length() == 0L) {
             return@withContext List(sampleCount) { 0.35f }
         }
-        runCatching {
-            val bytes = file.readBytes()
-            val step = (bytes.size / sampleCount).coerceAtLeast(1)
-            val samples = ArrayList<Float>(sampleCount)
-            var maxAmp = 1
-            for (i in 0 until sampleCount) {
-                var sum = 0L
-                val start = i * step
-                val end = (start + step).coerceAtMost(bytes.size)
-                for (j in start until end) {
-                    sum += Math.abs(bytes[j].toInt())
-                }
-                val avg = if (end > start) (sum / (end - start)).toInt() else 1
-                maxAmp = maxOf(maxAmp, avg)
-                samples.add(avg.toFloat())
-            }
-            samples.map { raw ->
-                val norm = (raw / maxAmp.toFloat()).coerceIn(0f, 1f)
-                0.15f + (norm * 0.85f)
-            }
-        }.getOrElse {
-            val seed = filePath.hashCode()
-            List(sampleCount) { idx ->
-                val v = Math.abs(Math.sin((seed + idx * 17).toDouble())).toFloat()
-                0.15f + (v * 0.85f)
+
+        // 1. Check sidecar .wave file
+        val waveFile = File("${filePath}.wave")
+        if (waveFile.exists()) {
+            val loaded = runCatching {
+                waveFile.readText()
+                    .split(",")
+                    .mapNotNull { it.trim().toFloatOrNull() }
+            }.getOrNull()
+            if (!loaded.isNullOrEmpty()) {
+                return@withContext quantizeWaveform(loaded, sampleCount)
             }
         }
+
+        // 2. High-contrast speech waveform pattern
+        generateDynamicWaveform(filePath, sampleCount)
     }
+}
+
+private fun generateDynamicWaveform(filePath: String, sampleCount: Int): List<Float> {
+    val seed = filePath.hashCode()
+    val random = java.util.Random(seed.toLong())
+    val samples = ArrayList<Float>(sampleCount)
+
+    var currentHeight = 0.3f + random.nextFloat() * 0.5f
+
+    for (i in 0 until sampleCount) {
+        val isPause = (i % 6 == 0 || i % 11 == 0) && random.nextFloat() > 0.35f
+        if (isPause) {
+            samples.add(0.08f + random.nextFloat() * 0.08f)
+        } else {
+            val target = 0.25f + random.nextFloat() * 0.75f
+            currentHeight = (currentHeight * 0.25f) + (target * 0.75f)
+            samples.add(currentHeight.coerceIn(0.12f, 1.0f))
+        }
+    }
+    return samples
 }
 
 @Composable
@@ -367,7 +421,7 @@ fun AudioWaveformVisualizer(
 
                 val barColor = if (isPlayed) activeColor else inactiveColor
                 val minHeight = 4.dp
-                val maxHeight = 20.dp
+                val maxHeight = 22.dp
                 val barHeight = minHeight + ((maxHeight - minHeight) * sampleHeightRatio)
 
                 Box(
