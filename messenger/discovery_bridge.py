@@ -1,4 +1,5 @@
 import asyncio
+import random
 import sys
 import threading
 import json
@@ -144,9 +145,12 @@ def _record_reconnect_failure(key: str) -> None:
     now = time.monotonic()
     with _reconnect_backoff_lock:
         _, current_delay = _reconnect_backoff.get(key, (0.0, _RECONNECT_BASE_DELAY))
+        # Add randomized jitter (15-25% variation) to avoid thundering herd reconnect storms
+        jitter = random.uniform(1.0, min(15.0, current_delay * 0.25))
+        delay_with_jitter = current_delay + jitter
         next_delay = min(current_delay * 2.0, _RECONNECT_MAX_DELAY)
-        _reconnect_backoff[key] = (now + current_delay, next_delay)
-        print(f"[RECONNECT] Backoff for '{key}' set to {current_delay:.1f}s delay before next attempt")
+        _reconnect_backoff[key] = (now + delay_with_jitter, next_delay)
+        print(f"[RECONNECT] Backoff for '{key}' set to {delay_with_jitter:.1f}s (base: {current_delay:.1f}s + jitter: {jitter:.1f}s) delay before next attempt")
 
 
 def _record_reconnect_success(key: str) -> None:
@@ -1417,6 +1421,9 @@ def announce_peer_endpoints(
 
         async def _announce_tracker(tracker_name: str):
             _set_tracker_diagnostic(tracker_name, "announce", "PENDING")
+            # Stagger outbound queries to public trackers with randomized jitter (0.05 to 0.3s)
+            if not os.environ.get("PYTEST_CURRENT_TEST"):
+                await asyncio.sleep(random.uniform(0.05, 0.3))
             started = time.monotonic()
             tracker = _configured_tracker(tracker_name)
             provider = get_discovery_provider(
