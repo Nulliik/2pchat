@@ -1224,70 +1224,19 @@ fun SettingsTab(
                                 }
 
                                 AnimatedVisibility(visible = showThemesPicker) {
-                                    Column(
-                                        modifier = Modifier.padding(top = 16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(0.dp)
-                                    ) {
-                                        // Light Mode Toggle
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(Localizations.getString("light_theme", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                                                Text(Localizations.getString("light_theme_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                                            }
-                                            Spacer(modifier = Modifier.width(16.dp))
-                                            Switch(
-                                                checked = !isDarkTheme,
-                                                onCheckedChange = { onThemeChanged(!it) },
-                                                colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
-                                            )
-                                        }
-
-                                        HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-
-                                        // Cerulean Blue Toggle
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(Localizations.getString("cerulean_blue", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                                                Text(Localizations.getString("cerulean_blue_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                                            }
-                                            Spacer(modifier = Modifier.width(16.dp))
-                                            Switch(
-                                                checked = useCerulean,
-                                                onCheckedChange = { onAccentChanged(it) },
-                                                colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
-                                            )
-                                        }
-
-                                        if (isDarkTheme) {
-                                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-
-                                            // AMOLED Theme Toggle
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.SpaceBetween
-                                            ) {
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    Text(Localizations.getString("amoled_theme", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
-                                                    Text(Localizations.getString("amoled_theme_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
-                                                }
-                                                Spacer(modifier = Modifier.width(16.dp))
-                                                Switch(
-                                                    checked = useAmoled,
-                                                    onCheckedChange = { onAmoledChanged(it) },
-                                                    colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
-                                                )
-                                            }
-                                        }
-                                    }
+                                    VisualThemeSelector(
+                                        isDarkTheme = isDarkTheme,
+                                        onThemeChanged = onThemeChanged,
+                                        useCerulean = useCerulean,
+                                        onAccentChanged = onAccentChanged,
+                                        useAmoled = useAmoled,
+                                        onAmoledChanged = onAmoledChanged,
+                                        appLanguage = appLanguage,
+                                        primaryColor = primaryColor,
+                                        surfaceColor = surfaceColor,
+                                        onSurfaceColor = onSurfaceColor,
+                                        onSurfaceVariant = onSurfaceVariant,
+                                    )
                                 }
 
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
@@ -3928,5 +3877,481 @@ fun LanguageSettingsPage(
         }
     }
 }
+
+
+private data class ThemePreset(
+    val id: String,
+    val titleRu: String,
+    val titleEn: String,
+    val isDark: Boolean,
+    val useCerulean: Boolean,
+    val useAmoled: Boolean,
+    val previewBg: Color,
+    val previewIncomingBg: Color,
+    val previewIncomingText: Color,
+    val previewOutgoingBg: Color,
+    val previewOutgoingText: Color,
+)
+
+@Composable
+private fun VisualThemeSelector(
+    isDarkTheme: Boolean,
+    onThemeChanged: (Boolean) -> Unit,
+    useCerulean: Boolean,
+    onAccentChanged: (Boolean) -> Unit,
+    useAmoled: Boolean,
+    onAmoledChanged: (Boolean) -> Unit,
+    appLanguage: String,
+    primaryColor: Color,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
+    onSurfaceVariant: Color,
+) {
+    val presets = remember {
+        listOf(
+            ThemePreset(
+                id = "mint_dark",
+                titleRu = "Тёмная Mint",
+                titleEn = "Mint Dark",
+                isDark = true,
+                useCerulean = false,
+                useAmoled = false,
+                previewBg = Color(0xFF0D131D),
+                previewIncomingBg = Color(0xFF1E293B),
+                previewIncomingText = Color(0xFFF8FAFC),
+                previewOutgoingBg = Color(0xFF00E5A3),
+                previewOutgoingText = Color(0xFF000000),
+            ),
+            ThemePreset(
+                id = "cerulean_dark",
+                titleRu = "Cerulean Blue",
+                titleEn = "Cerulean Blue",
+                isDark = true,
+                useCerulean = true,
+                useAmoled = false,
+                previewBg = Color(0xFF0B141F),
+                previewIncomingBg = Color(0xFF1C2735),
+                previewIncomingText = Color(0xFFF8FAFC),
+                previewOutgoingBg = Color(0xFF007AFF),
+                previewOutgoingText = Color(0xFFFFFFFF),
+            ),
+            ThemePreset(
+                id = "amoled_mint",
+                titleRu = "AMOLED Mint",
+                titleEn = "AMOLED Mint",
+                isDark = true,
+                useCerulean = false,
+                useAmoled = true,
+                previewBg = Color(0xFF000000),
+                previewIncomingBg = Color(0xFF171717),
+                previewIncomingText = Color(0xFFF8FAFC),
+                previewOutgoingBg = Color(0xFF00E5A3),
+                previewOutgoingText = Color(0xFF000000),
+            ),
+            ThemePreset(
+                id = "amoled_blue",
+                titleRu = "AMOLED Blue",
+                titleEn = "AMOLED Blue",
+                isDark = true,
+                useCerulean = true,
+                useAmoled = true,
+                previewBg = Color(0xFF000000),
+                previewIncomingBg = Color(0xFF171717),
+                previewIncomingText = Color(0xFFF8FAFC),
+                previewOutgoingBg = Color(0xFF007AFF),
+                previewOutgoingText = Color(0xFFFFFFFF),
+            ),
+            ThemePreset(
+                id = "mint_light",
+                titleRu = "Светлая Mint",
+                titleEn = "Light Mint",
+                isDark = false,
+                useCerulean = false,
+                useAmoled = false,
+                previewBg = Color(0xFFF8FAFC),
+                previewIncomingBg = Color(0xFFE2E8F0),
+                previewIncomingText = Color(0xFF0F172A),
+                previewOutgoingBg = Color(0xFF10B981),
+                previewOutgoingText = Color(0xFFFFFFFF),
+            ),
+            ThemePreset(
+                id = "cerulean_light",
+                titleRu = "Светлая Blue",
+                titleEn = "Light Cerulean",
+                isDark = false,
+                useCerulean = true,
+                useAmoled = false,
+                previewBg = Color(0xFFF0F4F8),
+                previewIncomingBg = Color(0xFFE2E8F0),
+                previewIncomingText = Color(0xFF0F172A),
+                previewOutgoingBg = Color(0xFF007AFF),
+                previewOutgoingText = Color(0xFFFFFFFF),
+            ),
+        )
+    }
+
+    val activePresetId = remember(isDarkTheme, useCerulean, useAmoled) {
+        when {
+            !isDarkTheme && useCerulean -> "cerulean_light"
+            !isDarkTheme -> "mint_light"
+            useAmoled && useCerulean -> "amoled_blue"
+            useAmoled -> "amoled_mint"
+            useCerulean -> "cerulean_dark"
+            else -> "mint_dark"
+        }
+    }
+
+    val activePreset = presets.firstOrNull { it.id == activePresetId } ?: presets.first()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp, bottom = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        // Live Chat Interactive Preview Card
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = activePreset.previewBg),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    width = 1.dp,
+                    color = primaryColor.copy(alpha = 0.25f),
+                    shape = RoundedCornerShape(20.dp)
+                )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Header badge inside live preview
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(activePreset.previewIncomingBg.copy(alpha = 0.75f))
+                            .padding(horizontal = 10.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Предпросмотр темы" else "Theme Live Preview",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = activePreset.previewIncomingText.copy(alpha = 0.85f)
+                        )
+                    }
+                }
+
+                // Incoming Message Bubble
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Start)
+                        .widthIn(max = 240.dp)
+                        .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 2.dp, bottomEnd = 14.dp))
+                        .background(activePreset.previewIncomingBg)
+                        .padding(horizontal = 11.dp, vertical = 7.dp)
+                ) {
+                    Column {
+                        Text(
+                            text = if (appLanguage == "Русский") "Посмотри, как тебе такой вариант оформления?" else "How do you like this chat style?",
+                            fontSize = 12.sp,
+                            color = activePreset.previewIncomingText
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "04:25",
+                            fontSize = 9.sp,
+                            color = activePreset.previewIncomingText.copy(alpha = 0.5f),
+                            modifier = Modifier.align(Alignment.End)
+                        )
+                    }
+                }
+
+                // Outgoing Message Bubble
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .widthIn(max = 240.dp)
+                        .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomStart = 14.dp, bottomEnd = 2.dp))
+                        .background(activePreset.previewOutgoingBg)
+                        .padding(horizontal = 11.dp, vertical = 7.dp)
+                ) {
+                    Column {
+                        Text(
+                            text = if (appLanguage == "Русский") "Выглядит отлично, оставляем!" else "Looks awesome, let's keep it!",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = activePreset.previewOutgoingText
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "04:25 ✓✓",
+                            fontSize = 9.sp,
+                            color = activePreset.previewOutgoingText.copy(alpha = 0.75f),
+                            modifier = Modifier.align(Alignment.End)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Horizontal Theme Cards Carousel
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = if (appLanguage == "Русский") "Готовые темы" else "Theme Presets",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = onSurfaceColor
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                presets.forEach { preset ->
+                    val isSelected = preset.id == activePresetId
+                    val title = if (appLanguage == "Русский") preset.titleRu else preset.titleEn
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .width(108.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable {
+                                onThemeChanged(!preset.isDark)
+                                onAccentChanged(preset.useCerulean)
+                                onAmoledChanged(preset.useAmoled)
+                            }
+                            .border(
+                                width = if (isSelected) 2.dp else 1.dp,
+                                color = if (isSelected) primaryColor else onSurfaceColor.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(16.dp)
+                            )
+                            .background(surfaceColor)
+                            .padding(8.dp)
+                    ) {
+                        // Mini Theme Preview Card
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(60.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(preset.previewBg)
+                                .padding(5.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                // Mini incoming bubble
+                                Box(
+                                    modifier = Modifier
+                                        .width(46.dp)
+                                        .height(13.dp)
+                                        .clip(RoundedCornerShape(5.dp))
+                                        .background(preset.previewIncomingBg)
+                                )
+                                // Mini outgoing bubble
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.End)
+                                        .width(52.dp)
+                                        .height(15.dp)
+                                        .clip(RoundedCornerShape(5.dp))
+                                        .background(preset.previewOutgoingBg)
+                                )
+                            }
+
+                            if (isSelected) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.Center)
+                                        .size(20.dp)
+                                        .clip(CircleShape)
+                                        .background(primaryColor),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = "Selected",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        Text(
+                            text = title,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) primaryColor else onSurfaceColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        // Color Accent Swatches & Quick Mode Selectors
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(onSurfaceColor.copy(alpha = 0.03f))
+                .padding(12.dp)
+        ) {
+            Text(
+                text = if (appLanguage == "Русский") "Цветовая схема" else "Color Accent",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = onSurfaceColor
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Mint Green Swatch
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onAccentChanged(false) }
+                        .border(
+                            width = if (!useCerulean) 2.dp else 1.dp,
+                            color = if (!useCerulean) Color(0xFF00E5A3) else onSurfaceColor.copy(alpha = 0.08f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .background(surfaceColor)
+                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF00E5A3))
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Mint Green",
+                        fontSize = 12.sp,
+                        fontWeight = if (!useCerulean) FontWeight.Bold else FontWeight.Medium,
+                        color = onSurfaceColor
+                    )
+                }
+
+                // Cerulean Blue Swatch
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onAccentChanged(true) }
+                        .border(
+                            width = if (useCerulean) 2.dp else 1.dp,
+                            color = if (useCerulean) Color(0xFF007AFF) else onSurfaceColor.copy(alpha = 0.08f),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .background(surfaceColor)
+                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF007AFF))
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Cerulean Blue",
+                        fontSize = 12.sp,
+                        fontWeight = if (useCerulean) FontWeight.Bold else FontWeight.Medium,
+                        color = onSurfaceColor
+                    )
+                }
+            }
+
+            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+            // Quick Switches for Light Mode & AMOLED
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = Localizations.getString("light_theme", appLanguage),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = onSurfaceColor
+                    )
+                    Text(
+                        text = Localizations.getString("light_theme_desc", appLanguage),
+                        fontSize = 11.sp,
+                        color = onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Switch(
+                    checked = !isDarkTheme,
+                    onCheckedChange = { onThemeChanged(!it) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = primaryColor,
+                        checkedTrackColor = primaryColor.copy(alpha = 0.3f)
+                    )
+                )
+            }
+
+            if (isDarkTheme) {
+                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = Localizations.getString("amoled_theme", appLanguage),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = onSurfaceColor
+                        )
+                        Text(
+                            text = Localizations.getString("amoled_theme_desc", appLanguage),
+                            fontSize = 11.sp,
+                            color = onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Switch(
+                        checked = useAmoled,
+                        onCheckedChange = { onAmoledChanged(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = primaryColor,
+                            checkedTrackColor = primaryColor.copy(alpha = 0.3f)
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
 
 
