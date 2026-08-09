@@ -440,7 +440,8 @@ object P2PMessageRelay {
             outboundMessenger.reconnect(context, authenticatedName)
         }.also { localPeerDiscovery = it }
         try {
-            discovery.start(username, fingerprint, port)
+            val hiddenMode = !P2PPreferences.isWifiDiscoveryEnabled(context)
+            discovery.start(username, fingerprint, port, hiddenMode)
         } catch (error: Exception) {
             log(context, "Local Wi-Fi discovery could not start", "ERROR", error)
         }

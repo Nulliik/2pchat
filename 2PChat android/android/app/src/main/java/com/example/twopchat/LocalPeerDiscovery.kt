@@ -19,28 +19,30 @@ internal class LocalPeerDiscovery(
     private var localFingerprint = ""
 
     @Synchronized
-    fun start(name: String, fingerprint: String, port: Int) {
+    fun start(name: String, fingerprint: String, port: Int, hiddenMode: Boolean = false) {
         stop()
-        if (name.isBlank() || fingerprint.isBlank()) return
+        if (fingerprint.isBlank()) return
         localFingerprint = fingerprint
-        val safeFingerprint = fingerprint.take(16)
-        val service = NsdServiceInfo().apply {
-            serviceName = "2PChat-$safeFingerprint"
-            serviceType = SERVICE_TYPE
-            setPort(port)
-            setAttribute(ATTRIBUTE_NAME, name.take(32))
-            setAttribute(ATTRIBUTE_FINGERPRINT, fingerprint)
+        if (!hiddenMode && name.isNotBlank()) {
+            val safeFingerprint = fingerprint.take(16)
+            val service = NsdServiceInfo().apply {
+                serviceName = "2PChat-$safeFingerprint"
+                serviceType = SERVICE_TYPE
+                setPort(port)
+                setAttribute(ATTRIBUTE_NAME, name.take(32))
+                setAttribute(ATTRIBUTE_FINGERPRINT, fingerprint)
+            }
+            registrationListener = object : NsdManager.RegistrationListener {
+                override fun onServiceRegistered(serviceInfo: NsdServiceInfo) = Unit
+                override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                    Log.w(TAG, "NSD registration failed: $errorCode")
+                }
+                override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) = Unit
+                override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                    Log.w(TAG, "NSD unregistration failed: $errorCode")
+                }
+            }.also { manager.registerService(service, NsdManager.PROTOCOL_DNS_SD, it) }
         }
-        registrationListener = object : NsdManager.RegistrationListener {
-            override fun onServiceRegistered(serviceInfo: NsdServiceInfo) = Unit
-            override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                Log.w(TAG, "NSD registration failed: $errorCode")
-            }
-            override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) = Unit
-            override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                Log.w(TAG, "NSD unregistration failed: $errorCode")
-            }
-        }.also { manager.registerService(service, NsdManager.PROTOCOL_DNS_SD, it) }
 
         discoveryListener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) = Unit

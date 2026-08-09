@@ -933,6 +933,7 @@ async def _verify_live_endpoint(
                 announced_fp == session.peer_fingerprint
                 and _same_nickname(announced_name, nickname)
             ):
+                _record_endpoint_success(endpoint)
                 return {
                     "nickname": announced_name.strip(),
                     "fingerprint": session.peer_fingerprint,
@@ -941,6 +942,7 @@ async def _verify_live_endpoint(
                     "ownership_verified": expected_fingerprint is not None,
                     "verification_reason": "authenticated live response",
                 }
+            _record_endpoint_failure(endpoint)
             print(
                 "Live identity mismatch for "
                 f"{endpoint}: requested={nickname!r}, announced={announced_name!r}, "
@@ -952,6 +954,7 @@ async def _verify_live_endpoint(
                 "verification_reason": "live identity did not match the requested name",
             }
     except Exception as exc:
+        _record_endpoint_failure(endpoint)
         print(f"Live peer verification failed for {endpoint}: {exc!r}")
         reason = str(exc).strip() or f"{type(exc).__name__} (no detail)"
         return {
@@ -1196,6 +1199,9 @@ def resolve_peers(
             if ep.host in local_announced_ips or ep.host in {"127.0.0.1", "::1", "localhost"}:
                 continue
             ep_str = _format_endpoint(ep.host, ep.port)
+            if _is_endpoint_in_cooldown(ep_str):
+                print(f"[DISCOVERY] Skipping endpoint {ep_str} (in 5-minute failure cooldown)")
+                continue
             key = ep_str
             if key not in seen_ep:
                 seen_ep.add(key)

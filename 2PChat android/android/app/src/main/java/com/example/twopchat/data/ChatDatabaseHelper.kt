@@ -321,8 +321,32 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         db.update(TABLE_MESSAGES, values, "$KEY_PEER_NAME = ?", arrayOf(peerName))
     }
 
+    private fun getMessageStatusById(db: SQLiteDatabase, id: String): String? {
+        return try {
+            db.query(TABLE_MESSAGES, arrayOf(KEY_STATUS), "$KEY_ID = ?", arrayOf(id), null, null, null).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(KEY_STATUS)
+                    if (idx >= 0 && !cursor.isNull(idx)) cursor.getString(idx) else null
+                } else null
+            }
+        } catch (_: Exception) { null }
+    }
+
+    private fun isHigherPriorityStatus(existing: String, incoming: String): Boolean {
+        val priority = mapOf("read" to 4, "delivered" to 3, "sent" to 2, "sending" to 1)
+        val pExisting = priority[existing.lowercase()] ?: 0
+        val pIncoming = priority[incoming.lowercase()] ?: 0
+        return pExisting > pIncoming
+    }
+
     fun saveMessage(peerName: String, msg: Message) {
         val db = this.safeWritableDatabase
+        val existingStatus = getMessageStatusById(db, msg.id)
+        val finalStatus = if (existingStatus != null && isHigherPriorityStatus(existingStatus, msg.status)) {
+            existingStatus
+        } else {
+            msg.status
+        }
         val values = ContentValues().apply {
             put(KEY_ID, msg.id)
             put(KEY_PEER_NAME, peerName)
@@ -335,7 +359,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             put(KEY_REPLY_TO_ID, msg.replyToId)
             put(KEY_REPLY_TO_TEXT, encNullable(msg.replyToText))
             put(KEY_REPLY_TO_NAME, encNullable(msg.replyToName))
-            put(KEY_STATUS, msg.status)
+            put(KEY_STATUS, finalStatus)
             put(KEY_REACTIONS, encNullable(serializeReactions(msg.reactions)))
             put(KEY_SENT_AT_MS, msg.sentAtEpochMs)
             put(KEY_IS_PINNED, if (msg.isPinned) 1 else 0)
