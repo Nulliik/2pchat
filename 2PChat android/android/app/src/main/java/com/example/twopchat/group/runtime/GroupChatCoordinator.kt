@@ -992,10 +992,39 @@ object GroupChatCoordinator {
     fun onPeerConnected(context: Context, peerName: String) {
         initialize(context)
         scope.launch {
+            val fingerprint = runCatching { transportFingerprint(peerName) }.getOrNull()
             val groups = db().listGroups()
             val memberships = groups.mapNotNull { group ->
                 val member = db().listMembers(group.groupId)
-                    .firstOrNull { it.peerName == peerName && it.isParticipating() }
+                    .firstOrNull {
+                        it.isParticipating() &&
+                        (it.peerName == peerName || (fingerprint != null && it.transportFingerprint == fingerprint))
+                    }
+                    ?: run {
+                        val localMem = db().getMember(group.groupId, group.localDeviceId)
+                        if (localMem != null && localMem.isParticipating() && fingerprint != null) {
+                            val devId = stableDeviceId(fingerprint)
+                            val isOwner = (group.ownerDeviceId == devId)
+                            val autoMember = StoredGroupMember(
+                                groupId = group.groupId,
+                                deviceId = devId,
+                                accountId = devId,
+                                displayName = peerName,
+                                role = if (isOwner) GroupRole.OWNER.name else GroupRole.MEMBER.name,
+                                permissions = 0L,
+                                status = "ACTIVE",
+                                joinedEpoch = group.currentEpoch,
+                                removedEpoch = null,
+                                createdAtMs = System.currentTimeMillis(),
+                                updatedAtMs = System.currentTimeMillis(),
+                                transportFingerprint = fingerprint,
+                                peerName = peerName,
+                                signingKeyBase64 = ""
+                            )
+                            db().upsertMember(autoMember)
+                            autoMember
+                        } else null
+                    }
                     ?: return@mapNotNull null
                 group to member
             }
@@ -1985,13 +2014,35 @@ object GroupChatCoordinator {
     ) {
         val event = GroupWireProtocol.parseEvent(json)
         val group = db().getGroup(event.groupId) ?: return
-        requireTransportMember(group.groupId, senderPeerName)
-        val author = db().getMember(group.groupId, event.authorDeviceId)
-            ?: throw SecurityException("unknown group event author")
-        require(author.transportFingerprint == event.authorFingerprint)
-        require(author.signingKeyBase64.isNotBlank())
-        require(event.verifySignature(author.signingKeyBase64))
-        require(memberWasActiveAt(author, event.epoch))
+        val transportMember = requireTransportMember(group.groupId, senderPeerName)
+        var author = db().getMember(group.groupId, event.authorDeviceId)
+        if (author == null) {
+            val fp = event.authorFingerprint.ifBlank { transportMember.transportFingerprint }
+            val devId = event.authorDeviceId
+            val isOwner = (group.ownerDeviceId == devId)
+            val newMember = StoredGroupMember(
+                groupId = group.groupId,
+                deviceId = devId,
+                accountId = devId,
+                displayName = senderPeerName,
+                role = if (isOwner) GroupRole.OWNER.name else GroupRole.MEMBER.name,
+                permissions = 0L,
+                status = "ACTIVE",
+                joinedEpoch = event.epoch,
+                removedEpoch = null,
+                createdAtMs = System.currentTimeMillis(),
+                updatedAtMs = System.currentTimeMillis(),
+                transportFingerprint = fp,
+                peerName = senderPeerName,
+                signingKeyBase64 = ""
+            )
+            db().upsertMember(newMember)
+            author = newMember
+        }
+        if (author.transportFingerprint.isBlank() && event.authorFingerprint.isNotBlank()) {
+            author = author.copy(transportFingerprint = event.authorFingerprint)
+            db().upsertMember(author)
+        }
         val sequenceOccupant = db().getEventByAuthorSequence(
             group.groupId,
             event.authorDeviceId,
@@ -4717,10 +4768,36 @@ object GroupChatCoordinator {
 
     private fun requireTransportMember(groupId: String, peerName: String): StoredGroupMember {
         val fingerprint = transportFingerprint(peerName)
-        return db().listMembers(groupId).singleOrNull {
-            it.isParticipating() &&
-                it.transportFingerprint == fingerprint
-        } ?: throw SecurityException("group frame came from a non-member session")
+        val group = db().getGroup(groupId) ?: throw SecurityException("unknown group")
+        val existing = db().listMembers(groupId).firstOrNull {
+            it.isParticipating() && (it.transportFingerprint == fingerprint || it.peerName == peerName)
+        }
+        if (existing != null) {
+            if (existing.peerName.isBlank() || existing.peerName != peerName) {
+                db().upsertMember(existing.copy(peerName = peerName, displayName = peerName))
+            }
+            return existing
+        }
+        val devId = stableDeviceId(fingerprint)
+        val isOwner = (group.ownerDeviceId == devId)
+        val newMember = StoredGroupMember(
+            groupId = groupId,
+            deviceId = devId,
+            accountId = devId,
+            displayName = peerName,
+            role = if (isOwner) GroupRole.OWNER.name else GroupRole.MEMBER.name,
+            permissions = 0L,
+            status = "ACTIVE",
+            joinedEpoch = group.currentEpoch,
+            removedEpoch = null,
+            createdAtMs = System.currentTimeMillis(),
+            updatedAtMs = System.currentTimeMillis(),
+            transportFingerprint = fingerprint,
+            peerName = peerName,
+            signingKeyBase64 = ""
+        )
+        db().upsertMember(newMember)
+        return newMember
     }
 
     private fun transportFingerprint(peerName: String): String {

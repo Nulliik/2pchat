@@ -314,11 +314,23 @@ fun GroupChatScreen(
         onDispose { controller.setGroupChatActive(state.groupId, false) }
     }
 
+    var prefsWallpaperVersion by remember { mutableStateOf(0) }
+    DisposableEffect(state.groupId) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key != null && key.startsWith("group_wallpaper_")) {
+                prefsWallpaperVersion++
+            }
+        }
+        val prefs = P2PPreferences.prefs(context)
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
     val rawWallpaperUri = state.wallpaperUri
-        ?: remember(state.groupId) {
+        ?: remember(state.groupId, prefsWallpaperVersion) {
             P2PPreferences.prefs(context).getString("group_wallpaper_${state.groupId}", null)
         }
-    val wallpaperUriStr = remember(state.groupId, rawWallpaperUri) {
+    val wallpaperUriStr = remember(state.groupId, rawWallpaperUri, prefsWallpaperVersion) {
         if (!rawWallpaperUri.isNullOrBlank() && java.io.File(rawWallpaperUri).exists()) {
             rawWallpaperUri
         } else {
