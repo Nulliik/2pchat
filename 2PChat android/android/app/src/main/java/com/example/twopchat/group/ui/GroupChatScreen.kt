@@ -2028,11 +2028,10 @@ fun GroupChatScreen(
                     android.widget.Toast.makeText(context, "Сообщение переслано в ${item.title}", android.widget.Toast.LENGTH_SHORT).show()
                 } else {
                     val targetPeer = item.id.removePrefix("peer_")
-                    val myName = P2PPreferences.prefs(context).getString("display_name", "Me") ?: "Me"
                     if (att != null) {
                         P2PMessageRelay.sendFile(context, targetPeer, "", att.fileName)
                     } else {
-                        P2PMessageRelay.sendMessage(context, targetPeer, myName, text)
+                        P2PMessageRelay.sendMessageToPeer(context, targetPeer, text)
                     }
                     android.widget.Toast.makeText(context, "Сообщение переслано $targetPeer", android.widget.Toast.LENGTH_SHORT).show()
                 }

@@ -91,8 +91,7 @@ object P2PMessageRelay {
         val normalizedEndpoints = endpoints.trim()
         val endpointParts = normalizedEndpoints.split(',').map(String::trim).filter(String::isNotEmpty)
         if (normalizedName.isEmpty() || normalizedName.length > 160 ||
-            normalizedEndpoints.length > 4_096 || endpointParts.isEmpty() || endpointParts.size > 12 ||
-            endpointParts.any { it.length > 512 || it.any { char -> char.isISOControl() } }) {
+            endpointParts.isEmpty() || !isValidPeerEndpointList(normalizedEndpoints)) {
             return false
         }
         if (normalizedName !in _peerEndpoints && _peerEndpoints.size >= MAX_TRACKED_PEER_ENDPOINTS) return false
@@ -1713,6 +1712,16 @@ object P2PMessageRelay {
      */
     fun sendMessage(context: Context, endpoint: String, @Suppress("UNUSED_PARAMETER") senderName: String, text: String, onResult: (Boolean) -> Unit = {}) {
         outboundMessenger.sendMessage(context, endpoint, text, onResult)
+    }
+
+    /** Send to a known contact without ever interpreting its name or peer id as an endpoint. */
+    fun sendMessageToPeer(
+        context: Context,
+        peerName: String,
+        text: String,
+        onResult: (Boolean) -> Unit = {},
+    ) {
+        outboundMessenger.sendMessageToPeer(context, peerName, text, onResult)
     }
 
     fun sendVerificationRequest(context: Context, peerName: String, onResult: (Boolean) -> Unit) {

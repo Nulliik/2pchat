@@ -2431,10 +2431,13 @@ private fun GroupInviteQrModal(
             onRecipientSelected = { item ->
                 showShareContactDialog = false
                 val peerName = item.title
-                val localUsername = prefs.getString("username_profile", "2PChat User").orEmpty()
                 val shareText = "👋 Приглашение в группу «$groupTitle»!\n\nСсылка для входа:\n$inviteLink"
-                P2PMessageRelay.sendMessage(context, peerName, localUsername, shareText) { success ->
-                    val msg = if (success) "Приглашение отправлено $peerName!" else "Отправлено (доставится при подключении)"
+                P2PMessageRelay.sendMessageToPeer(context, peerName, shareText) { success ->
+                    val msg = if (success) {
+                        "Приглашение отправлено $peerName!"
+                    } else {
+                        "Не удалось отправить приглашение: контакт не подключён"
+                    }
                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 }
             }

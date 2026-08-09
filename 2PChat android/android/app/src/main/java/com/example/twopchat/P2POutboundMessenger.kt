@@ -32,6 +32,39 @@ internal class P2POutboundMessenger(
 
     fun sendMessage(context: Context, endpoint: String, text: String, onResult: (Boolean) -> Unit = {}) {
         val peerName = peerEndpoints.entries.firstOrNull { it.value == endpoint }?.key ?: "Direct Peer"
+        sendResolvedMessage(context, peerName, endpoint, text, onResult)
+    }
+
+    fun sendMessageToPeer(
+        context: Context,
+        peerName: String,
+        text: String,
+        onResult: (Boolean) -> Unit = {},
+    ) {
+        val endpoint = resolvePeerEndpoint(
+            peerName = peerName,
+            liveEndpoint = peerEndpoints[peerName],
+            persistedEndpoint = P2PPreferences.prefs(context)
+                .getString(P2PPreferences.lastEndpoint(peerName), null),
+        ) ?: run {
+            log(
+                context,
+                "No valid transport endpoint for $peerName; refusing to use a peer identity as an endpoint",
+                "ERROR",
+                null,
+            )
+            return postResult(onResult, false)
+        }
+        sendResolvedMessage(context, peerName, endpoint, text, onResult)
+    }
+
+    private fun sendResolvedMessage(
+        context: Context,
+        peerName: String,
+        endpoint: String,
+        text: String,
+        onResult: (Boolean) -> Unit,
+    ) {
         if (isPaused(context, peerName)) {
             log(context, "Blocked message to $peerName while its identity change awaits confirmation", "ERROR", null)
             return postResult(onResult, false)
@@ -85,9 +118,7 @@ internal class P2POutboundMessenger(
         onResult: (Boolean) -> Unit = {},
     ) {
         if (isPaused(context, peerName)) return postResult(onResult, false)
-        val endpoint = peerEndpoints[peerName]
-        if (endpoint.isNullOrBlank()) return onResult(false)
-        sendMessage(context, endpoint, payload.toString(), onResult)
+        sendMessageToPeer(context, peerName, payload.toString(), onResult)
     }
 
     fun sendFile(
