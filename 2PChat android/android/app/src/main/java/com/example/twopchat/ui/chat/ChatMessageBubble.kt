@@ -1439,46 +1439,77 @@ fun LinkifiedText(
     fontWeight: FontWeight? = null,
     modifier: Modifier = Modifier
 ) {
-    val annotatedString = remember(text, textColor, linkColor) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val myUsername = remember(context) {
+        com.example.twopchat.P2PPreferences.prefs(context).getString("username_profile", "") ?: ""
+    }
+
+    val annotatedString = remember(text, textColor, linkColor, myUsername) {
         buildAnnotatedString {
-            val matcher = URL_PATTERN.matcher(text)
+            // Pattern for matching URLs and @mentions
+            val pattern = Pattern.compile("(https?://[\\w\\-._~:/?#\\[\\]@!$&'()*+,;=]+)|(?<=^|\\s)(@[a-zA-Z0-9_А-Яа-я-]+)")
+            val matcher = pattern.matcher(text)
             var lastMatchEnd = 0
             while (matcher.find()) {
-                val start = matcher.start(1)
-                val end = matcher.end(1)
+                val start = matcher.start()
+                val end = matcher.end()
                 
-                // Append text before link
+                // Append text before match
                 append(text.substring(lastMatchEnd, start))
                 
-                val originalUrl = text.substring(start, end)
-                val destinationUrl = if (!originalUrl.startsWith("http://", ignoreCase = true) && 
-                                          !originalUrl.startsWith("https://", ignoreCase = true)) {
-                    "https://$originalUrl"
-                } else {
-                    originalUrl
-                }
-                
-                val linkStyles = TextLinkStyles(
-                    style = SpanStyle(
-                        color = linkColor,
-                        textDecoration = TextDecoration.Underline,
-                        fontWeight = FontWeight.Bold
+                val token = text.substring(start, end)
+                if (token.startsWith("@")) {
+                    // Mention handling
+                    val mentionedName = token.removePrefix("@")
+                    val isMe = myUsername.isNotBlank() && (
+                        myUsername.equals(mentionedName, ignoreCase = true) ||
+                        mentionedName.equals("all", ignoreCase = true)
                     )
-                )
-                val linkAnnotation = LinkAnnotation.Url(
-                    url = destinationUrl,
-                    styles = linkStyles
-                )
-                
-                val linkStart = this.length
-                append(originalUrl)
-                val linkEnd = this.length
-                
-                addLink(
-                    url = linkAnnotation,
-                    start = linkStart,
-                    end = linkEnd
-                )
+                    
+                    val mentionStart = this.length
+                    append(token)
+                    val mentionEnd = this.length
+                    
+                    addStyle(
+                        style = SpanStyle(
+                            color = linkColor,
+                            fontWeight = FontWeight.Bold,
+                            background = if (isMe) linkColor.copy(alpha = 0.22f) else Color.Transparent
+                        ),
+                        start = mentionStart,
+                        end = mentionEnd
+                    )
+                } else {
+                    // URL handling
+                    val destinationUrl = if (!token.startsWith("http://", ignoreCase = true) && 
+                                              !token.startsWith("https://", ignoreCase = true)) {
+                        "https://$token"
+                    } else {
+                        token
+                    }
+                    
+                    val linkStyles = TextLinkStyles(
+                        style = SpanStyle(
+                            color = linkColor,
+                            textDecoration = TextDecoration.Underline,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                    val linkAnnotation = LinkAnnotation.Url(
+                        url = destinationUrl,
+                        styles = linkStyles
+                    )
+                    
+                    val linkStart = this.length
+                    append(token)
+                    val linkEnd = this.length
+                    
+                    addLink(
+                        url = linkAnnotation,
+                        start = linkStart,
+                        end = linkEnd
+                    )
+                }
                 
                 lastMatchEnd = end
             }

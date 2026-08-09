@@ -6,6 +6,7 @@ import com.example.twopchat.data.Localizations
 import androidx.compose.ui.draw.shadow
 import com.example.twopchat.ui.chat.AlbumPreviewModal
 import androidx.compose.runtime.collectAsState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import com.example.twopchat.theme.MotionTokens
@@ -3483,6 +3484,55 @@ private fun GroupComposer(
             return
         }
 
+        val activeMentionQuery = remember(draft) {
+            val lastAt = draft.lastIndexOf('@')
+            if (lastAt != -1 && (lastAt == 0 || draft[lastAt - 1].isWhitespace())) {
+                val sub = draft.substring(lastAt + 1)
+                if (!sub.contains('\n') && !sub.contains(' ')) sub else null
+            } else null
+        }
+
+        val availableMembers = remember(state.members, state.messages) {
+            if (state.members.isNotEmpty()) state.members
+            else {
+                state.messages
+                    .map { it.authorName }
+                    .filter { it.isNotBlank() && !it.equals("SYSTEM", ignoreCase = true) }
+                    .distinct()
+                    .map { GroupMember(memberId = it, displayName = it) }
+            }
+        }
+
+        val mentionCandidates = remember(activeMentionQuery, availableMembers) {
+            if (activeMentionQuery == null) emptyList()
+            else {
+                availableMembers.filter { member ->
+                    member.displayName.contains(activeMentionQuery, ignoreCase = true)
+                }
+            }
+        }
+
+        AnimatedVisibility(
+            visible = activeMentionQuery != null && mentionCandidates.isNotEmpty(),
+            enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+            exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut()
+        ) {
+            GroupMentionSuggestionBar(
+                suggestions = mentionCandidates,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onMemberSelected = { selectedMember ->
+                    val lastAt = draft.lastIndexOf('@')
+                    if (lastAt != -1) {
+                        val prefix = draft.substring(0, lastAt)
+                        onDraftChange("$prefix@${selectedMember.displayName} ")
+                    }
+                },
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+        }
+
         AnimatedVisibility(
             visible = isAttachmentPanelOpen,
             enter = expandVertically(expandFrom = Alignment.Bottom, animationSpec = MotionTokens.ResponsiveIntSizeSpring) + fadeIn(animationSpec = MotionTokens.FastTween),
@@ -3957,6 +4007,85 @@ private fun GroupAlbumCell(
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupMentionSuggestionBar(
+    suggestions: List<GroupMember>,
+    primaryColor: Color,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
+    onMemberSelected: (GroupMember) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = surfaceColor,
+        tonalElevation = 6.dp,
+        shadowElevation = 4.dp,
+        modifier = modifier
+            .fillMaxWidth()
+            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 6.dp)
+        ) {
+            Text(
+                text = "Упомянуть участника",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = primaryColor,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+            )
+
+            androidx.compose.foundation.lazy.LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(suggestions, key = { member -> member.memberId }) { member ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(onSurfaceColor.copy(alpha = 0.06f))
+                            .clickable { onMemberSelected(member) }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(primaryColor),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = member.displayName.take(1).uppercase(),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "@${member.displayName}",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = onSurfaceColor
+                        )
+                        if (member.role == GroupRole.OWNER || member.role == GroupRole.ADMIN) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (member.role == GroupRole.OWNER) "👑" else "⭐",
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
             }
         }
     }

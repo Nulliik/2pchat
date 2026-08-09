@@ -272,6 +272,7 @@ data class GroupChatUiState(
   val avatarUri: String? = null,
   val syncStatus: GroupSyncStatus = GroupSyncStatus.SYNCING,
   val messages: List<GroupTimelineMessage> = emptyList(),
+  val members: List<GroupMember> = emptyList(),
   val hasMoreBefore: Boolean = false,
   val isLoadingBefore: Boolean = false,
   val currentReply: GroupReplyPreview? = null,
