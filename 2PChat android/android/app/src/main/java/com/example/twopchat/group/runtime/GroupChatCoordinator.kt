@@ -1079,6 +1079,14 @@ object GroupChatCoordinator {
 
     suspend fun runAntiEntropy(): Int {
         runCatching { android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND) }
+        // Repair memberships whose transport identity changed while the app was
+        // running.  Waiting for a fresh connection event left already-connected
+        // participants stuck until they re-entered the group or restarted both
+        // peers.
+        val context = applicationContext ?: return 0
+        listActiveGroupMemberPeerNames(context)
+            .filter { P2PMessageRelay.peerSessionStates[it] == true }
+            .forEach { onPeerConnected(context, it) }
         if (recoveryNeeded.get()) {
             runCatching { reconcileDurableState() }
                 .onSuccess { recoveryNeeded.set(false) }
