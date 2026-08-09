@@ -45,6 +45,38 @@ private val DarkBlueColorScheme = darkColorScheme(
     surfaceContainerHigh = Color(0xFF1C212A)
 )
 
+private val DarkPurpleColorScheme = darkColorScheme(
+    primary = AmethystPurple,
+    secondary = DeepPurple,
+    background = DarkBgBlue,
+    surface = DarkSurfaceBlue,
+    onPrimary = Color.White,
+    onBackground = TextLight,
+    onSurface = TextLight,
+    surfaceVariant = Color(0xFF1E1728),
+    onSurfaceVariant = TextGray,
+    outline = Color(0x1AFFFFFF),
+    outlineVariant = Color(0x0DFFFFFF),
+    surfaceContainer = Color(0xFF161B22),
+    surfaceContainerHigh = Color(0xFF1C212A)
+)
+
+private val DarkAmberColorScheme = darkColorScheme(
+    primary = SolarAmber,
+    secondary = DeepAmber,
+    background = DarkBgBlue,
+    surface = DarkSurfaceBlue,
+    onPrimary = Color.Black,
+    onBackground = TextLight,
+    onSurface = TextLight,
+    surfaceVariant = Color(0xFF231C14),
+    onSurfaceVariant = TextGray,
+    outline = Color(0x1AFFFFFF),
+    outlineVariant = Color(0x0DFFFFFF),
+    surfaceContainer = Color(0xFF161B22),
+    surfaceContainerHigh = Color(0xFF1C212A)
+)
+
 private val AmoledMintColorScheme = darkColorScheme(
     primary = MintGreen,
     secondary = DeepPine,
@@ -75,6 +107,38 @@ private val AmoledBlueColorScheme = darkColorScheme(
     outlineVariant = Color(0x0DFFFFFF),
     surfaceContainer = Color(0xFF111722),
     surfaceContainerHigh = Color(0xFF1A2233)
+)
+
+private val AmoledPurpleColorScheme = darkColorScheme(
+    primary = AmethystPurple,
+    secondary = DeepPurple,
+    background = Color.Black,
+    surface = StealthBlack,
+    onPrimary = Color.White,
+    onBackground = TextLight,
+    onSurface = TextLight,
+    surfaceVariant = Color(0xFF1B1324),
+    onSurfaceVariant = TextGray,
+    outline = Color(0x1AFFFFFF),
+    outlineVariant = Color(0x0DFFFFFF),
+    surfaceContainer = Color(0xFF111417),
+    surfaceContainerHigh = Color(0xFF1A1F24)
+)
+
+private val AmoledAmberColorScheme = darkColorScheme(
+    primary = SolarAmber,
+    secondary = DeepAmber,
+    background = Color.Black,
+    surface = StealthBlack,
+    onPrimary = Color.Black,
+    onBackground = TextLight,
+    onSurface = TextLight,
+    surfaceVariant = Color(0xFF22170B),
+    onSurfaceVariant = TextGray,
+    outline = Color(0x1AFFFFFF),
+    outlineVariant = Color(0x0DFFFFFF),
+    surfaceContainer = Color(0xFF111417),
+    surfaceContainerHigh = Color(0xFF1A1F24)
 )
 
 private val LightMintColorScheme = lightColorScheme(
@@ -111,15 +175,51 @@ private val LightBlueColorScheme = lightColorScheme(
     outlineVariant     = Color(0x0A0F172A)
 )
 
+private val LightPurpleColorScheme = lightColorScheme(
+    primary            = AmethystPurpleLight,
+    onPrimary          = Color.White,
+    primaryContainer   = Color(0xFFF3E8FF),
+    onPrimaryContainer = Color(0xFF3B0764),
+    secondary          = DeepPurple,
+    background         = Color(0xFFF8F5FC),
+    onBackground       = TextDark,
+    surface            = LightSurface,
+    onSurface          = TextDark,
+    surfaceVariant     = Color(0xFFF3E8FF),
+    onSurfaceVariant   = TextSubdued,
+    surfaceContainer   = Color(0xFFFFFFFF),
+    outline            = BorderLight,
+    outlineVariant     = Color(0x0A0F172A)
+)
+
+private val LightAmberColorScheme = lightColorScheme(
+    primary            = SolarAmberLight,
+    onPrimary          = Color.White,
+    primaryContainer   = Color(0xFFFFEDD5),
+    onPrimaryContainer = Color(0xFF431407),
+    secondary          = DeepAmber,
+    background         = Color(0xFFFFFBEB),
+    onBackground       = TextDark,
+    surface            = LightSurface,
+    onSurface          = TextDark,
+    surfaceVariant     = Color(0xFFFFEDD5),
+    onSurfaceVariant   = TextSubdued,
+    surfaceContainer   = Color(0xFFFFFFFF),
+    outline            = BorderLight,
+    outlineVariant     = Color(0x0A0F172A)
+)
+
 @Composable
 fun _2PChatTheme(
   darkTheme: Boolean = true,
   useCerulean: Boolean = false,
+  accentScheme: String = if (useCerulean) "cerulean" else "mint",
   useAmoled: Boolean = false,
   dynamicColor: Boolean = false,
   animationsEnabled: Boolean = true,
   content: @Composable () -> Unit,
 ) {
+  val effectiveScheme = if (accentScheme.isNotBlank()) accentScheme else if (useCerulean) "cerulean" else "mint"
   val colorScheme =
     when {
       dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
@@ -128,13 +228,28 @@ fun _2PChatTheme(
       }
       darkTheme -> {
         if (useAmoled) {
-          if (useCerulean) AmoledBlueColorScheme else AmoledMintColorScheme
+          when (effectiveScheme) {
+            "cerulean" -> AmoledBlueColorScheme
+            "purple" -> AmoledPurpleColorScheme
+            "amber" -> AmoledAmberColorScheme
+            else -> AmoledMintColorScheme
+          }
         } else {
-          if (useCerulean) DarkBlueColorScheme else DarkMintColorScheme
+          when (effectiveScheme) {
+            "cerulean" -> DarkBlueColorScheme
+            "purple" -> DarkPurpleColorScheme
+            "amber" -> DarkAmberColorScheme
+            else -> DarkMintColorScheme
+          }
         }
       }
       else -> {
-        if (useCerulean) LightBlueColorScheme else LightMintColorScheme
+        when (effectiveScheme) {
+          "cerulean" -> LightBlueColorScheme
+          "purple" -> LightPurpleColorScheme
+          "amber" -> LightAmberColorScheme
+          else -> LightMintColorScheme
+        }
       }
     }
 

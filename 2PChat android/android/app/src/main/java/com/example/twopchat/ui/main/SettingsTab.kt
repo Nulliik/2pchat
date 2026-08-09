@@ -112,6 +112,8 @@ fun SettingsTab(
     onThemeChanged: (Boolean) -> Unit,
     useCerulean: Boolean,
     onAccentChanged: (Boolean) -> Unit,
+    accentScheme: String = if (useCerulean) "cerulean" else "mint",
+    onAccentSchemeChanged: (String) -> Unit = {},
     useAmoled: Boolean,
     onAmoledChanged: (Boolean) -> Unit,
     activeIconAlias: String,
@@ -3884,7 +3886,8 @@ private data class ThemePreset(
     val titleRu: String,
     val titleEn: String,
     val isDark: Boolean,
-    val useCerulean: Boolean,
+    val useCerulean: Boolean = false,
+    val accentScheme: String = if (useCerulean) "cerulean" else "mint",
     val useAmoled: Boolean,
     val previewBg: Color,
     val previewIncomingBg: Color,
@@ -3899,6 +3902,8 @@ private fun VisualThemeSelector(
     onThemeChanged: (Boolean) -> Unit,
     useCerulean: Boolean,
     onAccentChanged: (Boolean) -> Unit,
+    accentScheme: String = if (useCerulean) "cerulean" else "mint",
+    onAccentSchemeChanged: (String) -> Unit = {},
     useAmoled: Boolean,
     onAmoledChanged: (Boolean) -> Unit,
     appLanguage: String,
@@ -3907,6 +3912,8 @@ private fun VisualThemeSelector(
     onSurfaceColor: Color,
     onSurfaceVariant: Color,
 ) {
+    val currentScheme = if (accentScheme.isNotBlank()) accentScheme else if (useCerulean) "cerulean" else "mint"
+
     val presets = remember {
         listOf(
             ThemePreset(
@@ -3914,7 +3921,7 @@ private fun VisualThemeSelector(
                 titleRu = "Тёмная Mint",
                 titleEn = "Mint Dark",
                 isDark = true,
-                useCerulean = false,
+                accentScheme = "mint",
                 useAmoled = false,
                 previewBg = Color(0xFF0D131D),
                 previewIncomingBg = Color(0xFF1E293B),
@@ -3927,7 +3934,7 @@ private fun VisualThemeSelector(
                 titleRu = "Cerulean Blue",
                 titleEn = "Cerulean Blue",
                 isDark = true,
-                useCerulean = true,
+                accentScheme = "cerulean",
                 useAmoled = false,
                 previewBg = Color(0xFF0B141F),
                 previewIncomingBg = Color(0xFF1C2735),
@@ -3936,11 +3943,37 @@ private fun VisualThemeSelector(
                 previewOutgoingText = Color(0xFFFFFFFF),
             ),
             ThemePreset(
+                id = "purple_dark",
+                titleRu = "Amethyst Purple",
+                titleEn = "Amethyst Purple",
+                isDark = true,
+                accentScheme = "purple",
+                useAmoled = false,
+                previewBg = Color(0xFF0D121B),
+                previewIncomingBg = Color(0xFF1E2536),
+                previewIncomingText = Color(0xFFF8FAFC),
+                previewOutgoingBg = Color(0xFFBF5AF2),
+                previewOutgoingText = Color(0xFFFFFFFF),
+            ),
+            ThemePreset(
+                id = "amber_dark",
+                titleRu = "Solar Amber",
+                titleEn = "Solar Amber",
+                isDark = true,
+                accentScheme = "amber",
+                useAmoled = false,
+                previewBg = Color(0xFF0E131C),
+                previewIncomingBg = Color(0xFF1E2736),
+                previewIncomingText = Color(0xFFF8FAFC),
+                previewOutgoingBg = Color(0xFFFF9500),
+                previewOutgoingText = Color(0xFF000000),
+            ),
+            ThemePreset(
                 id = "amoled_mint",
                 titleRu = "AMOLED Mint",
                 titleEn = "AMOLED Mint",
                 isDark = true,
-                useCerulean = false,
+                accentScheme = "mint",
                 useAmoled = true,
                 previewBg = Color(0xFF000000),
                 previewIncomingBg = Color(0xFF171717),
@@ -3953,7 +3986,7 @@ private fun VisualThemeSelector(
                 titleRu = "AMOLED Blue",
                 titleEn = "AMOLED Blue",
                 isDark = true,
-                useCerulean = true,
+                accentScheme = "cerulean",
                 useAmoled = true,
                 previewBg = Color(0xFF000000),
                 previewIncomingBg = Color(0xFF171717),
@@ -3962,11 +3995,37 @@ private fun VisualThemeSelector(
                 previewOutgoingText = Color(0xFFFFFFFF),
             ),
             ThemePreset(
+                id = "amoled_purple",
+                titleRu = "AMOLED Purple",
+                titleEn = "AMOLED Purple",
+                isDark = true,
+                accentScheme = "purple",
+                useAmoled = true,
+                previewBg = Color(0xFF000000),
+                previewIncomingBg = Color(0xFF171717),
+                previewIncomingText = Color(0xFFF8FAFC),
+                previewOutgoingBg = Color(0xFFBF5AF2),
+                previewOutgoingText = Color(0xFFFFFFFF),
+            ),
+            ThemePreset(
+                id = "amoled_amber",
+                titleRu = "AMOLED Amber",
+                titleEn = "AMOLED Amber",
+                isDark = true,
+                accentScheme = "amber",
+                useAmoled = true,
+                previewBg = Color(0xFF000000),
+                previewIncomingBg = Color(0xFF171717),
+                previewIncomingText = Color(0xFFF8FAFC),
+                previewOutgoingBg = Color(0xFFFF9500),
+                previewOutgoingText = Color(0xFF000000),
+            ),
+            ThemePreset(
                 id = "mint_light",
                 titleRu = "Светлая Mint",
                 titleEn = "Light Mint",
                 isDark = false,
-                useCerulean = false,
+                accentScheme = "mint",
                 useAmoled = false,
                 previewBg = Color(0xFFF8FAFC),
                 previewIncomingBg = Color(0xFFE2E8F0),
@@ -3979,7 +4038,7 @@ private fun VisualThemeSelector(
                 titleRu = "Светлая Blue",
                 titleEn = "Light Cerulean",
                 isDark = false,
-                useCerulean = true,
+                accentScheme = "cerulean",
                 useAmoled = false,
                 previewBg = Color(0xFFF0F4F8),
                 previewIncomingBg = Color(0xFFE2E8F0),
@@ -3987,17 +4046,55 @@ private fun VisualThemeSelector(
                 previewOutgoingBg = Color(0xFF007AFF),
                 previewOutgoingText = Color(0xFFFFFFFF),
             ),
+            ThemePreset(
+                id = "purple_light",
+                titleRu = "Светлая Purple",
+                titleEn = "Light Purple",
+                isDark = false,
+                accentScheme = "purple",
+                useAmoled = false,
+                previewBg = Color(0xFFF8F5FC),
+                previewIncomingBg = Color(0xFFE2E8F0),
+                previewIncomingText = Color(0xFF0F172A),
+                previewOutgoingBg = Color(0xFF9333EA),
+                previewOutgoingText = Color(0xFFFFFFFF),
+            ),
+            ThemePreset(
+                id = "amber_light",
+                titleRu = "Светлая Amber",
+                titleEn = "Light Amber",
+                isDark = false,
+                accentScheme = "amber",
+                useAmoled = false,
+                previewBg = Color(0xFFFFFBEB),
+                previewIncomingBg = Color(0xFFE2E8F0),
+                previewIncomingText = Color(0xFF0F172A),
+                previewOutgoingBg = Color(0xFFEA580C),
+                previewOutgoingText = Color(0xFFFFFFFF),
+            ),
         )
     }
 
-    val activePresetId = remember(isDarkTheme, useCerulean, useAmoled) {
+    val activePresetId = remember(isDarkTheme, currentScheme, useAmoled) {
         when {
-            !isDarkTheme && useCerulean -> "cerulean_light"
-            !isDarkTheme -> "mint_light"
-            useAmoled && useCerulean -> "amoled_blue"
-            useAmoled -> "amoled_mint"
-            useCerulean -> "cerulean_dark"
-            else -> "mint_dark"
+            !isDarkTheme -> when (currentScheme) {
+                "cerulean" -> "cerulean_light"
+                "purple" -> "purple_light"
+                "amber" -> "amber_light"
+                else -> "mint_light"
+            }
+            useAmoled -> when (currentScheme) {
+                "cerulean" -> "amoled_blue"
+                "purple" -> "amoled_purple"
+                "amber" -> "amoled_amber"
+                else -> "amoled_mint"
+            }
+            else -> when (currentScheme) {
+                "cerulean" -> "cerulean_dark"
+                "purple" -> "purple_dark"
+                "amber" -> "amber_dark"
+                else -> "mint_dark"
+            }
         }
     }
 
@@ -4126,7 +4223,8 @@ private fun VisualThemeSelector(
                             .clip(RoundedCornerShape(16.dp))
                             .clickable {
                                 onThemeChanged(preset.isDark)
-                                onAccentChanged(preset.useCerulean)
+                                onAccentSchemeChanged(preset.accentScheme)
+                                onAccentChanged(preset.accentScheme == "cerulean")
                                 onAmoledChanged(preset.useAmoled)
                             }
                             .border(
@@ -4219,69 +4317,155 @@ private fun VisualThemeSelector(
                 color = onSurfaceColor
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Mint Green Swatch
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onAccentChanged(false) }
-                        .border(
-                            width = if (!useCerulean) 2.dp else 1.dp,
-                            color = if (!useCerulean) Color(0xFF00E5A3) else onSurfaceColor.copy(alpha = 0.08f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .background(surfaceColor)
-                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(
+                    // Mint Green Swatch
+                    val isMint = currentScheme == "mint"
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .size(18.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF00E5A3))
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Mint Green",
-                        fontSize = 12.sp,
-                        fontWeight = if (!useCerulean) FontWeight.Bold else FontWeight.Medium,
-                        color = onSurfaceColor
-                    )
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                onAccentSchemeChanged("mint")
+                                onAccentChanged(false)
+                            }
+                            .border(
+                                width = if (isMint) 2.dp else 1.dp,
+                                color = if (isMint) Color(0xFF00E5A3) else onSurfaceColor.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .background(surfaceColor)
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF00E5A3))
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Mint Green",
+                            fontSize = 12.sp,
+                            fontWeight = if (isMint) FontWeight.Bold else FontWeight.Medium,
+                            color = onSurfaceColor
+                        )
+                    }
+
+                    // Cerulean Blue Swatch
+                    val isBlue = currentScheme == "cerulean"
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                onAccentSchemeChanged("cerulean")
+                                onAccentChanged(true)
+                            }
+                            .border(
+                                width = if (isBlue) 2.dp else 1.dp,
+                                color = if (isBlue) Color(0xFF007AFF) else onSurfaceColor.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .background(surfaceColor)
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF007AFF))
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Cerulean Blue",
+                            fontSize = 12.sp,
+                            fontWeight = if (isBlue) FontWeight.Bold else FontWeight.Medium,
+                            color = onSurfaceColor
+                        )
+                    }
                 }
 
-                // Cerulean Blue Swatch
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onAccentChanged(true) }
-                        .border(
-                            width = if (useCerulean) 2.dp else 1.dp,
-                            color = if (useCerulean) Color(0xFF007AFF) else onSurfaceColor.copy(alpha = 0.08f),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                        .background(surfaceColor)
-                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(
+                    // Amethyst Purple Swatch
+                    val isPurple = currentScheme == "purple"
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .size(18.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF007AFF))
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Cerulean Blue",
-                        fontSize = 12.sp,
-                        fontWeight = if (useCerulean) FontWeight.Bold else FontWeight.Medium,
-                        color = onSurfaceColor
-                    )
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                onAccentSchemeChanged("purple")
+                                onAccentChanged(false)
+                            }
+                            .border(
+                                width = if (isPurple) 2.dp else 1.dp,
+                                color = if (isPurple) Color(0xFFBF5AF2) else onSurfaceColor.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .background(surfaceColor)
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFBF5AF2))
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Amethyst Purple",
+                            fontSize = 12.sp,
+                            fontWeight = if (isPurple) FontWeight.Bold else FontWeight.Medium,
+                            color = onSurfaceColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    // Solar Amber Swatch
+                    val isAmber = currentScheme == "amber"
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                onAccentSchemeChanged("amber")
+                                onAccentChanged(false)
+                            }
+                            .border(
+                                width = if (isAmber) 2.dp else 1.dp,
+                                color = if (isAmber) Color(0xFFFF9500) else onSurfaceColor.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .background(surfaceColor)
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFFF9500))
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Solar Amber",
+                            fontSize = 12.sp,
+                            fontWeight = if (isAmber) FontWeight.Bold else FontWeight.Medium,
+                            color = onSurfaceColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 

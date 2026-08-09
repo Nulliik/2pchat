@@ -228,7 +228,12 @@ class MainActivity : ComponentActivity() {
                     }
                 )
             }
-            var useCerulean by remember { mutableStateOf(sharedPrefs.getBoolean("use_cerulean", false)) }
+            var accentScheme by remember {
+                val saved = sharedPrefs.getString("accent_scheme", null)
+                val legacyCerulean = sharedPrefs.getBoolean("use_cerulean", false)
+                mutableStateOf(saved ?: if (legacyCerulean) "cerulean" else "mint")
+            }
+            var useCerulean by remember(accentScheme) { mutableStateOf(accentScheme == "cerulean") }
             var useAmoled by remember { mutableStateOf(sharedPrefs.getBoolean("use_amoled", false)) }
             val systemDefaultLanguage = if (java.util.Locale.getDefault().language == "ru") "Русский" else "English"
             var appLanguage by remember { mutableStateOf(sharedPrefs.getString("settings_language", systemDefaultLanguage) ?: systemDefaultLanguage) }
@@ -280,7 +285,8 @@ class MainActivity : ComponentActivity() {
 
             _2PChatTheme(
                 darkTheme = isDarkTheme,
-                useCerulean = useCerulean,
+                accentScheme = accentScheme,
+                useCerulean = accentScheme == "cerulean",
                 useAmoled = useAmoled,
                 animationsEnabled = !reduceMotionState.value,
             ) {
@@ -344,6 +350,7 @@ class MainActivity : ComponentActivity() {
                                             android.util.Log.e("MainActivity", "Failed to reset icon on duress", e)
                                         }
                                         isDarkTheme = true
+                                        accentScheme = "mint"
                                         useCerulean = false
                                         useAmoled = false
                                         appLanguage = "English"
@@ -361,8 +368,16 @@ class MainActivity : ComponentActivity() {
                                     },
                                     useCerulean = useCerulean,
                                     onAccentChanged = { cerulean ->
+                                        val newScheme = if (cerulean) "cerulean" else "mint"
+                                        accentScheme = newScheme
                                         useCerulean = cerulean
-                                        sharedPrefs.edit().putBoolean("use_cerulean", cerulean).apply()
+                                        sharedPrefs.edit().putString("accent_scheme", newScheme).putBoolean("use_cerulean", cerulean).apply()
+                                    },
+                                    accentScheme = accentScheme,
+                                    onAccentSchemeChanged = { scheme ->
+                                        accentScheme = scheme
+                                        useCerulean = (scheme == "cerulean")
+                                        sharedPrefs.edit().putString("accent_scheme", scheme).putBoolean("use_cerulean", scheme == "cerulean").apply()
                                     },
                                     useAmoled = useAmoled,
                                     onAmoledChanged = { amoled ->
