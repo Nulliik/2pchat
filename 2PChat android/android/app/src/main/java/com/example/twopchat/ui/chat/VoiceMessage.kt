@@ -145,13 +145,13 @@ private suspend fun extractWaveformSamples(filePath: String?, sampleCount: Int =
             }
             samples.map { raw ->
                 val norm = (raw / maxAmp.toFloat()).coerceIn(0f, 1f)
-                0.2f + (norm * 0.8f)
+                0.15f + (norm * 0.85f)
             }
         }.getOrElse {
             val seed = filePath.hashCode()
             List(sampleCount) { idx ->
                 val v = Math.abs(Math.sin((seed + idx * 17).toDouble())).toFloat()
-                0.2f + (v * 0.8f)
+                0.15f + (v * 0.85f)
             }
         }
     }
@@ -191,9 +191,15 @@ fun VoiceMessagePlayer(
     }
 
     Row(
-        modifier = Modifier.widthIn(min = 230.dp, max = 290.dp),
+        modifier = Modifier.widthIn(min = 210.dp, max = 290.dp).padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val themeColor = if (isMine) {
+            if (primaryColor.luminance() > 0.5f) StealthBlack else Color.White
+        } else {
+            primaryColor
+        }
+
         val playBtnBg = if (isMine) {
             if (primaryColor.luminance() > 0.5f) StealthBlack else Color.White
         } else {
@@ -239,96 +245,88 @@ fun VoiceMessagePlayer(
                 }
             },
             modifier = Modifier
-                .size(42.dp)
+                .size(36.dp)
                 .background(playBtnBg, CircleShape),
         ) {
             Icon(
                 painter = painterResource(if (isPlaying) R.drawable.ic_voice_pause else R.drawable.ic_voice_play),
-                contentDescription = if (isPlaying) "Pause voice message" else "Play voice message",
+                contentDescription = if (isPlaying) "Pause" else "Play",
                 tint = playBtnIconTint,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(16.dp),
             )
         }
-        Spacer(Modifier.width(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            val themeColor = if (isMine) {
-                if (primaryColor.luminance() > 0.5f) StealthBlack else Color.White
-            } else {
-                primaryColor
-            }
 
-            val progressRatio = if (duration > 0) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
+        Spacer(Modifier.width(8.dp))
 
-            AudioWaveformVisualizer(
-                samples = waveformSamples.ifEmpty { List(28) { 0.35f } },
-                progress = progressRatio,
-                activeColor = themeColor,
-                inactiveColor = themeColor.copy(alpha = 0.28f),
-                onSeek = { fraction ->
-                    val targetPos = (fraction * duration.coerceAtLeast(1)).toInt()
-                    position = targetPos
-                    runCatching { player?.seekTo(targetPos) }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-            )
+        val progressRatio = if (duration > 0) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = VoiceMessageSupport.formatDuration(if (isPlaying) position else duration),
-                    color = contentColor.copy(alpha = 0.72f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium
-                )
+        AudioWaveformVisualizer(
+            samples = waveformSamples.ifEmpty { List(28) { 0.35f } },
+            progress = progressRatio,
+            activeColor = themeColor,
+            inactiveColor = themeColor.copy(alpha = 0.32f),
+            onSeek = { fraction ->
+                val targetPos = (fraction * duration.coerceAtLeast(1)).toInt()
+                position = targetPos
+                runCatching { player?.seekTo(targetPos) }
+            },
+            modifier = Modifier
+                .weight(1f)
+                .height(24.dp)
+        )
 
-                // Playback Speed Toggle Chip (1x / 1.5x / 2x)
-                val speedText = when (speedMultiplier) {
-                    1.5f -> "1.5x"
-                    2.0f -> "2x"
-                    else -> "1x"
-                }
-                Box(
-                    modifier = Modifier
-                        .background(themeColor.copy(alpha = 0.15f), shape = RoundedCornerShape(6.dp))
-                        .clickable {
-                            val next = when (speedMultiplier) {
-                                1.0f -> 1.5f
-                                1.5f -> 2.0f
-                                else -> 1.0f
-                            }
-                            speedMultiplier = next
-                            runCatching {
-                                player?.let { p ->
-                                    val wasPlaying = p.isPlaying
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                                        p.playbackParams = p.playbackParams.setSpeed(next)
-                                        if (!wasPlaying) p.pause()
-                                    }
-                                }
+        Spacer(Modifier.width(8.dp))
+
+        Text(
+            text = VoiceMessageSupport.formatDuration(if (isPlaying) position else duration),
+            color = contentColor.copy(alpha = 0.85f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+
+        Spacer(Modifier.width(6.dp))
+
+        // Speed Chip Badge (1x / 1.5x / 2x)
+        val speedText = when (speedMultiplier) {
+            1.5f -> "1.5x"
+            2.0f -> "2x"
+            else -> "1x"
+        }
+        Box(
+            modifier = Modifier
+                .background(themeColor.copy(alpha = 0.18f), shape = RoundedCornerShape(6.dp))
+                .clickable {
+                    val next = when (speedMultiplier) {
+                        1.0f -> 1.5f
+                        1.5f -> 2.0f
+                        else -> 1.0f
+                    }
+                    speedMultiplier = next
+                    runCatching {
+                        player?.let { p ->
+                            val wasPlaying = p.isPlaying
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                p.playbackParams = p.playbackParams.setSpeed(next)
+                                if (!wasPlaying) p.pause()
                             }
                         }
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = speedText,
-                        color = themeColor,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    }
                 }
-            }
+                .padding(horizontal = 5.dp, vertical = 2.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = speedText,
+                color = themeColor,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
 
 @Composable
-private fun AudioWaveformVisualizer(
+fun AudioWaveformVisualizer(
     samples: List<Float>,
     progress: Float,
     activeColor: Color,
@@ -339,7 +337,6 @@ private fun AudioWaveformVisualizer(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(26.dp)
             .pointerInput(Unit) {
                 detectTapGestures { offset ->
                     val fraction = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
@@ -369,15 +366,15 @@ private fun AudioWaveformVisualizer(
                 val isPlayed = barFraction <= progress
 
                 val barColor = if (isPlayed) activeColor else inactiveColor
-                val minHeight = 5.dp
-                val maxHeight = 24.dp
+                val minHeight = 4.dp
+                val maxHeight = 20.dp
                 val barHeight = minHeight + ((maxHeight - minHeight) * sampleHeightRatio)
 
                 Box(
                     modifier = Modifier
                         .width(barWidth)
                         .height(barHeight)
-                        .clip(RoundedCornerShape(2.dp))
+                        .clip(CircleShape)
                         .background(barColor)
                 )
             }

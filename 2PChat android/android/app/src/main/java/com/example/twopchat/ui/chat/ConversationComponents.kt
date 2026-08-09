@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -236,22 +237,24 @@ fun ConversationComposerRow(
                     .height(46.dp)
                     .background(inputBackground, RoundedCornerShape(23.dp))
                     .border(0.5.dp, primaryColor.copy(alpha = 0.25f), RoundedCornerShape(23.dp))
-                    .padding(horizontal = 14.dp),
+                    .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(Modifier.size(8.dp).background(Color.Red, CircleShape))
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(6.dp))
                 Text(
                     VoiceMessageSupport.formatDuration(recordingElapsedMs),
-                    color = onSurfaceColor,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp,
+                    color = Color.Red,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
                 )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "Нажмите × для отмены",
-                    color = onSurfaceVariant.copy(alpha = 0.7f),
-                    fontSize = 11.sp,
+                Spacer(Modifier.width(10.dp))
+                RecordingLiveWaveform(
+                    recordingElapsedMs = recordingElapsedMs,
+                    activeColor = primaryColor,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(20.dp)
                 )
             }
         } else {
@@ -406,6 +409,40 @@ fun ConversationPinnedMessageBar(
             IconButton(onClick = onUnpin, modifier = Modifier.size(28.dp)) {
                 Text("×", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = onSurfaceVariant)
             }
+        }
+    }
+}
+
+@Composable
+private fun RecordingLiveWaveform(
+    recordingElapsedMs: Int,
+    activeColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val barCount = 20
+    val sampleHeights = remember(recordingElapsedMs) {
+        List(barCount) { idx ->
+            val phase = (recordingElapsedMs / 100 + idx * 8) % 360
+            val norm = Math.abs(Math.sin(Math.toRadians(phase.toDouble()))).toFloat()
+            0.2f + (norm * 0.8f)
+        }
+    }
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        sampleHeights.forEach { heightRatio ->
+            val minHeight = 4.dp
+            val maxHeight = 18.dp
+            val barHeight = minHeight + ((maxHeight - minHeight) * heightRatio)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(barHeight)
+                    .clip(CircleShape)
+                    .background(activeColor)
+            )
         }
     }
 }
