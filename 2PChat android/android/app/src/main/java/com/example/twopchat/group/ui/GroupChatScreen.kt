@@ -1245,40 +1245,42 @@ fun GroupChatScreen(
     }
 }
 
-    val allGroupImages = remember(state.messages) {
-        state.messages.flatMap { msg ->
-            val list = mutableListOf<String>()
-            val textIsSticker = msg.text.startsWith("2psticker:", ignoreCase = true) ||
-                msg.text.startsWith("2psticker_", ignoreCase = true) ||
-                msg.text.startsWith("sticker:", ignoreCase = true) ||
-                StickerSupport.isStickerFileName(msg.text) ||
-                (msg.text.lowercase().contains("sticker") && msg.text.lowercase().endsWith(".webp"))
+    val allGroupImages by remember(state.messages) {
+        derivedStateOf {
+            state.messages.flatMap { msg ->
+                val list = mutableListOf<String>()
+                val textIsSticker = msg.text.startsWith("2psticker:", ignoreCase = true) ||
+                    msg.text.startsWith("2psticker_", ignoreCase = true) ||
+                    msg.text.startsWith("sticker:", ignoreCase = true) ||
+                    StickerSupport.isStickerFileName(msg.text) ||
+                    (msg.text.lowercase().contains("sticker") && msg.text.lowercase().endsWith(".webp"))
 
-            val checkAtt: (GroupAttachmentUi) -> Unit = { att ->
-                val p = att.localPath ?: att.fileName
-                val isGif = att.mimeType == "image/gif" || p.lowercase().endsWith(".gif")
-                val isSticker = textIsSticker ||
-                    att.mimeType.contains("sticker") ||
-                    att.fileName.lowercase().contains("sticker") ||
-                    StickerSupport.isStickerFileName(att.fileName) ||
-                    att.localPath?.lowercase()?.contains("sticker") == true
+                val checkAtt: (GroupAttachmentUi) -> Unit = { att ->
+                    val p = att.localPath ?: att.fileName
+                    val isGif = att.mimeType == "image/gif" || p.lowercase().endsWith(".gif")
+                    val isSticker = textIsSticker ||
+                        att.mimeType.contains("sticker") ||
+                        att.fileName.lowercase().contains("sticker") ||
+                        StickerSupport.isStickerFileName(att.fileName) ||
+                        att.localPath?.lowercase()?.contains("sticker") == true
 
-                if (!isGif && !isSticker && p.isNotBlank()) {
-                    val isImage = att.mimeType.startsWith("image/") ||
-                        p.endsWith(".jpg", true) || p.endsWith(".jpeg", true) ||
-                        p.endsWith(".png", true) || p.endsWith(".webp", true)
-                    if (isImage) {
-                        list.add(p)
+                    if (!isGif && !isSticker && p.isNotBlank()) {
+                        val isImage = att.mimeType.startsWith("image/") ||
+                            p.endsWith(".jpg", true) || p.endsWith(".jpeg", true) ||
+                            p.endsWith(".png", true) || p.endsWith(".webp", true)
+                        if (isImage) {
+                            list.add(p)
+                        }
                     }
                 }
-            }
 
-            if (msg.attachments.size > 1) {
-                msg.attachments.forEach(checkAtt)
-            } else {
-                msg.attachment?.let(checkAtt)
+                if (msg.attachments.size > 1) {
+                    msg.attachments.forEach(checkAtt)
+                } else {
+                    msg.attachment?.let(checkAtt)
+                }
+                list
             }
-            list
         }
     }
 
