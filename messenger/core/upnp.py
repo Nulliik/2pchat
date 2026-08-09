@@ -51,7 +51,8 @@ def _open_upnp_url(request, *, timeout):
     opener = urllib.request.build_opener(_NoRedirectHandler())
     return opener.open(request, timeout=timeout)
 
-_upnp_mapping = None  # Tuple of (control_url, service_type, external_port)
+_upnp_mapping = None  # Tuple of (control_url, service_type, external_port, local_ip)
+_renewal_stop_event = None
 _upnp_status_lock = threading.Lock()
 _upnp_status = {
     "mapped": False,
@@ -240,6 +241,31 @@ def delete_port_mapping(control_url, service_type, external_port, protocol="TCP"
         return False
 
 
+def _start_lease_renewal_thread(control_url, service_type, port, local_ip):
+    global _renewal_stop_event
+    with _upnp_status_lock:
+        if _renewal_stop_event is not None:
+            _renewal_stop_event.set()
+        _renewal_stop_event = threading.Event()
+        stop_event = _renewal_stop_event
+
+    def run():
+        # Renew lease every 40 minutes (2400 s) for a 60-minute lease duration
+        while not stop_event.wait(timeout=2400.0):
+            with _upnp_status_lock:
+                if stop_event.is_set() or _upnp_mapping is None:
+                    break
+            print(f"[UPNP] Renewing port mapping lease for port {port}...")
+            success = add_port_mapping(control_url, service_type, port, port, local_ip, duration=3600)
+            if success:
+                print(f"[UPNP] Successfully renewed lease for port {port}.")
+            else:
+                print(f"[UPNP] Failed to renew lease for port {port}.")
+
+    t = threading.Thread(target=run, name="UPnPLeaseRenewalThread", daemon=True)
+    t.start()
+
+
 def setup_upnp_in_background(port):
     def run():
         global _upnp_mapping
@@ -263,8 +289,9 @@ def setup_upnp_in_background(port):
                     success = add_port_mapping(control_url, service_type, port, port, local_ip)
                     if success:
                         print(f"[UPNP] Successfully mapped port {port} via UPnP.")
-                        _upnp_mapping = (control_url, service_type, port)
+                        _upnp_mapping = (control_url, service_type, port, local_ip)
                         _update_upnp_status(mapped=True, state="mapped", error="")
+                        _start_lease_renewal_thread(control_url, service_type, port, local_ip)
                     else:
                         print("[UPNP] Failed to add port mapping.")
                         _update_upnp_status(mapped=False, state="failed", error="router rejected AddPortMapping")
@@ -283,9 +310,13 @@ def setup_upnp_in_background(port):
 
 
 def stop_upnp():
-    global _upnp_mapping
+    global _upnp_mapping, _renewal_stop_event
+    with _upnp_status_lock:
+        if _renewal_stop_event is not None:
+            _renewal_stop_event.set()
+            _renewal_stop_event = None
     if _upnp_mapping:
-        control_url, service_type, port = _upnp_mapping
+        control_url, service_type, port = _upnp_mapping[0], _upnp_mapping[1], _upnp_mapping[2]
         _upnp_mapping = None
         _update_upnp_status(mapped=False, state="stopping")
 

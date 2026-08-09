@@ -102,3 +102,10 @@ def test_binary_file_chunk_rejects_payload_larger_than_256_kib():
 
     with pytest.raises(ValueError, match="exceeds the binary-v1 maximum"):
         protocol.encode_file_chunk(b"x" * 12, 0, oversized)
+
+
+def test_structured_payload_rejects_oversized_messages():
+    oversized_json = json.dumps({"type": "chat", "body": "a" * (protocol.MAX_STRUCTURED_PAYLOAD_SIZE + 10)}).encode("utf-8")
+    with pytest.raises(ValueError, match="structured payload size.*exceeds maximum limit"):
+        protocol.decode_message(oversized_json)
+

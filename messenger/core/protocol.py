@@ -111,18 +111,23 @@ def encode_message(message: Dict[str, Any], encoding: str = DEFAULT_FORMAT) -> b
     raise ValueError(f"Unsupported encoding: {encoding}")
 
 
-MAX_ALLOWED_PAYLOAD_SIZE = 10 * 1024 * 1024  # 10 MB limit
+MAX_STRUCTURED_PAYLOAD_SIZE = 1 * 1024 * 1024  # 1 MB limit for JSON/CBOR structured messages
+MAX_BINARY_CHUNK_FRAME_SIZE = _FILE_CHUNK_HEADER.size + MAX_FILE_CHUNK_PAYLOAD_SIZE  # ~256.2 KB limit
 
 
 def decode_message(payload: bytes, encoding: str = DEFAULT_FORMAT) -> Dict[str, Any]:
     if not isinstance(payload, (bytes, bytearray)):
         raise TypeError("payload must be bytes")
-    if len(payload) > MAX_ALLOWED_PAYLOAD_SIZE:
-        raise ValueError(
-            f"message payload size ({len(payload)} bytes) exceeds the maximum allowed limit of {MAX_ALLOWED_PAYLOAD_SIZE} bytes"
-        )
     if payload and payload[0] == FILE_CHUNK_FRAME_TYPE:
+        if len(payload) > MAX_BINARY_CHUNK_FRAME_SIZE:
+            raise ValueError(
+                f"binary file chunk size ({len(payload)} bytes) exceeds maximum limit of {MAX_BINARY_CHUNK_FRAME_SIZE} bytes"
+            )
         return decode_file_chunk(payload)
+    if len(payload) > MAX_STRUCTURED_PAYLOAD_SIZE:
+        raise ValueError(
+            f"structured payload size ({len(payload)} bytes) exceeds maximum limit of {MAX_STRUCTURED_PAYLOAD_SIZE} bytes"
+        )
     if encoding == "json":
         return _validate_structured_message(json.loads(payload.decode("utf-8")))
     if encoding == "cbor":
