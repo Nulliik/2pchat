@@ -270,10 +270,14 @@ internal class MessageNotificationService {
         val settings = P2PPreferences.prefs(context)
         if (!settings.getBoolean("settings_notifications", true)) return
 
-        // 5. Per-Peer Mute Check
+        val myUsername = settings.getString("username_profile", "") ?: ""
+        val isMention = (myUsername.isNotBlank() && text.contains("@$myUsername", ignoreCase = true)) ||
+                text.contains("@all", ignoreCase = true)
+
+        // 5. Per-Peer Mute Check (Mentions override mute)
         val mutedPeers = settings.getStringSet("muted_peers", emptySet()) ?: emptySet()
         val isMuted = mutedPeers.contains(sender)
-        if (isMuted) return // Suppress notifications for muted contacts
+        if (isMuted && !isMention) return // Suppress notifications for muted contacts unless mentioned
 
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
@@ -322,8 +326,12 @@ internal class MessageNotificationService {
             .setName(sender)
             .setIcon(avatarIcon)
             .build()
+        val conversationTitle = if (isMention) {
+            if (isRu) "💬 Вас упомянули ($sender)" else "💬 Mentioned by $sender"
+        } else sender
+
         val messagingStyle = NotificationCompat.MessagingStyle(userPerson)
-            .setConversationTitle(sender)
+            .setConversationTitle(conversationTitle)
 
         history.messages.forEach { item ->
             messagingStyle.addMessage(item, System.currentTimeMillis(), senderPerson)
