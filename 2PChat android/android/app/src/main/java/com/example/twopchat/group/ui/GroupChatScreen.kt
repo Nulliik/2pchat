@@ -1197,7 +1197,7 @@ fun GroupChatScreen(
                     "Poll", "Polls", "Опрос" -> showCreatePollDialog = true
                     "Camera" -> {
                         try {
-                            val attachmentsDir = File(context.cacheDir, "attachments")
+                            val attachmentsDir = File(context.filesDir, "attachments")
                             if (!attachmentsDir.exists()) attachmentsDir.mkdirs()
                             val file = File(attachmentsDir, "camera_capture_${System.currentTimeMillis()}.jpg")
                             tempCameraFile = file

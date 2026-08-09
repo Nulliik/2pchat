@@ -737,9 +737,10 @@ fun PhotoEditorModal(
                                         }
                                     }
 
-                                    // Save to temporary file
+                                    // Save to persistent attachments directory
+                                    val attachmentsDir = File(context.filesDir, "attachments").apply { if (!exists()) mkdirs() }
                                     val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-                                    val editedFile = File(context.cacheDir, "edited_photo_$timeStamp.jpg")
+                                    val editedFile = File(attachmentsDir, "sent_photo_${timeStamp}_${java.util.UUID.randomUUID().toString().take(8)}.jpg")
                                     FileOutputStream(editedFile).use { out ->
                                         finalBmp.compress(Bitmap.CompressFormat.JPEG, 92, out)
                                     }
