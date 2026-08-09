@@ -19,6 +19,9 @@ object P2PPreferences {
     const val UPNP_ENABLED = "settings_upnp"
     const val DEFAULT_LISTENER_PORT = 50001
 
+    fun isWifiDiscoveryEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(WIFI_DISCOVERY, true)
+
     fun isUpnpEnabled(context: Context): Boolean =
         prefs(context).getBoolean(UPNP_ENABLED, false)
     const val DEFAULT_STICKER_CACHE_LIMIT_MB = 100

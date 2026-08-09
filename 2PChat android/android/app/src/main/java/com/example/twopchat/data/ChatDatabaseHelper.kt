@@ -332,7 +332,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         } catch (_: Exception) { null }
     }
 
-    private fun isHigherPriorityStatus(existing: String, incoming: String): Boolean {
+    private fun isHigherPriorityStatus(existing: String?, incoming: String?): Boolean {
+        if (existing == null) return false
+        if (incoming == null) return true
         val priority = mapOf("read" to 4, "delivered" to 3, "sent" to 2, "sending" to 1)
         val pExisting = priority[existing.lowercase()] ?: 0
         val pIncoming = priority[incoming.lowercase()] ?: 0
