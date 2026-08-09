@@ -1005,6 +1005,8 @@ object GroupChatCoordinator {
                         if (localMem != null && localMem.isParticipating() && fingerprint != null) {
                             val devId = stableDeviceId(fingerprint)
                             val isOwner = (group.ownerDeviceId == devId)
+                            // joinedEpoch=0 so the auto-registered peer is not barred from
+                            // receiving old epochs during initial history sync.
                             val autoMember = StoredGroupMember(
                                 groupId = group.groupId,
                                 deviceId = devId,
@@ -1013,7 +1015,7 @@ object GroupChatCoordinator {
                                 role = if (isOwner) GroupRole.OWNER.name else GroupRole.MEMBER.name,
                                 permissions = 0L,
                                 status = "ACTIVE",
-                                joinedEpoch = group.currentEpoch,
+                                joinedEpoch = 0L,
                                 removedEpoch = null,
                                 createdAtMs = System.currentTimeMillis(),
                                 updatedAtMs = System.currentTimeMillis(),
@@ -1034,6 +1036,23 @@ object GroupChatCoordinator {
             }
             // Key packages and roster controls must be replayed before sync can
             // successfully ingest ciphertext from epochs created while offline.
+            flushDueOutbox()
+            // Re-enqueue current epoch key for the connecting peer if we are owner and
+            // they are missing the key (e.g. first connect after being added).
+            memberships.forEach { (group, member) ->
+                val localIsOwner = group.localDeviceId == group.ownerDeviceId
+                if (localIsOwner) {
+                    val controlHead = group.controlHead ?: return@forEach
+                    db().getEpochKey(group.groupId, group.currentEpoch)?.let { epochKey ->
+                        enqueueEpochKeyPackages(
+                            group.groupId,
+                            controlHead,
+                            group.currentEpoch,
+                            epochKey.keyMaterial,
+                        )
+                    }
+                }
+            }
             flushDueOutbox()
             memberships.forEach { (group, member) ->
                 sendSyncRequests(group, member)
@@ -3349,6 +3368,7 @@ object GroupChatCoordinator {
                     val wallpaperUriInPayload = payload.optString("wallpaper_uri", "")
                     val ctx = applicationContext
                     if (wallpaperDataB64.isNotBlank() && ctx != null) {
+                        // Inline base64 blob — save to local file and register the path.
                         runCatching {
                             val bytes = Base64.decode(wallpaperDataB64, Base64.NO_WRAP)
                             val dir = File(ctx.filesDir, "group_wallpapers").also { it.mkdirs() }
@@ -3357,10 +3377,20 @@ object GroupChatCoordinator {
                             P2PPreferences.prefs(ctx).edit().putString("group_wallpaper_${current.groupId}", destFile.absolutePath).apply()
                         }
                     } else if (wallpaperUriInPayload.isBlank() && ctx != null) {
+                        // Explicit clear — remove wallpaper.
                         P2PPreferences.prefs(ctx).edit().remove("group_wallpaper_${current.groupId}").apply()
                     } else if (wallpaperUriInPayload.isNotBlank() && ctx != null) {
-                        if (File(wallpaperUriInPayload).exists()) {
-                            P2PPreferences.prefs(ctx).edit().putString("group_wallpaper_${current.groupId}", wallpaperUriInPayload).apply()
+                        // wallpaper_uri points to the sender's local path which won't
+                        // exist on this device. Check for a fallback file that may have
+                        // been saved by a previous inline blob delivery, and register it.
+                        val fallbackFile = File(ctx.filesDir, "group_wallpapers/${current.groupId}.jpg")
+                        val localPath = when {
+                            File(wallpaperUriInPayload).exists() -> wallpaperUriInPayload
+                            fallbackFile.exists() -> fallbackFile.absolutePath
+                            else -> null
+                        }
+                        if (localPath != null) {
+                            P2PPreferences.prefs(ctx).edit().putString("group_wallpaper_${current.groupId}", localPath).apply()
                         }
                     }
                 }
@@ -4780,6 +4810,9 @@ object GroupChatCoordinator {
         }
         val devId = stableDeviceId(fingerprint)
         val isOwner = (group.ownerDeviceId == devId)
+        // joinedEpoch=0 so this auto-registered peer can receive full history sync.
+        // A properly invited member will have their real joinedEpoch set via roster
+        // snapshot or MEMBER_ADDED control event, which overwrites this value.
         val newMember = StoredGroupMember(
             groupId = groupId,
             deviceId = devId,
@@ -4788,7 +4821,7 @@ object GroupChatCoordinator {
             role = if (isOwner) GroupRole.OWNER.name else GroupRole.MEMBER.name,
             permissions = 0L,
             status = "ACTIVE",
-            joinedEpoch = group.currentEpoch,
+            joinedEpoch = 0L,
             removedEpoch = null,
             createdAtMs = System.currentTimeMillis(),
             updatedAtMs = System.currentTimeMillis(),
