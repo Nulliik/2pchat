@@ -995,10 +995,15 @@ object GroupChatCoordinator {
             val fingerprint = runCatching { transportFingerprint(peerName) }.getOrNull()
             val groups = db().listGroups()
             val memberships = groups.mapNotNull { group ->
+                val transportDeviceId = fingerprint?.let(::stableDeviceId)
                 val member = db().listMembers(group.groupId)
                     .firstOrNull {
                         it.isParticipating() &&
-                        (it.peerName == peerName || (fingerprint != null && it.transportFingerprint == fingerprint))
+                        (
+                            it.peerName == peerName ||
+                                (fingerprint != null && it.transportFingerprint == fingerprint) ||
+                                (transportDeviceId != null && it.deviceId == transportDeviceId)
+                            )
                     }
                     ?: run {
                         val localMem = db().getMember(group.groupId, group.localDeviceId)
@@ -4821,17 +4826,37 @@ object GroupChatCoordinator {
 
     private fun requireTransportMember(groupId: String, peerName: String): StoredGroupMember {
         val fingerprint = transportFingerprint(peerName)
+        val transportDeviceId = stableDeviceId(fingerprint)
         val group = db().getGroup(groupId) ?: throw SecurityException("unknown group")
         val existing = db().listMembers(groupId).firstOrNull {
-            it.isParticipating() && (it.transportFingerprint == fingerprint || it.peerName == peerName)
+            it.isParticipating() &&
+                (
+                    it.transportFingerprint == fingerprint ||
+                        it.peerName == peerName ||
+                        it.deviceId == transportDeviceId
+                    )
         }
         if (existing != null) {
-            if (existing.peerName.isBlank() || existing.peerName != peerName) {
-                db().upsertMember(existing.copy(peerName = peerName, displayName = peerName))
+            if (
+                existing.peerName.isBlank() ||
+                    existing.peerName != peerName ||
+                    existing.transportFingerprint != fingerprint
+            ) {
+                db().upsertMember(
+                    existing.copy(
+                        peerName = peerName,
+                        displayName = peerName,
+                        transportFingerprint = fingerprint,
+                    ),
+                )
             }
-            return existing
+            return existing.copy(
+                peerName = peerName,
+                displayName = peerName,
+                transportFingerprint = fingerprint,
+            )
         }
-        val devId = stableDeviceId(fingerprint)
+        val devId = transportDeviceId
         val isOwner = (group.ownerDeviceId == devId)
         // joinedEpoch=0 so this auto-registered peer can receive full history sync.
         // A properly invited member will have their real joinedEpoch set via roster
