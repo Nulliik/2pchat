@@ -4125,7 +4125,7 @@ private fun VisualThemeSelector(
                             .width(108.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .clickable {
-                                onThemeChanged(!preset.isDark)
+                                onThemeChanged(preset.isDark)
                                 onAccentChanged(preset.useCerulean)
                                 onAmoledChanged(preset.useAmoled)
                             }
