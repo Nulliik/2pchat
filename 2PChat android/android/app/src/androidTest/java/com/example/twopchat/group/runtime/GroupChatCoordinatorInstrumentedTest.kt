@@ -146,13 +146,12 @@ class GroupChatCoordinatorInstrumentedTest {
         val chatState = GroupChatCoordinator.chatState(groupId)
         awaitCondition {
             !chatState.value.composerEnabled &&
-                chatState.value.readOnlyReason.contains("owner", ignoreCase = true)
+                chatState.value.readOnlyReason.isWaitingForOwner()
         }
         val joiningState = chatState.value
         assertFalse(joiningState.composerEnabled)
         assertTrue(
-            chatState.value.readOnlyReason
-                .contains("owner", ignoreCase = true),
+            chatState.value.readOnlyReason.isWaitingForOwner(),
         )
 
         GroupChatCoordinator.sendMessage(groupId, "must not be emitted while joining")
@@ -215,7 +214,7 @@ class GroupChatCoordinatorInstrumentedTest {
         }
         awaitCondition {
             !chatState.value.composerEnabled &&
-                chatState.value.readOnlyReason.contains("owner", ignoreCase = true)
+                chatState.value.readOnlyReason.isWaitingForOwner()
         }
         val keyPackage = signedOwnerKeyPackage(
             groupId = groupId,
@@ -582,6 +581,27 @@ class GroupChatCoordinatorInstrumentedTest {
                     .any { it.body == "restored https://example.com" }
             }
         }
+
+        val forgedRestriction = signedOwnerRestriction(
+            groupId = groupId,
+            epochSecret = activeSecret,
+            permissions = withoutLinks.bits,
+            authorSequence = 4L,
+            previousOwnerEvent = restored.eventId,
+            controlHead = restored.eventId,
+        )
+        val forgedJson = GroupWireProtocol.eventToJson(forgedRestriction).apply {
+            put("signature", Base64.encodeToString(ByteArray(64) { 0x7f }, Base64.NO_WRAP))
+        }
+        assertTrue(GroupChatCoordinator.handleIncoming(context, ownerPeerName, forgedJson))
+        Thread.sleep(300)
+        GroupDatabaseHelper(context).use { database ->
+            assertEquals(null, database.getEvent(groupId, forgedRestriction.eventId))
+            assertEquals(
+                memberDefaults.bits,
+                database.getMember(groupId, localDeviceId)?.permissions,
+            )
+        }
     }
 
     private fun signedInvite(
@@ -880,6 +900,9 @@ class GroupChatCoordinatorInstrumentedTest {
         }
         assertTrue("condition was not met within ${timeoutMs}ms", predicate())
     }
+
+    private fun String.isWaitingForOwner(): Boolean =
+        contains("owner", ignoreCase = true) || contains("владел", ignoreCase = true)
 
     private fun stableDeviceId(fingerprint: String): String =
         sha256Hex("2pchat-group-device-v1\u0000$fingerprint".toByteArray())

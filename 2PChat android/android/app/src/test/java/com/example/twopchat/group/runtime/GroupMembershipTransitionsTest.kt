@@ -6,6 +6,51 @@ import org.junit.Test
 
 class GroupMembershipTransitionsTest {
     @Test
+    fun reconnectOnlyMatchesAnExistingCryptographicRosterIdentity() {
+        assertTrue(
+            GroupMembershipTransitions.isReconnectCandidate(
+                status = "ACTIVE",
+                storedDeviceId = "device-alice",
+                storedFingerprint = "fingerprint-alice",
+                connectedFingerprint = "fingerprint-alice",
+                connectedDeviceId = "device-alice",
+            ),
+        )
+        assertFalse(
+            GroupMembershipTransitions.isReconnectCandidate(
+                status = "ACTIVE",
+                storedDeviceId = "device-alice",
+                storedFingerprint = "fingerprint-alice",
+                connectedFingerprint = "fingerprint-mallory",
+                connectedDeviceId = "device-mallory",
+            ),
+        )
+        assertFalse(
+            GroupMembershipTransitions.isReconnectCandidate(
+                status = "LEFT",
+                storedDeviceId = "device-alice",
+                storedFingerprint = "fingerprint-alice",
+                connectedFingerprint = "fingerprint-alice",
+                connectedDeviceId = "device-alice",
+            ),
+        )
+    }
+
+    @Test
+    fun reconnectWakesAnOfflineInvitationWithoutActivatingTheInvitee() {
+        assertTrue(
+            GroupMembershipTransitions.isReconnectCandidate(
+                status = "INVITED",
+                storedDeviceId = "device-bob",
+                storedFingerprint = "fingerprint-bob",
+                connectedFingerprint = "fingerprint-bob",
+                connectedDeviceId = "device-bob",
+            ),
+        )
+        assertFalse(GroupMembershipTransitions.isParticipating("INVITED"))
+    }
+
+    @Test
     fun onlyActiveAndRestrictedMembersParticipate() {
         assertTrue(GroupMembershipTransitions.isParticipating("ACTIVE"))
         assertTrue(GroupMembershipTransitions.isParticipating("RESTRICTED"))

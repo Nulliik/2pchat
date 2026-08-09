@@ -9,6 +9,23 @@ internal object GroupMembershipTransitions {
     fun isParticipating(status: String): Boolean =
         status == "ACTIVE" || status == "RESTRICTED"
 
+    /**
+     * A reconnect may wake durable delivery only for an identity already
+     * present in the accepted roster. Peer names are mutable labels and must
+     * never be used as a membership credential.
+     */
+    fun isReconnectCandidate(
+        status: String,
+        storedDeviceId: String,
+        storedFingerprint: String,
+        connectedFingerprint: String,
+        connectedDeviceId: String,
+    ): Boolean =
+        status in setOf("ACTIVE", "RESTRICTED", "INVITED", "JOINING") &&
+            storedFingerprint.isNotBlank() &&
+            storedFingerprint == connectedFingerprint &&
+            storedDeviceId == connectedDeviceId
+
     fun canApplyMemberAdded(currentStatus: String?, requestedStatus: String): Boolean =
         when (requestedStatus) {
             "INVITED" -> currentStatus == null || currentStatus in setOf("LEFT", "BANNED")

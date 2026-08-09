@@ -11,6 +11,49 @@ import org.junit.Test
 
 class GroupEventLogResilienceSimulationTest {
     @Test
+    fun longLivedGroupConvergesAcrossRepeatedOfflineGenerations() {
+        val simulation = DeterministicGroupNetworkSimulator(
+            participantCount = PARTICIPANTS,
+            seed = 91_337L,
+            faults = NetworkFaultProfile(lossEvery = 5, duplicateEvery = 7, maxDelayTicks = 23),
+        )
+
+        repeat(12) { generation ->
+            val offline = simulation.participantIds.filterIndexed { index, _ ->
+                (index + generation) % 5 == 0
+            }
+            offline.forEach { simulation.setOnline(it, false) }
+            simulation.participantIds.forEachIndexed { index, participant ->
+                repeat(3) { eventInGeneration ->
+                    simulation.appendEvent(
+                        author = participant,
+                        kind = if ((generation + index + eventInGeneration) % 4 == 0) {
+                            GroupEventKind.MEDIA_MESSAGE
+                        } else {
+                            GroupEventKind.TEXT_MESSAGE
+                        },
+                        payload = "generation=$generation;participant=$index;event=$eventInGeneration",
+                    )
+                }
+            }
+            simulation.runUntilIdle()
+            offline.forEach { simulation.setOnline(it, true) }
+            simulation.gossipRound()
+            simulation.runUntilIdle()
+        }
+
+        simulation.participantIds.forEach { simulation.setOnline(it, true) }
+        val rounds = simulation.gossipUntilConverged(maxRounds = 20)
+
+        assertTrue("long-lived group did not converge", rounds in 0..20)
+        assertTrue(simulation.hasConverged())
+        val expected = PARTICIPANTS * 12 * 3
+        simulation.participantIds.forEach { participant ->
+            assertEquals(expected, simulation.eventCount(participant))
+        }
+    }
+
+    @Test
     fun twentyParticipantsConvergeAfterOfflineLossDuplicateReorderAndDelay() {
         val simulation = newFaultySimulation()
         val temporarilyOffline = simulation.participantIds.slice(4..9).toSet()

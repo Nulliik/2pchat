@@ -2811,29 +2811,25 @@ private fun ModalActionButton(
     titleColor: Color,
     onClick: () -> Unit
 ) {
-    AnimatedPressButton(
+    Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth()
+        color = Color.White.copy(alpha = 0.05f),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Surface(
-            color = Color.White.copy(alpha = 0.05f),
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth()
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 14.dp)
-            ) {
-                Text(
-                    text = title,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = titleColor,
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            Text(
+                text = title,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = titleColor,
+                modifier = Modifier.weight(1f)
+            )
         }
     }
 }

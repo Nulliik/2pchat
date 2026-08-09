@@ -939,15 +939,7 @@ fun GroupChatScreen(
 
                                     Text(
                                         text = if (state.readOnlyReason.isNotBlank()) {
-                                            Localizations.tr(
-                                                appLanguage,
-                                                "Ожидание подтверждения членства владельцем группы",
-                                                "Waiting for group owner to confirm membership",
-                                                "Warten auf Bestätigung der Mitgliedschaft durch den Gruppenbesitzer",
-                                                "Esperando la confirmación de membresía por parte del propietario del grupo",
-                                                "En attente de la confirmation de l'appartenance par le propriétaire du groupe",
-                                                "Aguardando confirmação de associação pelo proprietário do grupo"
-                                            )
+                                            state.readOnlyReason
                                         } else {
                                             Localizations.tr(
                                                 appLanguage,

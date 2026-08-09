@@ -2,10 +2,13 @@ package com.example.twopchat.group.ui
 
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onFirst
@@ -21,6 +24,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 
+@OptIn(ExperimentalTestApi::class)
 class GroupScreensTest {
   @get:Rule val composeTestRule = createAndroidComposeRule<ComponentActivity>()
 
@@ -144,8 +148,10 @@ class GroupScreensTest {
     composeTestRule.onNodeWithText("Медиа").performScrollTo().performClick()
     composeTestRule.waitForIdle()
 
-    composeTestRule.onNodeWithTag("group_media_media-0_attachment-0").assertExists()
-    composeTestRule.onNodeWithTag("group_media_media-89_attachment-89").assertDoesNotExist()
+    // The media tab is newest-first, so only the tail of the source timeline
+    // should be composed initially.
+    composeTestRule.onNodeWithTag("group_media_media-89_attachment-89").assertExists()
+    composeTestRule.onNodeWithTag("group_media_media-0_attachment-0").assertDoesNotExist()
   }
 
   @Test
@@ -276,6 +282,7 @@ class GroupScreensTest {
       .performScrollToNode(hasTestTag("restrict_bob"))
     composeTestRule.onNodeWithTag("member_bob").performClick()
     composeTestRule.onNodeWithText("Ограничить права").performClick()
+    composeTestRule.waitUntilAtLeastOneExists(hasText("Отправка ссылок"))
     composeTestRule.onNodeWithText("Отправка ссылок", useUnmergedTree = true)
       .performScrollTo()
       .performClick()
@@ -447,6 +454,7 @@ class GroupScreensTest {
       .performScrollToNode(hasTestTag("ban_bob"))
     composeTestRule.onNodeWithTag("member_bob").performClick()
     composeTestRule.onNodeWithText("Заблокировать").performClick()
+    composeTestRule.waitUntilAtLeastOneExists(hasTestTag("confirm_ban_member"))
     composeTestRule.onNodeWithTag("confirm_ban_member", useUnmergedTree = true).performClick()
 
     composeTestRule.runOnIdle {
@@ -516,7 +524,7 @@ class GroupScreensTest {
     }
 
     composeTestRule.onNodeWithTag("delivery_read-message", useUnmergedTree = true)
-      .assertTextEquals("✔✔")
+      .assertContentDescriptionEquals("Delivered")
   }
 
   @Test

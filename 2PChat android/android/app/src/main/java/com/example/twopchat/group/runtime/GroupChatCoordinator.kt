@@ -998,41 +998,19 @@ object GroupChatCoordinator {
                 val transportDeviceId = fingerprint?.let(::stableDeviceId)
                 val member = db().listMembers(group.groupId)
                     .firstOrNull {
-                        it.isParticipating() &&
-                        (
-                            it.peerName == peerName ||
-                                (fingerprint != null && it.transportFingerprint == fingerprint) ||
-                                (transportDeviceId != null && it.deviceId == transportDeviceId)
+                        fingerprint != null && transportDeviceId != null &&
+                            GroupMembershipTransitions.isReconnectCandidate(
+                                it.status,
+                                it.deviceId,
+                                it.transportFingerprint,
+                                fingerprint,
+                                transportDeviceId,
                             )
-                    }
-                    ?: run {
-                        val localMem = db().getMember(group.groupId, group.localDeviceId)
-                        if (localMem != null && localMem.isParticipating() && fingerprint != null) {
-                            val devId = stableDeviceId(fingerprint)
-                            val isOwner = (group.ownerDeviceId == devId)
-                            // joinedEpoch=0 so the auto-registered peer is not barred from
-                            // receiving old epochs during initial history sync.
-                            val autoMember = StoredGroupMember(
-                                groupId = group.groupId,
-                                deviceId = devId,
-                                accountId = devId,
-                                displayName = peerName,
-                                role = if (isOwner) GroupRole.OWNER.name else GroupRole.MEMBER.name,
-                                permissions = 0L,
-                                status = "ACTIVE",
-                                joinedEpoch = 0L,
-                                removedEpoch = null,
-                                createdAtMs = System.currentTimeMillis(),
-                                updatedAtMs = System.currentTimeMillis(),
-                                transportFingerprint = fingerprint,
-                                peerName = peerName,
-                                signingKeyBase64 = ""
-                            )
-                            db().upsertMember(autoMember)
-                            autoMember
-                        } else null
                     }
                     ?: return@mapNotNull null
+                if (member.peerName != peerName) {
+                    db().upsertMember(member.copy(peerName = peerName))
+                }
                 group to member
             }
             val now = System.currentTimeMillis()
@@ -1045,6 +1023,7 @@ object GroupChatCoordinator {
             // Re-enqueue current epoch key for the connecting peer if we are owner and
             // they are missing the key (e.g. first connect after being added).
             memberships.forEach { (group, member) ->
+                if (!member.isParticipating()) return@forEach
                 val localIsOwner = group.localDeviceId == group.ownerDeviceId
                 if (localIsOwner) {
                     val controlHead = group.controlHead ?: return@forEach
@@ -1060,7 +1039,7 @@ object GroupChatCoordinator {
             }
             flushDueOutbox()
             memberships.forEach { (group, member) ->
-                sendSyncRequests(group, member)
+                if (member.isParticipating()) sendSyncRequests(group, member)
             }
         }
     }
@@ -2046,34 +2025,20 @@ object GroupChatCoordinator {
     ) {
         val event = GroupWireProtocol.parseEvent(json)
         val group = db().getGroup(event.groupId) ?: return
-        val transportMember = requireTransportMember(group.groupId, senderPeerName)
-        var author = db().getMember(group.groupId, event.authorDeviceId)
-        if (author == null) {
-            val fp = event.authorFingerprint.ifBlank { transportMember.transportFingerprint }
-            val devId = event.authorDeviceId
-            val isOwner = (group.ownerDeviceId == devId)
-            val newMember = StoredGroupMember(
-                groupId = group.groupId,
-                deviceId = devId,
-                accountId = devId,
-                displayName = senderPeerName,
-                role = if (isOwner) GroupRole.OWNER.name else GroupRole.MEMBER.name,
-                permissions = 0L,
-                status = "ACTIVE",
-                joinedEpoch = event.epoch,
-                removedEpoch = null,
-                createdAtMs = System.currentTimeMillis(),
-                updatedAtMs = System.currentTimeMillis(),
-                transportFingerprint = fp,
-                peerName = senderPeerName,
-                signingKeyBase64 = ""
-            )
-            db().upsertMember(newMember)
-            author = newMember
+        requireTransportMember(group.groupId, senderPeerName)
+        val author = db().getMember(group.groupId, event.authorDeviceId)
+            ?: throw SecurityException("group event author is absent from the accepted roster")
+        require(author.deviceId == stableDeviceId(author.transportFingerprint)) {
+            "group event author has an invalid roster identity"
         }
-        if (author.transportFingerprint.isBlank() && event.authorFingerprint.isNotBlank()) {
-            author = author.copy(transportFingerprint = event.authorFingerprint)
-            db().upsertMember(author)
+        require(event.authorFingerprint == author.transportFingerprint) {
+            "group event fingerprint does not match the accepted roster"
+        }
+        require(author.signingKeyBase64.isNotBlank()) {
+            "group event author has no accepted signing key"
+        }
+        require(event.verifySignature(author.signingKeyBase64)) {
+            "group event signature is invalid"
         }
         val sequenceOccupant = db().getEventByAuthorSequence(
             group.groupId,
@@ -4835,58 +4800,29 @@ object GroupChatCoordinator {
     private fun requireTransportMember(groupId: String, peerName: String): StoredGroupMember {
         val fingerprint = transportFingerprint(peerName)
         val transportDeviceId = stableDeviceId(fingerprint)
-        val group = db().getGroup(groupId) ?: throw SecurityException("unknown group")
+        db().getGroup(groupId) ?: throw SecurityException("unknown group")
         val existing = db().listMembers(groupId).firstOrNull {
-            it.isParticipating() &&
-                (
-                    it.transportFingerprint == fingerprint ||
-                        it.peerName == peerName ||
-                        it.deviceId == transportDeviceId
-                    )
+            it.isParticipating() && GroupMembershipTransitions.isReconnectCandidate(
+                it.status,
+                it.deviceId,
+                it.transportFingerprint,
+                fingerprint,
+                transportDeviceId,
+            )
         }
         if (existing != null) {
-            if (
-                existing.peerName.isBlank() ||
-                    existing.peerName != peerName ||
-                    existing.transportFingerprint != fingerprint
-            ) {
+            if (existing.peerName != peerName) {
                 db().upsertMember(
                     existing.copy(
                         peerName = peerName,
-                        displayName = peerName,
-                        transportFingerprint = fingerprint,
                     ),
                 )
             }
             return existing.copy(
                 peerName = peerName,
-                displayName = peerName,
-                transportFingerprint = fingerprint,
             )
         }
-        val devId = transportDeviceId
-        val isOwner = (group.ownerDeviceId == devId)
-        // joinedEpoch=0 so this auto-registered peer can receive full history sync.
-        // A properly invited member will have their real joinedEpoch set via roster
-        // snapshot or MEMBER_ADDED control event, which overwrites this value.
-        val newMember = StoredGroupMember(
-            groupId = groupId,
-            deviceId = devId,
-            accountId = devId,
-            displayName = peerName,
-            role = if (isOwner) GroupRole.OWNER.name else GroupRole.MEMBER.name,
-            permissions = 0L,
-            status = "ACTIVE",
-            joinedEpoch = 0L,
-            removedEpoch = null,
-            createdAtMs = System.currentTimeMillis(),
-            updatedAtMs = System.currentTimeMillis(),
-            transportFingerprint = fingerprint,
-            peerName = peerName,
-            signingKeyBase64 = ""
-        )
-        db().upsertMember(newMember)
-        return newMember
+        throw SecurityException("group sender is not an active roster member")
     }
 
     private fun transportFingerprint(peerName: String): String {
