@@ -124,16 +124,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
         try {
-            db.rawQuery("PRAGMA quick_check", null).use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val result = cursor.getString(0)
-                    if (!result.equals("ok", ignoreCase = true)) {
-                        Log.e(TAG, "Database integrity check failed: $result")
-                    }
-                }
-            }
+            db.enableWriteAheadLogging()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to run quick_check on database", e)
+            Log.w(TAG, "Could not enable Write-Ahead Logging (WAL)", e)
         }
     }
 

@@ -39,6 +39,15 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                val prefs = P2PPreferences.prefs(appContext)
+                val activeChats = prefs.getStringSet(P2PPreferences.ACTIVE_CHATS, emptySet()).orEmpty()
+                val hasPeerRecord = prefs.contains(P2PPreferences.peerFingerprint(sender)) ||
+                    prefs.contains(P2PPreferences.lastEndpoint(sender))
+                if (sender !in activeChats && !hasPeerRecord) {
+                    Log.w(TAG, "Rejected notification action for unverified sender: $sender")
+                    return@launch
+                }
+
                 ensureRelayRunning(appContext)
                 when (action) {
                     ACTION_REPLY -> {

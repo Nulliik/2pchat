@@ -234,8 +234,9 @@ class MainActivity : ComponentActivity() {
             var appLanguage by remember { mutableStateOf(sharedPrefs.getString("settings_language", systemDefaultLanguage) ?: systemDefaultLanguage) }
             
             var isAppLocked by remember { mutableStateOf(sharedPrefs.getBoolean("settings_passcode", false)) }
-            val passcodeVal = remember<String>(isAppLocked) { sharedPrefs.getString("passcode_value", "") ?: "" }
-            val duressPinVal = remember<String>(isAppLocked) { sharedPrefs.getString("passcode_duress_value", "") ?: "" }
+            val hasPasscodeConfigured = remember(isAppLocked) {
+                !sharedPrefs.getString("passcode_value", null).isNullOrEmpty()
+            }
             var isStealthDisguiseLocked by remember { mutableStateOf(sharedPrefs.getBoolean("settings_stealth_disguise", false)) }
 
             // Check auto-lock on app start/resume
@@ -290,7 +291,7 @@ class MainActivity : ComponentActivity() {
                     val currentScreen = when {
                         showSplash -> "splash"
                         isStealthDisguiseLocked && sharedPrefs.getBoolean("settings_stealth_disguise", false) -> "disguise"
-                        isAppLocked && passcodeVal.isNotEmpty() -> "unlock"
+                        isAppLocked && hasPasscodeConfigured -> "unlock"
                         else -> "main"
                     }
                     AnimatedContent(
@@ -312,7 +313,7 @@ class MainActivity : ComponentActivity() {
                                     appLanguage = appLanguage,
                                     onUnlock = {
                                         isStealthDisguiseLocked = false
-                                        if (passcodeVal.isNotEmpty()) {
+                                        if (hasPasscodeConfigured) {
                                             isAppLocked = true
                                         }
                                     }
@@ -324,8 +325,6 @@ class MainActivity : ComponentActivity() {
                                     primaryColor = MaterialTheme.colorScheme.primary,
                                     surfaceColor = MaterialTheme.colorScheme.surface,
                                     onSurfaceColor = MaterialTheme.colorScheme.onSurface,
-                                    correctPasscode = passcodeVal,
-                                    duressPasscode = duressPinVal,
                                     onUnlock = {
                                         isAppLocked = false
                                         lastInteractionTime = System.currentTimeMillis()
@@ -450,8 +449,6 @@ fun PasscodeUnlockScreen(
     primaryColor: Color,
     surfaceColor: Color,
     onSurfaceColor: Color,
-    correctPasscode: String,
-    duressPasscode: String,
     onUnlock: () -> Unit,
     onDuressTriggered: () -> Unit
 ) {
@@ -578,6 +575,8 @@ fun PasscodeUnlockScreen(
                                                 inputPin += digit
                                                 if (inputPin.length == 4) {
                                                     val sharedPrefs = P2PPreferences.prefs(context)
+                                                    val correctPasscode = sharedPrefs.getString("passcode_value", "") ?: ""
+                                                    val duressPasscode = sharedPrefs.getString("passcode_duress_value", "") ?: ""
                                                     
                                                     if (SecurityUtils.verifyAndMigratePasscode(inputPin, correctPasscode, sharedPrefs, "passcode_value")) {
                                                         failedAttempts = 0
