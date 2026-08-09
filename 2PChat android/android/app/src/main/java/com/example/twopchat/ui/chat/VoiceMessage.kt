@@ -8,26 +8,30 @@ import android.os.Build
 import android.os.SystemClock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.material3.SliderDefaults
-import com.example.twopchat.theme.StealthBlack
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.material3.Text
 import com.example.twopchat.R
 import com.example.twopchat.VoiceMessageSupport
+import com.example.twopchat.theme.StealthBlack
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 
 data class VoiceRecording(val file: File, val durationMs: Int)
@@ -97,6 +101,10 @@ class VoiceRecorder(private val context: Context) {
         outputFile?.delete()
         outputFile = null
     }
+
+    fun getMaxAmplitude(): Int {
+        return runCatching { recorder?.maxAmplitude ?: 0 }.getOrDefault(0)
+    }
 }
 
 private fun voiceDuration(filePath: String?): Int {
@@ -112,6 +120,43 @@ private fun voiceDuration(filePath: String?): Int {
     }
 }
 
+private suspend fun extractWaveformSamples(filePath: String?, sampleCount: Int = 28): List<Float> {
+    if (filePath.isNullOrBlank()) return List(sampleCount) { 0.35f }
+    return withContext(Dispatchers.IO) {
+        val file = File(filePath)
+        if (!file.exists() || file.length() == 0L) {
+            return@withContext List(sampleCount) { 0.35f }
+        }
+        runCatching {
+            val bytes = file.readBytes()
+            val step = (bytes.size / sampleCount).coerceAtLeast(1)
+            val samples = ArrayList<Float>(sampleCount)
+            var maxAmp = 1
+            for (i in 0 until sampleCount) {
+                var sum = 0L
+                val start = i * step
+                val end = (start + step).coerceAtMost(bytes.size)
+                for (j in start until end) {
+                    sum += Math.abs(bytes[j].toInt())
+                }
+                val avg = if (end > start) (sum / (end - start)).toInt() else 1
+                maxAmp = maxOf(maxAmp, avg)
+                samples.add(avg.toFloat())
+            }
+            samples.map { raw ->
+                val norm = (raw / maxAmp.toFloat()).coerceIn(0f, 1f)
+                0.2f + (norm * 0.8f)
+            }
+        }.getOrElse {
+            val seed = filePath.hashCode()
+            List(sampleCount) { idx ->
+                val v = Math.abs(Math.sin((seed + idx * 17).toDouble())).toFloat()
+                0.2f + (v * 0.8f)
+            }
+        }
+    }
+}
+
 @Composable
 fun VoiceMessagePlayer(
     filePath: String?,
@@ -123,8 +168,13 @@ fun VoiceMessagePlayer(
     var isPlaying by remember(filePath) { mutableStateOf(false) }
     var duration by remember(filePath) { mutableIntStateOf(voiceDuration(filePath)) }
     var position by remember(filePath) { mutableIntStateOf(0) }
-
     var speedMultiplier by remember { mutableFloatStateOf(1.0f) }
+
+    var waveformSamples by remember(filePath) { mutableStateOf<List<Float>>(emptyList()) }
+
+    LaunchedEffect(filePath) {
+        waveformSamples = extractWaveformSamples(filePath, sampleCount = 28)
+    }
 
     DisposableEffect(filePath) {
         onDispose {
@@ -132,10 +182,11 @@ fun VoiceMessagePlayer(
             player = null
         }
     }
+
     LaunchedEffect(isPlaying, player) {
         while (isPlaying) {
             position = runCatching { player?.currentPosition ?: 0 }.getOrDefault(0)
-            kotlinx.coroutines.delay(150)
+            kotlinx.coroutines.delay(100)
         }
     }
 
@@ -144,11 +195,7 @@ fun VoiceMessagePlayer(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val playBtnBg = if (isMine) {
-            if (primaryColor.luminance() > 0.5f) {
-                StealthBlack
-            } else {
-                Color.White
-            }
+            if (primaryColor.luminance() > 0.5f) StealthBlack else Color.White
         } else {
             primaryColor
         }
@@ -202,27 +249,31 @@ fun VoiceMessagePlayer(
                 modifier = Modifier.size(20.dp),
             )
         }
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             val themeColor = if (isMine) {
                 if (primaryColor.luminance() > 0.5f) StealthBlack else Color.White
             } else {
                 primaryColor
             }
-            Slider(
-                value = position.coerceAtMost(duration).toFloat(),
-                onValueChange = { value ->
-                    position = value.toInt()
-                    runCatching { player?.seekTo(position) }
+
+            val progressRatio = if (duration > 0) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
+
+            AudioWaveformVisualizer(
+                samples = waveformSamples.ifEmpty { List(28) { 0.35f } },
+                progress = progressRatio,
+                activeColor = themeColor,
+                inactiveColor = themeColor.copy(alpha = 0.28f),
+                onSeek = { fraction ->
+                    val targetPos = (fraction * duration.coerceAtLeast(1)).toInt()
+                    position = targetPos
+                    runCatching { player?.seekTo(targetPos) }
                 },
-                valueRange = 0f..duration.coerceAtLeast(1).toFloat(),
-                modifier = Modifier.height(28.dp),
-                colors = SliderDefaults.colors(
-                    thumbColor = themeColor,
-                    activeTrackColor = themeColor,
-                    inactiveTrackColor = themeColor.copy(alpha = 0.24f)
-                )
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
             )
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -232,9 +283,10 @@ fun VoiceMessagePlayer(
                     text = VoiceMessageSupport.formatDuration(if (isPlaying) position else duration),
                     color = contentColor.copy(alpha = 0.72f),
                     fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium
                 )
-                
-                // Playback Speed Toggle Chip
+
+                // Playback Speed Toggle Chip (1x / 1.5x / 2x)
                 val speedText = when (speedMultiplier) {
                     1.5f -> "1.5x"
                     2.0f -> "2x"
@@ -270,6 +322,64 @@ fun VoiceMessagePlayer(
                         fontWeight = FontWeight.Bold
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AudioWaveformVisualizer(
+    samples: List<Float>,
+    progress: Float,
+    activeColor: Color,
+    inactiveColor: Color,
+    onSeek: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(26.dp)
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    val fraction = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                    onSeek(fraction)
+                }
+            }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures { change, _ ->
+                    val fraction = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                    onSeek(fraction)
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        val totalWidth = maxWidth
+        val barCount = samples.size.coerceAtLeast(1)
+        val spacing = 2.dp
+        val barWidth = ((totalWidth - (spacing * (barCount - 1))) / barCount).coerceAtLeast(2.dp)
+
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(spacing),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            samples.forEachIndexed { index, sampleHeightRatio ->
+                val barFraction = index.toFloat() / barCount.toFloat()
+                val isPlayed = barFraction <= progress
+
+                val barColor = if (isPlayed) activeColor else inactiveColor
+                val minHeight = 5.dp
+                val maxHeight = 24.dp
+                val barHeight = minHeight + ((maxHeight - minHeight) * sampleHeightRatio)
+
+                Box(
+                    modifier = Modifier
+                        .width(barWidth)
+                        .height(barHeight)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(barColor)
+                )
             }
         }
     }
