@@ -3541,7 +3541,8 @@ private fun GroupComposer(
             if (activeMentionQuery == null) emptyList()
             else {
                 availableMembers.filter { member ->
-                    member.displayName.contains(activeMentionQuery, ignoreCase = true)
+                    member.displayName.contains(activeMentionQuery, ignoreCase = true) ||
+                    member.memberId.contains(activeMentionQuery, ignoreCase = true)
                 }
             }
         }

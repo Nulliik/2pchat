@@ -4344,14 +4344,37 @@ object GroupChatCoordinator {
             localParticipates && hasCurrentEpochKey && groupPostingAllowed && localMember.toPolicyMember().let {
             GroupRolePolicy.canPerform(it, GroupAction.POST_MEDIA).allowed
         } == true
+        val uiMembers = members.filter { it.status != "LEFT" }.map { member ->
+            com.example.twopchat.group.ui.GroupMember(
+                memberId = member.deviceId,
+                displayName = member.displayName,
+                role = member.role.toUiRole(),
+                statusLabel = if (member.deviceId == group.localDeviceId) {
+                    "В сети (Это устройство)"
+                } else if (P2PMessageRelay.peerSessionStates[member.peerName] == true) {
+                    "В сети"
+                } else if (!member.isParticipating()) {
+                    when (member.status.uppercase(Locale.ROOT)) {
+                        "INVITED" -> "Приглашение отправлено"
+                        "RESTRICTED" -> "Права ограничены"
+                        "BANNED" -> "Заблокирован"
+                        else -> "Не активен"
+                    }
+                } else {
+                    "Оффлайн"
+                },
+                isCurrentUser = member.deviceId == group.localDeviceId
+            )
+        }
         chatFlows.computeIfAbsent(groupId) {
             MutableStateFlow(
-                GroupChatUiState(groupId, group.title, activeMembers),
+                GroupChatUiState(groupId, group.title, activeMembers, members = uiMembers),
             )
         }.value = GroupChatUiState(
             groupId = groupId,
             title = group.title,
             memberCount = activeMembers,
+            members = uiMembers,
             syncStatus = when {
                 localMember?.status == "JOINING" -> GroupSyncStatus.SYNCING
                 localParticipates && !hasCurrentEpochKey -> GroupSyncStatus.SYNCING

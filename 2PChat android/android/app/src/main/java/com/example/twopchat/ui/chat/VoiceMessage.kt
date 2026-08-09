@@ -80,8 +80,20 @@ class VoiceRecorder(private val context: Context) {
 
     fun sampleAmplitude(): Float {
         val raw = runCatching { recorder?.maxAmplitude ?: 0 }.getOrDefault(0)
-        // MediaRecorder maxAmplitude returns 0..32767
-        val norm = (raw / 20000f).coerceIn(0.08f, 1.0f)
+        // MediaRecorder maxAmplitude returns 0..32767.
+        // Ambient noise/music & normal speech usually fall in the 200..6000 range.
+        // We use log-compression with power scaling to map quiet/medium sound dynamically.
+        val norm = if (raw <= 50) {
+            0.08f
+        } else {
+            val minLog = Math.log10(50.0)
+            val maxLog = Math.log10(32767.0)
+            val currentLog = Math.log10(raw.toDouble().coerceIn(50.0, 32767.0))
+            val ratio = ((currentLog - minLog) / (maxLog - minLog)).toFloat().coerceIn(0f, 1f)
+            // Power curve (ratio ^ 0.65) significantly boosts low-to-mid amplitude reactivity
+            val boostedRatio = Math.pow(ratio.toDouble(), 0.65).toFloat()
+            0.08f + (boostedRatio * 0.92f)
+        }
         amplitudeHistory.add(norm)
         return norm
     }
