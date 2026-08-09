@@ -4224,7 +4224,6 @@ private fun VisualThemeSelector(
                             .clickable {
                                 onThemeChanged(preset.isDark)
                                 onAccentSchemeChanged(preset.accentScheme)
-                                onAccentChanged(preset.accentScheme == "cerulean")
                                 onAmoledChanged(preset.useAmoled)
                             }
                             .border(
@@ -4331,7 +4330,6 @@ private fun VisualThemeSelector(
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 onAccentSchemeChanged("mint")
-                                onAccentChanged(false)
                             }
                             .border(
                                 width = if (isMint) 2.dp else 1.dp,
@@ -4365,7 +4363,6 @@ private fun VisualThemeSelector(
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 onAccentSchemeChanged("cerulean")
-                                onAccentChanged(true)
                             }
                             .border(
                                 width = if (isBlue) 2.dp else 1.dp,
@@ -4404,7 +4401,6 @@ private fun VisualThemeSelector(
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 onAccentSchemeChanged("purple")
-                                onAccentChanged(false)
                             }
                             .border(
                                 width = if (isPurple) 2.dp else 1.dp,
@@ -4440,7 +4436,6 @@ private fun VisualThemeSelector(
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 onAccentSchemeChanged("amber")
-                                onAccentChanged(false)
                             }
                             .border(
                                 width = if (isAmber) 2.dp else 1.dp,

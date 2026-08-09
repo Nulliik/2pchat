@@ -368,9 +368,9 @@ class MainActivity : ComponentActivity() {
                                     },
                                     useCerulean = useCerulean,
                                     onAccentChanged = { cerulean ->
-                                        val newScheme = if (cerulean) "cerulean" else "mint"
+                                        val newScheme = if (cerulean) "cerulean" else if (accentScheme == "cerulean") "mint" else accentScheme
                                         accentScheme = newScheme
-                                        useCerulean = cerulean
+                                        useCerulean = (newScheme == "cerulean")
                                         sharedPrefs.edit().putString("accent_scheme", newScheme).putBoolean("use_cerulean", cerulean).apply()
                                     },
                                     accentScheme = accentScheme,
