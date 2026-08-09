@@ -2908,11 +2908,17 @@ private fun GroupMessageCard(
                     endsWith(".m4a") || endsWith(".aac") || endsWith(".mp3") || endsWith(".wav") || endsWith(".ogg")
                 }
             )
-            val isAttachmentPlaceholder = attachment != null && (
+            val isAlbumPlaceholder = message.attachments.size > 1 && (
+                message.text.startsWith("Альбом") ||
+                message.text.startsWith("Album") ||
+                message.text.startsWith("Sent an album") ||
+                message.text.startsWith("Медиаальбом")
+            )
+            val isAttachmentPlaceholder = (attachment != null && (
                 message.text.startsWith("attachment-") ||
                 message.text == attachment.fileName ||
                 isSticker
-            )
+            )) || isAlbumPlaceholder
             val shouldDisplayText = message.text.isNotEmpty() && !isAttachmentPlaceholder && !isSticker
             val hasMediaContent = attachment != null && (isImage || isGif || isVideo)
             val isMediaOnly = attachment != null && (!shouldDisplayText || isSticker) && (isImage || isGif || isSticker || isVideo)
@@ -3492,14 +3498,22 @@ private fun GroupComposer(
             } else null
         }
 
-        val availableMembers = remember(state.members, state.messages) {
-            if (state.members.isNotEmpty()) state.members
+        val context = LocalContext.current
+        val myUsername = remember(context) { P2PPreferences.prefs(context).getString("username_profile", "") ?: "" }
+
+        val availableMembers = remember(state.members, state.messages, myUsername) {
+            val rawList = if (state.members.isNotEmpty()) state.members
             else {
                 state.messages
                     .map { it.authorName }
                     .filter { it.isNotBlank() && !it.equals("SYSTEM", ignoreCase = true) }
                     .distinct()
                     .map { GroupMember(memberId = it, displayName = it) }
+            }
+            rawList.filter { member ->
+                !member.isCurrentUser &&
+                (myUsername.isBlank() || !member.displayName.equals(myUsername, ignoreCase = true)) &&
+                (myUsername.isBlank() || !member.memberId.equals(myUsername, ignoreCase = true))
             }
         }
 
@@ -3934,29 +3948,31 @@ private fun GroupAlbumCell(
 ) {
     val isImage = type == "IMAGE" || att.mimeType.startsWith("image/")
     val isVideo = type == "VIDEO" || att.mimeType.startsWith("video/")
-    val isGif = type == GifStorageManager.ATTACHMENT_TYPE || att.mimeType == "image/gif"
+    val context = LocalContext.current
 
-    val imageBitmap by produceState<Bitmap?>(initialValue = GroupImageCache.get(uri), key1 = uri, key2 = att.isDownloaded) {
-        if (value != null) return@produceState
-        if (uri.isNotBlank() && (isImage || isGif)) {
-            value = withContext(Dispatchers.IO) {
-                runCatching {
-                    val file = File(uri)
-                    if (file.exists()) {
-                        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-                        BitmapFactory.decodeFile(file.absolutePath, opts)
-                    } else null
-                }.getOrNull()
-            }?.also { GroupImageCache.put(uri, it) }
-        }
+    val targetPath = remember(uri, att.localPath, att.fileName) {
+        val candidates = listOfNotNull(
+            uri.takeIf { it.isNotBlank() },
+            att.localPath?.takeIf { it.isNotBlank() },
+            att.fileName.takeIf { it.isNotBlank() }?.let { File(File(context.filesDir, "attachments"), it).absolutePath },
+            att.fileName.takeIf { it.isNotBlank() }?.let { File(context.filesDir, it).absolutePath }
+        )
+        candidates.firstOrNull { p ->
+            val clean = p.removePrefix("file://")
+            clean.startsWith("content://") || (File(clean).exists() && File(clean).length() > 0L)
+        } ?: uri
     }
+
+    val imageBitmap = if (!isVideo) com.example.twopchat.ui.chat.rememberSampledImage(targetPath) else null
+    val videoThumbnail = if (isVideo) com.example.twopchat.ui.chat.rememberVideoThumbnail(targetPath) else null
+    val bmp = imageBitmap ?: videoThumbnail
 
     Box(
         modifier = modifier
             .background(Color.DarkGray)
             .clickable {
-                if (uri.isNotBlank() && File(uri).exists()) {
-                    onMediaClick(uri)
+                if (targetPath.isNotBlank()) {
+                    onMediaClick(targetPath)
                 }
             },
         contentAlignment = Alignment.Center
