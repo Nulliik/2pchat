@@ -1216,7 +1216,9 @@ fun SettingsTab(
                                         val themeLabel = when {
                                             !isDarkTheme -> if (appLanguage == "Русский") "Светлая" else "Light"
                                             useAmoled -> "AMOLED"
-                                            useCerulean -> "Cerulean"
+                                            accentScheme == "purple" -> "Amethyst"
+                                            accentScheme == "amber" -> "Amber"
+                                            useCerulean || accentScheme == "cerulean" -> "Cerulean"
                                             else -> if (appLanguage == "Русский") "Тёмная" else "Dark"
                                         }
                                         Text(text = themeLabel, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -1231,6 +1233,8 @@ fun SettingsTab(
                                         onThemeChanged = onThemeChanged,
                                         useCerulean = useCerulean,
                                         onAccentChanged = onAccentChanged,
+                                        accentScheme = accentScheme,
+                                        onAccentSchemeChanged = onAccentSchemeChanged,
                                         useAmoled = useAmoled,
                                         onAmoledChanged = onAmoledChanged,
                                         appLanguage = appLanguage,
