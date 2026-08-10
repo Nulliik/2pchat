@@ -197,17 +197,35 @@ internal fun contactFromPeerSearchResult(
     return ContactItem(
         name = displayName,
         status = if (verified && ownershipVerified) {
-            if (appLanguage == "Русский") "Подтверждён ссылкой приглашения" else "Verified by invite link"
+            Localizations.tr(
+                appLanguage,
+                "Подтверждён ссылкой приглашения",
+                "Verified by invite link",
+                "Durch Einladungslink verifiziert",
+                "Verificado por enlace de invitación",
+                "Vérifié par lien d'invitation",
+                "Verificado por link de convite"
+            )
         } else if (verified) {
-            if (appLanguage == "Русский") {
-                "Узел и ключ активны · владелец ника не подтверждён"
-            } else {
-                "Live node and key · nickname ownership unverified"
-            }
-        } else if (appLanguage == "Русский") {
-            "Найден на трекере · live-проверка не пройдена"
+            Localizations.tr(
+                appLanguage,
+                "Узел и ключ активны · владелец ника не подтверждён",
+                "Live node and key · nickname ownership unverified",
+                "Aktiver Knoten & Schlüssel · Nickname-Eigentum nicht verifiziert",
+                "Nodo y clave activos · propiedad de apodo no verificada",
+                "Nœud et clé actifs · propriété du pseudo non vérifiée",
+                "Nó e chave ativos · propriedade do apelido não verificada"
+            )
         } else {
-            "Found on tracker · live verification failed"
+            Localizations.tr(
+                appLanguage,
+                "Найден на трекере · live-проверка не пройдена",
+                "Found on tracker · live verification failed",
+                "Auf Tracker gefunden · Live-Verifizierung fehlgeschlagen",
+                "Encontrado en tracker · verificación en vivo fallida",
+                "Trouvé sur le tracker · échec de la vérification en direct",
+                "Encontrado no tracker · verificação ao vivo falhou"
+            )
         },
         initials = displayName.take(2).uppercase(),
         verified = verified,
