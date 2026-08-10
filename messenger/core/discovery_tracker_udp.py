@@ -243,6 +243,10 @@ class UdpTrackerDiscovery(DiscoveryProvider):
         endpoint = endpoints[0]
         if endpoint.port != self._peer_port:
             raise ValueError("Endpoint port must match tracker discovery peer_port")
+        now_val = self._time_fn()
+        if hasattr(self, "_last_announce_time") and (now_val - self._last_announce_time < 2.0):
+            await asyncio.sleep(2.0 - (now_val - self._last_announce_time))
+        self._last_announce_time = self._time_fn()
         info_hash = self.derive_info_hash(nickname, shared_code)
         interval, peers = await self._announce(info_hash, event=TRACKER_EVENT_STARTED)
         now = int(self._time_fn())

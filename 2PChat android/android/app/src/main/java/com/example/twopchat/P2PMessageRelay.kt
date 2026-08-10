@@ -76,7 +76,12 @@ object P2PMessageRelay {
             .orEmpty()
 
     fun injectLocalDiscoveryCandidate(peerName: String, peerFingerprint: String, endpoint: String) {
-        val candidates = localPeerCandidates.computeIfAbsent(localPeerCandidateKey(peerName)) {
+        val key = localPeerCandidateKey(peerName)
+        if (localPeerCandidates.size >= 128 && !localPeerCandidates.containsKey(key)) {
+            val oldestKey = localPeerCandidates.keys.firstOrNull()
+            if (oldestKey != null) localPeerCandidates.remove(oldestKey)
+        }
+        val candidates = localPeerCandidates.computeIfAbsent(key) {
             CopyOnWriteArrayList()
         }
         val candidate = LocalPeerCandidate(peerFingerprint, endpoint)
@@ -435,7 +440,7 @@ object P2PMessageRelay {
                 currentPrefs.getString(P2PPreferences.peerFingerprint(it), null) == peerFingerprint
             } ?: return@LocalPeerDiscovery
             currentPrefs.edit().putString(P2PPreferences.lastEndpoint(authenticatedName), endpoint).apply()
-            serviceScope.launch(Dispatchers.Main) { rememberAuthenticatedPeerEndpoint(authenticatedName, endpoint) }
+            rememberAuthenticatedPeerEndpoint(authenticatedName, endpoint)
             outboundMessenger.reconnect(context, authenticatedName)
         }.also { localPeerDiscovery = it }
         try {

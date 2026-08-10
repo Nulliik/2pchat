@@ -82,6 +82,13 @@ internal class LocalPeerDiscovery(
     }
 
     @Synchronized
+    fun onScreenStateChanged(isScreenOn: Boolean) {
+        if (!isScreenOn) {
+            stop()
+        }
+    }
+
+    @Synchronized
     fun stop() {
         discoveryListener?.let {
             try { manager.stopServiceDiscovery(it) } catch (_: Exception) { }
