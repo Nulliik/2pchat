@@ -21,15 +21,19 @@ internal object AccountDataWiper {
         val appContext = context.applicationContext
         val steps = listOf(
             "cancel background group work" to { GroupWorkScheduler.cancel(appContext); true },
-            "close encrypted chat databases" to { ChatDatabaseHelper.closeAllConnections(); true },
+            "close encrypted chat databases" to {
+                ChatDatabaseHelper.closeAllConnections()
+                SecureStorage.clearDbPassphrase()
+                true
+            },
             "clear in-memory account state" to {
                 PythonBridge.clearAccountCaches()
                 MessageNotificationService.clearAvatarCache()
                 true
             },
             "clear all SharedPreferences" to {
+                P2PPreferences.clearInMemoryState()
                 clearAllSharedPreferences(appContext)
-                    .also { P2PPreferences.clearInMemoryState() }
             },
             "delete chat databases" to { deleteDatabases(appContext) },
             "delete internal account files" to {
@@ -64,8 +68,13 @@ internal object AccountDataWiper {
         return deleteChildren(preferencesDir) && cleared
     }
 
-    private fun deleteDatabases(context: Context): Boolean =
-        context.databaseList().all { database -> context.deleteDatabase(database) }
+    private fun deleteDatabases(context: Context): Boolean {
+        val databaseNames = context.databaseList().toList()
+        val dbsDeleted = databaseNames.all { database -> context.deleteDatabase(database) }
+        val databasesDir = File(context.applicationInfo.dataDir, "databases")
+        val dirDeleted = deleteChildren(databasesDir)
+        return dbsDeleted && dirDeleted
+    }
 
     private fun deleteExternalFiles(context: Context): Boolean =
         (context.externalCacheDirs.asList() + context.getExternalFilesDirs(null).asList())

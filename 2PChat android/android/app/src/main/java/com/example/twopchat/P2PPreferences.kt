@@ -44,6 +44,9 @@ object P2PPreferences {
     /** Drops account-derived caches after the backing preferences are erased. */
     fun clearInMemoryState() {
         synchronized(this) {
+            cachedPrefs?.let { p ->
+                runCatching { p.edit().clear().commit() }
+            }
             cachedPrefs = null
             fingerprintToPeerNameCache.clear()
             fingerprintCacheInitialized = false
