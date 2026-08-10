@@ -25,6 +25,13 @@ import androidx.compose.ui.unit.sp
 import com.example.twopchat.group.ui.GroupRole
 import com.example.twopchat.group.ui.GroupMember
 
+private val AvatarBgColors = listOf(
+    Color(0xFFE57373), Color(0xFFF06292), Color(0xFFBA68C8),
+    Color(0xFF9575CD), Color(0xFF7986CB), Color(0xFF64B5F6),
+    Color(0xFF4FC3F7), Color(0xFF4DB6AC), Color(0xFF81C784),
+    Color(0xFFFFB74D), Color(0xFFFF8A65)
+)
+
 @Composable
 internal fun GroupMentionSuggestionBar(
     suggestions: List<GroupMember>,
@@ -80,15 +87,8 @@ internal fun GroupMentionSuggestionBar(
                             )
                         } else {
                             val colorHash = member.displayName.hashCode()
-                            val bgColors = remember(colorHash) {
-                                listOf(
-                                    Color(0xFFE57373), Color(0xFFF06292), Color(0xFFBA68C8),
-                                    Color(0xFF9575CD), Color(0xFF7986CB), Color(0xFF64B5F6),
-                                    Color(0xFF4FC3F7), Color(0xFF4DB6AC), Color(0xFF81C784),
-                                    Color(0xFFFFB74D), Color(0xFFFF8A65)
-                                )
-                            }
-                            val avatarBg = bgColors[Math.abs(colorHash) % bgColors.size]
+                            val avatarBg = AvatarBgColors[Math.abs(colorHash) % AvatarBgColors.size]
+                            val initial = remember(member.displayName) { member.displayName.take(1).uppercase() }
 
                             Box(
                                 modifier = Modifier
@@ -98,7 +98,7 @@ internal fun GroupMentionSuggestionBar(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = member.displayName.take(1).uppercase(),
+                                    text = initial,
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White

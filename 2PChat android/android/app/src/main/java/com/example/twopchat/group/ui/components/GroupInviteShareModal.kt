@@ -253,18 +253,20 @@ internal fun GroupInviteQrModal(
 
     // Modal to pick a 1-on-1 contact inside 2PChat
     if (showShareContactDialog) {
-        val recipientItems = candidates.map { contact ->
-            val peerName = contact.displayName
-            val avatar = P2PMessageRelay.peerAvatars[peerName]
-            RecipientItem(
-                id = contact.contactId,
-                title = contact.displayName,
-                subtitle = if (contact.isOnline) "В сети" else "Был(а) недавно",
-                isOnline = contact.isOnline,
-                avatarBitmap = avatar,
-                initials = contact.displayName.take(2).uppercase(),
-                isGroup = false,
-            )
+        val recipientItems = remember(candidates) {
+            candidates.map { contact ->
+                val peerName = contact.displayName
+                val avatar = P2PMessageRelay.peerAvatars[peerName]
+                RecipientItem(
+                    id = contact.contactId,
+                    title = contact.displayName,
+                    subtitle = if (contact.isOnline) "В сети" else "Был(а) недавно",
+                    isOnline = contact.isOnline,
+                    avatarBitmap = avatar,
+                    initials = contact.displayName.take(2).uppercase(),
+                    isGroup = false,
+                )
+            }
         }
 
         RecipientPickerDialog(
