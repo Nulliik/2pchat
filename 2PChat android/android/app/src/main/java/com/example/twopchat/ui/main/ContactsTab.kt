@@ -1135,7 +1135,7 @@ fun ContactsTab(
                     contactsToDisplay.forEach { contact ->
                         Card(
                             colors = CardDefaults.cardColors(containerColor = surfaceColor),
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable(enabled = contact.verified) {
@@ -1173,86 +1173,165 @@ fun ContactsTab(
                                     }
                                     onItemClick(Chat(peerKey))
                                 }
-                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(14.dp))
+                                .border(
+                                    width = 1.dp,
+                                    color = if (contact.verified) primaryColor.copy(alpha = 0.25f) else Color(0xFFFFB300).copy(alpha = 0.2f),
+                                    shape = RoundedCornerShape(16.dp)
+                                )
                         ) {
-                            Row(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(14.dp)
                             ) {
-                                // Avatar
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = contact.initials,
-                                        color = primaryColor,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
-                                    )
-                                }
-                                
-                                Spacer(modifier = Modifier.width(12.dp))
-                                
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = contact.name,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = onSurfaceColor
-                                    )
-                                    
-                                    val localizedStatus = when {
-                                        contact.status.startsWith("Online") -> contact.status
-                                        contact.status == "Offline" -> Localizations.getString("offline", appLanguage)
-                                        contact.status.startsWith("Active ") -> {
-                                            val timeStr = contact.status.substringAfter("Active ").substringBefore(" ago")
-                                            String.format(Localizations.getString("active_m", appLanguage), timeStr)
+                                    // Avatar
+                                    val peerAvatarBitmap = P2PMessageRelay.peerAvatars[contact.name]
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .clip(CircleShape)
+                                            .background(primaryColor.copy(alpha = 0.15f))
+                                    ) {
+                                        if (peerAvatarBitmap != null) {
+                                            Image(
+                                                bitmap = peerAvatarBitmap.asImageBitmap(),
+                                                contentDescription = contact.name,
+                                                modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                            )
+                                        } else {
+                                            Text(
+                                                text = contact.initials,
+                                                color = primaryColor,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 15.sp
+                                            )
                                         }
-                                        else -> contact.status
                                     }
-                                    
-                                    Text(
-                                        text = localizedStatus,
-                                        fontSize = 12.sp,
-                                        color = if (contact.verified) primaryColor else Color(0xFFFFB300)
-                                    )
-                                    if (contact.fingerprint.isNotBlank()) {
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = contact.name,
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = onSurfaceColor
+                                        )
+
+                                        Spacer(modifier = Modifier.height(2.dp))
+
+                                        val localizedStatus = when {
+                                            contact.status.startsWith("Online") -> contact.status
+                                            contact.status == "Offline" -> Localizations.getString("offline", appLanguage)
+                                            contact.status.startsWith("Active ") -> {
+                                                val timeStr = contact.status.substringAfter("Active ").substringBefore(" ago")
+                                                String.format(Localizations.getString("active_m", appLanguage), timeStr)
+                                            }
+                                            else -> contact.status
+                                        }
+
+                                        Text(
+                                            text = localizedStatus,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (contact.verified) primaryColor else Color(0xFFFFB300)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    // Action Button / Badge
+                                    if (contact.verified) {
+                                        Surface(
+                                            color = primaryColor,
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.clip(RoundedCornerShape(12.dp))
+                                        ) {
+                                            Text(
+                                                text = when {
+                                                    contact.ownershipVerified -> if (appLanguage == "Русский") "Доверен" else "Trusted"
+                                                    else -> if (appLanguage == "Русский") "Выбрать" else "Select"
+                                                },
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (primaryColor == MintGreen) StealthBlack else Color.White,
+                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                                            )
+                                        }
+                                    } else {
+                                        Surface(
+                                            color = onSurfaceColor.copy(alpha = 0.08f),
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Text(
+                                                text = if (appLanguage == "Русский") "Не проверен" else "Unverified",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = onSurfaceVariant,
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                // Cryptographic Fingerprint Chip
+                                if (contact.fingerprint.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Surface(
+                                        color = Color.Black.copy(alpha = 0.22f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
                                         Text(
                                             text = "FP: ${contact.fingerprint.take(12)}…${contact.fingerprint.takeLast(6)}",
-                                            fontSize = 10.sp,
+                                            fontSize = 11.sp,
                                             fontFamily = FontFamily.Monospace,
-                                            color = if (contact.ownershipVerified) Color(0xFF4CAF50) else Color(0xFFFFB300)
+                                            color = if (contact.ownershipVerified) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                                         )
-                                    }
-                                    if (contact.verified && !contact.ownershipVerified) {
-                                        Text(
-                                            text = if (appLanguage == "Русский") "Это ключ живого узла, но не доказательство владения ником" else "Live node key; not proof of nickname ownership",
-                                            fontSize = 10.sp,
-                                            color = Color(0xFFFFB300)
-                                        )
-                                    }
-                                    if (!contact.verified) {
-                                        Text(contact.endpoints, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = onSurfaceVariant)
-                                        Text(if (appLanguage == "Русский") "Подключение заблокировано до успешной проверки личности" else "Connection is blocked until identity verification succeeds", fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
                                     }
                                 }
-                                
-                                Text(
-                                    text = when {
-                                        contact.ownershipVerified -> if (appLanguage == "Русский") "ДОВЕРЕН" else "TRUSTED"
-                                        contact.verified -> if (appLanguage == "Русский") "ВЫБРАТЬ КЛЮЧ" else "SELECT KEY"
-                                        appLanguage == "Русский" -> "НЕ ПРОВЕРЕН"
-                                        else -> "UNVERIFIED"
-                                    },
-                                    fontSize = 11.sp,
-                                    color = primaryColor,
-                                    fontWeight = FontWeight.Bold
-                                )
+
+                                // Ownership warning banner
+                                if (contact.verified && !contact.ownershipVerified) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Surface(
+                                        color = Color(0xFFF59E0B).copy(alpha = 0.12f),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "⚡ ",
+                                                fontSize = 11.sp
+                                            )
+                                            Text(
+                                                text = if (appLanguage == "Русский") "Ключ живого узла (владелец ника не подтверждён)" else "Live node key (nickname ownership unverified)",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = Color(0xFFFFC107)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (!contact.verified) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(contact.endpoints, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = onSurfaceVariant)
+                                    Text(
+                                        text = if (appLanguage == "Русский") "Подключение заблокировано до успешной проверки личности" else "Connection blocked until identity verification succeeds",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
                             }
                         }
                     }
