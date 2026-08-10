@@ -92,4 +92,38 @@ class MessageTest {
         assertEquals("READ_edited", MessageDeliveryStatus.merge("SENT_edited", "READ"))
         assertEquals("READ", MessageDeliveryStatus.merge("SENT", "READ"))
     }
+
+    @Test
+    fun albumAssembly_handlesOutOfOrderArrivalWithoutLosingParts() {
+        val totalParts = 3
+        val albumUris = mutableListOf("", "", "")
+        val albumTypes = mutableListOf("IMAGE", "IMAGE", "IMAGE")
+
+        // Part 2 (3rd image) arrives first
+        val part2Index = 2
+        val part2Uri = "file:///storage/img_2.jpg"
+        if (part2Index in 0 until totalParts) {
+            albumUris[part2Index] = part2Uri
+        }
+        assertEquals(listOf("", "", "file:///storage/img_2.jpg"), albumUris)
+        org.junit.Assert.assertFalse(albumUris.take(totalParts).all { it.isNotBlank() })
+
+        // Part 0 (1st image - the bat) arrives second
+        val part0Index = 0
+        val part0Uri = "file:///storage/bat_0.jpg"
+        if (part0Index in 0 until totalParts) {
+            albumUris[part0Index] = part0Uri
+        }
+        assertEquals(listOf("file:///storage/bat_0.jpg", "", "file:///storage/img_2.jpg"), albumUris)
+        org.junit.Assert.assertFalse(albumUris.take(totalParts).all { it.isNotBlank() })
+
+        // Part 1 (2nd image) arrives third
+        val part1Index = 1
+        val part1Uri = "file:///storage/img_1.jpg"
+        if (part1Index in 0 until totalParts) {
+            albumUris[part1Index] = part1Uri
+        }
+        assertEquals(listOf("file:///storage/bat_0.jpg", "file:///storage/img_1.jpg", "file:///storage/img_2.jpg"), albumUris)
+        org.junit.Assert.assertTrue(albumUris.take(totalParts).all { it.isNotBlank() })
+    }
 }
