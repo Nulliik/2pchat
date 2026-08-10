@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -200,25 +201,26 @@ fun ChatsTab(
     ) {
         // ─── HERO CARD & STATUS PILLS (TOP HEADER) ───────────────────────────
         Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-                shape = RoundedCornerShape(26.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-                    .animateContentSize(animationSpec = spring(dampingRatio = 0.8f, stiffness = 450f))
-                    .background(
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                primaryColor.copy(alpha = 0.18f),
-                                surfaceColor.copy(alpha = 0.95f),
-                                primaryColor.copy(alpha = 0.08f)
-                            )
-                        ),
-                        shape = RoundedCornerShape(26.dp)
-                    )
-                    .border(1.dp, primaryColor.copy(alpha = 0.35f), RoundedCornerShape(26.dp))
-            ) {
+                val isDarkHero = surfaceColor.luminance() < 0.5f
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                    shape = RoundedCornerShape(26.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                        .animateContentSize(animationSpec = spring(dampingRatio = 0.8f, stiffness = 450f))
+                        .background(
+                            brush = Brush.linearGradient(
+                                colors = listOf(
+                                    primaryColor.copy(alpha = if (isDarkHero) 0.18f else 0.08f),
+                                    surfaceColor.copy(alpha = 0.95f),
+                                    primaryColor.copy(alpha = if (isDarkHero) 0.08f else 0.02f)
+                                )
+                            ),
+                            shape = RoundedCornerShape(26.dp)
+                        )
+                        .border(1.dp, primaryColor.copy(alpha = if (isDarkHero) 0.35f else 0.18f), RoundedCornerShape(26.dp))
+                ) {
                 Column(modifier = Modifier.padding(if (isHeroCollapsed) 10.dp else 16.dp)) {
                     if (isHeroCollapsed) {
                         // COMPACT NEXUSTAB (No Avatar, No Profile Header - Just 4 status indicators + expand toggle)

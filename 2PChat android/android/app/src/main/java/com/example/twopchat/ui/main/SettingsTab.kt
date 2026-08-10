@@ -4070,10 +4070,10 @@ private fun VisualThemeSelector(
                 isDark = false,
                 accentScheme = "amber",
                 useAmoled = false,
-                previewBg = Color(0xFFFFFBEB),
+                previewBg = Color(0xFFFAF9F5),
                 previewIncomingBg = Color(0xFFE2E8F0),
                 previewIncomingText = Color(0xFF0F172A),
-                previewOutgoingBg = Color(0xFFEA580C),
+                previewOutgoingBg = Color(0xFFD97706),
                 previewOutgoingText = Color(0xFFFFFFFF),
             ),
         )
