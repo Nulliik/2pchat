@@ -3555,8 +3555,7 @@ object GroupChatCoordinator {
                 event.kind == GroupEventKind.OWNERSHIP_TRANSFERRED
             ) {
                 runCatching {
-                    val transitionObj = payload.optJSONObject("owner_transition")
-                        ?: payload.getJSONObject("owner_transition")
+                    val transitionObj = payload.optJSONObject("owner_transition") ?: return@runCatching null
                     GroupOwnerLineage.parse(transitionObj)
                 }.getOrNull()?.let { certificate ->
                     StoredOwnerLineageCertificate(
