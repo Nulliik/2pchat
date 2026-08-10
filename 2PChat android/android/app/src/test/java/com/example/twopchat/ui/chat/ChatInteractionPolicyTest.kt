@@ -1,5 +1,6 @@
 package com.example.twopchat.ui.chat
 
+import com.example.twopchat.ui.chat.state.*
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
