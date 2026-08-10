@@ -411,9 +411,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val sentAtEpochMs = if (indexSentAtMs != -1) cursor.getLong(indexSentAtMs) else 0L
         val isPinned = if (indexIsPinned != -1) cursor.getInt(indexIsPinned) == 1 else false
         val rawAlbumUris = if (indexAlbumUris != -1) stringCipher.decrypt(cursor.getString(indexAlbumUris)) else null
-        val albumMediaUris = rawAlbumUris?.split("|||")?.filter { it.isNotBlank() } ?: emptyList()
+        val albumMediaUris = rawAlbumUris?.split("|||") ?: emptyList()
         val rawAlbumTypes = if (indexAlbumTypes != -1) cursor.getString(indexAlbumTypes) else null
-        val albumMediaTypes = rawAlbumTypes?.split("|||")?.filter { it.isNotBlank() } ?: emptyList()
+        val albumMediaTypes = rawAlbumTypes?.split("|||") ?: emptyList()
 
         return Message(
             id = id,

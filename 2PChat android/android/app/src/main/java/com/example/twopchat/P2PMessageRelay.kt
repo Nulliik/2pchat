@@ -1320,18 +1320,17 @@ object P2PMessageRelay {
                             incomingAttachment.albumIndex != null &&
                             incomingAttachment.albumCount != null
                         ) {
+                            val totalParts = incomingAttachment.albumCount.coerceIn(1, 100)
                             val albumUris = existingAlbum?.albumMediaUris.orEmpty().toMutableList()
                             val albumTypes = existingAlbum?.albumMediaTypes.orEmpty().toMutableList()
+                            while (albumUris.size < totalParts) albumUris.add("")
+                            while (albumTypes.size < totalParts) albumTypes.add("IMAGE")
                             val partIndex = incomingAttachment.albumIndex
-                            if (partIndex < albumUris.size) {
+                            if (partIndex in 0 until totalParts) {
                                 albumUris[partIndex] = incomingAttachment.attachmentUri
-                                while (albumTypes.size <= partIndex) albumTypes.add("IMAGE")
                                 albumTypes[partIndex] = incomingAttachment.attachmentType
-                            } else {
-                                albumUris.add(incomingAttachment.attachmentUri)
-                                albumTypes.add(incomingAttachment.attachmentType)
                             }
-                            val albumComplete = albumUris.size >= incomingAttachment.albumCount
+                            val albumComplete = albumUris.take(totalParts).all { it.isNotBlank() }
                             Message(
                                 id = incomingAttachment.albumId,
                                 text = existingAlbum?.text
@@ -1344,7 +1343,7 @@ object P2PMessageRelay {
                                         java.util.Locale.getDefault(),
                                     ).format(java.util.Date()),
                                 attachmentType = "ALBUM",
-                                attachmentUri = albumUris.firstOrNull(),
+                                attachmentUri = albumUris.firstOrNull { it.isNotBlank() } ?: albumUris.firstOrNull(),
                                 attachmentName = "Album",
                                 status = if (albumComplete) "SENT" else "RECEIVING",
                                 albumMediaUris = albumUris,
