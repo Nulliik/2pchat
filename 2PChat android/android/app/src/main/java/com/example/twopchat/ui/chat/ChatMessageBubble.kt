@@ -1110,7 +1110,29 @@ internal fun ChatMessageBubble(
                                     }
                                 }
                                 else -> {
-                                    if (isOnlyEmoji) {
+                                    val groupInvite = remember(msg.text) { parseGroupInviteInText(msg.text, peerName) }
+                                    if (groupInvite != null) {
+                                        val context = androidx.compose.ui.platform.LocalContext.current
+                                        GroupInviteCard(
+                                            inviteInfo = groupInvite,
+                                            isMe = msg.isMe,
+                                            primaryColor = primaryColor,
+                                            onSurfaceColor = onSurfaceColor,
+                                            surfaceColor = surfaceColor,
+                                            onJoinClick = {
+                                                com.example.twopchat.group.runtime.GroupChatCoordinator.requestJoinFromInvite(
+                                                    groupInvite.groupId,
+                                                    groupInvite.groupToken,
+                                                    groupInvite.inviterPeerName
+                                                )
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "Запрос на вступление отправлен!",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        )
+                                    } else if (isOnlyEmoji) {
                                         Text(
                                             text = msg.text.trim(),
                                             fontSize = 72.sp,
@@ -1529,7 +1551,115 @@ fun LinkifiedText(
     )
 }
 
-private fun isEmojiCodePoint(codePoint: Int): Boolean {
+internal data class GroupInviteInfo(
+    val groupTitle: String,
+    val groupId: String,
+    val groupToken: String,
+    val inviterPeerName: String
+)
+
+internal fun parseGroupInviteInText(text: String, defaultInviter: String): GroupInviteInfo? {
+    if (!text.contains("group=") || !text.contains("group_token=")) return null
+    val urlRegex = Regex("""(2pchat://connect\?[^\s]+)""")
+    val match = urlRegex.find(text) ?: return null
+    val rawUrl = match.value
+    val uri = try { android.net.Uri.parse(rawUrl) } catch (e: Exception) { return null }
+    val groupId = uri.getQueryParameter("group") ?: return null
+    val groupToken = uri.getQueryParameter("group_token") ?: return null
+    val inviterName = uri.getQueryParameter("name")?.takeIf { it.isNotBlank() } ?: defaultInviter
+
+    val titleMatch = Regex("""«([^»]+)»""").find(text)
+    val groupTitle = titleMatch?.groupValues?.get(1)
+        ?: uri.getQueryParameter("group_title")
+        ?: uri.getQueryParameter("title")
+        ?: "Группа"
+
+    return GroupInviteInfo(
+        groupTitle = groupTitle,
+        groupId = groupId,
+        groupToken = groupToken,
+        inviterPeerName = inviterName
+    )
+}
+
+@Composable
+internal fun GroupInviteCard(
+    inviteInfo: GroupInviteInfo,
+    isMe: Boolean,
+    primaryColor: Color,
+    onSurfaceColor: Color,
+    surfaceColor: Color,
+    onJoinClick: () -> Unit
+) {
+    Surface(
+        color = if (isMe) Color.White.copy(alpha = 0.15f) else primaryColor.copy(alpha = 0.1f),
+        shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isMe) Color.White.copy(alpha = 0.3f) else primaryColor.copy(alpha = 0.3f)
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .background(primaryColor.copy(alpha = 0.2f))
+                ) {
+                    Text("👥", fontSize = 22.sp)
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Приглашение в группу",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = if (isMe) Color.White.copy(alpha = 0.75f) else onSurfaceColor.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        text = inviteInfo.groupTitle,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isMe) Color.White else onSurfaceColor,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            androidx.compose.material3.Button(
+                onClick = onJoinClick,
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = if (isMe) Color.White else primaryColor,
+                    contentColor = if (isMe) primaryColor else Color.White
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(40.dp)
+            ) {
+                Text(
+                    text = "Принять приглашение",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+internal fun isEmojiCodePoint(codePoint: Int): Boolean {
     return (codePoint in 0x1F300..0x1F5FF) || // Misc Symbols & Pictographs
            (codePoint in 0x1F600..0x1F64F) || // Emoticons
            (codePoint in 0x1F680..0x1F6FF) || // Transport & Map
@@ -1552,7 +1682,7 @@ private fun isEmojiCodePoint(codePoint: Int): Boolean {
            (codePoint in 0x2000..0x206F && codePoint == 0x200D) // ZWJ
 }
 
-private fun isSingleEmoji(text: String): Boolean {
+internal fun isSingleEmoji(text: String): Boolean {
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return false
     

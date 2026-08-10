@@ -2954,11 +2954,12 @@ private fun GroupMessageCard(
         val shouldDisplayText = mediaFlags.shouldDisplayText
         val isMediaOnly = mediaFlags.isMediaOnly
         val hasMediaContent = attachment != null && (isImage || isGif || isVideo)
+        val isOnlyEmoji = remember(message.text, attachment) { attachment == null && com.example.twopchat.ui.chat.isSingleEmoji(message.text) }
 
         val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
         Surface(
-            shape = if (isSticker) RoundedCornerShape(0.dp) else bubbleShape,
-            color = if (isSticker) Color.Transparent else if (isMediaOnly) Color.Transparent else bubbleContainerColor,
+            shape = if (isSticker || isOnlyEmoji) RoundedCornerShape(0.dp) else bubbleShape,
+            color = if (isSticker || isOnlyEmoji) Color.Transparent else if (isMediaOnly) Color.Transparent else bubbleContainerColor,
             modifier = Modifier
                 .wrapContentWidth()
                 .widthIn(max = 280.dp)
@@ -3355,14 +3356,23 @@ private fun GroupMessageCard(
 
                 // Message Text with Clickable Links
                 if (shouldDisplayText) {
-                    com.example.twopchat.ui.chat.LinkifiedText(
-                        text = message.text,
-                        textColor = messageTextColor,
-                        linkColor = if (message.isMine) Color(0xFF90CAF9) else Color(0xFF64B5F6),
-                        fontSize = 15.sp,
-                        lineHeight = 20.sp,
-                        modifier = if (hasMediaContent) Modifier.padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 4.dp) else Modifier.padding(top = 4.dp, bottom = 2.dp)
-                    )
+                    if (isOnlyEmoji) {
+                        Text(
+                            text = message.text.trim(),
+                            fontSize = 64.sp,
+                            lineHeight = 72.sp,
+                            modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp)
+                        )
+                    } else {
+                        com.example.twopchat.ui.chat.LinkifiedText(
+                            text = message.text,
+                            textColor = messageTextColor,
+                            linkColor = if (message.isMine) Color(0xFF90CAF9) else Color(0xFF64B5F6),
+                            fontSize = 15.sp,
+                            lineHeight = 20.sp,
+                            modifier = if (hasMediaContent) Modifier.padding(start = 10.dp, end = 10.dp, top = 4.dp, bottom = 4.dp) else Modifier.padding(top = 4.dp, bottom = 2.dp)
+                        )
+                    }
                 }
 
                 // Reactions Row
