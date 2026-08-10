@@ -2293,16 +2293,17 @@ object GroupChatCoordinator {
         val batch = GroupSyncBatch(request.requestId, group.groupId, events, hasMore)
         val batchJson = GroupControlFrames.syncBatchToJson(batch)
         GroupWireProtocol.requireBoundedWire(batchJson.toString())
+        val context = applicationContext ?: return
         directOversizedEvent?.let { oversized ->
             GroupWireProtocol.requireBoundedWire(oversized.toString())
             P2PMessageRelay.sendGroupFrame(
-                requireNotNull(applicationContext),
+                context,
                 senderPeerName,
                 oversized,
             )
         }
         P2PMessageRelay.sendGroupFrame(
-            requireNotNull(applicationContext),
+            context,
             senderPeerName,
             batchJson,
         )
@@ -3549,9 +3550,11 @@ object GroupChatCoordinator {
             ownerLineageCertificate = if (
                 event.kind == GroupEventKind.OWNERSHIP_TRANSFERRED
             ) {
-                GroupOwnerLineage.parse(
-                    payload.getJSONObject("owner_transition"),
-                ).let { certificate ->
+                runCatching {
+                    val transitionObj = payload.optJSONObject("owner_transition")
+                        ?: payload.getJSONObject("owner_transition")
+                    GroupOwnerLineage.parse(transitionObj)
+                }.getOrNull()?.let { certificate ->
                     StoredOwnerLineageCertificate(
                         groupId = current.groupId,
                         sequence = certificate.lineageSequence,
@@ -3977,7 +3980,8 @@ object GroupChatCoordinator {
                         signingKey = member.signingKeyBase64,
                         role = parseRole(member.role),
                         permissions = member.permissions and GroupPermission.knownBits,
-                        status = GroupRosterMemberStatus.valueOf(member.status),
+                        status = runCatching { GroupRosterMemberStatus.valueOf(member.status) }
+                            .getOrDefault(GroupRosterMemberStatus.ACTIVE),
                         joinedEpoch = member.joinedEpoch,
                         removedEpoch = member.removedEpoch,
                         lastAuthorSequence = admissionCursors.getValue(member.deviceId),
@@ -5214,7 +5218,7 @@ object GroupChatCoordinator {
 
     private fun parseRole(value: String): GroupRole = when (value) {
         "ADMIN" -> GroupRole.ADMINISTRATOR
-        else -> GroupRole.valueOf(value)
+        else -> runCatching { GroupRole.valueOf(value) }.getOrDefault(GroupRole.MEMBER)
     }
 
     private fun String?.toUiRole(): com.example.twopchat.group.ui.GroupRole = when (this) {
