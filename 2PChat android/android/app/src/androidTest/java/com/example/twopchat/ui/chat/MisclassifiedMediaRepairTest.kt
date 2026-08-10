@@ -1,6 +1,7 @@
 package com.example.twopchat.ui.chat
 
 import android.graphics.Bitmap
+import com.example.twopchat.ui.chat.state.repairMisclassifiedLocalImage
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
