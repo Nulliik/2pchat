@@ -65,4 +65,21 @@ class PeerIdentityTest {
         assertFalse(deleted)
         assertFalse(wiped)
     }
+
+    @Test
+    fun `account wipe runs every cleanup step even when one fails`() {
+        val events = mutableListOf<String>()
+
+        val completed = runAccountDataWipe(
+            listOf(
+                "preferences" to { events += "preferences"; true },
+                "messages" to { events += "messages"; false },
+                "stickers" to { events += "stickers"; true },
+            ),
+            onFailure = { _, _ -> },
+        )
+
+        assertFalse(completed)
+        assertTrue(events == listOf("preferences", "messages", "stickers"))
+    }
 }
