@@ -85,6 +85,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.example.twopchat.ui.chat.state.*
+import com.example.twopchat.ui.chat.components.ChatFullscreenMediaViewer
 
 private fun newMessageId(): String = java.util.UUID.randomUUID().toString()
 
@@ -3603,26 +3604,18 @@ remove("pinned_msg_id_${peerName}")
             )
         }
 
-        if (activeFullscreenImages.isNotEmpty()) {
-            FullscreenImageViewer(
-                imagePaths = activeFullscreenImages,
-                initialIndex = activeFullscreenImageIndex,
-                appLanguage = appLanguage,
-                bitmapOverrides = activeFullscreenBitmapOverrides,
-                onClose = {
-                    activeFullscreenImages = emptyList()
-                    activeFullscreenBitmapOverrides = emptyMap()
-                }
-            )
-        }
-
-        if (activeFullscreenVideo != null) {
-            FullscreenVideoPlayer(
-                videoPath = activeFullscreenVideo!!,
-                appLanguage = appLanguage,
-                onClose = { activeFullscreenVideo = null }
-            )
-        }
+        ChatFullscreenMediaViewer(
+            activeFullscreenImages = activeFullscreenImages,
+            activeFullscreenImageIndex = activeFullscreenImageIndex,
+            activeFullscreenBitmapOverrides = activeFullscreenBitmapOverrides,
+            activeFullscreenVideo = activeFullscreenVideo,
+            appLanguage = appLanguage,
+            onCloseImages = {
+                activeFullscreenImages = emptyList()
+                activeFullscreenBitmapOverrides = emptyMap()
+            },
+            onCloseVideo = { activeFullscreenVideo = null },
+        )
 
         if (showPinnedSheet) {
             val pinnedItems = remember(pinnedMessagesList) {
