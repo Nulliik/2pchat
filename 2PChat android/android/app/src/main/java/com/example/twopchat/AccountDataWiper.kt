@@ -44,9 +44,14 @@ internal object AccountDataWiper {
     }
 
     private fun clearAllSharedPreferences(context: Context): Boolean {
-        // Clear known live instances first, then remove every preference XML. The
-        // latter covers future preference files automatically, so a new cache
-        // cannot silently escape account deletion.
+        // Discover and clear all live instances first, then remove every preference XML.
+        // This covers both known and future preference files in memory and on disk.
+        val preferencesDir = File(context.applicationInfo.dataDir, "shared_prefs")
+        val dynamicallyDiscoveredPrefs = preferencesDir.listFiles().orEmpty()
+            .filter { it.isFile && it.name.endsWith(".xml") }
+            .map { it.name.removeSuffix(".xml") }
+            .map { name -> context.getSharedPreferences(name, Context.MODE_PRIVATE) }
+
         val knownPreferences = listOf(
             P2PPreferences.prefs(context),
             context.getSharedPreferences(P2PPreferences.FILE_NAME, Context.MODE_PRIVATE),
@@ -54,8 +59,8 @@ internal object AccountDataWiper {
             context.getSharedPreferences("2pchat_network_traffic", Context.MODE_PRIVATE),
             context.getSharedPreferences("2pchat_lock_state", Context.MODE_PRIVATE),
         )
-        val cleared = knownPreferences.all { it.edit().clear().commit() }
-        val preferencesDir = File(context.applicationInfo.dataDir, "shared_prefs")
+        val allPrefs = (knownPreferences + dynamicallyDiscoveredPrefs).distinct()
+        val cleared = allPrefs.all { it.edit().clear().commit() }
         return deleteChildren(preferencesDir) && cleared
     }
 
