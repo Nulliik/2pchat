@@ -3963,10 +3963,19 @@ private fun GroupAlbumCell(
     val isVideo = type == "VIDEO" || att.mimeType.startsWith("video/")
     val context = LocalContext.current
 
-    val targetPath = remember(uri, att.localPath, att.fileName) {
+    val targetPath = remember(uri, att.localPath, att.fileName, att.attachmentId) {
+        val groupDownloadCandidates = att.attachmentId.takeIf { it.isNotBlank() }?.let { id ->
+            val groupDir = File(context.filesDir, "group_downloads")
+            groupDir.listFiles()?.mapNotNull { sub ->
+                val attDir = File(sub, id)
+                val target = File(attDir, att.fileName)
+                target.takeIf { it.exists() && it.length() > 0L }?.absolutePath
+            }?.firstOrNull()
+        }
         val candidates = listOfNotNull(
             uri.takeIf { it.isNotBlank() },
             att.localPath?.takeIf { it.isNotBlank() },
+            groupDownloadCandidates,
             att.fileName.takeIf { it.isNotBlank() }?.let { File(File(context.filesDir, "attachments"), it).absolutePath },
             att.fileName.takeIf { it.isNotBlank() }?.let { File(context.filesDir, it).absolutePath }
         )
@@ -3990,7 +3999,6 @@ private fun GroupAlbumCell(
             },
         contentAlignment = Alignment.Center
     ) {
-        val bmp = imageBitmap
         if (bmp != null) {
             Image(
                 bitmap = bmp.asImageBitmap(),

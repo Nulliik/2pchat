@@ -2537,9 +2537,13 @@ object GroupChatCoordinator {
         val event = db().getEvent(group.groupId, request.eventId)
             ?: throw SecurityException("attachment request references an unknown event")
         require(event.kind == GroupEventKind.MEDIA.name)
-        val manifest = loadAttachmentManifest(group.groupId, event.eventId)
-            ?: throw SecurityException("attachment request has no valid group manifest")
-        val allowedCids = manifest.blocks.mapTo(hashSetOf()) { it.ciphertextCid }
+        val manifests = loadAttachmentManifests(group.groupId, event.eventId)
+        if (manifests.isEmpty()) {
+            throw SecurityException("attachment request has no valid group manifest")
+        }
+        val allowedCids = manifests.flatMapTo(hashSetOf()) { manifest ->
+            manifest.blocks.map { it.ciphertextCid }
+        }
         require(request.ciphertextCids.all { it in allowedCids }) {
             "attachment request crosses its signed group manifest"
         }
@@ -2617,7 +2621,7 @@ object GroupChatCoordinator {
             .filter {
                 it.isParticipating() &&
                 it.deviceId != group.localDeviceId &&
-                    P2PMessageRelay.peerSessionStates[it.peerName] == true
+                    (P2PMessageRelay.peerSessionStates[it.peerName] == true || it.peerName == preferredPeerName)
             }
         val sourceEvent = db().getEvent(groupId, eventId)
         val plannedReplicaIds = sourceEvent?.let { event ->
@@ -2682,7 +2686,7 @@ object GroupChatCoordinator {
             .filter { it.kind == GroupEventKind.MEDIA.name }
             .forEach { event ->
                 if (!shouldSeedAttachment(group, event)) return@forEach
-                loadAttachmentManifest(group.groupId, event.eventId)?.let { manifest ->
+                loadAttachmentManifests(group.groupId, event.eventId).forEach { manifest ->
                     if (attachmentStore(group.groupId).missingBlocks(manifest).isNotEmpty()) {
                         requestMissingAttachmentBlocks(group.groupId, event.eventId, manifest)
                     }
