@@ -138,7 +138,7 @@ fun DirectChatWallpaperModal(
 
     fun prepareFinalBitmap(): Bitmap? {
         val src = previewBitmap ?: return null
-        return if (scale != 1f || offset != Offset.Zero) {
+        return if (containerSize.width > 0 && containerSize.height > 0) {
             transformBitmap(src, containerSize, scale, offset)
         } else {
             src
@@ -409,6 +409,7 @@ fun DirectChatWallpaperModal(
                                     .clickable {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                         selectedPreset = preset
+                                        selectedUri = null
                                         scale = 1f
                                         offset = Offset.Zero
                                         val targetW = containerSize.width.coerceAtLeast(720)
@@ -665,7 +666,7 @@ private fun decodeSampledBitmapFromUri(context: Context, uri: Uri, maxDim: Int =
         if (w > maxDim || h > maxDim) {
             val halfW = w / 2
             val halfH = h / 2
-            while ((halfW / sampleSize) >= maxDim && (halfH / sampleSize) >= maxDim) {
+            while ((halfW / sampleSize) >= maxDim || (halfH / sampleSize) >= maxDim) {
                 sampleSize *= 2
             }
         }
@@ -688,7 +689,7 @@ private fun decodeSampledBitmapFromFile(path: String, maxDim: Int = 1920): Bitma
         if (w > maxDim || h > maxDim) {
             val halfW = w / 2
             val halfH = h / 2
-            while ((halfW / sampleSize) >= maxDim && (halfH / sampleSize) >= maxDim) {
+            while ((halfW / sampleSize) >= maxDim || (halfH / sampleSize) >= maxDim) {
                 sampleSize *= 2
             }
         }
