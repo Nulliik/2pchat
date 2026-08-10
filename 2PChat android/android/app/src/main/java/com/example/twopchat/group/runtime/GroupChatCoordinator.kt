@@ -761,6 +761,15 @@ object GroupChatCoordinator {
         )
     }
 
+    fun acceptPendingInviteForGroup(groupId: String): Boolean {
+        val pending = database?.listPendingInvites()?.firstOrNull { it.groupId == groupId }
+        if (pending != null) {
+            acceptInvite(pending.inviteId)
+            return true
+        }
+        return false
+    }
+
     fun votePoll(groupId: String, pollId: String, optionId: Int) {
         if (optionId < 0) return
         scope.launch {

@@ -2961,8 +2961,8 @@ private fun GroupMessageCard(
             shape = if (isSticker || isOnlyEmoji) RoundedCornerShape(0.dp) else bubbleShape,
             color = if (isSticker || isOnlyEmoji) Color.Transparent else if (isMediaOnly) Color.Transparent else bubbleContainerColor,
             modifier = Modifier
-                .wrapContentWidth()
-                .widthIn(max = 280.dp)
+                .wrapContentWidth(align = if (message.isMine) Alignment.End else Alignment.Start)
+                .widthIn(max = if (isOnlyEmoji) 140.dp else 280.dp)
                 .then(
                     if (isHighlighted) Modifier.border(2.dp, primaryColor, bubbleShape) else Modifier
                 )
@@ -3361,7 +3361,9 @@ private fun GroupMessageCard(
                             text = message.text.trim(),
                             fontSize = 64.sp,
                             lineHeight = 72.sp,
-                            modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp)
+                            modifier = Modifier
+                                .padding(vertical = 4.dp, horizontal = 4.dp)
+                                .align(if (message.isMine) Alignment.End else Alignment.Start)
                         )
                     } else {
                         com.example.twopchat.ui.chat.LinkifiedText(

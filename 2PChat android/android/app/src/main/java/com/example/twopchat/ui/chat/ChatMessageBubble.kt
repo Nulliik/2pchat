@@ -1120,14 +1120,16 @@ internal fun ChatMessageBubble(
                                             onSurfaceColor = onSurfaceColor,
                                             surfaceColor = surfaceColor,
                                             onJoinClick = {
+                                                val accepted = com.example.twopchat.group.runtime.GroupChatCoordinator.acceptPendingInviteForGroup(groupInvite.groupId)
                                                 com.example.twopchat.group.runtime.GroupChatCoordinator.requestJoinFromInvite(
                                                     groupInvite.groupId,
                                                     groupInvite.groupToken,
                                                     groupInvite.inviterPeerName
                                                 )
+                                                val msgText = if (accepted) "Вы вошли в группу!" else "Запрос на вступление отправлен!"
                                                 android.widget.Toast.makeText(
                                                     context,
-                                                    "Запрос на вступление отправлен!",
+                                                    msgText,
                                                     android.widget.Toast.LENGTH_SHORT
                                                 ).show()
                                             }

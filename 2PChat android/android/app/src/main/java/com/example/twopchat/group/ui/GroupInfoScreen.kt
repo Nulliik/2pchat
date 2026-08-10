@@ -1477,7 +1477,29 @@ private fun GroupMemberCard(
                 .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val memberAvatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName]
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val myAvatarFile = remember(context) { java.io.File(context.filesDir, "profile_avatar.jpg") }
+            val myAvatarBitmap = remember(myAvatarFile) {
+                if (myAvatarFile.isFile) {
+                    try { android.graphics.BitmapFactory.decodeFile(myAvatarFile.absolutePath) } catch (e: Exception) { null }
+                } else null
+            }
+            val memberAvatarBitmap = if (member.isCurrentUser) {
+                com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName] ?: myAvatarBitmap
+            } else {
+                com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName]
+            }
+
+            val cleanDisplayName = remember(member.displayName, member.isCurrentUser) {
+                if (member.displayName.isBlank() || member.displayName.equals("null", ignoreCase = true)) {
+                    if (member.isCurrentUser) {
+                        val saved = com.example.twopchat.P2PPreferences.prefs(context).getString("username_profile", null)
+                        saved?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) } ?: "Пользователь"
+                    } else "Участник"
+                } else member.displayName
+            }
+            val memberInitials = remember(cleanDisplayName) { cleanDisplayName.take(2).uppercase() }
+
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -1488,7 +1510,7 @@ private fun GroupMemberCard(
                 if (memberAvatarBitmap != null) {
                     androidx.compose.foundation.Image(
                         bitmap = memberAvatarBitmap.asImageBitmap(),
-                        contentDescription = member.displayName,
+                        contentDescription = cleanDisplayName,
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                         modifier = Modifier.fillMaxSize().clip(CircleShape)
                     )
@@ -1508,7 +1530,7 @@ private fun GroupMemberCard(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = buildString {
-                            append(member.displayName)
+                            append(cleanDisplayName)
                             if (member.isCurrentUser) append(if (appLanguage == "Русский") " (Вы)" else " (You)")
                         },
                         fontWeight = FontWeight.Bold,
@@ -2204,7 +2226,25 @@ private fun MemberProfileModal(
     var animateIn by remember { mutableStateOf(false) }
     var showFullMemberAvatar by remember { mutableStateOf(false) }
     var fullMemberAvatarBitmap by remember(member.displayName) { mutableStateOf<Bitmap?>(null) }
-    val memberAvatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName]
+    val myAvatarFile = remember(context) { java.io.File(context.filesDir, "profile_avatar.jpg") }
+    val myAvatarBitmap = remember(myAvatarFile) {
+        if (myAvatarFile.isFile) {
+            try { android.graphics.BitmapFactory.decodeFile(myAvatarFile.absolutePath) } catch (e: Exception) { null }
+        } else null
+    }
+    val memberAvatarBitmap = if (member.isCurrentUser) {
+        com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName] ?: myAvatarBitmap
+    } else {
+        com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName]
+    }
+    val cleanDisplayName = remember(member.displayName, member.isCurrentUser) {
+        if (member.displayName.isBlank() || member.displayName.equals("null", ignoreCase = true)) {
+            if (member.isCurrentUser) {
+                val saved = com.example.twopchat.P2PPreferences.prefs(context).getString("username_profile", null)
+                saved?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) } ?: "Пользователь"
+            } else "Участник"
+        } else member.displayName
+    }
 
     LaunchedEffect(member.displayName) {
         withContext(Dispatchers.IO) {
@@ -2328,7 +2368,7 @@ private fun MemberProfileModal(
 
                     Text(
                         text = buildString {
-                            append(member.displayName)
+                            append(cleanDisplayName)
                             if (member.isCurrentUser) append(if (appLanguage == "Русский") " (Вы)" else " (You)")
                         },
                         fontWeight = FontWeight.Bold,
