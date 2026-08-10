@@ -41,6 +41,16 @@ object P2PPreferences {
         isAppLockedState = locked
     }
 
+    /** Drops account-derived caches after the backing preferences are erased. */
+    fun clearInMemoryState() {
+        synchronized(this) {
+            cachedPrefs = null
+            fingerprintToPeerNameCache.clear()
+            fingerprintCacheInitialized = false
+            isAppLockedState = false
+        }
+    }
+
     private val fingerprintToPeerNameCache = ConcurrentHashMap<String, String>()
     @Volatile
     private var fingerprintCacheInitialized = false

@@ -1,10 +1,6 @@
 package com.example.twopchat
 
 import android.content.Context
-import android.util.Log
-import com.example.twopchat.data.ChatDatabaseHelper
-import com.example.twopchat.security.IdentityKeyStore
-import com.example.twopchat.group.runtime.GroupWorkScheduler
 
 internal fun performAccountDeletion(
     shutdownRuntime: () -> Boolean,
@@ -15,9 +11,6 @@ internal fun performAccountDeletion(
 }
 
 object AccountLifecycle {
-    private const val TAG = "AccountLifecycle"
-    private val preservedRuntimeFiles = setOf("chaquopy", "profileInstalled")
-
     fun deleteAccount(context: Context): Boolean {
         val appContext = context.applicationContext
         return performAccountDeletion(
@@ -25,65 +18,8 @@ object AccountLifecycle {
                 P2PMessageRelay.shutdownForAccountDeletion(appContext)
             },
             wipePersistentData = {
-                wipePersistentData(appContext)
+                AccountDataWiper.wipe(appContext)
             },
         )
-    }
-
-    private fun wipePersistentData(context: Context): Boolean {
-        var success = true
-
-        GroupWorkScheduler.cancel(context)
-        ChatDatabaseHelper.closeAllConnections()
-        PythonBridge.clearAccountCaches()
-        MessageNotificationService.clearAllHistory(context)
-
-        if (!P2PPreferences.prefs(context)
-                .edit().clear().commit()
-        ) {
-            Log.e(TAG, "Failed to synchronously clear account preferences")
-            success = false
-        }
-        if (!NetworkTrafficStats.clear(context)) {
-            Log.e(TAG, "Failed to synchronously clear network traffic statistics")
-            success = false
-        }
-
-        for (database in context.databaseList()) {
-            if (!context.deleteDatabase(database)) {
-                Log.e(TAG, "Failed to delete database $database")
-                success = false
-            }
-        }
-
-        context.filesDir.listFiles().orEmpty()
-            .filterNot { it.name in preservedRuntimeFiles }
-            .forEach { file ->
-                if (!file.deleteRecursively()) {
-                    Log.e(TAG, "Failed to delete account file ${file.absolutePath}")
-                    success = false
-                }
-            }
-        context.cacheDir.listFiles().orEmpty().forEach { file ->
-            if (!file.deleteRecursively()) {
-                Log.e(TAG, "Failed to delete cache file ${file.absolutePath}")
-                success = false
-            }
-        }
-
-        try {
-            IdentityKeyStore.deleteKey()
-        } catch (error: Exception) {
-            Log.e(TAG, "Failed to delete identity wrapping key", error)
-            success = false
-        }
-        try {
-            SecureStorage.deleteKey()
-        } catch (error: Exception) {
-            Log.e(TAG, "Failed to delete local storage wrapping key", error)
-            success = false
-        }
-
-        return success
     }
 }
