@@ -31,8 +31,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import com.example.twopchat.copyTextToClipboard
 import com.example.twopchat.readTextFromClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -1135,7 +1137,7 @@ fun ContactsTab(
                     contactsToDisplay.forEach { contact ->
                         Card(
                             colors = CardDefaults.cardColors(containerColor = surfaceColor),
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(18.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable(enabled = contact.verified) {
@@ -1175,14 +1177,14 @@ fun ContactsTab(
                                 }
                                 .border(
                                     width = 1.dp,
-                                    color = if (contact.verified) primaryColor.copy(alpha = 0.25f) else Color(0xFFFFB300).copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(16.dp)
+                                    color = if (contact.verified) primaryColor.copy(alpha = 0.35f) else Color(0xFFF59E0B).copy(alpha = 0.3f),
+                                    shape = RoundedCornerShape(18.dp)
                                 )
                         ) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(14.dp)
+                                    .padding(16.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1193,9 +1195,9 @@ fun ContactsTab(
                                     Box(
                                         contentAlignment = Alignment.Center,
                                         modifier = Modifier
-                                            .size(46.dp)
+                                            .size(48.dp)
                                             .clip(CircleShape)
-                                            .background(primaryColor.copy(alpha = 0.15f))
+                                            .background(primaryColor.copy(alpha = 0.12f))
                                     ) {
                                         if (peerAvatarBitmap != null) {
                                             Image(
@@ -1208,7 +1210,7 @@ fun ContactsTab(
                                                 text = contact.initials,
                                                 color = primaryColor,
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 15.sp
+                                                fontSize = 16.sp
                                             )
                                         }
                                     }
@@ -1223,7 +1225,7 @@ fun ContactsTab(
                                             color = onSurfaceColor
                                         )
 
-                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Spacer(modifier = Modifier.height(3.dp))
 
                                         val localizedStatus = when {
                                             contact.status.startsWith("Online") -> contact.status
@@ -1235,15 +1237,21 @@ fun ContactsTab(
                                             else -> contact.status
                                         }
 
+                                        val statusColor = when {
+                                            contact.ownershipVerified -> Color(0xFF059669)
+                                            contact.verified -> if (onSurfaceColor.luminance() > 0.5f) Color(0xFFFFC107) else Color(0xFFD97706)
+                                            else -> Color(0xFFDC2626)
+                                        }
+
                                         Text(
                                             text = localizedStatus,
                                             fontSize = 12.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = if (contact.verified) primaryColor else Color(0xFFFFB300)
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = statusColor
                                         )
                                     }
 
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(10.dp))
 
                                     // Action Button / Badge
                                     if (contact.verified) {
@@ -1259,8 +1267,8 @@ fun ContactsTab(
                                                 },
                                                 fontSize = 13.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                color = if (primaryColor == MintGreen) StealthBlack else Color.White,
-                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                                                color = if (primaryColor == MintGreen || primaryColor.luminance() > 0.6f) StealthBlack else Color.White,
+                                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                                             )
                                         }
                                     } else {
@@ -1273,40 +1281,53 @@ fun ContactsTab(
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = onSurfaceVariant,
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                             )
                                         }
                                     }
                                 }
 
-                                // Cryptographic Fingerprint Chip
+                                // Cryptographic Fingerprint Chip (Adaptive Light & Dark contrast)
                                 if (contact.fingerprint.isNotBlank()) {
-                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Spacer(modifier = Modifier.height(12.dp))
                                     Surface(
-                                        color = Color.Black.copy(alpha = 0.22f),
-                                        shape = RoundedCornerShape(8.dp),
+                                        color = onSurfaceColor.copy(alpha = 0.05f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(0.5.dp, onSurfaceColor.copy(alpha = 0.1f)),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
                                             text = "FP: ${contact.fingerprint.take(12)}…${contact.fingerprint.takeLast(6)}",
                                             fontSize = 11.sp,
                                             fontFamily = FontFamily.Monospace,
-                                            color = if (contact.ownershipVerified) Color(0xFF10B981) else Color(0xFFF59E0B),
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (contact.ownershipVerified) {
+                                                Color(0xFF059669)
+                                            } else if (onSurfaceColor.luminance() > 0.5f) {
+                                                Color(0xFFFFC107)
+                                            } else {
+                                                Color(0xFFD97706)
+                                            },
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                                         )
                                     }
                                 }
 
-                                // Ownership warning banner
+                                // Ownership warning banner (Adaptive contrast)
                                 if (contact.verified && !contact.ownershipVerified) {
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    val warningBg = if (onSurfaceColor.luminance() > 0.5f) Color(0xFFF59E0B).copy(alpha = 0.15f) else Color(0xFFFFF7ED)
+                                    val warningBorder = if (onSurfaceColor.luminance() > 0.5f) Color(0xFFF59E0B).copy(alpha = 0.3f) else Color(0xFFFED7AA)
+                                    val warningText = if (onSurfaceColor.luminance() > 0.5f) Color(0xFFFFC107) else Color(0xFFB45309)
+
                                     Surface(
-                                        color = Color(0xFFF59E0B).copy(alpha = 0.12f),
-                                        shape = RoundedCornerShape(8.dp),
+                                        color = warningBg,
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(0.5.dp, warningBorder),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
@@ -1317,14 +1338,14 @@ fun ContactsTab(
                                                 text = if (appLanguage == "Русский") "Ключ живого узла (владелец ника не подтверждён)" else "Live node key (nickname ownership unverified)",
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.Medium,
-                                                color = Color(0xFFFFC107)
+                                                color = warningText
                                             )
                                         }
                                     }
                                 }
 
                                 if (!contact.verified) {
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
                                     Text(contact.endpoints, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = onSurfaceVariant)
                                     Text(
                                         text = if (appLanguage == "Русский") "Подключение заблокировано до успешной проверки личности" else "Connection blocked until identity verification succeeds",
