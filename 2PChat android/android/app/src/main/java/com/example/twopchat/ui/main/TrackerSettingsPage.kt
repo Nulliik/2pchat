@@ -37,12 +37,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.collectAsState
 import com.example.twopchat.BuiltInTracker
 import com.example.twopchat.CustomTracker
 import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.P2PPreferences
 import com.example.twopchat.ProxyConfig
 import com.example.twopchat.PythonBridge
+import com.example.twopchat.TorManager
+import com.example.twopchat.TorStatusFormatter
 import com.example.twopchat.TrackerPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -73,6 +76,7 @@ fun TrackerSettingsPage(
     val proxyEnabled = remember(revision) { P2PPreferences.isProxyEnabled(context) }
     val proxyHost = remember(revision) { P2PPreferences.getProxyHost(context) }
     val proxyPortText = remember(revision) { P2PPreferences.getProxyPort(context).toString() }
+    val isTorRunning by TorManager.isTorRunning.collectAsState()
 
     fun settingsChanged() {
         revision += 1
@@ -160,7 +164,65 @@ fun TrackerSettingsPage(
 
             Spacer(Modifier.height(16.dp))
             Text(
-                text = if (isRussian) "SOCKS5 / Tor Прокси" else "SOCKS5 / Tor Proxy",
+                text = if (isRussian) "Встроенная анонимизация (Tor)" else "Embedded Tor Privacy",
+                color = onSurfaceColor,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+            )
+            TrackerSectionCard(surfaceColor, onSurfaceColor) {
+                TrackerToggleRow(
+                    title = if (isRussian) "Встроенный Tor (Автономно)" else "Embedded Tor (Autonomous)",
+                    subtitle = if (isRussian) {
+                        "Запуск фонового демона Tor без использования сторонних приложений"
+                    } else {
+                        "Launches autonomous embedded Tor daemon without external apps"
+                    },
+                    checked = proxyEnabled && isTorRunning,
+                    onSurfaceColor = onSurfaceColor,
+                    onSurfaceVariant = onSurfaceVariant,
+                    onCheckedChange = { enabled ->
+                        if (enabled) {
+                            P2PPreferences.prefs(context).edit()
+                                .putBoolean(P2PPreferences.PROXY_ENABLED, true)
+                                .putString(P2PPreferences.PROXY_HOST, "127.0.0.1")
+                                .putInt(P2PPreferences.PROXY_PORT, 9050)
+                                .commit()
+                            TorManager.startTor(context)
+                        } else {
+                            TorManager.stopTor()
+                            P2PPreferences.prefs(context).edit()
+                                .putBoolean(P2PPreferences.PROXY_ENABLED, false)
+                                .commit()
+                        }
+                        settingsChanged()
+                    },
+                )
+                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (isRussian) "Статус сеанса Tor" else "Tor Session Status",
+                        fontSize = 14.sp,
+                        color = onSurfaceColor,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = TorStatusFormatter.formatStatus(isTorRunning, isRussian),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isTorRunning) Color(0xFF4CAF50) else onSurfaceVariant.copy(alpha = 0.6f),
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = if (isRussian) "SOCKS5 / Внешний Прокси" else "SOCKS5 / Custom Proxy",
                 color = onSurfaceColor,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
