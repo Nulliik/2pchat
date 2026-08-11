@@ -931,7 +931,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         )
     }
 
-    private fun checkAndMigrateDatabase(context: Context, dbFile: java.io.File, pass: String) {
+    private fun checkAndMigrateDatabase(context: Context, dbFile: java.io.File, pass: ByteArray) {
         if (!dbFile.exists()) return
         try {
             val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, pass, null, SQLiteDatabase.OPEN_READWRITE, null)
@@ -944,23 +944,20 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             }
         }
         try {
-            val unencryptedDb = SQLiteDatabase.openDatabase(dbFile.absolutePath, null as String?, null, SQLiteDatabase.OPEN_READWRITE, null)
+            val unencryptedDb = SQLiteDatabase.openDatabase(dbFile.absolutePath, null as ByteArray?, null, SQLiteDatabase.OPEN_READWRITE, null)
             unencryptedDb.close()
         } catch (e: Exception) {
             return
         }
-        // The temporary database is already SQLCipher-encrypted. Keep it beside the
-        // destination so the final rename is on the same filesystem and always clean it.
         val tempFile = java.io.File(dbFile.parentFile, "$DATABASE_NAME.encrypted.tmp")
         if (tempFile.exists()) tempFile.delete()
-        require(pass.matches(Regex("^[A-Za-z0-9+/=]+$"))) { "Invalid passphrase format" }
         var source: SQLiteDatabase? = null
         try {
-            val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null as String?, null, SQLiteDatabase.OPEN_READWRITE, null)
+            val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null as ByteArray?, null, SQLiteDatabase.OPEN_READWRITE, null)
             source = db
             val escPath = tempFile.absolutePath.replace("'", "''")
-            val escPass = pass.replace("'", "''")
-            db.execSQL("ATTACH DATABASE '$escPath' AS encrypted KEY '$escPass'")
+            val passHex = pass.joinToString("") { "%02x".format(it) }
+            db.execSQL("ATTACH DATABASE '$escPath' AS encrypted KEY \"x'$passHex'\"")
             db.execSQL("SELECT sqlcipher_export('encrypted')")
             db.execSQL("DETACH DATABASE encrypted")
             db.close()
@@ -970,10 +967,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         } catch (e: Exception) {
             Log.e(TAG, "Failed to migrate plaintext database", e)
         } finally {
+            com.example.twopchat.SecurityUtils.zeroize(pass)
             try {
                 source?.close()
-            } catch (_: Exception) {
-            }
+            } catch (_: Exception) { }
             if (tempFile.exists()) tempFile.delete()
         }
     }

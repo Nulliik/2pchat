@@ -106,21 +106,21 @@ object SecureStorage {
     }
 
     @Synchronized
-    fun getOrGenerateDbPassphrase(context: android.content.Context): String {
+    fun getOrGenerateDbPassphrase(context: android.content.Context): ByteArray {
         val sharedPrefs = P2PPreferences.prefs(context)
         val enc = sharedPrefs.getString("db_passphrase_enc", null)
         if (enc != null) {
             val dec = decrypt(enc)
             if (dec != null) {
-                return dec
+                return Base64.decode(dec, Base64.NO_WRAP)
             }
         }
         val bytes = ByteArray(32)
         java.security.SecureRandom().nextBytes(bytes)
-        val pass = Base64.encodeToString(bytes, Base64.NO_WRAP)
-        val encrypted = encrypt(pass)
-        sharedPrefs.edit().putString("db_passphrase_enc", encrypted).apply()
-        return pass
+        val b64Str = Base64.encodeToString(bytes, Base64.NO_WRAP)
+        val encrypted = encrypt(b64Str)
+        sharedPrefs.edit().putString("db_passphrase_enc", encrypted).commit()
+        return bytes
     }
 
     @Synchronized
