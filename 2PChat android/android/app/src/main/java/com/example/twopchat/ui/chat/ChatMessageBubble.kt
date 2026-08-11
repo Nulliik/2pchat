@@ -1162,55 +1162,65 @@ internal fun ChatMessageBubble(
                             }
                             if (msg.attachmentType != "IMAGE" && msg.attachmentType != "VIDEO" && msg.attachmentType != "ALBUM" && msg.albumMediaUris.isEmpty()) {
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.align(Alignment.End)
+                                val isTransparentBubble = isOnlyEmoji || isSticker || isGif
+                                Surface(
+                                    color = if (isTransparentBubble) Color.Black.copy(alpha = 0.42f) else Color.Transparent,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.align(Alignment.End).padding(top = 2.dp, bottom = 2.dp)
                                 ) {
-                                    Text(
-                                        text = formattedTime,
-                                        color = (if (isOnlyEmoji || isSticker || isGif) {
-                                            onSurfaceColor.copy(alpha = 0.5f)
-                                        } else if (msg.isMe) {
-                                            if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.65f)
-                                        } else onSurfaceColor.copy(alpha = 0.5f)),
-                                        fontSize = 9.sp
-                                    )
-                                    if (msg.isMe) {
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        val isPending = msg.status?.startsWith("PENDING") == true
-                                        
-                                        val statusColor = if (isOnlyEmoji || isSticker || isGif) {
-                                            onSurfaceVariant.copy(alpha = 0.5f)
-                                        } else if (msg.isMe) {
-                                            if (primaryColor == com.example.twopchat.theme.MintGreen) {
-                                                StealthBlack.copy(alpha = 0.45f)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(
+                                            horizontal = if (isTransparentBubble) 6.dp else 0.dp,
+                                            vertical = if (isTransparentBubble) 2.dp else 0.dp
+                                        )
+                                    ) {
+                                        Text(
+                                            text = formattedTime,
+                                            color = (if (isTransparentBubble) {
+                                                Color.White.copy(alpha = 0.95f)
+                                            } else if (msg.isMe) {
+                                                if (primaryColor == com.example.twopchat.theme.MintGreen) StealthBlack.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.65f)
+                                            } else onSurfaceColor.copy(alpha = 0.5f)),
+                                            fontSize = 9.sp
+                                        )
+                                        if (msg.isMe) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            val isPending = msg.status?.startsWith("PENDING") == true
+
+                                            val statusColor = if (isTransparentBubble) {
+                                                Color.White.copy(alpha = 0.95f)
+                                            } else if (msg.isMe) {
+                                                if (primaryColor == com.example.twopchat.theme.MintGreen) {
+                                                    StealthBlack.copy(alpha = 0.45f)
+                                                } else {
+                                                    Color.White.copy(alpha = 0.55f)
+                                                }
                                             } else {
-                                                Color.White.copy(alpha = 0.55f)
+                                                onSurfaceVariant.copy(alpha = 0.5f)
                                             }
-                                        } else {
-                                            onSurfaceVariant.copy(alpha = 0.5f)
-                                        }
-                                        
-                                        if (isPending) {
-                                            Text(
-                                                text = "🕒",
-                                                color = statusColor,
-                                                fontSize = 9.sp
-                                            )
-                                        } else if (isRead) {
-                                            Icon(
-                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_double_check),
-                                                contentDescription = "Read",
-                                                tint = statusColor,
-                                                modifier = Modifier.height(11.dp).width(16.dp)
-                                            )
-                                        } else {
-                                            Icon(
-                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_single_check),
-                                                contentDescription = "Sent",
-                                                tint = statusColor,
-                                                modifier = Modifier.height(11.dp).width(12.dp)
-                                            )
+
+                                            if (isPending) {
+                                                Text(
+                                                    text = "🕒",
+                                                    color = statusColor,
+                                                    fontSize = 9.sp
+                                                )
+                                            } else if (isRead) {
+                                                Icon(
+                                                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_double_check),
+                                                    contentDescription = "Read",
+                                                    tint = if (isTransparentBubble) Color(0xFF64B5F6) else statusColor,
+                                                    modifier = Modifier.height(11.dp).width(16.dp)
+                                                )
+                                            } else {
+                                                Icon(
+                                                    painter = painterResource(id = com.example.twopchat.R.drawable.ic_msg_single_check),
+                                                    contentDescription = "Sent",
+                                                    tint = statusColor,
+                                                    modifier = Modifier.height(11.dp).width(12.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }

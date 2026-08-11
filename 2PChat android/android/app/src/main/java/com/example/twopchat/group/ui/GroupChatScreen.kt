@@ -3408,8 +3408,8 @@ private fun GroupMessageCard(
                     }
                 }
 
-                // Message Footer: Timestamp & Delivery Status (Only for text/audio/document messages without visual media overlay)
-                if (!hasMediaContent && !isSticker) {
+                // Message Footer: Timestamp & Delivery Status
+                if (!hasMediaContent) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -3421,7 +3421,7 @@ private fun GroupMessageCard(
                             isEdited = message.isEdited,
                             deliveryStatus = message.deliveryStatus,
                             messageId = message.messageId,
-                            isOverlayOnImage = false,
+                            isOverlayOnImage = isOnlyEmoji || isSticker,
                             isMine = message.isMine,
                             textColor = timestampColor,
                             onClick = { onShowSeenBy(message) }
