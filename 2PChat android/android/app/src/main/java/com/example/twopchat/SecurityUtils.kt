@@ -130,5 +130,50 @@ object SecurityUtils {
         }
         return true
     }
+
+    /** Derive a 256-bit Key Encryption Key (KEK) from PIN and salt via PBKDF2-HMAC-SHA256 (200k iterations). */
+    fun deriveKek(pinChars: CharArray, salt: ByteArray, iterations: Int = ITERATIONS): ByteArray {
+        var spec: PBEKeySpec? = null
+        return try {
+            spec = PBEKeySpec(pinChars, salt, iterations, KEY_LENGTH)
+            val skf = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            skf.generateSecret(spec).encoded
+        } finally {
+            spec?.clearPassword()
+        }
+    }
+
+    /** Encrypt raw payload with KEK using AES-256-GCM. Result format: [12-byte IV][ciphertext + 16-byte tag] */
+    fun wrapKeyWithKek(kekBytes: ByteArray, rawKeyPayload: ByteArray): ByteArray? {
+        if (kekBytes.size != 32 || rawKeyPayload.isEmpty()) return null
+        return try {
+            val iv = ByteArray(12)
+            SecureRandom().nextBytes(iv)
+            val secretKey = javax.crypto.spec.SecretKeySpec(kekBytes, "AES")
+            val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, secretKey, javax.crypto.spec.GCMParameterSpec(128, iv))
+            val cipherText = cipher.doFinal(rawKeyPayload)
+            iv + cipherText
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Decrypt payload with KEK using AES-256-GCM. Returns null if tag verification fails or wrong KEK is provided. */
+    fun unwrapKeyWithKek(kekBytes: ByteArray, wrappedPayload: ByteArray): ByteArray? {
+        if (kekBytes.size != 32 || wrappedPayload.size <= 12 + 16) return null
+        return try {
+            val secretKey = javax.crypto.spec.SecretKeySpec(kekBytes, "AES")
+            val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(
+                javax.crypto.Cipher.DECRYPT_MODE,
+                secretKey,
+                javax.crypto.spec.GCMParameterSpec(128, wrappedPayload, 0, 12)
+            )
+            cipher.doFinal(wrappedPayload, 12, wrappedPayload.size - 12)
+        } catch (_: Exception) {
+            null
+        }
+    }
 }
 
