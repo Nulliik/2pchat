@@ -77,6 +77,19 @@ object P2PPreferences {
         return fingerprintToPeerNameCache[fingerprint]
     }
 
+    fun findPeerByDiscoveryToken(context: Context, discoveryToken: String): Pair<String, String>? {
+        if (discoveryToken.isBlank()) return null
+        if (!fingerprintCacheInitialized) {
+            findPeerNameByFingerprint(context, "dummy")
+        }
+        for ((fingerprint, peerName) in fingerprintToPeerNameCache) {
+            if (LocalDiscoveryToken.matchesFingerprint(discoveryToken, fingerprint)) {
+                return Pair(peerName, fingerprint)
+            }
+        }
+        return null
+    }
+
     fun updateFingerprintCache(fingerprint: String, peerName: String) {
         if (fingerprint.isNotBlank() && peerName.isNotBlank()) {
             fingerprintToPeerNameCache[fingerprint] = peerName

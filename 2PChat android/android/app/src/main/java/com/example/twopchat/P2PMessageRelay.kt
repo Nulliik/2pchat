@@ -429,19 +429,18 @@ object P2PMessageRelay {
         val username = prefs.getString("username_profile", "").orEmpty()
         val fingerprint = PythonBridge.getLocalFingerprint()
         if (username.isBlank() || fingerprint.length < 40) return
-        val discovery = localPeerDiscovery ?: LocalPeerDiscovery(context) { peerName, peerFingerprint, endpoint ->
-            // NSD metadata is only a route candidate. It is deliberately not
-            // trusted here: search performs the encrypted identity probe before
-            // exposing a new contact to the user.
-            injectLocalDiscoveryCandidate(peerName, peerFingerprint, endpoint)
+        val discovery = localPeerDiscovery ?: LocalPeerDiscovery(context) { _, discoveryToken, endpoint ->
             val currentPrefs = P2PPreferences.prefs(context)
-            val knownName = P2PPreferences.findPeerNameByFingerprint(context, peerFingerprint)
-            val authenticatedName = knownName ?: peerName.takeIf {
-                currentPrefs.getString(P2PPreferences.peerFingerprint(it), null) == peerFingerprint
-            } ?: return@LocalPeerDiscovery
-            currentPrefs.edit().putString(P2PPreferences.lastEndpoint(authenticatedName), endpoint).apply()
-            rememberAuthenticatedPeerEndpoint(authenticatedName, endpoint)
-            outboundMessenger.reconnect(context, authenticatedName)
+            val knownPeer = P2PPreferences.findPeerByDiscoveryToken(context, discoveryToken)
+            if (knownPeer != null) {
+                val (authenticatedName, peerFingerprint) = knownPeer
+                injectLocalDiscoveryCandidate(authenticatedName, peerFingerprint, endpoint)
+                currentPrefs.edit().putString(P2PPreferences.lastEndpoint(authenticatedName), endpoint).apply()
+                rememberAuthenticatedPeerEndpoint(authenticatedName, endpoint)
+                outboundMessenger.reconnect(context, authenticatedName)
+            } else {
+                injectLocalDiscoveryCandidate("Peer", discoveryToken, endpoint)
+            }
         }.also { localPeerDiscovery = it }
         try {
             val hiddenMode = !P2PPreferences.isWifiDiscoveryEnabled(context)

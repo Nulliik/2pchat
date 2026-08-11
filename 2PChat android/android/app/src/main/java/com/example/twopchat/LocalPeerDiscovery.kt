@@ -4,7 +4,25 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.util.Log
+import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+
+internal object LocalDiscoveryToken {
+    fun deriveToken(fingerprint: String, epochDay: Long = System.currentTimeMillis() / 86_400_000L): String {
+        if (fingerprint.isBlank()) return ""
+        val payload = "$fingerprint:2pchat-mdns-v1:$epochDay".toByteArray(Charsets.UTF_8)
+        val digest = MessageDigest.getInstance("SHA-256").digest(payload)
+        return digest.joinToString("") { "%02x".format(it) }.take(32)
+    }
+
+    fun matchesFingerprint(token: String, fingerprint: String, nowMs: Long = System.currentTimeMillis()): Boolean {
+        if (token.isBlank() || fingerprint.isBlank()) return false
+        if (token == fingerprint) return true // Backward compatibility with legacy raw fingerprints
+        val currentDay = nowMs / 86_400_000L
+        return deriveToken(fingerprint, currentDay) == token ||
+               deriveToken(fingerprint, currentDay - 1) == token
+    }
+}
 
 /** LAN discovery is an optimisation only; authenticated fingerprints remain authoritative. */
 internal class LocalPeerDiscovery(
@@ -23,14 +41,15 @@ internal class LocalPeerDiscovery(
         stop()
         if (fingerprint.isBlank()) return
         localFingerprint = fingerprint
-        if (!hiddenMode && name.isNotBlank()) {
-            val safeFingerprint = fingerprint.take(16)
+        if (!hiddenMode) {
+            val token = LocalDiscoveryToken.deriveToken(fingerprint)
+            val serviceToken = token.take(16)
             val service = NsdServiceInfo().apply {
-                serviceName = "2PChat-$safeFingerprint"
+                serviceName = "2PChat-$serviceToken"
                 serviceType = SERVICE_TYPE
                 setPort(port)
-                setAttribute(ATTRIBUTE_NAME, name.take(32))
-                setAttribute(ATTRIBUTE_FINGERPRINT, fingerprint)
+                // Privacy Invariant (§5): Plaintext nickname is omitted from mDNS TXT records.
+                setAttribute(ATTRIBUTE_FINGERPRINT, token)
             }
             registrationListener = object : NsdManager.RegistrationListener {
                 override fun onServiceRegistered(serviceInfo: NsdServiceInfo) = Unit
@@ -57,16 +76,16 @@ internal class LocalPeerDiscovery(
 
                     override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                         resolving.remove(serviceInfo.serviceName)
-                        val fingerprint = (serviceInfo.attributes[ATTRIBUTE_FINGERPRINT]
+                        val discoveryToken = (serviceInfo.attributes[ATTRIBUTE_FINGERPRINT]
                             ?: serviceInfo.attributes["fingerprint"])
                             ?.toString(Charsets.UTF_8).orEmpty()
-                        if (fingerprint.isBlank() || fingerprint == localFingerprint) return
-                        val peerName = serviceInfo.attributes[ATTRIBUTE_NAME]
-                            ?.toString(Charsets.UTF_8).orEmpty()
+                        if (discoveryToken.isBlank()) return
+                        if (LocalDiscoveryToken.matchesFingerprint(discoveryToken, localFingerprint)) return
                         val host = serviceInfo.host?.hostAddress?.substringBefore('%').orEmpty()
-                        if (peerName.isBlank() || host.isBlank() || serviceInfo.port !in 1..65535) return
+                        if (host.isBlank() || serviceInfo.port !in 1..65535) return
                         val endpoint = if (host.contains(':')) "[$host]:${serviceInfo.port}" else "$host:${serviceInfo.port}"
-                        onPeerResolved(peerName, fingerprint, endpoint)
+                        // Plaintext nickname is not broadcast in mDNS (Privacy Invariant); caller resolves contact or uses candidate ID.
+                        onPeerResolved("", discoveryToken, endpoint)
                     }
                 })
             }
@@ -104,7 +123,6 @@ internal class LocalPeerDiscovery(
     private companion object {
         const val TAG = "LocalPeerDiscovery"
         const val SERVICE_TYPE = "_2pchat._tcp."
-        const val ATTRIBUTE_NAME = "name"
         const val ATTRIBUTE_FINGERPRINT = "fp"
     }
 }
