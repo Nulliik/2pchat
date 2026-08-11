@@ -343,6 +343,7 @@ internal class MessageNotificationService {
             .build()
 
         val replyIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            setPackage(context.packageName)
             action = NotificationActionReceiver.ACTION_REPLY
             putExtra(NotificationActionReceiver.EXTRA_SENDER, sender)
             putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, id)
@@ -370,6 +371,7 @@ internal class MessageNotificationService {
 
         // 3. Mark as Read Action
         val readIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            setPackage(context.packageName)
             action = NotificationActionReceiver.ACTION_MARK_READ
             putExtra(NotificationActionReceiver.EXTRA_SENDER, sender)
             putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, id)

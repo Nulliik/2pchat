@@ -27,9 +27,21 @@ class NotificationActionReceiver : BroadcastReceiver() {
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
         const val EXTRA_MESSAGE_IDS = "extra_message_ids"
         private const val TAG = "NotificationAction"
+
+        fun isPackageMatch(targetPackage: String?, expectedPackage: String): Boolean {
+            return !targetPackage.isNullOrBlank() && targetPackage == expectedPackage
+        }
+
+        fun isIntentPackageValid(intent: Intent, expectedPackage: String): Boolean {
+            return isPackageMatch(intent.`package`, expectedPackage)
+        }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (!isIntentPackageValid(intent, context.packageName)) {
+            Log.w(TAG, "Rejected broadcast intent with untrusted or missing package target: ${intent.`package`}")
+            return
+        }
         val action = intent.action ?: return
         val sender = intent.getStringExtra(EXTRA_SENDER) ?: return
         val notifId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0)
