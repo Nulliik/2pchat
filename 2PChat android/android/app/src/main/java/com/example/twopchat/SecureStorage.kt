@@ -140,7 +140,7 @@ object SecureStorage {
         if (enc != null) {
             val dec = decrypt(enc)
             if (dec != null) {
-                return Base64.decode(dec, Base64.NO_WRAP)
+                return dec.toByteArray(Charsets.UTF_8)
             }
         }
         val bytes = ByteArray(32)
@@ -148,7 +148,22 @@ object SecureStorage {
         val b64Str = Base64.encodeToString(bytes, Base64.NO_WRAP)
         val encrypted = encrypt(b64Str)
         sharedPrefs.edit().putString("db_passphrase_enc", encrypted).commit()
-        return bytes
+        val result = b64Str.toByteArray(Charsets.UTF_8)
+        SecurityUtils.zeroize(bytes)
+        return result
+    }
+
+    /** Helper for fallback attempting decoded binary key if legacy database was created during raw byte window. */
+    @Synchronized
+    fun getRawDecodedDbPassphraseFallback(context: android.content.Context): ByteArray? {
+        val sharedPrefs = P2PPreferences.prefs(context)
+        val enc = sharedPrefs.getString("db_passphrase_enc", null) ?: return null
+        val dec = decrypt(enc) ?: return null
+        return try {
+            Base64.decode(dec, Base64.NO_WRAP)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     @Synchronized
