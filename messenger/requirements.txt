@@ -12,3 +12,4 @@ argon2-cffi
 fastapi
 uvicorn[standard]
 httpx
+PySocks

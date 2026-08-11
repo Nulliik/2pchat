@@ -450,6 +450,7 @@ def configure_trackers(config_json: str) -> bool:
     return True
 
 
+_original_socket_factory = socket.socket
 _proxy_config_lock = threading.Lock()
 _proxy_enabled = False
 _proxy_host = "127.0.0.1"
@@ -479,6 +480,15 @@ def configure_proxy(config_json: str) -> bool:
         _proxy_enabled = enabled
         _proxy_host = host
         _proxy_port = port
+        if enabled:
+            try:
+                import socks
+                socks.set_default_proxy(socks.SOCKS5, host, port)
+                socket.socket = socks.socksocket
+            except Exception as exc:
+                print(f"[PROXY] PySocks module unavailable or failed to patch socket ({exc}); falling back to direct connection")
+        else:
+            socket.socket = _original_socket_factory
     print(f"[PROXY] Configuration updated: enabled={enabled}, host={host}, port={port}")
     return True
 
@@ -504,7 +514,7 @@ def create_tracker_socket(family: int, socktype: int, proto: int = 0) -> socket.
             return s
         except Exception as exc:
             print(f"[PROXY] SOCKS5 proxy unreachable ({exc}); falling back to direct connection")
-    return socket.socket(family, socktype, proto)
+    return _original_socket_factory(family, socktype, proto)
 
 
 def _configured_tracker(name: str):
