@@ -73,32 +73,65 @@ object TorManager {
 
                 // Attempt to launch embedded Tor binary if available on system/apk
                 val nativeLibDir = context.applicationInfo.nativeLibraryDir
-                val torExecutable = File(nativeLibDir, "libtor.so")
+                val libTorSo = File(nativeLibDir, "libtor.so")
+                var torExecutable: File? = null
 
-                if (torExecutable.exists() && torExecutable.canExecute()) {
+                if (libTorSo.exists()) {
+                    val binFile = File(appTorDir, "tor_bin")
+                    try {
+                        if (!binFile.exists() || binFile.length() != libTorSo.length()) {
+                            libTorSo.copyTo(binFile, overwrite = true)
+                        }
+                        binFile.setExecutable(true, false)
+                        if (binFile.canExecute()) {
+                            torExecutable = binFile
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Could not copy libtor.so to binFile: ${e.message}")
+                    }
+
+                    if (torExecutable == null && libTorSo.canExecute()) {
+                        torExecutable = libTorSo
+                    }
+                }
+
+                if (torExecutable != null) {
                     val processBuilder = ProcessBuilder(
                         torExecutable.absolutePath,
                         "-f", torrcFile.absolutePath
-                    ).directory(appTorDir)
+                    ).directory(appTorDir).redirectErrorStream(true)
 
-                    torProcess = processBuilder.start()
+                    val proc = processBuilder.start()
+                    torProcess = proc
                     Log.i(TAG, "Started embedded Tor process from ${torExecutable.absolutePath}")
+
+                    scope.launch {
+                        try {
+                            proc.inputStream.bufferedReader().useLines { lines ->
+                                lines.forEach { line ->
+                                    Log.d(TAG, "[TOR_LOG] $line")
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
                 } else {
-                    Log.w(TAG, "Native libtor.so not executable directly; operating in socket fallback mode")
+                    Log.w(TAG, "Native libtor.so binary not found or executable; operating in socket fallback mode")
                 }
 
-                val portReady = waitForSocksPort()
+                val portReady = waitForSocksPort(timeoutMs = 5000)
                 if (portReady) {
-                    Log.i(TAG, "SOCKS5 port 9050 is ready")
+                    Log.i(TAG, "SOCKS5 port 9050 is ready and accepting connections")
+                    _isTorRunning.value = true
+                    PythonBridge.applyProxyConfiguration()
                 } else {
-                    Log.w(TAG, "SOCKS5 port 9050 not responding yet; applying proxy configuration with fallback")
+                    Log.w(TAG, "SOCKS5 port 9050 not responding; Tor daemon startup pending/failed. Falling back to direct connection.")
+                    _isTorRunning.value = false
+                    PythonBridge.applyProxyConfiguration()
                 }
-
-                _isTorRunning.value = true
-                PythonBridge.applyProxyConfiguration()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to start Tor daemon", e)
                 _isTorRunning.value = false
+                PythonBridge.applyProxyConfiguration()
             }
         }
     }
