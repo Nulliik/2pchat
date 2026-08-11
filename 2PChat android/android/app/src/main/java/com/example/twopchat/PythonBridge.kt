@@ -27,9 +27,32 @@ private fun isUsableExternalIpv4(value: String): Boolean {
     return !isLocalIpv4(value) && octets[0] != 0 && octets[0] < 224
 }
 
+internal fun isValidEndpoint(endpoint: String): Boolean {
+    val trimmed = endpoint.trim()
+    if (trimmed.isEmpty() || trimmed.length > 256) return false
+    val lastColonIndex = trimmed.lastIndexOf(':')
+    if (lastColonIndex <= 0 || lastColonIndex == trimmed.length - 1) return false
+    val portStr = trimmed.substring(lastColonIndex + 1)
+    val port = portStr.toIntOrNull() ?: return false
+    if (port !in 1..65535) return false
+
+    val hostStr = trimmed.substring(0, lastColonIndex)
+    if (hostStr.isEmpty()) return false
+    if (hostStr.contains(' ') || hostStr.contains('\t') || hostStr.contains('\r') || hostStr.contains('\n')) return false
+
+    if (hostStr.startsWith('[')) {
+        if (!hostStr.endsWith(']')) return false
+        val innerIpv6 = hostStr.substring(1, hostStr.length - 1).trim()
+        if (innerIpv6.isEmpty()) return false
+    } else if (hostStr.contains(':')) {
+        return false
+    }
+    return true
+}
+
 /** Stable route order for QR probes: LAN IPv4, public IPv4, then IPv6. */
 internal fun orderedDirectEndpoints(endpoints: List<String>): List<String> =
-    endpoints.distinct().sortedBy { endpoint ->
+    endpoints.filter(::isValidEndpoint).distinct().sortedBy { endpoint ->
         when {
             isLocalIpv4(endpoint) -> 0
             numericIpv4Octets(endpoint) != null -> 1
@@ -665,7 +688,10 @@ object PythonBridge {
     }
 
     fun sendP2pMessage(peerName: String, endpoint: String, text: String, expectedFingerprint: String? = null): Boolean {
-        if (!isInitialized) return false
+        if (!isInitialized || !isValidEndpoint(endpoint)) {
+            if (!isValidEndpoint(endpoint)) Log.w(TAG, "Rejected message send attempt to invalid endpoint: $endpoint")
+            return false
+        }
         return try {
             val bridge = getDiscoveryBridgeModule() ?: return false
             val success = bridge.callAttr("send_p2p_message", peerName, endpoint, text, expectedFingerprint)
@@ -688,7 +714,10 @@ object PythonBridge {
         albumIndex: Int = -1,
         albumCount: Int = 0,
     ): Boolean {
-        if (!isInitialized) return false
+        if (!isInitialized || !isValidEndpoint(endpoint)) {
+            if (!isValidEndpoint(endpoint)) Log.w(TAG, "Rejected file transfer attempt to invalid endpoint: $endpoint")
+            return false
+        }
         return try {
             val bridge = getDiscoveryBridgeModule() ?: return false
             val success = bridge.callAttr(
@@ -813,7 +842,10 @@ object PythonBridge {
     }
 
     fun reconnectPeerSession(peerName: String, endpoint: String, expectedFingerprint: String? = null): Boolean {
-        if (!isInitialized || !isLoopRunning()) return false
+        if (!isInitialized || !isLoopRunning() || !isValidEndpoint(endpoint)) {
+            if (!isValidEndpoint(endpoint)) Log.w(TAG, "Rejected reconnect attempt to invalid endpoint: $endpoint")
+            return false
+        }
         return try {
             val bridge = getDiscoveryBridgeModule() ?: return false
             val success = bridge.callAttr("reconnect_peer_session", peerName, endpoint, expectedFingerprint)
