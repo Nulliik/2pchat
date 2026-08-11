@@ -1167,7 +1167,7 @@ private fun GroupQuickActionsRow(
             if (canInviteByLink) {
                 add(Triple(if (appLanguage == "Русский") "QR код" else "QR code", R.drawable.ic_qr_code, onQrClick))
             }
-            add(Triple(leaveLabel, R.drawable.ic_delete, onLeaveClick))
+            add(Triple(leaveLabel, if (leaveLabel == "Удалить" || leaveLabel == "Delete") R.drawable.ic_delete else R.drawable.ic_leave, onLeaveClick))
         }
 
         actions.forEach { (label, iconRes, onClick) ->
