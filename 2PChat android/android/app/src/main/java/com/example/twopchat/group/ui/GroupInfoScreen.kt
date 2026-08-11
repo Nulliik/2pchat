@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -399,7 +400,7 @@ fun GroupInfoScreen(
                             },
                             leadingIcon = {
                                 Icon(
-                                    imageVector = Icons.Default.Delete,
+                                    imageVector = if (isSoloOwner) Icons.Default.Delete else Icons.AutoMirrored.Filled.ExitToApp,
                                     contentDescription = "Leave",
                                     tint = Color.Red,
                                     modifier = Modifier.size(20.dp)

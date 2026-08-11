@@ -81,6 +81,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -2640,7 +2641,7 @@ private fun GroupChatHeader(
                             },
                             leadingIcon = {
                                 Icon(
-                                    imageVector = Icons.Default.Delete,
+                                    imageVector = Icons.AutoMirrored.Filled.ExitToApp,
                                     contentDescription = "Leave",
                                     tint = Color.Red,
                                     modifier = Modifier.size(20.dp)
