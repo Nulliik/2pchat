@@ -26,19 +26,47 @@ object SecureStorage {
         return synchronized(this) {
             cachedKey?.let { return it }
             val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-            val key = (store.getKey(KEY_ALIAS, null) as? SecretKey) ?: KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").run {
-                init(
-                    KeyGenParameterSpec.Builder(
+            val existing = store.getKey(KEY_ALIAS, null) as? SecretKey
+            if (existing != null) {
+                cachedKey = existing
+                return existing
+            }
+
+            val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+            var key: SecretKey? = null
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                try {
+                    val strongBoxSpec = KeyGenParameterSpec.Builder(
                         KEY_ALIAS,
                         KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
                     ).setKeySize(256)
                         .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                         .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                         .setRandomizedEncryptionRequired(true)
+                        .setIsStrongBoxBacked(true)
                         .build()
-                )
-                generateKey()
+                    keyGenerator.init(strongBoxSpec)
+                    key = keyGenerator.generateKey()
+                } catch (_: Exception) {
+                    // StrongBox is not present on device hardware; fallback to TEE KeyStore
+                    key = null
+                }
             }
+
+            if (key == null) {
+                val teeSpec = KeyGenParameterSpec.Builder(
+                    KEY_ALIAS,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                ).setKeySize(256)
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setRandomizedEncryptionRequired(true)
+                    .build()
+                keyGenerator.init(teeSpec)
+                key = keyGenerator.generateKey()
+            }
+
             cachedKey = key
             key
         }
