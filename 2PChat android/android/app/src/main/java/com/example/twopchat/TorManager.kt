@@ -32,6 +32,25 @@ object TorManager {
         """.trimIndent()
     }
 
+    fun waitForSocksPort(socksPort: Int = DEFAULT_SOCKS_PORT, timeoutMs: Long = 3000): Boolean {
+        val startTime = System.currentTimeMillis()
+        while (System.currentTimeMillis() - startTime < timeoutMs) {
+            try {
+                java.net.Socket().use { socket ->
+                    socket.connect(java.net.InetSocketAddress("127.0.0.1", socksPort), 400)
+                    return true
+                }
+            } catch (_: Exception) {
+                try {
+                    Thread.sleep(150)
+                } catch (_: InterruptedException) {
+                    break
+                }
+            }
+        }
+        return false
+    }
+
     @Synchronized
     fun startTor(context: Context) {
         if (_isTorRunning.value) {
@@ -66,6 +85,13 @@ object TorManager {
                     Log.i(TAG, "Started embedded Tor process from ${torExecutable.absolutePath}")
                 } else {
                     Log.w(TAG, "Native libtor.so not executable directly; operating in socket fallback mode")
+                }
+
+                val portReady = waitForSocksPort()
+                if (portReady) {
+                    Log.i(TAG, "SOCKS5 port 9050 is ready")
+                } else {
+                    Log.w(TAG, "SOCKS5 port 9050 not responding yet; applying proxy configuration with fallback")
                 }
 
                 _isTorRunning.value = true

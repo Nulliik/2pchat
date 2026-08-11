@@ -457,6 +457,34 @@ _proxy_host = "127.0.0.1"
 _proxy_port = 9050
 
 
+def _patch_pysocks_ipv6():
+    """Sanitize 4-element IPv6 address tuples for PySocks compatibility."""
+    try:
+        import socks
+        if getattr(socks.socksocket, "_2pchat_ipv6_patched", False):
+            return
+        orig_bind = socks.socksocket.bind
+        orig_sendto = socks.socksocket.sendto
+
+        def safe_bind(self, address):
+            if isinstance(address, tuple) and len(address) > 2:
+                address = (address[0], address[1])
+            return orig_bind(self, address)
+
+        def safe_sendto(self, data, *args):
+            if args:
+                dest = args[0]
+                if isinstance(dest, tuple) and len(dest) > 2:
+                    args = ((dest[0], dest[1]),) + args[1:]
+            return orig_sendto(self, data, *args)
+
+        socks.socksocket.bind = safe_bind
+        socks.socksocket.sendto = safe_sendto
+        socks.socksocket._2pchat_ipv6_patched = True
+    except Exception as exc:
+        print(f"[PROXY] PySocks IPv6 patch warning: {exc}")
+
+
 def configure_proxy(config_json: str) -> bool:
     """Configure optional SOCKS5 proxy settings for tracker/DHT network connections."""
     try:
@@ -483,6 +511,7 @@ def configure_proxy(config_json: str) -> bool:
         if enabled:
             try:
                 import socks
+                _patch_pysocks_ipv6()
                 socks.set_default_proxy(socks.SOCKS5, host, port)
                 socket.socket = socks.socksocket
             except Exception as exc:
