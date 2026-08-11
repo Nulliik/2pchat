@@ -2582,21 +2582,26 @@ private fun GroupChatHeader(
                                 )
                             }
                         )
-                        DropdownMenuItem(
-                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Обои чата", "Chat Wallpaper", "Chat-Hintergrund", "Fondo del chat", "Fond d'écran du chat", "Papel de parede do chat"), color = onSurfaceColor) },
-                            onClick = {
-                                showHeaderMenu = false
-                                onOpenWallpaper()
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_chat_wallpaper),
-                                    contentDescription = "Wallpaper",
-                                    tint = onSurfaceColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        )
+                        val canChangeWallpaper = remember(state.members) {
+                            state.members.firstOrNull { it.isCurrentUser }?.let { it.role == GroupRole.OWNER || it.role == GroupRole.ADMIN } == true
+                        }
+                        if (canChangeWallpaper) {
+                            DropdownMenuItem(
+                                text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Обои чата", "Chat Wallpaper", "Chat-Hintergrund", "Fondo del chat", "Fond d'écran du chat", "Papel de parede do chat"), color = onSurfaceColor) },
+                                onClick = {
+                                    showHeaderMenu = false
+                                    onOpenWallpaper()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_chat_wallpaper),
+                                        contentDescription = "Wallpaper",
+                                        tint = onSurfaceColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Переподключить соединение", "Reconnect Connection", "Verbindung neu herstellen", "Reconectar conexión", "Reconnecter la connexion", "Reconectar conexão"), color = onSurfaceColor) },
                             onClick = {

@@ -391,6 +391,14 @@ object GroupChatCoordinator {
     fun updateGroupWallpaper(groupId: String, wallpaperUri: String?) {
         scope.launch {
             val context = applicationContext ?: return@launch
+            val group = db().getGroup(groupId) ?: return@launch
+            val local = localIdentity()
+            val member = db().getMember(groupId, local.deviceId)
+            val role = parseRole(member?.role ?: "")
+            if (role != GroupRole.OWNER && role != GroupRole.ADMINISTRATOR) {
+                Log.w(TAG, "Refusing to update wallpaper: local user is not OWNER or ADMIN")
+                return@launch
+            }
             val (persistedPath, wallpaperData) = if (wallpaperUri != null) {
                 runCatching {
                     val bmp = if (wallpaperUri.startsWith("content://")) {
