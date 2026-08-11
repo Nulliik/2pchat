@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.PythonBridge
 import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.P2PPreferences
+import com.example.twopchat.TorManager
 import com.example.twopchat.connectionTransportLabel
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
@@ -321,6 +323,7 @@ private fun formatLogs(
                     "P2P" -> line.contains("P2PMessageRelay") || line.contains("p2p") || line.contains("PythonBridge") || line.contains("OutboundMessenger")
                     "YGG" -> line.contains("PacketTunnelProvider") || line.contains("Yggdrasil") || line.contains("GoLog") || line.contains("TUN")
                     "TRACKERS" -> line.contains("Tracker") || line.contains("announce") || line.contains("discovery")
+                    "TOR" -> line.contains("TorManager") || line.contains("[PROXY]") || line.contains("SOCKS5") || line.contains("socks") || line.contains("torrc") || line.contains("Tor")
                     else -> true
                 }
 
@@ -650,8 +653,10 @@ fun NetworkDiagnosticsDialog(
                                     )
                                     val yggState = yggDiagnostics["state"] ?: "disabled"
                                     val activePeersCount = activePeers.size
+                                    val isTorRunning = TorManager.isTorRunning.collectAsState().value
+                                    val torSummary = if (isTorRunning) "Tor: active" else "Tor: off"
                                     Text(
-                                        text = "YGG: $yggState · Peers: $activePeersCount",
+                                        text = "YGG: $yggState · $torSummary · Peers: $activePeersCount",
                                         fontSize = 10.sp,
                                         fontFamily = FontFamily.Monospace,
                                         color = onSurfaceVariant
@@ -682,12 +687,29 @@ fun NetworkDiagnosticsDialog(
                                 val localIpv4 = PythonBridge.getLocalAddresses().filter { !it.contains(':') }.joinToString(", ").ifEmpty { "127.0.0.1" }
                                 val upnpMapped = upnpDetails["mapped"] == "true"
                                 val trackerCount = trackerDiagnostics.size
+                                val isProxyEnabled = P2PPreferences.isProxyEnabled(context)
+                                val proxyHost = P2PPreferences.getProxyHost(context)
+                                val proxyPort = P2PPreferences.getProxyPort(context)
+                                val isTorRunning = TorManager.isTorRunning.collectAsState().value
+                                val torText = if (isProxyEnabled && isTorRunning) {
+                                    "EMBEDDED TOR (127.0.0.1:9050 - ACTIVE)"
+                                } else if (isProxyEnabled) {
+                                    "CUSTOM SOCKS5 ($proxyHost:$proxyPort)"
+                                } else {
+                                    "DISABLED"
+                                }
 
                                 Text(
                                     text = "• P2P Server Port: $listenerPort (Listening) · Local IPv4: $localIpv4",
                                     fontSize = 11.sp,
                                     fontFamily = FontFamily.Monospace,
                                     color = Color(0xFF4CAF50)
+                                )
+                                Text(
+                                    text = "• Tor / SOCKS5 Proxy: $torText",
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = if (isProxyEnabled) Color(0xFF4CAF50) else onSurfaceVariant
                                 )
                                 Text(
                                     text = "• Yggdrasil IPv6: ${if (yggAddress.isNotEmpty()) yggAddress else "Off"} · State: ${yggDiagnostics["state"] ?: "disabled"}",
@@ -733,7 +755,8 @@ fun NetworkDiagnosticsDialog(
                                 "ERRORS" to (if (appLanguage == "Русский") "ОШИБКИ" else "ERRORS"),
                                 "P2P" to "P2P",
                                 "YGG" to "YGGDRASIL",
-                                "TRACKERS" to (if (appLanguage == "Русский") "ТРЕКЕРЫ" else "TRACKERS")
+                                "TRACKERS" to (if (appLanguage == "Русский") "ТРЕКЕРЫ" else "TRACKERS"),
+                                "TOR" to "TOR"
                             ).forEach { (key, label) ->
                                 val isSelected = levelFilter == key
                                 Box(
