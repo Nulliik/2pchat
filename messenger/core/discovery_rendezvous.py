@@ -20,7 +20,11 @@ def normalize_shared_code(value: str) -> str:
     return normalized
 
 
-def derive_rendezvous_key(nickname: str, shared_code: str) -> bytes:
+def derive_rendezvous_key(
+    nickname: str,
+    shared_code: str,
+    epoch_bucket: int | None = None,
+) -> bytes:
     """Return the common 20-byte lookup key used by every discovery provider."""
 
     normalized_nick = normalize_nickname(nickname)
@@ -32,6 +36,8 @@ def derive_rendezvous_key(nickname: str, shared_code: str) -> bytes:
         + b":"
         + normalized_code.encode("utf-8")
     )
+    if epoch_bucket is not None:
+        payload += b":" + str(epoch_bucket).encode("ascii")
     return hashlib.sha1(payload).digest()
 
 

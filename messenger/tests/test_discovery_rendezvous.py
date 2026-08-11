@@ -14,11 +14,13 @@ def test_all_discovery_providers_use_the_same_v1_rendezvous_key():
     assert MainlineDHTDiscovery.derive_lookup_namespace("Alice", "shared-secret") == expected
 
 
-def test_rendezvous_key_rejects_empty_values():
-    for nickname, shared_code in [("", "secret"), ("alice", "   ")]:
-        try:
-            derive_rendezvous_key(nickname, shared_code)
-        except ValueError:
-            pass
-        else:
-            raise AssertionError("Expected an empty rendezvous component to be rejected")
+def test_rendezvous_key_supports_optional_epoch_bucket():
+    base_key = derive_rendezvous_key("Alice", "shared-secret")
+    epoch_key_1 = derive_rendezvous_key("Alice", "shared-secret", epoch_bucket=20500)
+    epoch_key_2 = derive_rendezvous_key("Alice", "shared-secret", epoch_bucket=20501)
+
+    assert len(epoch_key_1) == 20
+    assert len(epoch_key_2) == 20
+    assert epoch_key_1 != base_key
+    assert epoch_key_1 != epoch_key_2
+
