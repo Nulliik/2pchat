@@ -2204,17 +2204,23 @@ object GroupChatCoordinator {
             )
         ) {
             applicationContext?.let { context ->
-                if (group.groupId !in activeGroupChats) {
+                val text = if (event.kind == GroupEventKind.POLL) {
+                    "Опрос: ${payload.optString("question")}"
+                } else {
+                    payload.optString("text")
+                }
+                val prefs = com.example.twopchat.P2PPreferences.prefs(context)
+                val myDisplayName = prefs.getString("username_profile", "") ?: ""
+                val isMentioned = GroupNotificationService.isGroupMention(text, myDisplayName)
+                val isChatActive = group.groupId in activeGroupChats
+
+                if (!isChatActive || isMentioned) {
                     GroupNotificationService.show(
                         context,
                         group.groupId,
                         group.title,
                         author.displayName,
-                        if (event.kind == GroupEventKind.POLL) {
-                            "Опрос: ${payload.optString("question")}"
-                        } else {
-                            payload.optString("text")
-                        },
+                        text,
                     )
                 } else {
                     GroupNotificationService.cancelNotificationForGroup(context, group.groupId)

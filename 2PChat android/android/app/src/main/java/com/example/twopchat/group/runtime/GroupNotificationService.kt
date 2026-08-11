@@ -69,6 +69,7 @@ internal object GroupNotificationService {
     }
 
     internal fun isGroupMention(text: String, displayName: String): Boolean {
+        if (text.contains("@all", ignoreCase = true) || text.contains("@everyone", ignoreCase = true)) return true
         val normalizedName = displayName.trim()
         if (normalizedName.isEmpty()) return false
         return Regex(
