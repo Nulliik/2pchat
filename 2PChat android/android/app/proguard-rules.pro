@@ -22,6 +22,12 @@
 -keep class com.example.twopchat.data.** { *; }
 -keep class com.example.twopchat.group.ui.** { *; }
 
+# Keep NetCipher & Tor Binary native classes
+-keep class info.guardianproject.** { *; }
+-keep class org.torproject.android.binary.** { *; }
+-dontwarn info.guardianproject.**
+-dontwarn org.torproject.android.binary.**
+
 # Strip raw android.util.Log in release builds
 -assumenosideeffects class android.util.Log {
     public static *** v(...);

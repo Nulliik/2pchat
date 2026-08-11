@@ -40,7 +40,7 @@ val forbidDuplicatedPythonCore by tasks.registering {
 
 android {
     namespace = "com.example.twopchat"
-    compileSdk = 36
+    compileSdk = 37
     ndkVersion = "26.1.10909125"
     defaultConfig {
         applicationId = "com.example.twopchat"
@@ -156,6 +156,11 @@ dependencies {
   implementation("androidx.camera:camera-camera2:1.4.1")
   implementation("androidx.camera:camera-lifecycle:1.4.1")
   implementation("androidx.camera:camera-view:1.4.1")
+
+  // Embedded Tor & NetCipher dependencies
+  implementation("info.guardianproject:tor-android:0.4.9.11")
+  implementation("info.guardianproject:jtorctl:0.4.5.7")
+  implementation("info.guardianproject.netcipher:netcipher:2.1.0")
 }
 
 

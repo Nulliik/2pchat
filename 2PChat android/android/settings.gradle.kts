@@ -24,6 +24,8 @@ dependencyResolutionManagement {
         }
         mavenCentral()
         maven { url = uri("https://chaquo.com/maven") }
+        maven { url = uri("https://raw.githubusercontent.com/guardianproject/gpmaven/master") }
+        maven { url = uri("https://jitpack.io") }
     }
 }
 
