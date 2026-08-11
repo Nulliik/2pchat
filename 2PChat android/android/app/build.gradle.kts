@@ -179,6 +179,7 @@ chaquopy {
             install("pynacl")
             install("cbor2")
             install("argon2-cffi")
+            install("PySocks")
         }
     }
 }
