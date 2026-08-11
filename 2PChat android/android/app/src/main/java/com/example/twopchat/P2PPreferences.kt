@@ -18,12 +18,26 @@ object P2PPreferences {
     const val STICKER_CACHE_LIMIT_MB = "settings_sticker_cache_limit_mb"
     const val UPNP_ENABLED = "settings_upnp"
     const val DEFAULT_LISTENER_PORT = 50001
+    const val PROXY_ENABLED = "settings_proxy_enabled"
+    const val PROXY_HOST = "settings_proxy_host"
+    const val PROXY_PORT = "settings_proxy_port"
+    const val DEFAULT_PROXY_HOST = "127.0.0.1"
+    const val DEFAULT_PROXY_PORT = 9050
 
     fun isWifiDiscoveryEnabled(context: Context): Boolean =
         prefs(context).getBoolean(WIFI_DISCOVERY, true)
 
     fun isUpnpEnabled(context: Context): Boolean =
         prefs(context).getBoolean(UPNP_ENABLED, false)
+
+    fun isProxyEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(PROXY_ENABLED, false)
+
+    fun getProxyHost(context: Context): String =
+        prefs(context).getString(PROXY_HOST, DEFAULT_PROXY_HOST) ?: DEFAULT_PROXY_HOST
+
+    fun getProxyPort(context: Context): Int =
+        prefs(context).getInt(PROXY_PORT, DEFAULT_PROXY_PORT)
     const val DEFAULT_STICKER_CACHE_LIMIT_MB = 100
     val STICKER_CACHE_LIMIT_OPTIONS_MB = listOf(50, 100, 250, 500)
     const val MIN_LISTENER_PORT = 1024

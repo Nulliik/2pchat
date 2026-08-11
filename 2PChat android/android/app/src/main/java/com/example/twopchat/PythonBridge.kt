@@ -501,6 +501,20 @@ object PythonBridge {
         }
     }
 
+    /** Applies user SOCKS5 proxy preferences to the embedded discovery runtime. */
+    fun applyProxyConfiguration(): Boolean {
+        if (!isInitialized) return false
+        return try {
+            val context = appContext ?: return false
+            val bridge = Python.getInstance().getModule("discovery_bridge")
+            val payload = ProxyConfig.configJson(context)
+            bridge.callAttr("configure_proxy", payload).toBoolean()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error applying proxy configuration", e)
+            false
+        }
+    }
+
     private fun applyTrackerConfiguration(
         bridge: com.chaquo.python.PyObject,
         configJson: String? = null,

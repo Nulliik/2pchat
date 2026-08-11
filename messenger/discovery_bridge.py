@@ -450,6 +450,63 @@ def configure_trackers(config_json: str) -> bool:
     return True
 
 
+_proxy_config_lock = threading.Lock()
+_proxy_enabled = False
+_proxy_host = "127.0.0.1"
+_proxy_port = 9050
+
+
+def configure_proxy(config_json: str) -> bool:
+    """Configure optional SOCKS5 proxy settings for tracker/DHT network connections."""
+    try:
+        config = json.loads(config_json)
+        if not isinstance(config, dict):
+            raise ValueError("proxy configuration must be a JSON object")
+        enabled = bool(config.get("proxy_enabled", False))
+        host = str(config.get("proxy_host", "127.0.0.1")).strip()
+        port = int(config.get("proxy_port", 9050))
+        if enabled:
+            if not host or len(host) > 256 or " " in host:
+                raise ValueError("invalid proxy host")
+            if not (1 <= port <= 65535):
+                raise ValueError("invalid proxy port")
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        print(f"Rejected proxy configuration: {exc}")
+        return False
+
+    global _proxy_enabled, _proxy_host, _proxy_port
+    with _proxy_config_lock:
+        _proxy_enabled = enabled
+        _proxy_host = host
+        _proxy_port = port
+    print(f"[PROXY] Configuration updated: enabled={enabled}, host={host}, port={port}")
+    return True
+
+
+def get_proxy_configuration() -> dict:
+    """Return active SOCKS5 proxy configuration."""
+    with _proxy_config_lock:
+        return {
+            "enabled": _proxy_enabled,
+            "host": _proxy_host,
+            "port": _proxy_port,
+        }
+
+
+def create_tracker_socket(family: int, socktype: int, proto: int = 0) -> socket.socket:
+    """Create a socket for tracker connections, routing through SOCKS5 if enabled and reachable."""
+    proxy = get_proxy_configuration()
+    if proxy["enabled"]:
+        try:
+            import socks
+            s = socks.socksocket(family, socktype, proto)
+            s.set_proxy(socks.SOCKS5, proxy["host"], proxy["port"])
+            return s
+        except Exception as exc:
+            print(f"[PROXY] SOCKS5 proxy unreachable ({exc}); falling back to direct connection")
+    return socket.socket(family, socktype, proto)
+
+
 def _configured_tracker(name: str):
     with _tracker_config_lock:
         custom = _custom_trackers.get(name)

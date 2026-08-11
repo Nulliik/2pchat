@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.sp
 import com.example.twopchat.BuiltInTracker
 import com.example.twopchat.CustomTracker
 import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.P2PPreferences
+import com.example.twopchat.ProxyConfig
 import com.example.twopchat.PythonBridge
 import com.example.twopchat.TrackerPreferences
 import kotlinx.coroutines.Dispatchers
@@ -68,11 +70,15 @@ fun TrackerSettingsPage(
     val clearnetEnabled = remember(revision) { TrackerPreferences.clearnetTrackersEnabled(context) }
     val yggEnabled = remember(revision) { TrackerPreferences.yggTrackersEnabled(context) }
     val ipv4Mode = remember(revision) { TrackerPreferences.ipv4AnnounceMode(context) }
+    val proxyEnabled = remember(revision) { P2PPreferences.isProxyEnabled(context) }
+    val proxyHost = remember(revision) { P2PPreferences.getProxyHost(context) }
+    val proxyPortText = remember(revision) { P2PPreferences.getProxyPort(context).toString() }
 
     fun settingsChanged() {
         revision += 1
         scope.launch(Dispatchers.IO) {
             PythonBridge.applyTrackerConfiguration()
+            PythonBridge.applyProxyConfiguration()
             P2PMessageRelay.refreshAnnouncement(context)
         }
     }
@@ -150,6 +156,71 @@ fun TrackerSettingsPage(
                         settingsChanged()
                     },
                 )
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = if (isRussian) "SOCKS5 / Tor Прокси" else "SOCKS5 / Tor Proxy",
+                color = onSurfaceColor,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+            )
+            TrackerSectionCard(surfaceColor, onSurfaceColor) {
+                var currentHost by remember(proxyHost) { mutableStateOf(proxyHost) }
+                var currentPortText by remember(proxyPortText) { mutableStateOf(proxyPortText) }
+
+                TrackerToggleRow(
+                    title = if (isRussian) "Использовать SOCKS5 Прокси" else "Use SOCKS5 Proxy",
+                    subtitle = if (isRussian) {
+                        "Маршрутизация анонсов к трекерам через Tor (Orbot) или локальный прокси"
+                    } else {
+                        "Routes tracker announces through Tor (Orbot) or local proxy"
+                    },
+                    checked = proxyEnabled,
+                    onSurfaceColor = onSurfaceColor,
+                    onSurfaceVariant = onSurfaceVariant,
+                    onCheckedChange = { enabled ->
+                        P2PPreferences.prefs(context).edit().putBoolean(P2PPreferences.PROXY_ENABLED, enabled).commit()
+                        settingsChanged()
+                    },
+                )
+                if (proxyEnabled) {
+                    HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = currentHost,
+                            onValueChange = { newHost ->
+                                currentHost = newHost
+                                if (ProxyConfig.isValidHost(newHost)) {
+                                    P2PPreferences.prefs(context).edit().putString(P2PPreferences.PROXY_HOST, newHost.trim()).commit()
+                                    settingsChanged()
+                                }
+                            },
+                            label = { Text(if (isRussian) "Хост прокси" else "Proxy Host") },
+                            singleLine = true,
+                            modifier = Modifier.weight(2f),
+                        )
+                        OutlinedTextField(
+                            value = currentPortText,
+                            onValueChange = { newPort ->
+                                currentPortText = newPort
+                                val portInt = newPort.toIntOrNull()
+                                if (portInt != null && ProxyConfig.isValidPort(portInt)) {
+                                    P2PPreferences.prefs(context).edit().putInt(P2PPreferences.PROXY_PORT, portInt).commit()
+                                    settingsChanged()
+                                }
+                            },
+                            label = { Text(if (isRussian) "Порт" else "Port") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
             }
 
             Spacer(Modifier.height(16.dp))
