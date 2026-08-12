@@ -91,7 +91,13 @@ fun TrackerSettingsPage(
         }
     }
 
-    LaunchedEffect(isTorRunning) {
+    LaunchedEffect(Unit) {
+        if (torUserRequested && !isTorRunning) {
+            TorManager.startTor(context)
+        }
+    }
+
+    LaunchedEffect(isTorRunning, torUserRequested) {
         if (isTorRunning) {
             P2PPreferences.prefs(context).edit()
                 .putBoolean(P2PPreferences.PROXY_ENABLED, true)
@@ -99,6 +105,20 @@ fun TrackerSettingsPage(
                 .putInt(P2PPreferences.PROXY_PORT, 9050)
                 .apply()
             settingsChanged()
+        } else if (torUserRequested && !isTorRunning) {
+            kotlinx.coroutines.delay(5500)
+            if (!TorManager.isTorRunning.value) {
+                torUserRequested = false
+                P2PPreferences.prefs(context).edit()
+                    .putBoolean(P2PPreferences.PROXY_ENABLED, false)
+                    .apply()
+                settingsChanged()
+                Toast.makeText(
+                    context,
+                    TorStatusFormatter.getFailedToast(appLanguage),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         } else if (!torUserRequested && proxyEnabled) {
             P2PPreferences.prefs(context).edit()
                 .putBoolean(P2PPreferences.PROXY_ENABLED, false)

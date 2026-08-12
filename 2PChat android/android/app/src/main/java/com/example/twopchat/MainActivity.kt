@@ -148,6 +148,9 @@ class MainActivity : ComponentActivity() {
             try {
                 PythonBridge.ensurePythonStarted(appContext)
                 PythonBridge.init(appContext)
+                if (P2PPreferences.isProxyEnabled(appContext)) {
+                    TorManager.startTor(appContext)
+                }
                 val relayPrefs = P2PPreferences.prefs(appContext)
                 val hasLocalIdentity =
                     relayPrefs.getBoolean("onboarding_completed", false) &&
