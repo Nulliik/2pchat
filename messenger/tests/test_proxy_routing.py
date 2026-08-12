@@ -77,3 +77,41 @@ def test_pysocks_ipv6_4tuple_sanitization(monkeypatch):
     assert received_addresses[0] == ("bind", ("127.0.0.1", 9050))
     assert received_addresses[1] == ("connect", ("127.0.0.1", 9050))
     assert received_addresses[2] == ("sendto", ("127.0.0.1", 9050))
+
+
+def test_yggdrasil_proxy_bypass(monkeypatch):
+    import socks
+    from messenger.discovery_bridge import _is_yggdrasil_host
+
+    assert _is_yggdrasil_host("200:44dd:c0a0::1") is True
+    assert _is_yggdrasil_host("201:229e:d0b0::2") is True
+    assert _is_yggdrasil_host("202:a2a5:dead::3") is True
+    assert _is_yggdrasil_host("peer.ygg") is True
+    assert _is_yggdrasil_host("93.184.216.34") is False
+    assert _is_yggdrasil_host("opentrackr.org") is False
+
+    # Test that proxy is set to None during Yggdrasil connect call
+    proxy_states = []
+
+    def mock_connect_check_proxy(self, dest_pair):
+        proxy_states.append((dest_pair[0], getattr(self, "proxy", None)))
+
+    monkeypatch.setattr(socks.socksocket, "connect", mock_connect_check_proxy)
+    if hasattr(socks.socksocket, "_2pchat_ipv6_patched"):
+        delattr(socks.socksocket, "_2pchat_ipv6_patched")
+
+    _patch_pysocks_ipv6()
+
+    dummy = socks.socksocket()
+    dummy.proxy = (socks.SOCKS5, "127.0.0.1", 9050, True, None, None)
+
+    # Yggdrasil connect should temporarily clear proxy
+    dummy.connect(("200:44dd:c0a0::1", 50001))
+    assert proxy_states[0] == ("200:44dd:c0a0::1", None)
+    # Ensure proxy setting is restored afterwards
+    assert dummy.proxy == (socks.SOCKS5, "127.0.0.1", 9050, True, None, None)
+
+    # Public IP connect should keep proxy intact
+    dummy.connect(("93.184.216.34", 80))
+    assert proxy_states[1] == ("93.184.216.34", (socks.SOCKS5, "127.0.0.1", 9050, True, None, None))
+

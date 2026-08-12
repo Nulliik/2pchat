@@ -457,8 +457,22 @@ _proxy_host = "127.0.0.1"
 _proxy_port = 9050
 
 
+def _is_yggdrasil_host(host: str) -> bool:
+    """Return True if host is an Yggdrasil overlay IPv6 address (200::/7) or .ygg domain."""
+    if not isinstance(host, str):
+        return False
+    h = host.strip().lower()
+    if h.endswith(".ygg"):
+        return True
+    if h.startswith("200:") or h.startswith("201:") or h.startswith("202:") or h.startswith("203:"):
+        return True
+    if h.startswith("200") and ":" in h:
+        return True
+    return False
+
+
 def _patch_pysocks_ipv6():
-    """Sanitize 4-element IPv6 address tuples for PySocks compatibility."""
+    """Sanitize 4-element IPv6 address tuples and bypass SOCKS proxy for Yggdrasil IPv6 traffic."""
     try:
         import socks
         if getattr(socks.socksocket, "_2pchat_ipv6_patched", False):
@@ -476,12 +490,34 @@ def _patch_pysocks_ipv6():
             if args:
                 dest = args[0]
                 if isinstance(dest, tuple) and len(dest) > 2:
-                    args = ((dest[0], dest[1]),) + args[1:]
+                    dest = (dest[0], dest[1])
+                    args = (dest,) + args[1:]
+                
+                dest_host = dest[0] if isinstance(dest, tuple) and len(dest) > 0 else ""
+                if _is_yggdrasil_host(str(dest_host)):
+                    saved_proxy = getattr(self, "proxy", None)
+                    try:
+                        self.proxy = None
+                        return orig_sendto(self, data, *args)
+                    finally:
+                        if saved_proxy:
+                            self.proxy = saved_proxy
             return orig_sendto(self, data, *args)
 
         def safe_connect(self, dest_pair):
             if isinstance(dest_pair, tuple) and len(dest_pair) > 2:
                 dest_pair = (dest_pair[0], dest_pair[1])
+            
+            dest_host = dest_pair[0] if isinstance(dest_pair, tuple) and len(dest_pair) > 0 else ""
+            if _is_yggdrasil_host(str(dest_host)):
+                # Yggdrasil traffic cannot be routed over Tor SOCKS proxy; bypass proxy
+                saved_proxy = getattr(self, "proxy", None)
+                try:
+                    self.proxy = None
+                    return orig_connect(self, dest_pair)
+                finally:
+                    if saved_proxy:
+                        self.proxy = saved_proxy
             return orig_connect(self, dest_pair)
 
         socks.socksocket.bind = safe_bind
