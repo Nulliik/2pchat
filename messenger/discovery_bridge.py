@@ -465,6 +465,7 @@ def _patch_pysocks_ipv6():
             return
         orig_bind = socks.socksocket.bind
         orig_sendto = socks.socksocket.sendto
+        orig_connect = socks.socksocket.connect
 
         def safe_bind(self, address):
             if isinstance(address, tuple) and len(address) > 2:
@@ -478,8 +479,14 @@ def _patch_pysocks_ipv6():
                     args = ((dest[0], dest[1]),) + args[1:]
             return orig_sendto(self, data, *args)
 
+        def safe_connect(self, dest_pair):
+            if isinstance(dest_pair, tuple) and len(dest_pair) > 2:
+                dest_pair = (dest_pair[0], dest_pair[1])
+            return orig_connect(self, dest_pair)
+
         socks.socksocket.bind = safe_bind
         socks.socksocket.sendto = safe_sendto
+        socks.socksocket.connect = safe_connect
         socks.socksocket._2pchat_ipv6_patched = True
     except Exception as exc:
         print(f"[PROXY] PySocks IPv6 patch warning: {exc}")
