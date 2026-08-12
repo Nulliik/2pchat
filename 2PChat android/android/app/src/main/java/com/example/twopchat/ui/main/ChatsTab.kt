@@ -162,13 +162,17 @@ fun ChatsTab(
         )
     }
 
-    // Hero Card live state
     var heroActivePeers by chatsViewModel.heroActivePeers
     var heroUpnpOk by chatsViewModel.heroUpnpOk
     var heroTrackersOk by chatsViewModel.heroTrackersOk
     var heroYggOk by chatsViewModel.heroYggOk
     var isRefreshingAll by chatsViewModel.isRefreshingAll
     val heroScope = rememberCoroutineScope()
+
+    val isTorRunning by com.example.twopchat.TorManager.isTorRunning.collectAsState()
+    val isTorConnecting by com.example.twopchat.TorManager.isTorConnecting.collectAsState()
+    val torBootstrapProgress by com.example.twopchat.TorManager.bootstrapProgress.collectAsState()
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
 
     val activeHandshakesLabel = remember(appLanguage) {
         Localizations.getString("active_handshakes", appLanguage).uppercase()
@@ -223,103 +227,76 @@ fun ChatsTab(
             ) {
                 Column(modifier = Modifier.padding(if (isHeroCollapsed) 10.dp else 16.dp)) {
                     if (isHeroCollapsed) {
-                        // COMPACT NEXUSTAB (No Avatar, No Profile Header - Just 4 status indicators + expand toggle)
+                        // ─── UNIFIED HEALTH BAR (COLLAPSED VIEW) ─────────────────────
+                        val healthColor = when {
+                            isTorConnecting -> Color(0xFFFFD54F)
+                            isTorRunning && heroYggOk == true -> Color(0xFF10B981)
+                            isTorRunning -> Color(0xFF10B981)
+                            else -> primaryColor
+                        }
+
+                        val healthStatusText = remember(isTorRunning, isTorConnecting, torBootstrapProgress, heroYggOk, heroActivePeers, appLanguage) {
+                            val peersText = if (heroActivePeers > 0) "$heroActivePeers" else "0"
+                            val isRu = appLanguage == "Русский"
+                            when {
+                                isTorConnecting -> if (isRu) "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText пир." else "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText peers"
+                                isTorRunning && heroYggOk == true -> if (isRu) "🛡️ Защищено • Tor 100% • Yggdrasil • $peersText пир." else "🛡️ Protected • Tor 100% • Yggdrasil • $peersText peers"
+                                isTorRunning -> if (isRu) "🛡️ Tor 100% • $peersText пир." else "🛡️ Tor 100% • $peersText peers"
+                                heroYggOk == true -> if (isRu) "🛡️ P2P Прямое • Yggdrasil • $peersText пир." else "🛡️ P2P Direct • Yggdrasil • $peersText peers"
+                                else -> if (isRu) "🛡️ Офлайн • $peersText пир." else "🛡️ Offline • $peersText peers"
+                            }
+                        }
+
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable {
+                                    isHeroCollapsed = false
+                                    heroPrefs.edit().putBoolean("settings_hero_widget_collapsed", false).apply()
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            @Composable
-                            fun NexusCompactPill(
-                                label: String,
-                                valText: String,
-                                ok: Boolean?,
-                                node: RadarNode,
-                                modifier: Modifier = Modifier
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
                             ) {
-                                val pillColor = when (ok) {
-                                    true  -> Color(0xFF10B981)
-                                    false -> Color(0xFFEF4444)
-                                    null  -> onSurfaceVariant
-                                }
-                                Row(
-                                    modifier = modifier
-                                        .clip(RoundedCornerShape(14.dp))
-                                        .clickable { onStatusPillClick(node) }
-                                        .background(pillColor.copy(alpha = 0.12f))
-                                        .border(0.8.dp, pillColor.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-                                        .padding(vertical = 9.dp, horizontal = 4.dp),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(6.dp)
-                                            .background(pillColor, CircleShape)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "$label $valText".trim(),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = pillColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .background(healthColor, CircleShape)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = healthStatusText,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = onSurfaceColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
-
-                            NexusCompactPill(
-                                "UPnP",
-                                if (heroUpnpOk == true) "OK" else if (heroUpnpOk == false) "x" else "…",
-                                heroUpnpOk,
-                                RadarNode.ROUTER,
-                                Modifier.weight(1.1f)
-                            )
-                            NexusCompactPill(
-                                if (appLanguage == "Русский") "Трекеры" else "Trackers",
-                                if (heroTrackersOk == true) "OK" else if (heroTrackersOk == false) "x" else "…",
-                                heroTrackersOk,
-                                RadarNode.TRACKERS,
-                                Modifier.weight(1.25f)
-                            )
-                            NexusCompactPill(
-                                "Ygg",
-                                if (heroYggOk == true) "OK" else if (heroYggOk == false) "x" else "…",
-                                heroYggOk,
-                                RadarNode.YGGDRASIL,
-                                Modifier.weight(1f)
-                            )
-                            NexusCompactPill(
-                                if (appLanguage == "Русский") "Пиры" else "Peers",
-                                "$heroActivePeers",
-                                if (heroActivePeers > 0) true else null,
-                                RadarNode.PEERS,
-                                Modifier.weight(1f)
-                            )
 
                             Box(
                                 modifier = Modifier
-                                    .size(34.dp)
-                                    .background(primaryColor.copy(alpha = 0.15f), shape = RoundedCornerShape(10.dp))
-                                    .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
-                                    .clickable {
-                                        isHeroCollapsed = false
-                                        heroPrefs.edit().putBoolean("settings_hero_widget_collapsed", false).apply()
-                                    },
+                                    .size(32.dp)
+                                    .background(primaryColor.copy(alpha = 0.12f), shape = RoundedCornerShape(10.dp))
+                                    .border(0.5.dp, primaryColor.copy(alpha = 0.25f), RoundedCornerShape(10.dp)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.KeyboardArrowDown,
-                                    contentDescription = "Expand NexusTab",
+                                    contentDescription = "Expand Network Diagnostics",
                                     tint = primaryColor,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
                     } else {
-                        // EXPANDED NEXUSTAB
-                        // Avatar + Name + Refresh + Chevron Up
+                        // ─── 2-LEVEL ACCORDION (EXPANDED VIEW) ─────────────────────────
+                        // Level 1: Profile Header Row
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
@@ -466,135 +443,193 @@ fun ChatsTab(
                             }
                         }
 
-                        @Composable
-                        fun StatusPill(
-                            label: String,
-                            value: String,
-                            ok: Boolean?,
-                            node: RadarNode,
-                            modifier: Modifier = Modifier
-                        ) {
-                            val pillColor = when (ok) {
-                                true  -> Color(0xFF10B981)
-                                false -> Color(0xFFEF4444)
-                                null  -> onSurfaceVariant
-                            }
-                            
-                            val pillInteractionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-                            val isPillPressed by pillInteractionSource.collectIsPressedAsState()
-                            val pillScale by animateFloatAsState(
-                                targetValue = if (isPillPressed) 0.94f else 1.0f,
-                                animationSpec = spring(dampingRatio = 0.7f, stiffness = 500f),
-                                label = "pillScale"
-                            )
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = modifier
-                                    .graphicsLayer {
-                                        scaleX = pillScale
-                                        scaleY = pillScale
-                                    }
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .clickable(
-                                        interactionSource = pillInteractionSource,
-                                        indication = ripple(),
-                                        onClick = { onStatusPillClick(node) }
-                                    )
-                                    .background(pillColor.copy(alpha = 0.12f))
-                                    .border(0.75.dp, pillColor.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-                                    .padding(vertical = 8.dp, horizontal = 2.dp)
+                        // Level 2 Section A: 🧅 Anonymization Layer (Tor)
+                        val isRu = appLanguage == "Русский"
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.6f)),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.75.dp, primaryColor.copy(alpha = 0.20f), RoundedCornerShape(16.dp))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(
-                                    contentAlignment = Alignment.Center,
-                                    modifier = Modifier.size(12.dp)
-                                ) {
-                                    if (ok != null) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(10.dp)
-                                                .border(1.dp, pillColor.copy(alpha = 0.38f), CircleShape)
-                                        )
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .size(5.dp)
-                                            .background(pillColor, CircleShape)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(3.dp))
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center,
-                                    modifier = Modifier.padding(horizontal = 2.dp)
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = "OK",
-                                            tint = pillColor,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                    } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "Error",
-                                            tint = pillColor,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(2.dp))
-                                    }
-                                    Text(
-                                        text = if (ok == true && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                            "OK"
-                                        } else if (ok == false && (node == RadarNode.ROUTER || node == RadarNode.TRACKERS || node == RadarNode.YGGDRASIL)) {
-                                            Localizations.tr(appLanguage, "Нет", "No", "Nein", "No", "Non", "Não")
-                                        } else {
-                                            value
-                                        },
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = pillColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                    Icon(
+                                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_tor),
+                                        contentDescription = "Tor Icon",
+                                        tint = Color.Unspecified,
+                                        modifier = Modifier.size(24.dp)
                                     )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = if (isRu) "Слой анонимизации (Tor)" else "Anonymization Layer (Tor)",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = onSurfaceColor
+                                        )
+                                        Text(
+                                            text = com.example.twopchat.TorStatusFormatter.formatStatus(
+                                                isRunning = isTorRunning,
+                                                isConnecting = isTorConnecting,
+                                                appLanguage = appLanguage,
+                                                progress = torBootstrapProgress
+                                            ),
+                                            fontSize = 11.sp,
+                                            color = when {
+                                                isTorRunning -> Color(0xFF10B981)
+                                                isTorConnecting -> Color(0xFFFFD54F)
+                                                else -> onSurfaceVariant
+                                            }
+                                        )
+                                    }
                                 }
-                                Text(text = label, fontSize = 9.sp, color = onSurfaceVariant, letterSpacing = 0.3.sp, maxLines = 1)
+
+                                Switch(
+                                    checked = isTorRunning || isTorConnecting,
+                                    onCheckedChange = { enable ->
+                                        if (enable) {
+                                            com.example.twopchat.P2PPreferences.prefs(context).edit()
+                                                .putBoolean(com.example.twopchat.P2PPreferences.TOR_ENABLED, true)
+                                                .putBoolean(com.example.twopchat.P2PPreferences.PROXY_ENABLED, true)
+                                                .putString(com.example.twopchat.P2PPreferences.PROXY_HOST, "127.0.0.1")
+                                                .putInt(com.example.twopchat.P2PPreferences.PROXY_PORT, 9050)
+                                                .apply()
+                                            com.example.twopchat.TorManager.startTor(context)
+                                            Toast.makeText(
+                                                context,
+                                                com.example.twopchat.TorStatusFormatter.getActivationToast(appLanguage),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        } else {
+                                            com.example.twopchat.P2PPreferences.prefs(context).edit()
+                                                .putBoolean(com.example.twopchat.P2PPreferences.TOR_ENABLED, false)
+                                                .putBoolean(com.example.twopchat.P2PPreferences.PROXY_ENABLED, false)
+                                                .apply()
+                                            com.example.twopchat.TorManager.stopTor()
+                                            heroScope.launch(Dispatchers.IO) {
+                                                PythonBridge.applyProxyConfiguration()
+                                            }
+                                        }
+                                    }
+                                )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            StatusPill(
-                                label = "UPnP",
-                                value = "…",
-                                ok = heroUpnpOk,
-                                node = RadarNode.ROUTER,
-                                modifier = Modifier.weight(1f)
-                            )
-                            StatusPill(
-                                label = Localizations.tr(appLanguage, "Трекеры", "Trackers", "Tracker", "Rastreadores", "Traqueurs", "Rastreadores"),
-                                value = "…",
-                                ok = heroTrackersOk,
-                                node = RadarNode.TRACKERS,
-                                modifier = Modifier.weight(1f)
-                            )
-                            StatusPill(
-                                label = "Yggdrasil",
-                                value = "…",
-                                ok = heroYggOk,
-                                node = RadarNode.YGGDRASIL,
-                                modifier = Modifier.weight(1f)
-                            )
-                            StatusPill(
-                                label = Localizations.tr(appLanguage, "Пиры", "Peers", "Peers", "Pares", "Pairs", "Pares"),
-                                value = if (heroActivePeers > 0) "$heroActivePeers 🟢" else "0",
-                                ok = if (heroActivePeers > 0) true else null,
-                                node = RadarNode.PEERS,
-                                modifier = Modifier.weight(1f)
-                            )
+                        // Level 2 Section B: 🌐 Mesh Network & Peers
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.6f)),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.75.dp, primaryColor.copy(alpha = 0.20f), RoundedCornerShape(16.dp))
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(text = "🌐", fontSize = 18.sp)
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Yggdrasil Mesh",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = onSurfaceColor
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (heroYggOk == true) "✓ OK" else "✕ Off",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (heroYggOk == true) Color(0xFF10B981) else Color(0xFFEF4444)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    // Trackers Chip
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable { onStatusPillClick(RadarNode.TRACKERS) }
+                                            .background(if (heroTrackersOk == true) Color(0xFF10B981).copy(alpha = 0.12f) else onSurfaceVariant.copy(alpha = 0.12f))
+                                            .border(0.5.dp, if (heroTrackersOk == true) Color(0xFF10B981).copy(alpha = 0.35f) else onSurfaceVariant.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+                                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = if (isRu) "📡 Трекеры: ${if (heroTrackersOk == true) "9/9" else "0/9"}" else "📡 Trackers: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (heroTrackersOk == true) Color(0xFF10B981) else onSurfaceVariant
+                                        )
+                                    }
+
+                                    // Peers Chip
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable { onStatusPillClick(RadarNode.PEERS) }
+                                            .background(if (heroActivePeers > 0) Color(0xFF10B981).copy(alpha = 0.12f) else onSurfaceVariant.copy(alpha = 0.12f))
+                                            .border(0.5.dp, if (heroActivePeers > 0) Color(0xFF10B981).copy(alpha = 0.35f) else onSurfaceVariant.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+                                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = if (isRu) "👥 Пиры: $heroActivePeers" else "👥 Peers: $heroActivePeers",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (heroActivePeers > 0) Color(0xFF10B981) else onSurfaceVariant
+                                        )
+                                    }
+
+                                    // UPnP Chip
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable { onStatusPillClick(RadarNode.ROUTER) }
+                                            .background(if (heroUpnpOk == true) Color(0xFF10B981).copy(alpha = 0.12f) else onSurfaceVariant.copy(alpha = 0.12f))
+                                            .border(0.5.dp, if (heroUpnpOk == true) Color(0xFF10B981).copy(alpha = 0.35f) else onSurfaceVariant.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+                                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "🔌 UPnP: ${if (heroUpnpOk == true) "OK" else "N/A"}",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (heroUpnpOk == true) Color(0xFF10B981) else onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
