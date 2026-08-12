@@ -205,7 +205,7 @@ fun TrackerSettingsPage(
                         if (enabled) {
                             Toast.makeText(
                                 context,
-                                if (isRussian) "🧅 Анонимизация Tor включена. Задержка соединения может увеличиться." else "🧅 Tor privacy enabled. Connection latency may increase.",
+                                TorStatusFormatter.getActivationToast(appLanguage),
                                 Toast.LENGTH_LONG
                             ).show()
                             TorManager.startTor(context)
@@ -234,7 +234,7 @@ fun TrackerSettingsPage(
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
-                        text = TorStatusFormatter.formatStatus(isRunning = isTorRunning, isConnecting = isConnecting, isRussian = isRussian),
+                        text = TorStatusFormatter.formatStatus(isRunning = isTorRunning, isConnecting = isConnecting, appLanguage = appLanguage),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = when {
