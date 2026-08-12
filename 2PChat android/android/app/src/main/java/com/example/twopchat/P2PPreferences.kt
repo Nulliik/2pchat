@@ -19,6 +19,9 @@ object P2PPreferences {
     const val UPNP_ENABLED = "settings_upnp"
     const val DEFAULT_LISTENER_PORT = 50001
     const val PROXY_ENABLED = "settings_proxy_enabled"
+    const val TOR_ENABLED = "settings_tor_enabled"
+    const val TOR_BRIDGES = "settings_tor_bridges"
+    const val TOR_PUBLIC_BRIDGES_ENABLED = "settings_tor_public_bridges_enabled"
     const val PROXY_HOST = "settings_proxy_host"
     const val PROXY_PORT = "settings_proxy_port"
     const val DEFAULT_PROXY_HOST = "127.0.0.1"
@@ -33,11 +36,57 @@ object P2PPreferences {
     fun isProxyEnabled(context: Context): Boolean =
         prefs(context).getBoolean(PROXY_ENABLED, false)
 
+    fun isTorEnabled(context: Context): Boolean {
+        val preferences = prefs(context)
+        if (preferences.contains(TOR_ENABLED)) {
+            return preferences.getBoolean(TOR_ENABLED, false)
+        }
+        return isLegacyTorConfiguration(
+            proxyEnabled = preferences.getBoolean(PROXY_ENABLED, false),
+            proxyHost = preferences.getString(PROXY_HOST, DEFAULT_PROXY_HOST),
+            proxyPort = preferences.getInt(PROXY_PORT, DEFAULT_PROXY_PORT),
+        )
+    }
+
+    internal fun isLegacyTorConfiguration(
+        proxyEnabled: Boolean,
+        proxyHost: String?,
+        proxyPort: Int,
+    ): Boolean = proxyEnabled &&
+        proxyPort == DEFAULT_PROXY_PORT &&
+        proxyHost?.trim()?.lowercase() in setOf("127.0.0.1", "localhost", "::1")
+
     fun getProxyHost(context: Context): String =
         prefs(context).getString(PROXY_HOST, DEFAULT_PROXY_HOST) ?: DEFAULT_PROXY_HOST
 
     fun getProxyPort(context: Context): Int =
         prefs(context).getInt(PROXY_PORT, DEFAULT_PROXY_PORT)
+
+    fun getTorBridgeLines(context: Context): List<String> =
+        prefs(context).getString(TOR_BRIDGES, "")
+            .orEmpty()
+            .lineSequence()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .toList()
+
+    fun setTorBridgeLines(context: Context, bridges: List<String>): Boolean =
+        prefs(context).edit()
+            .putString(TOR_BRIDGES, bridges.joinToString("\n") { it.trim() })
+            .commit()
+
+    fun publicTorBridgesEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(TOR_PUBLIC_BRIDGES_ENABLED, true)
+
+    fun setPublicTorBridgesEnabled(context: Context, enabled: Boolean): Boolean =
+        prefs(context).edit().putBoolean(TOR_PUBLIC_BRIDGES_ENABLED, enabled).commit()
+
+    fun getEffectiveTorBridgeLines(context: Context): List<String> =
+        TorBridgeCatalog.select(
+            customBridges = getTorBridgeLines(context),
+            publicBridgesEnabled = publicTorBridgesEnabled(context),
+        )
+
     const val DEFAULT_STICKER_CACHE_LIMIT_MB = 100
     val STICKER_CACHE_LIMIT_OPTIONS_MB = listOf(50, 100, 250, 500)
     const val MIN_LISTENER_PORT = 1024

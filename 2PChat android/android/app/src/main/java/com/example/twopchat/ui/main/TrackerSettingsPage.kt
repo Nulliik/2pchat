@@ -47,7 +47,9 @@ import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.P2PPreferences
 import com.example.twopchat.ProxyConfig
 import com.example.twopchat.PythonBridge
+import com.example.twopchat.TorBridgeCatalog
 import com.example.twopchat.TorManager
+import com.example.twopchat.TorBridgeValidationError
 import com.example.twopchat.TorStatusFormatter
 import com.example.twopchat.TrackerPreferences
 import kotlinx.coroutines.Dispatchers
@@ -80,7 +82,30 @@ fun TrackerSettingsPage(
     val proxyHost = remember(revision) { P2PPreferences.getProxyHost(context) }
     val proxyPortText = remember(revision) { P2PPreferences.getProxyPort(context).toString() }
     val isTorRunning by TorManager.isTorRunning.collectAsState()
-    var torUserRequested by remember { mutableStateOf(proxyEnabled || isTorRunning) }
+    val isTorConnecting by TorManager.isTorConnecting.collectAsState()
+    val torBootstrapFailure by TorManager.lastBootstrapFailureReason.collectAsState()
+    var torUserRequested by remember {
+        mutableStateOf(P2PPreferences.isTorEnabled(context) || isTorRunning || isTorConnecting)
+    }
+    var savedTorBridgeLines by remember {
+        mutableStateOf(P2PPreferences.getTorBridgeLines(context))
+    }
+    var torBridgesText by remember {
+        mutableStateOf(savedTorBridgeLines.joinToString("\n"))
+    }
+    var torBridgeSaveFailed by remember { mutableStateOf(false) }
+    var publicTorBridgesEnabled by remember {
+        mutableStateOf(P2PPreferences.publicTorBridgesEnabled(context))
+    }
+    val torBridgeValidation = remember(torBridgesText) {
+        TorManager.parseBridgeText(torBridgesText)
+    }
+    val effectiveTorBridges = remember(torBridgeValidation, publicTorBridgesEnabled) {
+        TorBridgeCatalog.select(
+            customBridges = torBridgeValidation.bridges,
+            publicBridgesEnabled = publicTorBridgesEnabled,
+        )
+    }
 
     fun settingsChanged() {
         revision += 1
@@ -102,28 +127,27 @@ fun TrackerSettingsPage(
             torUserRequested = true
             P2PPreferences.prefs(context).edit()
                 .putBoolean(P2PPreferences.PROXY_ENABLED, true)
+                .putBoolean(P2PPreferences.TOR_ENABLED, true)
                 .putString(P2PPreferences.PROXY_HOST, "127.0.0.1")
                 .putInt(P2PPreferences.PROXY_PORT, 9050)
                 .apply()
             settingsChanged()
-        } else {
-            if (torUserRequested) {
-                torUserRequested = false
-                P2PPreferences.prefs(context).edit()
-                    .putBoolean(P2PPreferences.PROXY_ENABLED, false)
-                    .apply()
-                settingsChanged()
-                Toast.makeText(
-                    context,
-                    TorStatusFormatter.getFailedToast(appLanguage),
-                    Toast.LENGTH_LONG
-                ).show()
-            } else if (proxyEnabled) {
-                P2PPreferences.prefs(context).edit()
-                    .putBoolean(P2PPreferences.PROXY_ENABLED, false)
-                    .apply()
-                settingsChanged()
-            }
+        }
+    }
+
+    LaunchedEffect(torBootstrapFailure) {
+        if (torBootstrapFailure != null && torUserRequested) {
+            torUserRequested = false
+            P2PPreferences.prefs(context).edit()
+                .putBoolean(P2PPreferences.TOR_ENABLED, false)
+                .putBoolean(P2PPreferences.PROXY_ENABLED, false)
+                .apply()
+            settingsChanged()
+            Toast.makeText(
+                context,
+                TorStatusFormatter.getFailedToast(appLanguage),
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
@@ -220,21 +244,77 @@ fun TrackerSettingsPage(
                     checked = torUserRequested || (proxyEnabled && isTorRunning),
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariant = onSurfaceVariant,
-                    onCheckedChange = { enabled ->
+                    onCheckedChange = torToggle@{ enabled ->
                         torUserRequested = enabled
                         if (enabled) {
+                            if (torBridgeValidation.error != null) {
+                                torUserRequested = false
+                                Toast.makeText(
+                                    context,
+                                    torBridgeValidationMessage(torBridgeValidation.error, isRussian),
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                                return@torToggle
+                            }
+                            if (!P2PPreferences.setTorBridgeLines(context, torBridgeValidation.bridges)) {
+                                torUserRequested = false
+                                torBridgeSaveFailed = true
+                                return@torToggle
+                            }
+                            savedTorBridgeLines = torBridgeValidation.bridges
+                            torBridgesText = torBridgeValidation.bridges.joinToString("\n")
+                            torBridgeSaveFailed = false
+                            P2PPreferences.prefs(context).edit()
+                                .putBoolean(P2PPreferences.TOR_ENABLED, true)
+                                .apply()
                             Toast.makeText(
                                 context,
                                 TorStatusFormatter.getActivationToast(appLanguage),
                                 Toast.LENGTH_LONG
                             ).show()
-                            TorManager.startTor(context)
+                            TorManager.startTor(context, effectiveTorBridges)
                         } else {
                             TorManager.stopTor()
                             P2PPreferences.prefs(context).edit()
+                                .putBoolean(P2PPreferences.TOR_ENABLED, false)
                                 .putBoolean(P2PPreferences.PROXY_ENABLED, false)
                                 .apply()
                             settingsChanged()
+                        }
+                    },
+                )
+                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
+                TrackerToggleRow(
+                    title = if (isRussian) "Автоматические публичные мосты" else "Automatic public bridges",
+                    subtitle = if (isRussian) {
+                        "Встроенный пул obfs4 проверяется автоматически; ручные мосты имеют приоритет"
+                    } else {
+                        "The built-in obfs4 pool is checked automatically; custom bridges take priority"
+                    },
+                    checked = publicTorBridgesEnabled,
+                    onSurfaceColor = onSurfaceColor,
+                    onSurfaceVariant = onSurfaceVariant,
+                    onCheckedChange = { enabled ->
+                        if (P2PPreferences.setPublicTorBridgesEnabled(context, enabled)) {
+                            val previous = effectiveTorBridges
+                            publicTorBridgesEnabled = enabled
+                            val updated = TorBridgeCatalog.select(
+                                customBridges = torBridgeValidation.bridges,
+                                publicBridgesEnabled = enabled,
+                            )
+                            if (
+                                updated != previous &&
+                                (torUserRequested || isTorRunning || isTorConnecting)
+                            ) {
+                                TorManager.stopTor()
+                                TorManager.startTor(context, updated)
+                            }
+                        } else {
+                            Toast.makeText(
+                                context,
+                                if (isRussian) "Не удалось сохранить режим мостов" else "Could not save bridge mode",
+                                Toast.LENGTH_LONG,
+                            ).show()
                         }
                     },
                 )
@@ -246,7 +326,6 @@ fun TrackerSettingsPage(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val isConnecting = torUserRequested && !isTorRunning
                     Text(
                         text = if (isRussian) "Статус сеанса Tor" else "Tor Session Status",
                         fontSize = 14.sp,
@@ -254,15 +333,99 @@ fun TrackerSettingsPage(
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
-                        text = TorStatusFormatter.formatStatus(isRunning = isTorRunning, isConnecting = isConnecting, appLanguage = appLanguage),
+                        text = TorStatusFormatter.formatStatus(isRunning = isTorRunning, isConnecting = isTorConnecting, appLanguage = appLanguage),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = when {
                             isTorRunning -> Color(0xFF4CAF50)
-                            isConnecting -> Color(0xFFFFD54F)
+                            isTorConnecting -> Color(0xFFFFD54F)
                             else -> onSurfaceVariant.copy(alpha = 0.6f)
                         },
                     )
+                }
+                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
+                Column(modifier = Modifier.padding(16.dp)) {
+                    OutlinedTextField(
+                        value = torBridgesText,
+                        onValueChange = {
+                            torBridgesText = it
+                            torBridgeSaveFailed = false
+                        },
+                        label = {
+                            Text(if (isRussian) "Свои мосты Tor (необязательно)" else "Custom Tor Bridges (optional)")
+                        },
+                        placeholder = {
+                            Text("obfs4 IP:port fingerprint cert=… iat-mode=0")
+                        },
+                        minLines = 3,
+                        maxLines = 6,
+                        isError = torBridgeValidation.error != null || torBridgeSaveFailed,
+                        supportingText = {
+                            Text(
+                                when {
+                                    torBridgeSaveFailed -> if (isRussian) {
+                                        "Не удалось сохранить мосты в защищённых настройках"
+                                    } else {
+                                        "Could not save bridges to secure settings"
+                                    }
+                                    torBridgeValidation.error != null ->
+                                        torBridgeValidationMessage(torBridgeValidation.error, isRussian)
+                                    torBridgeValidation.bridges.isEmpty() && publicTorBridgesEnabled ->
+                                        if (isRussian) {
+                                            "Будет автоматически выбран рабочий публичный мост obfs4"
+                                        } else {
+                                            "A working public obfs4 bridge will be selected automatically"
+                                        }
+                                    torBridgeValidation.bridges.isEmpty() ->
+                                        if (isRussian) {
+                                            "Автомосты выключены: Tor попробует прямое подключение"
+                                        } else {
+                                            "Automatic bridges are off: Tor will try a direct connection"
+                                        }
+                                    else -> if (isRussian) {
+                                        "По одной строке obfs4 или snowflake на строку"
+                                    } else {
+                                        "One obfs4 or snowflake bridge per line"
+                                    }
+                                }
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(
+                        enabled = torBridgeValidation.error == null &&
+                            (torBridgeValidation.bridges != savedTorBridgeLines || torBridgeSaveFailed),
+                        onClick = {
+                            val saved = P2PPreferences.setTorBridgeLines(
+                                context,
+                                torBridgeValidation.bridges,
+                            )
+                            torBridgeSaveFailed = !saved
+                            if (saved) {
+                                savedTorBridgeLines = torBridgeValidation.bridges
+                                torBridgesText = torBridgeValidation.bridges.joinToString("\n")
+                                if (torUserRequested || isTorRunning || isTorConnecting) {
+                                    TorManager.stopTor()
+                                    TorManager.startTor(
+                                        context,
+                                        TorBridgeCatalog.select(
+                                            customBridges = torBridgeValidation.bridges,
+                                            publicBridgesEnabled = publicTorBridgesEnabled,
+                                        ),
+                                    )
+                                }
+                                Toast.makeText(
+                                    context,
+                                    if (isRussian) "Мосты Tor сохранены" else "Tor bridges saved",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        },
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
+                        Text(if (isRussian) "Сохранить мосты" else "Save bridges")
+                    }
                 }
             }
 
@@ -661,4 +824,56 @@ private fun AddTrackerDialog(
             TextButton(onClick = onDismiss) { Text(if (isRussian) "Отмена" else "Cancel") }
         },
     )
+}
+
+private fun torBridgeValidationMessage(
+    error: TorBridgeValidationError?,
+    isRussian: Boolean,
+): String = when (error) {
+    TorBridgeValidationError.INPUT_TOO_LARGE,
+    TorBridgeValidationError.TOO_MANY_BRIDGES,
+    TorBridgeValidationError.LINE_TOO_LONG -> if (isRussian) {
+        "Список мостов слишком большой"
+    } else {
+        "The bridge list is too large"
+    }
+
+    TorBridgeValidationError.UNSUPPORTED_TRANSPORT -> if (isRussian) {
+        "Поддерживаются только мосты obfs4 и snowflake"
+    } else {
+        "Only obfs4 and snowflake bridges are supported"
+    }
+
+    TorBridgeValidationError.INVALID_ENDPOINT -> if (isRussian) {
+        "Проверьте адрес и порт моста"
+    } else {
+        "Check the bridge address and port"
+    }
+
+    TorBridgeValidationError.INVALID_FINGERPRINT -> if (isRussian) {
+        "Fingerprint моста должен содержать 40 шестнадцатеричных символов"
+    } else {
+        "The bridge fingerprint must contain 40 hexadecimal characters"
+    }
+
+    TorBridgeValidationError.MISSING_OBFS4_CERT,
+    TorBridgeValidationError.INVALID_OBFS4_IAT_MODE -> if (isRussian) {
+        "Строка obfs4 должна содержать корректные cert и iat-mode"
+    } else {
+        "The obfs4 line must contain valid cert and iat-mode values"
+    }
+
+    TorBridgeValidationError.MISSING_SNOWFLAKE_CONFIGURATION -> if (isRussian) {
+        "Строка snowflake должна содержать url, front/fronts и ice"
+    } else {
+        "The snowflake line must contain url, front/fronts, and ice"
+    }
+
+    TorBridgeValidationError.INVALID_FORMAT -> if (isRussian) {
+        "Некорректный формат строки моста"
+    } else {
+        "Invalid bridge-line format"
+    }
+
+    null -> ""
 }

@@ -2,33 +2,90 @@ package com.example.twopchat
 
 import android.content.Context
 import android.util.Log
+import java.io.File
+import java.util.Locale
+import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import java.io.File
+import kotlinx.coroutines.launch
 
-import android.os.Handler
-import android.os.Looper
-import androidx.lifecycle.DefaultLifecycleObserver
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ProcessLifecycleOwner
+internal class TorRunGate {
+    private var sequence = 0L
+    private var currentRun: Long? = null
+
+    @Synchronized
+    fun begin(): Long {
+        sequence += 1
+        return sequence.also { currentRun = it }
+    }
+
+    @Synchronized
+    fun invalidate() {
+        sequence += 1
+        currentRun = null
+    }
+
+    @Synchronized
+    fun isCurrent(runId: Long): Boolean = currentRun == runId
+
+    @Synchronized
+    fun finish(runId: Long): Boolean {
+        if (currentRun != runId) return false
+        currentRun = null
+        return true
+    }
+}
+
+internal enum class TorBridgeValidationError {
+    INPUT_TOO_LARGE,
+    TOO_MANY_BRIDGES,
+    LINE_TOO_LONG,
+    UNSUPPORTED_TRANSPORT,
+    INVALID_FORMAT,
+    INVALID_ENDPOINT,
+    INVALID_FINGERPRINT,
+    MISSING_OBFS4_CERT,
+    INVALID_OBFS4_IAT_MODE,
+    MISSING_SNOWFLAKE_CONFIGURATION,
+}
+
+internal data class TorBridgeParseResult(
+    val bridges: List<String> = emptyList(),
+    val transports: Set<String> = emptySet(),
+    val error: TorBridgeValidationError? = null,
+)
 
 object TorManager {
     private const val TAG = "TorManager"
     private const val DEFAULT_SOCKS_PORT = 9050
     private const val DEFAULT_CONTROL_PORT = 9051
-    private const val BOOTSTRAP_TIMEOUT_MS = 30000L
+    private const val MAX_BRIDGE_INPUT_CHARS = 32768
+    private const val MAX_BRIDGE_LINE_CHARS = 4096
+    private const val MAX_BRIDGE_LINES = 16
+    private const val OBFS4_TRANSPORT = "obfs4"
+    private const val SNOWFLAKE_TRANSPORT = "snowflake"
+    // Opening the SOCKS listener happens near the beginning of bootstrap and
+    // must not be treated as a usable Tor circuit. Slower devices and censored
+    // networks routinely need more than 30 seconds for the first bootstrap.
+    private const val DIRECT_BOOTSTRAP_TIMEOUT_MS = 90000L
+    private const val BRIDGE_BOOTSTRAP_TIMEOUT_MS = 180000L
 
     private val _isTorRunning = MutableStateFlow(false)
     val isTorRunning: StateFlow<Boolean> = _isTorRunning.asStateFlow()
+
+    private val _isTorConnecting = MutableStateFlow(false)
+    val isTorConnecting: StateFlow<Boolean> = _isTorConnecting.asStateFlow()
 
     private val _bootstrapProgress = MutableStateFlow(0)
     val bootstrapProgress: StateFlow<Int> = _bootstrapProgress.asStateFlow()
@@ -38,36 +95,154 @@ object TorManager {
 
     private var torProcess: Process? = null
     private var torJob: Job? = null
-    private var isLifecycleRegistered = false
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val runGate = TorRunGate()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val BOOTSTRAP_REGEX = Regex("""Bootstrapped\s+(\d+)%""")
+    private val FINGERPRINT_REGEX = Regex("^[A-Fa-f0-9]{40}$")
+    private val HOST_REGEX = Regex("^[A-Za-z0-9.-]+$")
+    private val IPV6_HOST_REGEX = Regex("^[A-Fa-f0-9:.]+$")
 
     fun parseBootstrapProgress(logLine: String): Int? {
         val match = BOOTSTRAP_REGEX.find(logLine) ?: return null
-        return match.groupValues.getOrNull(1)?.toIntOrNull()
+        return match.groupValues.getOrNull(1)?.toIntOrNull()?.takeIf { it in 0..100 }
     }
 
-    fun initLifecycle(context: Context) {
-        if (isLifecycleRegistered) return
-        try {
-            Handler(Looper.getMainLooper()).post {
-                if (isLifecycleRegistered) return@post
-                try {
-                    ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
-                        override fun onStop(owner: LifecycleOwner) {
-                            Log.i(TAG, "Application entering background/stopped; terminating embedded Tor process")
-                            stopTor()
-                        }
-                    })
-                    isLifecycleRegistered = true
-                } catch (e: Exception) {
-                    Log.w(TAG, "Could not register ProcessLifecycleOwner observer: ${e.message}")
+    fun classifyBootstrapFailureHint(logLine: String): String? {
+        val normalized = logLine.uppercase(Locale.US)
+        return when {
+            "CLOCK" in normalized && (
+                "WRONG" in normalized || "SKEW" in normalized || "JUMPED" in normalized
+            ) -> "CLOCK_SKEW"
+            "TLS" in normalized && (
+                "ERROR" in normalized || "HANDSHAKE" in normalized || "FAILED" in normalized
+            ) -> "TLS_HANDSHAKE"
+            "NETWORK IS UNREACHABLE" in normalized -> "NETWORK_UNREACHABLE"
+            else -> null
+        }
+    }
+
+    fun isBootstrapReady(socksPortReady: Boolean, bootstrapProgress: Int): Boolean =
+        socksPortReady && bootstrapProgress >= 100
+
+    internal fun parseBridgeText(text: String): TorBridgeParseResult {
+        if (text.length > MAX_BRIDGE_INPUT_CHARS) {
+            return invalidBridgeResult(TorBridgeValidationError.INPUT_TOO_LARGE)
+        }
+        return parseBridgeLines(text.lineSequence().toList())
+    }
+
+    internal fun parseBridgeLines(lines: List<String>): TorBridgeParseResult {
+        if (lines.sumOf(String::length) > MAX_BRIDGE_INPUT_CHARS) {
+            return invalidBridgeResult(TorBridgeValidationError.INPUT_TOO_LARGE)
+        }
+
+        val inputLines = lines.flatMap { it.lineSequence().toList() }
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+        if (inputLines.size > MAX_BRIDGE_LINES) {
+            return invalidBridgeResult(TorBridgeValidationError.TOO_MANY_BRIDGES)
+        }
+
+        val normalizedLines = mutableListOf<String>()
+        val transports = linkedSetOf<String>()
+
+        for (rawLine in inputLines) {
+            if (rawLine.length > MAX_BRIDGE_LINE_CHARS) {
+                return invalidBridgeResult(TorBridgeValidationError.LINE_TOO_LONG)
+            }
+            if (rawLine.any { it.isISOControl() } || '#' in rawLine) {
+                return invalidBridgeResult(TorBridgeValidationError.INVALID_FORMAT)
+            }
+
+            val withoutDirective = if (rawLine.startsWith("Bridge ", ignoreCase = true)) {
+                rawLine.substringAfter(' ').trimStart()
+            } else {
+                rawLine
+            }
+            val pieces = withoutDirective.split(Regex("\\s+"))
+            if (pieces.size < 3) {
+                return invalidBridgeResult(TorBridgeValidationError.INVALID_FORMAT)
+            }
+
+            val transport = pieces[0].lowercase(Locale.US)
+            if (transport !in setOf(OBFS4_TRANSPORT, SNOWFLAKE_TRANSPORT)) {
+                return invalidBridgeResult(TorBridgeValidationError.UNSUPPORTED_TRANSPORT)
+            }
+            if (!isValidBridgeEndpoint(pieces[1])) {
+                return invalidBridgeResult(TorBridgeValidationError.INVALID_ENDPOINT)
+            }
+            if (!FINGERPRINT_REGEX.matches(pieces[2])) {
+                return invalidBridgeResult(TorBridgeValidationError.INVALID_FINGERPRINT)
+            }
+
+            val parameters = pieces.drop(3)
+                .mapNotNull { token ->
+                    val separator = token.indexOf('=')
+                    if (separator <= 0 || separator == token.lastIndex) null
+                    else token.substring(0, separator).lowercase(Locale.US) to token.substring(separator + 1)
+                }
+                .toMap()
+
+            when (transport) {
+                OBFS4_TRANSPORT -> {
+                    if (parameters["cert"].isNullOrBlank()) {
+                        return invalidBridgeResult(TorBridgeValidationError.MISSING_OBFS4_CERT)
+                    }
+                    val iatMode = parameters["iat-mode"]
+                    if (iatMode != null && iatMode !in setOf("0", "1", "2")) {
+                        return invalidBridgeResult(TorBridgeValidationError.INVALID_OBFS4_IAT_MODE)
+                    }
+                }
+
+                SNOWFLAKE_TRANSPORT -> {
+                    val brokerUrl = parameters["url"]
+                    val frontDomains = parameters["fronts"] ?: parameters["front"]
+                    val iceServers = parameters["ice"]
+                    if (
+                        brokerUrl.isNullOrBlank() ||
+                        !brokerUrl.startsWith("https://", ignoreCase = true) ||
+                        frontDomains.isNullOrBlank() ||
+                        iceServers.isNullOrBlank()
+                    ) {
+                        return invalidBridgeResult(TorBridgeValidationError.MISSING_SNOWFLAKE_CONFIGURATION)
+                    }
                 }
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not post to main looper for lifecycle observer: ${e.message}")
+
+            transports += transport
+            normalizedLines += pieces.toMutableList().also { it[0] = transport }.joinToString(" ")
         }
+
+        return TorBridgeParseResult(
+            bridges = normalizedLines,
+            transports = transports,
+        )
+    }
+
+    private fun invalidBridgeResult(error: TorBridgeValidationError) =
+        TorBridgeParseResult(error = error)
+
+    private fun isValidBridgeEndpoint(endpoint: String): Boolean {
+        val host: String
+        val portText: String
+        if (endpoint.startsWith('[')) {
+            val closingBracket = endpoint.indexOf(']')
+            if (closingBracket <= 1 || closingBracket + 1 >= endpoint.length || endpoint[closingBracket + 1] != ':') {
+                return false
+            }
+            host = endpoint.substring(1, closingBracket)
+            portText = endpoint.substring(closingBracket + 2)
+            if (!IPV6_HOST_REGEX.matches(host) || ':' !in host) return false
+        } else {
+            val separator = endpoint.lastIndexOf(':')
+            if (separator <= 0 || separator == endpoint.lastIndex) return false
+            host = endpoint.substring(0, separator)
+            portText = endpoint.substring(separator + 1)
+            if (!HOST_REGEX.matches(host)) return false
+        }
+        val port = portText.toIntOrNull() ?: return false
+        return port in 1..65535
     }
 
     fun generateTorrcContent(
@@ -75,194 +250,334 @@ object TorManager {
         socksPort: Int = DEFAULT_SOCKS_PORT,
         controlPort: Int = DEFAULT_CONTROL_PORT,
         bridges: List<String> = emptyList(),
-        obfs4PluginPath: String? = null,
-        snowflakePluginPath: String? = null
+        bridgePluginPath: String? = null,
     ): String {
+        val parsedBridges = parseBridgeLines(bridges)
+        require(parsedBridges.error == null) {
+            "Invalid Tor bridge configuration: ${parsedBridges.error?.name}"
+        }
         val sb = StringBuilder()
         sb.appendLine("DataDirectory $dataDir")
         sb.appendLine("SocksPort 127.0.0.1:$socksPort")
         sb.appendLine("ControlPort 127.0.0.1:$controlPort")
         sb.appendLine("CookieAuthentication 1")
         sb.appendLine("SafeSocks 0")
+        sb.appendLine("SafeLogging 1")
 
-        if (bridges.isNotEmpty()) {
+        if (parsedBridges.bridges.isNotEmpty()) {
             sb.appendLine("UseBridges 1")
-            if (!obfs4PluginPath.isNullOrBlank()) {
-                sb.appendLine("ClientTransportPlugin obfs4 exec $obfs4PluginPath")
-            }
-            if (!snowflakePluginPath.isNullOrBlank()) {
-                sb.appendLine("ClientTransportPlugin snowflake exec $snowflakePluginPath")
-            }
-            bridges.forEach { bridgeLine ->
-                if (bridgeLine.isNotBlank()) {
-                    val formattedBridge = if (bridgeLine.trim().startsWith("Bridge ")) bridgeLine.trim() else "Bridge ${bridgeLine.trim()}"
-                    sb.appendLine(formattedBridge)
-                }
+            require(!bridgePluginPath.isNullOrBlank()) { "Missing Lyrebird transport binary" }
+            val transportList = parsedBridges.transports.joinToString(",")
+            sb.appendLine("ClientTransportPlugin $transportList exec $bridgePluginPath")
+            parsedBridges.bridges.forEach { bridgeLine ->
+                sb.appendLine("Bridge $bridgeLine")
             }
         }
 
-        return sb.toString().trimIndent()
+        return sb.toString().trimEnd()
     }
 
     suspend fun waitForSocksPort(socksPort: Int = DEFAULT_SOCKS_PORT, timeoutMs: Long = 3000): Boolean = withContext(Dispatchers.IO) {
-        val startTime = System.currentTimeMillis()
-        while (isActive && System.currentTimeMillis() - startTime < timeoutMs) {
+        val startTime = System.nanoTime()
+        while (isActive && elapsedMillisSince(startTime) < timeoutMs) {
             try {
                 java.net.Socket().use { socket ->
                     socket.connect(java.net.InetSocketAddress("127.0.0.1", socksPort), 400)
                     return@withContext true
                 }
-            } catch (_: Exception) {
-                try {
-                    delay(150)
-                } catch (_: Exception) {
-                    break
-                }
-            }
+            } catch (_: Exception) {}
+            delay(150)
         }
         false
     }
 
     @Synchronized
-    fun startTor(context: Context, bridges: List<String> = emptyList()) {
-        if (_isTorRunning.value) {
-            Log.d(TAG, "Tor is already running")
+    fun startTor(
+        context: Context,
+        bridges: List<String> = P2PPreferences.getEffectiveTorBridgeLines(context),
+    ) {
+        if (_isTorRunning.value || _isTorConnecting.value) {
+            Log.d(TAG, "Tor is already running or connecting")
             return
         }
 
-        initLifecycle(context)
-        torJob?.cancel()
+        val bridgeConfiguration = parseBridgeLines(bridges)
+        if (bridgeConfiguration.error != null) {
+            _isTorRunning.value = false
+            _isTorConnecting.value = false
+            _bootstrapProgress.value = 0
+            _lastBootstrapFailureReason.value = "INVALID_BRIDGE_CONFIGURATION"
+            P2PPreferences.prefs(context).edit()
+                .putBoolean(P2PPreferences.TOR_ENABLED, false)
+                .putBoolean(P2PPreferences.PROXY_ENABLED, false)
+                .apply()
+            Log.w(TAG, "Rejected invalid Tor bridge configuration (${bridgeConfiguration.error.name})")
+            return
+        }
+
+        val runId = runGate.begin()
+        _isTorConnecting.value = true
         _bootstrapProgress.value = 0
         _lastBootstrapFailureReason.value = null
 
-        torJob = scope.launch {
-            try {
-                val appTorDir = File(context.filesDir, "app_tor")
-                if (!appTorDir.exists()) {
-                    appTorDir.mkdirs()
+        val appContext = context.applicationContext
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            runTor(appContext, bridgeConfiguration, runId)
+        }
+        torJob = job
+        job.start()
+    }
+
+    private suspend fun runTor(
+        context: Context,
+        bridgeConfiguration: TorBridgeParseResult,
+        runId: Long,
+    ) {
+        var process: Process? = null
+        var logReaderJob: Job? = null
+        val failureHint = AtomicReference<String?>(null)
+        try {
+            val appTorDir = File(context.filesDir, "app_tor")
+            if (!appTorDir.exists() && !appTorDir.mkdirs()) {
+                throw IllegalStateException("Unable to create Tor data directory")
+            }
+
+            // Cleanup legacy tor_bin files from filesDir and codeCacheDir if present
+            val legacyBinFiles = listOf(
+                File(appTorDir, "tor_bin"),
+                File(context.codeCacheDir, "tor_bin")
+            )
+            legacyBinFiles.forEach { file ->
+                if (file.exists()) {
+                    runCatching { file.delete() }
                 }
+            }
 
-                // Cleanup legacy tor_bin files from filesDir and codeCacheDir if present
-                val legacyBinFiles = listOf(
-                    File(appTorDir, "tor_bin"),
-                    File(context.codeCacheDir, "tor_bin")
-                )
-                legacyBinFiles.forEach { file ->
-                    if (file.exists()) {
-                        runCatching { file.delete() }
-                    }
-                }
+            val nativeLibDir = context.applicationInfo.nativeLibraryDir
+            val torExecutable = File(nativeLibDir, "libtor.so").takeIf(File::exists)
+            if (torExecutable == null) {
+                recordFailure(runId, "MISSING_BINARY")
+                disableTorProxy(context, runId)
+                return
+            }
 
-                val nativeLibDir = context.applicationInfo.nativeLibraryDir
-                val obfs4File = File(nativeLibDir, "libobfs4proxy.so")
-                val snowflakeFile = File(nativeLibDir, "libsnowflake.so")
+            val bridgePlugin = if (bridgeConfiguration.bridges.isNotEmpty()) {
+                File(nativeLibDir, "liblyrebird.so").takeIf(File::exists)
+            } else {
+                null
+            }
+            if (bridgeConfiguration.bridges.isNotEmpty() && bridgePlugin == null) {
+                recordFailure(runId, "MISSING_BRIDGE_TRANSPORT_BINARY")
+                disableTorProxy(context, runId)
+                return
+            }
 
-                val torrcFile = File(appTorDir, "torrc")
-                val torrcContent = generateTorrcContent(
-                    dataDir = appTorDir.absolutePath,
-                    bridges = bridges,
-                    obfs4PluginPath = if (obfs4File.exists()) obfs4File.absolutePath else null,
-                    snowflakePluginPath = if (snowflakeFile.exists()) snowflakeFile.absolutePath else null
-                )
-                torrcFile.writeText(torrcContent)
+            val torrcFile = File(appTorDir, "torrc")
+            val torrcContent = generateTorrcContent(
+                dataDir = appTorDir.absolutePath,
+                bridges = bridgeConfiguration.bridges,
+                bridgePluginPath = bridgePlugin?.absolutePath,
+            )
+            torrcFile.writeText(torrcContent)
 
-                Log.i(TAG, "Initialized torrc at ${torrcFile.absolutePath} (Bridges active: ${bridges.isNotEmpty()})")
+            Log.i(
+                TAG,
+                "Initialized embedded Tor configuration (Bridges active: ${bridgeConfiguration.bridges.isNotEmpty()})"
+            )
 
-                // Directly execute libtor.so from nativeLibraryDir (pre-labeled with execute SELinux context by Android PM)
-                val libTorSo = File(nativeLibDir, "libtor.so")
-                val torExecutable: File? = if (libTorSo.exists()) libTorSo else null
+            if (!currentCoroutineContext().isActive || !runGate.isCurrent(runId)) return
 
-                if (!isActive) return@launch
+            val startedProcess = ProcessBuilder(
+                torExecutable.absolutePath,
+                "-f", torrcFile.absolutePath
+            ).directory(appTorDir).redirectErrorStream(true).start()
+            process = startedProcess
+            if (!attachProcess(runId, startedProcess)) {
+                terminateProcess(startedProcess)
+                return
+            }
+            Log.i(TAG, "Started embedded Tor process")
 
-                if (torExecutable != null) {
-                    val processBuilder = ProcessBuilder(
-                        torExecutable.absolutePath,
-                        "-f", torrcFile.absolutePath
-                    ).directory(appTorDir).redirectErrorStream(true)
-
-                    val proc = processBuilder.start()
-                    torProcess = proc
-                    Log.i(TAG, "Started embedded Tor process from ${torExecutable.absolutePath}")
-
-                    scope.launch {
-                        try {
-                            proc.inputStream.bufferedReader().useLines { lines ->
-                                lines.forEach { line ->
-                                    Log.d(TAG, "[TOR_LOG] $line")
-                                    parseBootstrapProgress(line)?.let { progress ->
-                                        _bootstrapProgress.value = progress
-                                    }
+            logReaderJob = scope.launch {
+                try {
+                    startedProcess.inputStream.bufferedReader().useLines { lines ->
+                        lines.forEach { line ->
+                            if (!runGate.isCurrent(runId)) return@forEach
+                            parseBootstrapProgress(line)?.let { progress ->
+                                _bootstrapProgress.value = progress
+                                Log.i(TAG, "Tor bootstrap progress: $progress%")
+                            }
+                            classifyBootstrapFailureHint(line)?.let { category ->
+                                if (failureHint.getAndSet(category) != category) {
+                                    Log.w(TAG, "Tor bootstrap warning category: $category")
                                 }
                             }
-                        } catch (_: Exception) {}
+                        }
                     }
-                } else {
-                    Log.w(TAG, "Native libtor.so binary not found or executable; operating in socket fallback mode")
-                }
-
-                // 30-second bootstrap readiness check loop
-                val startTime = System.currentTimeMillis()
-                var fullyBootstrapped = false
-
-                while (isActive && System.currentTimeMillis() - startTime < BOOTSTRAP_TIMEOUT_MS) {
-                    if (waitForSocksPort(timeoutMs = 400) && _bootstrapProgress.value >= 100) {
-                        fullyBootstrapped = true
-                        break
+                } catch (exc: Exception) {
+                    if (runGate.isCurrent(runId)) {
+                        Log.w(TAG, "Tor log reader stopped (${exc.javaClass.simpleName})")
                     }
-                    delay(300)
                 }
-
-                if (!isActive) return@launch
-
-                if (fullyBootstrapped) {
-                    Log.i(TAG, "Tor fully bootstrapped (100%) and SOCKS5 port 9050 ready; enabling proxy in PythonBridge.")
-                    _isTorRunning.value = true
-                    PythonBridge.applyProxyConfiguration()
-                } else {
-                    val progress = _bootstrapProgress.value
-                    if (progress < 50) {
-                        Log.w(TAG, "Tor bootstrap stuck at $progress% (<50%) for 30s; direct Tor likely blocked by ISP. Disabling proxy and falling back to direct connection.")
-                        _lastBootstrapFailureReason.value = "BOOTSTRAP_STUCK_UNDER_50_PERCENT"
-                    } else {
-                        Log.w(TAG, "Tor bootstrap timed out at $progress% (<100%) after 30s. Disabling proxy and falling back to direct connection.")
-                        _lastBootstrapFailureReason.value = "BOOTSTRAP_INCOMPLETE_TIMEOUT"
-                    }
-                    stopTor()
-                    _isTorRunning.value = false
-                    PythonBridge.applyProxyConfiguration()
-                }
-            } catch (e: CancellationException) {
-                Log.i(TAG, "Tor startup cancelled")
-                stopTor()
-                _isTorRunning.value = false
-                throw e
-            } catch (e: Exception) {
-                if (!isActive) return@launch
-                Log.e(TAG, "Failed to start Tor daemon", e)
-                stopTor()
-                _isTorRunning.value = false
-                PythonBridge.applyProxyConfiguration()
             }
+
+            val startTime = System.nanoTime()
+            var portReady = false
+            var processExited = false
+
+            val bootstrapTimeoutMs = if (bridgeConfiguration.bridges.isEmpty()) {
+                DIRECT_BOOTSTRAP_TIMEOUT_MS
+            } else {
+                BRIDGE_BOOTSTRAP_TIMEOUT_MS
+            }
+            while (currentCoroutineContext().isActive && elapsedMillisSince(startTime) < bootstrapTimeoutMs) {
+                if (!runGate.isCurrent(runId)) return
+                if (!startedProcess.isAlive) {
+                    processExited = true
+                    break
+                }
+
+                if (!portReady) {
+                    portReady = waitForSocksPort(timeoutMs = 500)
+                }
+                if (isBootstrapReady(portReady, _bootstrapProgress.value)) break
+                delay(300)
+            }
+
+            if (!currentCoroutineContext().isActive || !runGate.isCurrent(runId)) return
+
+            if (isBootstrapReady(portReady, _bootstrapProgress.value)) {
+                if (!markRunning(runId)) return
+                Log.i(TAG, "SOCKS5 listener is ready and Tor bootstrapped to 100%")
+                if (!enableTorProxy(context, runId)) return
+
+                while (currentCoroutineContext().isActive && runGate.isCurrent(runId) && startedProcess.isAlive) {
+                    delay(1000)
+                }
+                if (currentCoroutineContext().isActive && runGate.isCurrent(runId) && !startedProcess.isAlive) {
+                    recordFailure(runId, "PROCESS_EXITED")
+                    disableTorProxy(context, runId)
+                }
+                return
+            }
+
+            val reason = when {
+                processExited -> "PROCESS_EXITED"
+                !portReady -> "PORT_TIMEOUT"
+                failureHint.get() != null -> "BOOTSTRAP_TIMEOUT_${failureHint.get()}"
+                else -> "BOOTSTRAP_TIMEOUT"
+            }
+            recordFailure(runId, reason)
+            disableTorProxy(context, runId)
+        } catch (exc: CancellationException) {
+            Log.i(TAG, "Tor run cancelled")
+            throw exc
+        } catch (exc: Exception) {
+            if (runGate.isCurrent(runId)) {
+                Log.e(TAG, "Failed to start embedded Tor (${exc.javaClass.simpleName})")
+                recordFailure(runId, "START_FAILED")
+                disableTorProxy(context, runId)
+            }
+        } finally {
+            logReaderJob?.cancel()
+            terminateProcess(process)
+            finishRun(runId, process)
+        }
+    }
+
+    private fun elapsedMillisSince(startNanos: Long): Long =
+        (System.nanoTime() - startNanos) / 1_000_000L
+
+    @Synchronized
+    private fun attachProcess(runId: Long, process: Process): Boolean {
+        if (!runGate.isCurrent(runId)) return false
+        torProcess = process
+        return true
+    }
+
+    @Synchronized
+    private fun markRunning(runId: Long): Boolean {
+        if (!runGate.isCurrent(runId)) return false
+        _isTorRunning.value = true
+        _isTorConnecting.value = false
+        return true
+    }
+
+    @Synchronized
+    private fun recordFailure(runId: Long, reason: String): Boolean {
+        if (!runGate.isCurrent(runId)) return false
+        _lastBootstrapFailureReason.value = reason
+        _isTorRunning.value = false
+        _isTorConnecting.value = false
+        Log.w(TAG, "Embedded Tor failure category: $reason")
+        return true
+    }
+
+    private fun enableTorProxy(context: Context, runId: Long): Boolean {
+        if (!runGate.isCurrent(runId)) return false
+        val saved = P2PPreferences.prefs(context).edit()
+            .putBoolean(P2PPreferences.TOR_ENABLED, true)
+            .putBoolean(P2PPreferences.PROXY_ENABLED, true)
+            .putString(P2PPreferences.PROXY_HOST, "127.0.0.1")
+            .putInt(P2PPreferences.PROXY_PORT, DEFAULT_SOCKS_PORT)
+            .commit()
+        if (!saved) {
+            recordFailure(runId, "PREFERENCES_WRITE_FAILED")
+            return false
+        }
+        if (!runGate.isCurrent(runId)) return false
+        if (!PythonBridge.applyProxyConfiguration()) {
+            recordFailure(runId, "PROXY_CONFIGURATION_FAILED")
+            disableTorProxy(context, runId)
+            return false
+        }
+        return true
+    }
+
+    private fun disableTorProxy(context: Context, runId: Long) {
+        if (!runGate.isCurrent(runId)) return
+        P2PPreferences.prefs(context).edit()
+            .putBoolean(P2PPreferences.TOR_ENABLED, false)
+            .putBoolean(P2PPreferences.PROXY_ENABLED, false)
+            .commit()
+        if (runGate.isCurrent(runId)) {
+            PythonBridge.applyProxyConfiguration()
+        }
+    }
+
+    @Synchronized
+    private fun finishRun(runId: Long, process: Process?) {
+        if (!runGate.finish(runId)) return
+        if (torProcess === process) torProcess = null
+        torJob = null
+        _isTorRunning.value = false
+        _isTorConnecting.value = false
+        _bootstrapProgress.value = 0
+    }
+
+    private fun terminateProcess(process: Process?) {
+        if (process == null) return
+        try {
+            if (process.isAlive) {
+                process.destroy()
+                Log.i(TAG, "Stopped embedded Tor process")
+            }
+        } catch (exc: Exception) {
+            Log.e(TAG, "Error stopping embedded Tor (${exc.javaClass.simpleName})")
         }
     }
 
     @Synchronized
     fun stopTor() {
-        torJob?.cancel()
+        val job = torJob
+        val process = torProcess
+        runGate.invalidate()
         torJob = null
-        try {
-            torProcess?.let { proc ->
-                if (proc.isAlive) {
-                    proc.destroy()
-                    Log.i(TAG, "Stopped embedded Tor process")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping Tor process", e)
-        } finally {
-            torProcess = null
-            _isTorRunning.value = false
-            _bootstrapProgress.value = 0
-        }
+        torProcess = null
+        _isTorRunning.value = false
+        _isTorConnecting.value = false
+        _bootstrapProgress.value = 0
+        job?.cancel()
+        terminateProcess(process)
     }
 }

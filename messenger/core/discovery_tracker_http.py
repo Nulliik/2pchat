@@ -29,6 +29,7 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         interval_floor: int = 60,
         retries: int = 1,
         time_fn=time.time,
+        urlopen_fn=None,
     ) -> None:
         self._tracker_url = tracker_url
         parsed = urllib.parse.urlparse(tracker_url)
@@ -43,6 +44,7 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         self._interval_floor = max(15, interval_floor)
         self._retries = max(1, retries)
         self._time_fn = time_fn
+        self._urlopen = urlopen_fn or urllib.request.urlopen
         self._peer_id = self._make_peer_id()
         self._key = random.randint(0, 0xFFFFFFFF)
         self.observed_addresses: set[str] = set()
@@ -118,7 +120,7 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         last_error = None
         for _attempt in range(self._retries):
             try:
-                with urllib.request.urlopen(request, timeout=self._timeout) as resp:
+                with self._urlopen(request, timeout=self._timeout) as resp:
                     payload = resp.read()
                     self._record_observed_addresses(payload)
                     return payload

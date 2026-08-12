@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
@@ -15,6 +17,31 @@ val chaquopyBuildPython = providers.gradleProperty("chaquopyBuildPython")
 // messenger/ at the repository root is the only source of truth. The Android
 // package is generated under build/ and can never drift as a committed copy.
 val generatedPythonRoot = layout.buildDirectory.dir("generated/python/main")
+val pluggableTransportBinaries by configurations.creating
+val generatedBridgeJniLibs = layout.buildDirectory.dir("generated/jniLibs/bridgeTransport")
+val expectedLyrebirdSha256 = "2d70a38393ee6f1760a65a33dd971210efa06b5a355ebea829196b61fd9fd11a"
+val unpackBridgeTransportBinaries by tasks.registering(Sync::class) {
+    from({ pluggableTransportBinaries.map { zipTree(it) } })
+    into(generatedBridgeJniLibs)
+    doFirst {
+        val artifacts = pluggableTransportBinaries.files
+        check(artifacts.size == 1) { "Expected exactly one Lyrebird artifact" }
+        val artifact = artifacts.single()
+        val digest = MessageDigest.getInstance("SHA-256")
+        artifact.inputStream().buffered().use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        check(actual == expectedLyrebirdSha256) {
+            "Lyrebird artifact checksum mismatch"
+        }
+    }
+}
 val syncCanonicalPythonCore by tasks.registering(Sync::class) {
     from(rootProject.layout.projectDirectory.dir("../../messenger")) {
         exclude("tests/**", "**/__pycache__/**", "**/*.pyc")
@@ -76,13 +103,17 @@ android {
       }
       jniLibs {
         useLegacyPackaging = true
-        doNotStrip("**/libgojni.so")
+        keepDebugSymbols.add("**/libgojni.so")
+        keepDebugSymbols.add("**/liblyrebird.so")
       }
     }
+    sourceSets.getByName("main").jniLibs.directories.add(
+        generatedBridgeJniLibs.get().asFile.absolutePath
+    )
 }
 
 tasks.named("preBuild") {
-    dependsOn(syncCanonicalPythonCore, forbidDuplicatedPythonCore)
+    dependsOn(syncCanonicalPythonCore, forbidDuplicatedPythonCore, unpackBridgeTransportBinaries)
 }
 
 tasks.configureEach {
@@ -97,6 +128,10 @@ kotlin {
 }
 
 dependencies {
+  // Reproducible standalone Tor managed transport. Keeping this executable
+  // outside the runtime classpath avoids a second gomobile/libgojni runtime.
+  add(pluggableTransportBinaries.name, "org.briarproject:lyrebird-android:0.6.2")
+
   val composeBom = platform(libs.androidx.compose.bom)
   implementation(composeBom)
   androidTestImplementation(composeBom)

@@ -37,4 +37,14 @@ class ProxySettingsTest {
         assertFalse(ProxyConfig.isValidPort(0))
         assertFalse(ProxyConfig.isValidPort(70000))
     }
+
+    @Test
+    fun testLegacyEmbeddedTorPreferenceDetection() {
+        assertTrue(P2PPreferences.isLegacyTorConfiguration(true, "127.0.0.1", 9050))
+        assertTrue(P2PPreferences.isLegacyTorConfiguration(true, "localhost", 9050))
+        assertTrue(P2PPreferences.isLegacyTorConfiguration(true, "::1", 9050))
+        assertFalse(P2PPreferences.isLegacyTorConfiguration(false, "127.0.0.1", 9050))
+        assertFalse(P2PPreferences.isLegacyTorConfiguration(true, "proxy.example", 9050))
+        assertFalse(P2PPreferences.isLegacyTorConfiguration(true, "127.0.0.1", 1080))
+    }
 }

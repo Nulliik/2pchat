@@ -24,6 +24,7 @@ import os
 import socket
 import struct
 import urllib.parse
+import urllib.request
 from pathlib import Path
 from datetime import datetime, timezone
 from nacl.signing import VerifyKey
@@ -455,77 +456,17 @@ _proxy_config_lock = threading.Lock()
 _proxy_enabled = False
 _proxy_host = "127.0.0.1"
 _proxy_port = 9050
+_proxy_url_opener = None
 
 
-def _is_yggdrasil_host(host: str) -> bool:
-    """Return True if host is an Yggdrasil overlay IPv6 address (200::/7) or .ygg domain."""
-    if not isinstance(host, str):
-        return False
-    h = host.strip().lower()
-    if h.endswith(".ygg"):
-        return True
-    if h.startswith("200:") or h.startswith("201:") or h.startswith("202:") or h.startswith("203:"):
-        return True
-    if h.startswith("200") and ":" in h:
-        return True
-    return False
+def _build_proxy_url_opener(host: str, port: int):
+    """Build an HTTP(S)-only SOCKS opener without patching process sockets."""
+    import socks
+    from sockshandler import SocksiPyHandler
 
-
-def _patch_pysocks_ipv6():
-    """Sanitize 4-element IPv6 address tuples and bypass SOCKS proxy for Yggdrasil IPv6 traffic."""
-    try:
-        import socks
-        if getattr(socks.socksocket, "_2pchat_ipv6_patched", False):
-            return
-        orig_bind = socks.socksocket.bind
-        orig_sendto = socks.socksocket.sendto
-        orig_connect = socks.socksocket.connect
-
-        def safe_bind(self, address):
-            if isinstance(address, tuple) and len(address) > 2:
-                address = (address[0], address[1])
-            return orig_bind(self, address)
-
-        def safe_sendto(self, data, *args):
-            if args:
-                dest = args[0]
-                if isinstance(dest, tuple) and len(dest) > 2:
-                    dest = (dest[0], dest[1])
-                    args = (dest,) + args[1:]
-                
-                dest_host = dest[0] if isinstance(dest, tuple) and len(dest) > 0 else ""
-                if _is_yggdrasil_host(str(dest_host)):
-                    saved_proxy = getattr(self, "proxy", None)
-                    try:
-                        self.proxy = None
-                        return orig_sendto(self, data, *args)
-                    finally:
-                        if saved_proxy:
-                            self.proxy = saved_proxy
-            return orig_sendto(self, data, *args)
-
-        def safe_connect(self, dest_pair):
-            if isinstance(dest_pair, tuple) and len(dest_pair) > 2:
-                dest_pair = (dest_pair[0], dest_pair[1])
-            
-            dest_host = dest_pair[0] if isinstance(dest_pair, tuple) and len(dest_pair) > 0 else ""
-            if _is_yggdrasil_host(str(dest_host)):
-                # Yggdrasil traffic cannot be routed over Tor SOCKS proxy; bypass proxy
-                saved_proxy = getattr(self, "proxy", None)
-                try:
-                    self.proxy = None
-                    return orig_connect(self, dest_pair)
-                finally:
-                    if saved_proxy:
-                        self.proxy = saved_proxy
-            return orig_connect(self, dest_pair)
-
-        socks.socksocket.bind = safe_bind
-        socks.socksocket.sendto = safe_sendto
-        socks.socksocket.connect = safe_connect
-        socks.socksocket._2pchat_ipv6_patched = True
-    except Exception as exc:
-        print(f"[PROXY] PySocks IPv6 patch warning: {exc}")
+    return urllib.request.build_opener(
+        SocksiPyHandler(socks.SOCKS5, host, port, rdns=True)
+    )
 
 
 def configure_proxy(config_json: str) -> bool:
@@ -534,11 +475,13 @@ def configure_proxy(config_json: str) -> bool:
         config = json.loads(config_json)
         if not isinstance(config, dict):
             raise ValueError("proxy configuration must be a JSON object")
-        enabled = bool(config.get("proxy_enabled", False))
+        enabled = config.get("proxy_enabled", False)
+        if not isinstance(enabled, bool):
+            raise ValueError("proxy_enabled must be boolean")
         host = str(config.get("proxy_host", "127.0.0.1")).strip()
         port = int(config.get("proxy_port", 9050))
         if enabled:
-            if not host or len(host) > 256 or " " in host:
+            if not host or len(host) > 256 or any(char.isspace() for char in host):
                 raise ValueError("invalid proxy host")
             if not (1 <= port <= 65535):
                 raise ValueError("invalid proxy port")
@@ -546,22 +489,25 @@ def configure_proxy(config_json: str) -> bool:
         print(f"Rejected proxy configuration: {exc}")
         return False
 
-    global _proxy_enabled, _proxy_host, _proxy_port
+    opener = None
+    if enabled:
+        try:
+            opener = _build_proxy_url_opener(host, port)
+        except Exception as exc:
+            print(
+                f"[PROXY] SOCKS5 support unavailable ({type(exc).__name__}); "
+                "proxy remains disabled"
+            )
+            return False
+
+    global _proxy_enabled, _proxy_host, _proxy_port, _proxy_url_opener
     with _proxy_config_lock:
         _proxy_enabled = enabled
         _proxy_host = host
         _proxy_port = port
-        if enabled:
-            try:
-                import socks
-                _patch_pysocks_ipv6()
-                socks.set_default_proxy(socks.SOCKS5, host, port)
-                socket.socket = socks.socksocket
-            except Exception as exc:
-                print(f"[PROXY] PySocks module unavailable or failed to patch socket ({exc}); falling back to direct connection")
-        else:
-            socket.socket = _original_socket_factory
-    print(f"[PROXY] Configuration updated: enabled={enabled}, host={host}, port={port}")
+        _proxy_url_opener = opener
+
+    print(f"[PROXY] Configuration updated: enabled={enabled}, port={port}")
     return True
 
 
@@ -576,17 +522,47 @@ def get_proxy_configuration() -> dict:
 
 
 def create_tracker_socket(family: int, socktype: int, proto: int = 0) -> socket.socket:
-    """Create a socket for tracker connections, routing through SOCKS5 if enabled and reachable."""
+    """Create a tracker socket, failing closed for unsupported SOCKS5 UDP."""
     proxy = get_proxy_configuration()
     if proxy["enabled"]:
+        if socktype == socket.SOCK_DGRAM:
+            raise OSError("SOCKS5/Tor does not support UDP tracker sockets")
         try:
             import socks
             s = socks.socksocket(family, socktype, proto)
-            s.set_proxy(socks.SOCKS5, proxy["host"], proxy["port"])
+            s.set_proxy(socks.SOCKS5, proxy["host"], proxy["port"], rdns=True)
             return s
         except Exception as exc:
-            print(f"[PROXY] SOCKS5 proxy unreachable ({exc}); falling back to direct connection")
+            raise OSError("SOCKS5 tracker socket initialization failed") from exc
     return _original_socket_factory(family, socktype, proto)
+
+
+def open_tracker_url(request, *, timeout: float):
+    """Open one HTTP(S) tracker request through the configured SOCKS proxy."""
+    with _proxy_config_lock:
+        enabled = _proxy_enabled
+        opener = _proxy_url_opener
+    if enabled:
+        if opener is None:
+            raise OSError("SOCKS5 proxy is enabled but unavailable")
+        return opener.open(request, timeout=timeout)
+    return urllib.request.urlopen(request, timeout=timeout)
+
+
+def _tracker_provider(tracker, *, peer_port: int, transport: str, **kwargs):
+    """Create a discovery provider with proxying limited to HTTP(S)."""
+    proxy = get_proxy_configuration()
+    if proxy["enabled"] and tracker.discovery_scheme != "http-tracker":
+        raise OSError("SOCKS5/Tor cannot carry UDP tracker traffic")
+    if tracker.discovery_scheme == "http-tracker":
+        kwargs["urlopen_fn"] = open_tracker_url
+    return get_discovery_provider(
+        tracker.discovery_scheme,
+        tracker_url=tracker.announce_url,
+        peer_port=peer_port,
+        transport=transport,
+        **kwargs,
+    )
 
 
 def _configured_tracker(name: str):
@@ -1248,9 +1224,8 @@ def resolve_peers(
         started = time.monotonic()
         try:
             tracker = _configured_tracker(t_name)
-            provider = get_discovery_provider(
-                tracker.discovery_scheme,
-                tracker_url=tracker.announce_url,
+            provider = _tracker_provider(
+                tracker,
                 peer_port=listener_port,
                 transport="direct",
                 timeout=3.0,
@@ -1280,6 +1255,9 @@ def resolve_peers(
     async def _query_dht():
         if not _dht_enabled:
             _set_tracker_diagnostic(MAINLINE_DHT, "resolve", "DISABLED BY USER")
+            return []
+        if get_proxy_configuration()["enabled"]:
+            _set_tracker_diagnostic(MAINLINE_DHT, "resolve", "SKIPPED (SOCKS5 has no UDP)")
             return []
         started = time.monotonic()
         try:
@@ -1454,9 +1432,8 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
     async def _query(tracker_name: str):
         try:
             tracker = _configured_tracker(tracker_name)
-            provider = get_discovery_provider(
-                tracker.discovery_scheme,
-                tracker_url=tracker.announce_url,
+            provider = _tracker_provider(
+                tracker,
                 peer_port=listener_port,
                 transport="direct",
             )
@@ -1571,9 +1548,8 @@ def announce_peer_endpoints(
                 await asyncio.sleep(random.uniform(0.05, 0.3))
             started = time.monotonic()
             tracker = _configured_tracker(tracker_name)
-            provider = get_discovery_provider(
-                tracker.discovery_scheme,
-                tracker_url=tracker.announce_url,
+            provider = _tracker_provider(
+                tracker,
                 peer_port=port,
                 transport="direct",
                 timeout=3.0,
@@ -1612,6 +1588,9 @@ def announce_peer_endpoints(
             async def _announce_dht():
                 if not _dht_enabled:
                     _set_tracker_diagnostic(MAINLINE_DHT, "announce", "DISABLED BY USER")
+                    return 0
+                if get_proxy_configuration()["enabled"]:
+                    _set_tracker_diagnostic(MAINLINE_DHT, "announce", "SKIPPED (SOCKS5 has no UDP)")
                     return 0
                 _set_tracker_diagnostic(MAINLINE_DHT, "announce", "PENDING")
                 dht_started = time.monotonic()

@@ -18,7 +18,41 @@ class P2PPreferencesTest {
         P2PPreferences.prefs(context).edit()
             .remove(P2PPreferences.LISTENER_PORT)
             .remove(P2PPreferences.verifiedPeer("Alice"))
+            .remove(P2PPreferences.TOR_BRIDGES)
+            .remove(P2PPreferences.TOR_PUBLIC_BRIDGES_ENABLED)
             .commit()
+    }
+
+    @Test
+    fun torBridgeLinesRoundTripThroughEncryptedPreferences() {
+        val bridges = listOf(
+            "obfs4 192.0.2.1:443 75263E44B1D414D3C6086716091A39DE46FDF1D0 " +
+                "cert=bW9jay1vYmZzNC1jZXJ0 iat-mode=0"
+        )
+
+        assertTrue(P2PPreferences.setTorBridgeLines(context, bridges))
+        assertEquals(bridges, P2PPreferences.getTorBridgeLines(context))
+    }
+
+    @Test
+    fun automaticPublicTorBridgesAreDefaultAndCustomLinesOverrideThem() {
+        val custom = listOf(
+            "obfs4 192.0.2.1:443 75263E44B1D414D3C6086716091A39DE46FDF1D0 " +
+                "cert=bW9jay1vYmZzNC1jZXJ0 iat-mode=0"
+        )
+
+        assertTrue(P2PPreferences.publicTorBridgesEnabled(context))
+        assertEquals(
+            TorBridgeCatalog.PUBLIC_OBFS4_BRIDGES,
+            P2PPreferences.getEffectiveTorBridgeLines(context),
+        )
+
+        assertTrue(P2PPreferences.setTorBridgeLines(context, custom))
+        assertEquals(custom, P2PPreferences.getEffectiveTorBridgeLines(context))
+
+        assertTrue(P2PPreferences.setTorBridgeLines(context, emptyList()))
+        assertTrue(P2PPreferences.setPublicTorBridgesEnabled(context, false))
+        assertTrue(P2PPreferences.getEffectiveTorBridgeLines(context).isEmpty())
     }
 
     @Test
