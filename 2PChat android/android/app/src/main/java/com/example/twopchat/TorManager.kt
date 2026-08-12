@@ -148,7 +148,7 @@ object TorManager {
                     Log.w(TAG, "Native libtor.so binary not found or executable; operating in socket fallback mode")
                 }
 
-                val portReady = waitForSocksPort(timeoutMs = 5000)
+                val portReady = waitForSocksPort(timeoutMs = 15000)
                 if (!isActive) return@launch
 
                 if (portReady) {
@@ -156,17 +156,20 @@ object TorManager {
                     _isTorRunning.value = true
                     PythonBridge.applyProxyConfiguration()
                 } else {
-                    Log.w(TAG, "SOCKS5 port 9050 not responding; Tor daemon startup pending/failed. Falling back to direct connection.")
+                    Log.w(TAG, "SOCKS5 port 9050 not responding within 15s; Tor daemon startup failed. Cleaning up.")
+                    stopTor()
                     _isTorRunning.value = false
                     PythonBridge.applyProxyConfiguration()
                 }
             } catch (e: CancellationException) {
                 Log.i(TAG, "Tor startup cancelled")
+                stopTor()
                 _isTorRunning.value = false
                 throw e
             } catch (e: Exception) {
                 if (!isActive) return@launch
                 Log.e(TAG, "Failed to start Tor daemon", e)
+                stopTor()
                 _isTorRunning.value = false
                 PythonBridge.applyProxyConfiguration()
             }
