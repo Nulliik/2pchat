@@ -8,6 +8,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import java.io.File
 
 object TorManager {
@@ -19,6 +24,7 @@ object TorManager {
     val isTorRunning: StateFlow<Boolean> = _isTorRunning.asStateFlow()
 
     private var torProcess: Process? = null
+    private var torJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.IO)
 
     fun generateTorrcContent(dataDir: String, socksPort: Int = DEFAULT_SOCKS_PORT, controlPort: Int = DEFAULT_CONTROL_PORT): String {
@@ -32,23 +38,23 @@ object TorManager {
         """.trimIndent()
     }
 
-    fun waitForSocksPort(socksPort: Int = DEFAULT_SOCKS_PORT, timeoutMs: Long = 3000): Boolean {
+    suspend fun waitForSocksPort(socksPort: Int = DEFAULT_SOCKS_PORT, timeoutMs: Long = 3000): Boolean = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
-        while (System.currentTimeMillis() - startTime < timeoutMs) {
+        while (isActive && System.currentTimeMillis() - startTime < timeoutMs) {
             try {
                 java.net.Socket().use { socket ->
                     socket.connect(java.net.InetSocketAddress("127.0.0.1", socksPort), 400)
-                    return true
+                    return@withContext true
                 }
             } catch (_: Exception) {
                 try {
-                    Thread.sleep(150)
-                } catch (_: InterruptedException) {
+                    delay(150)
+                } catch (_: Exception) {
                     break
                 }
             }
         }
-        return false
+        false
     }
 
     @Synchronized
@@ -58,7 +64,8 @@ object TorManager {
             return
         }
 
-        scope.launch {
+        torJob?.cancel()
+        torJob = scope.launch {
             try {
                 val appTorDir = File(context.filesDir, "app_tor")
                 if (!appTorDir.exists()) {
@@ -95,6 +102,8 @@ object TorManager {
                     }
                 }
 
+                if (!isActive) return@launch
+
                 if (torExecutable != null) {
                     val processBuilder = ProcessBuilder(
                         torExecutable.absolutePath,
@@ -119,6 +128,8 @@ object TorManager {
                 }
 
                 val portReady = waitForSocksPort(timeoutMs = 5000)
+                if (!isActive) return@launch
+
                 if (portReady) {
                     Log.i(TAG, "SOCKS5 port 9050 is ready and accepting connections")
                     _isTorRunning.value = true
@@ -128,7 +139,12 @@ object TorManager {
                     _isTorRunning.value = false
                     PythonBridge.applyProxyConfiguration()
                 }
+            } catch (e: CancellationException) {
+                Log.i(TAG, "Tor startup cancelled")
+                _isTorRunning.value = false
+                throw e
             } catch (e: Exception) {
+                if (!isActive) return@launch
                 Log.e(TAG, "Failed to start Tor daemon", e)
                 _isTorRunning.value = false
                 PythonBridge.applyProxyConfiguration()
@@ -138,7 +154,8 @@ object TorManager {
 
     @Synchronized
     fun stopTor() {
-        if (!_isTorRunning.value && torProcess == null) return
+        torJob?.cancel()
+        torJob = null
         try {
             torProcess?.let { proc ->
                 if (proc.isAlive) {

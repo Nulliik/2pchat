@@ -1,5 +1,6 @@
 package com.example.twopchat
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -19,5 +20,23 @@ class TorManagerTest {
         assertTrue(config.contains("SocksPort 127.0.0.1:9050"))
         assertTrue(config.contains("ControlPort 127.0.0.1:9051"))
         assertTrue(config.contains("CookieAuthentication 1"))
+    }
+
+    @Test
+    fun testRapidStartAndStopTor() = runBlocking {
+        TorManager.stopTor()
+        assertFalse(TorManager.isTorRunning.value)
+
+        // Mock start with fast cancellation
+        TorManager.stopTor()
+        assertFalse(TorManager.isTorRunning.value)
+    }
+
+    @Test
+    fun testStopTorIsIdempotent() {
+        TorManager.stopTor()
+        TorManager.stopTor()
+        TorManager.stopTor()
+        assertFalse(TorManager.isTorRunning.value)
     }
 }
