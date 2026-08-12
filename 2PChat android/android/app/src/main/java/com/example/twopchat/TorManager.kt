@@ -15,6 +15,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.io.File
 
+import android.os.Handler
+import android.os.Looper
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -35,15 +37,22 @@ object TorManager {
     fun initLifecycle(context: Context) {
         if (isLifecycleRegistered) return
         try {
-            ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
-                override fun onStop(owner: LifecycleOwner) {
-                    Log.i(TAG, "Application entering background/stopped; terminating embedded Tor process")
-                    stopTor()
+            Handler(Looper.getMainLooper()).post {
+                if (isLifecycleRegistered) return@post
+                try {
+                    ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+                        override fun onStop(owner: LifecycleOwner) {
+                            Log.i(TAG, "Application entering background/stopped; terminating embedded Tor process")
+                            stopTor()
+                        }
+                    })
+                    isLifecycleRegistered = true
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not register ProcessLifecycleOwner observer: ${e.message}")
                 }
-            })
-            isLifecycleRegistered = true
+            }
         } catch (e: Exception) {
-            Log.w(TAG, "Could not register ProcessLifecycleOwner observer: ${e.message}")
+            Log.w(TAG, "Could not post to main looper for lifecycle observer: ${e.message}")
         }
     }
 
@@ -53,7 +62,6 @@ object TorManager {
             SocksPort 127.0.0.1:$socksPort
             ControlPort 127.0.0.1:$controlPort
             CookieAuthentication 1
-            AvoidDisjointLooseHops 1
             SafeSocks 0
         """.trimIndent()
     }
