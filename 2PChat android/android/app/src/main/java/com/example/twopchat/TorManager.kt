@@ -202,11 +202,11 @@ object TorManager {
 
                 // 30-second bootstrap readiness check loop
                 val startTime = System.currentTimeMillis()
-                var portReady = false
+                var fullyBootstrapped = false
 
                 while (isActive && System.currentTimeMillis() - startTime < BOOTSTRAP_TIMEOUT_MS) {
-                    if (waitForSocksPort(timeoutMs = 500)) {
-                        portReady = true
+                    if (waitForSocksPort(timeoutMs = 400) && _bootstrapProgress.value >= 100) {
+                        fullyBootstrapped = true
                         break
                     }
                     delay(300)
@@ -214,26 +214,18 @@ object TorManager {
 
                 if (!isActive) return@launch
 
-                if (portReady && _bootstrapProgress.value >= 50) {
-                    Log.i(TAG, "SOCKS5 port 9050 is ready and Tor bootstrapped to ${_bootstrapProgress.value}%")
+                if (fullyBootstrapped) {
+                    Log.i(TAG, "Tor fully bootstrapped (100%) and SOCKS5 port 9050 ready; enabling proxy in PythonBridge.")
                     _isTorRunning.value = true
                     PythonBridge.applyProxyConfiguration()
-                } else if (portReady && _bootstrapProgress.value < 50) {
-                    // Port opened but bootstrap is stuck below 50%
-                    Log.w(TAG, "Tor SOCKS port opened but bootstrap progress stuck at ${_bootstrapProgress.value}% (<50%) for 30s; direct Tor likely blocked by ISP. Disabling proxy and falling back to direct connection.")
-                    _lastBootstrapFailureReason.value = "BOOTSTRAP_STUCK_UNDER_50_PERCENT"
-                    stopTor()
-                    _isTorRunning.value = false
-                    PythonBridge.applyProxyConfiguration()
                 } else {
-                    // SOCKS port failed to open within 30s
                     val progress = _bootstrapProgress.value
                     if (progress < 50) {
-                        Log.w(TAG, "Tor bootstrap stuck at $progress% (<50%) for 30 seconds; TLS handshake error or direct connection blocked by ISP. Disabling proxy and falling back to direct connection.")
+                        Log.w(TAG, "Tor bootstrap stuck at $progress% (<50%) for 30s; direct Tor likely blocked by ISP. Disabling proxy and falling back to direct connection.")
                         _lastBootstrapFailureReason.value = "BOOTSTRAP_STUCK_UNDER_50_PERCENT"
                     } else {
-                        Log.w(TAG, "SOCKS5 port 9050 not responding within 30s; Tor daemon startup failed. Cleaning up.")
-                        _lastBootstrapFailureReason.value = "PORT_TIMEOUT"
+                        Log.w(TAG, "Tor bootstrap timed out at $progress% (<100%) after 30s. Disabling proxy and falling back to direct connection.")
+                        _lastBootstrapFailureReason.value = "BOOTSTRAP_INCOMPLETE_TIMEOUT"
                     }
                     stopTor()
                     _isTorRunning.value = false
