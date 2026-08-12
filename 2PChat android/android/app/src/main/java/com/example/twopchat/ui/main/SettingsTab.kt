@@ -2965,9 +2965,15 @@ fun SettingsTab(
         )
     }
 
-    // Language Selector dialog
     if (showLanguageDialog) {
-        val languages = listOf("Русский", "English", "Deutsch", "Español", "Français", "Português")
+        val languages = listOf(
+            Pair("Русский", "🇷🇺"),
+            Pair("English", "🇬🇧"),
+            Pair("Deutsch", "🇩🇪"),
+            Pair("Español", "🇪🇸"),
+            Pair("Français", "🇫🇷"),
+            Pair("Português", "🇵🇹")
+        )
         AlertDialog(
             onDismissRequest = { showLanguageDialog = false },
             confirmButton = {},
@@ -2979,7 +2985,7 @@ fun SettingsTab(
             title = { Text(Localizations.getString("app_language", appLanguage), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = onSurfaceColor) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    languages.forEach { lang ->
+                    languages.forEach { (lang, flag) ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -2992,7 +2998,11 @@ fun SettingsTab(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = lang, fontSize = 15.sp, color = onSurfaceColor)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(text = flag, fontSize = 20.sp)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(text = lang, fontSize = 15.sp, color = onSurfaceColor)
+                            }
                             if (lang == appLanguage) {
                                 Icon(
                                     painter = androidx.compose.ui.res.painterResource(id = com.example.twopchat.R.drawable.ic_check_bold),
@@ -3702,12 +3712,12 @@ fun LanguageSettingsPage(
 
     val languageList = remember {
         listOf(
-            Pair("Русский", "Russian"),
-            Pair("English", "English"),
-            Pair("Deutsch", "German"),
-            Pair("Español", "Spanish"),
-            Pair("Français", "French"),
-            Pair("Português", "Portuguese")
+            Triple("Русский", "Russian", "🇷🇺"),
+            Triple("English", "English", "🇬🇧"),
+            Triple("Deutsch", "German", "🇩🇪"),
+            Triple("Español", "Spanish", "🇪🇸"),
+            Triple("Français", "French", "🇫🇷"),
+            Triple("Português", "Portuguese", "🇵🇹")
         )
     }
 
@@ -3818,7 +3828,7 @@ fun LanguageSettingsPage(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            items(filteredLanguages) { (nativeName, englishName) ->
+            items(filteredLanguages) { (nativeName, englishName, flag) ->
                 val isSelected = appLanguage == nativeName
                 val activeGreen = Color(0xFF00E676)
 
@@ -3862,7 +3872,11 @@ fun LanguageSettingsPage(
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    Text(text = flag, fontSize = 22.sp)
+
+                    Spacer(modifier = Modifier.width(12.dp))
 
                     Column {
                         Text(
