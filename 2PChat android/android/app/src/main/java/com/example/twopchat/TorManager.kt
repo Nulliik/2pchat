@@ -15,6 +15,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.io.File
 
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
+
 object TorManager {
     private const val TAG = "TorManager"
     private const val DEFAULT_SOCKS_PORT = 9050
@@ -25,7 +29,23 @@ object TorManager {
 
     private var torProcess: Process? = null
     private var torJob: Job? = null
+    private var isLifecycleRegistered = false
     private val scope = CoroutineScope(Dispatchers.IO)
+
+    fun initLifecycle(context: Context) {
+        if (isLifecycleRegistered) return
+        try {
+            ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onStop(owner: LifecycleOwner) {
+                    Log.i(TAG, "Application entering background/stopped; terminating embedded Tor process")
+                    stopTor()
+                }
+            })
+            isLifecycleRegistered = true
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not register ProcessLifecycleOwner observer: ${e.message}")
+        }
+    }
 
     fun generateTorrcContent(dataDir: String, socksPort: Int = DEFAULT_SOCKS_PORT, controlPort: Int = DEFAULT_CONTROL_PORT): String {
         return """
@@ -64,6 +84,7 @@ object TorManager {
             return
         }
 
+        initLifecycle(context)
         torJob?.cancel()
         torJob = scope.launch {
             try {
@@ -72,19 +93,26 @@ object TorManager {
                     appTorDir.mkdirs()
                 }
 
+                // Cleanup legacy tor_bin from filesDir if present
+                val legacyBin = File(appTorDir, "tor_bin")
+                if (legacyBin.exists()) {
+                    runCatching { legacyBin.delete() }
+                }
+
                 val torrcFile = File(appTorDir, "torrc")
                 val torrcContent = generateTorrcContent(appTorDir.absolutePath)
                 torrcFile.writeText(torrcContent)
 
                 Log.i(TAG, "Initialized torrc at ${torrcFile.absolutePath}")
 
-                // Attempt to launch embedded Tor binary if available on system/apk
+                // Attempt to launch embedded Tor binary from codeCacheDir
                 val nativeLibDir = context.applicationInfo.nativeLibraryDir
                 val libTorSo = File(nativeLibDir, "libtor.so")
                 var torExecutable: File? = null
 
                 if (libTorSo.exists()) {
-                    val binFile = File(appTorDir, "tor_bin")
+                    val codeCacheDir = context.codeCacheDir
+                    val binFile = File(codeCacheDir, "tor_bin")
                     try {
                         if (!binFile.exists() || binFile.length() != libTorSo.length()) {
                             libTorSo.copyTo(binFile, overwrite = true)
@@ -94,7 +122,7 @@ object TorManager {
                             torExecutable = binFile
                         }
                     } catch (e: Exception) {
-                        Log.w(TAG, "Could not copy libtor.so to binFile: ${e.message}")
+                        Log.w(TAG, "Could not copy libtor.so to codeCacheDir binFile: ${e.message}")
                     }
 
                     if (torExecutable == null && libTorSo.canExecute()) {

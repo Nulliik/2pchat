@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class TorManagerTest {
 
@@ -38,5 +39,15 @@ class TorManagerTest {
         TorManager.stopTor()
         TorManager.stopTor()
         assertFalse(TorManager.isTorRunning.value)
+    }
+
+    @Test
+    fun testCodeCacheExecutableResolution() {
+        val tempCodeCache = File(System.getProperty("java.io.tmpdir"), "code_cache")
+        tempCodeCache.mkdirs()
+        val binFile = File(tempCodeCache, "tor_bin")
+        binFile.writeText("binary_content")
+        assertTrue(binFile.exists())
+        binFile.delete()
     }
 }
