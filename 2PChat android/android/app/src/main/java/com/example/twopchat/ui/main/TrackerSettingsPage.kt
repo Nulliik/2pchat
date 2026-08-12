@@ -24,6 +24,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +78,7 @@ fun TrackerSettingsPage(
     val proxyHost = remember(revision) { P2PPreferences.getProxyHost(context) }
     val proxyPortText = remember(revision) { P2PPreferences.getProxyPort(context).toString() }
     val isTorRunning by TorManager.isTorRunning.collectAsState()
+    var torUserRequested by remember { mutableStateOf(proxyEnabled || isTorRunning) }
 
     fun settingsChanged() {
         revision += 1
@@ -84,6 +86,22 @@ fun TrackerSettingsPage(
             PythonBridge.applyTrackerConfiguration()
             PythonBridge.applyProxyConfiguration()
             P2PMessageRelay.refreshAnnouncement(context)
+        }
+    }
+
+    LaunchedEffect(isTorRunning) {
+        if (isTorRunning) {
+            P2PPreferences.prefs(context).edit()
+                .putBoolean(P2PPreferences.PROXY_ENABLED, true)
+                .putString(P2PPreferences.PROXY_HOST, "127.0.0.1")
+                .putInt(P2PPreferences.PROXY_PORT, 9050)
+                .apply()
+            settingsChanged()
+        } else if (!torUserRequested && proxyEnabled) {
+            P2PPreferences.prefs(context).edit()
+                .putBoolean(P2PPreferences.PROXY_ENABLED, false)
+                .apply()
+            settingsChanged()
         }
     }
 
@@ -177,24 +195,20 @@ fun TrackerSettingsPage(
                     } else {
                         "Launches autonomous embedded Tor daemon without external apps"
                     },
-                    checked = proxyEnabled && isTorRunning,
+                    checked = torUserRequested || (proxyEnabled && isTorRunning),
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariant = onSurfaceVariant,
                     onCheckedChange = { enabled ->
+                        torUserRequested = enabled
                         if (enabled) {
-                            P2PPreferences.prefs(context).edit()
-                                .putBoolean(P2PPreferences.PROXY_ENABLED, true)
-                                .putString(P2PPreferences.PROXY_HOST, "127.0.0.1")
-                                .putInt(P2PPreferences.PROXY_PORT, 9050)
-                                .commit()
                             TorManager.startTor(context)
                         } else {
                             TorManager.stopTor()
                             P2PPreferences.prefs(context).edit()
                                 .putBoolean(P2PPreferences.PROXY_ENABLED, false)
-                                .commit()
+                                .apply()
+                            settingsChanged()
                         }
-                        settingsChanged()
                     },
                 )
                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
@@ -205,6 +219,7 @@ fun TrackerSettingsPage(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    val isConnecting = torUserRequested && !isTorRunning
                     Text(
                         text = if (isRussian) "Статус сеанса Tor" else "Tor Session Status",
                         fontSize = 14.sp,
@@ -212,10 +227,14 @@ fun TrackerSettingsPage(
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
-                        text = TorStatusFormatter.formatStatus(isTorRunning, isRussian),
+                        text = TorStatusFormatter.formatStatus(isRunning = isTorRunning, isConnecting = isConnecting, isRussian = isRussian),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (isTorRunning) Color(0xFF4CAF50) else onSurfaceVariant.copy(alpha = 0.6f),
+                        color = when {
+                            isTorRunning -> Color(0xFF4CAF50)
+                            isConnecting -> Color(0xFFFFD54F)
+                            else -> onSurfaceVariant.copy(alpha = 0.6f)
+                        },
                     )
                 }
             }
