@@ -1,5 +1,7 @@
 package com.example.twopchat.ui.main
 
+import android.widget.Toast
+
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -201,6 +203,11 @@ fun TrackerSettingsPage(
                     onCheckedChange = { enabled ->
                         torUserRequested = enabled
                         if (enabled) {
+                            Toast.makeText(
+                                context,
+                                if (isRussian) "🧅 Анонимизация Tor включена. Задержка соединения может увеличиться." else "🧅 Tor privacy enabled. Connection latency may increase.",
+                                Toast.LENGTH_LONG
+                            ).show()
                             TorManager.startTor(context)
                         } else {
                             TorManager.stopTor()
