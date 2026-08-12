@@ -25,14 +25,28 @@ object TorManager {
     private const val TAG = "TorManager"
     private const val DEFAULT_SOCKS_PORT = 9050
     private const val DEFAULT_CONTROL_PORT = 9051
+    private const val BOOTSTRAP_TIMEOUT_MS = 30000L
 
     private val _isTorRunning = MutableStateFlow(false)
     val isTorRunning: StateFlow<Boolean> = _isTorRunning.asStateFlow()
+
+    private val _bootstrapProgress = MutableStateFlow(0)
+    val bootstrapProgress: StateFlow<Int> = _bootstrapProgress.asStateFlow()
+
+    private val _lastBootstrapFailureReason = MutableStateFlow<String?>(null)
+    val lastBootstrapFailureReason: StateFlow<String?> = _lastBootstrapFailureReason.asStateFlow()
 
     private var torProcess: Process? = null
     private var torJob: Job? = null
     private var isLifecycleRegistered = false
     private val scope = CoroutineScope(Dispatchers.IO)
+
+    private val BOOTSTRAP_REGEX = Regex("""Bootstrapped\s+(\d+)%""")
+
+    fun parseBootstrapProgress(logLine: String): Int? {
+        val match = BOOTSTRAP_REGEX.find(logLine) ?: return null
+        return match.groupValues.getOrNull(1)?.toIntOrNull()
+    }
 
     fun initLifecycle(context: Context) {
         if (isLifecycleRegistered) return
@@ -56,14 +70,38 @@ object TorManager {
         }
     }
 
-    fun generateTorrcContent(dataDir: String, socksPort: Int = DEFAULT_SOCKS_PORT, controlPort: Int = DEFAULT_CONTROL_PORT): String {
-        return """
-            DataDirectory $dataDir
-            SocksPort 127.0.0.1:$socksPort
-            ControlPort 127.0.0.1:$controlPort
-            CookieAuthentication 1
-            SafeSocks 0
-        """.trimIndent()
+    fun generateTorrcContent(
+        dataDir: String,
+        socksPort: Int = DEFAULT_SOCKS_PORT,
+        controlPort: Int = DEFAULT_CONTROL_PORT,
+        bridges: List<String> = emptyList(),
+        obfs4PluginPath: String? = null,
+        snowflakePluginPath: String? = null
+    ): String {
+        val sb = StringBuilder()
+        sb.appendLine("DataDirectory $dataDir")
+        sb.appendLine("SocksPort 127.0.0.1:$socksPort")
+        sb.appendLine("ControlPort 127.0.0.1:$controlPort")
+        sb.appendLine("CookieAuthentication 1")
+        sb.appendLine("SafeSocks 0")
+
+        if (bridges.isNotEmpty()) {
+            sb.appendLine("UseBridges 1")
+            if (!obfs4PluginPath.isNullOrBlank()) {
+                sb.appendLine("ClientTransportPlugin obfs4 exec $obfs4PluginPath")
+            }
+            if (!snowflakePluginPath.isNullOrBlank()) {
+                sb.appendLine("ClientTransportPlugin snowflake exec $snowflakePluginPath")
+            }
+            bridges.forEach { bridgeLine ->
+                if (bridgeLine.isNotBlank()) {
+                    val formattedBridge = if (bridgeLine.trim().startsWith("Bridge ")) bridgeLine.trim() else "Bridge ${bridgeLine.trim()}"
+                    sb.appendLine(formattedBridge)
+                }
+            }
+        }
+
+        return sb.toString().trimIndent()
     }
 
     suspend fun waitForSocksPort(socksPort: Int = DEFAULT_SOCKS_PORT, timeoutMs: Long = 3000): Boolean = withContext(Dispatchers.IO) {
@@ -86,7 +124,7 @@ object TorManager {
     }
 
     @Synchronized
-    fun startTor(context: Context) {
+    fun startTor(context: Context, bridges: List<String> = emptyList()) {
         if (_isTorRunning.value) {
             Log.d(TAG, "Tor is already running")
             return
@@ -94,6 +132,9 @@ object TorManager {
 
         initLifecycle(context)
         torJob?.cancel()
+        _bootstrapProgress.value = 0
+        _lastBootstrapFailureReason.value = null
+
         torJob = scope.launch {
             try {
                 val appTorDir = File(context.filesDir, "app_tor")
@@ -112,14 +153,22 @@ object TorManager {
                     }
                 }
 
+                val nativeLibDir = context.applicationInfo.nativeLibraryDir
+                val obfs4File = File(nativeLibDir, "libobfs4proxy.so")
+                val snowflakeFile = File(nativeLibDir, "libsnowflake.so")
+
                 val torrcFile = File(appTorDir, "torrc")
-                val torrcContent = generateTorrcContent(appTorDir.absolutePath)
+                val torrcContent = generateTorrcContent(
+                    dataDir = appTorDir.absolutePath,
+                    bridges = bridges,
+                    obfs4PluginPath = if (obfs4File.exists()) obfs4File.absolutePath else null,
+                    snowflakePluginPath = if (snowflakeFile.exists()) snowflakeFile.absolutePath else null
+                )
                 torrcFile.writeText(torrcContent)
 
-                Log.i(TAG, "Initialized torrc at ${torrcFile.absolutePath}")
+                Log.i(TAG, "Initialized torrc at ${torrcFile.absolutePath} (Bridges active: ${bridges.isNotEmpty()})")
 
                 // Directly execute libtor.so from nativeLibraryDir (pre-labeled with execute SELinux context by Android PM)
-                val nativeLibDir = context.applicationInfo.nativeLibraryDir
                 val libTorSo = File(nativeLibDir, "libtor.so")
                 val torExecutable: File? = if (libTorSo.exists()) libTorSo else null
 
@@ -140,6 +189,9 @@ object TorManager {
                             proc.inputStream.bufferedReader().useLines { lines ->
                                 lines.forEach { line ->
                                     Log.d(TAG, "[TOR_LOG] $line")
+                                    parseBootstrapProgress(line)?.let { progress ->
+                                        _bootstrapProgress.value = progress
+                                    }
                                 }
                             }
                         } catch (_: Exception) {}
@@ -148,15 +200,41 @@ object TorManager {
                     Log.w(TAG, "Native libtor.so binary not found or executable; operating in socket fallback mode")
                 }
 
-                val portReady = waitForSocksPort(timeoutMs = 15000)
+                // 30-second bootstrap readiness check loop
+                val startTime = System.currentTimeMillis()
+                var portReady = false
+
+                while (isActive && System.currentTimeMillis() - startTime < BOOTSTRAP_TIMEOUT_MS) {
+                    if (waitForSocksPort(timeoutMs = 500)) {
+                        portReady = true
+                        break
+                    }
+                    delay(300)
+                }
+
                 if (!isActive) return@launch
 
-                if (portReady) {
-                    Log.i(TAG, "SOCKS5 port 9050 is ready and accepting connections")
+                if (portReady && _bootstrapProgress.value >= 50) {
+                    Log.i(TAG, "SOCKS5 port 9050 is ready and Tor bootstrapped to ${_bootstrapProgress.value}%")
                     _isTorRunning.value = true
                     PythonBridge.applyProxyConfiguration()
+                } else if (portReady && _bootstrapProgress.value < 50) {
+                    // Port opened but bootstrap is stuck below 50%
+                    Log.w(TAG, "Tor SOCKS port opened but bootstrap progress stuck at ${_bootstrapProgress.value}% (<50%) for 30s; direct Tor likely blocked by ISP. Disabling proxy and falling back to direct connection.")
+                    _lastBootstrapFailureReason.value = "BOOTSTRAP_STUCK_UNDER_50_PERCENT"
+                    stopTor()
+                    _isTorRunning.value = false
+                    PythonBridge.applyProxyConfiguration()
                 } else {
-                    Log.w(TAG, "SOCKS5 port 9050 not responding within 15s; Tor daemon startup failed. Cleaning up.")
+                    // SOCKS port failed to open within 30s
+                    val progress = _bootstrapProgress.value
+                    if (progress < 50) {
+                        Log.w(TAG, "Tor bootstrap stuck at $progress% (<50%) for 30 seconds; TLS handshake error or direct connection blocked by ISP. Disabling proxy and falling back to direct connection.")
+                        _lastBootstrapFailureReason.value = "BOOTSTRAP_STUCK_UNDER_50_PERCENT"
+                    } else {
+                        Log.w(TAG, "SOCKS5 port 9050 not responding within 30s; Tor daemon startup failed. Cleaning up.")
+                        _lastBootstrapFailureReason.value = "PORT_TIMEOUT"
+                    }
                     stopTor()
                     _isTorRunning.value = false
                     PythonBridge.applyProxyConfiguration()
@@ -192,6 +270,7 @@ object TorManager {
         } finally {
             torProcess = null
             _isTorRunning.value = false
+            _bootstrapProgress.value = 0
         }
     }
 }
