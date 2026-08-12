@@ -237,13 +237,52 @@ fun ChatsTab(
 
                         val healthStatusText = remember(isTorRunning, isTorConnecting, torBootstrapProgress, heroYggOk, heroActivePeers, appLanguage) {
                             val peersText = if (heroActivePeers > 0) "$heroActivePeers" else "0"
-                            val isRu = appLanguage == "Русский"
                             when {
-                                isTorConnecting -> if (isRu) "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText пир." else "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText peers"
-                                isTorRunning && heroYggOk == true -> if (isRu) "🛡️ Защищено • Tor 100% • Yggdrasil • $peersText пир." else "🛡️ Protected • Tor 100% • Yggdrasil • $peersText peers"
-                                isTorRunning -> if (isRu) "🛡️ Tor 100% • $peersText пир." else "🛡️ Tor 100% • $peersText peers"
-                                heroYggOk == true -> if (isRu) "🛡️ P2P Прямое • Yggdrasil • $peersText пир." else "🛡️ P2P Direct • Yggdrasil • $peersText peers"
-                                else -> if (isRu) "🛡️ Офлайн • $peersText пир." else "🛡️ Offline • $peersText peers"
+                                isTorConnecting -> com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText пир.",
+                                    en = "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText peers",
+                                    de = "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText Peers",
+                                    es = "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText pares",
+                                    fr = "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText pairs",
+                                    pt = "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText pares"
+                                )
+                                isTorRunning && heroYggOk == true -> com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "🛡️ Защищено • Tor 100% • Yggdrasil • $peersText пир.",
+                                    en = "🛡️ Protected • Tor 100% • Yggdrasil • $peersText peers",
+                                    de = "🛡️ Geschützt • Tor 100% • Yggdrasil • $peersText Peers",
+                                    es = "🛡️ Protegido • Tor 100% • Yggdrasil • $peersText pares",
+                                    fr = "🛡️ Protégé • Tor 100% • Yggdrasil • $peersText pairs",
+                                    pt = "🛡️ Protegido • Tor 100% • Yggdrasil • $peersText pares"
+                                )
+                                isTorRunning -> com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "🛡️ Tor 100% • $peersText пир.",
+                                    en = "🛡️ Tor 100% • $peersText peers",
+                                    de = "🛡️ Tor 100% • $peersText Peers",
+                                    es = "🛡️ Tor 100% • $peersText pares",
+                                    fr = "🛡️ Tor 100% • $peersText pairs",
+                                    pt = "🛡️ Tor 100% • $peersText pares"
+                                )
+                                heroYggOk == true -> com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "🛡️ P2P Прямое • Yggdrasil • $peersText пир.",
+                                    en = "🛡️ P2P Direct • Yggdrasil • $peersText peers",
+                                    de = "🛡️ P2P Direkt • Yggdrasil • $peersText Peers",
+                                    es = "🛡️ P2P Directo • Yggdrasil • $peersText pares",
+                                    fr = "🛡️ P2P Direct • Yggdrasil • $peersText pairs",
+                                    pt = "🛡️ P2P Direto • Yggdrasil • $peersText pares"
+                                )
+                                else -> com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "🛡️ Офлайн • $peersText пир.",
+                                    en = "🛡️ Offline • $peersText peers",
+                                    de = "🛡️ Offline • $peersText Peers",
+                                    es = "🛡️ Fuera de línea • $peersText pares",
+                                    fr = "🛡️ Hors ligne • $peersText pairs",
+                                    pt = "🛡️ Offline • $peersText pares"
+                                )
                             }
                         }
 
@@ -474,7 +513,15 @@ fun ChatsTab(
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column {
                                         Text(
-                                            text = if (isRu) "Слой анонимизации (Tor)" else "Anonymization Layer (Tor)",
+                                            text = com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Слой анонимизации (Tor)",
+                                                en = "Anonymization Layer (Tor)",
+                                                de = "Anonymisierungsschicht (Tor)",
+                                                es = "Capa de anonimato (Tor)",
+                                                fr = "Couche d'anonymat (Tor)",
+                                                pt = "Camada de anonimato (Tor)"
+                                            ),
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = onSurfaceColor
@@ -584,7 +631,15 @@ fun ChatsTab(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
-                                            text = if (isRu) "📡 Трекеры: ${if (heroTrackersOk == true) "9/9" else "0/9"}" else "📡 Trackers: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
+                                            text = com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "📡 Трекеры: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
+                                                en = "📡 Trackers: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
+                                                de = "📡 Tracker: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
+                                                es = "📡 Rastreos: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
+                                                fr = "📡 Traqueurs: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
+                                                pt = "📡 Rastradores: ${if (heroTrackersOk == true) "9/9" else "0/9"}"
+                                            ),
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (heroTrackersOk == true) Color(0xFF10B981) else onSurfaceVariant
@@ -603,7 +658,15 @@ fun ChatsTab(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
-                                            text = if (isRu) "👥 Пиры: $heroActivePeers" else "👥 Peers: $heroActivePeers",
+                                            text = com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "👥 Пиры: $heroActivePeers",
+                                                en = "👥 Peers: $heroActivePeers",
+                                                de = "👥 Peers: $heroActivePeers",
+                                                es = "👥 Pares: $heroActivePeers",
+                                                fr = "👥 Pairs: $heroActivePeers",
+                                                pt = "👥 Pares: $heroActivePeers"
+                                            ),
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (heroActivePeers > 0) Color(0xFF10B981) else onSurfaceVariant

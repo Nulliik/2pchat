@@ -358,7 +358,17 @@ fun TrackerSettingsPage(
                             torBridgeSaveFailed = false
                         },
                         label = {
-                            Text(if (isRussian) "Свои мосты Tor (необязательно)" else "Custom Tor Bridges (optional)")
+                            Text(
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Свои мосты Tor (необязательно)",
+                                    en = "Custom Tor Bridges (optional)",
+                                    de = "Eigene Tor-Brücken (optional)",
+                                    es = "Puentes Tor personalizados (opcional)",
+                                    fr = "Ponts Tor personnalisés (optionnel)",
+                                    pt = "Pontes Tor personalizadas (opcional)"
+                                )
+                            )
                         },
                         placeholder = {
                             Text("obfs4 IP:port fingerprint cert=… iat-mode=0")
@@ -369,30 +379,46 @@ fun TrackerSettingsPage(
                         supportingText = {
                             Text(
                                 when {
-                                    torBridgeSaveFailed -> if (isRussian) {
-                                        "Не удалось сохранить мосты в защищённых настройках"
-                                    } else {
-                                        "Could not save bridges to secure settings"
-                                    }
+                                    torBridgeSaveFailed -> com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Не удалось сохранить мосты в защищённых настройках",
+                                        en = "Could not save bridges to secure settings",
+                                        de = "Brücken konnten nicht in sicheren Einstellungen gespeichert werden",
+                                        es = "No se pudieron guardar los puentes en la configuración segura",
+                                        fr = "Impossible d'enregistrer les ponts dans les paramètres sécurisés",
+                                        pt = "Não foi possível salvar as pontes nas configurações seguras"
+                                    )
                                     torBridgeValidation.error != null ->
                                         torBridgeValidationMessage(torBridgeValidation.error, isRussian)
                                     torBridgeValidation.bridges.isEmpty() && publicTorBridgesEnabled ->
-                                        if (isRussian) {
-                                            "Будет автоматически выбран рабочий публичный мост obfs4"
-                                        } else {
-                                            "A working public obfs4 bridge will be selected automatically"
-                                        }
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Будет автоматически выбран рабочий публичный мост obfs4",
+                                            en = "A working public obfs4 bridge will be selected automatically",
+                                            de = "Eine funktionierende öffentliche obfs4-Brücke wird automatisch ausgewählt",
+                                            es = "Se seleccionará automáticamente un puente obfs4 público que funcione",
+                                            fr = "Un pont obfs4 public fonctionnel sera sélectionné automatiquement",
+                                            pt = "Uma ponte obfs4 pública funcional será selecionada automaticamente"
+                                        )
                                     torBridgeValidation.bridges.isEmpty() ->
-                                        if (isRussian) {
-                                            "Автомосты выключены: Tor попробует прямое подключение"
-                                        } else {
-                                            "Automatic bridges are off: Tor will try a direct connection"
-                                        }
-                                    else -> if (isRussian) {
-                                        "По одной строке obfs4 или snowflake на строку"
-                                    } else {
-                                        "One obfs4 or snowflake bridge per line"
-                                    }
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Автомосты выключены: Tor попробует прямое подключение",
+                                            en = "Automatic bridges are off: Tor will try a direct connection",
+                                            de = "Automatische Brücken sind aus: Tor versucht eine direkte Verbindung",
+                                            es = "Puentes automáticos desactivados: Tor intentará conexión directa",
+                                            fr = "Ponts automatiques désactivés: Tor essaiera une connexion directe",
+                                            pt = "Pontes automáticas desativadas: O Tor tentará conexão direta"
+                                        )
+                                    else -> com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "По одной строке obfs4 или snowflake на строку",
+                                        en = "One obfs4 or snowflake bridge per line",
+                                        de = "Eine obfs4- oder snowflake-Brücke pro Zeile",
+                                        es = "Un puente obfs4 o snowflake por línea",
+                                        fr = "Un pont obfs4 ou snowflake par ligne",
+                                        pt = "Uma ponte obfs4 ou snowflake por linha"
+                                    )
                                 }
                             )
                         },
@@ -423,21 +449,47 @@ fun TrackerSettingsPage(
                                 }
                                 Toast.makeText(
                                     context,
-                                    if (isRussian) "Мосты Tor сохранены" else "Tor bridges saved",
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Мосты Tor сохранены",
+                                        en = "Tor bridges saved",
+                                        de = "Tor-Brücken gespeichert",
+                                        es = "Puentes Tor guardados",
+                                        fr = "Ponts Tor enregistrés",
+                                        pt = "Pontes Tor salvas"
+                                    ),
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             }
                         },
                         modifier = Modifier.align(Alignment.End),
                     ) {
-                        Text(if (isRussian) "Сохранить мосты" else "Save bridges")
+                        Text(
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Сохранить мосты",
+                                en = "Save bridges",
+                                de = "Brücken speichern",
+                                es = "Guardar puentes",
+                                fr = "Enregistrer les ponts",
+                                pt = "Salvar pontes"
+                            )
+                        )
                     }
                 }
             }
 
             Spacer(Modifier.height(16.dp))
             Text(
-                text = if (isRussian) "SOCKS5 / Внешний Прокси" else "SOCKS5 / Custom Proxy",
+                text = com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "SOCKS5 / Внешний Прокси",
+                    en = "SOCKS5 / Custom Proxy",
+                    de = "SOCKS5 / Externer Proxy",
+                    es = "SOCKS5 / Proxy externo",
+                    fr = "SOCKS5 / Proxy externe",
+                    pt = "SOCKS5 / Proxy externo"
+                ),
                 color = onSurfaceColor,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
@@ -447,12 +499,24 @@ fun TrackerSettingsPage(
                 var currentPortText by remember(proxyPortText) { mutableStateOf(proxyPortText) }
 
                 TrackerToggleRow(
-                    title = if (isRussian) "Использовать SOCKS5 Прокси" else "Use SOCKS5 Proxy",
-                    subtitle = if (isRussian) {
-                        "Маршрутизация анонсов к трекерам через Tor (Orbot) или локальный прокси"
-                    } else {
-                        "Routes tracker announces through Tor (Orbot) or local proxy"
-                    },
+                    title = com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Использовать SOCKS5 Прокси",
+                        en = "Use SOCKS5 Proxy",
+                        de = "SOCKS5-Proxy verwenden",
+                        es = "Usar Proxy SOCKS5",
+                        fr = "Utiliser un proxy SOCKS5",
+                        pt = "Usar Proxy SOCKS5"
+                    ),
+                    subtitle = com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Маршрутизация анонсов к трекерам через Tor (Orbot) или локальный прокси",
+                        en = "Routes tracker announces through Tor (Orbot) or local proxy",
+                        de = "Routet Tracker-Ankündigungen über Tor (Orbot) oder lokalen Proxy",
+                        es = "Enruta anuncios de rastreo a través de Tor (Orbot) o proxy local",
+                        fr = "Achemine les annonces de traqueurs via Tor (Orbot) ou un proxy local",
+                        pt = "Roteia anúncios de rastreadores via Tor (Orbot) ou proxy local"
+                    ),
                     checked = proxyEnabled,
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariant = onSurfaceVariant,
