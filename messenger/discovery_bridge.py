@@ -14,6 +14,11 @@ warnings.filterwarnings(
     message="Enable tracemalloc",
     category=ResourceWarning,
 )
+warnings.filterwarnings(
+    "ignore",
+    message=".*unclosed.*SSLSocket.*",
+    category=ResourceWarning,
+)
 import uuid
 import re
 import time
@@ -1231,6 +1236,9 @@ def resolve_peers(
         started = time.monotonic()
         try:
             tracker = _configured_tracker(t_name)
+            if get_proxy_configuration()["enabled"] and getattr(tracker, "discovery_scheme", "") != "http-tracker":
+                _set_tracker_diagnostic(t_name, "resolve", "SKIPPED (Tor/SOCKS5 active)")
+                return []
             provider = _tracker_provider(
                 tracker,
                 peer_port=listener_port,
@@ -1550,11 +1558,17 @@ def announce_peer_endpoints(
 
         async def _announce_tracker(tracker_name: str):
             _set_tracker_diagnostic(tracker_name, "announce", "PENDING")
+            tracker = _configured_tracker(tracker_name)
+            if get_proxy_configuration()["enabled"] and getattr(tracker, "discovery_scheme", "") != "http-tracker":
+                _set_tracker_diagnostic(tracker_name, "announce", "SKIPPED (Tor/SOCKS5 active)")
+                return 0
             # Stagger outbound queries to public trackers with randomized jitter (0.05 to 0.3s)
             if not os.environ.get("PYTEST_CURRENT_TEST"):
                 await asyncio.sleep(random.uniform(0.05, 0.3))
+            if get_proxy_configuration()["enabled"] and getattr(tracker, "discovery_scheme", "") != "http-tracker":
+                _set_tracker_diagnostic(tracker_name, "announce", "SKIPPED (Tor/SOCKS5 active)")
+                return 0
             started = time.monotonic()
-            tracker = _configured_tracker(tracker_name)
             provider = _tracker_provider(
                 tracker,
                 peer_port=port,
