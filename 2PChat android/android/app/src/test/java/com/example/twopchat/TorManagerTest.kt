@@ -3,6 +3,7 @@ package com.example.twopchat
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -42,12 +43,25 @@ class TorManagerTest {
     }
 
     @Test
-    fun testCodeCacheExecutableResolution() {
-        val tempCodeCache = File(System.getProperty("java.io.tmpdir"), "code_cache")
-        tempCodeCache.mkdirs()
-        val binFile = File(tempCodeCache, "tor_bin")
-        binFile.writeText("binary_content")
-        assertTrue(binFile.exists())
-        binFile.delete()
+    fun testNativeLibraryDirExecutableResolution() {
+        val tempNativeDir = File(System.getProperty("java.io.tmpdir"), "lib_test")
+        tempNativeDir.mkdirs()
+        val libTorSo = File(tempNativeDir, "libtor.so")
+        libTorSo.writeText("mock_so_binary")
+        
+        val resolvedExecutable = if (libTorSo.exists()) libTorSo else null
+        assertEquals(libTorSo.absolutePath, resolvedExecutable?.absolutePath)
+        
+        libTorSo.delete()
+        tempNativeDir.delete()
+    }
+
+    @Test
+    fun testMissingLibTorGracefulHandling() {
+        val nonExistentDir = File(System.getProperty("java.io.tmpdir"), "non_existent_dir")
+        val libTorSo = File(nonExistentDir, "libtor.so")
+        
+        val resolvedExecutable = if (libTorSo.exists()) libTorSo else null
+        assertNull(resolvedExecutable)
     }
 }

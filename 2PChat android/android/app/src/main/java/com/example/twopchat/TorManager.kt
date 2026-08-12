@@ -93,10 +93,15 @@ object TorManager {
                     appTorDir.mkdirs()
                 }
 
-                // Cleanup legacy tor_bin from filesDir if present
-                val legacyBin = File(appTorDir, "tor_bin")
-                if (legacyBin.exists()) {
-                    runCatching { legacyBin.delete() }
+                // Cleanup legacy tor_bin files from filesDir and codeCacheDir if present
+                val legacyBinFiles = listOf(
+                    File(appTorDir, "tor_bin"),
+                    File(context.codeCacheDir, "tor_bin")
+                )
+                legacyBinFiles.forEach { file ->
+                    if (file.exists()) {
+                        runCatching { file.delete() }
+                    }
                 }
 
                 val torrcFile = File(appTorDir, "torrc")
@@ -105,30 +110,10 @@ object TorManager {
 
                 Log.i(TAG, "Initialized torrc at ${torrcFile.absolutePath}")
 
-                // Attempt to launch embedded Tor binary from codeCacheDir
+                // Directly execute libtor.so from nativeLibraryDir (pre-labeled with execute SELinux context by Android PM)
                 val nativeLibDir = context.applicationInfo.nativeLibraryDir
                 val libTorSo = File(nativeLibDir, "libtor.so")
-                var torExecutable: File? = null
-
-                if (libTorSo.exists()) {
-                    val codeCacheDir = context.codeCacheDir
-                    val binFile = File(codeCacheDir, "tor_bin")
-                    try {
-                        if (!binFile.exists() || binFile.length() != libTorSo.length()) {
-                            libTorSo.copyTo(binFile, overwrite = true)
-                        }
-                        binFile.setExecutable(true, false)
-                        if (binFile.canExecute()) {
-                            torExecutable = binFile
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Could not copy libtor.so to codeCacheDir binFile: ${e.message}")
-                    }
-
-                    if (torExecutable == null && libTorSo.canExecute()) {
-                        torExecutable = libTorSo
-                    }
-                }
+                val torExecutable: File? = if (libTorSo.exists()) libTorSo else null
 
                 if (!isActive) return@launch
 
