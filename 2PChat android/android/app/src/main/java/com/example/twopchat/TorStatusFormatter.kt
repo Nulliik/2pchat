@@ -1,7 +1,7 @@
 package com.example.twopchat
 
 object TorStatusFormatter {
-    fun formatStatus(isRunning: Boolean, isConnecting: Boolean = false, appLanguage: String = "English"): String {
+    fun formatStatus(isRunning: Boolean, isConnecting: Boolean = false, appLanguage: String = "English", progress: Int = 0): String {
         val lang = appLanguage.lowercase()
         return when {
             isRunning -> when {
@@ -12,13 +12,16 @@ object TorStatusFormatter {
                 lang.startsWith("por") || lang == "pt" -> "Conectado ao Tor"
                 else -> "Connected to Tor"
             }
-            isConnecting -> when {
-                lang.startsWith("рус") || lang == "ru" -> "Подключение..."
-                lang.startsWith("deu") || lang.startsWith("ger") || lang == "de" -> "Verbindung wird hergestellt..."
-                lang.startsWith("esp") || lang.startsWith("spa") || lang == "es" -> "Conectando..."
-                lang.startsWith("fra") || lang.startsWith("fre") || lang == "fr" -> "Connexion en cours..."
-                lang.startsWith("por") || lang == "pt" -> "Conectando..."
-                else -> "Connecting..."
+            isConnecting -> {
+                val progressSuffix = if (progress > 0) " ($progress%)" else ""
+                when {
+                    lang.startsWith("рус") || lang == "ru" -> "Подключение...$progressSuffix"
+                    lang.startsWith("deu") || lang.startsWith("ger") || lang == "de" -> "Verbindung wird hergestellt...$progressSuffix"
+                    lang.startsWith("esp") || lang.startsWith("spa") || lang == "es" -> "Conectando...$progressSuffix"
+                    lang.startsWith("fra") || lang.startsWith("fre") || lang == "fr" -> "Connexion en cours...$progressSuffix"
+                    lang.startsWith("por") || lang == "pt" -> "Conectando...$progressSuffix"
+                    else -> "Connecting...$progressSuffix"
+                }
             }
             else -> when {
                 lang.startsWith("рус") || lang == "ru" -> "Отключено"
@@ -31,8 +34,8 @@ object TorStatusFormatter {
         }
     }
 
-    fun formatStatus(isRunning: Boolean, isConnecting: Boolean, isRussian: Boolean): String {
-        return formatStatus(isRunning, isConnecting, if (isRussian) "Русский" else "English")
+    fun formatStatus(isRunning: Boolean, isConnecting: Boolean, isRussian: Boolean, progress: Int = 0): String {
+        return formatStatus(isRunning, isConnecting, if (isRussian) "Русский" else "English", progress)
     }
 
     fun getActivationToast(appLanguage: String): String {

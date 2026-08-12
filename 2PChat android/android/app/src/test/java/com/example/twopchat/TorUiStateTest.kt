@@ -12,6 +12,8 @@ class TorUiStateTest {
         assertEquals("Connected to Tor", TorStatusFormatter.formatStatus(isRunning = true, isConnecting = false, isRussian = false))
         assertEquals("Подключение...", TorStatusFormatter.formatStatus(isRunning = false, isConnecting = true, isRussian = true))
         assertEquals("Connecting...", TorStatusFormatter.formatStatus(isRunning = false, isConnecting = true, isRussian = false))
+        assertEquals("Подключение... (45%)", TorStatusFormatter.formatStatus(isRunning = false, isConnecting = true, isRussian = true, progress = 45))
+        assertEquals("Connecting... (45%)", TorStatusFormatter.formatStatus(isRunning = false, isConnecting = true, isRussian = false, progress = 45))
         assertEquals("Отключено", TorStatusFormatter.formatStatus(isRunning = false, isConnecting = false, isRussian = true))
         assertEquals("Disconnected", TorStatusFormatter.formatStatus(isRunning = false, isConnecting = false, isRussian = false))
     }

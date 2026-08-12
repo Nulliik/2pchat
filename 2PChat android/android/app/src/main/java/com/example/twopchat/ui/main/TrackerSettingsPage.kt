@@ -83,6 +83,7 @@ fun TrackerSettingsPage(
     val proxyPortText = remember(revision) { P2PPreferences.getProxyPort(context).toString() }
     val isTorRunning by TorManager.isTorRunning.collectAsState()
     val isTorConnecting by TorManager.isTorConnecting.collectAsState()
+    val torBootstrapProgress by TorManager.bootstrapProgress.collectAsState()
     val torBootstrapFailure by TorManager.lastBootstrapFailureReason.collectAsState()
     var torUserRequested by remember {
         mutableStateOf(P2PPreferences.isTorEnabled(context) || isTorRunning || isTorConnecting)
@@ -333,7 +334,12 @@ fun TrackerSettingsPage(
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
-                        text = TorStatusFormatter.formatStatus(isRunning = isTorRunning, isConnecting = isTorConnecting, appLanguage = appLanguage),
+                        text = TorStatusFormatter.formatStatus(
+                            isRunning = isTorRunning,
+                            isConnecting = isTorConnecting,
+                            appLanguage = appLanguage,
+                            progress = torBootstrapProgress,
+                        ),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = when {
