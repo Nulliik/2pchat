@@ -102,3 +102,30 @@ def test_http_tracker_request_uses_scoped_proxy_opener(monkeypatch):
     request = object()
     assert discovery_bridge.open_tracker_url(request, timeout=2.5) == "proxied-response"
     assert calls == [(request, 2.5)]
+
+
+def test_tor_skips_udp_trackers(monkeypatch):
+    from messenger import discovery_bridge
+
+    # Configure proxy as enabled
+    discovery_bridge.configure_proxy(json.dumps({
+        "proxy_enabled": True,
+        "proxy_host": "127.0.0.1",
+        "proxy_port": 9050,
+    }))
+
+    trackers = ["OpenTrackr HTTPS", "Torrent.eu.org UDP", "Open Stealth UDP"]
+    filtered = discovery_bridge._filter_enabled_trackers(trackers)
+
+    # Assert that UDP trackers are skipped and ONLY HTTP(S) trackers remain when proxy is active
+    assert "OpenTrackr HTTPS" in filtered
+    assert "Torrent.eu.org UDP" not in filtered
+    assert "Open Stealth UDP" not in filtered
+
+    # Disable proxy and verify UDP trackers are allowed again
+    discovery_bridge.configure_proxy(json.dumps({
+        "proxy_enabled": False,
+    }))
+    filtered_direct = discovery_bridge._filter_enabled_trackers(trackers)
+    assert "Torrent.eu.org UDP" in filtered_direct
+

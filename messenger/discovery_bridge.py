@@ -575,6 +575,7 @@ def _configured_tracker(name: str):
 
 def _filter_enabled_trackers(names):
     result = []
+    proxy_enabled = get_proxy_configuration().get("enabled", False)
     with _tracker_config_lock:
         protocols = set(_enabled_tracker_protocols)
         disabled = set(_disabled_builtin_trackers)
@@ -601,6 +602,12 @@ def _filter_enabled_trackers(names):
             except ValueError:
                 # Preserve testability for injected tracker presets.
                 spec = _configured_tracker(name)
+        
+        # SOCKS5/Tor proxy does not support UDP forwarding.
+        # Skip UDP trackers when proxy is active to prevent IP leakage and network socket errors.
+        if proxy_enabled and getattr(spec, "discovery_scheme", "") != "http-tracker":
+            continue
+
         protocol = getattr(spec, "protocol", None)
         if protocol is None:
             protocol = urllib.parse.urlparse(spec.announce_url).scheme.lower()
