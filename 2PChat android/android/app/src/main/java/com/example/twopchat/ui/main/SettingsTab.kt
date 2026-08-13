@@ -533,6 +533,30 @@ fun SettingsTab(
                                 onClick = { activeSubPage = "trackers" }
                             ),
                             DeepSettingItem(
+                                category = if (isRu) "Анонимизация" else "Anonymization",
+                                categoryColor = Color(0xFFAB47BC),
+                                title = if (isRu) "Встроенный Tor & Мосты obfs4" else "Embedded Tor & obfs4 Bridges",
+                                subtitle = if (isRu) "Луковая маршрутизация, мосты obfs4 и ротация цепочки" else "Onion routing, obfs4 bridges & circuit rotation",
+                                keywords = listOf("tor", "onion", "obfs4", "bridge", "bridges", "тор", "мосты", "анонимность", "цепочка", "circuit", "new identity", "ротация"),
+                                onClick = { activeSubPage = "trackers" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Сеть" else "Network",
+                                categoryColor = Color(0xFF26A69A),
+                                title = if (isRu) "SOCKS5 / Внешний Прокси" else "SOCKS5 / Custom Proxy",
+                                subtitle = if (isRu) "Настройка внешнего SOCKS5 прокси или Orbot" else "Route connections via custom SOCKS5 proxy or Orbot",
+                                keywords = listOf("socks5", "proxy", "socks", "прокси", "хост", "порт", "1080", "9050", "orbot"),
+                                onClick = { activeSubPage = "trackers" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Оформление" else "Appearance",
+                                categoryColor = Color(0xFFFFA726),
+                                title = if (isRu) "Сворачивать NexusTab по умолчанию" else "Collapse NexusTab by Default",
+                                subtitle = if (isRu) "Компактный режим виджета статуса на экране чатов" else "Compact NexusTab status bar on chats tab",
+                                keywords = listOf("nexustab", "nexus", "hero", "widget", "виджет", "сворачивать", "компактный", "статус"),
+                                onClick = { activeSubPage = "chat_settings" }
+                            ),
+                            DeepSettingItem(
                                 category = if (isRu) "Сеть" else "Network",
                                 categoryColor = Color(0xFFAB47BC),
                                 title = if (isRu) "Пиры сети Yggdrasil" else "Yggdrasil Peers List",
