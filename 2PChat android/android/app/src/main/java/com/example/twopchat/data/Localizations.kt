@@ -588,6 +588,15 @@ object Localizations {
         "help_duress_desc" to "Das Festlegen einer Notfall-PIN ermöglicht das sofortige Löschen aller Daten direkt vom Sperrbildschirm.",
         "help_relay_title" to "Wie P2P-Relay-Routing funktioniert",
         "help_relay_desc" to "2PChat hat keine zentralen Server. Nachrichten werden über 3 dynamische Transport-Layer übertragen.",
+        "help_tor_title" to "Wie funktioniert die Tor-Anonymisierungsschicht?",
+        "help_tor_desc" to "Tor schützt Metadaten und verbirgt Ihre IP-Adresse durch 3-Schichten-Onion-Routing über 3 Knoten: Eingang (Guard), Mitte (Middle) und Ausgang (Exit). Zur Umgehung von ISP-Sperren werden obfs4-Brücken verwendet.",
+        "help_socks5_title" to "SOCKS5-Proxy & DNS-Leck-Schutz (socks5h)",
+        "help_socks5_desc" to "2PChat führt einen lokalen SOCKS5-Proxy auf 127.0.0.1:9050 aus. Die Verwendung des socks5h-Protokolls stellt sicher, dass DNS-Anfragen remote in Tor aufgelöst werden.",
+        "help_circuit_rotation_title" to "Tor-Schaltungs-Rotation ('Neue Identität')",
+        "help_circuit_rotation_desc" to "Die Aktion 'Neue Identität' sendet ein SIGNAL NEWNYM an den Tor ControlPort. Dies wechselt sofort Ihren Exit-Knoten und Ihre IP-Adresse.",
+        "help_sqlcipher_title" to "SQLCipher-Datenbankverschlüsselung (AES-256)",
+        "help_sqlcipher_desc" to "Alle lokalen Chats, Profile und Medien in 2PChat werden mit SQLCipher (256-Bit-AES-CBC) verschlüsselt und durch den Hardware-Keystore geschützt.",
+
 
         // Settings Main Menu Sections & Items
         "sec_appearance_chats" to "ERSCHEINUNGSBILD & CHATS",
@@ -797,6 +806,15 @@ object Localizations {
         "help_duress_desc" to "Establecer un PIN de emergencia te permite borrar todos los datos directamente desde la pantalla de bloqueo.",
         "help_relay_title" to "Cómo funciona el enrutamiento P2P Relay",
         "help_relay_desc" to "2PChat no tiene servidores centrales. Los mensajes se entregan a través de 3 capas de transporte dinámicas.",
+        "help_tor_title" to "¿Cómo funciona la capa de anonimato Tor?",
+        "help_tor_desc" to "Tor protege los metadatos y oculta su dirección IP mediante enrutamiento cebolla de 3 capas a través de 3 nodos: Entrada (Guard), Intermedio (Middle) y Salida (Exit). Para evitar bloqueos, se usan puentes obfs4.",
+        "help_socks5_title" to "Proxy SOCKS5 y protección contra fugas DNS (socks5h)",
+        "help_socks5_desc" to "2PChat ejecuta un proxy SOCKS5 local en 127.0.0.1:9050. El protocolo socks5h garantiza que las solicitudes DNS se resuelvan de forma remota dentro de Tor.",
+        "help_circuit_rotation_title" to "Rotación de circuito Tor ('Nueva identidad')",
+        "help_circuit_rotation_desc" to "La acción 'Nueva identidad' envía una orden SIGNAL NEWNYM al ControlPort de Tor. Esto rota inmediatamente su nodo de salida y dirección IP.",
+        "help_sqlcipher_title" to "Cifrado de base de datos SQLCipher (AES-256)",
+        "help_sqlcipher_desc" to "Todos los chats, perfiles y archivos locales se cifran con SQLCipher (AES-256-CBC) y están protegidos por el Keystore de hardware de Android/iOS.",
+
 
         // Settings Main Menu Sections & Items
         "sec_appearance_chats" to "ASPECTO Y CHATS",
@@ -1006,6 +1024,15 @@ object Localizations {
         "help_duress_desc" to "Définir un PIN d'urgence vous permet d'effacer immédiatement toutes les données depuis l'écran de verrouillage.",
         "help_relay_title" to "Fonctionnement du routage P2P Relay",
         "help_relay_desc" to "2PChat n'a pas de serveurs centraux. Les messages sont transmis via 3 couches de transport dynamiques.",
+        "help_tor_title" to "Comment fonctionne la couche d'anonymat Tor ?",
+        "help_tor_desc" to "Tor protège les métadonnées et masque votre adresse IP via un routage en oignon à 3 couches sur 3 nœuds : Entrée (Guard), Intermédiaire (Middle) et Sortie (Exit). Des ponts obfs4 sont utilisés pour contourner le blocage.",
+        "help_socks5_title" to "Proxy SOCKS5 et protection contre les fuites DNS (socks5h)",
+        "help_socks5_desc" to "2PChat exécute un proxy SOCKS5 local sur 127.0.0.1:9050. Le protocole socks5h garantit que les requêtes DNS sont résolues à distance dans Tor.",
+        "help_circuit_rotation_title" to "Rotation de circuit Tor ('Nouvelle identité')",
+        "help_circuit_rotation_desc" to "L'action 'Nouvelle identité' envoie un signal SIGNAL NEWNYM au ControlPort de Tor. Cela change immédiatement votre nœud de sortie et votre IP.",
+        "help_sqlcipher_title" to "Chiffrement de base de données SQLCipher (AES-256)",
+        "help_sqlcipher_desc" to "Tous les messages, profils et fichiers locaux sont chiffrés sur le disque avec SQLCipher (AES-256-CBC) et protégés par le Keystore matériel.",
+
 
         // Settings Main Menu Sections & Items
         "sec_appearance_chats" to "APPARENCE ET DISCUSSIONS",
@@ -1215,6 +1242,15 @@ object Localizations {
         "help_duress_desc" to "Definir um PIN de emergência permite apagar todos os dados diretamente da tela de bloqueio.",
         "help_relay_title" to "Como funciona o Roteamento P2P Relay",
         "help_relay_desc" to "O 2PChat não possui servidores centrais. As mensagens são entregues através de 3 camadas de transporte dinâmicas.",
+        "help_tor_title" to "Como funciona a camada de anonimato Tor?",
+        "help_tor_desc" to "O Tor protege os metadados e oculta seu endereço IP usando roteamento em cebola de 3 camadas em 3 nós: Entrada (Guard), Intermediário (Middle) e Saída (Exit). Pontes obfs4 são usadas para contornar bloqueios.",
+        "help_socks5_title" to "Proxy SOCKS5 e proteção contra vazamento de DNS (socks5h)",
+        "help_socks5_desc" to "O 2PChat executa um proxy SOCKS5 local em 127.0.0.1:9050. O uso do protocolo socks5h garante que as consultas de DNS sejam resolvidas remotamente dentro do Tor.",
+        "help_circuit_rotation_title" to "Rotação de circuito Tor ('Nova identidade')",
+        "help_circuit_rotation_desc" to "A ação 'Nova identidade' envia um comando SIGNAL NEWNYM para a ControlPort do Tor. Isso altera imediatamente o nó de saída e o IP da sessão.",
+        "help_sqlcipher_title" to "Criptografia de banco de dados SQLCipher (AES-256)",
+        "help_sqlcipher_desc" to "Todos os chats, perfis e mídias locais são criptografados com SQLCipher (AES-256-CBC) e protegidos pelo Keystore de hardware do Android/iOS.",
+
 
         // Settings Main Menu Sections & Items
         "sec_appearance_chats" to "APARÊNCIA E CONVERSAS",
