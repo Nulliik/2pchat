@@ -20,6 +20,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+data class TorCircuitNode(
+    val role: String,
+    val countryCode: String?,
+    val flagEmoji: String,
+    val name: String? = null
+)
+
 internal class TorRunGate {
     private var sequence = 0L
     private var currentRun: Long? = null
@@ -96,6 +103,15 @@ object TorManager {
     private val _circuitStatus = MutableStateFlow("[🛡️ Вход] ➔ [🔄 Срединный] ➔ [🌍 Выход]")
     val circuitStatus: StateFlow<String> = _circuitStatus.asStateFlow()
 
+    private val defaultNodes = listOf(
+        TorCircuitNode(role = "Guard", countryCode = null, flagEmoji = "🛡️", name = "Вход"),
+        TorCircuitNode(role = "Middle", countryCode = null, flagEmoji = "⚡", name = "Срединный"),
+        TorCircuitNode(role = "Exit", countryCode = null, flagEmoji = "🌍", name = "Выход")
+    )
+
+    private val _circuitNodes = MutableStateFlow<List<TorCircuitNode>>(defaultNodes)
+    val circuitNodes: StateFlow<List<TorCircuitNode>> = _circuitNodes.asStateFlow()
+
     private val _isRotatingCircuit = MutableStateFlow(false)
     val isRotatingCircuit: StateFlow<Boolean> = _isRotatingCircuit.asStateFlow()
 
@@ -117,6 +133,71 @@ object TorManager {
 
     fun shouldRotateOnBootstrapStall(progress: Int, durationMs: Long): Boolean =
         progress in 1..45 && durationMs > 30000L
+
+    fun countryCodeToFlagEmoji(countryCode: String?): String {
+        if (countryCode.isNullOrEmpty() || countryCode.length != 2) return "🌐"
+        val uppercase = countryCode.uppercase(Locale.US)
+        if (!uppercase.all { it in 'A'..'Z' }) return "🌐"
+        val firstChar = Character.codePointAt(uppercase, 0) - 0x41 + 0x1F1E6
+        val secondChar = Character.codePointAt(uppercase, 1) - 0x41 + 0x1F1E6
+        return String(Character.toChars(firstChar)) + String(Character.toChars(secondChar))
+    }
+
+    fun parseCircuitStatusNodes(circuitStatusLine: String): List<TorCircuitNode> {
+        val roles = listOf("Guard", "Middle", "Exit")
+        val nodes = mutableListOf<TorCircuitNode>()
+
+        val nodeMatches = Regex("""\$[A-Fa-f0-9]{40}[~=]([A-Za-z0-9]+)""").findAll(circuitStatusLine).toList()
+        if (nodeMatches.isNotEmpty()) {
+            nodeMatches.take(3).forEachIndexed { index, match ->
+                val nodeName = match.groupValues.getOrNull(1) ?: ""
+                val country = extractCountryCodeFromName(nodeName)
+                val role = roles.getOrElse(index) { "Node" }
+                nodes.add(
+                    TorCircuitNode(
+                        role = role,
+                        countryCode = country,
+                        flagEmoji = countryCodeToFlagEmoji(country),
+                        name = nodeName
+                    )
+                )
+            }
+        } else {
+            val parts = circuitStatusLine.split(" ")
+                .firstOrNull { "BUILT" in it || "\$" in it }
+                ?.split(",") ?: emptyList()
+
+            parts.take(3).forEachIndexed { index, part ->
+                val cleanName = part.substringAfter("~").substringAfter("=").trim()
+                val country = extractCountryCodeFromName(cleanName)
+                val role = roles.getOrElse(index) { "Node" }
+                nodes.add(
+                    TorCircuitNode(
+                        role = role,
+                        countryCode = country,
+                        flagEmoji = countryCodeToFlagEmoji(country),
+                        name = cleanName
+                    )
+                )
+            }
+        }
+
+        while (nodes.size < 3) {
+            val idx = nodes.size
+            val role = roles.getOrElse(idx) { "Node" }
+            nodes.add(TorCircuitNode(role = role, countryCode = null, flagEmoji = "🌐", name = role))
+        }
+
+        return nodes
+    }
+
+    private fun extractCountryCodeFromName(nodeName: String): String? {
+        if (nodeName.length >= 2) {
+            val lastTwo = nodeName.takeLast(2).uppercase(Locale.US)
+            if (lastTwo.all { it in 'A'..'Z' }) return lastTwo
+        }
+        return null
+    }
 
     fun parseBootstrapProgress(logLine: String): Int? {
         val match = BOOTSTRAP_REGEX.find(logLine) ?: return null
@@ -336,6 +417,22 @@ object TorManager {
                 if (signalResponse == null || !signalResponse.startsWith("250")) {
                     Log.w(TAG, "ControlPort SIGNAL NEWNYM failed: $signalResponse")
                     return@withContext false
+                }
+
+                runCatching {
+                    writer.write("GETINFO circuit-status\r\n")
+                    writer.flush()
+                    val sb = StringBuilder()
+                    var statusLine: String?
+                    while (reader.readLine().also { statusLine = it } != null) {
+                        val currentLine = statusLine ?: break
+                        if (currentLine.startsWith("250 OK")) break
+                        sb.append(currentLine).append("\n")
+                    }
+                    val parsed = parseCircuitStatusNodes(sb.toString())
+                    if (parsed.isNotEmpty()) {
+                        _circuitNodes.value = parsed
+                    }
                 }
 
                 _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Срединный] ➔ [🌍 Выход (Обновлен)]"

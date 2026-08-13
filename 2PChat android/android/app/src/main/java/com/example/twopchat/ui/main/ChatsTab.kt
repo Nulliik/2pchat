@@ -576,6 +576,11 @@ fun ChatsTab(
                             }
                             if (isTorRunning) {
                                 val isRotatingCircuit by com.example.twopchat.TorManager.isRotatingCircuit.collectAsState()
+                                val circuitNodes by com.example.twopchat.TorManager.circuitNodes.collectAsState()
+                                val guardNode = circuitNodes.getOrNull(0)
+                                val middleNode = circuitNodes.getOrNull(1)
+                                val exitNode = circuitNodes.getOrNull(2)
+
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.08f), modifier = Modifier.padding(horizontal = 14.dp))
                                 Column(
                                     modifier = Modifier
@@ -685,10 +690,10 @@ fun ChatsTab(
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(text = "🛡️", fontSize = 12.sp)
+                                                Text(text = guardNode?.flagEmoji ?: "🛡️", fontSize = 12.sp)
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
-                                                    text = com.example.twopchat.data.Localizations.tr(
+                                                    text = guardNode?.countryCode ?: com.example.twopchat.data.Localizations.tr(
                                                         appLanguage,
                                                         ru = "Вход",
                                                         en = "Guard",
@@ -722,10 +727,10 @@ fun ChatsTab(
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(text = "⚡", fontSize = 12.sp)
+                                                Text(text = middleNode?.flagEmoji ?: "⚡", fontSize = 12.sp)
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
-                                                    text = com.example.twopchat.data.Localizations.tr(
+                                                    text = middleNode?.countryCode ?: com.example.twopchat.data.Localizations.tr(
                                                         appLanguage,
                                                         ru = "Срединный",
                                                         en = "Middle",
@@ -759,10 +764,10 @@ fun ChatsTab(
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(text = "🌍", fontSize = 12.sp)
+                                                Text(text = exitNode?.flagEmoji ?: "🌍", fontSize = 12.sp)
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(
-                                                    text = com.example.twopchat.data.Localizations.tr(
+                                                    text = exitNode?.countryCode ?: com.example.twopchat.data.Localizations.tr(
                                                         appLanguage,
                                                         ru = "Выход",
                                                         en = "Exit",

@@ -265,5 +265,29 @@ class TorManagerTest {
         assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 45, durationMs = 31000L))
         assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 100, durationMs = 35000L))
     }
+
+    @Test
+    fun testCountryCodeToFlagEmoji() {
+        assertEquals("🇩🇪", TorManager.countryCodeToFlagEmoji("DE"))
+        assertEquals("🇫🇷", TorManager.countryCodeToFlagEmoji("FR"))
+        assertEquals("🇺🇸", TorManager.countryCodeToFlagEmoji("US"))
+        assertEquals("🇷🇺", TorManager.countryCodeToFlagEmoji("RU"))
+        assertEquals("🌐", TorManager.countryCodeToFlagEmoji(""))
+        assertEquals("🌐", TorManager.countryCodeToFlagEmoji(null))
+    }
+
+    @Test
+    fun testParseCircuitStatusResponse() {
+        val sampleResponse = "1 BUILT \$A123456789012345678901234567890123456789~GuardDE,\$B123456789012345678901234567890123456789~MiddleFR,\$C123456789012345678901234567890123456789~ExitUS PURPOSE=GENERAL"
+        val nodes = TorManager.parseCircuitStatusNodes(sampleResponse)
+        assertEquals(3, nodes.size)
+        assertEquals("DE", nodes[0].countryCode)
+        assertEquals("🇩🇪", nodes[0].flagEmoji)
+        assertEquals("FR", nodes[1].countryCode)
+        assertEquals("🇫🇷", nodes[1].flagEmoji)
+        assertEquals("US", nodes[2].countryCode)
+        assertEquals("🇺🇸", nodes[2].flagEmoji)
+    }
 }
+
 
