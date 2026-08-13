@@ -151,6 +151,11 @@ object Localizations {
         "help_duress_desc" to "Setting a Duress PIN lets you instantly wipe local database files and cryptographic identity directly from the lock screen under emergency conditions.",
         "help_relay_title" to "How P2P Relay Routing Works",
         "help_relay_desc" to "2PChat has no central servers storing your chats. Messages are delivered over 3 dynamic transport layers: Direct P2P (local Wi-Fi), Yggdrasil IPv6 mesh, or Relay proxy for strict NAT bypass. All payload bytes are end-to-end encrypted with Double Ratchet so relays never see message content or history.",
+        "help_tor_title" to "How Tor Anonymization Layer Works",
+        "help_tor_desc" to "Tor protects metadata and hides your real IP address using 3-layer onion routing across 3 nodes: Guard, Middle, and Exit. To bypass ISP censorship, obfs4 pluggable transport bridges are used automatically.",
+        "help_socks5_title" to "SOCKS5 Proxy & DNS Leak Protection (socks5h)",
+        "help_socks5_desc" to "2PChat runs a local SOCKS5 proxy on 127.0.0.1:9050. Using the socks5h protocol ensures DNS requests resolve remotely inside Tor, preventing cleartext ISP DNS leaks.",
+
 
         // Settings Main Menu Sections & Items
         "sec_appearance_chats" to "APPEARANCE & CHATS",
@@ -359,6 +364,11 @@ object Localizations {
         "help_duress_desc" to "Установка экстренного PIN-кода (Duress PIN) позволяет мгновенно стереть локальную базу данных и ключи прямо с экрана блокировки в экстренной ситуации.",
         "help_relay_title" to "Как работает P2P Реле-маршрутизация?",
         "help_relay_desc" to "В 2PChat нет центральных серверов для хранения переписки. Сообщения передаются по 3 динамическим каналам: Direct P2P (в Wi-Fi сети), Yggdrasil IPv6 Mesh или P2P Relay (для обхода провайдерских NAT). Все данные защищены сквозным E2EE-шифрованием Double Ratchet — реле лишь пересылает зашифрованные пакеты и не имеет доступа к их содержимому или истории.",
+        "help_tor_title" to "Как работает слой анонимизации Tor?",
+        "help_tor_desc" to "Tor защищает метаданные и скрывает ваш IP-адрес с помощью 3 слоев шифрования («луковая маршрутизация») через 3 узла: Входной (Guard), Срединный (Middle) и Выходной (Exit). Для обхода блокировок интернет-провайдеров автоматически применяются мосты obfs4.",
+        "help_socks5_title" to "SOCKS5 и защита от утечек DNS (socks5h)",
+        "help_socks5_desc" to "2PChat запускает локальный прокси SOCKS5 на 127.0.0.1:9050. Использование протокола socks5h гарантирует, что доменные DNS-запросы выполняются удаленно внутри Tor, полностью исключая открытые утечки DNS вашего провайдера.",
+
 
         // Settings Main Menu Sections & Items
         "sec_appearance_chats" to "ПЕРСОНАЛИЗАЦИЯ И ЧАТЫ",

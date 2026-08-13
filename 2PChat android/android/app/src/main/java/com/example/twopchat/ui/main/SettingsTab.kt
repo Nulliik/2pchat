@@ -6,6 +6,16 @@ import android.content.Intent
 import android.net.VpnService
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import org.json.JSONArray
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -2786,82 +2796,54 @@ fun SettingsTab(
                                 .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
-                                Text(
-                                    text = Localizations.getString("help_yggdrasil_title", appLanguage),
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryColor
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = Localizations.getString("help_yggdrasil_desc", appLanguage),
-                                    fontSize = 13.sp,
-                                    color = onSurfaceColor.copy(alpha = 0.8f),
-                                    lineHeight = 20.sp
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_yggdrasil_title", appLanguage),
+                                    description = Localizations.getString("help_yggdrasil_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor
                                 )
 
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp), color = onSurfaceColor.copy(alpha = 0.08f))
-
-                                Text(
-                                    text = Localizations.getString("help_relay_title", appLanguage),
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryColor
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = Localizations.getString("help_relay_desc", appLanguage),
-                                    fontSize = 13.sp,
-                                    color = onSurfaceColor.copy(alpha = 0.8f),
-                                    lineHeight = 20.sp
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_tor_title", appLanguage),
+                                    description = Localizations.getString("help_tor_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor
                                 )
 
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp), color = onSurfaceColor.copy(alpha = 0.08f))
-
-                                Text(
-                                    text = Localizations.getString("help_e2ee_title", appLanguage),
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryColor
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = Localizations.getString("help_e2ee_desc", appLanguage),
-                                    fontSize = 13.sp,
-                                    color = onSurfaceColor.copy(alpha = 0.8f),
-                                    lineHeight = 20.sp
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_socks5_title", appLanguage),
+                                    description = Localizations.getString("help_socks5_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor
                                 )
 
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp), color = onSurfaceColor.copy(alpha = 0.08f))
-
-                                Text(
-                                    text = Localizations.getString("help_privacy_title", appLanguage),
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryColor
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = Localizations.getString("help_privacy_desc", appLanguage),
-                                    fontSize = 13.sp,
-                                    color = onSurfaceColor.copy(alpha = 0.8f),
-                                    lineHeight = 20.sp
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_relay_title", appLanguage),
+                                    description = Localizations.getString("help_relay_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor
                                 )
 
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp), color = onSurfaceColor.copy(alpha = 0.08f))
-
-                                Text(
-                                    text = Localizations.getString("help_duress_title", appLanguage),
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryColor
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_e2ee_title", appLanguage),
+                                    description = Localizations.getString("help_e2ee_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor
                                 )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = Localizations.getString("help_duress_desc", appLanguage),
-                                    fontSize = 13.sp,
-                                    color = onSurfaceColor.copy(alpha = 0.8f),
-                                    lineHeight = 20.sp
+
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_privacy_title", appLanguage),
+                                    description = Localizations.getString("help_privacy_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor
+                                )
+
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_duress_title", appLanguage),
+                                    description = Localizations.getString("help_duress_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor,
+                                    showDivider = false
                                 )
                             }
                         }
@@ -4549,6 +4531,75 @@ private fun VisualThemeSelector(
         }
     }
 }
+
+@Composable
+private fun HelpAccordionItem(
+    title: String,
+    description: String,
+    primaryColor: Color,
+    onSurfaceColor: Color,
+    showDivider: Boolean = true
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val rotationAngle by animateFloatAsState(
+        targetValue = if (expanded) 180f else 0f,
+        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+        label = "accordionChevronRotation"
+    )
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { expanded = !expanded }
+                .padding(vertical = 12.dp, horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = primaryColor,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowDown,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = primaryColor,
+                modifier = Modifier
+                    .size(24.dp)
+                    .rotate(rotationAngle)
+            )
+        }
+
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(animationSpec = tween(220, easing = FastOutSlowInEasing)) +
+                    fadeIn(animationSpec = tween(180)),
+            exit = shrinkVertically(animationSpec = tween(200, easing = FastOutSlowInEasing)) +
+                    fadeOut(animationSpec = tween(150))
+        ) {
+            Text(
+                text = description,
+                fontSize = 13.sp,
+                color = onSurfaceColor.copy(alpha = 0.85f),
+                lineHeight = 20.sp,
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 2.dp, bottom = 12.dp)
+            )
+        }
+
+        if (showDivider) {
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 4.dp),
+                color = onSurfaceColor.copy(alpha = 0.08f)
+            )
+        }
+    }
+}
+
 
 
 
