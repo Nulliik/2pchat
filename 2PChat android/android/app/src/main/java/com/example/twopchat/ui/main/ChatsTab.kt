@@ -197,7 +197,19 @@ fun ChatsTab(
 
     val heroPrefs = remember { com.example.twopchat.P2PPreferences.prefs(context) }
     var isHeroCollapsed by remember {
-        mutableStateOf(heroPrefs.getBoolean("settings_hero_widget_collapsed", false))
+        mutableStateOf(heroPrefs.getBoolean(com.example.twopchat.P2PPreferences.HERO_WIDGET_COLLAPSED_DEFAULT, false))
+    }
+
+    DisposableEffect(heroPrefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
+            if (key == com.example.twopchat.P2PPreferences.HERO_WIDGET_COLLAPSED_DEFAULT) {
+                isHeroCollapsed = prefs.getBoolean(com.example.twopchat.P2PPreferences.HERO_WIDGET_COLLAPSED_DEFAULT, false)
+            }
+        }
+        heroPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            heroPrefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
     }
 
     Column(
@@ -292,7 +304,6 @@ fun ChatsTab(
                                 .clip(RoundedCornerShape(16.dp))
                                 .clickable {
                                     isHeroCollapsed = false
-                                    heroPrefs.edit().putBoolean("settings_hero_widget_collapsed", false).apply()
                                 }
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -469,7 +480,6 @@ fun ChatsTab(
                                     .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(14.dp))
                                     .clickable {
                                         isHeroCollapsed = true
-                                        heroPrefs.edit().putBoolean("settings_hero_widget_collapsed", true).apply()
                                     },
                                 contentAlignment = Alignment.Center
                             ) {

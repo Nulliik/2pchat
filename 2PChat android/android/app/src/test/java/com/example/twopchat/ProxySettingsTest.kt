@@ -47,4 +47,10 @@ class ProxySettingsTest {
         assertFalse(P2PPreferences.isLegacyTorConfiguration(true, "proxy.example", 9050))
         assertFalse(P2PPreferences.isLegacyTorConfiguration(true, "127.0.0.1", 1080))
     }
+
+    @Test
+    fun testHeroWidgetCollapsedDefaultKey() {
+        assertEquals("settings_hero_widget_collapsed", P2PPreferences.HERO_WIDGET_COLLAPSED_DEFAULT)
+    }
 }
+

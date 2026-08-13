@@ -26,6 +26,10 @@ object P2PPreferences {
     const val PROXY_PORT = "settings_proxy_port"
     const val DEFAULT_PROXY_HOST = "127.0.0.1"
     const val DEFAULT_PROXY_PORT = 9050
+    const val HERO_WIDGET_COLLAPSED_DEFAULT = "settings_hero_widget_collapsed"
+
+    fun isHeroWidgetCollapsedByDefault(context: Context): Boolean =
+        prefs(context).getBoolean(HERO_WIDGET_COLLAPSED_DEFAULT, false)
 
     fun isWifiDiscoveryEnabled(context: Context): Boolean =
         prefs(context).getBoolean(WIFI_DISCOVERY, true)
