@@ -575,74 +575,208 @@ fun ChatsTab(
                                 )
                             }
                             if (isTorRunning) {
-                                val circuitStatus by com.example.twopchat.TorManager.circuitStatus.collectAsState()
                                 val isRotatingCircuit by com.example.twopchat.TorManager.isRotatingCircuit.collectAsState()
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.08f), modifier = Modifier.padding(horizontal = 14.dp))
-                                Row(
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 6.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .padding(horizontal = 14.dp, vertical = 10.dp)
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    // Top Header Row: Section Label + Renew Circuit Pill Button
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Text(
                                             text = com.example.twopchat.data.Localizations.tr(
                                                 appLanguage,
-                                                ru = "Цепочка Tor:",
-                                                en = "Tor Circuit:",
-                                                de = "Tor-Schaltung:",
-                                                es = "Circuito Tor:",
-                                                fr = "Circuit Tor:",
-                                                pt = "Circuito Tor:"
+                                                ru = "АКТИВНАЯ ЦЕПОЧКА TOR",
+                                                en = "ACTIVE TOR CIRCUIT",
+                                                de = "AKTIVE TOR-SCHALTUNG",
+                                                es = "CIRCUITO TOR ACTIVO",
+                                                fr = "CIRCUIT TOR ACTIF",
+                                                pt = "CIRCUITO TOR ATIVO"
                                             ),
                                             fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 0.5.sp,
                                             color = onSurfaceVariant.copy(alpha = 0.7f)
                                         )
-                                        Text(
-                                            text = circuitStatus,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = onSurfaceColor
-                                        )
-                                    }
-                                    TextButton(
-                                        enabled = !isRotatingCircuit,
-                                        onClick = {
-                                            heroScope.launch {
-                                                val ok = com.example.twopchat.TorManager.renewTorIdentity(context)
-                                                if (ok) {
-                                                    Toast.makeText(
-                                                        context,
-                                                        com.example.twopchat.data.Localizations.tr(
-                                                            appLanguage,
-                                                            ru = "Цепочка обновлена",
-                                                            en = "Circuit renewed",
-                                                            de = "Schaltung erneuert",
-                                                            es = "Circuito renovado",
-                                                            fr = "Circuit renouvelé",
-                                                            pt = "Circuito renovado"
-                                                        ),
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
+
+                                        // Renew Identity Pill Button
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable(enabled = !isRotatingCircuit) {
+                                                    heroScope.launch {
+                                                        val ok = com.example.twopchat.TorManager.renewTorIdentity(context)
+                                                        if (ok) {
+                                                            Toast.makeText(
+                                                                context,
+                                                                com.example.twopchat.data.Localizations.tr(
+                                                                    appLanguage,
+                                                                    ru = "Цепочка обновлена",
+                                                                    en = "Circuit renewed",
+                                                                    de = "Schaltung erneuert",
+                                                                    es = "Circuito renovado",
+                                                                    fr = "Circuit renouvelé",
+                                                                    pt = "Circuito renovado"
+                                                                ),
+                                                                Toast.LENGTH_SHORT
+                                                            ).show()
+                                                        }
+                                                    }
                                                 }
+                                                .background(if (isRotatingCircuit) onSurfaceVariant.copy(alpha = 0.1f) else primaryColor.copy(alpha = 0.12f))
+                                                .border(
+                                                    width = 0.75.dp,
+                                                    color = if (isRotatingCircuit) onSurfaceVariant.copy(alpha = 0.2f) else primaryColor.copy(alpha = 0.35f),
+                                                    shape = RoundedCornerShape(10.dp)
+                                                )
+                                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (isRotatingCircuit) {
+                                                    CircularProgressIndicator(
+                                                        modifier = Modifier.size(12.dp),
+                                                        strokeWidth = 1.5.dp,
+                                                        color = primaryColor
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                } else {
+                                                    Text(text = "🔄", fontSize = 11.sp)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                }
+                                                Text(
+                                                    text = com.example.twopchat.data.Localizations.tr(
+                                                        appLanguage,
+                                                        ru = "Сменить цепочку",
+                                                        en = "New Identity",
+                                                        de = "Neue Identität",
+                                                        es = "Nueva identidad",
+                                                        fr = "Nouvelle identité",
+                                                        pt = "Nova identidade"
+                                                    ),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = primaryColor
+                                                )
                                             }
                                         }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Node Pipeline Flow Row: [Guard Node] ──➔ [Middle Node] ──➔ [Exit Node]
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        // 1. Guard Node Pill (Вход)
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(Color(0xFF10B981).copy(alpha = 0.12f))
+                                                .border(0.75.dp, Color(0xFF10B981).copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                                                .padding(vertical = 8.dp, horizontal = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(text = "🛡️", fontSize = 12.sp)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = com.example.twopchat.data.Localizations.tr(
+                                                        appLanguage,
+                                                        ru = "Вход",
+                                                        en = "Guard",
+                                                        de = "Eingang",
+                                                        es = "Entrada",
+                                                        fr = "Entrée",
+                                                        pt = "Entrada"
+                                                    ),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF10B981)
+                                                )
+                                            }
+                                        }
+
+                                        // Connector 1
                                         Text(
-                                            text = if (isRotatingCircuit) "⏳..." else com.example.twopchat.data.Localizations.tr(
-                                                appLanguage,
-                                                ru = "🔄 Сменить цепочку",
-                                                en = "🔄 New Identity",
-                                                de = "🔄 Neue Identität",
-                                                es = "🔄 Nueva identidad",
-                                                fr = "🔄 Nouvelle identité",
-                                                pt = "🔄 Nova identidade"
-                                            ),
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = primaryColor
+                                            text = "➔",
+                                            fontSize = 12.sp,
+                                            color = onSurfaceVariant.copy(alpha = 0.5f)
                                         )
+
+                                        // 2. Middle Node Pill (Срединный)
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1.1f)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(primaryColor.copy(alpha = 0.12f))
+                                                .border(0.75.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                                                .padding(vertical = 8.dp, horizontal = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(text = "⚡", fontSize = 12.sp)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = com.example.twopchat.data.Localizations.tr(
+                                                        appLanguage,
+                                                        ru = "Срединный",
+                                                        en = "Middle",
+                                                        de = "Mitte",
+                                                        es = "Intermedio",
+                                                        fr = "Intermédiaire",
+                                                        pt = "Intermediário"
+                                                    ),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = primaryColor
+                                                )
+                                            }
+                                        }
+
+                                        // Connector 2
+                                        Text(
+                                            text = "➔",
+                                            fontSize = 12.sp,
+                                            color = onSurfaceVariant.copy(alpha = 0.5f)
+                                        )
+
+                                        // 3. Exit Node Pill (Выход)
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(Color(0xFF3B82F6).copy(alpha = 0.12f))
+                                                .border(0.75.dp, Color(0xFF3B82F6).copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                                                .padding(vertical = 8.dp, horizontal = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(text = "🌍", fontSize = 12.sp)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = com.example.twopchat.data.Localizations.tr(
+                                                        appLanguage,
+                                                        ru = "Выход",
+                                                        en = "Exit",
+                                                        de = "Ausgang",
+                                                        es = "Salida",
+                                                        fr = "Sortie",
+                                                        pt = "Saída"
+                                                    ),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF3B82F6)
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
