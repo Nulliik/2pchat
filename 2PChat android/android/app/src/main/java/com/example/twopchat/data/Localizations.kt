@@ -155,6 +155,11 @@ object Localizations {
         "help_tor_desc" to "Tor protects metadata and hides your real IP address using 3-layer onion routing across 3 nodes: Guard, Middle, and Exit. To bypass ISP censorship, obfs4 pluggable transport bridges are used automatically.",
         "help_socks5_title" to "SOCKS5 Proxy & DNS Leak Protection (socks5h)",
         "help_socks5_desc" to "2PChat runs a local SOCKS5 proxy on 127.0.0.1:9050. Using the socks5h protocol ensures DNS requests resolve remotely inside Tor, preventing cleartext ISP DNS leaks.",
+        "help_circuit_rotation_title" to "Tor Circuit Rotation ('New Identity')",
+        "help_circuit_rotation_desc" to "The 'New Identity' action sends a SIGNAL NEWNYM command to the Tor ControlPort. This immediately rotates your Exit Node and active session IP. Use this if a node is throttled, blocked, or slow.",
+        "help_sqlcipher_title" to "SQLCipher Database Encryption (AES-256)",
+        "help_sqlcipher_desc" to "All local chats, profiles, and media in 2PChat are encrypted on-disk using SQLCipher (256-bit AES-CBC). Cryptographic keys are protected by hardware-backed Android/iOS Keystore, preventing extraction via physical access or backups.",
+
 
 
         // Settings Main Menu Sections & Items
@@ -368,6 +373,11 @@ object Localizations {
         "help_tor_desc" to "Tor защищает метаданные и скрывает ваш IP-адрес с помощью 3 слоев шифрования («луковая маршрутизация») через 3 узла: Входной (Guard), Срединный (Middle) и Выходной (Exit). Для обхода блокировок интернет-провайдеров автоматически применяются мосты obfs4.",
         "help_socks5_title" to "SOCKS5 и защита от утечек DNS (socks5h)",
         "help_socks5_desc" to "2PChat запускает локальный прокси SOCKS5 на 127.0.0.1:9050. Использование протокола socks5h гарантирует, что доменные DNS-запросы выполняются удаленно внутри Tor, полностью исключая открытые утечки DNS вашего провайдера.",
+        "help_circuit_rotation_title" to "Ротация цепочки Tor («New Identity»)",
+        "help_circuit_rotation_desc" to "Функция «Сменить цепочку» отправляет сигнал SIGNAL NEWNYM в Tor ControlPort. Это мгновенно меняет выходной узел (Exit Node) и IP-адрес вашей сессии. Используйте это, если один из узлов заблокирован или работает медленно.",
+        "help_sqlcipher_title" to "Шифрование базы данных SQLCipher (AES-256)",
+        "help_sqlcipher_desc" to "Все сообщения, профили и файлы в 2PChat шифруются прямо на устройстве с помощью баз данных SQLCipher (AES-256-CBC). Ключи шифрования защищены в аппаратном Keystore Android/iOS, предотвращая извлечение данных при физическом доступе или бэкапе.",
+
 
 
         // Settings Main Menu Sections & Items

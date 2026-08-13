@@ -2839,6 +2839,20 @@ fun SettingsTab(
                                 )
 
                                 HelpAccordionItem(
+                                    title = Localizations.getString("help_circuit_rotation_title", appLanguage),
+                                    description = Localizations.getString("help_circuit_rotation_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor
+                                )
+
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_sqlcipher_title", appLanguage),
+                                    description = Localizations.getString("help_sqlcipher_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor
+                                )
+
+                                HelpAccordionItem(
                                     title = Localizations.getString("help_duress_title", appLanguage),
                                     description = Localizations.getString("help_duress_desc", appLanguage),
                                     primaryColor = primaryColor,
