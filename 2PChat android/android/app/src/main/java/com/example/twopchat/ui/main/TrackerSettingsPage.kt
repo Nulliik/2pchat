@@ -2,25 +2,41 @@ package com.example.twopchat.ui.main
 
 import android.widget.Toast
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
+import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -35,9 +51,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.collectAsState
@@ -89,23 +107,19 @@ fun TrackerSettingsPage(
     var torUserRequested by remember {
         mutableStateOf(P2PPreferences.isTorEnabled(context) || isTorRunning || isTorConnecting)
     }
-    var savedTorBridgeLines by remember {
+    var savedBridgeLines by remember {
         mutableStateOf(P2PPreferences.getTorBridgeLines(context))
     }
-    var torBridgesText by remember {
-        mutableStateOf(savedTorBridgeLines.joinToString("\n"))
-    }
     var torBridgeSaveFailed by remember { mutableStateOf(false) }
+    var showAddBridgeDialog by remember { mutableStateOf(false) }
+    var bridgePanelExpanded by remember { mutableStateOf(savedBridgeLines.isNotEmpty()) }
     var publicTorBridgesEnabled by remember {
         mutableStateOf(P2PPreferences.publicTorBridgesEnabled(context))
     }
     var torTransport by remember(revision) { mutableStateOf(P2PPreferences.torTransport(context)) }
-    val torBridgeValidation = remember(torBridgesText) {
-        TorManager.parseBridgeText(torBridgesText)
-    }
-    val effectiveTorBridges = remember(torBridgeValidation, publicTorBridgesEnabled, torTransport) {
+    val effectiveTorBridges = remember(savedBridgeLines, publicTorBridgesEnabled, torTransport) {
         TorBridgeCatalog.select(
-            customBridges = torBridgeValidation.bridges,
+            customBridges = savedBridgeLines,
             publicBridgesEnabled = publicTorBridgesEnabled,
             transport = torTransport,
         )
@@ -126,7 +140,7 @@ fun TrackerSettingsPage(
             TorManager.startTor(
                 context,
                 TorBridgeCatalog.select(
-                    customBridges = torBridgeValidation.bridges,
+                    customBridges = savedBridgeLines,
                     publicBridgesEnabled = publicTorBridgesEnabled,
                     transport = transport,
                 ),
@@ -261,23 +275,6 @@ fun TrackerSettingsPage(
                     onCheckedChange = torToggle@{ enabled ->
                         torUserRequested = enabled
                         if (enabled) {
-                            if (torBridgeValidation.error != null) {
-                                torUserRequested = false
-                                Toast.makeText(
-                                    context,
-                                    torBridgeValidationMessage(torBridgeValidation.error, isRussian),
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                                return@torToggle
-                            }
-                            if (!P2PPreferences.setTorBridgeLines(context, torBridgeValidation.bridges)) {
-                                torUserRequested = false
-                                torBridgeSaveFailed = true
-                                return@torToggle
-                            }
-                            savedTorBridgeLines = torBridgeValidation.bridges
-                            torBridgesText = torBridgeValidation.bridges.joinToString("\n")
-                            torBridgeSaveFailed = false
                             P2PPreferences.prefs(context).edit()
                                 .putBoolean(P2PPreferences.TOR_ENABLED, true)
                                 .apply()
@@ -312,7 +309,7 @@ fun TrackerSettingsPage(
                             val previous = effectiveTorBridges
                             publicTorBridgesEnabled = enabled
                             val updated = TorBridgeCatalog.select(
-                                customBridges = torBridgeValidation.bridges,
+                                customBridges = savedBridgeLines,
                                 publicBridgesEnabled = enabled,
                                 transport = torTransport,
                             )
@@ -386,6 +383,41 @@ fun TrackerSettingsPage(
                     },
                 )
                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
+                // ── Collapsible bridge manager ──────────────────────────────
+                TorBridgePanel(
+                    bridges = savedBridgeLines,
+                    expanded = bridgePanelExpanded,
+                    onExpandToggle = { bridgePanelExpanded = !bridgePanelExpanded },
+                    onAddClick = { showAddBridgeDialog = true },
+                    onDelete = { line ->
+                        val updated = savedBridgeLines.filter { it != line }
+                        if (P2PPreferences.setTorBridgeLines(context, updated)) {
+                            savedBridgeLines = updated
+                            if (torUserRequested || isTorRunning || isTorConnecting) {
+                                TorManager.stopTor()
+                                TorManager.startTor(
+                                    context,
+                                    TorBridgeCatalog.select(
+                                        customBridges = updated,
+                                        publicBridgesEnabled = publicTorBridgesEnabled,
+                                        transport = torTransport,
+                                    ),
+                                )
+                            }
+                        } else {
+                            Toast.makeText(
+                                context,
+                                if (isRussian) "Не удалось удалить мост" else "Could not remove bridge",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    },
+                    isRussian = isRussian,
+                    onSurfaceColor = onSurfaceColor,
+                    onSurfaceVariant = onSurfaceVariant,
+                    primaryColor = primaryColor,
+                )
+                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -414,135 +446,6 @@ fun TrackerSettingsPage(
                             else -> onSurfaceVariant.copy(alpha = 0.6f)
                         },
                     )
-                }
-                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
-                Column(modifier = Modifier.padding(16.dp)) {
-                    OutlinedTextField(
-                        value = torBridgesText,
-                        onValueChange = {
-                            torBridgesText = it
-                            torBridgeSaveFailed = false
-                        },
-                        label = {
-                            Text(
-                                com.example.twopchat.data.Localizations.tr(
-                                    appLanguage,
-                                    ru = "Свои мосты Tor (необязательно)",
-                                    en = "Custom Tor Bridges (optional)",
-                                    de = "Eigene Tor-Brücken (optional)",
-                                    es = "Puentes Tor personalizados (opcional)",
-                                    fr = "Ponts Tor personnalisés (optionnel)",
-                                    pt = "Pontes Tor personalizadas (opcional)"
-                                )
-                            )
-                        },
-                        placeholder = {
-                            Text("obfs4 IP:port fingerprint cert=… iat-mode=0")
-                        },
-                        minLines = 3,
-                        maxLines = 6,
-                        isError = torBridgeValidation.error != null || torBridgeSaveFailed,
-                        supportingText = {
-                            Text(
-                                when {
-                                    torBridgeSaveFailed -> com.example.twopchat.data.Localizations.tr(
-                                        appLanguage,
-                                        ru = "Не удалось сохранить мосты в защищённых настройках",
-                                        en = "Could not save bridges to secure settings",
-                                        de = "Brücken konnten nicht in sicheren Einstellungen gespeichert werden",
-                                        es = "No se pudieron guardar los puentes en la configuración segura",
-                                        fr = "Impossible d'enregistrer les ponts dans les paramètres sécurisés",
-                                        pt = "Não foi possível salvar as pontes nas configurações seguras"
-                                    )
-                                    torBridgeValidation.error != null ->
-                                        torBridgeValidationMessage(torBridgeValidation.error, isRussian)
-                                    torBridgeValidation.bridges.isEmpty() && publicTorBridgesEnabled ->
-                                        com.example.twopchat.data.Localizations.tr(
-                                            appLanguage,
-                                            ru = "Будет автоматически выбран рабочий публичный мост obfs4",
-                                            en = "A working public obfs4 bridge will be selected automatically",
-                                            de = "Eine funktionierende öffentliche obfs4-Brücke wird automatisch ausgewählt",
-                                            es = "Se seleccionará automáticamente un puente obfs4 público que funcione",
-                                            fr = "Un pont obfs4 public fonctionnel sera sélectionné automatiquement",
-                                            pt = "Uma ponte obfs4 pública funcional será selecionada automaticamente"
-                                        )
-                                    torBridgeValidation.bridges.isEmpty() ->
-                                        com.example.twopchat.data.Localizations.tr(
-                                            appLanguage,
-                                            ru = "Автомосты выключены: Tor попробует прямое подключение",
-                                            en = "Automatic bridges are off: Tor will try a direct connection",
-                                            de = "Automatische Brücken sind aus: Tor versucht eine direkte Verbindung",
-                                            es = "Puentes automáticos desactivados: Tor intentará conexión directa",
-                                            fr = "Ponts automatiques désactivés: Tor essaiera une connexion directe",
-                                            pt = "Pontes automáticas desativadas: O Tor tentará conexão direta"
-                                        )
-                                    else -> com.example.twopchat.data.Localizations.tr(
-                                        appLanguage,
-                                        ru = "По одной строке obfs4 или snowflake на строку",
-                                        en = "One obfs4 or snowflake bridge per line",
-                                        de = "Eine obfs4- oder snowflake-Brücke pro Zeile",
-                                        es = "Un puente obfs4 o snowflake por línea",
-                                        fr = "Un pont obfs4 ou snowflake par ligne",
-                                        pt = "Uma ponte obfs4 ou snowflake por linha"
-                                    )
-                                }
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    TextButton(
-                        enabled = torBridgeValidation.error == null &&
-                            (torBridgeValidation.bridges != savedTorBridgeLines || torBridgeSaveFailed),
-                        onClick = {
-                            val saved = P2PPreferences.setTorBridgeLines(
-                                context,
-                                torBridgeValidation.bridges,
-                            )
-                            torBridgeSaveFailed = !saved
-                            if (saved) {
-                                savedTorBridgeLines = torBridgeValidation.bridges
-                                torBridgesText = torBridgeValidation.bridges.joinToString("\n")
-                                if (torUserRequested || isTorRunning || isTorConnecting) {
-                                    TorManager.stopTor()
-                                    TorManager.startTor(
-                                        context,
-                                        TorBridgeCatalog.select(
-                                            customBridges = torBridgeValidation.bridges,
-                                            publicBridgesEnabled = publicTorBridgesEnabled,
-                                            transport = torTransport,
-                                        ),
-                                    )
-                                }
-                                Toast.makeText(
-                                    context,
-                                    com.example.twopchat.data.Localizations.tr(
-                                        appLanguage,
-                                        ru = "Мосты Tor сохранены",
-                                        en = "Tor bridges saved",
-                                        de = "Tor-Brücken gespeichert",
-                                        es = "Puentes Tor guardados",
-                                        fr = "Ponts Tor enregistrés",
-                                        pt = "Pontes Tor salvas"
-                                    ),
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            }
-                        },
-                        modifier = Modifier.align(Alignment.End),
-                    ) {
-                        Text(
-                            com.example.twopchat.data.Localizations.tr(
-                                appLanguage,
-                                ru = "Сохранить мосты",
-                                en = "Save bridges",
-                                de = "Brücken speichern",
-                                es = "Guardar puentes",
-                                fr = "Enregistrer les ponts",
-                                pt = "Salvar pontes"
-                            )
-                        )
-                    }
                 }
             }
 
@@ -823,6 +726,43 @@ fun TrackerSettingsPage(
             },
         )
     }
+
+    if (showAddBridgeDialog) {
+        AddBridgeDialog(
+            isRussian = isRussian,
+            existingBridges = savedBridgeLines,
+            onDismiss = { showAddBridgeDialog = false },
+            onAdd = { newLine ->
+                val parseResult = TorManager.parseBridgeText(newLine)
+                if (parseResult.error != null) {
+                    torBridgeValidationMessage(parseResult.error, isRussian)
+                } else if (parseResult.bridges.isEmpty()) {
+                    if (isRussian) "Введите строку моста" else "Please enter a bridge line"
+                } else {
+                    val updated = (savedBridgeLines + parseResult.bridges).distinct()
+                    if (P2PPreferences.setTorBridgeLines(context, updated)) {
+                        savedBridgeLines = updated
+                        bridgePanelExpanded = true
+                        showAddBridgeDialog = false
+                        if (torUserRequested || isTorRunning || isTorConnecting) {
+                            TorManager.stopTor()
+                            TorManager.startTor(
+                                context,
+                                TorBridgeCatalog.select(
+                                    customBridges = updated,
+                                    publicBridgesEnabled = publicTorBridgesEnabled,
+                                    transport = torTransport,
+                                ),
+                            )
+                        }
+                        null
+                    } else {
+                        if (isRussian) "Не удалось сохранить мосты" else "Could not save bridges"
+                    }
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -1013,4 +953,214 @@ private fun torBridgeValidationMessage(
     }
 
     null -> ""
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TorBridgePanel(
+    bridges: List<String>,
+    expanded: Boolean,
+    onExpandToggle: () -> Unit,
+    onAddClick: () -> Unit,
+    onDelete: (String) -> Unit,
+    isRussian: Boolean,
+    onSurfaceColor: Color,
+    onSurfaceVariant: Color,
+    primaryColor: Color,
+) {
+    val arrowAngle by animateFloatAsState(if (expanded) 180f else 0f, label = "arrow")
+    Column {
+        // ── Header row (always visible) ──────────────────────────────────
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onExpandToggle)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (isRussian) "Свои мосты Tor" else "Custom Tor Bridges",
+                    color = onSurfaceColor,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp,
+                )
+                Text(
+                    text = if (bridges.isEmpty()) {
+                        if (isRussian) "Нет добавленных мостов" else "No bridges added"
+                    } else {
+                        if (isRussian) "${bridges.size} ${pluralRu(bridges.size, "мост", "моста", "мостов")}" else "${bridges.size} bridge${if (bridges.size == 1) "" else "s"}"
+                    },
+                    color = onSurfaceVariant,
+                    fontSize = 12.sp,
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onAddClick) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = if (isRussian) "Добавить мост" else "Add bridge",
+                        tint = primaryColor,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = onSurfaceVariant,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .rotate(arrowAngle),
+                )
+            }
+        }
+        // ── Expandable list ──────────────────────────────────────────────
+        AnimatedVisibility(visible = expanded) {
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+                if (bridges.isEmpty()) {
+                    Text(
+                        text = if (isRussian) {
+                            "Нажмите «+» чтобы добавить obfs4 или snowflake мост"
+                        } else {
+                            "Tap «+» to add an obfs4 or snowflake bridge"
+                        },
+                        color = onSurfaceVariant,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                    )
+                } else {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    ) {
+                        bridges.forEach { line ->
+                            // Show only first ~30 chars so it fits as a chip
+                            val label = line.take(32).let { if (line.length > 32) "$it…" else it }
+                            InputChip(
+                                selected = false,
+                                onClick = {},
+                                label = {
+                                    Text(
+                                        text = label,
+                                        fontSize = 11.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                },
+                                trailingIcon = {
+                                    IconButton(
+                                        onClick = { onDelete(line) },
+                                        modifier = Modifier.size(InputChipDefaults.IconSize),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = if (isRussian) "Удалить" else "Delete",
+                                            modifier = Modifier.size(12.dp),
+                                        )
+                                    }
+                                },
+                                colors = InputChipDefaults.inputChipColors(
+                                    containerColor = onSurfaceColor.copy(alpha = 0.07f),
+                                    labelColor = onSurfaceColor,
+                                    trailingIconColor = onSurfaceVariant,
+                                ),
+                                border = null,
+                            )
+                        }
+                    }
+                }
+                AssistChip(
+                    onClick = onAddClick,
+                    label = { Text(if (isRussian) "Добавить мост" else "Add bridge", fontSize = 12.sp) },
+                    leadingIcon = {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = primaryColor.copy(alpha = 0.12f),
+                        labelColor = primaryColor,
+                        leadingIconContentColor = primaryColor,
+                    ),
+                    border = null,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddBridgeDialog(
+    isRussian: Boolean,
+    existingBridges: List<String>,
+    onDismiss: () -> Unit,
+    onAdd: (String) -> String?,          // returns error message or null on success
+) {
+    var text by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (isRussian) "Добавить мост Tor" else "Add Tor Bridge") },
+        text = {
+            Column {
+                Text(
+                    text = if (isRussian) {
+                        "Вставьте строку obfs4 или snowflake моста, полученную с bridges.torproject.org"
+                    } else {
+                        "Paste an obfs4 or snowflake bridge line obtained from bridges.torproject.org"
+                    },
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it; error = null },
+                    placeholder = { Text("obfs4 1.2.3.4:1234 FINGERPRINT cert=… iat-mode=0", fontSize = 11.sp) },
+                    minLines = 3,
+                    maxLines = 6,
+                    isError = error != null,
+                    supportingText = error?.let { { Text(it) } },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (existingBridges.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = if (isRussian) {
+                            "Уже добавлено: ${existingBridges.size}"
+                        } else {
+                            "Already saved: ${existingBridges.size}"
+                        },
+                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val result = onAdd(text.trim())
+                error = result
+            }) {
+                Text(if (isRussian) "Добавить" else "Add")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(if (isRussian) "Отмена" else "Cancel")
+            }
+        },
+    )
+}
+
+private fun pluralRu(n: Int, one: String, few: String, many: String): String {
+    val mod10 = n % 10
+    val mod100 = n % 100
+    return when {
+        mod100 in 11..19 -> many
+        mod10 == 1 -> one
+        mod10 in 2..4 -> few
+        else -> many
+    }
 }
