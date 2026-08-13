@@ -502,12 +502,21 @@ object PythonBridge {
     }
 
     /** Applies user SOCKS5 proxy preferences to the embedded discovery runtime. */
-    fun applyProxyConfiguration(): Boolean {
+    fun applyProxyConfiguration(
+        context: Context? = null,
+        enabled: Boolean? = null,
+        host: String? = null,
+        port: Int? = null
+    ): Boolean {
         if (!isInitialized) return false
         return try {
-            val context = appContext ?: return false
+            val ctx = context ?: appContext ?: return false
+            val payload = if (enabled != null && host != null && port != null) {
+                ProxyConfig.toJson(enabled, host, port)
+            } else {
+                ProxyConfig.configJson(ctx)
+            }
             val bridge = Python.getInstance().getModule("discovery_bridge")
-            val payload = ProxyConfig.configJson(context)
             bridge.callAttr("configure_proxy", payload).toBoolean()
         } catch (e: Exception) {
             Log.e(TAG, "Error applying proxy configuration", e)

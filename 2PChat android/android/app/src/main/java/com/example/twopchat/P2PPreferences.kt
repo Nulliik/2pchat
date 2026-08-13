@@ -28,8 +28,23 @@ object P2PPreferences {
     const val DEFAULT_PROXY_PORT = 9050
     const val HERO_WIDGET_COLLAPSED_DEFAULT = "settings_hero_widget_collapsed"
 
+    const val SOCKS5_ENABLED = "settings_socks5_enabled"
+    const val SOCKS5_HOST = "settings_socks5_host"
+    const val SOCKS5_PORT = "settings_socks5_port"
+    const val DEFAULT_SOCKS5_HOST = "127.0.0.1"
+    const val DEFAULT_SOCKS5_PORT = 1080
+
     fun isHeroWidgetCollapsedByDefault(context: Context): Boolean =
         prefs(context).getBoolean(HERO_WIDGET_COLLAPSED_DEFAULT, false)
+
+    fun isCustomSocks5Enabled(context: Context): Boolean =
+        prefs(context).getBoolean(SOCKS5_ENABLED, false)
+
+    fun getCustomSocks5Host(context: Context): String =
+        prefs(context).getString(SOCKS5_HOST, DEFAULT_SOCKS5_HOST)?.takeIf { it.isNotBlank() } ?: DEFAULT_SOCKS5_HOST
+
+    fun getCustomSocks5Port(context: Context): Int =
+        prefs(context).getInt(SOCKS5_PORT, DEFAULT_SOCKS5_PORT)
 
     fun isWifiDiscoveryEnabled(context: Context): Boolean =
         prefs(context).getBoolean(WIFI_DISCOVERY, true)

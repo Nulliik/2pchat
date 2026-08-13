@@ -574,7 +574,6 @@ fun ChatsTab(
                                         } else {
                                             com.example.twopchat.P2PPreferences.prefs(context).edit()
                                                 .putBoolean(com.example.twopchat.P2PPreferences.TOR_ENABLED, false)
-                                                .putBoolean(com.example.twopchat.P2PPreferences.PROXY_ENABLED, false)
                                                 .apply()
                                             com.example.twopchat.TorManager.stopTor()
                                             heroScope.launch(Dispatchers.IO) {

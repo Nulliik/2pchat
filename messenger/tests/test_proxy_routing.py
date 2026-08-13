@@ -31,6 +31,19 @@ def test_proxy_configuration_parsing():
     assert active["port"] == 9050
 
 
+def test_custom_socks5_port_configuration():
+    config = {
+        "proxy_enabled": True,
+        "proxy_host": "10.0.0.1",
+        "proxy_port": 1080
+    }
+    assert configure_proxy(json.dumps(config)) is True
+    active = get_proxy_configuration()
+    assert active["enabled"] is True
+    assert active["host"] == "10.0.0.1"
+    assert active["port"] == 1080
+
+
 def test_proxy_disabled_configuration():
     config = {
         "proxy_enabled": False,

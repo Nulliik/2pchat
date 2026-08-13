@@ -78,9 +78,9 @@ fun TrackerSettingsPage(
     val clearnetEnabled = remember(revision) { TrackerPreferences.clearnetTrackersEnabled(context) }
     val yggEnabled = remember(revision) { TrackerPreferences.yggTrackersEnabled(context) }
     val ipv4Mode = remember(revision) { TrackerPreferences.ipv4AnnounceMode(context) }
-    val proxyEnabled = remember(revision) { P2PPreferences.isProxyEnabled(context) }
-    val proxyHost = remember(revision) { P2PPreferences.getProxyHost(context) }
-    val proxyPortText = remember(revision) { P2PPreferences.getProxyPort(context).toString() }
+    val customSocks5Enabled = remember(revision) { P2PPreferences.isCustomSocks5Enabled(context) }
+    val customSocks5Host = remember(revision) { P2PPreferences.getCustomSocks5Host(context) }
+    val customSocks5PortText = remember(revision) { P2PPreferences.getCustomSocks5Port(context).toString() }
     val isTorRunning by TorManager.isTorRunning.collectAsState()
     val isTorConnecting by TorManager.isTorConnecting.collectAsState()
     val torBootstrapProgress by TorManager.bootstrapProgress.collectAsState()
@@ -112,7 +112,7 @@ fun TrackerSettingsPage(
         revision += 1
         scope.launch(Dispatchers.IO) {
             PythonBridge.applyTrackerConfiguration()
-            PythonBridge.applyProxyConfiguration()
+            ProxyConfig.updateNetworkProxy(context)
             P2PMessageRelay.refreshAnnouncement(context)
         }
     }
@@ -127,10 +127,7 @@ fun TrackerSettingsPage(
         if (isTorRunning) {
             torUserRequested = true
             P2PPreferences.prefs(context).edit()
-                .putBoolean(P2PPreferences.PROXY_ENABLED, true)
                 .putBoolean(P2PPreferences.TOR_ENABLED, true)
-                .putString(P2PPreferences.PROXY_HOST, "127.0.0.1")
-                .putInt(P2PPreferences.PROXY_PORT, 9050)
                 .apply()
             settingsChanged()
         }
@@ -242,7 +239,7 @@ fun TrackerSettingsPage(
                     } else {
                         "Launches autonomous embedded Tor daemon without external apps"
                     },
-                    checked = torUserRequested || (proxyEnabled && isTorRunning),
+                    checked = torUserRequested || isTorRunning,
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariant = onSurfaceVariant,
                     onCheckedChange = torToggle@{ enabled ->
@@ -278,7 +275,6 @@ fun TrackerSettingsPage(
                             TorManager.stopTor()
                             P2PPreferences.prefs(context).edit()
                                 .putBoolean(P2PPreferences.TOR_ENABLED, false)
-                                .putBoolean(P2PPreferences.PROXY_ENABLED, false)
                                 .apply()
                             settingsChanged()
                         }
@@ -495,8 +491,8 @@ fun TrackerSettingsPage(
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
             )
             TrackerSectionCard(surfaceColor, onSurfaceColor) {
-                var currentHost by remember(proxyHost) { mutableStateOf(proxyHost) }
-                var currentPortText by remember(proxyPortText) { mutableStateOf(proxyPortText) }
+                var currentHost by remember(customSocks5Host) { mutableStateOf(customSocks5Host) }
+                var currentPortText by remember(customSocks5PortText) { mutableStateOf(customSocks5PortText) }
 
                 TrackerToggleRow(
                     title = com.example.twopchat.data.Localizations.tr(
@@ -510,22 +506,22 @@ fun TrackerSettingsPage(
                     ),
                     subtitle = com.example.twopchat.data.Localizations.tr(
                         appLanguage,
-                        ru = "Маршрутизация анонсов к трекерам через Tor (Orbot) или локальный прокси",
-                        en = "Routes tracker announces through Tor (Orbot) or local proxy",
-                        de = "Routet Tracker-Ankündigungen über Tor (Orbot) oder lokalen Proxy",
-                        es = "Enruta anuncios de rastreo a través de Tor (Orbot) o proxy local",
-                        fr = "Achemine les annonces de traqueurs via Tor (Orbot) ou un proxy local",
-                        pt = "Roteia anúncios de rastreadores via Tor (Orbot) ou proxy local"
+                        ru = "Самостоятельное введение хоста/порта внешнего SOCKS5 прокси",
+                        en = "Independent custom SOCKS5 host/port routing",
+                        de = "Eigenständige SOCKS5-Host/Port-Verbindung",
+                        es = "Enrutamiento SOCKS5 personalizado independiente",
+                        fr = "Routage SOCKS5 personnalisé indépendant",
+                        pt = "Roteamento SOCKS5 personalizado independente"
                     ),
-                    checked = proxyEnabled,
+                    checked = customSocks5Enabled,
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariant = onSurfaceVariant,
                     onCheckedChange = { enabled ->
-                        P2PPreferences.prefs(context).edit().putBoolean(P2PPreferences.PROXY_ENABLED, enabled).commit()
+                        P2PPreferences.prefs(context).edit().putBoolean(P2PPreferences.SOCKS5_ENABLED, enabled).commit()
                         settingsChanged()
                     },
                 )
-                if (proxyEnabled) {
+                if (customSocks5Enabled) {
                     HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
                     Row(
                         modifier = Modifier
@@ -538,7 +534,7 @@ fun TrackerSettingsPage(
                             onValueChange = { newHost ->
                                 currentHost = newHost
                                 if (ProxyConfig.isValidHost(newHost)) {
-                                    P2PPreferences.prefs(context).edit().putString(P2PPreferences.PROXY_HOST, newHost.trim()).commit()
+                                    P2PPreferences.prefs(context).edit().putString(P2PPreferences.SOCKS5_HOST, newHost.trim()).commit()
                                     settingsChanged()
                                 }
                             },
@@ -552,7 +548,7 @@ fun TrackerSettingsPage(
                                 currentPortText = newPort
                                 val portInt = newPort.toIntOrNull()
                                 if (portInt != null && ProxyConfig.isValidPort(portInt)) {
-                                    P2PPreferences.prefs(context).edit().putInt(P2PPreferences.PROXY_PORT, portInt).commit()
+                                    P2PPreferences.prefs(context).edit().putInt(P2PPreferences.SOCKS5_PORT, portInt).commit()
                                     settingsChanged()
                                 }
                             },

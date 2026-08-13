@@ -52,5 +52,52 @@ class ProxySettingsTest {
     fun testHeroWidgetCollapsedDefaultKey() {
         assertEquals("settings_hero_widget_collapsed", P2PPreferences.HERO_WIDGET_COLLAPSED_DEFAULT)
     }
+
+    @Test
+    fun testCustomSocks5PreferenceKeys() {
+        assertEquals("settings_socks5_enabled", P2PPreferences.SOCKS5_ENABLED)
+        assertEquals("settings_socks5_host", P2PPreferences.SOCKS5_HOST)
+        assertEquals("settings_socks5_port", P2PPreferences.SOCKS5_PORT)
+        assertEquals("127.0.0.1", P2PPreferences.DEFAULT_SOCKS5_HOST)
+        assertEquals(1080, P2PPreferences.DEFAULT_SOCKS5_PORT)
+    }
+
+    @Test
+    fun testProxyPriorityResolution() {
+        // 1. Tor active takes precedence over custom SOCKS5
+        val torPriority = ProxyConfig.resolveProxyConfig(
+            isTorEnabled = true,
+            isTorRunning = true,
+            customSocks5Enabled = true,
+            customHost = "10.0.0.1",
+            customPort = 1080
+        )
+        assertTrue(torPriority.enabled)
+        assertEquals("127.0.0.1", torPriority.host)
+        assertEquals(9050, torPriority.port)
+
+        // 2. Tor disabled/not running -> fallback to Custom SOCKS5
+        val customSocks5 = ProxyConfig.resolveProxyConfig(
+            isTorEnabled = false,
+            isTorRunning = false,
+            customSocks5Enabled = true,
+            customHost = "10.0.0.1",
+            customPort = 1080
+        )
+        assertTrue(customSocks5.enabled)
+        assertEquals("10.0.0.1", customSocks5.host)
+        assertEquals(1080, customSocks5.port)
+
+        // 3. Both disabled -> Direct connection
+        val direct = ProxyConfig.resolveProxyConfig(
+            isTorEnabled = false,
+            isTorRunning = false,
+            customSocks5Enabled = false,
+            customHost = "10.0.0.1",
+            customPort = 1080
+        )
+        assertFalse(direct.enabled)
+    }
 }
+
 
