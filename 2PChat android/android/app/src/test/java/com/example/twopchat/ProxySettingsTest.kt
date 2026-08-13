@@ -98,6 +98,20 @@ class ProxySettingsTest {
         )
         assertFalse(direct.enabled)
     }
+
+    @Test
+    fun testInvalidCustomValuesFallBackToSocks5Defaults() {
+        val resolved = ProxyConfig.resolveProxyConfig(
+            isTorEnabled = false,
+            isTorRunning = false,
+            customSocks5Enabled = true,
+            customHost = " invalid host ",
+            customPort = 0,
+        )
+
+        assertEquals(P2PPreferences.DEFAULT_SOCKS5_HOST, resolved.host)
+        assertEquals(P2PPreferences.DEFAULT_SOCKS5_PORT, resolved.port)
+    }
 }
 
 

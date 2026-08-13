@@ -51,7 +51,7 @@ class TorManagerTest {
             TorBridgeCatalog.select(customBridges = custom, publicBridgesEnabled = true),
         )
         assertEquals(
-            TorBridgeCatalog.PUBLIC_OBFS4_BRIDGES,
+            TorBridgeCatalog.PUBLIC_OBFS4_BRIDGES + TorBridgeCatalog.PUBLIC_SNOWFLAKE_BRIDGES,
             TorBridgeCatalog.select(customBridges = emptyList(), publicBridgesEnabled = true),
         )
         assertTrue(
@@ -255,8 +255,36 @@ class TorManagerTest {
         val initialIndex = TorBridgeCatalog.currentBridgeIndex.value
         val bridge1 = TorBridgeCatalog.rotateNextBridge()
         val nextIndex = TorBridgeCatalog.currentBridgeIndex.value
-        assertEquals((initialIndex + 1) % TorBridgeCatalog.PUBLIC_OBFS4_BRIDGES.size, nextIndex)
-        assertTrue(bridge1.startsWith("obfs4"))
+        assertEquals(
+            (initialIndex + 1) % (TorBridgeCatalog.PUBLIC_OBFS4_BRIDGES.size + TorBridgeCatalog.PUBLIC_SNOWFLAKE_BRIDGES.size),
+            nextIndex,
+        )
+        assertTrue(bridge1.startsWith("obfs4") || bridge1.startsWith("snowflake"))
+    }
+
+    @Test
+    fun testSnowflakeOnlyTransportUsesSnowflakeBridge() {
+        val bridges = TorBridgeCatalog.select(
+            customBridges = emptyList(),
+            publicBridgesEnabled = true,
+            transport = TorTransport.SNOWFLAKE,
+        )
+
+        assertEquals(TorBridgeCatalog.PUBLIC_SNOWFLAKE_BRIDGES.toSet(), bridges.toSet())
+        assertEquals(null, TorManager.parseBridgeLines(bridges).error)
+    }
+
+    @Test
+    fun testBuiltInSnowflakeCatalogUsesCurrentTorBrowserRendezvous() {
+        val bridges = TorBridgeCatalog.PUBLIC_SNOWFLAKE_BRIDGES
+
+        assertEquals(2, bridges.size)
+        bridges.forEach { bridge ->
+            assertTrue(bridge.contains("url=https://1098762253.rsc.cdn77.org/"))
+            assertTrue(bridge.contains("fronts=app.datapacket.com,www.datapacket.com"))
+            assertTrue(bridge.contains("utls-imitate=hellorandomizedalpn"))
+            assertFalse(bridge.contains("snowflake-broker.torproject.net.global.prod.fastly.net"))
+        }
     }
 
     @Test

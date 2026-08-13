@@ -49,6 +49,7 @@ import com.example.twopchat.ProxyConfig
 import com.example.twopchat.PythonBridge
 import com.example.twopchat.TorBridgeCatalog
 import com.example.twopchat.TorManager
+import com.example.twopchat.TorTransport
 import com.example.twopchat.TorBridgeValidationError
 import com.example.twopchat.TorStatusFormatter
 import com.example.twopchat.TrackerPreferences
@@ -98,13 +99,15 @@ fun TrackerSettingsPage(
     var publicTorBridgesEnabled by remember {
         mutableStateOf(P2PPreferences.publicTorBridgesEnabled(context))
     }
+    var torTransport by remember(revision) { mutableStateOf(P2PPreferences.torTransport(context)) }
     val torBridgeValidation = remember(torBridgesText) {
         TorManager.parseBridgeText(torBridgesText)
     }
-    val effectiveTorBridges = remember(torBridgeValidation, publicTorBridgesEnabled) {
+    val effectiveTorBridges = remember(torBridgeValidation, publicTorBridgesEnabled, torTransport) {
         TorBridgeCatalog.select(
             customBridges = torBridgeValidation.bridges,
             publicBridgesEnabled = publicTorBridgesEnabled,
+            transport = torTransport,
         )
     }
 
@@ -112,8 +115,22 @@ fun TrackerSettingsPage(
         revision += 1
         scope.launch(Dispatchers.IO) {
             PythonBridge.applyTrackerConfiguration()
-            ProxyConfig.updateNetworkProxy(context)
+            PythonBridge.updateNetworkProxy(context)
             P2PMessageRelay.refreshAnnouncement(context)
+        }
+    }
+
+    fun restartTorForTransport(transport: TorTransport) {
+        if (torUserRequested || isTorRunning || isTorConnecting) {
+            TorManager.stopTor()
+            TorManager.startTor(
+                context,
+                TorBridgeCatalog.select(
+                    customBridges = torBridgeValidation.bridges,
+                    publicBridgesEnabled = publicTorBridgesEnabled,
+                    transport = transport,
+                ),
+            )
         }
     }
 
@@ -138,7 +155,6 @@ fun TrackerSettingsPage(
             torUserRequested = false
             P2PPreferences.prefs(context).edit()
                 .putBoolean(P2PPreferences.TOR_ENABLED, false)
-                .putBoolean(P2PPreferences.PROXY_ENABLED, false)
                 .apply()
             settingsChanged()
             Toast.makeText(
@@ -298,6 +314,7 @@ fun TrackerSettingsPage(
                             val updated = TorBridgeCatalog.select(
                                 customBridges = torBridgeValidation.bridges,
                                 publicBridgesEnabled = enabled,
+                                transport = torTransport,
                             )
                             if (
                                 updated != previous &&
@@ -312,6 +329,59 @@ fun TrackerSettingsPage(
                                 if (isRussian) "Не удалось сохранить режим мостов" else "Could not save bridge mode",
                                 Toast.LENGTH_LONG,
                             ).show()
+                        }
+                    },
+                )
+                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
+                TrackerToggleRow(
+                    title = if (isRussian) "Автовыбор транспорта" else "Automatic transport selection",
+                    subtitle = if (isRussian) {
+                        "Сначала obfs4, затем Snowflake при недоступности мостов"
+                    } else {
+                        "Try obfs4 first, then Snowflake if bridges are unreachable"
+                    },
+                    checked = torTransport == TorTransport.AUTO,
+                    onSurfaceColor = onSurfaceColor,
+                    onSurfaceVariant = onSurfaceVariant,
+                    onCheckedChange = { enabled ->
+                        if (enabled && P2PPreferences.setTorTransport(context, TorTransport.AUTO)) {
+                            torTransport = TorTransport.AUTO
+                            restartTorForTransport(TorTransport.AUTO)
+                            settingsChanged()
+                        }
+                    },
+                )
+                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
+                TrackerToggleRow(
+                    title = "obfs4",
+                    subtitle = if (isRussian) "Использовать только встроенный пул obfs4" else "Use only the built-in obfs4 pool",
+                    checked = torTransport == TorTransport.OBFS4,
+                    onSurfaceColor = onSurfaceColor,
+                    onSurfaceVariant = onSurfaceVariant,
+                    onCheckedChange = { enabled ->
+                        if (enabled && P2PPreferences.setTorTransport(context, TorTransport.OBFS4)) {
+                            torTransport = TorTransport.OBFS4
+                            restartTorForTransport(TorTransport.OBFS4)
+                            settingsChanged()
+                        }
+                    },
+                )
+                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
+                TrackerToggleRow(
+                    title = "Snowflake",
+                    subtitle = if (isRussian) {
+                        "WebRTC-прокси волонтёров для сетей с глубокой блокировкой"
+                    } else {
+                        "Volunteer WebRTC proxies for heavily censored networks"
+                    },
+                    checked = torTransport == TorTransport.SNOWFLAKE,
+                    onSurfaceColor = onSurfaceColor,
+                    onSurfaceVariant = onSurfaceVariant,
+                    onCheckedChange = { enabled ->
+                        if (enabled && P2PPreferences.setTorTransport(context, TorTransport.SNOWFLAKE)) {
+                            torTransport = TorTransport.SNOWFLAKE
+                            restartTorForTransport(TorTransport.SNOWFLAKE)
+                            settingsChanged()
                         }
                     },
                 )
@@ -440,6 +510,7 @@ fun TrackerSettingsPage(
                                         TorBridgeCatalog.select(
                                             customBridges = torBridgeValidation.bridges,
                                             publicBridgesEnabled = publicTorBridgesEnabled,
+                                            transport = torTransport,
                                         ),
                                     )
                                 }

@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.PythonBridge
+import com.example.twopchat.ProxyConfig
 import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.P2PPreferences
 import com.example.twopchat.TorManager
@@ -688,14 +689,12 @@ fun NetworkDiagnosticsDialog(
                                 val localIpv4 = PythonBridge.getLocalAddresses().filter { !it.contains(':') }.joinToString(", ").ifEmpty { "127.0.0.1" }
                                 val upnpMapped = upnpDetails["mapped"] == "true"
                                 val trackerCount = trackerDiagnostics.size
-                                val isProxyEnabled = P2PPreferences.isProxyEnabled(context)
-                                val proxyHost = P2PPreferences.getProxyHost(context)
-                                val proxyPort = P2PPreferences.getProxyPort(context)
                                 val isTorRunning = TorManager.isTorRunning.collectAsState().value
-                                val torText = if (isProxyEnabled && isTorRunning) {
+                                val effectiveProxy = ProxyConfig.getEffectiveProxyConfig(context)
+                                val torText = if (isTorRunning && effectiveProxy.enabled) {
                                     "EMBEDDED TOR (127.0.0.1:9050 - ACTIVE)"
-                                } else if (isProxyEnabled) {
-                                    "CUSTOM SOCKS5 ($proxyHost:$proxyPort)"
+                                } else if (effectiveProxy.enabled) {
+                                    "CUSTOM SOCKS5 (${effectiveProxy.host}:${effectiveProxy.port})"
                                 } else {
                                     "DISABLED"
                                 }
@@ -710,7 +709,7 @@ fun NetworkDiagnosticsDialog(
                                     text = "• Tor / SOCKS5 Proxy: $torText",
                                     fontSize = 11.sp,
                                     fontFamily = FontFamily.Monospace,
-                                    color = if (isProxyEnabled) Color(0xFF4CAF50) else onSurfaceVariant
+                                    color = if (effectiveProxy.enabled) Color(0xFF4CAF50) else onSurfaceVariant
                                 )
                                 Text(
                                     text = "• Yggdrasil IPv6: ${if (yggAddress.isNotEmpty()) yggAddress else "Off"} · State: ${yggDiagnostics["state"] ?: "disabled"}",

@@ -69,11 +69,15 @@ internal object AccountDataWiper {
     }
 
     private fun deleteDatabases(context: Context): Boolean {
-        val databaseNames = context.databaseList().toList()
-        val dbsDeleted = databaseNames.all { database -> context.deleteDatabase(database) }
+        // deleteDatabase() may report false even when Android removed the main
+        // file (for example while cleaning up SQLite sidecars). Verify the
+        // security-relevant postcondition instead: no database artifacts remain.
+        context.databaseList().forEach(context::deleteDatabase)
         val databasesDir = File(context.applicationInfo.dataDir, "databases")
         val dirDeleted = deleteChildren(databasesDir)
-        return dbsDeleted && dirDeleted
+        return dirDeleted &&
+            context.databaseList().isEmpty() &&
+            databasesDir.listFiles().orEmpty().isEmpty()
     }
 
     private fun deleteExternalFiles(context: Context): Boolean =

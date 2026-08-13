@@ -1,10 +1,13 @@
 package com.example.twopchat
 
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import java.io.File
+import java.security.KeyStore
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicReference
+import java.security.cert.X509Certificate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -90,6 +93,9 @@ object TorManager {
 
     private val _isTorRunning = MutableStateFlow(false)
     val isTorRunning: StateFlow<Boolean> = _isTorRunning.asStateFlow()
+
+    @Volatile
+    private var lastAppContext: Context? = null
 
     private val _isTorConnecting = MutableStateFlow(false)
     val isTorConnecting: StateFlow<Boolean> = _isTorConnecting.asStateFlow()
@@ -449,9 +455,10 @@ object TorManager {
     }
 
     fun rotateBridge(context: Context) {
-        Log.i(TAG, "[TOR] Bootstrap stalled at <= 45%. Rotating to next obfs4 bridge...")
+        val transport = P2PPreferences.torTransport(context)
+        Log.i(TAG, "[TOR] Bootstrap stalled at <= 45%. Rotating $transport bridge...")
         _isRotatingBridge.value = true
-        val nextBridge = TorBridgeCatalog.rotateNextBridge()
+        val nextBridge = TorBridgeCatalog.rotateNextBridge(transport)
         stopTor()
         scope.launch {
             delay(500)
@@ -470,6 +477,7 @@ object TorManager {
             return
         }
 
+        lastAppContext = context.applicationContext
         val bridgeConfiguration = parseBridgeLines(bridges)
         if (bridgeConfiguration.error != null) {
             _isTorRunning.value = false
@@ -478,11 +486,17 @@ object TorManager {
             _lastBootstrapFailureReason.value = "INVALID_BRIDGE_CONFIGURATION"
             P2PPreferences.prefs(context).edit()
                 .putBoolean(P2PPreferences.TOR_ENABLED, false)
-                .putBoolean(P2PPreferences.PROXY_ENABLED, false)
                 .apply()
+            PythonBridge.updateNetworkProxy(context)
             Log.w(TAG, "Rejected invalid Tor bridge configuration (${bridgeConfiguration.error.name})")
             return
         }
+
+        // This setting represents the embedded daemon only. Custom SOCKS5 settings
+        // remain untouched and are selected automatically whenever Tor is not ready.
+        P2PPreferences.prefs(context).edit()
+            .putBoolean(P2PPreferences.TOR_ENABLED, true)
+            .apply()
 
         val runId = runGate.begin()
         _isTorConnecting.value = true
@@ -549,6 +563,12 @@ object TorManager {
             )
             torrcFile.writeText(torrcContent)
 
+            // Lyrebird is a standalone Go executable, so it cannot use
+            // AndroidCAStore through the Java security APIs. Give it a PEM
+            // bundle derived from Android's system roots instead. The file is
+            // private to the app and intentionally excludes user-added CAs.
+            val systemCaBundle = writeSystemCaBundle(appTorDir)
+
             Log.i(
                 TAG,
                 "Initialized embedded Tor configuration (Bridges active: ${bridgeConfiguration.bridges.isNotEmpty()})"
@@ -556,10 +576,14 @@ object TorManager {
 
             if (!currentCoroutineContext().isActive || !runGate.isCurrent(runId)) return
 
-            val startedProcess = ProcessBuilder(
+            val processBuilder = ProcessBuilder(
                 torExecutable.absolutePath,
                 "-f", torrcFile.absolutePath
-            ).directory(appTorDir).redirectErrorStream(true).start()
+            ).directory(appTorDir).redirectErrorStream(true)
+            systemCaBundle?.let { bundle ->
+                processBuilder.environment()["SSL_CERT_FILE"] = bundle.absolutePath
+            }
+            val startedProcess = processBuilder.start()
             process = startedProcess
             if (!attachProcess(runId, startedProcess)) {
                 terminateProcess(startedProcess)
@@ -572,6 +596,7 @@ object TorManager {
                     startedProcess.inputStream.bufferedReader().useLines { lines ->
                         lines.forEach { line ->
                             if (!runGate.isCurrent(runId)) return@forEach
+                            appendTorLog(context, line)
                             parseBootstrapProgress(line)?.let { progress ->
                                 _bootstrapProgress.value = progress
                                 Log.i(TAG, "Tor bootstrap progress: $progress%")
@@ -675,6 +700,40 @@ object TorManager {
     private fun elapsedMillisSince(startNanos: Long): Long =
         (System.nanoTime() - startNanos) / 1_000_000L
 
+    private fun appendTorLog(context: Context, line: String) {
+        val boundedLine = line.take(4096)
+        AppLog.append(context, "[TOR] $boundedLine\n")
+    }
+
+    private fun writeSystemCaBundle(appTorDir: File): File? {
+        return try {
+            val keyStore = KeyStore.getInstance("AndroidCAStore").apply { load(null) }
+            val pem = StringBuilder()
+            val aliases = keyStore.aliases()
+            var certificateCount = 0
+            while (aliases.hasMoreElements()) {
+                val alias = aliases.nextElement()
+                if (!alias.startsWith("system:")) continue
+                val certificate = keyStore.getCertificate(alias) as? X509Certificate ?: continue
+                val encoded = Base64.encodeToString(certificate.encoded, Base64.NO_WRAP)
+                pem.appendLine("-----BEGIN CERTIFICATE-----")
+                encoded.chunked(64).forEach(pem::appendLine)
+                pem.appendLine("-----END CERTIFICATE-----")
+                certificateCount++
+            }
+            check(certificateCount > 0) { "Android system CA store is empty" }
+            File(appTorDir, "system-ca-bundle.pem").also { bundle ->
+                bundle.writeText(pem.toString())
+                bundle.setReadable(false, false)
+                bundle.setReadable(true, true)
+                Log.i(TAG, "Prepared Android system CA bundle ($certificateCount roots)")
+            }
+        } catch (exception: Exception) {
+            Log.w(TAG, "Could not prepare Android system CA bundle", exception)
+            null
+        }
+    }
+
     @Synchronized
     private fun attachProcess(runId: Long, process: Process): Boolean {
         if (!runGate.isCurrent(runId)) return false
@@ -704,16 +763,13 @@ object TorManager {
         if (!runGate.isCurrent(runId)) return false
         val saved = P2PPreferences.prefs(context).edit()
             .putBoolean(P2PPreferences.TOR_ENABLED, true)
-            .putBoolean(P2PPreferences.PROXY_ENABLED, true)
-            .putString(P2PPreferences.PROXY_HOST, "127.0.0.1")
-            .putInt(P2PPreferences.PROXY_PORT, DEFAULT_SOCKS_PORT)
             .commit()
         if (!saved) {
             recordFailure(runId, "PREFERENCES_WRITE_FAILED")
             return false
         }
         if (!runGate.isCurrent(runId)) return false
-        if (!PythonBridge.applyProxyConfiguration()) {
+        if (!applyEffectiveProxy(context)) {
             recordFailure(runId, "PROXY_CONFIGURATION_FAILED")
             disableTorProxy(context, runId)
             return false
@@ -725,10 +781,18 @@ object TorManager {
         if (!runGate.isCurrent(runId)) return
         P2PPreferences.prefs(context).edit()
             .putBoolean(P2PPreferences.TOR_ENABLED, false)
-            .putBoolean(P2PPreferences.PROXY_ENABLED, false)
             .commit()
         if (runGate.isCurrent(runId)) {
-            PythonBridge.applyProxyConfiguration()
+            PythonBridge.updateNetworkProxy(context)
+        }
+    }
+
+    private fun applyEffectiveProxy(context: Context): Boolean {
+        return try {
+            PythonBridge.updateNetworkProxy(context)
+        } catch (exception: Exception) {
+            Log.e(TAG, "Unable to apply effective proxy configuration", exception)
+            false
         }
     }
 
@@ -766,5 +830,10 @@ object TorManager {
         _bootstrapProgress.value = 0
         job?.cancel()
         terminateProcess(process)
+        lastAppContext?.let { context ->
+            scope.launch(Dispatchers.IO) {
+                PythonBridge.updateNetworkProxy(context)
+            }
+        }
     }
 }

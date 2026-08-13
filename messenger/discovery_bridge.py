@@ -474,10 +474,21 @@ def _build_proxy_url_opener(host: str, port: int):
     )
 
 
-def configure_proxy(config_json: str) -> bool:
-    """Configure optional SOCKS5 proxy settings for tracker/DHT network connections."""
+def configure_proxy(config_json_or_enabled, port=None, host=None) -> bool:
+    """Configure SOCKS5 for discovery from JSON or ``(enabled, port, host)``.
+
+    The JSON form is used by Android. The positional form keeps the bridge
+    usable by direct callers while allowing an arbitrary SOCKS5 endpoint.
+    """
     try:
-        config = json.loads(config_json)
+        if isinstance(config_json_or_enabled, bool):
+            config = {
+                "proxy_enabled": config_json_or_enabled,
+                "proxy_port": 9050 if port is None else port,
+                "proxy_host": "127.0.0.1" if host is None else host,
+            }
+        else:
+            config = json.loads(config_json_or_enabled)
         if not isinstance(config, dict):
             raise ValueError("proxy configuration must be a JSON object")
         enabled = config.get("proxy_enabled", False)

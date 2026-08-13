@@ -37,8 +37,10 @@ object ProxyConfig {
             isTorEnabled && isTorRunning -> ResolvedProxyConfig(enabled = true, host = "127.0.0.1", port = 9050)
             customSocks5Enabled -> ResolvedProxyConfig(
                 enabled = true,
-                host = customHost.ifBlank { "127.0.0.1" },
-                port = if (isValidPort(customPort)) customPort else 1080
+                host = customHost.trim().takeIf(::isValidHost)
+                    ?: P2PPreferences.DEFAULT_SOCKS5_HOST,
+                port = customPort.takeIf(::isValidPort)
+                    ?: P2PPreferences.DEFAULT_SOCKS5_PORT
             )
             else -> ResolvedProxyConfig(enabled = false, host = "127.0.0.1", port = 9050)
         }
@@ -60,9 +62,9 @@ object ProxyConfig {
         )
     }
 
-    fun updateNetworkProxy(context: Context) {
+    fun updateNetworkProxy(context: Context): Boolean {
         val effective = getEffectiveProxyConfig(context)
-        PythonBridge.applyProxyConfiguration(
+        return PythonBridge.applyProxyConfiguration(
             context = context,
             enabled = effective.enabled,
             host = effective.host,

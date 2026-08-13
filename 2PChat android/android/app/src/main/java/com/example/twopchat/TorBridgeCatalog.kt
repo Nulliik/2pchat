@@ -4,12 +4,23 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+enum class TorTransport(val storedValue: String) {
+    AUTO("auto"),
+    OBFS4("obfs4"),
+    SNOWFLAKE("snowflake");
+
+    companion object {
+        fun fromStored(value: String?): TorTransport =
+            entries.firstOrNull { it.storedValue == value } ?: AUTO
+    }
+}
+
 /**
  * Offline bootstrap pool from Tor Browser's public built-in bridge catalog.
  *
  * Source: tor-browser-build/projects/tor-expert-bundle/pt_config.json
- * Revision: 7e6cd044785587260c228be2c5c2e00cfc328dfe (2026-08-11),
- * reachability checked from the Android emulator on 2026-08-12.
+ * Revision: 7fb9dcedd548c02b0013d49761d56f5132132a80 (2026-08-13),
+ * reachability checked from the Android emulator on 2026-08-13.
  *
  * Keeping the snapshot in the APK mirrors the Yggdrasil public-peer bootstrap
  * model and avoids a fingerprintable clearnet bridge-directory request before
@@ -31,33 +42,64 @@ internal object TorBridgeCatalog {
             "cert=PBwr+S8JTVZo6MPdHnkTwXJPILWADLqfMGoVvhZClMq/Urndyd42BwX9YFJHZnBB3H0XCw iat-mode=1",
     )
 
+    // Tor Browser's Snowflake rendezvous configuration. It uses ephemeral
+    // volunteer WebRTC proxies instead of a fixed bridge address.
+    val PUBLIC_SNOWFLAKE_BRIDGES: List<String> = listOf(
+        "snowflake 192.0.2.3:80 2B280B23E1107BB62ABFC40DDCC8824814F80A72 " +
+            "fingerprint=2B280B23E1107BB62ABFC40DDCC8824814F80A72 " +
+            "url=https://1098762253.rsc.cdn77.org/ " +
+            "fronts=app.datapacket.com,www.datapacket.com " +
+            "ice=stun:stun.epygi.com:3478,stun:stun.uls.co.za:3478," +
+            "stun:stun.voipgate.com:3478,stun:stun.mixvoip.com:3478," +
+            "stun:stun.telnyx.com:3478,stun:stun.hot-chilli.net:3478," +
+            "stun:stun.fitauto.ru:3478,stun:stun.m-online.net:3478 " +
+            "utls-imitate=hellorandomizedalpn",
+        "snowflake 192.0.2.4:80 8838024498816A039FCBBAB14E6F40A0843051FA " +
+            "fingerprint=8838024498816A039FCBBAB14E6F40A0843051FA " +
+            "url=https://1098762253.rsc.cdn77.org/ " +
+            "fronts=app.datapacket.com,www.datapacket.com " +
+            "ice=stun:stun.epygi.com:3478,stun:stun.uls.co.za:3478," +
+            "stun:stun.voipgate.com:3478,stun:stun.mixvoip.com:3478," +
+            "stun:stun.telnyx.com:3478,stun:stun.hot-chilli.net:3478," +
+            "stun:stun.fitauto.ru:3478,stun:stun.m-online.net:3478 " +
+            "utls-imitate=hellorandomizedalpn",
+    )
+
     private val _currentBridgeIndex = MutableStateFlow(0)
     val currentBridgeIndex: StateFlow<Int> = _currentBridgeIndex.asStateFlow()
 
-    fun rotateNextBridge(): String {
-        val nextIdx = (_currentBridgeIndex.value + 1) % PUBLIC_OBFS4_BRIDGES.size
+    fun rotateNextBridge(transport: TorTransport = TorTransport.AUTO): String {
+        val candidates = publicBridges(transport)
+        val nextIdx = (_currentBridgeIndex.value + 1) % candidates.size
         _currentBridgeIndex.value = nextIdx
-        return PUBLIC_OBFS4_BRIDGES[nextIdx]
+        return candidates[nextIdx]
     }
 
-    fun getCurrentBridge(): String {
-        return PUBLIC_OBFS4_BRIDGES.getOrElse(_currentBridgeIndex.value) { PUBLIC_OBFS4_BRIDGES[0] }
-    }
+    fun getCurrentBridge(transport: TorTransport = TorTransport.AUTO): String =
+        publicBridges(transport).getOrElse(_currentBridgeIndex.value) { publicBridges(transport).first() }
 
     fun select(
         customBridges: List<String>,
         publicBridgesEnabled: Boolean,
+        transport: TorTransport = TorTransport.AUTO,
     ): List<String> {
         val custom = customBridges.map(String::trim).filter(String::isNotEmpty)
         return when {
             custom.isNotEmpty() -> custom
             publicBridgesEnabled -> {
-                val current = getCurrentBridge()
-                val rest = PUBLIC_OBFS4_BRIDGES.filter { it != current }
+                val candidates = publicBridges(transport)
+                val current = getCurrentBridge(transport)
+                val rest = candidates.filter { it != current }
                 listOf(current) + rest
             }
             else -> emptyList()
         }
+    }
+
+    private fun publicBridges(transport: TorTransport): List<String> = when (transport) {
+        TorTransport.OBFS4 -> PUBLIC_OBFS4_BRIDGES
+        TorTransport.SNOWFLAKE -> PUBLIC_SNOWFLAKE_BRIDGES
+        TorTransport.AUTO -> PUBLIC_OBFS4_BRIDGES + PUBLIC_SNOWFLAKE_BRIDGES
     }
 }
 

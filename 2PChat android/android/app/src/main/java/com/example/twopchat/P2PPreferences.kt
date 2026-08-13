@@ -22,6 +22,7 @@ object P2PPreferences {
     const val TOR_ENABLED = "settings_tor_enabled"
     const val TOR_BRIDGES = "settings_tor_bridges"
     const val TOR_PUBLIC_BRIDGES_ENABLED = "settings_tor_public_bridges_enabled"
+    const val TOR_TRANSPORT = "settings_tor_transport"
     const val PROXY_HOST = "settings_proxy_host"
     const val PROXY_PORT = "settings_proxy_port"
     const val DEFAULT_PROXY_HOST = "127.0.0.1"
@@ -45,6 +46,8 @@ object P2PPreferences {
 
     fun getCustomSocks5Port(context: Context): Int =
         prefs(context).getInt(SOCKS5_PORT, DEFAULT_SOCKS5_PORT)
+            .takeIf { it in 1..65535 }
+            ?: DEFAULT_SOCKS5_PORT
 
     fun isWifiDiscoveryEnabled(context: Context): Boolean =
         prefs(context).getBoolean(WIFI_DISCOVERY, true)
@@ -100,10 +103,18 @@ object P2PPreferences {
     fun setPublicTorBridgesEnabled(context: Context, enabled: Boolean): Boolean =
         prefs(context).edit().putBoolean(TOR_PUBLIC_BRIDGES_ENABLED, enabled).commit()
 
+    fun torTransport(context: Context): TorTransport = TorTransport.fromStored(
+        prefs(context).getString(TOR_TRANSPORT, null),
+    )
+
+    fun setTorTransport(context: Context, transport: TorTransport): Boolean =
+        prefs(context).edit().putString(TOR_TRANSPORT, transport.storedValue).commit()
+
     fun getEffectiveTorBridgeLines(context: Context): List<String> =
         TorBridgeCatalog.select(
             customBridges = getTorBridgeLines(context),
             publicBridgesEnabled = publicTorBridgesEnabled(context),
+            transport = torTransport(context),
         )
 
     const val DEFAULT_STICKER_CACHE_LIMIT_MB = 100

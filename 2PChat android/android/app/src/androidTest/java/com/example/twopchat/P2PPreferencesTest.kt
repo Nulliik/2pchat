@@ -20,6 +20,7 @@ class P2PPreferencesTest {
             .remove(P2PPreferences.verifiedPeer("Alice"))
             .remove(P2PPreferences.TOR_BRIDGES)
             .remove(P2PPreferences.TOR_PUBLIC_BRIDGES_ENABLED)
+            .remove(P2PPreferences.TOR_TRANSPORT)
             .commit()
     }
 
@@ -43,7 +44,7 @@ class P2PPreferencesTest {
 
         assertTrue(P2PPreferences.publicTorBridgesEnabled(context))
         assertEquals(
-            TorBridgeCatalog.PUBLIC_OBFS4_BRIDGES,
+            TorBridgeCatalog.PUBLIC_OBFS4_BRIDGES + TorBridgeCatalog.PUBLIC_SNOWFLAKE_BRIDGES,
             P2PPreferences.getEffectiveTorBridgeLines(context),
         )
 

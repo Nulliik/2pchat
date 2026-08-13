@@ -44,6 +44,15 @@ def test_custom_socks5_port_configuration():
     assert active["port"] == 1080
 
 
+def test_custom_socks5_positional_configuration():
+    assert configure_proxy(True, 1080, "10.0.0.1") is True
+    assert get_proxy_configuration() == {
+        "enabled": True,
+        "host": "10.0.0.1",
+        "port": 1080,
+    }
+
+
 def test_proxy_disabled_configuration():
     config = {
         "proxy_enabled": False,

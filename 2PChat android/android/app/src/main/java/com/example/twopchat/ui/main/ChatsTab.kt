@@ -561,9 +561,6 @@ fun ChatsTab(
                                         if (enable) {
                                             com.example.twopchat.P2PPreferences.prefs(context).edit()
                                                 .putBoolean(com.example.twopchat.P2PPreferences.TOR_ENABLED, true)
-                                                .putBoolean(com.example.twopchat.P2PPreferences.PROXY_ENABLED, true)
-                                                .putString(com.example.twopchat.P2PPreferences.PROXY_HOST, "127.0.0.1")
-                                                .putInt(com.example.twopchat.P2PPreferences.PROXY_PORT, 9050)
                                                 .apply()
                                             com.example.twopchat.TorManager.startTor(context)
                                             Toast.makeText(
@@ -577,7 +574,7 @@ fun ChatsTab(
                                                 .apply()
                                             com.example.twopchat.TorManager.stopTor()
                                             heroScope.launch(Dispatchers.IO) {
-                                                PythonBridge.applyProxyConfiguration()
+                                                PythonBridge.updateNetworkProxy(context)
                                             }
                                         }
                                     }

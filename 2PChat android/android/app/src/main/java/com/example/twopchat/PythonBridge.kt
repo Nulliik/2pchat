@@ -524,6 +524,11 @@ object PythonBridge {
         }
     }
 
+    /** Re-evaluates Tor/custom SOCKS5 priority and applies it to discovery. */
+    fun updateNetworkProxy(context: Context): Boolean {
+        return ProxyConfig.updateNetworkProxy(context)
+    }
+
     private fun applyTrackerConfiguration(
         bridge: com.chaquo.python.PyObject,
         configJson: String? = null,
