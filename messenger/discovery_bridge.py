@@ -507,6 +507,8 @@ def configure_proxy(config_json: str) -> bool:
 
     global _proxy_enabled, _proxy_host, _proxy_port, _proxy_url_opener
     with _proxy_config_lock:
+        if _proxy_enabled == enabled and _proxy_host == host and _proxy_port == port:
+            return True
         _proxy_enabled = enabled
         _proxy_host = host
         _proxy_port = port
