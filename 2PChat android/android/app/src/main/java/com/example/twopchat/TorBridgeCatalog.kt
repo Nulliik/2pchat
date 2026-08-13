@@ -1,5 +1,9 @@
 package com.example.twopchat
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 /**
  * Offline bootstrap pool from Tor Browser's public built-in bridge catalog.
  *
@@ -27,6 +31,19 @@ internal object TorBridgeCatalog {
             "cert=PBwr+S8JTVZo6MPdHnkTwXJPILWADLqfMGoVvhZClMq/Urndyd42BwX9YFJHZnBB3H0XCw iat-mode=1",
     )
 
+    private val _currentBridgeIndex = MutableStateFlow(0)
+    val currentBridgeIndex: StateFlow<Int> = _currentBridgeIndex.asStateFlow()
+
+    fun rotateNextBridge(): String {
+        val nextIdx = (_currentBridgeIndex.value + 1) % PUBLIC_OBFS4_BRIDGES.size
+        _currentBridgeIndex.value = nextIdx
+        return PUBLIC_OBFS4_BRIDGES[nextIdx]
+    }
+
+    fun getCurrentBridge(): String {
+        return PUBLIC_OBFS4_BRIDGES.getOrElse(_currentBridgeIndex.value) { PUBLIC_OBFS4_BRIDGES[0] }
+    }
+
     fun select(
         customBridges: List<String>,
         publicBridgesEnabled: Boolean,
@@ -34,8 +51,14 @@ internal object TorBridgeCatalog {
         val custom = customBridges.map(String::trim).filter(String::isNotEmpty)
         return when {
             custom.isNotEmpty() -> custom
-            publicBridgesEnabled -> PUBLIC_OBFS4_BRIDGES
+            publicBridgesEnabled -> {
+                val current = getCurrentBridge()
+                val rest = PUBLIC_OBFS4_BRIDGES.filter { it != current }
+                listOf(current) + rest
+            }
             else -> emptyList()
         }
     }
 }
+
+

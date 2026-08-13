@@ -526,12 +526,14 @@ fun ChatsTab(
                                             fontWeight = FontWeight.Bold,
                                             color = onSurfaceColor
                                         )
+                                        val isRotatingBridge by com.example.twopchat.TorManager.isRotatingBridge.collectAsState()
                                         Text(
                                             text = com.example.twopchat.TorStatusFormatter.formatStatus(
                                                 isRunning = isTorRunning,
                                                 isConnecting = isTorConnecting,
                                                 appLanguage = appLanguage,
-                                                progress = torBootstrapProgress
+                                                progress = torBootstrapProgress,
+                                                isRotatingBridge = isRotatingBridge
                                             ),
                                             fontSize = 11.sp,
                                             color = when {
@@ -571,6 +573,78 @@ fun ChatsTab(
                                         }
                                     }
                                 )
+                            }
+                            if (isTorRunning) {
+                                val circuitStatus by com.example.twopchat.TorManager.circuitStatus.collectAsState()
+                                val isRotatingCircuit by com.example.twopchat.TorManager.isRotatingCircuit.collectAsState()
+                                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.08f), modifier = Modifier.padding(horizontal = 14.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Цепочка Tor:",
+                                                en = "Tor Circuit:",
+                                                de = "Tor-Schaltung:",
+                                                es = "Circuito Tor:",
+                                                fr = "Circuit Tor:",
+                                                pt = "Circuito Tor:"
+                                            ),
+                                            fontSize = 10.sp,
+                                            color = onSurfaceVariant.copy(alpha = 0.7f)
+                                        )
+                                        Text(
+                                            text = circuitStatus,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = onSurfaceColor
+                                        )
+                                    }
+                                    TextButton(
+                                        enabled = !isRotatingCircuit,
+                                        onClick = {
+                                            heroScope.launch {
+                                                val ok = com.example.twopchat.TorManager.renewTorIdentity(context)
+                                                if (ok) {
+                                                    Toast.makeText(
+                                                        context,
+                                                        com.example.twopchat.data.Localizations.tr(
+                                                            appLanguage,
+                                                            ru = "Цепочка обновлена",
+                                                            en = "Circuit renewed",
+                                                            de = "Schaltung erneuert",
+                                                            es = "Circuito renovado",
+                                                            fr = "Circuit renouvelé",
+                                                            pt = "Circuito renovado"
+                                                        ),
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        Text(
+                                            text = if (isRotatingCircuit) "⏳..." else com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "🔄 Сменить цепочку",
+                                                en = "🔄 New Identity",
+                                                de = "🔄 Neue Identität",
+                                                es = "🔄 Nueva identidad",
+                                                fr = "🔄 Nouvelle identité",
+                                                pt = "🔄 Nova identidade"
+                                            ),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = primaryColor
+                                        )
+                                    }
+                                }
                             }
                         }
 

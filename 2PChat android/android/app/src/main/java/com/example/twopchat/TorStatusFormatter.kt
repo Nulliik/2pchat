@@ -1,8 +1,18 @@
 package com.example.twopchat
 
 object TorStatusFormatter {
-    fun formatStatus(isRunning: Boolean, isConnecting: Boolean = false, appLanguage: String = "English", progress: Int = 0): String {
+    fun formatStatus(isRunning: Boolean, isConnecting: Boolean = false, appLanguage: String = "English", progress: Int = 0, isRotatingBridge: Boolean = false): String {
         val lang = appLanguage.lowercase()
+        if (isRotatingBridge) {
+            return when {
+                lang.startsWith("рус") || lang == "ru" -> "🔄 Смена моста..."
+                lang.startsWith("deu") || lang.startsWith("ger") || lang == "de" -> "🔄 Brücke wechseln..."
+                lang.startsWith("esp") || lang.startsWith("spa") || lang == "es" -> "🔄 Cambiando puente..."
+                lang.startsWith("fra") || lang.startsWith("fre") || lang == "fr" -> "🔄 Changement de pont..."
+                lang.startsWith("por") || lang == "pt" -> "🔄 Trocando ponte..."
+                else -> "🔄 Rotating bridge..."
+            }
+        }
         return when {
             isRunning -> when {
                 lang.startsWith("рус") || lang == "ru" -> "Подключено к Tor"

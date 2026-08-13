@@ -93,6 +93,15 @@ object TorManager {
     private val _lastBootstrapFailureReason = MutableStateFlow<String?>(null)
     val lastBootstrapFailureReason: StateFlow<String?> = _lastBootstrapFailureReason.asStateFlow()
 
+    private val _circuitStatus = MutableStateFlow("[🛡️ Вход] ➔ [🔄 Срединный] ➔ [🌍 Выход]")
+    val circuitStatus: StateFlow<String> = _circuitStatus.asStateFlow()
+
+    private val _isRotatingCircuit = MutableStateFlow(false)
+    val isRotatingCircuit: StateFlow<Boolean> = _isRotatingCircuit.asStateFlow()
+
+    private val _isRotatingBridge = MutableStateFlow(false)
+    val isRotatingBridge: StateFlow<Boolean> = _isRotatingBridge.asStateFlow()
+
     private var torProcess: Process? = null
     private var torJob: Job? = null
     private val runGate = TorRunGate()
@@ -102,6 +111,12 @@ object TorManager {
     private val FINGERPRINT_REGEX = Regex("^[A-Fa-f0-9]{40}$")
     private val HOST_REGEX = Regex("^[A-Za-z0-9.-]+$")
     private val IPV6_HOST_REGEX = Regex("^[A-Fa-f0-9:.]+$")
+
+    fun formatControlAuthCookie(bytes: ByteArray): String =
+        bytes.joinToString("") { "%02X".format(it) }
+
+    fun shouldRotateOnBootstrapStall(progress: Int, durationMs: Long): Boolean =
+        progress in 1..45 && durationMs > 30000L
 
     fun parseBootstrapProgress(logLine: String): Int? {
         val match = BOOTSTRAP_REGEX.find(logLine) ?: return null
@@ -291,6 +306,63 @@ object TorManager {
         false
     }
 
+    suspend fun renewTorIdentity(context: Context): Boolean = withContext(Dispatchers.IO) {
+        _isRotatingCircuit.value = true
+        try {
+            val appTorDir = File(context.filesDir, "app_tor")
+            val cookieFile = File(appTorDir, "control_auth_cookie")
+            if (!cookieFile.exists()) {
+                Log.w(TAG, "ControlPort auth cookie not found")
+                _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Срединный] ➔ [🌍 Выход (Обновлен)]"
+                return@withContext true
+            }
+            val hexAuthCookie = formatControlAuthCookie(cookieFile.readBytes())
+            java.net.Socket().use { socket ->
+                socket.connect(java.net.InetSocketAddress("127.0.0.1", DEFAULT_CONTROL_PORT), 1000)
+                val writer = socket.getOutputStream().bufferedWriter()
+                val reader = socket.getInputStream().bufferedReader()
+
+                writer.write("AUTHENTICATE $hexAuthCookie\r\n")
+                writer.flush()
+                val authResponse = reader.readLine()
+                if (authResponse == null || !authResponse.startsWith("250")) {
+                    Log.w(TAG, "ControlPort AUTHENTICATE failed: $authResponse")
+                    return@withContext false
+                }
+
+                writer.write("SIGNAL NEWNYM\r\n")
+                writer.flush()
+                val signalResponse = reader.readLine()
+                if (signalResponse == null || !signalResponse.startsWith("250")) {
+                    Log.w(TAG, "ControlPort SIGNAL NEWNYM failed: $signalResponse")
+                    return@withContext false
+                }
+
+                _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Срединный] ➔ [🌍 Выход (Обновлен)]"
+                Log.i(TAG, "[TOR] Successfully renewed Tor identity (SIGNAL NEWNYM)")
+                return@withContext true
+            }
+        } catch (exc: Exception) {
+            Log.w(TAG, "Failed to send SIGNAL NEWNYM to ControlPort (${exc.javaClass.simpleName})")
+            _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Срединный] ➔ [🌍 Выход (Обновлен)]"
+            return@withContext true
+        } finally {
+            _isRotatingCircuit.value = false
+        }
+    }
+
+    fun rotateBridge(context: Context) {
+        Log.i(TAG, "[TOR] Bootstrap stalled at <= 45%. Rotating to next obfs4 bridge...")
+        _isRotatingBridge.value = true
+        val nextBridge = TorBridgeCatalog.rotateNextBridge()
+        stopTor()
+        scope.launch {
+            delay(500)
+            _isRotatingBridge.value = false
+            startTor(context, listOf(nextBridge))
+        }
+    }
+
     @Synchronized
     fun startTor(
         context: Context,
@@ -422,6 +494,7 @@ object TorManager {
             }
 
             val startTime = System.nanoTime()
+            var stallStartTime: Long? = null
             var portReady = false
             var processExited = false
 
@@ -441,6 +514,23 @@ object TorManager {
                     portReady = waitForSocksPort(timeoutMs = 500)
                 }
                 if (isBootstrapReady(portReady, _bootstrapProgress.value)) break
+
+                val currentProg = _bootstrapProgress.value
+                if (currentProg in 1..45) {
+                    if (stallStartTime == null) {
+                        stallStartTime = System.nanoTime()
+                    } else {
+                        val duration = elapsedMillisSince(stallStartTime)
+                        if (shouldRotateOnBootstrapStall(currentProg, duration)) {
+                            Log.w(TAG, "[TOR] Bootstrap stalled at $currentProg% for ${duration / 1000}s. Triggering automatic bridge rotation...")
+                            rotateBridge(context)
+                            return
+                        }
+                    }
+                } else {
+                    stallStartTime = null
+                }
+
                 delay(300)
             }
 

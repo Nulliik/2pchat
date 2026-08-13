@@ -241,4 +241,29 @@ class TorManagerTest {
         val resolvedExecutable = if (libTorSo.exists()) libTorSo else null
         assertNull(resolvedExecutable)
     }
+
+    @Test
+    fun testControlPortAuthCookieFormatting() {
+        val rawCookie = ByteArray(32) { (it + 1).toByte() }
+        val hexString = TorManager.formatControlAuthCookie(rawCookie)
+        assertEquals(64, hexString.length)
+        assertTrue(hexString.startsWith("01020304"))
+    }
+
+    @Test
+    fun testTorBridgeCatalogRotation() {
+        val initialIndex = TorBridgeCatalog.currentBridgeIndex.value
+        val bridge1 = TorBridgeCatalog.rotateNextBridge()
+        val nextIndex = TorBridgeCatalog.currentBridgeIndex.value
+        assertEquals((initialIndex + 1) % TorBridgeCatalog.PUBLIC_OBFS4_BRIDGES.size, nextIndex)
+        assertTrue(bridge1.startsWith("obfs4"))
+    }
+
+    @Test
+    fun testBootstrapStallDetectionThreshold() {
+        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 45, durationMs = 29000L))
+        assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 45, durationMs = 31000L))
+        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 100, durationMs = 35000L))
+    }
 }
+
