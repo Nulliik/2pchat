@@ -1000,6 +1000,7 @@ fun SettingsTab(
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     primaryColor = primaryColor,
+                                    useOriginalIconColors = true,
                                     onClick = { activeSubPage = "tor" }
                                 )
 
@@ -3544,6 +3545,7 @@ fun SettingsRow(
     onSurfaceVariant: Color,
     primaryColor: Color,
     isWarning: Boolean = false,
+    useOriginalIconColors: Boolean = false,
     onClick: () -> Unit
 ) {
     val warningRed = Color(0xFFFF5252)
@@ -3569,8 +3571,8 @@ fun SettingsRow(
             Icon(
                 painter = painterResource(id = iconRes),
                 contentDescription = null,
-                tint = effectiveIconColor,
-                modifier = Modifier.size(19.dp)
+                tint = if (useOriginalIconColors) Color.Unspecified else effectiveIconColor,
+                modifier = Modifier.size(if (useOriginalIconColors) 22.dp else 19.dp)
             )
         }
         
