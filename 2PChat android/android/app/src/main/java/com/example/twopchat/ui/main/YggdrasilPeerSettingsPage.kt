@@ -2,6 +2,9 @@ package com.example.twopchat.ui.main
 
 import android.content.Intent
 import android.net.VpnService
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -24,8 +27,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.twopchat.P2PPreferences
+import com.example.twopchat.data.Localizations
 import com.example.twopchat.yggdrasil.ConfigurationProxy
 import com.example.twopchat.yggdrasil.CustomYggdrasilPeer
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
@@ -72,14 +78,38 @@ fun YggdrasilPeerSettingsPage(
     val isRussian = appLanguage == "Русский"
     var revision by remember { mutableIntStateOf(0) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var showRegenerateYggdrasilKeysDialog by remember { mutableStateOf(false) }
     var applyJob by remember { mutableStateOf<Job?>(null) }
     var applying by remember { mutableStateOf(false) }
     var applyError by remember { mutableStateOf<String?>(null) }
     val sharedPrefs = remember(context) { P2PPreferences.prefs(context) }
+    var yggdrasilRouting by remember {
+        mutableStateOf(sharedPrefs.getBoolean("settings_yggdrasil", true))
+    }
+
+    val vpnLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+        onResult = { result ->
+            if (result.resultCode == android.app.Activity.RESULT_OK) {
+                val intent = Intent(context, PacketTunnelProvider::class.java).apply {
+                    action = PacketTunnelProvider.ACTION_START
+                }
+                context.startService(intent)
+                yggdrasilRouting = true
+                sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+            } else {
+                yggdrasilRouting = false
+                sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
+            }
+        }
+    )
 
     DisposableEffect(sharedPrefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key?.startsWith("yggdrasil_") == true) revision++
+            if (key == "settings_yggdrasil") {
+                yggdrasilRouting = sharedPrefs.getBoolean("settings_yggdrasil", true)
+            }
         }
         sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
         onDispose { sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
@@ -145,7 +175,7 @@ fun YggdrasilPeerSettingsPage(
             .padding(horizontal = 20.dp),
     ) {
         SubPageLayout(
-            title = if (isRussian) "Пиры Yggdrasil" else "Yggdrasil Peers",
+            title = if (isRussian) "Настройки Yggdrasil" else "Yggdrasil Settings",
             appLanguage = appLanguage,
             onBackClick = onBackClick,
             surfaceColor = surfaceColor,
@@ -155,6 +185,75 @@ fun YggdrasilPeerSettingsPage(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                item(key = "yggdrasil_main_routing") {
+                    PeerSettingsCard(surfaceColor, onSurfaceColor) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        Localizations.getString("yggdrasil_routing", appLanguage),
+                                        fontWeight = FontWeight.Medium,
+                                        color = onSurfaceColor
+                                    )
+                                    Text(
+                                        Localizations.getString("yggdrasil_routing_desc", appLanguage),
+                                        fontSize = 12.sp,
+                                        color = onSurfaceVariant
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Switch(
+                                    checked = yggdrasilRouting,
+                                    onCheckedChange = { isChecked ->
+                                        if (isChecked) {
+                                            val vpnIntent = VpnService.prepare(context)
+                                            if (vpnIntent != null) {
+                                                vpnLauncher.launch(vpnIntent)
+                                            } else {
+                                                val intent = Intent(context, PacketTunnelProvider::class.java).apply {
+                                                    action = PacketTunnelProvider.ACTION_START
+                                                }
+                                                context.startService(intent)
+                                                yggdrasilRouting = true
+                                                sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+                                            }
+                                        } else {
+                                            val intent = Intent(context, PacketTunnelProvider::class.java).apply {
+                                                action = PacketTunnelProvider.ACTION_STOP
+                                            }
+                                            context.startService(intent)
+                                            yggdrasilRouting = false
+                                            sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
+                                        }
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = primaryColor,
+                                        checkedTrackColor = primaryColor.copy(alpha = 0.3f)
+                                    )
+                                )
+                            }
+
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 10.dp),
+                                color = onSurfaceColor.copy(alpha = 0.05f)
+                            )
+
+                            TextButton(
+                                onClick = { showRegenerateYggdrasilKeysDialog = true },
+                                modifier = Modifier.align(Alignment.End),
+                            ) {
+                                Text(
+                                    if (isRussian) "Сгенерировать новый ключ Yggdrasil" else "Generate new Yggdrasil key"
+                                )
+                            }
+                        }
+                    }
+                }
+
                 item(key = "public_toggle") {
                     PeerSettingsCard(surfaceColor, onSurfaceColor) {
                         PeerToggleContent(
@@ -359,6 +458,44 @@ fun YggdrasilPeerSettingsPage(
                     applyPeerSettings()
                 }
                 error
+            },
+        )
+    }
+
+    if (showRegenerateYggdrasilKeysDialog) {
+        AlertDialog(
+            onDismissRequest = { showRegenerateYggdrasilKeysDialog = false },
+            title = {
+                Text(if (isRussian) "Сгенерировать новый ключ Yggdrasil?" else "Generate a new Yggdrasil key?")
+            },
+            text = {
+                Text(
+                    if (isRussian) {
+                        "Текущий Yggdrasil IPv6 изменится. Сохранённые у контактов старые адреса перестанут работать."
+                    } else {
+                        "Your Yggdrasil IPv6 address will change. Contacts with the old address will no longer be able to reach you."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
+                        action = PacketTunnelProvider.ACTION_REGENERATE_KEYS
+                    })
+                    showRegenerateYggdrasilKeysDialog = false
+                    Toast.makeText(
+                        context,
+                        if (isRussian) "Yggdrasil-ключ обновлён" else "Yggdrasil key regenerated",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }) {
+                    Text(if (isRussian) "Сгенерировать" else "Generate")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRegenerateYggdrasilKeysDialog = false }) {
+                    Text(if (isRussian) "Отмена" else "Cancel")
+                }
             },
         )
     }
