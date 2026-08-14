@@ -457,9 +457,9 @@ private fun torBridgeValidationMessage(
     }
 
     TorBridgeValidationError.UNSUPPORTED_TRANSPORT -> if (isRussian) {
-        "Поддерживаются только мосты obfs4 и snowflake"
+        "Поддерживаются только мосты obfs4, snowflake и webtunnel"
     } else {
-        "Only obfs4 and snowflake bridges are supported"
+        "Only obfs4, snowflake, and webtunnel bridges are supported"
     }
 
     TorBridgeValidationError.INVALID_ENDPOINT -> if (isRussian) {
@@ -485,6 +485,12 @@ private fun torBridgeValidationMessage(
         "Строка snowflake должна содержать url, front/fronts и ice"
     } else {
         "The snowflake line must contain url, front/fronts, and ice"
+    }
+
+    TorBridgeValidationError.MISSING_WEBTUNNEL_CONFIGURATION -> if (isRussian) {
+        "Строка webtunnel должна содержать корректный url (https://)"
+    } else {
+        "The webtunnel line must contain a valid url (https://)"
     }
 
     TorBridgeValidationError.INVALID_FORMAT -> if (isRussian) {

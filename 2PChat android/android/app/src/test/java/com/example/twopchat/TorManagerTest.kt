@@ -129,7 +129,7 @@ class TorManagerTest {
         assertEquals(
             TorBridgeValidationError.UNSUPPORTED_TRANSPORT,
             TorManager.parseBridgeText(
-                "webtunnel 192.0.2.1:443 75263E44B1D414D3C6086716091A39DE46FDF1D0 url=https://example/"
+                "meek 192.0.2.1:443 75263E44B1D414D3C6086716091A39DE46FDF1D0 url=https://example/"
             ).error
         )
         assertEquals(
@@ -289,9 +289,22 @@ class TorManagerTest {
 
     @Test
     fun testBootstrapStallDetectionThreshold() {
-        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 45, durationMs = 29000L))
-        assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 45, durationMs = 31000L))
-        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 100, durationMs = 35000L))
+        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 2, durationMs = 29000L))
+        assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 2, durationMs = 31000L))
+        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 25, durationMs = 89000L))
+        assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 25, durationMs = 91000L))
+        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 45, durationMs = 89000L))
+        assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 45, durationMs = 91000L))
+        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 100, durationMs = 95000L))
+    }
+
+    @Test
+    fun testParseWebTunnelBridge() {
+        val line = "webtunnel 192.0.2.3:1 1234567890ABCDEF1234567890ABCDEF12345678 url=https://example.com/secretpath"
+        val parsed = TorManager.parseBridgeLines(listOf(line))
+        assertEquals(null, parsed.error)
+        assertEquals(1, parsed.bridges.size)
+        assertTrue(parsed.transports.contains("webtunnel"))
     }
 
     @Test

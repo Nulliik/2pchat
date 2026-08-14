@@ -68,6 +68,7 @@ internal enum class TorBridgeValidationError {
     MISSING_OBFS4_CERT,
     INVALID_OBFS4_IAT_MODE,
     MISSING_SNOWFLAKE_CONFIGURATION,
+    MISSING_WEBTUNNEL_CONFIGURATION,
 }
 
 internal data class TorBridgeParseResult(
@@ -85,8 +86,9 @@ object TorManager {
     private const val MAX_BRIDGE_LINES = 16
     private const val OBFS4_TRANSPORT = "obfs4"
     private const val SNOWFLAKE_TRANSPORT = "snowflake"
+    private const val WEBTUNNEL_TRANSPORT = "webtunnel"
     private const val DIRECT_BOOTSTRAP_TIMEOUT_MS = 60000L
-    private const val BRIDGE_BOOTSTRAP_TIMEOUT_MS = 60000L
+    private const val BRIDGE_BOOTSTRAP_TIMEOUT_MS = 120000L
 
     private val _isTorRunning = MutableStateFlow(false)
     val isTorRunning: StateFlow<Boolean> = _isTorRunning.asStateFlow()
@@ -134,8 +136,11 @@ object TorManager {
     fun formatControlAuthCookie(bytes: ByteArray): String =
         bytes.joinToString("") { "%02X".format(it) }
 
-    fun shouldRotateOnBootstrapStall(progress: Int, durationMs: Long): Boolean =
-        progress in 1..45 && durationMs > 30000L
+    fun shouldRotateOnBootstrapStall(progress: Int, durationMs: Long): Boolean = when (progress) {
+        in 1..4 -> durationMs > 30000L
+        in 5..45 -> durationMs > 90000L
+        else -> false
+    }
 
     fun countryCodeToFlagEmoji(countryCode: String?): String {
         if (countryCode.isNullOrEmpty() || countryCode.length != 2) return "🌐"
@@ -265,7 +270,7 @@ object TorManager {
             }
 
             val transport = pieces[0].lowercase(Locale.US)
-            if (transport !in setOf(OBFS4_TRANSPORT, SNOWFLAKE_TRANSPORT)) {
+            if (transport !in setOf(OBFS4_TRANSPORT, SNOWFLAKE_TRANSPORT, WEBTUNNEL_TRANSPORT)) {
                 return invalidBridgeResult(TorBridgeValidationError.UNSUPPORTED_TRANSPORT)
             }
             if (!isValidBridgeEndpoint(pieces[1])) {
@@ -305,6 +310,13 @@ object TorManager {
                         iceServers.isNullOrBlank()
                     ) {
                         return invalidBridgeResult(TorBridgeValidationError.MISSING_SNOWFLAKE_CONFIGURATION)
+                    }
+                }
+
+                WEBTUNNEL_TRANSPORT -> {
+                    val url = parameters["url"]
+                    if (url.isNullOrBlank() || !url.startsWith("https://", ignoreCase = true)) {
+                        return invalidBridgeResult(TorBridgeValidationError.MISSING_WEBTUNNEL_CONFIGURATION)
                     }
                 }
             }
