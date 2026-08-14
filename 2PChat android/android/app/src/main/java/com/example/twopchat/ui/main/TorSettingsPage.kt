@@ -162,7 +162,8 @@ fun TorSettingsPage(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 20.dp),
+            .padding(horizontal = 20.dp)
+            .verticalScroll(rememberScrollState()),
     ) {
         SubPageLayout(
             title = if (isRussian) "Tor и анонимность" else "Tor & Anonymity",
