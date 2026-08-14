@@ -85,11 +85,8 @@ object TorManager {
     private const val MAX_BRIDGE_LINES = 16
     private const val OBFS4_TRANSPORT = "obfs4"
     private const val SNOWFLAKE_TRANSPORT = "snowflake"
-    // Opening the SOCKS listener happens near the beginning of bootstrap and
-    // must not be treated as a usable Tor circuit. Slower devices and censored
-    // networks routinely need more than 30 seconds for the first bootstrap.
-    private const val DIRECT_BOOTSTRAP_TIMEOUT_MS = 90000L
-    private const val BRIDGE_BOOTSTRAP_TIMEOUT_MS = 180000L
+    private const val DIRECT_BOOTSTRAP_TIMEOUT_MS = 60000L
+    private const val BRIDGE_BOOTSTRAP_TIMEOUT_MS = 60000L
 
     private val _isTorRunning = MutableStateFlow(false)
     val isTorRunning: StateFlow<Boolean> = _isTorRunning.asStateFlow()
@@ -819,6 +816,10 @@ object TorManager {
         try {
             if (process.isAlive) {
                 process.destroy()
+                process.waitFor(1000, java.util.concurrent.TimeUnit.MILLISECONDS)
+                if (process.isAlive) {
+                    process.destroyForcibly()
+                }
                 Log.i(TAG, "Stopped embedded Tor process")
             }
         } catch (exc: Exception) {

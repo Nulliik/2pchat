@@ -63,12 +63,12 @@ object TorStatusFormatter {
     fun getFailedToast(appLanguage: String): String {
         val lang = appLanguage.lowercase()
         return when {
-            lang.startsWith("рус") || lang == "ru" -> "🧅 Не удалось подключиться к Tor. Переход на прямое соединение."
-            lang.startsWith("deu") || lang.startsWith("ger") || lang == "de" -> "🧅 Verbindung zum Tor-Daemon fehlgeschlagen. Auf direkte Verbindung zurückgekehrt."
-            lang.startsWith("esp") || lang.startsWith("spa") || lang == "es" -> "🧅 Error al conectar con Tor. Usando conexión directa."
-            lang.startsWith("fra") || lang.startsWith("fre") || lang == "fr" -> "🧅 Échec de la connexion à Tor. Retour à la connexion directe."
-            lang.startsWith("por") || lang == "pt" -> "🧅 Falha ao conectar ao Tor. Usando conexão direta."
-            else -> "🧅 Failed to connect to Tor daemon. Falling back to direct connection."
+            lang.startsWith("рус") || lang == "ru" -> "🧅 Не удалось подключиться к Tor (проверьте мосты). Переход на прямое соединение."
+            lang.startsWith("deu") || lang.startsWith("ger") || lang == "de" -> "🧅 Tor-Verbindung fehlgeschlagen (Brücken prüfen). Rückkehr zur direkten Verbindung."
+            lang.startsWith("esp") || lang.startsWith("spa") || lang == "es" -> "🧅 Error al conectar con Tor (compruebe los puentes). Usando conexión directa."
+            lang.startsWith("fra") || lang.startsWith("fre") || lang == "fr" -> "🧅 Échec de la connexion à Tor (vérifiez les ponts). Retour à la connexion directe."
+            lang.startsWith("por") || lang == "pt" -> "🧅 Falha ao conectar ao Tor (verifique as pontes). Usando conexão direta."
+            else -> "🧅 Tor connection failed (check bridges). Falling back to direct connection."
         }
     }
 }
