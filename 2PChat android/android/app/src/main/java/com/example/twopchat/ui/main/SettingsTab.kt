@@ -993,6 +993,19 @@ fun SettingsTab(
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 SettingsRow(
+                                    title = if (appLanguage == "Русский") "Tor и анонимность" else "Tor & Anonymity",
+                                    subtitle = if (appLanguage == "Русский") "Встроенный Tor, мосты и транспорт" else "Embedded Tor daemon, bridges & transport",
+                                    iconRes = com.example.twopchat.R.drawable.ic_tor,
+                                    iconColor = Color(0xFF6B3FA0),
+                                    onSurfaceColor = onSurfaceColor,
+                                    onSurfaceVariant = onSurfaceVariant,
+                                    primaryColor = primaryColor,
+                                    onClick = { activeSubPage = "tor" }
+                                )
+
+                                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                SettingsRow(
                                     title = Localizations.getString("yggdrasil_peers_title", appLanguage),
                                     subtitle = Localizations.getString("yggdrasil_peers_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_quick_link,
@@ -1565,6 +1578,14 @@ fun SettingsTab(
                 }
             }
             "trackers" -> TrackerSettingsPage(
+                appLanguage = appLanguage,
+                onBackClick = { activeSubPage = null },
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+            )
+            "tor" -> TorSettingsPage(
                 appLanguage = appLanguage,
                 onBackClick = { activeSubPage = null },
                 primaryColor = primaryColor,
