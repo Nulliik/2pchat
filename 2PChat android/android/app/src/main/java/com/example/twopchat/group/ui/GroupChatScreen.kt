@@ -2938,7 +2938,7 @@ private fun GroupMessageCard(
             )) || isAlbumPlaceholder
             val shouldDisplayText = message.text.isNotEmpty() && !isAttachmentPlaceholder && !isSticker
             val hasMediaContent = attachment != null && (isImage || isGif || isVideo)
-            val isMediaOnly = attachment != null && (!shouldDisplayText || isSticker) && (isImage || isGif || isSticker || isVideo)
+            val isMediaOnly = (attachment != null || isSticker) && (!shouldDisplayText || isSticker) && (isImage || isGif || isSticker || isVideo)
 
             MediaFlags(
                 isGif = isGif,
@@ -2968,7 +2968,7 @@ private fun GroupMessageCard(
             color = if (isSticker || isOnlyEmoji) Color.Transparent else if (isMediaOnly) Color.Transparent else bubbleContainerColor,
             modifier = Modifier
                 .wrapContentWidth(align = if (message.isMine) Alignment.End else Alignment.Start)
-                .widthIn(max = if (isOnlyEmoji) 140.dp else 280.dp)
+                .widthIn(max = if (isOnlyEmoji) 140.dp else if (isSticker) 200.dp else 280.dp)
                 .then(
                     if (isHighlighted) Modifier.border(2.dp, primaryColor, bubbleShape) else Modifier
                 )
@@ -2985,8 +2985,8 @@ private fun GroupMessageCard(
                 .then(if (!message.isMine && !isSticker && !isMediaOnly && !hasMediaContent) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), bubbleShape) else Modifier)
         ) {
             Column(
-                modifier = if (isMediaOnly || hasMediaContent) Modifier.padding(0.dp) else Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
-                horizontalAlignment = Alignment.Start
+                modifier = if (isMediaOnly || hasMediaContent || isSticker || isOnlyEmoji) Modifier.padding(0.dp) else Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
+                horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start
             ) {
                 // Header line: Author Name & Role (if not mine and not sticker/media-only)
                 if ((!message.isMine || message.replyTo != null || message.isPinned) && !isSticker) {
@@ -3159,6 +3159,17 @@ private fun GroupMessageCard(
                                         )
                                     }
                                 }
+
+                                MessageTimestampBadge(
+                                    timestampLabel = message.timestampLabel,
+                                    isEdited = message.isEdited,
+                                    deliveryStatus = message.deliveryStatus,
+                                    messageId = message.messageId,
+                                    isOverlayOnImage = true,
+                                    isMine = message.isMine,
+                                    modifier = Modifier.align(Alignment.BottomEnd),
+                                    onClick = { onShowSeenBy(message) }
+                                )
                             }
                         }
 
@@ -3363,14 +3374,28 @@ private fun GroupMessageCard(
                 // Message Text with Clickable Links
                 if (shouldDisplayText) {
                     if (isOnlyEmoji) {
-                        Text(
-                            text = message.text.trim(),
-                            fontSize = 64.sp,
-                            lineHeight = 72.sp,
+                        Box(
                             modifier = Modifier
-                                .padding(vertical = 4.dp, horizontal = 4.dp)
+                                .padding(4.dp)
                                 .align(if (message.isMine) Alignment.End else Alignment.Start)
-                        )
+                        ) {
+                            Text(
+                                text = message.text.trim(),
+                                fontSize = 64.sp,
+                                lineHeight = 72.sp,
+                                modifier = Modifier.padding(bottom = 6.dp, end = 4.dp)
+                            )
+                            MessageTimestampBadge(
+                                timestampLabel = message.timestampLabel,
+                                isEdited = message.isEdited,
+                                deliveryStatus = message.deliveryStatus,
+                                messageId = message.messageId,
+                                isOverlayOnImage = true,
+                                isMine = message.isMine,
+                                modifier = Modifier.align(Alignment.BottomEnd),
+                                onClick = { onShowSeenBy(message) }
+                            )
+                        }
                     } else {
                         com.example.twopchat.ui.chat.LinkifiedText(
                             text = message.text,
@@ -3415,7 +3440,7 @@ private fun GroupMessageCard(
                 }
 
                 // Message Footer: Timestamp & Delivery Status
-                if (!hasMediaContent) {
+                if (!hasMediaContent && !isSticker && !isOnlyEmoji) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -3427,7 +3452,7 @@ private fun GroupMessageCard(
                             isEdited = message.isEdited,
                             deliveryStatus = message.deliveryStatus,
                             messageId = message.messageId,
-                            isOverlayOnImage = isOnlyEmoji || isSticker,
+                            isOverlayOnImage = false,
                             isMine = message.isMine,
                             textColor = timestampColor,
                             onClick = { onShowSeenBy(message) }

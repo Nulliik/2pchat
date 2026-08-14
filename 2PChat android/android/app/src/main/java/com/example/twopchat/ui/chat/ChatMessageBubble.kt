@@ -281,9 +281,9 @@ internal fun ChatMessageBubble(
                                 horizontal = if (isOnlyEmoji || isSticker || isGif || msg.attachmentType == "IMAGE" || msg.attachmentType == "VIDEO") 0.dp else 16.dp,
                                 vertical = if (isOnlyEmoji || isSticker || isGif || msg.attachmentType == "IMAGE" || msg.attachmentType == "VIDEO") 0.dp else 11.dp
                             )
-                            .widthIn(max = 280.dp)
+                            .widthIn(max = if (isOnlyEmoji) 140.dp else if (isSticker) 210.dp else 280.dp)
                     ) {
-                        Column(horizontalAlignment = Alignment.Start) {
+                        Column(horizontalAlignment = if (msg.isMe) Alignment.End else Alignment.Start) {
                             // Render reply quote if this message is a reply
                             if (msg.replyToId != null) {
                                 val replyBg = if (isOnlyEmoji) {
