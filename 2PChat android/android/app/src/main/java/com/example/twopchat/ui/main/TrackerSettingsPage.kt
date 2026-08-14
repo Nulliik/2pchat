@@ -1,42 +1,29 @@
 package com.example.twopchat.ui.main
 
 import android.widget.Toast
-
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.InputChip
-import androidx.compose.material3.InputChipDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -51,11 +38,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.BuiltInTracker
@@ -64,7 +49,6 @@ import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.P2PPreferences
 import com.example.twopchat.ProxyConfig
 import com.example.twopchat.PythonBridge
-import com.example.twopchat.TorBridgeValidationError
 import com.example.twopchat.TrackerPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -478,7 +462,7 @@ private fun TrackerSectionCard(
 }
 
 @Composable
-fun TrackerToggleRow(
+private fun TrackerToggleRow(
     title: String,
     subtitle: String,
     checked: Boolean,
@@ -596,266 +580,4 @@ private fun AddTrackerDialog(
             TextButton(onClick = onDismiss) { Text(if (isRussian) "Отмена" else "Cancel") }
         },
     )
-}
-
-internal fun torBridgeValidationMessage(
-    error: TorBridgeValidationError?,
-    isRussian: Boolean,
-): String = when (error) {
-    TorBridgeValidationError.INPUT_TOO_LARGE,
-    TorBridgeValidationError.TOO_MANY_BRIDGES,
-    TorBridgeValidationError.LINE_TOO_LONG -> if (isRussian) {
-        "Список мостов слишком большой"
-    } else {
-        "The bridge list is too large"
-    }
-
-    TorBridgeValidationError.UNSUPPORTED_TRANSPORT -> if (isRussian) {
-        "Поддерживаются только мосты obfs4 и snowflake"
-    } else {
-        "Only obfs4 and snowflake bridges are supported"
-    }
-
-    TorBridgeValidationError.INVALID_ENDPOINT -> if (isRussian) {
-        "Проверьте адрес и порт моста"
-    } else {
-        "Check the bridge address and port"
-    }
-
-    TorBridgeValidationError.INVALID_FINGERPRINT -> if (isRussian) {
-        "Fingerprint моста должен содержать 40 шестнадцатеричных символов"
-    } else {
-        "The bridge fingerprint must contain 40 hexadecimal characters"
-    }
-
-    TorBridgeValidationError.MISSING_OBFS4_CERT,
-    TorBridgeValidationError.INVALID_OBFS4_IAT_MODE -> if (isRussian) {
-        "Строка obfs4 должна содержать корректные cert и iat-mode"
-    } else {
-        "The obfs4 line must contain valid cert and iat-mode values"
-    }
-
-    TorBridgeValidationError.MISSING_SNOWFLAKE_CONFIGURATION -> if (isRussian) {
-        "Строка snowflake должна содержать url, front/fronts и ice"
-    } else {
-        "The snowflake line must contain url, front/fronts, and ice"
-    }
-
-    TorBridgeValidationError.INVALID_FORMAT -> if (isRussian) {
-        "Некорректный формат строки моста"
-    } else {
-        "Invalid bridge-line format"
-    }
-
-    null -> ""
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun TorBridgePanel(
-    bridges: List<String>,
-    expanded: Boolean,
-    onExpandToggle: () -> Unit,
-    onAddClick: () -> Unit,
-    onDelete: (String) -> Unit,
-    isRussian: Boolean,
-    onSurfaceColor: Color,
-    onSurfaceVariant: Color,
-    primaryColor: Color,
-) {
-    val arrowAngle by animateFloatAsState(if (expanded) 180f else 0f, label = "arrow")
-    Column {
-        // ── Header row (always visible) ──────────────────────────────────
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onExpandToggle)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = if (isRussian) "Свои мосты Tor" else "Custom Tor Bridges",
-                    color = onSurfaceColor,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 14.sp,
-                )
-                Text(
-                    text = if (bridges.isEmpty()) {
-                        if (isRussian) "Нет добавленных мостов" else "No bridges added"
-                    } else {
-                        if (isRussian) "${bridges.size} ${pluralRu(bridges.size, "мост", "моста", "мостов")}" else "${bridges.size} bridge${if (bridges.size == 1) "" else "s"}"
-                    },
-                    color = onSurfaceVariant,
-                    fontSize = 12.sp,
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onAddClick) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = if (isRussian) "Добавить мост" else "Add bridge",
-                        tint = primaryColor,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                Icon(
-                    imageVector = Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = onSurfaceVariant,
-                    modifier = Modifier
-                        .size(20.dp)
-                        .rotate(arrowAngle),
-                )
-            }
-        }
-        // ── Expandable list ──────────────────────────────────────────────
-        AnimatedVisibility(visible = expanded) {
-            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-                if (bridges.isEmpty()) {
-                    Text(
-                        text = if (isRussian) {
-                            "Нажмите «+» чтобы добавить obfs4 или snowflake мост"
-                        } else {
-                            "Tap «+» to add an obfs4 or snowflake bridge"
-                        },
-                        color = onSurfaceVariant,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-                    )
-                } else {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    ) {
-                        bridges.forEach { line ->
-                            // Show only first ~30 chars so it fits as a chip
-                            val label = line.take(32).let { if (line.length > 32) "$it…" else it }
-                            InputChip(
-                                selected = false,
-                                onClick = {},
-                                label = {
-                                    Text(
-                                        text = label,
-                                        fontSize = 11.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                },
-                                trailingIcon = {
-                                    IconButton(
-                                        onClick = { onDelete(line) },
-                                        modifier = Modifier.size(InputChipDefaults.IconSize),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = if (isRussian) "Удалить" else "Delete",
-                                            modifier = Modifier.size(12.dp),
-                                        )
-                                    }
-                                },
-                                colors = InputChipDefaults.inputChipColors(
-                                    containerColor = onSurfaceColor.copy(alpha = 0.07f),
-                                    labelColor = onSurfaceColor,
-                                    trailingIconColor = onSurfaceVariant,
-                                ),
-                                border = null,
-                            )
-                        }
-                    }
-                }
-                AssistChip(
-                    onClick = onAddClick,
-                    label = { Text(if (isRussian) "Добавить мост" else "Add bridge", fontSize = 12.sp) },
-                    leadingIcon = {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
-                    },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = primaryColor.copy(alpha = 0.12f),
-                        labelColor = primaryColor,
-                        leadingIconContentColor = primaryColor,
-                    ),
-                    border = null,
-                    modifier = Modifier.padding(bottom = 4.dp),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun AddBridgeDialog(
-    isRussian: Boolean,
-    existingBridges: List<String>,
-    onDismiss: () -> Unit,
-    onAdd: (String) -> String?,          // returns error message or null on success
-) {
-    var text by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (isRussian) "Добавить мост Tor" else "Add Tor Bridge") },
-        text = {
-            Column {
-                Text(
-                    text = if (isRussian) {
-                        "Вставьте строку obfs4 или snowflake моста, полученную с bridges.torproject.org"
-                    } else {
-                        "Paste an obfs4 or snowflake bridge line obtained from bridges.torproject.org"
-                    },
-                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                )
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it; error = null },
-                    placeholder = { Text("obfs4 1.2.3.4:1234 FINGERPRINT cert=… iat-mode=0", fontSize = 11.sp) },
-                    minLines = 3,
-                    maxLines = 6,
-                    isError = error != null,
-                    supportingText = error?.let { { Text(it) } },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (existingBridges.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = if (isRussian) {
-                            "Уже добавлено: ${existingBridges.size}"
-                        } else {
-                            "Already saved: ${existingBridges.size}"
-                        },
-                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val result = onAdd(text.trim())
-                error = result
-            }) {
-                Text(if (isRussian) "Добавить" else "Add")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(if (isRussian) "Отмена" else "Cancel")
-            }
-        },
-    )
-}
-
-private fun pluralRu(n: Int, one: String, few: String, many: String): String {
-    val mod10 = n % 10
-    val mod100 = n % 100
-    return when {
-        mod100 in 11..19 -> many
-        mod10 == 1 -> one
-        mod10 in 2..4 -> few
-        else -> many
-    }
 }
