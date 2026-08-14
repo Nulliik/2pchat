@@ -455,15 +455,25 @@ object TorManager {
     }
 
     fun rotateBridge(context: Context) {
+        val customBridges = P2PPreferences.getTorBridgeLines(context)
         val transport = P2PPreferences.torTransport(context)
-        Log.i(TAG, "[TOR] Bootstrap stalled at <= 45%. Rotating $transport bridge...")
         _isRotatingBridge.value = true
-        val nextBridge = TorBridgeCatalog.rotateNextBridge(transport)
+        val effectiveBridges = if (customBridges.isNotEmpty()) {
+            Log.i(TAG, "[TOR] Bootstrap stalled. Rotating custom bridges order...")
+            val rotated = if (customBridges.size > 1) customBridges.drop(1) + customBridges.take(1) else customBridges
+            P2PPreferences.setTorBridgeLines(context, rotated)
+            rotated
+        } else {
+            Log.i(TAG, "[TOR] Bootstrap stalled at <= 45%. Rotating $transport bridge...")
+            val nextBridge = TorBridgeCatalog.rotateNextBridge(transport)
+            val allPublic = TorBridgeCatalog.select(emptyList(), true, transport)
+            listOf(nextBridge) + (allPublic - nextBridge)
+        }
         stopTor()
         scope.launch {
             delay(500)
             _isRotatingBridge.value = false
-            startTor(context, listOf(nextBridge))
+            startTor(context, effectiveBridges)
         }
     }
 
@@ -617,6 +627,7 @@ object TorManager {
 
             val startTime = System.nanoTime()
             var stallStartTime: Long? = null
+            var lastObservedProgress = -1
             var portReady = false
             var processExited = false
 
@@ -638,19 +649,16 @@ object TorManager {
                 if (isBootstrapReady(portReady, _bootstrapProgress.value)) break
 
                 val currentProg = _bootstrapProgress.value
-                if (currentProg in 1..45) {
-                    if (stallStartTime == null) {
-                        stallStartTime = System.nanoTime()
-                    } else {
-                        val duration = elapsedMillisSince(stallStartTime)
-                        if (shouldRotateOnBootstrapStall(currentProg, duration)) {
-                            Log.w(TAG, "[TOR] Bootstrap stalled at $currentProg% for ${duration / 1000}s. Triggering automatic bridge rotation...")
-                            rotateBridge(context)
-                            return
-                        }
+                if (currentProg != lastObservedProgress) {
+                    lastObservedProgress = currentProg
+                    stallStartTime = if (currentProg in 1..45) System.nanoTime() else null
+                } else if (currentProg in 1..45 && stallStartTime != null) {
+                    val duration = elapsedMillisSince(stallStartTime)
+                    if (shouldRotateOnBootstrapStall(currentProg, duration)) {
+                        Log.w(TAG, "[TOR] Bootstrap stalled at $currentProg% for ${duration / 1000}s. Triggering automatic bridge rotation...")
+                        rotateBridge(context)
+                        return
                     }
-                } else {
-                    stallStartTime = null
                 }
 
                 delay(300)
