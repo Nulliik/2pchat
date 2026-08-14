@@ -88,7 +88,7 @@ object TorManager {
     private const val SNOWFLAKE_TRANSPORT = "snowflake"
     private const val WEBTUNNEL_TRANSPORT = "webtunnel"
     private const val DIRECT_BOOTSTRAP_TIMEOUT_MS = 60000L
-    private const val BRIDGE_BOOTSTRAP_TIMEOUT_MS = 120000L
+    private const val BRIDGE_BOOTSTRAP_TIMEOUT_MS = 180000L
 
     private val _isTorRunning = MutableStateFlow(false)
     val isTorRunning: StateFlow<Boolean> = _isTorRunning.asStateFlow()
@@ -98,6 +98,9 @@ object TorManager {
 
     private val _isTorConnecting = MutableStateFlow(false)
     val isTorConnecting: StateFlow<Boolean> = _isTorConnecting.asStateFlow()
+
+    private val _isSlowBootstrap = MutableStateFlow(false)
+    val isSlowBootstrap: StateFlow<Boolean> = _isSlowBootstrap.asStateFlow()
 
     private val _bootstrapProgress = MutableStateFlow(0)
     val bootstrapProgress: StateFlow<Int> = _bootstrapProgress.asStateFlow()
@@ -138,7 +141,7 @@ object TorManager {
 
     fun shouldRotateOnBootstrapStall(progress: Int, durationMs: Long): Boolean = when (progress) {
         in 1..4 -> durationMs > 30000L
-        in 5..45 -> durationMs > 90000L
+        in 5..49 -> durationMs > 120000L
         else -> false
     }
 
@@ -637,6 +640,7 @@ object TorManager {
             val startTime = System.nanoTime()
             var stallStartTime: Long? = null
             var lastObservedProgress = -1
+            var slowWarningLogged = false
             var portReady = false
             var processExited = false
 
@@ -660,9 +664,18 @@ object TorManager {
                 val currentProg = _bootstrapProgress.value
                 if (currentProg != lastObservedProgress) {
                     lastObservedProgress = currentProg
-                    stallStartTime = if (currentProg in 1..45) System.nanoTime() else null
-                } else if (currentProg in 1..45 && stallStartTime != null) {
+                    stallStartTime = if (currentProg in 1..49) System.nanoTime() else null
+                    slowWarningLogged = false
+                    _isSlowBootstrap.value = false
+                } else if (currentProg in 1..49 && stallStartTime != null) {
                     val duration = elapsedMillisSince(stallStartTime)
+                    if (duration > 30000L) {
+                        _isSlowBootstrap.value = true
+                    }
+                    if (duration > 60000L && currentProg in 5..49 && !slowWarningLogged) {
+                        Log.w(TAG, "[TOR] Tor bootstrap slow, waiting...")
+                        slowWarningLogged = true
+                    }
                     if (shouldRotateOnBootstrapStall(currentProg, duration)) {
                         Log.w(TAG, "[TOR] Bootstrap stalled at $currentProg% for ${duration / 1000}s. Triggering automatic bridge rotation...")
                         rotateBridge(context)
@@ -763,6 +776,7 @@ object TorManager {
         if (!runGate.isCurrent(runId)) return false
         _isTorRunning.value = true
         _isTorConnecting.value = false
+        _isSlowBootstrap.value = false
         return true
     }
 
@@ -772,6 +786,7 @@ object TorManager {
         _lastBootstrapFailureReason.value = reason
         _isTorRunning.value = false
         _isTorConnecting.value = false
+        _isSlowBootstrap.value = false
         Log.w(TAG, "Embedded Tor failure category: $reason")
         return true
     }
@@ -820,6 +835,7 @@ object TorManager {
         torJob = null
         _isTorRunning.value = false
         _isTorConnecting.value = false
+        _isSlowBootstrap.value = false
         _bootstrapProgress.value = 0
     }
 
@@ -848,6 +864,7 @@ object TorManager {
         torProcess = null
         _isTorRunning.value = false
         _isTorConnecting.value = false
+        _isSlowBootstrap.value = false
         _bootstrapProgress.value = 0
         job?.cancel()
         terminateProcess(process)

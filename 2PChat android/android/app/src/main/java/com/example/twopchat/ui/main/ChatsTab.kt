@@ -537,13 +537,15 @@ fun ChatsTab(
                                             color = onSurfaceColor
                                         )
                                         val isRotatingBridge by com.example.twopchat.TorManager.isRotatingBridge.collectAsState()
+                                        val isSlowBootstrap by com.example.twopchat.TorManager.isSlowBootstrap.collectAsState()
                                         Text(
                                             text = com.example.twopchat.TorStatusFormatter.formatStatus(
                                                 isRunning = isTorRunning,
                                                 isConnecting = isTorConnecting,
                                                 appLanguage = appLanguage,
                                                 progress = torBootstrapProgress,
-                                                isRotatingBridge = isRotatingBridge
+                                                isRotatingBridge = isRotatingBridge,
+                                                isSlowBootstrap = isSlowBootstrap
                                             ),
                                             fontSize = 11.sp,
                                             color = when {

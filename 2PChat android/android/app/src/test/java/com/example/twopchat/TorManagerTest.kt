@@ -291,11 +291,11 @@ class TorManagerTest {
     fun testBootstrapStallDetectionThreshold() {
         assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 2, durationMs = 29000L))
         assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 2, durationMs = 31000L))
-        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 25, durationMs = 89000L))
-        assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 25, durationMs = 91000L))
-        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 45, durationMs = 89000L))
-        assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 45, durationMs = 91000L))
-        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 100, durationMs = 95000L))
+        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 25, durationMs = 119000L))
+        assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 25, durationMs = 121000L))
+        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 45, durationMs = 119000L))
+        assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 45, durationMs = 121000L))
+        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 100, durationMs = 125000L))
     }
 
     @Test

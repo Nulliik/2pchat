@@ -1,7 +1,14 @@
 package com.example.twopchat
 
 object TorStatusFormatter {
-    fun formatStatus(isRunning: Boolean, isConnecting: Boolean = false, appLanguage: String = "English", progress: Int = 0, isRotatingBridge: Boolean = false): String {
+    fun formatStatus(
+        isRunning: Boolean,
+        isConnecting: Boolean = false,
+        appLanguage: String = "English",
+        progress: Int = 0,
+        isRotatingBridge: Boolean = false,
+        isSlowBootstrap: Boolean = false,
+    ): String {
         val lang = appLanguage.lowercase()
         if (isRotatingBridge) {
             return when {
@@ -24,13 +31,24 @@ object TorStatusFormatter {
             }
             isConnecting -> {
                 val progressSuffix = if (progress > 0) " ($progress%)" else ""
-                when {
-                    lang.startsWith("рус") || lang == "ru" -> "Подключение...$progressSuffix"
-                    lang.startsWith("deu") || lang.startsWith("ger") || lang == "de" -> "Verbindung wird hergestellt...$progressSuffix"
-                    lang.startsWith("esp") || lang.startsWith("spa") || lang == "es" -> "Conectando...$progressSuffix"
-                    lang.startsWith("fra") || lang.startsWith("fre") || lang == "fr" -> "Connexion en cours...$progressSuffix"
-                    lang.startsWith("por") || lang == "pt" -> "Conectando...$progressSuffix"
-                    else -> "Connecting...$progressSuffix"
+                if (isSlowBootstrap) {
+                    when {
+                        lang.startsWith("рус") || lang == "ru" -> "Подключение (Медленная сеть)...$progressSuffix"
+                        lang.startsWith("deu") || lang.startsWith("ger") || lang == "de" -> "Verbindung wird hergestellt (Langsames Netzwerk)...$progressSuffix"
+                        lang.startsWith("esp") || lang.startsWith("spa") || lang == "es" -> "Conectando (Red lenta)...$progressSuffix"
+                        lang.startsWith("fra") || lang.startsWith("fre") || lang == "fr" -> "Connexion en cours (Réseau lent)...$progressSuffix"
+                        lang.startsWith("por") || lang == "pt" -> "Conectando (Rede lenta)...$progressSuffix"
+                        else -> "Connecting (Slow network)...$progressSuffix"
+                    }
+                } else {
+                    when {
+                        lang.startsWith("рус") || lang == "ru" -> "Подключение...$progressSuffix"
+                        lang.startsWith("deu") || lang.startsWith("ger") || lang == "de" -> "Verbindung wird hergestellt...$progressSuffix"
+                        lang.startsWith("esp") || lang.startsWith("spa") || lang == "es" -> "Conectando...$progressSuffix"
+                        lang.startsWith("fra") || lang.startsWith("fre") || lang == "fr" -> "Connexion en cours...$progressSuffix"
+                        lang.startsWith("por") || lang == "pt" -> "Conectando...$progressSuffix"
+                        else -> "Connecting...$progressSuffix"
+                    }
                 }
             }
             else -> when {
@@ -44,8 +62,20 @@ object TorStatusFormatter {
         }
     }
 
-    fun formatStatus(isRunning: Boolean, isConnecting: Boolean, isRussian: Boolean, progress: Int = 0): String {
-        return formatStatus(isRunning, isConnecting, if (isRussian) "Русский" else "English", progress)
+    fun formatStatus(
+        isRunning: Boolean,
+        isConnecting: Boolean,
+        isRussian: Boolean,
+        progress: Int = 0,
+        isSlowBootstrap: Boolean = false,
+    ): String {
+        return formatStatus(
+            isRunning = isRunning,
+            isConnecting = isConnecting,
+            appLanguage = if (isRussian) "Русский" else "English",
+            progress = progress,
+            isSlowBootstrap = isSlowBootstrap,
+        )
     }
 
     fun getActivationToast(appLanguage: String): String {

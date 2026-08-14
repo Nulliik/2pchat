@@ -81,6 +81,8 @@ fun TorSettingsPage(
 
     val isTorRunning by TorManager.isTorRunning.collectAsState()
     val isTorConnecting by TorManager.isTorConnecting.collectAsState()
+    val isSlowBootstrap by TorManager.isSlowBootstrap.collectAsState()
+    val isRotatingBridge by TorManager.isRotatingBridge.collectAsState()
     val torBootstrapProgress by TorManager.bootstrapProgress.collectAsState()
     val torBootstrapFailure by TorManager.lastBootstrapFailureReason.collectAsState()
 
@@ -225,6 +227,8 @@ fun TorSettingsPage(
                             isConnecting = isTorConnecting,
                             appLanguage = appLanguage,
                             progress = torBootstrapProgress,
+                            isRotatingBridge = isRotatingBridge,
+                            isSlowBootstrap = isSlowBootstrap,
                         ),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
