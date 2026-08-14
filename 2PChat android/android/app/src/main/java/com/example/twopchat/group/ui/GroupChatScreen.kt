@@ -141,6 +141,12 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.rememberDatePickerState
+import java.util.Calendar
+import java.util.TimeZone
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -280,10 +286,12 @@ fun GroupChatScreen(
     var activeFullscreenVideo by remember { mutableStateOf<String?>(null) }
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var pendingVideoPath by remember { mutableStateOf<String?>(null) }
-    var isSearchMode by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
+    var isSearchMode by rememberSaveable { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedCategoryFilter by remember { mutableStateOf(SearchCategoryFilter.ALL) }
     var selectedDateFilterMs by remember { mutableStateOf<Long?>(null) }
+    var isSearchListView by rememberSaveable { mutableStateOf(false) }
+    var showDatePickerDialog by remember { mutableStateOf(false) }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var showPinnedSheet by remember { mutableStateOf(false) }
     var activePinnedIndex by remember(state.groupId) { mutableIntStateOf(0) }
@@ -296,7 +304,6 @@ fun GroupChatScreen(
         } ?: emptyList()
     }
     var showWallpaperModal by remember { mutableStateOf(false) }
-    var currentMatchIndex by remember { mutableIntStateOf(0) }
     var messageToForward by remember { mutableStateOf<GroupTimelineMessage?>(null) }
     var showForwardDialog by remember { mutableStateOf(false) }
     var showCreatePollDialog by remember { mutableStateOf(false) }
@@ -353,9 +360,14 @@ fun GroupChatScreen(
 
     BackHandler {
         when {
+            isSearchListView -> {
+                isSearchListView = false
+            }
             isSearchMode -> {
                 isSearchMode = false
                 searchQuery = ""
+                selectedCategoryFilter = SearchCategoryFilter.ALL
+                selectedDateFilterMs = null
             }
             showForwardDialog -> {
                 showForwardDialog = false
@@ -638,16 +650,38 @@ fun GroupChatScreen(
         }
     }
 
-    val searchFilteredMessages = remember(state.messages, searchQuery, selectedCategoryFilter, selectedDateFilterMs) {
-        if (searchQuery.isBlank() && selectedCategoryFilter == SearchCategoryFilter.ALL && selectedDateFilterMs == null) {
-            emptyList()
-        } else {
-            state.messages.filter { msg ->
-                val queryMatches = searchQuery.isBlank() || msg.text.contains(searchQuery, ignoreCase = true) || msg.authorName.contains(searchQuery, ignoreCase = true)
-                queryMatches && msg.matchesCategoryFilter(selectedCategoryFilter) && msg.matchesDateFilter(selectedDateFilterMs)
+    val profilePhotoUri = remember(prefsWallpaperVersion) {
+        com.example.twopchat.P2PPreferences.prefs(context).getString("profile_photo_uri", null)
+    }
+    val myAvatarBitmap by produceState<Bitmap?>(
+        initialValue = null,
+        context,
+        profilePhotoUri,
+    ) {
+        value = withContext(Dispatchers.IO) {
+            com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profilePhotoUri)
+        }
+    }
+
+    val searchMatchedIndices by remember(state.messages, searchQuery, selectedCategoryFilter, selectedDateFilterMs) {
+        derivedStateOf {
+            if (searchQuery.isBlank() && selectedCategoryFilter == SearchCategoryFilter.ALL && selectedDateFilterMs == null) {
+                emptyList<Int>()
+            } else {
+                state.messages.mapIndexedNotNull { index, msg ->
+                    val matchesText = searchQuery.isBlank() ||
+                        msg.text.contains(searchQuery, ignoreCase = true) ||
+                        msg.authorName.contains(searchQuery, ignoreCase = true) ||
+                        msg.attachment?.fileName?.contains(searchQuery, ignoreCase = true) == true
+                    val matchesCat = msg.matchesCategoryFilter(selectedCategoryFilter)
+                    val matchesDate = msg.matchesDateFilter(selectedDateFilterMs)
+                    if (matchesText && matchesCat && matchesDate) index else null
+                }
             }
         }
     }
+    var currentMatchPointer by remember(searchQuery, selectedCategoryFilter, selectedDateFilterMs) { mutableIntStateOf(0) }
+    val hasSearchActive = isSearchMode && (searchQuery.isNotEmpty() || selectedCategoryFilter != SearchCategoryFilter.ALL || selectedDateFilterMs != null)
 
     Box(modifier = modifier.fillMaxSize()) {
         if (wallpaperBitmap != null) {
@@ -747,7 +781,15 @@ fun GroupChatScreen(
                     controller = controller,
                     isSearchMode = isSearchMode,
                     searchQuery = searchQuery,
-                    onSearchModeChange = { isSearchMode = it },
+                    onSearchModeChange = {
+                        isSearchMode = it
+                        if (!it) {
+                            searchQuery = ""
+                            selectedCategoryFilter = SearchCategoryFilter.ALL
+                            selectedDateFilterMs = null
+                            isSearchListView = false
+                        }
+                    },
                     onSearchQueryChange = { searchQuery = it },
                     onOpenWallpaper = { showWallpaperModal = true }
                 )
@@ -838,15 +880,41 @@ fun GroupChatScreen(
                 .weight(1f)
                 .fillMaxWidth()
         ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 8.dp)
-                    .testTag("group_message_list"),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                item(key = "pagination") {
+            if (hasSearchActive && isSearchListView) {
+                GroupSearchResultsListViewOverlay(
+                    messages = state.messages,
+                    matchedIndices = searchMatchedIndices,
+                    myAvatarBitmap = myAvatarBitmap,
+                    appLanguage = appLanguage,
+                    primaryColor = primaryColor,
+                    surfaceColor = surfaceColor,
+                    onSurfaceColor = onSurfaceColor,
+                    onSurfaceVariant = onSurfaceColor.copy(alpha = 0.7f),
+                    onSelectMatch = { matchIndex ->
+                        isSearchListView = false
+                        currentMatchPointer = matchIndex
+                        val targetIdx = searchMatchedIndices[matchIndex]
+                        coroutineScope.launch {
+                            listState.animateScrollToItem(targetIdx)
+                            val targetMsgId = state.messages[targetIdx].messageId
+                            highlightedMessageId = targetMsgId
+                            delay(2000)
+                            if (highlightedMessageId == targetMsgId) {
+                                highlightedMessageId = null
+                            }
+                        }
+                    }
+                )
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 8.dp)
+                        .testTag("group_message_list"),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    item(key = "pagination") {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1132,130 +1200,189 @@ fun GroupChatScreen(
                 }
             }
 
-            androidx.compose.animation.AnimatedVisibility(
-                visible = showScrollToBottomButton && state.messages.isNotEmpty(),
-                enter = fadeIn() + scaleIn(),
-                exit = fadeOut() + scaleOut(),
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 12.dp)
-            ) {
-                Box {
-                    Surface(
-                        color = Color(0xFF1E2226).copy(alpha = 0.92f),
-                        shape = CircleShape,
-                        shadowElevation = 4.dp,
-                        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.15f)),
+                if (hasSearchActive && !isSearchListView) {
+                    SearchNavigationFabs(
                         modifier = Modifier
-                            .size(44.dp)
-                            .clickable {
-                                newMessagesBelowCount = 0
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 16.dp, bottom = 16.dp),
+                        onNavigatePrev = {
+                            if (searchMatchedIndices.isNotEmpty()) {
+                                currentMatchPointer = if (currentMatchPointer > 0) currentMatchPointer - 1 else searchMatchedIndices.lastIndex
+                                val targetIdx = searchMatchedIndices[currentMatchPointer]
                                 coroutineScope.launch {
-                                    val target = listState.layoutInfo.totalItemsCount - 1
-                                    if (target >= 0) {
-                                        listState.animateScrollToItem(target)
+                                    listState.animateScrollToItem(targetIdx)
+                                    val targetMsgId = state.messages[targetIdx].messageId
+                                    highlightedMessageId = targetMsgId
+                                    delay(2000)
+                                    if (highlightedMessageId == targetMsgId) {
+                                        highlightedMessageId = null
                                     }
                                 }
                             }
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_scroll_down),
-                                contentDescription = "Scroll down",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
+                        },
+                        onNavigateNext = {
+                            if (searchMatchedIndices.isNotEmpty()) {
+                                currentMatchPointer = if (currentMatchPointer < searchMatchedIndices.lastIndex) currentMatchPointer + 1 else 0
+                                val targetIdx = searchMatchedIndices[currentMatchPointer]
+                                coroutineScope.launch {
+                                    listState.animateScrollToItem(targetIdx)
+                                    val targetMsgId = state.messages[targetIdx].messageId
+                                    highlightedMessageId = targetMsgId
+                                    delay(2000)
+                                    if (highlightedMessageId == targetMsgId) {
+                                        highlightedMessageId = null
+                                    }
+                                }
+                            }
                         }
-                    }
+                    )
+                }
 
-                    if (newMessagesBelowCount > 0) {
-                        Surface(
-                            color = primaryColor,
-                            shape = CircleShape,
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .offset(x = 4.dp, y = (-4).dp)
-                        ) {
-                            Text(
-                                text = if (newMessagesBelowCount > 99) "99+" else "$newMessagesBelowCount",
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                            )
+                if (!hasSearchActive) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = showScrollToBottomButton && state.messages.isNotEmpty(),
+                        enter = fadeIn() + scaleIn(),
+                        exit = fadeOut() + scaleOut(),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 16.dp, bottom = 12.dp)
+                    ) {
+                        Box {
+                            Surface(
+                                color = Color(0xFF1E2226).copy(alpha = 0.92f),
+                                shape = CircleShape,
+                                shadowElevation = 4.dp,
+                                border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.15f)),
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clickable {
+                                        newMessagesBelowCount = 0
+                                        coroutineScope.launch {
+                                            val target = listState.layoutInfo.totalItemsCount - 1
+                                            if (target >= 0) {
+                                                listState.animateScrollToItem(target)
+                                            }
+                                        }
+                                    }
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_scroll_down),
+                                        contentDescription = "Scroll down",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            if (newMessagesBelowCount > 0) {
+                                Surface(
+                                    color = primaryColor,
+                                    shape = CircleShape,
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .offset(x = 4.dp, y = (-4).dp)
+                                ) {
+                                    Text(
+                                        text = if (newMessagesBelowCount > 99) "99+" else "$newMessagesBelowCount",
+                                        color = Color.White,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
 
-        HorizontalDivider(color = primaryColor.copy(alpha = 0.1f), thickness = 0.5.dp)
+        if (hasSearchActive) {
+            SearchBottomBarPill(
+                matchCount = searchMatchedIndices.size,
+                currentIndex = currentMatchPointer,
+                isListView = isSearchListView,
+                selectedCategory = selectedCategoryFilter,
+                selectedDateMs = selectedDateFilterMs,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onToggleListView = { isSearchListView = !isSearchListView },
+                onSelectCategory = { selectedCategoryFilter = it },
+                onPickDate = { showDatePickerDialog = true },
+                onClearDate = { selectedDateFilterMs = null }
+            )
+        } else {
+            HorizontalDivider(color = primaryColor.copy(alpha = 0.1f), thickness = 0.5.dp)
 
-        // Chat Input Bar / Composer
-        GroupComposer(
-            state = state,
-            draft = draft,
-            onDraftChange = { draft = it },
-            onCancelReply = { controller.cancelReply(state.groupId) },
-            isAttachmentPanelOpen = isAttachmentPanelOpen,
-            onToggleAttachmentPanel = { isAttachmentPanelOpen = !isAttachmentPanelOpen },
-            onAttachmentClick = { type ->
-                isAttachmentPanelOpen = false
-                when (type) {
-                    "GIF" -> showGifLibrary = true
-                    "Stickers", "STICKER", "Sticker" -> showStickerPicker = true
-                    "Poll", "Polls", "Опрос" -> showCreatePollDialog = true
-                    "Camera" -> {
-                        try {
-                            val attachmentsDir = File(context.filesDir, "attachments")
-                            if (!attachmentsDir.exists()) attachmentsDir.mkdirs()
-                            val file = File(attachmentsDir, "camera_capture_${System.currentTimeMillis()}.jpg")
-                            tempCameraFile = file
-                            val photoUri = androidx.core.content.FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                file
-                            )
-                            cameraLauncher.launch(photoUri)
-                        } catch (e: Exception) {
-                            Toast.makeText(context, if (appLanguage == "Русский") "Не удалось открыть камеру" else "Camera launch failed", Toast.LENGTH_SHORT).show()
+            // Chat Input Bar / Composer
+            GroupComposer(
+                state = state,
+                draft = draft,
+                onDraftChange = { draft = it },
+                onCancelReply = { controller.cancelReply(state.groupId) },
+                isAttachmentPanelOpen = isAttachmentPanelOpen,
+                onToggleAttachmentPanel = { isAttachmentPanelOpen = !isAttachmentPanelOpen },
+                onAttachmentClick = { type ->
+                    isAttachmentPanelOpen = false
+                    when (type) {
+                        "GIF" -> showGifLibrary = true
+                        "Stickers", "STICKER", "Sticker" -> showStickerPicker = true
+                        "Poll", "Polls", "Опрос" -> showCreatePollDialog = true
+                        "Camera" -> {
+                            try {
+                                val attachmentsDir = File(context.filesDir, "attachments")
+                                if (!attachmentsDir.exists()) attachmentsDir.mkdirs()
+                                val file = File(attachmentsDir, "camera_capture_${System.currentTimeMillis()}.jpg")
+                                tempCameraFile = file
+                                val photoUri = androidx.core.content.FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    file
+                                )
+                                cameraLauncher.launch(photoUri)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось открыть камеру" else "Camera launch failed", Toast.LENGTH_SHORT).show()
+                            }
                         }
+                        "Gallery" -> galleryLauncher.launch("image/*")
+                        "Video" -> videoLauncher.launch("video/*")
+                        "File" -> fileLauncher.launch("*/*")
+                        else -> fileLauncher.launch("*/*")
                     }
-                    "Gallery" -> galleryLauncher.launch("image/*")
-                    "Video" -> videoLauncher.launch("video/*")
-                    "File" -> fileLauncher.launch("*/*")
-                    else -> fileLauncher.launch("*/*")
-                }
-            },
-            onSend = {
-                val text = draft.trim()
-                if (text.isNotEmpty()) {
-                    val replyToId = state.currentReply?.messageId
-                    if (state.currentReply != null) controller.cancelReply(state.groupId)
-                    controller.sendMessage(state.groupId, text, replyToId)
-                    draft = ""
-                }
-            },
-            isRecordingVoice = isRecordingVoice,
-            recordingElapsedMs = recordingElapsedMs,
-            recordingAmplitudes = recordingAmplitudes,
-            onStartVoiceRecord = {
-                if (
-                    androidx.core.content.ContextCompat.checkSelfPermission(
-                        context,
-                        android.Manifest.permission.RECORD_AUDIO,
-                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    beginVoiceRecording()
-                } else {
-                    audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                }
-            },
-            onStopVoiceRecord = ::finishVoiceRecording,
-        )
+                },
+                onSend = {
+                    val text = draft.trim()
+                    if (text.isNotEmpty()) {
+                        val replyToId = state.currentReply?.messageId
+                        if (state.currentReply != null) controller.cancelReply(state.groupId)
+                        controller.sendMessage(state.groupId, text, replyToId)
+                        draft = ""
+                    }
+                },
+                isRecordingVoice = isRecordingVoice,
+                recordingElapsedMs = recordingElapsedMs,
+                recordingAmplitudes = recordingAmplitudes,
+                onStartVoiceRecord = {
+                    if (
+                        androidx.core.content.ContextCompat.checkSelfPermission(
+                            context,
+                            android.Manifest.permission.RECORD_AUDIO,
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        beginVoiceRecording()
+                    } else {
+                        audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                onStopVoiceRecord = ::finishVoiceRecording,
+            )
+        }
     }
 }
 
@@ -2344,6 +2471,74 @@ fun GroupChatScreen(
             }
         )
     }
+
+    if (showDatePickerDialog) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = selectedDateFilterMs ?: System.currentTimeMillis()
+        )
+        DatePickerDialog(
+            onDismissRequest = { showDatePickerDialog = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { dateMs ->
+                            val utcCal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = dateMs }
+                            val localCal = Calendar.getInstance().apply {
+                                set(Calendar.YEAR, utcCal.get(Calendar.YEAR))
+                                set(Calendar.MONTH, utcCal.get(Calendar.MONTH))
+                                set(Calendar.DAY_OF_MONTH, utcCal.get(Calendar.DAY_OF_MONTH))
+                                set(Calendar.HOUR_OF_DAY, 0)
+                                set(Calendar.MINUTE, 0)
+                                set(Calendar.SECOND, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }
+                            selectedDateFilterMs = localCal.timeInMillis
+                        }
+                        showDatePickerDialog = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = primaryColor)
+                ) {
+                    Text(
+                        text = if (appLanguage == "Русский") "ОК" else "OK",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDatePickerDialog = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = primaryColor)
+                ) {
+                    Text(
+                        text = if (appLanguage == "Русский") "ОТМЕНА" else "CANCEL",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            colors = DatePickerDefaults.colors(
+                containerColor = surfaceColor,
+            )
+        ) {
+            DatePicker(
+                state = datePickerState,
+                colors = DatePickerDefaults.colors(
+                    titleContentColor = onSurfaceColor,
+                    headlineContentColor = onSurfaceColor,
+                    weekdayContentColor = onSurfaceColor.copy(alpha = 0.6f),
+                    subheadContentColor = onSurfaceColor,
+                    yearContentColor = onSurfaceColor,
+                    currentYearContentColor = primaryColor,
+                    selectedYearContentColor = Color.White,
+                    selectedYearContainerColor = primaryColor,
+                    dayContentColor = onSurfaceColor,
+                    selectedDayContentColor = Color.White,
+                    selectedDayContainerColor = primaryColor,
+                    todayContentColor = primaryColor,
+                    todayDateBorderColor = primaryColor,
+                )
+            )
+        }
+    }
 }
 
 @Composable
@@ -2365,7 +2560,15 @@ private fun GroupChatHeader(
     if (isSearchMode) {
         ConversationSearchHeader(
             query = searchQuery,
-            placeholder = "Поиск в беседе...",
+            placeholder = Localizations.tr(
+                appLanguage,
+                "Поиск в беседе...",
+                "Search in group...",
+                "In Gruppe suchen...",
+                "Buscar en el grupo...",
+                "Rechercher dans le groupe...",
+                "Pesquisar no grupo..."
+            ),
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
             onSurfaceColor = onSurfaceColor,
@@ -3725,9 +3928,148 @@ private fun GroupTimelineMessage.matchesCategoryFilter(category: SearchCategoryF
     }
 }
 
-private fun GroupTimelineMessage.matchesDateFilter(dateMs: Long?): Boolean {
+private fun GroupTimelineMessage.matchesDateFilter(dateMs: Long?, timeZone: TimeZone = TimeZone.getDefault()): Boolean {
     if (dateMs == null || dateMs <= 0L) return true
-    return true
+    if (timestampEpochMs <= 0L) return false
+    val cal1 = Calendar.getInstance(timeZone).apply { timeInMillis = timestampEpochMs }
+    val cal2 = Calendar.getInstance(timeZone).apply { timeInMillis = dateMs }
+    return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR) &&
+        cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR)
+}
+
+@Composable
+private fun GroupSearchResultsListViewOverlay(
+    modifier: Modifier = Modifier,
+    messages: List<GroupTimelineMessage>,
+    matchedIndices: List<Int>,
+    myAvatarBitmap: Bitmap?,
+    appLanguage: String,
+    primaryColor: Color,
+    surfaceColor: Color,
+    onSurfaceColor: Color,
+    onSurfaceVariant: Color,
+    onSelectMatch: (Int) -> Unit
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(surfaceColor)
+    ) {
+        if (matchedIndices.isEmpty()) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (appLanguage == "Русский") "Ничего не найдено" else "No results found",
+                    color = onSurfaceVariant,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                itemsIndexed(matchedIndices) { matchPointer, messageIndex ->
+                    val msg = messages.getOrNull(messageIndex) ?: return@itemsIndexed
+                    val avatarBitmap = if (msg.isMine) myAvatarBitmap else com.example.twopchat.P2PMessageRelay.peerAvatars[msg.authorName]
+                    val displayName = if (msg.isMine) {
+                        if (appLanguage == "Русский") "Вы" else "You"
+                    } else {
+                        msg.authorName.ifBlank { "User" }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onSelectMatch(matchPointer) }
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (avatarBitmap != null) {
+                            Image(
+                                bitmap = avatarBitmap.asImageBitmap(),
+                                contentDescription = displayName,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                            )
+                        } else {
+                            val initials = displayName.take(2).uppercase().ifBlank { "U" }
+                            val colors = listOf(
+                                Color(0xFF3949AB), Color(0xFF00897B), Color(0xFFD81B60),
+                                Color(0xFFF4511E), Color(0xFF7CB342), Color(0xFF00ACC1)
+                            )
+                            val fallbackColor = if (msg.isMine) primaryColor else colors[abs(displayName.hashCode()) % colors.size]
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .background(fallbackColor.copy(alpha = 0.85f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = initials,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = displayName,
+                                    color = onSurfaceColor,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = msg.timestampLabel,
+                                    color = onSurfaceVariant.copy(alpha = 0.7f),
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            val snippet = when {
+                                msg.text.isNotBlank() -> msg.text
+                                msg.attachment != null -> msg.attachment.fileName.ifBlank { msg.attachment.mimeType }
+                                msg.poll != null -> "📊 " + msg.poll.question
+                                else -> if (appLanguage == "Русский") "Сообщение" else "Message"
+                            }
+                            Text(
+                                text = snippet,
+                                color = primaryColor,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    if (matchPointer < matchedIndices.lastIndex) {
+                        HorizontalDivider(
+                            color = onSurfaceColor.copy(alpha = 0.06f),
+                            thickness = 0.5.dp,
+                            modifier = Modifier.padding(start = 64.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
