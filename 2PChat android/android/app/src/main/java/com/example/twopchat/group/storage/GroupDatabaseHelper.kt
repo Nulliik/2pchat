@@ -2130,6 +2130,7 @@ class GroupDatabaseHelper(
             StoredGroupEventKind.MESSAGE.name,
             "POLL",
             "MEDIA",
+            "REPLY",
             ->
                 rebuildMaterializedMessage(
                     db,
@@ -2163,7 +2164,7 @@ class GroupDatabaseHelper(
             "REACTION_REMOVE",
             -> materializeReaction(db, event)
         }
-        if (event.kind in setOf(StoredGroupEventKind.MESSAGE.name, "POLL", "MEDIA") && countAsUnread) {
+        if (event.kind in setOf(StoredGroupEventKind.MESSAGE.name, "POLL", "MEDIA", "REPLY") && countAsUnread) {
             db.execSQL(
                 "UPDATE $TABLE_GROUPS SET unread_count = unread_count + 1, " +
                     "updated_at_ms = MAX(updated_at_ms, ?) WHERE group_id = ?",
@@ -2377,13 +2378,14 @@ class GroupDatabaseHelper(
         val base = db.query(
             TABLE_EVENTS,
             null,
-            "group_id = ? AND event_id = ? AND kind IN (?, ?, ?)",
+            "group_id = ? AND event_id = ? AND kind IN (?, ?, ?, ?)",
             arrayOf(
                 groupId,
                 messageId,
                 StoredGroupEventKind.MESSAGE.name,
                 "POLL",
                 "MEDIA",
+                "REPLY",
             ),
             null,
             null,

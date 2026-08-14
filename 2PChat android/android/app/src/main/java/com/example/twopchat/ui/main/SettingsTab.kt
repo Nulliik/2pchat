@@ -538,7 +538,7 @@ fun SettingsTab(
                                 title = if (isRu) "Встроенный Tor & Мосты obfs4" else "Embedded Tor & obfs4 Bridges",
                                 subtitle = if (isRu) "Луковая маршрутизация, мосты obfs4 и ротация цепочки" else "Onion routing, obfs4 bridges & circuit rotation",
                                 keywords = listOf("tor", "onion", "obfs4", "bridge", "bridges", "тор", "мосты", "анонимность", "цепочка", "circuit", "new identity", "ротация"),
-                                onClick = { activeSubPage = "trackers" }
+                                onClick = { activeSubPage = "tor" }
                             ),
                             DeepSettingItem(
                                 category = if (isRu) "Сеть" else "Network",
