@@ -445,7 +445,7 @@ fun TrackerSettingsPage(
 }
 
 @Composable
-private fun TrackerSectionCard(
+internal fun TrackerSectionCard(
     surfaceColor: Color,
     onSurfaceColor: Color,
     content: @Composable ColumnScope.() -> Unit,
@@ -462,7 +462,7 @@ private fun TrackerSectionCard(
 }
 
 @Composable
-private fun TrackerToggleRow(
+internal fun TrackerToggleRow(
     title: String,
     subtitle: String,
     checked: Boolean,
@@ -487,7 +487,7 @@ private fun TrackerToggleRow(
 }
 
 @Composable
-private fun BuiltInTrackerRow(
+internal fun BuiltInTrackerRow(
     tracker: BuiltInTracker,
     protocolEnabled: Boolean,
     enabled: Boolean,
@@ -507,7 +507,7 @@ private fun BuiltInTrackerRow(
 }
 
 @Composable
-private fun CustomTrackerRow(
+internal fun CustomTrackerRow(
     tracker: CustomTracker,
     protocolEnabled: Boolean,
     appLanguage: String,
@@ -535,7 +535,7 @@ private fun CustomTrackerRow(
 }
 
 @Composable
-private fun AddTrackerDialog(
+internal fun AddTrackerDialog(
     appLanguage: String,
     onDismiss: () -> Unit,
     onAdd: (String, String) -> String?,
