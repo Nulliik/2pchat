@@ -506,7 +506,7 @@ object P2PMessageRelay {
     }
 
     private fun isPlaceholderPeerName(name: String): Boolean {
-        return name.startsWith("Peer (") && name.endsWith(")")
+        return (name.startsWith("Peer (") || name.startsWith("Tor Peer (")) && name.endsWith(")")
     }
 
     private fun moveChatState(
@@ -662,7 +662,7 @@ object P2PMessageRelay {
             if (isPlaceholderPeerName(name)) null else name to value
         }
         for (placeholder in placeholders) {
-            val abbreviatedFingerprint = placeholder.removePrefix("Peer (").removeSuffix(")")
+            val abbreviatedFingerprint = placeholder.removePrefix("Tor Peer (").removePrefix("Peer (").removeSuffix(")")
             val matches = canonicalIdentities.filter { (_, fingerprint) ->
                 fingerprint.startsWith(abbreviatedFingerprint)
             }
