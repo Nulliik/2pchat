@@ -163,6 +163,15 @@ object Localizations {
         "help_onion_exchange_desc" to "When establishing a session over any transport (LAN, Yggdrasil, or Trackers), peers automatically and anonymously exchange their v3 .onion addresses inside the encrypted Double Ratchet handshake for future direct Tor messaging.",
         "help_transport_badges_title" to "Connection Type Badges (Direct / Tor / Disconnected)",
         "help_transport_badges_desc" to "Chat header badges indicate the active transport: Green ('Direct / Yggdrasil') for high-speed local P2P or Yggdrasil mesh with latency stats; Purple ('Tor Onion') for full anonymous 3-hop Tor routing; Grey for connecting state.",
+        "help_sec_tips" to "PRACTICAL TIPS & OPERATIONAL SECURITY",
+        "help_tip_duress_title" to "Emergency Data Destruction (Duress PIN)",
+        "help_tip_duress_desc" to "Set up a Duress PIN in Security settings. Entering it on the passcode lock screen immediately and permanently wipes your local database, identity keys, and chat history in high-risk scenarios.",
+        "help_tip_tor_rotation_title" to "Instant Tor Speed Boost",
+        "help_tip_tor_rotation_desc" to "If message delivery feels slow, tap 'Renew Identity' in the Tor settings or chat header widget. This triggers a SIGNAL NEWNYM to rotate your Exit Node to a faster circuit.",
+        "help_tip_bridges_title" to "Overcoming Severe DPI Censorship",
+        "help_tip_bridges_desc" to "If Tor bootstrap stalls at 45% on restricted networks, switch to obfs4, WebTunnel, or Snowflake bridges in Tor settings to disguise your traffic from ISP filters.",
+        "help_tip_screen_security_title" to "Preventing Visual Leaks & Screenshots",
+        "help_tip_screen_security_desc" to "Enable 'Screen Protection' in Security settings to block screenshot capture and prevent Android from caching chat thumbnails in the Recent Apps switcher.",
 
 
 
@@ -385,6 +394,15 @@ object Localizations {
         "help_onion_exchange_desc" to "При первом установлении сессии по любому каналу (LAN, Yggdrasil или трекеры) приложения автоматически и анонимно обмениваются своими v3 .onion адресами внутри шифрованного канала Double Ratchet для будущих прямых анонимных подключений.",
         "help_transport_badges_title" to "Индикаторы типа соединения (Direct / Tor / Disconnected)",
         "help_transport_badges_desc" to "Бейджи в шапке чата отображают активный транспорт: Зелёный («Direct / Yggdrasil») — высокоскоростное прямое P2P-соединение с показателем пинга; Фиолетовый («Tor Onion») — полностью анонимный 3-узловой Tor-туннель; Серый — ожидание подключения.",
+        "help_sec_tips" to "ПОЛЕЗНЫЕ СОВЕТЫ И РЕКОМЕНДАЦИИ",
+        "help_tip_duress_title" to "Экстренное уничтожение данных (Duress PIN)",
+        "help_tip_duress_desc" to "Задайте Duress PIN в настройках безопасности. При вводе этого кода на экране разблокировки приложение мгновенно и безвозвратно удалит локальную базу данных, ключи идентификации и историю сообщений.",
+        "help_tip_tor_rotation_title" to "Ускорение работы через Tor",
+        "help_tip_tor_rotation_desc" to "Если задержка сообщений увеличилась, нажмите «Сменить цепочку» в настройках Tor или в шапке чата. Сигнал NEWNYM переключит ваш выходной нод (Exit Node) на более быстрый маршрут.",
+        "help_tip_bridges_title" to "Обход жестких провайдерских блокировок (DPI)",
+        "help_tip_bridges_desc" to "Если подключение Tor зависает на 45%, включите использование транспортов obfs4, WebTunnel или Snowflake в настройках Tor для преодоления фильтрации интернет-провайдера.",
+        "help_tip_screen_security_title" to "Защита от визуальных утечек и скриншотов",
+        "help_tip_screen_security_desc" to "Включите «Защиту экрана» в настройках безопасности, чтобы запретить снимки экрана и предотвратить отображение содержимого чатов в списке недавних приложений Android.",
 
 
 

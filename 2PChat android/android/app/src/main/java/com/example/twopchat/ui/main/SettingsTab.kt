@@ -2802,6 +2802,57 @@ fun SettingsTab(
                             }
                         }
 
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // Section Header: Useful Tips & Best Practices
+                        Text(
+                            text = Localizations.getString("help_sec_tips", appLanguage),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryColor,
+                            letterSpacing = 0.5.sp,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                        )
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(20.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_tip_duress_title", appLanguage),
+                                    description = Localizations.getString("help_tip_duress_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor
+                                )
+
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_tip_tor_rotation_title", appLanguage),
+                                    description = Localizations.getString("help_tip_tor_rotation_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor
+                                )
+
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_tip_bridges_title", appLanguage),
+                                    description = Localizations.getString("help_tip_bridges_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor
+                                )
+
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_tip_screen_security_title", appLanguage),
+                                    description = Localizations.getString("help_tip_screen_security_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor,
+                                    showDivider = false
+                                )
+                            }
+                        }
+
                         Spacer(modifier = Modifier.height(30.dp))
                     }
                 }
