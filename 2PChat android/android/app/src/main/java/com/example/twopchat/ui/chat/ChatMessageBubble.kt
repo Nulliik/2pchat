@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -530,22 +531,25 @@ internal fun ChatMessageBubble(
                                                         }
                                                     }
                                                     if (msg.isMe) {
-                                                        Text(
-                                                            text = "×",
-                                                            color = Color.White,
-                                                            fontSize = 24.sp,
-                                                            fontWeight = FontWeight.Bold,
+                                                        Box(
                                                             modifier = Modifier
                                                                 .align(Alignment.TopEnd)
-                                                                .background(
-                                                                    Color.Black.copy(alpha = 0.55f),
-                                                                    CircleShape,
-                                                                )
+                                                                .padding(8.dp)
+                                                                .size(36.dp)
+                                                                .clip(CircleShape)
+                                                                .background(Color.Black.copy(alpha = 0.65f))
                                                                 .clickable {
                                                                     onCancelFileTransfer(msg)
-                                                                }
-                                                                .padding(horizontal = 9.dp, vertical = 3.dp),
-                                                        )
+                                                                },
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Close,
+                                                                contentDescription = if (appLanguage == "Русский") "Отменить" else "Cancel",
+                                                                tint = Color.White,
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
+                                                        }
                                                     }
                                                 }
                                                 if (isRemoved || isCancelled || hasFailed) {
@@ -812,23 +816,25 @@ internal fun ChatMessageBubble(
                                                     }
                                                 }
                                                 if (msg.isMe) {
-                                                    Text(
-                                                        text = "×",
-                                                        color = Color.White,
-                                                        fontSize = 24.sp,
-                                                        fontWeight = FontWeight.Bold,
+                                                    Box(
                                                         modifier = Modifier
                                                             .align(Alignment.TopEnd)
                                                             .padding(8.dp)
-                                                            .background(
-                                                                Color.Black.copy(alpha = 0.6f),
-                                                                CircleShape,
-                                                            )
+                                                            .size(36.dp)
+                                                            .clip(CircleShape)
+                                                            .background(Color.Black.copy(alpha = 0.65f))
                                                             .clickable {
                                                                 onCancelFileTransfer(msg)
-                                                            }
-                                                            .padding(horizontal = 9.dp, vertical = 3.dp),
-                                                    )
+                                                            },
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Close,
+                                                            contentDescription = if (appLanguage == "Русский") "Отменить" else "Cancel",
+                                                            tint = Color.White,
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                    }
                                                 }
                                             } else if (isCancelled || hasFailed || isRemoved) {
                                                 Box(

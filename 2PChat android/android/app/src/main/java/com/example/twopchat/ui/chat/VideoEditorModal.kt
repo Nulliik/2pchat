@@ -61,18 +61,23 @@ fun VideoEditorModal(
     }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            exoPlayer.stop()
+            onDismiss()
+        },
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             dismissOnBackPress = true,
-            dismissOnClickOutside = false
+            dismissOnClickOutside = false,
+            decorFitsSystemWindows = false
         )
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(surfaceColor)
-                .safeDrawingPadding()
+                .systemBarsPadding()
+                .imePadding()
         ) {
             Column(
                 modifier = Modifier
@@ -87,11 +92,18 @@ fun VideoEditorModal(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onDismiss) {
+                    IconButton(
+                        onClick = {
+                            exoPlayer.stop()
+                            onDismiss()
+                        },
+                        modifier = Modifier.size(48.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = "Cancel",
-                            tint = onSurfaceColor
+                            contentDescription = if (appLanguage == "Русский") "Отменить" else "Cancel",
+                            tint = onSurfaceColor,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
 

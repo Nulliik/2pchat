@@ -194,7 +194,6 @@ internal class P2POutboundMessenger(
 
     fun cancelFile(context: Context, peerName: String, messageId: String): Boolean {
         if (messageId.isBlank()) return false
-        if (messageId !in activeFileTransfers) return false
         cancelledFileTransfers.add(messageId)
         activeFileTransfers.remove(messageId)
         onMessageStatusChanged(peerName, messageId, "CANCELLED")

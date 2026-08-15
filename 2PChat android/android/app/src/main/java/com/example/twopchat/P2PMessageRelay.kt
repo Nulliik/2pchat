@@ -2082,16 +2082,20 @@ object P2PMessageRelay {
     }
 
     fun cancelFileTransfer(context: Context, peerName: String, messageId: String): Boolean {
-        val cancelled = outboundMessenger.cancelFile(
-            context.applicationContext,
+        val appContext = context.applicationContext
+        outboundMessenger.cancelFile(
+            appContext,
             peerName,
             messageId,
         )
-        if (cancelled) {
-            ChatDatabaseHelper.getInstance(context.applicationContext)
-                .updateMessageStatus(messageId, "CANCELLED")
-        }
-        return cancelled
+        ChatDatabaseHelper.getInstance(appContext)
+            .updateMessageStatus(messageId, "CANCELLED")
+        val key = if (peerName.isNotEmpty()) "$peerName:$messageId" else messageId
+        val cancelledProgress = FileProgressInfo(0L, 0L, 0.0, FileTransferState.CANCELLED)
+        fileProgressStates[key] = cancelledProgress
+        fileProgressStates[messageId] = cancelledProgress
+        messageListeners.forEach { it.onMessageStatusChanged(peerName, messageId, "CANCELLED") }
+        return true
     }
 
     fun isFileTransferActive(messageId: String): Boolean =

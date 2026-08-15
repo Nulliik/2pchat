@@ -2033,6 +2033,11 @@ fun ChatScreen(
                                 peerName,
                                 message.id,
                             )
+                            val idx = initialMessages.indexOfFirst { it.id == message.id }
+                            if (idx != -1) {
+                                val current = initialMessages[idx]
+                                initialMessages[idx] = current.copy(status = "CANCELLED")
+                            }
                         },
                         highlightedMessageId = highlightedMessageId,
                         onHighlightFinished = { highlightedMessageId = null },
