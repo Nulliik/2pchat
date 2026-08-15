@@ -340,26 +340,53 @@ object P2PPreferences {
     }
 
     fun getEffectiveEndpointsForPeer(context: Context, peerName: String, rawEndpoints: String? = null): String {
-        val endpoints = rawEndpoints?.takeIf { it.isNotBlank() }
-            ?: prefs(context).getString(lastEndpoint(peerName), "").orEmpty()
-        if (endpoints.isBlank()) return ""
-        val pref = getPeerTransportPreference(context, peerName)
-        val list = endpoints.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        val filtered = when (pref) {
-            PeerTransportPreference.AUTO -> list
-            PeerTransportPreference.TOR_ONLY -> list.filter { it.contains(".onion", ignoreCase = true) }
-            PeerTransportPreference.YGGDRASIL_ONLY -> list.filter { it.startsWith("[") || (it.contains(":") && it.count { c -> c == ':' } > 1) }
-            PeerTransportPreference.DIRECT_ONLY -> list.filter { !it.contains(".onion", ignoreCase = true) && !it.startsWith("[") && it.count { c -> c == ':' } <= 1 }
+        val lastEp = prefs(context).getString(lastEndpoint(peerName), "").orEmpty()
+        val savedOnion = getPeerOnionAddress(context, peerName)
+
+        val combined = mutableListOf<String>()
+        if (!rawEndpoints.isNullOrBlank()) {
+            combined.addAll(rawEndpoints.split(",").map { it.trim() }.filter { it.isNotEmpty() })
         }
-        return if (filtered.isNotEmpty()) filtered.joinToString(",") else endpoints
+        if (lastEp.isNotBlank()) {
+            for (ep in lastEp.split(",").map { it.trim() }.filter { it.isNotEmpty() }) {
+                if (ep !in combined) combined.add(ep)
+            }
+        }
+        if (!savedOnion.isNullOrBlank() && savedOnion !in combined) {
+            combined.add(savedOnion)
+        }
+
+        if (combined.isEmpty()) return ""
+        val pref = getPeerTransportPreference(context, peerName)
+        val filtered = when (pref) {
+            PeerTransportPreference.AUTO -> combined
+            PeerTransportPreference.TOR_ONLY -> combined.filter { it.contains(".onion", ignoreCase = true) }
+            PeerTransportPreference.YGGDRASIL_ONLY -> combined.filter { it.startsWith("[") || (it.contains(":") && it.count { c -> c == ':' } > 1) }
+            PeerTransportPreference.DIRECT_ONLY -> combined.filter { !it.contains(".onion", ignoreCase = true) && !it.startsWith("[") && it.count { c -> c == ':' } <= 1 }
+        }
+        return if (filtered.isNotEmpty()) {
+            filtered.joinToString(",")
+        } else if (pref == PeerTransportPreference.TOR_ONLY && !savedOnion.isNullOrBlank()) {
+            savedOnion
+        } else if (pref == PeerTransportPreference.AUTO) {
+            combined.joinToString(",")
+        } else {
+            // Strict preference mode with no matching endpoints: return empty so it doesn't leak/dial wrong transport
+            ""
+        }
     }
 
     fun setPeerOnionAddress(context: Context, peerName: String, onionAddress: String) {
         prefs(context).edit().putString(peerOnionAddress(peerName), onionAddress).apply()
     }
 
-    fun getPeerOnionAddress(context: Context, peerName: String): String? =
-        prefs(context).getString(peerOnionAddress(peerName), null)?.takeIf { it.isNotBlank() }
+    fun getPeerOnionAddress(context: Context, peerName: String): String? {
+        val prefVal = prefs(context).getString(peerOnionAddress(peerName), null)?.takeIf { it.isNotBlank() }
+        if (prefVal != null) return prefVal
+        return runCatching {
+            com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerOnionAddress(peerName)
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
 
     private const val PINNED_STATE_LOCAL_ACTOR = "pinned_state_local_actor"
 

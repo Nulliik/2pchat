@@ -98,8 +98,32 @@ fun ConnectionModeBottomSheet(
     fun selectMode(mode: PeerTransportPreference) {
         currentPreference = mode
         P2PPreferences.setPeerTransportPreference(context, peerName, mode)
-        if (mode == PeerTransportPreference.TOR_ONLY && !isTorRunning) {
-            TorManager.startTor(context)
+        if (mode == PeerTransportPreference.TOR_ONLY) {
+            if (!isTorRunning) {
+                TorManager.startTor(context)
+            }
+            if (P2PPreferences.getPeerOnionAddress(context, peerName) == null) {
+                val foundOnion: String? = runCatching {
+                    com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getMessagesForPeer(peerName)
+                        .asSequence()
+                        .map { it.text }
+                        .mapNotNull { text: String -> Regex("""([a-z2-7]{56}\.onion(?::\d+)?)""", RegexOption.IGNORE_CASE).find(text)?.value }
+                        .firstOrNull()
+                }.getOrNull()
+                if (foundOnion != null) {
+                    val formatted = com.example.twopchat.ui.main.formatInviteEndpoint(foundOnion, P2PMessageRelay.listenerPort(context))
+                    if (formatted != null && formatted.contains(".onion", ignoreCase = true)) {
+                        P2PPreferences.setPeerOnionAddress(context, peerName, formatted)
+                        val fingerprint = P2PPreferences.prefs(context).getString("peer_fingerprint_$peerName", null)
+                        com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).savePeerOnionAddress(
+                            peerName = peerName,
+                            onionAddress = formatted,
+                            fingerprint = fingerprint,
+                            endpoint = activeEndpoint,
+                        )
+                    }
+                }
+            }
         }
         scope.launch {
             isReconnecting = true
@@ -381,12 +405,12 @@ fun ConnectionModeBottomSheet(
             // Mode 3: YGGDRASIL ONLY
             TransportOptionCard(
                 title = if (isRussian) "🟢 Только Yggdrasil (Mesh-сеть)" else "🟢 Yggdrasil Only (Mesh Overlay)",
-                badge = if (isRussian) "Без серверов" else "P2P Mesh",
+                badge = if (isRussian) "IPv6 Mesh" else "IPv6 Mesh",
                 badgeColor = Color(0xFF10B981),
                 description = if (isRussian) {
-                    "Децентрализованная зашифрованная IPv6 mesh-сеть. Прямой провайдерский IP скрыт, низкая задержка и обход NAT без серверов."
+                    "Децентрализованная зашифрованная IPv6 mesh-сеть. Прямой провайдерский IP скрыт, низкая задержка и обход NAT."
                 } else {
-                    "Decentralized encrypted IPv6 mesh overlay. Hides ISP clearnet IP, low latency, and bypasses strict NAT without servers."
+                    "Decentralized encrypted IPv6 mesh overlay. Hides ISP clearnet IP, low latency, and bypasses NAT."
                 },
                 selected = currentPreference == PeerTransportPreference.YGGDRASIL_ONLY,
                 primaryColor = primaryColor,

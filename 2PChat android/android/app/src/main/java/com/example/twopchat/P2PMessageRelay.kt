@@ -1472,6 +1472,27 @@ object P2PMessageRelay {
                                     ?.recycle()
                             }
                         }
+                        if (text.isNotBlank()) {
+                            val onionMatch = Regex("""([a-z2-7]{56}\.onion(?::\d+)?)""", RegexOption.IGNORE_CASE).find(text)
+                            if (onionMatch != null) {
+                                val onionAddr = onionMatch.value.trim()
+                                val formatted = com.example.twopchat.ui.main.formatInviteEndpoint(onionAddr, listenerPort(appContext))
+                                if (formatted != null && formatted.contains(".onion", ignoreCase = true)) {
+                                    P2PPreferences.setPeerOnionAddress(appContext, sender, formatted)
+                                    val fingerprint = P2PPreferences.prefs(appContext)
+                                        .getString("peer_fingerprint_$sender", null)
+                                    ChatDatabaseHelper.getInstance(appContext).savePeerOnionAddress(
+                                        peerName = sender,
+                                        onionAddress = formatted,
+                                        fingerprint = fingerprint,
+                                        endpoint = _peerEndpoints[sender],
+                                    )
+                                    rememberAuthenticatedPeerEndpoint(sender, formatted)
+                                    log(appContext, "Saved authenticated onion address discovered from message: $formatted")
+                                }
+                            }
+                        }
+
                         persistAndDispatchIncoming(
                             appContext,
                             sender,
@@ -1821,6 +1842,24 @@ object P2PMessageRelay {
         text: String,
         onResult: (Boolean) -> Unit = {},
     ) {
+        if (text.isNotBlank()) {
+            val onionMatch = Regex("""([a-z2-7]{56}\.onion(?::\d+)?)""", RegexOption.IGNORE_CASE).find(text)
+            if (onionMatch != null) {
+                val onionAddr = onionMatch.value.trim()
+                val formatted = com.example.twopchat.ui.main.formatInviteEndpoint(onionAddr, listenerPort(context))
+                if (formatted != null && formatted.contains(".onion", ignoreCase = true) && P2PPreferences.getPeerOnionAddress(context, peerName) == null) {
+                    P2PPreferences.setPeerOnionAddress(context, peerName, formatted)
+                    val fingerprint = P2PPreferences.prefs(context)
+                        .getString("peer_fingerprint_$peerName", null)
+                    ChatDatabaseHelper.getInstance(context).savePeerOnionAddress(
+                        peerName = peerName,
+                        onionAddress = formatted,
+                        fingerprint = fingerprint,
+                        endpoint = _peerEndpoints[peerName],
+                    )
+                }
+            }
+        }
         outboundMessenger.sendMessageToPeer(context, peerName, text, onResult)
     }
 

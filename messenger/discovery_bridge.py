@@ -2765,9 +2765,11 @@ async def _establish_session_async(peer_name: str, endpoint: str, expected_finge
 
     fp = session.peer_fingerprint
     peer_fingerprint_to_name[fp] = peer_name
+    session.transport_name = _transport_for_endpoint(connected_endpoint)
     registered = await _register_authenticated_session(session, fp, initiator=True)
     if registered is not session:
         session = registered
+        session.transport_name = _transport_for_endpoint(connected_endpoint)
         print(f"Reused preferred Double Ratchet session to {peer_name} (Fingerprint: {fp})")
     else:
         asyncio.create_task(_read_loop(session, peer_name, fp))
@@ -2786,9 +2788,15 @@ async def _establish_session_async(peer_name: str, endpoint: str, expected_finge
 async def _send_message_unlocked(peer_name: str, endpoint: str, body: str, expected_fingerprint=None) -> bool:
     session = _session_for_peer(peer_name, expected_fingerprint)
     was_cached = session is not None and session.is_online
+
+    endpoints = [e.strip() for e in endpoint.split(",") if e.strip()] if endpoint else []
+    requested_transports = {_transport_for_endpoint(e) for e in endpoints} if endpoints else set()
+    current_transport = getattr(session, "transport_name", "") if session else ""
+    transport_mismatch = bool(requested_transports and current_transport and current_transport not in requested_transports)
+
     try:
-        if not session or not session.is_online:
-            if session and not session.is_online:
+        if not session or not session.is_online or transport_mismatch:
+            if session:
                 try:
                     asyncio.create_task(session.close())
                 except Exception:
@@ -3334,11 +3342,25 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
 
     # Close old session or verify health
     session = _session_for_peer(peer_name, expected_fingerprint)
-    if session and session.is_online:
+    endpoints = [e.strip() for e in endpoint.split(",") if e.strip()] if endpoint else []
+    requested_transports = {_transport_for_endpoint(e) for e in endpoints} if endpoints else set()
+    current_transport = getattr(session, "transport_name", "") if session else ""
+    if session and not current_transport and getattr(session, "writer", None):
+        try:
+            peername = session.writer.get_extra_info("peername")
+            if peername:
+                ip = peername[0]
+                current_transport = "Yggdrasil" if ":" in str(ip) else "Direct P2P"
+        except Exception:
+            pass
+
+    transport_mismatch = bool(requested_transports and current_transport and current_transport not in requested_transports)
+
+    if session and session.is_online and not transport_mismatch:
         try:
             probe_fut = asyncio.run_coroutine_threadsafe(session.send_reliable({"type": "heartbeat"}), loop)
             probe_fut.result(timeout=3.0)
-            print(f"[RECONNECT] Session with {peer_name} is healthy and responsive; keeping it")
+            print(f"[RECONNECT] Session with {peer_name} is healthy and responsive on {current_transport}; keeping it")
             _record_reconnect_success(reconnect_key)
             _finish_reconnect()
             return True
@@ -3373,7 +3395,7 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
                 except Exception as err:
                     print(f"[RECONNECT] Failed to connect to {peer_name} via endpoints {endpoints}: {err}")
             
-            if connected_session is None and expected_fingerprint:
+            if connected_session is None and expected_fingerprint and not requested_transports:
                 fresh_eps = [
                     ep for ep in await _resolve_peer_endpoints_async(expected_fingerprint)
                     if ep not in endpoints
@@ -3391,11 +3413,13 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
                 _record_reconnect_success(reconnect_key)
                 fp = connected_session.peer_fingerprint
                 peer_fingerprint_to_name[fp] = peer_name
+                connected_session.transport_name = _transport_for_endpoint(connected_endpoint)
                 registered = await _register_authenticated_session(
                     connected_session, fp, initiator=True
                 )
                 if registered is not connected_session:
                     connected_session = registered
+                    connected_session.transport_name = _transport_for_endpoint(connected_endpoint)
                 else:
                     asyncio.create_task(_read_loop(connected_session, peer_name, fp))
                 
