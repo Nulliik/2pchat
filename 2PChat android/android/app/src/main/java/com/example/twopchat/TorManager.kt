@@ -144,8 +144,7 @@ object TorManager {
         bytes.joinToString("") { "%02X".format(it) }
 
     fun shouldRotateOnBootstrapStall(progress: Int, durationMs: Long): Boolean = when (progress) {
-        in 1..4 -> durationMs > 30000L
-        in 5..49 -> durationMs > 120000L
+        in 1..49 -> durationMs > 30000L
         else -> false
     }
 
