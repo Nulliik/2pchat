@@ -33,9 +33,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        private const val DATABASE_VERSION = 10
+        private const val DATABASE_VERSION = 11
         private const val TABLE_MESSAGES = "messages"
         private const val TABLE_PENDING_CONTROLS = "pending_controls"
+        private const val TABLE_PEERS = "peers"
         
         private const val KEY_ID = "id"
         private const val KEY_PEER_NAME = "peer_name"
@@ -58,6 +59,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         private const val KEY_CONTROL_TYPE = "control_type"
         private const val KEY_CONTROL_PAYLOAD = "control_payload"
         private const val KEY_CREATED_AT_MS = "created_at_ms"
+        private const val KEY_ONION_ADDRESS = "onion_address"
+        private const val KEY_LAST_ENDPOINT = "last_endpoint"
+        private const val KEY_FINGERPRINT = "fingerprint"
+        private const val KEY_UPDATED_AT_MS = "updated_at_ms"
         private const val TAG = "ChatDatabaseHelper"
         private val dbLock = Any()
         private val activeHelpers = java.util.Collections.newSetFromMap(java.util.WeakHashMap<ChatDatabaseHelper, Boolean>())
@@ -152,6 +157,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         db.execSQL(createTable)
         createMessagePeerIndex(db)
         createPendingControlsTable(db)
+        createPeersTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -246,6 +252,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             )
             db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_ALBUM_URIS TEXT")
             db.execSQL("ALTER TABLE $TABLE_MESSAGES ADD COLUMN $KEY_ALBUM_TYPES TEXT")
+        }
+        if (oldVersion < 11) {
+            createPeersTable(db)
         }
     }
 
@@ -908,6 +917,77 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     private fun encNullable(value: String?) = value?.let(SecureStorage::encrypt)
     private fun dec(value: String?) = SecureStorage.decrypt(value).orEmpty()
     private fun decNullable(value: String?) = SecureStorage.decrypt(value)
+
+    fun savePeerOnionAddress(
+        peerName: String,
+        onionAddress: String,
+        fingerprint: String? = null,
+        endpoint: String? = null,
+    ) {
+        val db = this.safeWritableDatabase
+        val values = ContentValues().apply {
+            put(KEY_PEER_NAME, peerName)
+            put(KEY_ONION_ADDRESS, onionAddress)
+            if (!fingerprint.isNullOrBlank()) put(KEY_FINGERPRINT, fingerprint)
+            if (!endpoint.isNullOrBlank()) put(KEY_LAST_ENDPOINT, endpoint)
+            put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
+        }
+        db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun getPeerOnionAddress(peerName: String): String? {
+        val db = this.safeReadableDatabase
+        return db.query(
+            TABLE_PEERS,
+            arrayOf(KEY_ONION_ADDRESS),
+            "$KEY_PEER_NAME = ?",
+            arrayOf(peerName),
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndexOrThrow(KEY_ONION_ADDRESS)
+                if (!cursor.isNull(idx)) cursor.getString(idx) else null
+            } else null
+        }
+    }
+
+    fun getAllPeersWithOnion(): Map<String, String> {
+        val db = this.safeReadableDatabase
+        val result = mutableMapOf<String, String>()
+        db.query(
+            TABLE_PEERS,
+            arrayOf(KEY_PEER_NAME, KEY_ONION_ADDRESS),
+            "$KEY_ONION_ADDRESS IS NOT NULL AND $KEY_ONION_ADDRESS != ''",
+            null,
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            val nameIdx = cursor.getColumnIndexOrThrow(KEY_PEER_NAME)
+            val onionIdx = cursor.getColumnIndexOrThrow(KEY_ONION_ADDRESS)
+            while (cursor.moveToNext()) {
+                val name = cursor.getString(nameIdx)
+                val onion = cursor.getString(onionIdx)
+                if (!name.isNullOrBlank() && !onion.isNullOrBlank()) {
+                    result[name] = onion
+                }
+            }
+        }
+        return result
+    }
+
+    private fun createPeersTable(db: SQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS $TABLE_PEERS(" +
+                "$KEY_PEER_NAME TEXT PRIMARY KEY," +
+                "$KEY_FINGERPRINT TEXT," +
+                "$KEY_ONION_ADDRESS TEXT," +
+                "$KEY_LAST_ENDPOINT TEXT," +
+                "$KEY_UPDATED_AT_MS INTEGER NOT NULL DEFAULT 0)"
+        )
+    }
 
     private fun createPendingControlsTable(db: SQLiteDatabase) {
         db.execSQL(

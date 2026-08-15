@@ -401,6 +401,15 @@ class TorManagerTest {
         assertEquals("Bob", fromUrl?.nickname)
         assertEquals("$onionHost:50002", fromUrl?.onionEndpoint)
     }
+
+    @Test
+    fun testOnionAddressSharePayloadAndEndpoints() {
+        val onionHost = "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion"
+        val formatted = com.example.twopchat.ui.main.formatInviteEndpoint(onionHost, 50001)
+        assertEquals("$onionHost:50001", formatted)
+        org.junit.Assert.assertTrue(isValidPeerEndpointList(formatted!!))
+        org.junit.Assert.assertTrue(isValidPeerEndpointList("192.168.1.5:50001,$formatted"))
+    }
 }
 
 

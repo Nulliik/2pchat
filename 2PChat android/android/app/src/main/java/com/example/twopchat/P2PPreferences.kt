@@ -263,6 +263,7 @@ object P2PPreferences {
     }
 
     fun peerFingerprint(peerName: String) = "peer_fingerprint_$peerName"
+    fun peerOnionAddress(peerName: String) = "peer_onion_$peerName"
     fun fingerprintMismatch(peerName: String) = "fingerprint_mismatch_$peerName"
     fun pendingPeerFingerprint(peerName: String) = "pending_peer_fingerprint_$peerName"
     fun pendingPeerEndpoint(peerName: String) = "pending_peer_endpoint_$peerName"
@@ -278,6 +279,13 @@ object P2PPreferences {
     fun pinnedBy(peerName: String) = "pinned_by_$peerName"
     fun pinnedStateVersion(peerName: String) = "pinned_state_version_$peerName"
     fun pinnedStateActor(peerName: String) = "pinned_state_actor_$peerName"
+
+    fun setPeerOnionAddress(context: Context, peerName: String, onionAddress: String) {
+        prefs(context).edit().putString(peerOnionAddress(peerName), onionAddress).apply()
+    }
+
+    fun getPeerOnionAddress(context: Context, peerName: String): String? =
+        prefs(context).getString(peerOnionAddress(peerName), null)?.takeIf { it.isNotBlank() }
 
     private const val PINNED_STATE_LOCAL_ACTOR = "pinned_state_local_actor"
 

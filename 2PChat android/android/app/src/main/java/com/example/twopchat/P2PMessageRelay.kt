@@ -100,7 +100,9 @@ object P2PMessageRelay {
             return false
         }
         if (normalizedName !in _peerEndpoints && _peerEndpoints.size >= MAX_TRACKED_PEER_ENDPOINTS) return false
-        _peerEndpoints[normalizedName] = endpointParts.joinToString(",")
+        val existingParts = _peerEndpoints[normalizedName]?.split(',')?.map(String::trim)?.filter(String::isNotEmpty).orEmpty()
+        val combined = (existingParts + endpointParts).distinct()
+        _peerEndpoints[normalizedName] = combined.joinToString(",")
         return true
     }
 
@@ -172,9 +174,17 @@ object P2PMessageRelay {
             for (peerName in chats) {
                 val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
                     ?.takeIf { it.isNotBlank() } ?: continue
-                val endpoint = _peerEndpoints[peerName]
+                val liveEndpoint = _peerEndpoints[peerName]
                     ?: prefs.getString("last_endpoint_$peerName", null)?.takeIf { it.isNotBlank() }
-                    ?: continue
+                val savedOnion = P2PPreferences.getPeerOnionAddress(appContext, peerName)
+                    ?: ChatDatabaseHelper.getInstance(appContext).getPeerOnionAddress(peerName)
+                val endpoint = when {
+                    liveEndpoint != null && savedOnion != null && !liveEndpoint.contains(savedOnion) ->
+                        "$liveEndpoint,$savedOnion"
+                    liveEndpoint != null -> liveEndpoint
+                    savedOnion != null -> savedOnion
+                    else -> continue
+                }
                 PythonBridge.reconnectPeerSession(peerName, endpoint, fingerprint)
             }
         }
@@ -190,6 +200,8 @@ object P2PMessageRelay {
     private val fingerprintToPeerName = ConcurrentHashMap<String, String>()
     private val avatarSharesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val lastAvatarShareAt = ConcurrentHashMap<String, Long>()
+    private val onionSharesInFlight = ConcurrentHashMap.newKeySet<String>()
+    private val lastOnionShareAt = ConcurrentHashMap<String, Long>()
 
     // Maps peer name to their profile avatar bitmap in RAM
     val peerAvatars = avatarCache.avatars
@@ -694,6 +706,11 @@ object P2PMessageRelay {
             persistedPrefs.getString("last_endpoint_$peerName", null)
                 ?.takeIf { it.isNotBlank() }
                 ?.let { rememberAuthenticatedPeerEndpoint(peerName, it) }
+            val savedOnion = P2PPreferences.getPeerOnionAddress(appContext, peerName)
+                ?: ChatDatabaseHelper.getInstance(appContext).getPeerOnionAddress(peerName)
+            if (savedOnion != null) {
+                rememberAuthenticatedPeerEndpoint(peerName, savedOnion)
+            }
         }
         val port = listenerPort(appContext)
         try {
@@ -906,6 +923,30 @@ object P2PMessageRelay {
                                             log(appContext, "Error decoding avatar: ${e.message}", "ERROR", e)
                                         }
 
+                                    }
+                                    return
+                                }
+                                "onion_address_share" -> {
+                                    val rawOnion = json.optString("onion_address").trim()
+                                    val port = json.optInt("listener_port", listenerPort(appContext))
+                                    val formattedOnion = com.example.twopchat.ui.main.formatInviteEndpoint(rawOnion, port)
+                                    if (formattedOnion != null && formattedOnion.contains(".onion", ignoreCase = true)) {
+                                        log(appContext, "Received authenticated onion address from $sender: $formattedOnion")
+                                        P2PPreferences.setPeerOnionAddress(appContext, sender, formattedOnion)
+                                        val fingerprint = P2PPreferences.prefs(appContext)
+                                            .getString("peer_fingerprint_$sender", null)
+                                        ChatDatabaseHelper.getInstance(appContext).savePeerOnionAddress(
+                                            peerName = sender,
+                                            onionAddress = formattedOnion,
+                                            fingerprint = fingerprint,
+                                            endpoint = _peerEndpoints[sender],
+                                        )
+                                        rememberAuthenticatedPeerEndpoint(sender, formattedOnion)
+
+                                        // Reciprocal exchange if we haven't shared our onion address yet
+                                        if (lastOnionShareAt[sender] == null) {
+                                            shareOnionAddress(appContext, sender)
+                                        }
                                     }
                                     return
                                 }
@@ -1516,6 +1557,7 @@ object P2PMessageRelay {
                         }
 
                         shareAvatar(appContext, resolvedPeerName, endpoint)
+                        shareOnionAddress(appContext, resolvedPeerName, endpoint)
                         processOfflineQueue(appContext, resolvedPeerName, endpoint)
                         GroupChatCoordinator.onPeerConnected(appContext, resolvedPeerName)
                     }
@@ -1707,6 +1749,54 @@ object P2PMessageRelay {
     fun shareAvatarWithConnectedPeers(context: Context) {
         peerEndpoints.toMap().forEach { (peerName, endpoint) ->
             shareAvatar(context.applicationContext, peerName, endpoint)
+        }
+    }
+
+    fun shareOnionAddress(context: Context, peerName: String, endpoint: String = "") {
+        val prefs = P2PPreferences.prefs(context)
+        val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
+        val shareKey = fingerprint ?: peerName
+        val now = System.currentTimeMillis()
+        if (!onionSharesInFlight.add(shareKey)) return
+        if (now - (lastOnionShareAt[shareKey] ?: 0L) < 30_000L) {
+            onionSharesInFlight.remove(shareKey)
+            return
+        }
+        relayScope.launch {
+            try {
+                val onionHost = TorManager.onionAddress.value?.takeIf { it.isNotBlank() }
+                    ?: prefs.getString(P2PPreferences.TOR_ONION_HOSTNAME, null)?.takeIf { it.isNotBlank() }
+                if (onionHost.isNullOrBlank()) {
+                    log(context, "Local Tor onion address is not available; skipping onion share")
+                    return@launch
+                }
+                val json = JSONObject().apply {
+                    put("type", "onion_address_share")
+                    put("onion_address", onionHost)
+                    put("listener_port", listenerPort(context))
+                }
+                val payload = json.toString()
+                val expectedFingerprint = prefs.getString("peer_fingerprint_$peerName", null)
+
+                if (P2PPreferences.isPeerIdentityChangePending(context, peerName)) {
+                    log(context, "Blocked onion share while a peer identity change awaits confirmation", "ERROR")
+                    return@launch
+                }
+
+                if (!PythonBridge.isPeerOnline(peerName, expectedFingerprint)) {
+                    log(context, "Peer $peerName is offline; skipping onion share")
+                    return@launch
+                }
+
+                log(context, "Sharing Tor .onion address with $peerName")
+                val success = PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
+                if (success) lastOnionShareAt[shareKey] = System.currentTimeMillis()
+                log(context, "Onion address share status: $success")
+            } catch (e: Exception) {
+                log(context, "Failed to share onion address with peer", "ERROR", e)
+            } finally {
+                onionSharesInFlight.remove(shareKey)
+            }
         }
     }
 
