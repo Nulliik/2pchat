@@ -358,12 +358,7 @@ object P2PPreferences {
 
         if (combined.isEmpty()) return ""
         val pref = getPeerTransportPreference(context, peerName)
-        val filtered = when (pref) {
-            PeerTransportPreference.AUTO -> combined
-            PeerTransportPreference.TOR_ONLY -> combined.filter { it.contains(".onion", ignoreCase = true) }
-            PeerTransportPreference.YGGDRASIL_ONLY -> combined.filter { it.startsWith("[") || (it.contains(":") && it.count { c -> c == ':' } > 1) }
-            PeerTransportPreference.DIRECT_ONLY -> combined.filter { !it.contains(".onion", ignoreCase = true) && !it.startsWith("[") && it.count { c -> c == ':' } <= 1 }
-        }
+        val filtered = filterEndpointsByPreference(combined, pref)
         return if (filtered.isNotEmpty()) {
             filtered.joinToString(",")
         } else if (pref == PeerTransportPreference.TOR_ONLY && !savedOnion.isNullOrBlank()) {
@@ -373,6 +368,15 @@ object P2PPreferences {
         } else {
             // Strict preference mode with no matching endpoints: return empty so it doesn't leak/dial wrong transport
             ""
+        }
+    }
+
+    fun filterEndpointsByPreference(endpoints: List<String>, pref: PeerTransportPreference): List<String> {
+        return when (pref) {
+            PeerTransportPreference.AUTO -> endpoints
+            PeerTransportPreference.TOR_ONLY -> endpoints.filter { it.contains(".onion", ignoreCase = true) }
+            PeerTransportPreference.YGGDRASIL_ONLY -> endpoints.filter { it.startsWith("[") || (it.contains(":") && it.count { c -> c == ':' } > 1) }
+            PeerTransportPreference.DIRECT_ONLY -> endpoints.filter { !it.contains(".onion", ignoreCase = true) && !it.startsWith("[") && it.count { c -> c == ':' } <= 1 }
         }
     }
 

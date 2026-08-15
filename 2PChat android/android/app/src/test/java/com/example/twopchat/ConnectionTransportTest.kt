@@ -58,4 +58,30 @@ class ConnectionTransportTest {
         assertEquals(P2PPreferences.PeerTransportPreference.AUTO, P2PPreferences.PeerTransportPreference.fromKey("invalid"))
         assertEquals(P2PPreferences.PeerTransportPreference.AUTO, P2PPreferences.PeerTransportPreference.fromKey(null))
     }
+
+    @Test
+    fun `filters endpoint list by transport preference correctly`() {
+        val mixedEndpoints = listOf(
+            "192.168.10.247:50001",
+            "[200:abcd::12]:50001",
+            "karndtlkna43am2x6ddv.onion:50001"
+        )
+
+        // AUTO should preserve all candidates
+        val autoFiltered = P2PPreferences.filterEndpointsByPreference(mixedEndpoints, P2PPreferences.PeerTransportPreference.AUTO)
+        assertEquals(3, autoFiltered.size)
+        assertEquals(mixedEndpoints, autoFiltered)
+
+        // TOR_ONLY should strictly isolate .onion
+        val torFiltered = P2PPreferences.filterEndpointsByPreference(mixedEndpoints, P2PPreferences.PeerTransportPreference.TOR_ONLY)
+        assertEquals(listOf("karndtlkna43am2x6ddv.onion:50001"), torFiltered)
+
+        // YGGDRASIL_ONLY should strictly isolate IPv6 mesh
+        val yggFiltered = P2PPreferences.filterEndpointsByPreference(mixedEndpoints, P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY)
+        assertEquals(listOf("[200:abcd::12]:50001"), yggFiltered)
+
+        // DIRECT_ONLY should strictly isolate IPv4 LAN/clearnet
+        val directFiltered = P2PPreferences.filterEndpointsByPreference(mixedEndpoints, P2PPreferences.PeerTransportPreference.DIRECT_ONLY)
+        assertEquals(listOf("192.168.10.247:50001"), directFiltered)
+    }
 }
