@@ -452,18 +452,9 @@ fun SettingsTab(
                                 categoryColor = Color(0xFF66BB6A),
                                 title = if (isRu) "Входящий порт Direct P2P" else "Direct P2P Listening Port",
                                 subtitle = if (isRu) "Сетевой порт для принятия входящих P2P соединений" else "Inbound network port for direct P2P connections",
-                                valueBadge = "27271",
-                                keywords = listOf("port", "p2p port", "direct p2p", "порт", "прямое соединение", "27271"),
-                                onClick = { activeSubPage = "security" }
-                            ),
-                            DeepSettingItem(
-                                category = if (isRu) "Сеть" else "Network",
-                                categoryColor = Color(0xFFAB47BC),
-                                title = if (isRu) "Порт Yggdrasil Mesh" else "Yggdrasil Mesh Port",
-                                subtitle = if (isRu) "Виртуальный порт оверлейной P2P сети Yggdrasil" else "Virtual listening port for overlay mesh network",
-                                valueBadge = "9001",
-                                keywords = listOf("yggdrasil port", "mesh port", "порт yggdrasil", "9001", "mesh"),
-                                onClick = { activeSubPage = "security" }
+                                valueBadge = "50001",
+                                keywords = listOf("port", "p2p port", "direct p2p", "порт", "прямое соединение", "50001"),
+                                onClick = { activeSubPage = "advanced_network" }
                             ),
                             DeepSettingItem(
                                 category = if (isRu) "Сеть" else "Network",
@@ -970,6 +961,19 @@ fun SettingsTab(
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 SettingsRow(
+                                    title = if (appLanguage == "Русский") "Продвинутые параметры сети" else "Advanced Network Settings",
+                                    subtitle = if (appLanguage == "Русский") "Порт, UPnP (Авто-NAT), IPv4, WiFi Direct" else "Listener port, UPnP, IPv4, WiFi Direct",
+                                    iconRes = com.example.twopchat.R.drawable.ic_menu_settings,
+                                    iconColor = Color(0xFF0EA5E9),
+                                    onSurfaceColor = onSurfaceColor,
+                                    onSurfaceVariant = onSurfaceVariant,
+                                    primaryColor = primaryColor,
+                                    onClick = { activeSubPage = "advanced_network" }
+                                )
+
+                                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                SettingsRow(
                                     title = Localizations.getString("network_usage_title", appLanguage),
                                     subtitle = Localizations.getString("network_usage_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
@@ -1200,7 +1204,7 @@ fun SettingsTab(
                         .verticalScroll(rememberScrollState())
                 ) {
                     SubPageLayout(
-                        title = Localizations.tr(appLanguage, "Настройки чатов", "Chat Settings", "Chat-Einstellungen", "Ajustes de chat", "Paramètres de chat", "Configurações de chat"),
+                        title = Localizations.tr(appLanguage, "Тема и Оформление", "Appearance & Theme", "Erscheinungsbild & Theme", "Apariencia y Tema", "Apparence et Thème", "Aparência e Tema"),
                         appLanguage = appLanguage,
                         onBackClick = { activeSubPage = null },
                         surfaceColor = surfaceColor,
@@ -1595,13 +1599,13 @@ fun SettingsTab(
                         .verticalScroll(rememberScrollState())
                 ) {
                     SubPageLayout(
-                        title = Localizations.tr(appLanguage, "Конфиденциальность и Сеть", "Privacy & Security", "Datenschutz & Sicherheit", "Privacidad y Seguridad", "Confidentialité & Sécurité", "Privacidade e Segurança"),
+                        title = Localizations.tr(appLanguage, "Безопасность и Доступ", "Security & Access", "Sicherheit & Zugriff", "Seguridad y Acceso", "Sécurité et Accès", "Segurança e Acesso"),
                         appLanguage = appLanguage,
                         onBackClick = { activeSubPage = null },
                         surfaceColor = surfaceColor,
                         onSurfaceColor = onSurfaceColor
                     ) {
-                        // Security & Network Settings Card
+                        // Security & Access Settings Card
                         Card(
                             colors = CardDefaults.cardColors(containerColor = surfaceColor),
                             shape = RoundedCornerShape(16.dp),
@@ -1744,7 +1748,6 @@ fun SettingsTab(
                                         val duressPinValue = sharedPrefs.getString("passcode_duress_value", "") ?: ""
                                         val duressSet = duressPinValue.isNotEmpty()
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-
                                             Text(
                                                 text = if (duressSet) Localizations.getString("enabled", appLanguage) else Localizations.getString("disabled", appLanguage),
                                                 color = if (duressSet) primaryColor else onSurfaceVariant,
@@ -1788,9 +1791,35 @@ fun SettingsTab(
                                         }
                                     }
                                 }
+                            }
+                        }
 
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
-
+                        Spacer(modifier = Modifier.height(40.dp))
+                    }
+                }
+            }
+            "advanced_network" -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    SubPageLayout(
+                        title = Localizations.tr(appLanguage, "Параметры сети", "Network Parameters", "Netzwerkparameter", "Parámetros de red", "Paramètres réseau", "Parâmetros de rede"),
+                        appLanguage = appLanguage,
+                        onBackClick = { activeSubPage = null },
+                        surfaceColor = surfaceColor,
+                        onSurfaceColor = onSurfaceColor
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
                                 // Direct WiFi discovery
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1965,7 +1994,7 @@ fun SettingsTab(
                                 }
                             }
                         }
-                        
+
                         Spacer(modifier = Modifier.height(40.dp))
                     }
                 }
