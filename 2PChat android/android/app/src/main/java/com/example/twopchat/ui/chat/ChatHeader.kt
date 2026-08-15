@@ -113,38 +113,6 @@ internal fun ChatHeader(
             else -> peerName.take(2).uppercase()
         }
         val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
-        Box(
-            modifier = Modifier.clickable(enabled = !savedMessages, onClick = onShowProfile)
-        ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(43.dp)
-                    .background(primaryColor.copy(alpha = 0.12f), CircleShape),
-            ) {
-                val avatar = P2PMessageRelay.peerAvatars[peerName]
-                when {
-                    avatar != null -> Image(avatar.asImageBitmap(), "Avatar", Modifier.fillMaxSize().clip(CircleShape))
-                    savedMessages -> Icon(
-                        painterResource(R.drawable.ic_saved_messages),
-                        "Saved Messages",
-                        tint = primaryColor,
-                        modifier = Modifier.size(22.dp),
-                    )
-                    else -> Text(initials, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                }
-            }
-            if (!savedMessages && isOnline) {
-                Box(
-                    modifier = Modifier
-                        .size(10.dp)
-                        .background(primaryColor, CircleShape)
-                        .border(1.5.dp, surfaceColor, CircleShape)
-                        .align(Alignment.BottomEnd)
-                )
-            }
-        }
-        Spacer(Modifier.width(10.dp))
         val isMismatch = com.example.twopchat.P2PPreferences.prefs(context)
             .getBoolean("fingerprint_mismatch_$peerName", false)
         val shieldColor = when {
@@ -152,38 +120,72 @@ internal fun ChatHeader(
             isVerified -> Color(0xFF4CAF50)
             else -> Color(0xFFFFC107)
         }
-        Column(
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .weight(1f)
-                .clickable(enabled = !savedMessages, onClick = onShowProfile),
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(enabled = !savedMessages, onClick = onShowProfile)
+                .padding(vertical = 4.dp, horizontal = 2.dp),
         ) {
-            Text(
-                displayName,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = onSurfaceColor,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-            )
-            if (savedMessages) {
+            Box {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(43.dp)
+                        .background(primaryColor.copy(alpha = 0.12f), CircleShape),
+                ) {
+                    val avatar = P2PMessageRelay.peerAvatars[peerName]
+                    when {
+                        avatar != null -> Image(avatar.asImageBitmap(), "Avatar", Modifier.fillMaxSize().clip(CircleShape))
+                        savedMessages -> Icon(
+                            painterResource(R.drawable.ic_saved_messages),
+                            "Saved Messages",
+                            tint = primaryColor,
+                            modifier = Modifier.size(22.dp),
+                        )
+                        else -> Text(initials, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                }
+                if (!savedMessages && isOnline) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(primaryColor, CircleShape)
+                            .border(1.5.dp, surfaceColor, CircleShape)
+                            .align(Alignment.BottomEnd)
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    Localizations.getString("local_storage", appLanguage),
-                    fontSize = 11.sp,
-                    color = onSurfaceVariant.copy(alpha = 0.75f),
+                    displayName,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = onSurfaceColor,
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
-            } else {
-                val transportType = P2PMessageRelay.getPeerTransportType(peerName)
-                val rttMs = P2PMessageRelay.peerRttMs[peerName]
-                ConnectionTypeBadge(
-                    transportType = transportType,
-                    rttMs = rttMs,
-                    appLanguage = appLanguage,
-                    primaryColor = primaryColor,
-                    onSurfaceVariant = onSurfaceVariant,
-                    onClick = onOpenConnectionMode,
-                )
+                if (savedMessages) {
+                    Text(
+                        Localizations.getString("local_storage", appLanguage),
+                        fontSize = 11.sp,
+                        color = onSurfaceVariant.copy(alpha = 0.75f),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                } else {
+                    val transportType = P2PMessageRelay.getPeerTransportType(peerName)
+                    val rttMs = P2PMessageRelay.peerRttMs[peerName]
+                    ConnectionTypeBadge(
+                        transportType = transportType,
+                        rttMs = rttMs,
+                        appLanguage = appLanguage,
+                        primaryColor = primaryColor,
+                        onSurfaceVariant = onSurfaceVariant,
+                    )
+                }
             }
         }
         if (!savedMessages) {
@@ -213,6 +215,18 @@ internal fun ChatHeader(
             }
             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, modifier = Modifier.background(surfaceColor)) {
                 if (!savedMessages) {
+                    DropdownMenuItem(
+                        text = { Text(Localizations.tr(appLanguage, "Режим соединения", "Connection Mode", "Verbindungsmodus", "Modo de conexión", "Mode de connexion", "Modo de conexão"), color = onSurfaceColor) },
+                        onClick = { showMenu = false; onOpenConnectionMode() },
+                        leadingIcon = {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_shield_status),
+                                contentDescription = "Connection Mode",
+                                tint = primaryColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text(Localizations.tr(appLanguage, "Переподключить соединение", "Reconnect Connection", "Verbindung neu herstellen", "Reconectar conexión", "Reconnecter la connexion", "Reconectar conexão"), color = onSurfaceColor) },
                         onClick = { showMenu = false; onReconnect() },
@@ -358,7 +372,6 @@ internal fun ConnectionTypeBadge(
     primaryColor: Color,
     onSurfaceVariant: Color,
     modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null,
 ) {
     val (badgeBg, contentColor, iconRes, label) = when (transportType) {
         TransportType.ONION -> {
@@ -410,11 +423,6 @@ internal fun ConnectionTypeBadge(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
             .background(badgeBg)
-            .then(
-                if (onClick != null) {
-                    Modifier.clickable(onClick = onClick)
-                } else Modifier
-            )
             .padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
         if (iconRes != null) {
@@ -442,15 +450,6 @@ internal fun ConnectionTypeBadge(
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
-        if (onClick != null) {
-            Spacer(Modifier.width(2.dp))
-            Text(
-                text = "▾",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = contentColor.copy(alpha = 0.70f)
-            )
-        }
     }
 }
 
