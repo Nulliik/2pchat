@@ -101,14 +101,30 @@ fun VideoEditorModal(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
-                            contentDescription = if (appLanguage == "Русский") "Отменить" else "Cancel",
+                            contentDescription = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Отменить",
+                                en = "Cancel",
+                                de = "Abbrechen",
+                                es = "Cancelar",
+                                fr = "Annuler",
+                                pt = "Cancelar"
+                            ),
                             tint = onSurfaceColor,
                             modifier = Modifier.size(24.dp)
                         )
                     }
 
                     Text(
-                        text = if (appLanguage == "Русский") "Видеозапись" else "Video",
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Видеозапись",
+                            en = "Video",
+                            de = "Video",
+                            es = "Vídeo",
+                            fr = "Vidéo",
+                            pt = "Vídeo"
+                        ),
                         color = onSurfaceColor,
                         fontSize = 16.sp,
                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
@@ -151,7 +167,15 @@ fun VideoEditorModal(
                         onValueChange = { captionText = it },
                         placeholder = {
                             Text(
-                                text = if (appLanguage == "Русский") "Добавить подпись..." else "Add a caption...",
+                                text = com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Добавить подпись...",
+                                    en = "Add a caption...",
+                                    de = "Beschriftung hinzufügen...",
+                                    es = "Añadir subtítulo...",
+                                    fr = "Ajouter une légende...",
+                                    pt = "Adicionar legenda..."
+                                ),
                                 color = onSurfaceVariant.copy(alpha = 0.6f)
                             )
                         },

@@ -8,6 +8,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.net.Uri
 import android.widget.Toast
+import com.example.twopchat.data.Localizations
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -129,7 +130,15 @@ fun PhotoEditorModal(
         LaunchedEffect(Unit) {
             Toast.makeText(
                 context,
-                if (appLanguage == "Русский") "Не удалось загрузить изображение" else "Failed to load image",
+                Localizations.tr(
+                    appLanguage,
+                    ru = "Не удалось загрузить изображение",
+                    en = "Failed to load image",
+                    de = "Bild konnte nicht geladen werden",
+                    es = "No se pudo cargar la imagen",
+                    fr = "Échec du chargement de l'image",
+                    pt = "Falha ao carregar a imagem"
+                ),
                 Toast.LENGTH_SHORT
             ).show()
             onDismiss()
@@ -329,7 +338,15 @@ fun PhotoEditorModal(
                                     )
                                 } else {
                                     Text(
-                                        text = if (appLanguage == "Русский") option.labelRu else option.labelEn,
+                                        text = Localizations.tr(
+                                            appLanguage,
+                                            ru = option.labelRu,
+                                            en = option.labelEn,
+                                            de = option.labelEn,
+                                            es = if (option == AspectRatioOption.ORIGINAL) "Original" else "Libre",
+                                            fr = if (option == AspectRatioOption.ORIGINAL) "Original" else "Libre",
+                                            pt = if (option == AspectRatioOption.ORIGINAL) "Original" else "Livre"
+                                        ),
                                         fontSize = 12.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                     )
@@ -652,7 +669,15 @@ fun PhotoEditorModal(
                             onValueChange = { captionText = it },
                             placeholder = {
                                 Text(
-                                    text = if (appLanguage == "Русский") "Добавить подпись..." else "Add a caption...",
+                                    text = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Добавить подпись...",
+                                        en = "Add a caption...",
+                                        de = "Beschriftung hinzufügen...",
+                                        es = "Añadir subtítulo...",
+                                        fr = "Ajouter une légende...",
+                                        pt = "Adicionar legenda..."
+                                    ),
                                     color = onSurfaceVariant.copy(alpha = 0.6f),
                                     fontSize = 14.sp
                                 )
@@ -750,7 +775,15 @@ fun PhotoEditorModal(
                                     e.printStackTrace()
                                     Toast.makeText(
                                         context,
-                                        if (appLanguage == "Русский") "Ошибка при сохранении фото" else "Error saving photo",
+                                        Localizations.tr(
+                                            appLanguage,
+                                            ru = "Ошибка при сохранении фото",
+                                            en = "Error saving photo",
+                                            de = "Fehler beim Speichern des Fotos",
+                                            es = "Error al guardar la foto",
+                                            fr = "Erreur lors de l'enregistrement de la photo",
+                                            pt = "Erro ao salvar a foto"
+                                        ),
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 }

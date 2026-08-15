@@ -49,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.R
+import com.example.twopchat.data.Localizations
 import com.example.twopchat.theme.StealthBlack
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -373,7 +374,15 @@ internal fun ChatMessageBubble(
                                         Spacer(Modifier.width(10.dp))
                                         Column {
                                             Text(
-                                                text = if (appLanguage == "Русский") "Стикерпак добавлен" else "Sticker pack added",
+                                                text = Localizations.tr(
+                                                    appLanguage,
+                                                    ru = "Стикерпак добавлен",
+                                                    en = "Sticker pack added",
+                                                    de = "Sticker-Paket hinzugefügt",
+                                                    es = "Pack de stickers añadido",
+                                                    fr = "Pack d'autocollants ajouté",
+                                                    pt = "Pacote de figurinhas adicionado"
+                                                ),
                                                 color = textColor,
                                                 fontWeight = FontWeight.SemiBold,
                                             )
@@ -545,7 +554,15 @@ internal fun ChatMessageBubble(
                                                         ) {
                                                             Icon(
                                                                 imageVector = Icons.Default.Close,
-                                                                contentDescription = if (appLanguage == "Русский") "Отменить" else "Cancel",
+                                                                contentDescription = Localizations.tr(
+                                                                    appLanguage,
+                                                                    ru = "Отменить",
+                                                                    en = "Cancel",
+                                                                    de = "Abbrechen",
+                                                                    es = "Cancelar",
+                                                                    fr = "Annuler",
+                                                                    pt = "Cancelar"
+                                                                ),
                                                                 tint = Color.White,
                                                                 modifier = Modifier.size(20.dp)
                                                             )
@@ -561,11 +578,35 @@ internal fun ChatMessageBubble(
                                                     ) {
                                                         Text(
                                                             text = if (isCancelled) {
-                                                                if (appLanguage == "Русский") "Передача отменена" else "Transfer cancelled"
+                                                                Localizations.tr(
+                                                                    appLanguage,
+                                                                    ru = "Передача отменена",
+                                                                    en = "Transfer cancelled",
+                                                                    de = "Übertragung abgebrochen",
+                                                                    es = "Transferencia cancelada",
+                                                                    fr = "Transfert annulé",
+                                                                    pt = "Transferência cancelada"
+                                                                )
                                                             } else if (hasFailed) {
-                                                                if (appLanguage == "Русский") "Ошибка передачи" else "Transfer failed"
+                                                                Localizations.tr(
+                                                                    appLanguage,
+                                                                    ru = "Ошибка передачи",
+                                                                    en = "Transfer failed",
+                                                                    de = "Übertragungsfehler",
+                                                                    es = "Error de transferencia",
+                                                                    fr = "Échec du transfert",
+                                                                    pt = "Falha na transferência"
+                                                                )
                                                             } else {
-                                                                if (appLanguage == "Русский") "Файл удалён" else "File removed"
+                                                                Localizations.tr(
+                                                                    appLanguage,
+                                                                    ru = "Файл удалён",
+                                                                    en = "File removed",
+                                                                    de = "Datei entfernt",
+                                                                    es = "Archivo eliminado",
+                                                                    fr = "Fichier supprimé",
+                                                                    pt = "Arquivo removido"
+                                                                )
                                                             },
                                                             color = textColor.copy(alpha = 0.75f),
                                                             fontSize = 13.sp,
@@ -830,7 +871,15 @@ internal fun ChatMessageBubble(
                                                     ) {
                                                         Icon(
                                                             imageVector = Icons.Default.Close,
-                                                            contentDescription = if (appLanguage == "Русский") "Отменить" else "Cancel",
+                                                            contentDescription = Localizations.tr(
+                                                                appLanguage,
+                                                                ru = "Отменить",
+                                                                en = "Cancel",
+                                                                de = "Abbrechen",
+                                                                es = "Cancelar",
+                                                                fr = "Annuler",
+                                                                pt = "Cancelar"
+                                                            ),
                                                             tint = Color.White,
                                                             modifier = Modifier.size(20.dp)
                                                         )
@@ -845,11 +894,35 @@ internal fun ChatMessageBubble(
                                                 ) {
                                                     Text(
                                                         text = if (isCancelled) {
-                                                            if (appLanguage == "Русский") "Передача отменена" else "Transfer cancelled"
+                                                            Localizations.tr(
+                                                                appLanguage,
+                                                                ru = "Передача отменена",
+                                                                en = "Transfer cancelled",
+                                                                de = "Übertragung abgebrochen",
+                                                                es = "Transferencia cancelada",
+                                                                fr = "Transfert annulé",
+                                                                pt = "Transferência cancelada"
+                                                            )
                                                         } else if (hasFailed) {
-                                                            if (appLanguage == "Русский") "Ошибка передачи" else "Transfer failed"
+                                                            Localizations.tr(
+                                                                appLanguage,
+                                                                ru = "Ошибка передачи",
+                                                                en = "Transfer failed",
+                                                                de = "Übertragungsfehler",
+                                                                es = "Error de transferencia",
+                                                                fr = "Échec du transfert",
+                                                                pt = "Falha na transferência"
+                                                            )
                                                         } else {
-                                                            if (appLanguage == "Русский") "Файл удалён" else "File removed"
+                                                            Localizations.tr(
+                                                                appLanguage,
+                                                                ru = "Файл удалён",
+                                                                en = "File removed",
+                                                                de = "Datei entfernt",
+                                                                es = "Archivo eliminado",
+                                                                fr = "Fichier supprimé",
+                                                                pt = "Arquivo removido"
+                                                            )
                                                         },
                                                         color = Color.White,
                                                         fontSize = 13.sp,
@@ -1001,11 +1074,35 @@ internal fun ChatMessageBubble(
                                                     }
                                                     "$pct% • $speedStr"
                                                 } else if (isCancelled) {
-                                                    if (appLanguage == "Русский") "Передача отменена" else "Transfer cancelled"
+                                                    Localizations.tr(
+                                                        appLanguage,
+                                                        ru = "Передача отменена",
+                                                        en = "Transfer cancelled",
+                                                        de = "Übertragung abgebrochen",
+                                                        es = "Transferencia cancelada",
+                                                        fr = "Transfert annulé",
+                                                        pt = "Transferência cancelada"
+                                                    )
                                                 } else if (hasFailed) {
-                                                    if (appLanguage == "Русский") "Ошибка передачи" else "Transfer failed"
+                                                    Localizations.tr(
+                                                        appLanguage,
+                                                        ru = "Ошибка передачи",
+                                                        en = "Transfer failed",
+                                                        de = "Übertragungsfehler",
+                                                        es = "Error de transferencia",
+                                                        fr = "Échec du transfert",
+                                                        pt = "Falha na transferência"
+                                                    )
                                                 } else if (!attachmentAvailable) {
-                                                    if (appLanguage == "Русский") "Файл удалён" else "File removed"
+                                                    Localizations.tr(
+                                                        appLanguage,
+                                                        ru = "Файл удалён",
+                                                        en = "File removed",
+                                                        de = "Datei entfernt",
+                                                        es = "Archivo eliminado",
+                                                        fr = "Fichier supprimé",
+                                                        pt = "Arquivo removido"
+                                                    )
                                                 } else {
                                                     "Encrypted Document"
                                                 }
@@ -1035,7 +1132,15 @@ internal fun ChatMessageBubble(
                                                 if (msg.isMe) {
                                                     Spacer(modifier = Modifier.width(8.dp))
                                                     Text(
-                                                        text = if (appLanguage == "Русский") "Отменить" else "Cancel",
+                                                        text = Localizations.tr(
+                                                            appLanguage,
+                                                            ru = "Отменить",
+                                                            en = "Cancel",
+                                                            de = "Abbrechen",
+                                                            es = "Cancelar",
+                                                            fr = "Annuler",
+                                                            pt = "Cancelar"
+                                                        ),
                                                         color = if (msg.isMe) Color.White else primaryColor,
                                                         fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold,
@@ -1059,11 +1164,15 @@ internal fun ChatMessageBubble(
                                         )
                                     } else {
                                         Text(
-                                            text = if (appLanguage == "Русский") {
-                                                "Голосовой файл удалён"
-                                            } else {
-                                                "Voice file removed"
-                                            },
+                                            text = Localizations.tr(
+                                                appLanguage,
+                                                ru = "Голосовой файл удалён",
+                                                en = "Voice file removed",
+                                                de = "Sprachdatei entfernt",
+                                                es = "Archivo de voz eliminado",
+                                                fr = "Fichier vocal supprimé",
+                                                pt = "Arquivo de voz removido"
+                                            ),
                                             color = textColor.copy(alpha = 0.7f),
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.Medium,

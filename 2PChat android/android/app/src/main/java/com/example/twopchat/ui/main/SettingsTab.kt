@@ -961,8 +961,8 @@ fun SettingsTab(
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 SettingsRow(
-                                    title = if (appLanguage == "Русский") "Продвинутые параметры сети" else "Advanced Network Settings",
-                                    subtitle = if (appLanguage == "Русский") "Порт, UPnP (Авто-NAT), IPv4, WiFi Direct" else "Listener port, UPnP, IPv4, WiFi Direct",
+                                    title = Localizations.tr(appLanguage, "Продвинутые параметры сети", "Advanced Network Settings", "Erweiterte Netzwerkeinstellungen", "Ajustes de red avanzados", "Paramètres réseau avancés", "Configurações avançadas de rede"),
+                                    subtitle = Localizations.tr(appLanguage, "Порт, UPnP (Авто-NAT), IPv4, WiFi Direct", "Listener port, UPnP, IPv4, WiFi Direct", "Port, UPnP, IPv4, WiFi Direct", "Puerto, UPnP, IPv4, WiFi Direct", "Port, UPnP, IPv4, WiFi Direct", "Porta, UPnP, IPv4, WiFi Direct"),
                                     iconRes = com.example.twopchat.R.drawable.ic_menu_settings,
                                     iconColor = Color(0xFF0EA5E9),
                                     onSurfaceColor = onSurfaceColor,

@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.twopchat.R
+import com.example.twopchat.data.Localizations
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,7 +63,6 @@ fun AlbumPreviewModal(
         } else null
     }
 
-    val isRu = appLanguage == "Русский"
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -98,7 +98,15 @@ fun AlbumPreviewModal(
                         )
                     }
                     Text(
-                        text = if (isRu) "Альбом (${currentFiles.size})" else "Album (${currentFiles.size})",
+                        text = Localizations.tr(
+                            appLanguage,
+                            ru = "Альбом (${currentFiles.size})",
+                            en = "Album (${currentFiles.size})",
+                            de = "Album (${currentFiles.size})",
+                            es = "Álbum (${currentFiles.size})",
+                            fr = "Album (${currentFiles.size})",
+                            pt = "Álbum (${currentFiles.size})"
+                        ),
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold
@@ -168,7 +176,15 @@ fun AlbumPreviewModal(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Text(
-                                text = "◀ " + (if (isRu) "Влево" else "Move Left"),
+                                text = Localizations.tr(
+                                    appLanguage,
+                                    ru = "◀ Влево",
+                                    en = "◀ Left",
+                                    de = "◀ Links",
+                                    es = "◀ Izquierda",
+                                    fr = "◀ Gauche",
+                                    pt = "◀ Esquerda"
+                                ),
                                 color = if (selectedPreviewIndex > 0) Color.White else Color.White.copy(alpha = 0.3f),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
@@ -179,7 +195,15 @@ fun AlbumPreviewModal(
                                 }
                             )
                             Text(
-                                text = (if (isRu) "Вправо" else "Move Right") + " ▶",
+                                text = Localizations.tr(
+                                    appLanguage,
+                                    ru = "Вправо ▶",
+                                    en = "Right ▶",
+                                    de = "Rechts ▶",
+                                    es = "Derecha ▶",
+                                    fr = "Droite ▶",
+                                    pt = "Direita ▶"
+                                ),
                                 color = if (selectedPreviewIndex < currentFiles.lastIndex) Color.White else Color.White.copy(alpha = 0.3f),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
@@ -270,7 +294,15 @@ fun AlbumPreviewModal(
                             onValueChange = { captionText = it },
                             placeholder = {
                                 Text(
-                                    text = if (isRu) "Добавить подпись..." else "Add a caption...",
+                                    text = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Добавить подпись...",
+                                        en = "Add a caption...",
+                                        de = "Beschriftung hinzufügen...",
+                                        es = "Añadir subtítulo...",
+                                        fr = "Ajouter une légende...",
+                                        pt = "Adicionar legenda..."
+                                    ),
                                     color = onSurfaceColor.copy(alpha = 0.5f)
                                 )
                             },
