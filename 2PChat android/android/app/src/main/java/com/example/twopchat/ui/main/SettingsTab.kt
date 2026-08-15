@@ -3855,191 +3855,108 @@ private fun VisualThemeSelector(
 ) {
     val currentScheme = if (accentScheme.isNotBlank()) accentScheme else if (useCerulean) "cerulean" else "mint"
 
-    val presets = remember {
+    val presets = remember(isDarkTheme, useAmoled) {
         listOf(
             ThemePreset(
-                id = "mint_dark",
-                titleRu = "Тёмная Mint",
-                titleEn = "Mint Dark",
-                isDark = true,
+                id = "mint",
+                titleRu = "Mint Green",
+                titleEn = "Mint Green",
+                isDark = isDarkTheme,
                 accentScheme = "mint",
-                useAmoled = false,
-                previewBg = Color(0xFF0D131D),
-                previewIncomingBg = Color(0xFF1E293B),
-                previewIncomingText = Color(0xFFF8FAFC),
-                previewOutgoingBg = Color(0xFF00E5A3),
-                previewOutgoingText = Color(0xFF000000),
+                useAmoled = useAmoled,
+                previewBg = when {
+                    !isDarkTheme -> Color(0xFFF8FAFC)
+                    useAmoled -> Color(0xFF000000)
+                    else -> Color(0xFF0D131D)
+                },
+                previewIncomingBg = when {
+                    !isDarkTheme -> Color(0xFFE2E8F0)
+                    useAmoled -> Color(0xFF171717)
+                    else -> Color(0xFF1E293B)
+                },
+                previewIncomingText = when {
+                    !isDarkTheme -> Color(0xFF0F172A)
+                    else -> Color(0xFFF8FAFC)
+                },
+                previewOutgoingBg = if (!isDarkTheme) Color(0xFF10B981) else Color(0xFF00E5A3),
+                previewOutgoingText = if (!isDarkTheme) Color(0xFFFFFFFF) else Color(0xFF000000),
             ),
             ThemePreset(
-                id = "cerulean_dark",
+                id = "cerulean",
                 titleRu = "Cerulean Blue",
                 titleEn = "Cerulean Blue",
-                isDark = true,
+                isDark = isDarkTheme,
                 accentScheme = "cerulean",
-                useAmoled = false,
-                previewBg = Color(0xFF0B141F),
-                previewIncomingBg = Color(0xFF1C2735),
-                previewIncomingText = Color(0xFFF8FAFC),
+                useAmoled = useAmoled,
+                previewBg = when {
+                    !isDarkTheme -> Color(0xFFF0F4F8)
+                    useAmoled -> Color(0xFF000000)
+                    else -> Color(0xFF0B141F)
+                },
+                previewIncomingBg = when {
+                    !isDarkTheme -> Color(0xFFE2E8F0)
+                    useAmoled -> Color(0xFF171717)
+                    else -> Color(0xFF1C2735)
+                },
+                previewIncomingText = when {
+                    !isDarkTheme -> Color(0xFF0F172A)
+                    else -> Color(0xFFF8FAFC)
+                },
                 previewOutgoingBg = Color(0xFF007AFF),
                 previewOutgoingText = Color(0xFFFFFFFF),
             ),
             ThemePreset(
-                id = "purple_dark",
+                id = "purple",
                 titleRu = "Amethyst Purple",
                 titleEn = "Amethyst Purple",
-                isDark = true,
+                isDark = isDarkTheme,
                 accentScheme = "purple",
-                useAmoled = false,
-                previewBg = Color(0xFF0D121B),
-                previewIncomingBg = Color(0xFF1E2536),
-                previewIncomingText = Color(0xFFF8FAFC),
-                previewOutgoingBg = Color(0xFFBF5AF2),
+                useAmoled = useAmoled,
+                previewBg = when {
+                    !isDarkTheme -> Color(0xFFF8F5FC)
+                    useAmoled -> Color(0xFF000000)
+                    else -> Color(0xFF0D121B)
+                },
+                previewIncomingBg = when {
+                    !isDarkTheme -> Color(0xFFE2E8F0)
+                    useAmoled -> Color(0xFF171717)
+                    else -> Color(0xFF1E2536)
+                },
+                previewIncomingText = when {
+                    !isDarkTheme -> Color(0xFF0F172A)
+                    else -> Color(0xFFF8FAFC)
+                },
+                previewOutgoingBg = if (!isDarkTheme) Color(0xFF9333EA) else Color(0xFFBF5AF2),
                 previewOutgoingText = Color(0xFFFFFFFF),
             ),
             ThemePreset(
-                id = "amber_dark",
+                id = "amber",
                 titleRu = "Solar Amber",
                 titleEn = "Solar Amber",
-                isDark = true,
+                isDark = isDarkTheme,
                 accentScheme = "amber",
-                useAmoled = false,
-                previewBg = Color(0xFF0E131C),
-                previewIncomingBg = Color(0xFF1E2736),
-                previewIncomingText = Color(0xFFF8FAFC),
-                previewOutgoingBg = Color(0xFFFF9500),
-                previewOutgoingText = Color(0xFF000000),
-            ),
-            ThemePreset(
-                id = "amoled_mint",
-                titleRu = "AMOLED Mint",
-                titleEn = "AMOLED Mint",
-                isDark = true,
-                accentScheme = "mint",
-                useAmoled = true,
-                previewBg = Color(0xFF000000),
-                previewIncomingBg = Color(0xFF171717),
-                previewIncomingText = Color(0xFFF8FAFC),
-                previewOutgoingBg = Color(0xFF00E5A3),
-                previewOutgoingText = Color(0xFF000000),
-            ),
-            ThemePreset(
-                id = "amoled_blue",
-                titleRu = "AMOLED Blue",
-                titleEn = "AMOLED Blue",
-                isDark = true,
-                accentScheme = "cerulean",
-                useAmoled = true,
-                previewBg = Color(0xFF000000),
-                previewIncomingBg = Color(0xFF171717),
-                previewIncomingText = Color(0xFFF8FAFC),
-                previewOutgoingBg = Color(0xFF007AFF),
-                previewOutgoingText = Color(0xFFFFFFFF),
-            ),
-            ThemePreset(
-                id = "amoled_purple",
-                titleRu = "AMOLED Purple",
-                titleEn = "AMOLED Purple",
-                isDark = true,
-                accentScheme = "purple",
-                useAmoled = true,
-                previewBg = Color(0xFF000000),
-                previewIncomingBg = Color(0xFF171717),
-                previewIncomingText = Color(0xFFF8FAFC),
-                previewOutgoingBg = Color(0xFFBF5AF2),
-                previewOutgoingText = Color(0xFFFFFFFF),
-            ),
-            ThemePreset(
-                id = "amoled_amber",
-                titleRu = "AMOLED Amber",
-                titleEn = "AMOLED Amber",
-                isDark = true,
-                accentScheme = "amber",
-                useAmoled = true,
-                previewBg = Color(0xFF000000),
-                previewIncomingBg = Color(0xFF171717),
-                previewIncomingText = Color(0xFFF8FAFC),
-                previewOutgoingBg = Color(0xFFFF9500),
-                previewOutgoingText = Color(0xFF000000),
-            ),
-            ThemePreset(
-                id = "mint_light",
-                titleRu = "Светлая Mint",
-                titleEn = "Light Mint",
-                isDark = false,
-                accentScheme = "mint",
-                useAmoled = false,
-                previewBg = Color(0xFFF8FAFC),
-                previewIncomingBg = Color(0xFFE2E8F0),
-                previewIncomingText = Color(0xFF0F172A),
-                previewOutgoingBg = Color(0xFF10B981),
-                previewOutgoingText = Color(0xFFFFFFFF),
-            ),
-            ThemePreset(
-                id = "cerulean_light",
-                titleRu = "Светлая Blue",
-                titleEn = "Light Cerulean",
-                isDark = false,
-                accentScheme = "cerulean",
-                useAmoled = false,
-                previewBg = Color(0xFFF0F4F8),
-                previewIncomingBg = Color(0xFFE2E8F0),
-                previewIncomingText = Color(0xFF0F172A),
-                previewOutgoingBg = Color(0xFF007AFF),
-                previewOutgoingText = Color(0xFFFFFFFF),
-            ),
-            ThemePreset(
-                id = "purple_light",
-                titleRu = "Светлая Purple",
-                titleEn = "Light Purple",
-                isDark = false,
-                accentScheme = "purple",
-                useAmoled = false,
-                previewBg = Color(0xFFF8F5FC),
-                previewIncomingBg = Color(0xFFE2E8F0),
-                previewIncomingText = Color(0xFF0F172A),
-                previewOutgoingBg = Color(0xFF9333EA),
-                previewOutgoingText = Color(0xFFFFFFFF),
-            ),
-            ThemePreset(
-                id = "amber_light",
-                titleRu = "Светлая Amber",
-                titleEn = "Light Amber",
-                isDark = false,
-                accentScheme = "amber",
-                useAmoled = false,
-                previewBg = Color(0xFFFAF9F5),
-                previewIncomingBg = Color(0xFFE2E8F0),
-                previewIncomingText = Color(0xFF0F172A),
-                previewOutgoingBg = Color(0xFFD97706),
-                previewOutgoingText = Color(0xFFFFFFFF),
+                useAmoled = useAmoled,
+                previewBg = when {
+                    !isDarkTheme -> Color(0xFFFAF9F5)
+                    useAmoled -> Color(0xFF000000)
+                    else -> Color(0xFF0E131C)
+                },
+                previewIncomingBg = when {
+                    !isDarkTheme -> Color(0xFFE2E8F0)
+                    useAmoled -> Color(0xFF171717)
+                    else -> Color(0xFF1E2736)
+                },
+                previewIncomingText = when {
+                    !isDarkTheme -> Color(0xFF0F172A)
+                    else -> Color(0xFFF8FAFC)
+                },
+                previewOutgoingBg = if (!isDarkTheme) Color(0xFFD97706) else Color(0xFFFF9500),
+                previewOutgoingText = if (!isDarkTheme) Color(0xFFFFFFFF) else Color(0xFF000000),
             ),
         )
     }
 
-    val activePresetId = remember(isDarkTheme, currentScheme, useAmoled) {
-        when {
-            !isDarkTheme -> when (currentScheme) {
-                "cerulean" -> "cerulean_light"
-                "purple" -> "purple_light"
-                "amber" -> "amber_light"
-                else -> "mint_light"
-            }
-            useAmoled -> when (currentScheme) {
-                "cerulean" -> "amoled_blue"
-                "purple" -> "amoled_purple"
-                "amber" -> "amoled_amber"
-                else -> "amoled_mint"
-            }
-            else -> when (currentScheme) {
-                "cerulean" -> "cerulean_dark"
-                "purple" -> "purple_dark"
-                "amber" -> "amber_dark"
-                else -> "mint_dark"
-            }
-        }
-    }
-
-    val activePreset = presets.firstOrNull { it.id == activePresetId } ?: presets.first()
+    val activePreset = presets.firstOrNull { it.accentScheme == currentScheme } ?: presets.first()
 
     Column(
         modifier = Modifier
@@ -4154,7 +4071,7 @@ private fun VisualThemeSelector(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 presets.forEach { preset ->
-                    val isSelected = preset.id == activePresetId
+                    val isSelected = preset.accentScheme == currentScheme
                     val title = if (appLanguage == "Русский") preset.titleRu else preset.titleEn
 
                     Column(
@@ -4163,9 +4080,7 @@ private fun VisualThemeSelector(
                             .width(108.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .clickable {
-                                onThemeChanged(preset.isDark)
                                 onAccentSchemeChanged(preset.accentScheme)
-                                onAmoledChanged(preset.useAmoled)
                             }
                             .border(
                                 width = if (isSelected) 2.dp else 1.dp,
