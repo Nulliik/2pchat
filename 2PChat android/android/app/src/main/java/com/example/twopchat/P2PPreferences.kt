@@ -117,6 +117,14 @@ object P2PPreferences {
     fun setTorOnionHostname(context: Context, hostname: String?): Boolean =
         prefs(context).edit().putString(TOR_ONION_HOSTNAME, hostname).commit()
 
+    private const val KEY_TOR_HIDDEN_SERVICE_ENABLED = "tor_hidden_service_enabled"
+
+    fun isTorHiddenServiceEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_TOR_HIDDEN_SERVICE_ENABLED, true)
+
+    fun setTorHiddenServiceEnabled(context: Context, enabled: Boolean): Boolean =
+        prefs(context).edit().putBoolean(KEY_TOR_HIDDEN_SERVICE_ENABLED, enabled).commit()
+
     fun getEffectiveTorBridgeLines(context: Context): List<String> =
         TorBridgeCatalog.select(
             customBridges = getTorBridgeLines(context),

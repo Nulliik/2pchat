@@ -117,6 +117,8 @@ def _record_endpoint_success(endpoint: str) -> None:
 
 def _is_endpoint_in_cooldown(endpoint: str) -> bool:
     """Return True if *endpoint* is currently in its stale cooldown window."""
+    if _is_onion_endpoint(endpoint):
+        return False
     now = time.monotonic()
     with _stale_ep_lock:
         count, first = _stale_endpoint_failures.get(endpoint, (0, now))
@@ -702,16 +704,21 @@ def _format_endpoint(host: str, port: int) -> str:
 
 def _transport_for_endpoint(endpoint: str) -> str:
     host = endpoint.rsplit(":", 1)[0].strip("[]") if endpoint else ""
-    if host.endswith(".onion"):
+    if host.lower().endswith(".onion"):
         return "Tor Onion"
     return "Yggdrasil" if ":" in host else "Direct P2P"
 
 
+def _is_onion_endpoint(endpoint: str) -> bool:
+    host = endpoint.rsplit(":", 1)[0].strip("[]") if endpoint else ""
+    return host.lower().endswith(".onion")
+
+
 def _is_ipv4_endpoint(endpoint: str) -> bool:
-    if not endpoint or ".onion" in endpoint:
+    host = endpoint.rsplit(":", 1)[0].strip("[]") if endpoint else ""
+    if not host or host.lower().endswith(".onion"):
         return False
-    host = endpoint.rsplit(":", 1)[0].strip("[]")
-    return bool(host) and ":" not in host
+    return ":" not in host
 
 
 def _prune_incoming_files(now: float | None = None):
@@ -815,11 +822,11 @@ def set_ipv4_enabled(enabled: bool):
 
 def _endpoint_sort_key(endpoint_str: str) -> tuple[int, str]:
     proxy_active = get_proxy_configuration().get("enabled", False)
-    if proxy_active and ".onion" in endpoint_str:
+    if proxy_active and ".onion" in endpoint_str.lower():
         return (0, endpoint_str)
     if endpoint_str.startswith("["):
         return (1, endpoint_str)
-    if ".onion" in endpoint_str:
+    if ".onion" in endpoint_str.lower():
         return (2, endpoint_str)
     return (3, endpoint_str)
 
@@ -1014,21 +1021,28 @@ async def _send_local_identity_info(session) -> bool:
 def _canonical_expected_fingerprint(value: str | None) -> str | None:
     if value is None or not str(value).strip():
         return None
-    candidate = str(value).strip()
+    candidate = str(value).strip().replace(" ", "+")
+    missing_padding = len(candidate) % 4
+    if missing_padding:
+        candidate += "=" * (4 - missing_padding)
     try:
-        decoded = base64.b64decode(candidate, validate=True)
+        decoded = base64.b64decode(candidate, validate=False)
     except Exception as exc:
         raise ValueError("invite fingerprint is not valid Base64") from exc
     if len(decoded) != 32:
         raise ValueError("invite fingerprint must encode exactly 32 bytes")
-    canonical = base64.b64encode(decoded).decode("ascii")
-    if candidate != canonical:
-        raise ValueError("invite fingerprint is not in canonical Base64 form")
-    return canonical
+    return base64.b64encode(decoded).decode("ascii")
 
 
 def _parse_numeric_endpoint(endpoint: str) -> tuple[str, int] | None:
-    """Accept only numeric IPv4 or IPv6 endpoints supplied by local discovery."""
+    """Accept numeric IPv4, IPv6, or Tor .onion endpoints supplied by discovery."""
+    onion_match = re.fullmatch(r"([a-z2-7]{16,56}\.onion):(\d{1,5})", endpoint, re.IGNORECASE)
+    if onion_match:
+        host, raw_port = onion_match.groups()
+        port = int(raw_port)
+        if port in range(1, 65536):
+            return host.lower(), port
+        return None
     ipv6_match = re.fullmatch(r"\[([0-9a-fA-F:]+)\]:(\d{1,5})", endpoint)
     if ipv6_match:
         host, raw_port = ipv6_match.groups()
@@ -1044,6 +1058,7 @@ def _parse_numeric_endpoint(endpoint: str) -> tuple[str, int] | None:
         return None
     try:
         socket.inet_pton(family, host)
+        return host, port
     except OSError:
         return None
     return host, port
@@ -1071,8 +1086,9 @@ async def _verify_live_endpoint(
             endpoint, identity_priv, signing_key, None, expected_fingerprint
         )
         await session.send_reliable({"type": "identity_probe"})
+        timeout_val = 15.0 if _is_onion_endpoint(endpoint) else 3.0
         while True:
-            message = await asyncio.wait_for(session.receive_message(), timeout=3.0)
+            message = await asyncio.wait_for(session.receive_message(), timeout=timeout_val)
             if message.get("type") != "identity_info":
                 continue
             announced_name = str(message.get("nickname", ""))
@@ -1262,11 +1278,12 @@ def resolve_peers(
             if get_proxy_configuration()["enabled"] and getattr(tracker, "discovery_scheme", "") != "http-tracker":
                 _set_tracker_diagnostic(t_name, "resolve", "SKIPPED (Tor/SOCKS5 active)")
                 return []
+            is_proxy = get_proxy_configuration().get("enabled", False)
             provider = _tracker_provider(
                 tracker,
                 peer_port=listener_port,
                 transport="direct",
-                timeout=3.0,
+                timeout=8.0 if is_proxy else 3.0,
                 retries=1,
             )
             result = await provider.resolve(nickname, shared_code)
@@ -1336,8 +1353,9 @@ def resolve_peers(
                     traceback.print_exception(type(r), r, r.__traceback__)
         return flat_results
 
+    is_proxy = get_proxy_configuration().get("enabled", False)
     try:
-        descriptors = _run_coro_safely(_resolve_all(), timeout=15.0)
+        descriptors = _run_coro_safely(_resolve_all(), timeout=20.0 if is_proxy else 15.0)
     except Exception as e:
         if isinstance(e, (urllib.error.URLError, OSError)):
             print(f"Network error in resolve_peers loop: {e}")
@@ -1386,7 +1404,7 @@ def resolve_peers(
         )
 
     try:
-        verified = _run_coro_safely(_verify_all(), timeout=10.0)
+        verified = _run_coro_safely(_verify_all(), timeout=35.0 if is_proxy else 10.0)
     except Exception:
         verified = []
 
@@ -1495,7 +1513,7 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
             return []
 
     batches = await asyncio.gather(
-        *[_query(name) for name in _resolve_tracker_names("Yemekyedim HTTPS")],
+        *[_query(name) for name in _resolve_tracker_names()],
         _query_dht(),
         return_exceptions=True,
     )
@@ -1515,15 +1533,12 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
     result = sorted(dict.fromkeys(endpoints), key=_endpoint_sort_key)
     proxy_active = get_proxy_configuration().get("enabled", False)
     if proxy_active:
-        # When Tor is active, prioritize .onion and Yggdrasil IPv6 endpoints.
-        # If .onion or Yggdrasil endpoints exist, return them exclusively to avoid attempting
+        # When Tor is active, prioritize Yggdrasil IPv6 and Tor Onion endpoints.
+        # If non-IPv4 endpoints exist, return them exclusively to avoid attempting
         # dead connections to Tor exit node IPs.
-        onion_eps = [ep for ep in result if ".onion" in ep]
-        if onion_eps:
-            return onion_eps
-        ygg_eps = [ep for ep in result if not _is_ipv4_endpoint(ep)]
-        if ygg_eps:
-            return ygg_eps
+        non_ipv4_eps = [ep for ep in result if not _is_ipv4_endpoint(ep)]
+        if non_ipv4_eps:
+            return non_ipv4_eps
     return result if ipv4_enabled else [ep for ep in result if not _is_ipv4_endpoint(ep)]
 
 
@@ -1575,11 +1590,10 @@ def announce_peer_endpoints(
     if proxy_active:
         # When Tor is active, outbound tracker connections route via Tor exit relays.
         # Trackers cannot forward incoming IPv4 traffic to clients behind Tor, and
-        # local private IPv4 is useless to remote peers. Therefore, when Tor is active,
-        # strictly announce ONLY .onion and Yggdrasil IPv6 endpoints.
-        onion_or_ygg = [ep for ep in endpoints if ".onion" in ep.host or ":" in ep.host]
-        if onion_or_ygg:
-            endpoints = onion_or_ygg
+        # local private IPv4 is useless to remote peers. Therefore, when Tor is active
+        # and Yggdrasil IPv6 or Tor Onion is available, strictly announce non-IPv4 endpoints.
+        if local_yggdrasil_available or any(ep.host.lower().endswith(".onion") for ep in endpoints):
+            endpoints = [ep for ep in endpoints if not _is_ipv4_endpoint(ep.host)]
     elif ipv4_policy == "never":
         # Never announce IPv4 endpoints
         endpoints = [ep for ep in endpoints if ":" in ep.host]
@@ -2502,16 +2516,17 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
     writer = None
     session = None
     proxy_cfg = get_proxy_configuration()
-    connect_timeout = 15.0 if host.endswith(".onion") else 5.0
-    exchange_timeout = 10.0 if host.endswith(".onion") else 5.0
+    is_onion = host.lower().endswith(".onion")
+    connect_timeout = 15.0 if is_onion else 5.0
+    exchange_timeout = 10.0 if is_onion else 5.0
     try:
         reader, writer = await asyncio.wait_for(
             transport_connect(
                 "direct",
                 host,
                 port,
-                proxy_host=proxy_cfg["host"],
-                proxy_port=proxy_cfg["port"],
+                proxy_host=proxy_cfg.get("host") or "127.0.0.1",
+                proxy_port=proxy_cfg.get("port") or 9050,
             ),
             timeout=connect_timeout,
         )

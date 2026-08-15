@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.Canvas
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -50,7 +51,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -86,7 +91,7 @@ fun TorSettingsPage(
     val isRotatingBridge by TorManager.isRotatingBridge.collectAsState()
     val torBootstrapProgress by TorManager.bootstrapProgress.collectAsState()
     val torBootstrapFailure by TorManager.lastBootstrapFailureReason.collectAsState()
-    val onionAddress by TorManager.onionAddress.collectAsState()
+    val torOnionAddress by TorManager.onionAddress.collectAsState()
     var showOnionQr by remember { mutableStateOf(false) }
 
     var torUserRequested by remember {
@@ -242,18 +247,9 @@ fun TorSettingsPage(
                         },
                     )
                 }
-            }
-
-            val activeOnion = onionAddress ?: P2PPreferences.getTorOnionHostname(context)
-            if (activeOnion != null) {
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    text = if (isRussian) "Скрытый сервис (Onion v3)" else "Onion v3 Hidden Service",
-                    color = onSurfaceColor,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-                )
-                TorInnerCard(surfaceColor, onSurfaceColor) {
+                if (!torOnionAddress.isNullOrBlank()) {
+                    val activeOnion = torOnionAddress.orEmpty()
+                    HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.06f))
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -265,13 +261,13 @@ fun TorSettingsPage(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = if (isRussian) "Постоянный .onion адрес" else "Permanent .onion address",
+                                text = if (isRussian) "Onion-адрес (v3)" else "Onion Address (v3)",
                                 fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
                                 color = onSurfaceColor,
+                                fontWeight = FontWeight.SemiBold,
                             )
                             Text(
-                                text = if (isTorRunning) "● " + (if (isRussian) "Активен" else "Active") else "○ " + (if (isRussian) "Ожидание" else "Standby"),
+                                text = if (isTorRunning) (if (isRussian) "Активен" else "Active") else (if (isRussian) "Остановлен" else "Stopped"),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isTorRunning) Color(0xFF4CAF50) else onSurfaceVariant.copy(alpha = 0.6f),
@@ -308,10 +304,10 @@ fun TorSettingsPage(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+                            val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
                             AssistChip(
                                 onClick = {
-                                    clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(activeOnion))
+                                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(activeOnion))
                                     Toast.makeText(
                                         context,
                                         if (isRussian) "Onion-адрес скопирован" else "Onion address copied",
@@ -345,7 +341,7 @@ fun TorSettingsPage(
                             Spacer(Modifier.height(12.dp))
                             Card(
                                 shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
                                 modifier = Modifier
                                     .size(200.dp)
                                     .align(Alignment.CenterHorizontally)
@@ -857,3 +853,27 @@ private fun TorInnerCard(
         Column { content() }
     }
 }
+
+@Composable
+private fun CustomCopyIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val strokeW = (w * 0.10f).coerceAtLeast(1.5f)
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.28f, h * 0.08f),
+            size = Size(w * 0.62f, h * 0.62f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.12f, h * 0.12f),
+            style = Stroke(width = strokeW),
+        )
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.08f, h * 0.28f),
+            size = Size(w * 0.62f, h * 0.62f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.12f, h * 0.12f),
+            style = Stroke(width = strokeW),
+        )
+    }
+}
+

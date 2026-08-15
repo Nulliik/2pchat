@@ -24,7 +24,35 @@ class TorManagerTest {
         assertTrue(config.contains("ControlPort 127.0.0.1:9051"))
         assertTrue(config.contains("CookieAuthentication 1"))
         assertTrue(config.contains("SafeLogging 1"))
+        assertTrue(config.contains("HiddenServiceDir /data/user/0/com.example.twopchat/files/app_tor/hs"))
+        assertTrue(config.contains("HiddenServicePort 50001 127.0.0.1:50001"))
         assertFalse(config.contains("UseBridges 1"))
+    }
+
+    @Test
+    fun testReadOnionHostnameValidAndInvalid() {
+        val tempDir = File.createTempFile("tor_test", "").apply {
+            delete()
+            mkdirs()
+        }
+        try {
+            val hsDir = File(tempDir, "hs").apply { mkdirs() }
+            val hostnameFile = File(hsDir, "hostname")
+
+            // Empty / missing
+            assertNull(TorManager.readOnionHostname(tempDir))
+
+            // Valid v3 onion address (56 base32 characters)
+            val validOnion = "expyuz5wqqfdgah56emhgahna5awqqfdgah56emhgahna5awqqfdgah5.onion"
+            hostnameFile.writeText(validOnion + "\n")
+            assertEquals(validOnion, TorManager.readOnionHostname(tempDir))
+
+            // Invalid address
+            hostnameFile.writeText("invalid-onion\n")
+            assertNull(TorManager.readOnionHostname(tempDir))
+        } finally {
+            tempDir.deleteRecursively()
+        }
     }
 
     @Test
@@ -347,13 +375,13 @@ class TorManagerTest {
 
     @Test
     fun testReadOnionHostname() {
-        val tempDir = File.createTempFile("tor_hs_", "_test")
+        val tempDir = java.io.File.createTempFile("tor_hs_", "_test")
         tempDir.delete()
         tempDir.mkdirs()
         try {
             assertNull(TorManager.readOnionHostname(tempDir))
 
-            val hostnameFile = File(tempDir, "hostname")
+            val hostnameFile = java.io.File(tempDir, "hostname")
             hostnameFile.writeText("exmpl567890abcdefghijklmnopqrstuvwxyz12345678901234.onion\n")
             val hostname = TorManager.readOnionHostname(tempDir)
             assertEquals("exmpl567890abcdefghijklmnopqrstuvwxyz12345678901234.onion", hostname)

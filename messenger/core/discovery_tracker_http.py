@@ -72,19 +72,25 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         return "&".join(pieces)
 
     @staticmethod
-    def _split_endpoints(endpoints: List[PeerEndpoint]) -> tuple[PeerEndpoint | None, PeerEndpoint | None]:
+    def _split_endpoints(endpoints: List[PeerEndpoint]) -> tuple[PeerEndpoint | None, PeerEndpoint | None, PeerEndpoint | None]:
         ipv4_endpoint = None
         ipv6_endpoint = None
+        onion_endpoint = None
         for endpoint in endpoints:
+            host = endpoint.host.strip("[]")
+            if host.lower().endswith(".onion"):
+                if onion_endpoint is None:
+                    onion_endpoint = endpoint
+                continue
             try:
-                addr = ipaddress.ip_address(endpoint.host)
+                addr = ipaddress.ip_address(host)
             except ValueError:
                 continue
             if isinstance(addr, ipaddress.IPv4Address) and ipv4_endpoint is None:
                 ipv4_endpoint = endpoint
             elif isinstance(addr, ipaddress.IPv6Address) and ipv6_endpoint is None:
                 ipv6_endpoint = endpoint
-        return ipv4_endpoint, ipv6_endpoint
+        return ipv4_endpoint, ipv6_endpoint, onion_endpoint
 
     def _announce_request(
         self,
@@ -93,6 +99,7 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         event: str,
         ipv4_endpoint: PeerEndpoint | None = None,
         ipv6_endpoint: PeerEndpoint | None = None,
+        onion_endpoint: PeerEndpoint | None = None,
     ) -> bytes:
         params = {
             "info_hash": info_hash,
@@ -109,8 +116,12 @@ class HttpTrackerDiscovery(DiscoveryProvider):
             params["event"] = event
         if ipv4_endpoint is not None:
             params["ip"] = ipv4_endpoint.host
+        elif onion_endpoint is not None:
+            params["ip"] = onion_endpoint.host
         if ipv6_endpoint is not None:
             params["ipv6"] = ipv6_endpoint.host
+        if onion_endpoint is not None:
+            params["onion"] = onion_endpoint.host
         url = self._tracker_url + "?" + self._compact_query(params)
         request = urllib.request.Request(
             url,
@@ -198,25 +209,56 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         interval = int(decoded.get("interval", 0))
         peers_field = decoded.get("peers", b"")
         peers6_field = decoded.get("peers6", b"")
+        peers: list[PeerEndpoint] = []
+
         if isinstance(peers_field, list):
-            peers = []
             for entry in peers_field:
                 if not isinstance(entry, dict):
                     continue
-                host = entry.get("ip")
+                host = entry.get("ip") or entry.get("host") or entry.get("onion")
                 if isinstance(host, bytes):
                     host = host.decode("utf-8", errors="replace")
                 port = int(entry.get("port", 0))
                 if host and port:
                     peers.append(PeerEndpoint(host=str(host), port=port))
-            if isinstance(peers6_field, bytes):
+            if isinstance(peers6_field, bytes) and peers6_field:
                 peers.extend(cls._parse_compact_peers6(peers6_field))
-            return interval, peers
-        if not isinstance(peers_field, bytes):
+        elif isinstance(peers_field, bytes):
+            peers.extend(cls._parse_compact_peers(peers_field))
+            if isinstance(peers6_field, bytes) and peers6_field:
+                peers.extend(cls._parse_compact_peers6(peers6_field))
+        else:
             raise RuntimeError("Tracker returned an unsupported peer list format")
-        peers = cls._parse_compact_peers(peers_field)
-        if isinstance(peers6_field, bytes) and peers6_field:
-            peers.extend(cls._parse_compact_peers6(peers6_field))
+
+        # Parse any dedicated onion peer lists from extended tracker responses
+        for onion_key in ("onion", "peers_onion", "onions"):
+            onion_val = decoded.get(onion_key)
+            if isinstance(onion_val, list):
+                for entry in onion_val:
+                    if isinstance(entry, dict):
+                        host = entry.get("ip") or entry.get("host") or entry.get("onion")
+                        if isinstance(host, bytes):
+                            host = host.decode("utf-8", errors="replace")
+                        port = int(entry.get("port", 0))
+                        if host and port:
+                            peers.append(PeerEndpoint(host=str(host), port=port))
+                    elif isinstance(entry, (str, bytes)):
+                        raw_host = entry.decode("utf-8", errors="replace") if isinstance(entry, bytes) else entry
+                        if ":" in raw_host:
+                            h, p = raw_host.rsplit(":", 1)
+                            if p.isdigit():
+                                peers.append(PeerEndpoint(host=h, port=int(p)))
+                        elif raw_host.strip():
+                            peers.append(PeerEndpoint(host=raw_host.strip(), port=50001))
+            elif isinstance(onion_val, (str, bytes)):
+                raw_host = onion_val.decode("utf-8", errors="replace") if isinstance(onion_val, bytes) else onion_val
+                if ":" in raw_host:
+                    h, p = raw_host.rsplit(":", 1)
+                    if p.isdigit():
+                        peers.append(PeerEndpoint(host=h, port=int(p)))
+                elif raw_host.strip():
+                    peers.append(PeerEndpoint(host=raw_host.strip(), port=50001))
+
         return interval, peers
 
     async def announce(
@@ -231,8 +273,8 @@ class HttpTrackerDiscovery(DiscoveryProvider):
             raise ValueError("Tracker discovery requires at least one endpoint")
         if any(endpoint.port != self._peer_port for endpoint in endpoints):
             raise ValueError("Endpoint port must match tracker discovery peer_port")
-        ipv4_endpoint, ipv6_endpoint = self._split_endpoints(endpoints)
-        endpoint = ipv4_endpoint or ipv6_endpoint or endpoints[0]
+        ipv4_endpoint, ipv6_endpoint, onion_endpoint = self._split_endpoints(endpoints)
+        endpoint = ipv4_endpoint or ipv6_endpoint or onion_endpoint or endpoints[0]
         info_hash = self.derive_info_hash(nickname, shared_code)
         payload = await asyncio.to_thread(
             self._announce_request,
@@ -240,6 +282,7 @@ class HttpTrackerDiscovery(DiscoveryProvider):
             event="started",
             ipv4_endpoint=ipv4_endpoint,
             ipv6_endpoint=ipv6_endpoint,
+            onion_endpoint=onion_endpoint,
         )
         interval, peers = self._parse_response(payload)
         now = int(self._time_fn())
