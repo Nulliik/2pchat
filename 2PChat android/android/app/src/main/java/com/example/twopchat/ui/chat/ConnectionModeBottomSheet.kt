@@ -309,39 +309,83 @@ fun ConnectionModeBottomSheet(
                         )
                     }
 
-                    if (activeEndpoint.isNotBlank()) {
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(onSurfaceColor.copy(alpha = 0.04f))
-                                .clickable {
-                                    clipboardManager.setText(AnnotatedString(activeEndpoint))
-                                    Toast.makeText(
-                                        context,
-                                        if (isRussian) "Адрес скопирован" else "Endpoint copied",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = activeEndpoint,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = if (isRussian) "копировать" else "copy",
-                                fontSize = 10.sp,
-                                color = primaryColor
-                            )
+                    val rawEndpoints = activeEndpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    val allEndpoints = mutableListOf<String>()
+                    for (ep in rawEndpoints) {
+                        if (ep !in allEndpoints) allEndpoints.add(ep)
+                    }
+                    val savedOnion = P2PPreferences.getPeerOnionAddress(context, peerName)
+                    if (!savedOnion.isNullOrBlank() && savedOnion !in allEndpoints) {
+                        allEndpoints.add(savedOnion)
+                    }
+
+                    if (allEndpoints.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = if (isRussian) "СЕТЕВЫЕ АДРЕСА СОБЕСЕДНИКА" else "PEER NETWORK ENDPOINTS",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onSurfaceVariant.copy(alpha = 0.70f),
+                            letterSpacing = 0.6.sp,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        allEndpoints.forEach { ep ->
+                            val isEpOnion = ep.contains(".onion", ignoreCase = true)
+                            val isEpYgg = ep.startsWith("[") || (ep.contains(":") && ep.count { it == ':' } > 1)
+                            val epTypeLabel = when {
+                                isEpOnion -> "Tor .onion"
+                                isEpYgg -> "Yggdrasil IPv6"
+                                else -> "Direct IPv4 / LAN"
+                            }
+                            val epColor = if (isEpOnion) Color(0xFFA78BFA) else Color(0xFF10B981)
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(onSurfaceColor.copy(alpha = 0.04f))
+                                    .clickable {
+                                        clipboardManager.setText(AnnotatedString(ep))
+                                        Toast.makeText(
+                                            context,
+                                            if (isRussian) "Адрес скопирован ($epTypeLabel)" else "Copied ($epTypeLabel)",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(epColor)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = epTypeLabel,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = epColor,
+                                    modifier = Modifier.width(90.dp)
+                                )
+                                Text(
+                                    text = ep,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = onSurfaceColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = if (isRussian) "копировать" else "copy",
+                                    fontSize = 10.sp,
+                                    color = primaryColor
+                                )
+                            }
                         }
                     }
                 }
