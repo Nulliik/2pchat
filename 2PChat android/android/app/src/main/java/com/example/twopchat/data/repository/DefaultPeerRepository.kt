@@ -15,6 +15,10 @@ class DefaultPeerRepository : PeerRepository {
         return P2PMessageRelay.peerConnectionTransports[peerName]
     }
 
+    override fun getPeerTransportType(peerName: String): com.example.twopchat.TransportType {
+        return P2PMessageRelay.getPeerTransportType(peerName)
+    }
+
     override fun getPeerAvatar(peerName: String): Bitmap? {
         return P2PMessageRelay.peerAvatars[peerName]
     }

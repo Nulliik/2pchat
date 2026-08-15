@@ -203,6 +203,13 @@ object P2PMessageRelay {
     private val onionSharesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val lastOnionShareAt = ConcurrentHashMap<String, Long>()
 
+    fun getPeerTransportType(peerName: String): TransportType {
+        val isOnline = peerSessionStates[peerName] == true
+        val raw = peerConnectionTransports[peerName]
+        val ep = peerEndpoints[peerName]
+        return resolveTransportType(raw, ep, isOnline)
+    }
+
     // Maps peer name to their profile avatar bitmap in RAM
     val peerAvatars = avatarCache.avatars
 

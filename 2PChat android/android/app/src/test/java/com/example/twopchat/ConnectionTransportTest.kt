@@ -9,12 +9,31 @@ class ConnectionTransportTest {
     fun `normalizes transport values emitted by the Python bridge`() {
         assertEquals("Direct P2P", canonicalConnectionTransport("DIRECT P2P"))
         assertEquals("Yggdrasil", canonicalConnectionTransport("yggdrasil"))
+        assertEquals("Tor Onion", canonicalConnectionTransport("Tor Onion"))
+        assertEquals("Tor Onion", canonicalConnectionTransport("onion"))
     }
 
     @Test
     fun `infers route from endpoint while session metadata catches up`() {
         assertEquals("Direct P2P", canonicalConnectionTransport(null, "192.0.2.12:50001"))
         assertEquals("Yggdrasil", canonicalConnectionTransport(null, "[200:abcd::12]:50001"))
+        assertEquals(
+            "Tor Onion",
+            canonicalConnectionTransport(null, "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001"),
+        )
+    }
+
+    @Test
+    fun `resolves correct TransportType enum for UI badges`() {
+        assertEquals(TransportType.ONION, resolveTransportType("Tor Onion", isOnline = true))
+        assertEquals(
+            TransportType.ONION,
+            resolveTransportType(null, "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001", isOnline = true),
+        )
+        assertEquals(TransportType.DIRECT, resolveTransportType("Direct P2P", isOnline = true))
+        assertEquals(TransportType.YGGDRASIL, resolveTransportType("Yggdrasil", isOnline = true))
+        assertEquals(TransportType.DISCONNECTED, resolveTransportType("Tor Onion", isOnline = false))
+        assertEquals(TransportType.DISCONNECTED, resolveTransportType(null, null, isOnline = false))
     }
 
     @Test

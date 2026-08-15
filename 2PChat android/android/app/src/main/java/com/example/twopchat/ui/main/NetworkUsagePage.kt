@@ -126,6 +126,7 @@ internal fun NetworkUsagePage(
             val visibleProtocols = buildList {
                 add(TrafficProtocol.DIRECT_P2P)
                 add(TrafficProtocol.YGGDRASIL)
+                add(TrafficProtocol.TOR_ONION)
                 if (snapshot.byProtocol.getValue(TrafficProtocol.UNKNOWN).totalBytes > 0L) {
                     add(TrafficProtocol.UNKNOWN)
                 }
@@ -389,6 +390,7 @@ internal fun formatTrafficSize(bytes: Long): String {
 private fun protocolLabel(protocol: TrafficProtocol, isRussian: Boolean): String = when (protocol) {
     TrafficProtocol.DIRECT_P2P -> "Direct P2P"
     TrafficProtocol.YGGDRASIL -> "Yggdrasil P2P"
+    TrafficProtocol.TOR_ONION -> "Tor Onion"
     TrafficProtocol.UNKNOWN -> if (isRussian) "Неизвестный маршрут" else "Unknown route"
 }
 

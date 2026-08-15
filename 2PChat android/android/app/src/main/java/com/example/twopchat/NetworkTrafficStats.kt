@@ -16,6 +16,7 @@ private val LOCAL_FILE_BRIDGE_EVENTS = setOf(
 internal enum class TrafficProtocol {
     DIRECT_P2P,
     YGGDRASIL,
+    TOR_ONION,
     UNKNOWN,
 }
 
@@ -208,6 +209,7 @@ internal object NetworkTrafficStats {
 
 internal fun trafficProtocol(rawTransport: String?, endpoint: String?): TrafficProtocol =
     when (connectionTransportKind(rawTransport, endpoint)) {
+        ConnectionTransportKind.ONION -> TrafficProtocol.TOR_ONION
         ConnectionTransportKind.DIRECT -> TrafficProtocol.DIRECT_P2P
         ConnectionTransportKind.YGGDRASIL -> TrafficProtocol.YGGDRASIL
         ConnectionTransportKind.UNKNOWN -> TrafficProtocol.UNKNOWN

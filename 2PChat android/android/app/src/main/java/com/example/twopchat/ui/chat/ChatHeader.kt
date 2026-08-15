@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.R
+import com.example.twopchat.TransportType
 import com.example.twopchat.connectionTransportLabel
 import com.example.twopchat.data.Localizations
 import androidx.compose.material.icons.Icons
@@ -163,30 +164,23 @@ internal fun ChatHeader(
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!savedMessages && !isOnline) {
-                    Box(Modifier.size(5.dp).background(onSurfaceVariant.copy(alpha = 0.4f), CircleShape))
-                    Spacer(Modifier.width(4.dp))
-                }
-                val status = when {
-                    savedMessages -> Localizations.getString("local_storage", appLanguage)
-                    !isOnline -> if (appLanguage == "Русский") "Не в сети" else "Offline"
-                    else -> {
-                        val transport = connectionTransportLabel(
-                            rawTransport = P2PMessageRelay.peerConnectionTransports[peerName],
-                            endpoint = P2PMessageRelay.peerEndpoints[peerName],
-                            appLanguage = appLanguage,
-                        )
-                        val rtt = P2PMessageRelay.peerRttMs[peerName]?.let { " • ${it}ms" }.orEmpty()
-                        if (appLanguage == "Русский") "В сети • $transport$rtt" else "Online • $transport$rtt"
-                    }
-                }
+            if (savedMessages) {
                 Text(
-                    status,
+                    Localizations.getString("local_storage", appLanguage),
                     fontSize = 11.sp,
-                    color = if (isOnline) primaryColor.copy(alpha = 0.9f) else onSurfaceVariant.copy(alpha = 0.75f),
+                    color = onSurfaceVariant.copy(alpha = 0.75f),
                     maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            } else {
+                val transportType = P2PMessageRelay.getPeerTransportType(peerName)
+                val rttMs = P2PMessageRelay.peerRttMs[peerName]
+                ConnectionTypeBadge(
+                    transportType = transportType,
+                    rttMs = rttMs,
+                    appLanguage = appLanguage,
+                    primaryColor = primaryColor,
+                    onSurfaceVariant = onSurfaceVariant,
                 )
             }
         }
@@ -353,3 +347,100 @@ internal fun ChatHeader(
         )
     }
 }
+
+@Composable
+internal fun ConnectionTypeBadge(
+    transportType: TransportType,
+    rttMs: Long?,
+    appLanguage: String,
+    primaryColor: Color,
+    onSurfaceVariant: Color,
+    modifier: Modifier = Modifier,
+) {
+    val (badgeBg, contentColor, iconRes, label) = when (transportType) {
+        TransportType.ONION -> {
+            val text = "Tor Onion"
+            val rttText = rttMs?.let { " • ${it}ms" }.orEmpty()
+            val purple = Color(0xFFA78BFA)
+            BadgeData(
+                Color(0xFF7C3AED).copy(alpha = 0.20f),
+                purple,
+                R.drawable.ic_tor,
+                "$text$rttText",
+            )
+        }
+        TransportType.DIRECT -> {
+            val text = "Direct P2P"
+            val rttText = rttMs?.let { " • ${it}ms" }.orEmpty()
+            val green = Color(0xFF10B981)
+            BadgeData(
+                green.copy(alpha = 0.15f),
+                green,
+                null,
+                "$text$rttText",
+            )
+        }
+        TransportType.YGGDRASIL -> {
+            val text = "Yggdrasil"
+            val rttText = rttMs?.let { " • ${it}ms" }.orEmpty()
+            val green = Color(0xFF10B981)
+            BadgeData(
+                green.copy(alpha = 0.15f),
+                green,
+                null,
+                "$text$rttText",
+            )
+        }
+        TransportType.DISCONNECTED -> {
+            val text = if (appLanguage == "Русский") "Не в сети" else "Offline"
+            BadgeData(
+                onSurfaceVariant.copy(alpha = 0.10f),
+                onSurfaceVariant.copy(alpha = 0.70f),
+                null,
+                text,
+            )
+        }
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(badgeBg)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    ) {
+        if (iconRes != null) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = "Tor Onion",
+                tint = Color.Unspecified,
+                modifier = Modifier.size(12.dp),
+            )
+            Spacer(Modifier.width(4.dp))
+        } else {
+            Box(
+                Modifier
+                    .size(5.dp)
+                    .clip(CircleShape)
+                    .background(contentColor)
+            )
+            Spacer(Modifier.width(4.dp))
+        }
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = contentColor,
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private data class BadgeData(
+    val bg: Color,
+    val content: Color,
+    val icon: Int?,
+    val text: String,
+)
+

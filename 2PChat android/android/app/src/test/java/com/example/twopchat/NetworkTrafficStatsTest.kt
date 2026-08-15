@@ -14,6 +14,10 @@ class NetworkTrafficStatsTest {
             TrafficProtocol.DIRECT_P2P,
             trafficProtocol("Direct P2P", "[200:abcd::1]:50001"),
         )
+        assertEquals(
+            TrafficProtocol.TOR_ONION,
+            trafficProtocol("Tor Onion", "192.168.1.20:50001"),
+        )
     }
 
     @Test
@@ -25,6 +29,10 @@ class NetworkTrafficStatsTest {
         assertEquals(
             TrafficProtocol.DIRECT_P2P,
             trafficProtocol(null, "10.0.2.2:50001"),
+        )
+        assertEquals(
+            TrafficProtocol.TOR_ONION,
+            trafficProtocol(null, "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001"),
         )
         assertEquals(TrafficProtocol.UNKNOWN, trafficProtocol(null, null))
     }
