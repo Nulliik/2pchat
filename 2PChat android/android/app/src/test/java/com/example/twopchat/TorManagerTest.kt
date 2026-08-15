@@ -20,7 +20,7 @@ class TorManagerTest {
     fun testTorrcConfigStringGenerationWithoutBridges() {
         val config = TorManager.generateTorrcContent("/data/user/0/com.example.twopchat/files/app_tor", 9050, 9051)
         assertTrue(config.contains("DataDirectory /data/user/0/com.example.twopchat/files/app_tor"))
-        assertTrue(config.contains("SocksPort 127.0.0.1:9050"))
+        assertTrue(config.contains("SocksPort 127.0.0.1:9050 IsolateDestAddr IsolateDestPort"))
         assertTrue(config.contains("ControlPort 127.0.0.1:9051"))
         assertTrue(config.contains("CookieAuthentication 1"))
         assertTrue(config.contains("SafeLogging 1"))

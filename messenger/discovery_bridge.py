@@ -344,7 +344,6 @@ CLEARNET_TRACKERS = (
     "Exodus UDP",
     "OpenTrackr UDP",
     "Dler UDP",
-    "FileBase UDP",
     "BitSearch UDP",
 )
 YGG_TRACKERS = (
@@ -356,7 +355,7 @@ TRACKER_PROTOCOLS = frozenset({"http", "https", "udp"})
 MAX_CUSTOM_TRACKERS = 32
 _tracker_config_lock = threading.RLock()
 _enabled_tracker_protocols = set(TRACKER_PROTOCOLS)
-_disabled_builtin_trackers = {"FileBase UDP"}
+_disabled_builtin_trackers = set()
 _custom_trackers = {}
 _dht_enabled = True
 _announce_enabled = True
@@ -1626,11 +1625,12 @@ def announce_peer_endpoints(
                 _set_tracker_diagnostic(tracker_name, "announce", "SKIPPED (Tor/SOCKS5 active)")
                 return 0
             started = time.monotonic()
+            is_proxy = get_proxy_configuration().get("enabled", False)
             provider = _tracker_provider(
                 tracker,
                 peer_port=port,
                 transport="direct",
-                timeout=3.0,
+                timeout=8.0 if is_proxy else 4.0,
                 retries=1,
             )
             tasks = [

@@ -48,13 +48,7 @@ BASE_TRACKERS: tuple[TrackerSpec, ...] = (
         protocol="udp",
         notes="public UDP tracker",
     ),
-    TrackerSpec(
-        name="FileBase UDP",
-        announce_url="udp://tracker.filebase.online:6969/announce",
-        discovery_scheme="udp-tracker",
-        protocol="udp",
-        notes="public UDP tracker",
-    ),
+
     TrackerSpec(
         name="BitSearch UDP",
         announce_url="udp://tracker.bitsearch.to:6969/announce",

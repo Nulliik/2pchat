@@ -66,7 +66,6 @@ private val defaultTrackerUrls = mapOf(
     "Exodus UDP" to "udp://exodus.desync.com:6969/announce",
     "OpenTrackr UDP" to "udp://tracker.opentrackr.org:1337/announce",
     "Dler UDP" to "udp://tracker2.dler.org:80/announce",
-    "FileBase UDP" to "udp://tracker.filebase.online:6969/announce",
     "BitSearch UDP" to "udp://tracker.bitsearch.to:6969/announce",
     "OpenTrackr HTTP" to "http://tracker.opentrackr.org:1337/announce",
     "Dler HTTP" to "http://tracker2.dler.org:80/announce",

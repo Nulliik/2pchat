@@ -379,7 +379,7 @@ object TorManager {
         }
         val sb = StringBuilder()
         sb.appendLine("DataDirectory $dataDir")
-        sb.appendLine("SocksPort 127.0.0.1:$socksPort")
+        sb.appendLine("SocksPort 127.0.0.1:$socksPort IsolateDestAddr IsolateDestPort")
         sb.appendLine("ControlPort 127.0.0.1:$controlPort")
         sb.appendLine("CookieAuthentication 1")
         sb.appendLine("SafeSocks 0")
