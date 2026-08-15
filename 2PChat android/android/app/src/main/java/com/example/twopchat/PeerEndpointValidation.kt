@@ -27,9 +27,13 @@ internal fun resolvePeerEndpoint(
     peerName: String,
     liveEndpoint: String?,
     persistedEndpoint: String?,
+    onionEndpoint: String? = null,
 ): String? {
     if (peerName.isBlank()) return null
-    return sequenceOf(liveEndpoint, persistedEndpoint)
+    val validEndpoints = sequenceOf(onionEndpoint, liveEndpoint, persistedEndpoint)
         .mapNotNull { it?.trim()?.takeIf(::isValidPeerEndpointList) }
-        .firstOrNull()
+        .flatMap { it.split(',').asSequence().map(String::trim).filter(String::isNotEmpty) }
+        .distinct()
+        .toList()
+    return if (validEndpoints.isNotEmpty()) validEndpoints.joinToString(",") else null
 }

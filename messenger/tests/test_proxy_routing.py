@@ -231,3 +231,105 @@ async def test_direct_transport_onion_connect_via_socks(monkeypatch):
     assert ("set_proxy", 2, "127.0.0.1", 9050, True) in socks_calls
     assert ("connect", ("exmpl567890abcdefghijklmnopqrstuvwxyz12345678901234.onion", 50001)) in socks_calls
 
+
+def test_smart_transport_categorization():
+    # Proxy enabled
+    assert discovery_bridge._categorize_endpoint_tier("test.onion:50001", proxy_enabled=True) == 0
+    assert discovery_bridge._categorize_endpoint_tier("[200:abcd::1]:50001", proxy_enabled=True) == 1
+    assert discovery_bridge._categorize_endpoint_tier("192.168.1.10:50001", proxy_enabled=True) == 2
+
+    # Proxy disabled -> Onion is skipped (tier 3), Ygg is Tier 2 (1), Direct is Tier 3 (2)
+    assert discovery_bridge._categorize_endpoint_tier("test.onion:50001", proxy_enabled=False) == 3
+    assert discovery_bridge._categorize_endpoint_tier("[200:abcd::1]:50001", proxy_enabled=False) == 1
+    assert discovery_bridge._categorize_endpoint_tier("192.168.1.10:50001", proxy_enabled=False) == 2
+
+
+@pytest.mark.asyncio
+async def test_smart_transport_fallback_execution_order(monkeypatch):
+    dialed = []
+
+    async def mock_dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint=None):
+        dialed.append(ep)
+        if ".onion" in ep:
+            raise ConnectionError("Tor circuit failed")
+        if "[" in ep:
+            return "mock_session_ygg"
+        return "mock_session_direct"
+
+    monkeypatch.setattr(discovery_bridge, "_dial_identified_endpoint", mock_dial_identified_endpoint)
+    discovery_bridge.configure_proxy(json.dumps({
+        "proxy_enabled": True,
+        "proxy_host": "127.0.0.1",
+        "proxy_port": 9050,
+    }))
+
+    endpoints = [
+        "192.168.1.50:50001",
+        "[200:1e::5]:50001",
+        "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001",
+    ]
+
+    sess, ep = await discovery_bridge._dial_fastest_endpoint(endpoints, None, None, None)
+    assert sess == "mock_session_ygg"
+    assert ep == "[200:1e::5]:50001"
+    # Verify Onion was attempted first, then Yggdrasil, and Direct was not needed
+    assert dialed[0] == "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001"
+    assert dialed[1] == "[200:1e::5]:50001"
+    assert "192.168.1.50:50001" not in dialed
+
+
+@pytest.mark.asyncio
+async def test_smart_transport_onion_priority_when_successful(monkeypatch):
+    dialed = []
+
+    async def mock_dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint=None):
+        dialed.append(ep)
+        return "mock_session_onion"
+
+    monkeypatch.setattr(discovery_bridge, "_dial_identified_endpoint", mock_dial_identified_endpoint)
+    discovery_bridge.configure_proxy(json.dumps({
+        "proxy_enabled": True,
+        "proxy_host": "127.0.0.1",
+        "proxy_port": 9050,
+    }))
+
+    endpoints = [
+        "192.168.1.50:50001",
+        "[200:1e::5]:50001",
+        "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001",
+    ]
+
+    sess, ep = await discovery_bridge._dial_fastest_endpoint(endpoints, None, None, None)
+    assert sess == "mock_session_onion"
+    assert ep == "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001"
+    assert dialed == ["ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001"]
+
+
+@pytest.mark.asyncio
+async def test_smart_transport_disabled_proxy_skips_onion(monkeypatch):
+    dialed = []
+
+    async def mock_dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint=None):
+        dialed.append(ep)
+        return "mock_session_ygg"
+
+    monkeypatch.setattr(discovery_bridge, "_dial_identified_endpoint", mock_dial_identified_endpoint)
+    discovery_bridge.configure_proxy(json.dumps({
+        "proxy_enabled": False,
+        "proxy_host": "127.0.0.1",
+        "proxy_port": 9050,
+    }))
+
+    endpoints = [
+        "192.168.1.50:50001",
+        "[200:1e::5]:50001",
+        "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001",
+    ]
+
+    sess, ep = await discovery_bridge._dial_fastest_endpoint(endpoints, None, None, None)
+    assert sess == "mock_session_ygg"
+    assert ep == "[200:1e::5]:50001"
+    # Onion was skipped because proxy was disabled; Yggdrasil was dialed directly
+    assert "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001" not in dialed
+    assert dialed == ["[200:1e::5]:50001"]
+

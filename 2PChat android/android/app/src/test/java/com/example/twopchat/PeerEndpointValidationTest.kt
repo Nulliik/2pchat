@@ -11,6 +11,7 @@ class PeerEndpointValidationTest {
     fun `accepts the endpoint forms supported by the Python transport`() {
         assertTrue(isValidPeerEndpointList("192.0.2.10:50001"))
         assertTrue(isValidPeerEndpointList("[2001:db8::10]:50001"))
+        assertTrue(isValidPeerEndpointList("ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001"))
         assertTrue(isValidPeerEndpointList("chat.example.test:443, 192.0.2.10:50001"))
     }
 
@@ -24,7 +25,16 @@ class PeerEndpointValidationTest {
     @Test
     fun `group and invite delivery keeps contact identity while resolving its route`() {
         assertEquals(
-            "192.0.2.55:50001",
+            "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001,192.0.2.55:50001,192.0.2.10:50001",
+            resolvePeerEndpoint(
+                peerName = "foxy",
+                liveEndpoint = "192.0.2.55:50001",
+                persistedEndpoint = "192.0.2.10:50001",
+                onionEndpoint = "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001",
+            ),
+        )
+        assertEquals(
+            "192.0.2.55:50001,192.0.2.10:50001",
             resolvePeerEndpoint(
                 peerName = "foxy",
                 liveEndpoint = "192.0.2.55:50001",

@@ -2502,8 +2502,8 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
     writer = None
     session = None
     proxy_cfg = get_proxy_configuration()
-    connect_timeout = 30.0 if host.endswith(".onion") else 5.0
-    exchange_timeout = 20.0 if host.endswith(".onion") else 5.0
+    connect_timeout = 15.0 if host.endswith(".onion") else 5.0
+    exchange_timeout = 10.0 if host.endswith(".onion") else 5.0
     try:
         reader, writer = await asyncio.wait_for(
             transport_connect(
@@ -2600,6 +2600,21 @@ async def _invalidate_session(session) -> None:
         pass
 
 
+def _categorize_endpoint_tier(endpoint_str: str, proxy_enabled: bool) -> int:
+    """
+    Tier 1 (0): Tor Onion (when Tor proxy is active)
+    Tier 2 (1): Yggdrasil (IPv6 with ':' or '[')
+    Tier 3 (2): Direct Clearnet / IPv4
+    Tier 4 (3): Tor Onion (when Tor proxy is disabled - skipped)
+    """
+    clean = endpoint_str.strip()
+    if ".onion" in clean:
+        return 0 if proxy_enabled else 3
+    if clean.startswith("[") or (":" in clean and clean.count(":") > 1):
+        return 1
+    return 2
+
+
 async def _dial_fastest_endpoint(
     endpoints: list[str],
     identity_priv,
@@ -2608,57 +2623,92 @@ async def _dial_fastest_endpoint(
     expected_fingerprint=None,
 ) -> tuple["Session", str]:
     """
-    Concurrently dial candidate endpoints (Happy Eyeballs pattern).
+    Sequentially attempt tiers (Tier 1: Tor Onion -> Tier 2: Yggdrasil -> Tier 3: Direct/Trackers)
+    with concurrent Happy Eyeballs racing within each tier.
     Returns (connected_session, connected_endpoint).
     """
+    proxy_cfg = get_proxy_configuration()
+    proxy_enabled = proxy_cfg.get("enabled", False)
+
     valid_eps = [ep for ep in endpoints if not _is_endpoint_in_cooldown(ep)]
     if not valid_eps:
         raise ConnectionError(f"All candidate endpoints are in cooldown: {endpoints}")
 
-    if len(valid_eps) == 1:
-        ep = valid_eps[0]
-        sess = await _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
-        return sess, ep
+    # Group valid endpoints into priority tiers
+    tiers: dict[int, list[str]] = {0: [], 1: [], 2: []}
+    for ep in valid_eps:
+        tier_idx = _categorize_endpoint_tier(ep, proxy_enabled)
+        if tier_idx in tiers:
+            tiers[tier_idx].append(ep)
 
-    tasks = {
-        asyncio.create_task(
-            _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
-        ): ep
-        for ep in valid_eps
+    tier_names = {
+        0: "Tier 1 (Tor Onion)",
+        1: "Tier 2 (Yggdrasil)",
+        2: "Tier 3 (Direct/Trackers)",
     }
 
-    winning_session = None
-    winning_ep = ""
     last_error = None
+    for tier_idx in (0, 1, 2):
+        tier_eps = tiers[tier_idx]
+        if not tier_eps:
+            continue
 
-    try:
-        pending = set(tasks.keys())
-        while pending:
-            done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-            for task in done:
-                ep = tasks[task]
-                try:
-                    res = task.result()
-                    if winning_session is None:
-                        winning_session = res
-                        winning_ep = ep
-                    else:
-                        asyncio.create_task(_invalidate_session(res))
-                except Exception as err:
-                    last_error = err
+        tier_name = tier_names[tier_idx]
+        print(f"[SMART-FALLBACK] Attempting {tier_name}: {tier_eps}")
 
-            if winning_session is not None:
-                break
-    finally:
-        for t in tasks.keys():
-            if not t.done():
-                t.cancel()
+        # Single endpoint in tier
+        if len(tier_eps) == 1:
+            ep = tier_eps[0]
+            try:
+                sess = await _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+                print(f"[SMART-FALLBACK] Succeeded via {tier_name}: {ep}")
+                return sess, ep
+            except Exception as err:
+                print(f"[SMART-FALLBACK] {tier_name} endpoint {ep} failed: {err}")
+                last_error = err
+                continue
 
-    if winning_session is not None:
-        print(f"Happy Eyeballs dial connected via {winning_ep}")
-        return winning_session, winning_ep
+        # Multiple endpoints within the tier: race concurrently (Happy Eyeballs)
+        tasks = {
+            asyncio.create_task(
+                _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+            ): ep
+            for ep in tier_eps
+        }
 
-    raise ConnectionError(f"All candidate endpoints failed for {expected_fingerprint or valid_eps}. Last error: {last_error}")
+        winning_session = None
+        winning_ep = ""
+
+        try:
+            pending = set(tasks.keys())
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    ep = tasks[task]
+                    try:
+                        res = task.result()
+                        if winning_session is None:
+                            winning_session = res
+                            winning_ep = ep
+                        else:
+                            asyncio.create_task(_invalidate_session(res))
+                    except Exception as err:
+                        last_error = err
+
+                if winning_session is not None:
+                    break
+        finally:
+            for t in tasks.keys():
+                if not t.done():
+                    t.cancel()
+
+        if winning_session is not None:
+            print(f"[SMART-FALLBACK] Succeeded via {tier_name}: {winning_ep}")
+            return winning_session, winning_ep
+        else:
+            print(f"[SMART-FALLBACK] {tier_name} all endpoints failed, falling back to next tier...")
+
+    raise ConnectionError(f"All tiered candidate endpoints failed for {expected_fingerprint or valid_eps}. Last error: {last_error}")
 
 
 async def _establish_session_async(peer_name: str, endpoint: str, expected_fingerprint=None) -> "Session":

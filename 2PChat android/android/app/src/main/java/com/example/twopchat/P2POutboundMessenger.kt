@@ -46,6 +46,7 @@ internal class P2POutboundMessenger(
             liveEndpoint = peerEndpoints[peerName],
             persistedEndpoint = P2PPreferences.prefs(context)
                 .getString(P2PPreferences.lastEndpoint(peerName), null),
+            onionEndpoint = P2PPreferences.getPeerOnionAddress(context, peerName),
         ) ?: run {
             log(
                 context,
