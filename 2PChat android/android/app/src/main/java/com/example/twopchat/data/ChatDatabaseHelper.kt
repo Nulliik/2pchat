@@ -128,11 +128,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
-        try {
-            db.enableWriteAheadLogging()
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not enable Write-Ahead Logging (WAL)", e)
-        }
+        DatabaseTuning.applyOptimizations(db)
     }
 
     override fun onCreate(db: SQLiteDatabase) {

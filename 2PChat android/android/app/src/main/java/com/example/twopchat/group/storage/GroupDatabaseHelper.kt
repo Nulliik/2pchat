@@ -202,19 +202,7 @@ class GroupDatabaseHelper(
 ) {
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
-        db.execSQL("PRAGMA foreign_keys=ON")
-        try {
-            db.rawQuery("PRAGMA quick_check", null).use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val result = cursor.getString(0)
-                    if (!result.equals("ok", ignoreCase = true)) {
-                        android.util.Log.e("GroupDatabaseHelper", "Database integrity check failed: $result")
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("GroupDatabaseHelper", "Failed to run quick_check on group database", e)
-        }
+        com.example.twopchat.data.DatabaseTuning.applyOptimizations(db)
     }
 
     override fun onCreate(db: SQLiteDatabase) {
