@@ -25,12 +25,10 @@ internal class PeerAvatarCache(
     private var sizeBytes = 0L
 
     fun put(peerName: String, bitmap: Bitmap) {
+        if (bitmap.isRecycled) return
         val cachedBitmap = bitmap.scaledForCache(maxCachedDimensionPx)
         avatars.remove(peerName)?.let { old ->
             sizeBytes -= old.allocationByteCount.toLong()
-            if (old !== cachedBitmap && !old.isRecycled) {
-                old.recycle()
-            }
         }
         order.remove(peerName)
         avatars[peerName] = cachedBitmap
@@ -40,9 +38,6 @@ internal class PeerAvatarCache(
             val oldestPeer = order.removeFirst()
             avatars.remove(oldestPeer)?.let { evicted ->
                 sizeBytes -= evicted.allocationByteCount.toLong()
-                if (!evicted.isRecycled) {
-                    evicted.recycle()
-                }
             }
         }
     }
@@ -51,14 +46,10 @@ internal class PeerAvatarCache(
         order.remove(peerName)
         avatars.remove(peerName)?.let { old ->
             sizeBytes -= old.allocationByteCount.toLong()
-            if (!old.isRecycled) {
-                old.recycle()
-            }
         }
     }
 
     fun clear() {
-        avatars.values.forEach { if (!it.isRecycled) it.recycle() }
         avatars.clear()
         order.clear()
         sizeBytes = 0L
@@ -96,8 +87,10 @@ internal class PeerAvatarCache(
 
     fun savePersisted(context: Context, peerName: String, bitmap: Bitmap) {
         require(peerName.isNotBlank()) { "Peer name cannot be blank" }
+        if (bitmap.isRecycled) return
         val jpeg = ByteArrayOutputStream().use { output ->
-            check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output)) { "Avatar encoding failed" }
+            val compressed = runCatching { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output) }.getOrDefault(false)
+            if (!compressed) return
             output.toByteArray()
         }
         val nameBytes = peerName.toByteArray(Charsets.UTF_8)

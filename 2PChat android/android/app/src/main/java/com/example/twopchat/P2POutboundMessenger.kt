@@ -50,8 +50,8 @@ internal class P2POutboundMessenger(
         ) ?: run {
             log(
                 context,
-                "No valid transport endpoint for $peerName; refusing to use a peer identity as an endpoint",
-                "ERROR",
+                "No valid transport endpoint for $peerName; peer is offline",
+                "DEBUG",
                 null,
             )
             return postResult(onResult, false)

@@ -2016,7 +2016,14 @@ async def _handle_incoming(reader, writer, identity_priv, signing_key, trust_sto
         remote_ep = ""
         remote_transport = "Direct P2P"
         if peername:
-            remote_transport = "Yggdrasil" if ":" in str(peername[0]) else "Direct P2P"
+            ip_str = str(peername[0])
+            if ip_str in ("127.0.0.1", "::1", "localhost"):
+                remote_transport = "Tor Onion"
+            elif ":" in ip_str:
+                remote_transport = "Yggdrasil"
+            else:
+                remote_transport = "Direct P2P"
+        session.transport_name = remote_transport
 
         if not _notify_session_established(peer_name, fp, remote_ep, remote_transport):
             print(f"Android rejected authenticated session from {peer_name} ({fp})")
@@ -2086,9 +2093,14 @@ async def _read_loop(session, peer_name, fp):
                         remote_ep = _format_endpoint(peername[0], advertised_port)
                     else:
                         remote_ep = ""
-                    remote_transport = (
-                        "Yggdrasil" if peername and ":" in str(peername[0]) else "Direct P2P"
-                    )
+                    ip_str = str(peername[0]) if peername else ""
+                    if ip_str in ("127.0.0.1", "::1", "localhost"):
+                        remote_transport = "Tor Onion"
+                    elif ":" in ip_str:
+                        remote_transport = "Yggdrasil"
+                    else:
+                        remote_transport = "Direct P2P"
+                    session.transport_name = remote_transport
                     if not _notify_session_established(real_name, remote_fp, remote_ep, remote_transport, about_me):
                         print(f"Android rejected fingerprint {remote_fp} for nickname '{real_name}'")
                         await _invalidate_session(session)

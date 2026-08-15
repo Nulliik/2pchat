@@ -125,6 +125,21 @@ fun ConnectionModeBottomSheet(
                 }
             }
         }
+        when (mode) {
+            PeerTransportPreference.TOR_ONLY -> {
+                P2PMessageRelay.peerConnectionTransports[peerName] = "Tor Onion"
+                P2PPreferences.prefs(context).edit().putString(P2PPreferences.transport(peerName), "Tor Onion").apply()
+            }
+            PeerTransportPreference.YGGDRASIL_ONLY -> {
+                P2PMessageRelay.peerConnectionTransports[peerName] = "Yggdrasil"
+                P2PPreferences.prefs(context).edit().putString(P2PPreferences.transport(peerName), "Yggdrasil").apply()
+            }
+            PeerTransportPreference.DIRECT_ONLY -> {
+                P2PMessageRelay.peerConnectionTransports[peerName] = "Direct P2P"
+                P2PPreferences.prefs(context).edit().putString(P2PPreferences.transport(peerName), "Direct P2P").apply()
+            }
+            PeerTransportPreference.AUTO -> {}
+        }
         scope.launch {
             isReconnecting = true
             P2PMessageRelay.reconnectSession(context, peerName) {

@@ -198,14 +198,26 @@ internal class MessageNotificationService {
         fun getPeerAvatarIcon(context: Context, sender: String): androidx.core.graphics.drawable.IconCompat {
             // 0. Try IconCompat LRU Cache
             val cachedIcon = avatarIconCache.get(sender)
-            if (cachedIcon != null) return cachedIcon
+            if (cachedIcon != null) {
+                val isRecycled = runCatching {
+                    val bmp = cachedIcon.bitmap
+                    bmp != null && bmp.isRecycled
+                }.getOrDefault(false)
+                if (!isRecycled) return cachedIcon
+                avatarIconCache.remove(sender)
+            }
 
             // 1. Try RAM cache
             val cached = P2PMessageRelay.peerAvatars[sender]
-            if (cached != null) {
-                val icon = androidx.core.graphics.drawable.IconCompat.createWithBitmap(cached)
-                avatarIconCache.put(sender, icon)
-                return icon
+            if (cached != null && !cached.isRecycled) {
+                val safeBitmap = runCatching {
+                    cached.copy(android.graphics.Bitmap.Config.ARGB_8888, false)
+                }.getOrNull() ?: if (!cached.isRecycled) cached else null
+                if (safeBitmap != null) {
+                    val icon = androidx.core.graphics.drawable.IconCompat.createWithBitmap(safeBitmap)
+                    avatarIconCache.put(sender, icon)
+                    return icon
+                }
             }
 
             // 2. Try encrypted avatar storage on disk
@@ -223,7 +235,7 @@ internal class MessageNotificationService {
                                 if (name == sender) {
                                     val imgBytes = clear.copyOfRange(2 + nameLen, clear.size)
                                     val bmp = android.graphics.BitmapFactory.decodeByteArray(imgBytes, 0, imgBytes.size)
-                                    if (bmp != null) {
+                                    if (bmp != null && !bmp.isRecycled) {
                                         P2PMessageRelay.peerAvatars[sender] = bmp
                                         val icon = androidx.core.graphics.drawable.IconCompat.createWithBitmap(bmp)
                                         avatarIconCache.put(sender, icon)
@@ -396,21 +408,41 @@ internal class MessageNotificationService {
             .build()
 
         // Build Notification
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_logo_default_fg)
-            .setStyle(messagingStyle)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .addAction(replyAction)
-            .addAction(readAction)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-            .setVibrate(longArrayOf(0, 150, 100, 150))
-            .setDefaults(NotificationCompat.DEFAULT_ALL)
-            .build()
+        try {
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_logo_default_fg)
+                .setStyle(messagingStyle)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .addAction(replyAction)
+                .addAction(readAction)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setVibrate(longArrayOf(0, 150, 100, 150))
+                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                .build()
 
-        manager.notify(id, notification)
+            manager.notify(id, notification)
+        } catch (e: Exception) {
+            // Robust fallback without messaging style icon if SystemUI encounters bitmap issue
+            val fallbackNotification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_logo_default_fg)
+                .setContentTitle(conversationTitle)
+                .setContentText(displayText)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .addAction(replyAction)
+                .addAction(readAction)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setVibrate(longArrayOf(0, 150, 100, 150))
+                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                .build()
+
+            manager.notify(id, fallbackNotification)
+        }
     }
 
     fun cancelNotificationForPeer(context: Context, sender: String) {

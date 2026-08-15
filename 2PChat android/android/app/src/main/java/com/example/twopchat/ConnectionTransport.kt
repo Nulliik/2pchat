@@ -40,6 +40,7 @@ internal fun connectionTransportKind(
         else -> endpointValue.substringBeforeLast(':', endpointValue)
     }
     return when {
+        host in listOf("127.0.0.1", "localhost", "::1") -> ConnectionTransportKind.ONION
         ':' in host -> ConnectionTransportKind.YGGDRASIL
         host.isNotBlank() -> ConnectionTransportKind.DIRECT
         else -> ConnectionTransportKind.UNKNOWN
