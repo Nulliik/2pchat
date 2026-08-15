@@ -681,9 +681,13 @@ object GroupChatCoordinator {
 
     fun clearHistory(groupId: String) {
         scope.launch {
-            db().clearHistory(groupId)
-            refreshAllSummariesWithoutRecursion()
-            refreshGroup(groupId)
+            try {
+                db().clearHistory(groupId)
+                refreshAllSummariesWithoutRecursion()
+                refreshGroup(groupId)
+            } catch (error: Throwable) {
+                Log.e(TAG, "Failed to clear group history for $groupId", error)
+            }
         }
     }
 

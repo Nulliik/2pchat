@@ -2714,9 +2714,14 @@ class GroupDatabaseHelper(
         val db = writableDatabase
         db.beginTransaction()
         try {
-            db.delete("group_events", "group_id = ?", arrayOf(groupId))
             db.delete("group_messages", "group_id = ?", arrayOf(groupId))
-            db.delete("group_attachments", "group_id = ?", arrayOf(groupId))
+            db.delete(
+                "group_events",
+                "group_id = ? AND kind NOT IN ('genesis', 'roster_update', 'member_added', 'member_removed', 'role_changed', 'member_restricted', 'ownership_transferred', 'mls_commit', 'system', 'GENESIS', 'ROSTER_UPDATE', 'MEMBER_ADDED', 'MEMBER_REMOVED', 'ROLE_CHANGED', 'MEMBER_RESTRICTED', 'OWNER_TRANSFERRED', 'MLS_COMMIT', 'SYSTEM', 'GROUP_INFO_CHANGED', 'INVITE_LINK_CHANGED')",
+                arrayOf(groupId),
+            )
+            db.delete("group_reactions", "group_id = ?", arrayOf(groupId))
+            db.delete("receipts", "group_id = ?", arrayOf(groupId))
             db.execSQL("UPDATE groups SET unread_count = 0, pinned_event_id = NULL WHERE group_id = ?", arrayOf(groupId))
             db.setTransactionSuccessful()
         } finally {

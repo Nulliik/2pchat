@@ -2729,6 +2729,33 @@ private fun GroupChatHeader(
 
                 var showHeaderMenu by remember { mutableStateOf(false) }
                 var showDeleteGroupConfirmation by remember { mutableStateOf(false) }
+                var showClearHistoryConfirmation by remember { mutableStateOf(false) }
+
+                if (showClearHistoryConfirmation) {
+                    AlertDialog(
+                        onDismissRequest = { showClearHistoryConfirmation = false },
+                        title = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить историю?", "Clear history?", "Verlauf löschen?", "¿Borrar historial?", "Effacer l'historique ?", "Limpar histórico?"), fontWeight = FontWeight.Bold, color = onSurfaceColor) },
+                        text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Все сообщения этой группы будут удалены с вашего устройства.", "All messages in this group will be deleted from your device.", "Alle Nachrichten in dieser Gruppe werden von Ihrem Gerät gelöscht.", "Todos los mensajes de este grupo se eliminarán de tu dispositivo.", "Tous les messages de ce groupe seront supprimés de votre appareil.", "Todas as mensagens deste grupo serão apagadas do seu dispositivo."), color = onSurfaceColor.copy(alpha = 0.7f)) },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    showClearHistoryConfirmation = false
+                                    controller.clearHistory(state.groupId)
+                                    android.widget.Toast.makeText(context, com.example.twopchat.data.Localizations.tr(appLanguage, "История очищена", "History cleared", "Verlauf gelöscht", "Historial borrado", "Historique effacé", "Histórico limpo"), android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            ) {
+                                Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить", "Clear", "Löschen", "Borrar", "Effacer", "Limpar"), color = Color.Red, fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showClearHistoryConfirmation = false }) {
+                                Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Отмена", "Cancel", "Abbrechen", "Cancelar", "Annuler", "Cancelar"), color = onSurfaceColor)
+                            }
+                        },
+                        containerColor = surfaceColor,
+                        shape = RoundedCornerShape(20.dp)
+                    )
+                }
 
                 if (showDeleteGroupConfirmation) {
                     AlertDialog(
@@ -2825,7 +2852,7 @@ private fun GroupChatHeader(
                             text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить историю", "Clear History", "Verlauf löschen", "Borrar historial", "Effacer l'historique", "Limpar histórico"), color = Color.Red) },
                             onClick = {
                                 showHeaderMenu = false
-                                controller.clearHistory(state.groupId)
+                                showClearHistoryConfirmation = true
                             },
                             leadingIcon = {
                                 Icon(
