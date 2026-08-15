@@ -1049,3 +1049,64 @@ def test_is_peer_online_query():
     assert bridge.is_peer_online("alice") is True
     assert bridge.is_peer_online("bob") is False
     assert bridge.is_peer_online("charlie") is False
+
+
+def test_onion_endpoint_helpers_and_sorting():
+    bridge = _load_discovery_bridge()
+    onion_ep = "v4kg3abcdefghijklmnopqrstuvwxyz234567abcdefghijklmno.onion:50001"
+    ygg_ep = "[200:1234::1]:50001"
+    ipv4_ep = "192.168.1.100:50001"
+
+    assert bridge._is_onion_endpoint(onion_ep) is True
+    assert bridge._is_onion_endpoint(ygg_ep) is False
+    assert bridge._is_onion_endpoint(ipv4_ep) is False
+
+    assert bridge._is_ipv4_endpoint(onion_ep) is False
+    assert bridge._is_ipv4_endpoint(ygg_ep) is False
+    assert bridge._is_ipv4_endpoint(ipv4_ep) is True
+
+    assert bridge._transport_for_endpoint(onion_ep) == "Tor Onion"
+    assert bridge._transport_for_endpoint(ygg_ep) == "Yggdrasil"
+    assert bridge._transport_for_endpoint(ipv4_ep) == "Direct P2P"
+
+    # Sorting priority: Yggdrasil (0) -> Onion (1) -> IPv4 (2)
+    sorted_eps = sorted([ipv4_ep, onion_ep, ygg_ep], key=bridge._endpoint_sort_key)
+    assert sorted_eps == [ygg_ep, onion_ep, ipv4_ep]
+
+
+def test_onion_endpoint_announce_under_tor(monkeypatch):
+    bridge = _load_discovery_bridge()
+    passed_endpoints = []
+
+    class FakeTrackerProvider:
+        observed_addresses = ()
+
+        async def announce(self, nickname, shared_code, endpoints=None, **kwargs):
+            passed_endpoints.extend(endpoints or [])
+            return SimpleNamespace()
+
+    monkeypatch.setattr(bridge, "CLEARNET_TRACKERS", ("Test tracker",))
+    monkeypatch.setattr(bridge, "YGG_TRACKERS", ())
+    monkeypatch.setattr(bridge, "_dht_enabled", False)
+    monkeypatch.setattr(
+        bridge,
+        "get_tracker_by_name",
+        lambda _name: SimpleNamespace(
+            discovery_scheme="http-tracker",
+            announce_url="https://tracker.invalid/announce",
+            protocol="https",
+        ),
+    )
+    monkeypatch.setattr(bridge, "get_discovery_provider", lambda *_args, **_kwargs: FakeTrackerProvider())
+    monkeypatch.setattr(bridge, "get_proxy_configuration", lambda: {"enabled": True, "host": "127.0.0.1", "port": 9050})
+
+    onion_addr = "v4kg3abcdefghijklmnopqrstuvwxyz234567abcdefghijklmno.onion"
+    endpoints_json = json.dumps(["192.168.1.50", "200:1234::1", onion_addr])
+    assert bridge.announce_peer_endpoints("alice", "fingerprint", endpoints_json, 50001, "code") is True
+
+    hosts = [ep.host for ep in passed_endpoints]
+    # Under Tor, IPv4 should be filtered out while Yggdrasil IPv6 and Tor Onion are preserved
+    assert "200:1234::1" in hosts
+    assert onion_addr in hosts
+    assert "192.168.1.50" not in hosts
+

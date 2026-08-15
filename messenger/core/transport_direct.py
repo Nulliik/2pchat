@@ -11,30 +11,54 @@ from .transport_base import Transport
 _SERVER_BACKLOG = 128
 
 
+def _create_socks_connection(
+    proxy_host: str,
+    proxy_port: int,
+    target_host: str,
+    target_port: int,
+    timeout: float = 30.0,
+):
+    try:
+        import socks
+    except ImportError as exc:
+        raise ConnectionError("PySocks is required to connect to .onion addresses") from exc
+    s = socks.socksocket()
+    s.set_proxy(socks.SOCKS5, proxy_host, proxy_port, rdns=True)
+    s.settimeout(timeout)
+    try:
+        s.connect((target_host, target_port))
+    except Exception as exc:
+        s.close()
+        raise ConnectionError(f"Failed to connect to {target_host}:{target_port} via SOCKS5: {exc}") from exc
+    s.setblocking(False)
+    return s
+
+
 class DirectTransport(Transport):
     """IPv4/IPv6 direct transport using asyncio streams."""
 
     ACCEPT_QUEUE_SIZE = 64
 
     async def connect(
-        self, host: str, port: int, *, proxy_host: str = "127.0.0.1", proxy_port: int = 9050, **_options
+        self, host: str, port: int, **options
     ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         clean_host = host.strip().strip("[]")
-        if clean_host.endswith(".onion"):
-            loop = asyncio.get_running_loop()
-
-            def _socks_connect():
-                import socks
-                s = socks.socksocket()
-                s.set_proxy(socks.SOCKS5, proxy_host, proxy_port, rdns=True)
-                s.settimeout(30.0)
-                s.connect((clean_host, port))
-                s.setblocking(False)
-                return s
-
-            sock = await loop.run_in_executor(None, _socks_connect)
+        if clean_host.lower().endswith(".onion"):
+            proxy_host = options.get("proxy_host")
+            proxy_port = options.get("proxy_port")
+            if not proxy_host or not proxy_port:
+                try:
+                    from messenger.discovery_bridge import get_proxy_configuration
+                    proxy_cfg = get_proxy_configuration()
+                    proxy_host = proxy_host or proxy_cfg.get("host") or "127.0.0.1"
+                    proxy_port = proxy_port or proxy_cfg.get("port") or 9050
+                except Exception:
+                    proxy_host = proxy_host or "127.0.0.1"
+                    proxy_port = proxy_port or 9050
+            sock = await asyncio.to_thread(
+                _create_socks_connection, proxy_host, proxy_port, clean_host, port
+            )
             return await asyncio.open_connection(sock=sock)
-
         return await asyncio.open_connection(host, port)
 
     async def listen(

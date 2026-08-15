@@ -139,6 +139,7 @@ object TorManager {
     private val FINGERPRINT_REGEX = Regex("^[A-Fa-f0-9]{40}$")
     private val HOST_REGEX = Regex("^[A-Za-z0-9.-]+$")
     private val IPV6_HOST_REGEX = Regex("^[A-Fa-f0-9:.]+$")
+    private val ONION_HOST_REGEX = Regex("^[a-z0-9]{16,56}\\.onion$", RegexOption.IGNORE_CASE)
 
     fun formatControlAuthCookie(bytes: ByteArray): String =
         bytes.joinToString("") { "%02X".format(it) }
@@ -369,7 +370,7 @@ object TorManager {
         controlPort: Int = DEFAULT_CONTROL_PORT,
         bridges: List<String> = emptyList(),
         bridgePluginPath: String? = null,
-        hiddenServiceDir: String? = null,
+        hiddenServiceDir: String? = "$dataDir/hs",
         hiddenServicePort: Int = DEFAULT_HIDDEN_SERVICE_PORT,
         hiddenServiceTargetPort: Int = DEFAULT_HIDDEN_SERVICE_PORT,
     ): String {
@@ -384,7 +385,6 @@ object TorManager {
         sb.appendLine("CookieAuthentication 1")
         sb.appendLine("SafeSocks 0")
         sb.appendLine("SafeLogging 1")
-
         if (!hiddenServiceDir.isNullOrBlank()) {
             sb.appendLine("HiddenServiceDir $hiddenServiceDir")
             sb.appendLine("HiddenServicePort $hiddenServicePort 127.0.0.1:$hiddenServiceTargetPort")
@@ -404,15 +404,30 @@ object TorManager {
         return sb.toString().trimEnd()
     }
 
-    fun readOnionHostname(hiddenServiceDir: File): String? {
-        val hostnameFile = File(hiddenServiceDir, "hostname")
-        if (!hostnameFile.exists()) return null
+    fun readOnionHostname(dir: File): String? {
+        val hostnameFile = if (dir.name == "hs" || dir.name.contains("hidden_service")) {
+            File(dir, "hostname")
+        } else {
+            val direct = File(dir, "hostname")
+            if (direct.exists()) direct else File(File(dir, "hs"), "hostname")
+        }
+        if (!hostnameFile.exists() || !hostnameFile.canRead()) return null
         return try {
-            val text = hostnameFile.readText().trim()
-            if (text.endsWith(".onion") && text.length >= 16) text else null
-        } catch (exc: Exception) {
+            val content = hostnameFile.readText().trim().lowercase(Locale.US)
+            if (ONION_HOST_REGEX.matches(content)) content else null
+        } catch (_: Exception) {
             null
         }
+    }
+
+    fun getOnionAddress(context: Context): String? {
+        _onionAddress.value?.let { return it }
+        val appTorDir = File(context.filesDir, "app_tor")
+        val address = readOnionHostname(appTorDir) ?: P2PPreferences.getTorOnionHostname(context)
+        if (address != null) {
+            _onionAddress.value = address
+        }
+        return address
     }
 
     internal fun readAndPublishOnionAddress(context: Context, hiddenServiceDir: File): String? {
@@ -747,6 +762,10 @@ object TorManager {
                 if (!markRunning(runId)) return
                 Log.i(TAG, "SOCKS5 listener is ready and Tor bootstrapped to 100%")
                 readAndPublishOnionAddress(context, hsDir)
+                val onion = getOnionAddress(context)
+                if (onion != null) {
+                    Log.i(TAG, "Tor Onion service active: $onion")
+                }
                 if (!enableTorProxy(context, runId)) return
 
                 while (currentCoroutineContext().isActive && runGate.isCurrent(runId) && startedProcess.isAlive) {
@@ -900,6 +919,7 @@ object TorManager {
         _isTorConnecting.value = false
         _isSlowBootstrap.value = false
         _bootstrapProgress.value = 0
+        _onionAddress.value = null
     }
 
     private fun terminateProcess(process: Process?) {
@@ -929,6 +949,7 @@ object TorManager {
         _isTorConnecting.value = false
         _isSlowBootstrap.value = false
         _bootstrapProgress.value = 0
+        _onionAddress.value = null
         job?.cancel()
         terminateProcess(process)
         lastAppContext?.let { context ->

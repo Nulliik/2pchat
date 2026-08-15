@@ -35,6 +35,7 @@ def _bencode(value) -> bytes:
 class FakeHttpTrackerHandler(BaseHTTPRequestHandler):
     swarms = {}
     swarms6 = {}
+    swarms_onion = {}
 
     def do_GET(self):  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
@@ -49,8 +50,13 @@ class FakeHttpTrackerHandler(BaseHTTPRequestHandler):
         port = int(pairs["port"][0])
         peer = ("127.0.0.1", port)
         peer6 = None
+        peer_onion = None
+        if "onion" in pairs:
+            peer_onion = pairs["onion"][0]
+        elif "ip" in pairs and pairs["ip"][0].endswith(".onion"):
+            peer_onion = pairs["ip"][0]
         if "ipv6" in pairs:
-            val = pairs["ipv6"][0]
+            val = pairs["ipv6"][0].strip("[]")
             try:
                 raw = val.encode("latin-1")
                 if len(raw) == 16:
@@ -65,14 +71,19 @@ class FakeHttpTrackerHandler(BaseHTTPRequestHandler):
             peer6 = (host, port)
         swarm = self.swarms.setdefault(info_hash, [])
         swarm6 = self.swarms6.setdefault(info_hash, [])
+        cur_onions = self.swarms_onion.setdefault(info_hash, [])
         if event == "stopped":
             swarm[:] = [entry for entry in swarm if entry != peer]
             if peer6 is not None:
                 swarm6[:] = [entry for entry in swarm6 if entry != peer6]
+            if peer_onion is not None:
+                cur_onions[:] = [entry for entry in cur_onions if entry != (peer_onion, port)]
         elif peer not in swarm:
             swarm.append(peer)
         if peer6 is not None and peer6 not in swarm6:
             swarm6.append(peer6)
+        if peer_onion is not None and (peer_onion, port) not in cur_onions:
+            cur_onions.append((peer_onion, port))
 
         peers = b"".join(
             bytes(map(int, host.split("."))) + peer_port.to_bytes(2, "big")
@@ -82,7 +93,12 @@ class FakeHttpTrackerHandler(BaseHTTPRequestHandler):
             socket.inet_pton(socket.AF_INET6, host) + peer_port.to_bytes(2, "big")
             for host, peer_port in swarm6
         )
-        body = _bencode({"interval": 120, "peers": peers, "peers6": peers6})
+        resp_dict = {"interval": 120, "peers": peers, "peers6": peers6}
+        if cur_onions:
+            resp_dict["onion"] = [
+                {"host": h, "port": p} for h, p in cur_onions
+            ]
+        body = _bencode(resp_dict)
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.send_header("Content-Length", str(len(body)))
@@ -156,6 +172,36 @@ async def test_http_tracker_supports_ipv4_and_ipv6_endpoints():
         hosts = {descriptor.endpoints[0].host for descriptor in resolved}
         assert "127.0.0.1" in hosts
         assert "200:abcd::10" in hosts
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+@pytest.mark.asyncio
+async def test_http_tracker_supports_onion_endpoint():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), FakeHttpTrackerHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        tracker_url = f"http://{host}:{port}/announce"
+        discovery = HttpTrackerDiscovery(tracker_url=tracker_url, peer_port=50001)
+
+        onion_addr = "v4kg3abcdefghijklmnopqrstuvwxyz234567abcdefghijklmno.onion"
+        await discovery.announce(
+            "Alice",
+            "onion-test",
+            transport="direct",
+            endpoints=[
+                PeerEndpoint(host="200:1234::1", port=50001),
+                PeerEndpoint(host=onion_addr, port=50001),
+            ],
+        )
+
+        resolved = await discovery.resolve("Alice", "onion-test")
+        hosts = {descriptor.endpoints[0].host for descriptor in resolved}
+        assert onion_addr in hosts or any(onion_addr in [ep.host for ep in d.endpoints] for d in resolved)
     finally:
         server.shutdown()
         server.server_close()

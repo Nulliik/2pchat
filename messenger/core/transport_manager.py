@@ -7,6 +7,7 @@ from .transport_yggdrasil_embedded import EmbeddedYggdrasilTransport
 
 TRANSPORT_FACTORIES: Dict[str, Callable[..., Transport]] = {
     "direct": lambda **_: DirectTransport(),
+    "tor": lambda **_: DirectTransport(),
     "ygg": lambda **_: YggdrasilTransport(),
     "ygg-embedded": lambda **kwargs: EmbeddedYggdrasilTransport(**kwargs),
 }

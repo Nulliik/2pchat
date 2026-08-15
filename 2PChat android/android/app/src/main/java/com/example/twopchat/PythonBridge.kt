@@ -413,9 +413,18 @@ object PythonBridge {
             ""
         }
         val isTorActive = prefs?.let { P2PPreferences.isTorEnabled(context) } ?: false
+        val onionAddress = if (isTorActive) {
+            TorManager.getOnionAddress(context).orEmpty()
+        } else {
+            ""
+        }
         val addresses = buildList {
-            if (isTorActive && yggdrasilAddress.isNotEmpty()) {
-                add(yggdrasilAddress)
+            if (isTorActive) {
+                if (yggdrasilAddress.isNotEmpty()) add(yggdrasilAddress)
+                if (onionAddress.isNotEmpty()) add(onionAddress)
+                if (yggdrasilAddress.isEmpty() && onionAddress.isEmpty()) {
+                    addAll(ipv4Addresses)
+                }
             } else {
                 addAll(ipv4Addresses)
                 if (yggdrasilAddress.isNotEmpty()) add(yggdrasilAddress)
