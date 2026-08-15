@@ -1503,6 +1503,14 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
                     continue
                 endpoints.append(_format_endpoint(host, endpoint.port))
     result = sorted(dict.fromkeys(endpoints), key=_endpoint_sort_key)
+    proxy_active = get_proxy_configuration().get("enabled", False)
+    if proxy_active:
+        # When Tor is active, prioritize Yggdrasil IPv6 endpoints.
+        # If Yggdrasil IPv6 endpoints exist, return them exclusively to avoid attempting
+        # dead connections to Tor exit node IPs.
+        ygg_eps = [ep for ep in result if not _is_ipv4_endpoint(ep)]
+        if ygg_eps:
+            return ygg_eps
     return result if ipv4_enabled else [ep for ep in result if not _is_ipv4_endpoint(ep)]
 
 
@@ -1547,10 +1555,18 @@ def announce_peer_endpoints(
                 "resolve": "SKIPPED (Yggdrasil unavailable)",
             }
 
+    proxy_active = get_proxy_configuration().get("enabled", False)
     with _tracker_config_lock:
         ipv4_policy = _ipv4_announce_mode
 
-    if ipv4_policy == "never":
+    if proxy_active:
+        # When Tor is active, outbound tracker connections route via Tor exit relays.
+        # Trackers cannot forward incoming IPv4 traffic to clients behind Tor, and
+        # local private IPv4 is useless to remote peers. Therefore, when Tor is active
+        # and Yggdrasil IPv6 is available, strictly announce ONLY Yggdrasil IPv6 endpoints.
+        if local_yggdrasil_available:
+            endpoints = [ep for ep in endpoints if ":" in ep.host]
+    elif ipv4_policy == "never":
         # Never announce IPv4 endpoints
         endpoints = [ep for ep in endpoints if ":" in ep.host]
     elif ipv4_policy == "always":

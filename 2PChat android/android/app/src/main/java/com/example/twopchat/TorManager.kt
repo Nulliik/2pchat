@@ -816,12 +816,19 @@ object TorManager {
             .commit()
         if (runGate.isCurrent(runId)) {
             PythonBridge.updateNetworkProxy(context)
+            P2PMessageRelay.refreshAnnouncement(context)
+            P2PMessageRelay.triggerImmediateReconnect(context)
         }
     }
 
     private fun applyEffectiveProxy(context: Context): Boolean {
         return try {
-            PythonBridge.updateNetworkProxy(context)
+            val success = PythonBridge.updateNetworkProxy(context)
+            if (success) {
+                P2PMessageRelay.refreshAnnouncement(context)
+                P2PMessageRelay.triggerImmediateReconnect(context)
+            }
+            success
         } catch (exception: Exception) {
             Log.e(TAG, "Unable to apply effective proxy configuration", exception)
             false

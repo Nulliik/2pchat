@@ -110,7 +110,7 @@ class HttpTrackerDiscovery(DiscoveryProvider):
         if ipv4_endpoint is not None:
             params["ip"] = ipv4_endpoint.host
         if ipv6_endpoint is not None:
-            params["ipv6"] = ipaddress.IPv6Address(ipv6_endpoint.host).packed
+            params["ipv6"] = ipv6_endpoint.host
         url = self._tracker_url + "?" + self._compact_query(params)
         request = urllib.request.Request(
             url,

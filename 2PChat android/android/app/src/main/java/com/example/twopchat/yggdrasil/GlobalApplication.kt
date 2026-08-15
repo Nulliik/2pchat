@@ -56,6 +56,10 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
                     this.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 notificationManager.notify(SERVICE_NOTIFICATION_ID, notification)
             }
+            if (state == State.Connected) {
+                com.example.twopchat.P2PMessageRelay.refreshAnnouncement(this)
+                com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(this)
+            }
             currentState = state
         }
     }

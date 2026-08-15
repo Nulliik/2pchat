@@ -412,9 +412,14 @@ object PythonBridge {
         } else {
             ""
         }
+        val isTorActive = prefs?.let { P2PPreferences.isTorEnabled(context) } ?: false
         val addresses = buildList {
-            addAll(ipv4Addresses)
-            if (yggdrasilAddress.isNotEmpty()) add(yggdrasilAddress)
+            if (isTorActive && yggdrasilAddress.isNotEmpty()) {
+                add(yggdrasilAddress)
+            } else {
+                addAll(ipv4Addresses)
+                if (yggdrasilAddress.isNotEmpty()) add(yggdrasilAddress)
+            }
         }.distinct().sorted()
         // Endpoint changes are meaningful announces. In particular, do not
         // let an early IPv4/empty announce suppress a later Yggdrasil one.

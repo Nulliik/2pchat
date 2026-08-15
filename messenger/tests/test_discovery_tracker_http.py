@@ -50,8 +50,19 @@ class FakeHttpTrackerHandler(BaseHTTPRequestHandler):
         peer = ("127.0.0.1", port)
         peer6 = None
         if "ipv6" in pairs:
-            ipv6_raw = pairs["ipv6"][0].encode("latin-1")
-            peer6 = (socket.inet_ntop(socket.AF_INET6, ipv6_raw), port)
+            val = pairs["ipv6"][0]
+            try:
+                raw = val.encode("latin-1")
+                if len(raw) == 16:
+                    host = socket.inet_ntop(socket.AF_INET6, raw)
+                else:
+                    host = str(ipaddress.IPv6Address(val))
+            except Exception:
+                try:
+                    host = str(ipaddress.IPv6Address(val))
+                except Exception:
+                    host = val
+            peer6 = (host, port)
         swarm = self.swarms.setdefault(info_hash, [])
         swarm6 = self.swarms6.setdefault(info_hash, [])
         if event == "stopped":
