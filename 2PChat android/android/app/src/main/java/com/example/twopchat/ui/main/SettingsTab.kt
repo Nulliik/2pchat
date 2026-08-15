@@ -55,6 +55,7 @@ import com.example.twopchat.PythonBridge
 import com.example.twopchat.Chat
 import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.P2PPreferences
+import com.example.twopchat.TorManager
 import com.example.twopchat.P2PRelayService
 import com.example.twopchat.AttachmentCategory
 import com.example.twopchat.AttachmentCategoryUsage
@@ -198,6 +199,7 @@ fun SettingsTab(
     var showThemesPicker by remember { mutableStateOf(false) }
     var isSearchingSettings by remember { mutableStateOf(false) }
     var settingsSearchQuery by remember { mutableStateOf("") }
+    val isTorRunning by TorManager.isTorRunning.collectAsState()
 
     if (showEditAboutMeDialog) {
         var tempText by remember { mutableStateOf(aboutMeText) }
@@ -859,8 +861,132 @@ fun SettingsTab(
                             }
                         }
 
-                        // Section 1: Appearance & Personalization
-                        SettingsSectionHeader(Localizations.getString("sec_appearance_chats", appLanguage), primaryColor)
+                        // Group 1: 🛡 АНОНИМНОСТЬ И TOR (Anonymity & Tor)
+                        SettingsSectionHeader(
+                            Localizations.tr(appLanguage, "🛡 АНОНИМНОСТЬ И TOR", "🛡 ANONYMITY & TOR", "🛡 ANONYMITÄT & TOR", "🛡 ANONIMATO Y TOR", "🛡 ANONYMAT & TOR", "🛡 ANONIMATO & TOR"),
+                            Color(0xFF8B5CF6)
+                        )
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                        ) {
+                            Column {
+                                SettingsRow(
+                                    title = if (appLanguage == "Русский") "Tor и скрытые сервисы (.onion)" else "Tor & Hidden Services (.onion)",
+                                    subtitle = if (appLanguage == "Русский") "Встроенный демон, мосты obfs4, смена личности" else "Embedded daemon, obfs4 bridges, circuit renewal",
+                                    value = if (isTorRunning) "● Active" else "○ Standby",
+                                    iconRes = com.example.twopchat.R.drawable.ic_tor,
+                                    iconColor = Color(0xFF8B5CF6),
+                                    onSurfaceColor = onSurfaceColor,
+                                    onSurfaceVariant = onSurfaceVariant,
+                                    primaryColor = primaryColor,
+                                    useOriginalIconColors = true,
+                                    onClick = { activeSubPage = "tor" }
+                                )
+                            }
+                        }
+
+                        // Group 2: 🔐 БЕЗОПАСНОСТЬ И ДОСТУП (Security & Access)
+                        SettingsSectionHeader(
+                            Localizations.tr(appLanguage, "🔐 БЕЗОПАСНОСТЬ И ДОСТУП", "🔐 SECURITY & ACCESS", "🔐 SICHERHEIT & ZUGRIFF", "🔐 SEGURIDAD Y ACCESO", "🔐 SÉCURITÉ ET ACCÈS", "🔐 SEGURANÇA E ACESSO"),
+                            Color(0xFF10B981)
+                        )
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                        ) {
+                            Column {
+                                SettingsRow(
+                                    title = if (appLanguage == "Русский") "Код-пароль и защита входа" else "Passcode Lock & Access",
+                                    subtitle = if (appLanguage == "Русский") "4-значный PIN, экстренный Duress PIN, автоблокировка" else "4-digit PIN, emergency Duress PIN, auto-lock",
+                                    value = if (hasPasscode) (if (appLanguage == "Русский") "Включен" else "ON") else (if (appLanguage == "Русский") "Выкл" else "OFF"),
+                                    iconRes = com.example.twopchat.R.drawable.ic_shield_status,
+                                    iconColor = Color(0xFF10B981),
+                                    onSurfaceColor = onSurfaceColor,
+                                    onSurfaceVariant = onSurfaceVariant,
+                                    primaryColor = primaryColor,
+                                    onClick = { activeSubPage = "security" }
+                                )
+
+                                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                SettingsRow(
+                                    title = if (appLanguage == "Русский") "Приватность и Стелс-маскировка" else "Privacy & Stealth Disguise",
+                                    subtitle = if (appLanguage == "Русский") "Запрет скриншотов, защита от перехвата, калькулятор" else "Screenshot blocking, app switcher guard, disguise",
+                                    value = if (stealthDisguise) (if (appLanguage == "Русский") "Стелс" else "Stealth") else null,
+                                    iconRes = com.example.twopchat.R.drawable.ic_eye,
+                                    iconColor = Color(0xFF059669),
+                                    onSurfaceColor = onSurfaceColor,
+                                    onSurfaceVariant = onSurfaceVariant,
+                                    primaryColor = primaryColor,
+                                    onClick = { activeSubPage = "security" }
+                                )
+                            }
+                        }
+
+                        // Group 3: 🌐 СЕТЬ И ПРОДВИНУТЫЕ ПАРАМЕТРЫ (Network & Advanced)
+                        SettingsSectionHeader(
+                            Localizations.tr(appLanguage, "🌐 СЕТЬ И ПРОДВИНУТЫЕ ПАРАМЕТРЫ", "🌐 NETWORK & ADVANCED", "🌐 NETZWERK & ERWEITERT", "🌐 RED Y AVANZADO", "🌐 RÉSEAU ET AVANCÉ", "🌐 REDE E AVANÇADO"),
+                            Color(0xFF0284C7)
+                        )
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                        ) {
+                            Column {
+                                SettingsRow(
+                                    title = Localizations.getString("yggdrasil_peers_title", appLanguage),
+                                    subtitle = Localizations.getString("yggdrasil_peers_desc", appLanguage),
+                                    iconRes = com.example.twopchat.R.drawable.ic_quick_link,
+                                    iconColor = Color(0xFF0284C7),
+                                    onSurfaceColor = onSurfaceColor,
+                                    onSurfaceVariant = onSurfaceVariant,
+                                    primaryColor = primaryColor,
+                                    onClick = { activeSubPage = "yggdrasil_peers" }
+                                )
+
+                                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                SettingsRow(
+                                    title = Localizations.getString("trackers_discovery_title", appLanguage),
+                                    subtitle = Localizations.getString("trackers_discovery_desc", appLanguage),
+                                    iconRes = com.example.twopchat.R.drawable.ic_menu_search,
+                                    iconColor = Color(0xFF06B6D4),
+                                    onSurfaceColor = onSurfaceColor,
+                                    onSurfaceVariant = onSurfaceVariant,
+                                    primaryColor = primaryColor,
+                                    onClick = { activeSubPage = "trackers" }
+                                )
+
+                                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                SettingsRow(
+                                    title = Localizations.getString("network_usage_title", appLanguage),
+                                    subtitle = Localizations.getString("network_usage_desc", appLanguage),
+                                    iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
+                                    iconColor = Color(0xFF3B82F6),
+                                    onSurfaceColor = onSurfaceColor,
+                                    onSurfaceVariant = onSurfaceVariant,
+                                    primaryColor = primaryColor,
+                                    onClick = { activeSubPage = "network_usage" }
+                                )
+                            }
+                        }
+
+                        // Group 4: 🎨 ОФОРМЛЕНИЕ И ЯЗЫК (Appearance & Language)
+                        SettingsSectionHeader(
+                            Localizations.tr(appLanguage, "🎨 ОФОРМЛЕНИЕ И ЯЗЫК", "🎨 APPEARANCE & LANGUAGE", "🎨 ERSCHEINUNGSBILD & SPRACHE", "🎨 APARIENCIA E IDIOMA", "🎨 APPARENCE ET LANGUE", "🎨 APARÊNCIA E IDIOMA"),
+                            Color(0xFFF59E0B)
+                        )
                         Card(
                             colors = CardDefaults.cardColors(containerColor = surfaceColor),
                             shape = RoundedCornerShape(20.dp),
@@ -873,7 +999,7 @@ fun SettingsTab(
                                     title = Localizations.getString("chat_settings_theme_title", appLanguage),
                                     subtitle = Localizations.getString("chat_settings_theme_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_menu_chats,
-                                    iconColor = Color(0xFFFFA726),
+                                    iconColor = Color(0xFFF59E0B),
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     primaryColor = primaryColor,
@@ -886,93 +1012,20 @@ fun SettingsTab(
                                     title = Localizations.getString("sticker_packs_title", appLanguage),
                                     subtitle = Localizations.getString("sticker_packs_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_sticker_smile,
-                                    iconColor = Color(0xFFFF7043),
+                                    iconColor = Color(0xFFFB923C),
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     primaryColor = primaryColor,
                                     onClick = { activeSubPage = "sticker_packs" }
                                 )
-                            }
-                        }
-
-                        // Section 2: Privacy & Network
-                        SettingsSectionHeader(Localizations.getString("sec_security_network", appLanguage), primaryColor)
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
-                            shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
-                        ) {
-                            Column {
-                                SettingsRow(
-                                    title = Localizations.getString("privacy_security_title", appLanguage),
-                                    subtitle = Localizations.getString("privacy_security_desc", appLanguage),
-                                    iconRes = com.example.twopchat.R.drawable.ic_shield_status,
-                                    iconColor = Color(0xFF66BB6A),
-                                    onSurfaceColor = onSurfaceColor,
-                                    onSurfaceVariant = onSurfaceVariant,
-                                    primaryColor = primaryColor,
-                                    onClick = { activeSubPage = "security" }
-                                )
 
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
-                                SettingsRow(
-                                    title = Localizations.getString("trackers_discovery_title", appLanguage),
-                                    subtitle = Localizations.getString("trackers_discovery_desc", appLanguage),
-                                    iconRes = com.example.twopchat.R.drawable.ic_menu_search,
-                                    iconColor = Color(0xFF29B6F6),
-                                    onSurfaceColor = onSurfaceColor,
-                                    onSurfaceVariant = onSurfaceVariant,
-                                    primaryColor = primaryColor,
-                                    onClick = { activeSubPage = "trackers" }
-                                )
-
-                                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-
-                                SettingsRow(
-                                    title = if (appLanguage == "Русский") "Tor и анонимность" else "Tor & Anonymity",
-                                    subtitle = if (appLanguage == "Русский") "Встроенный Tor, мосты и транспорт" else "Embedded Tor daemon, bridges & transport",
-                                    iconRes = com.example.twopchat.R.drawable.ic_tor,
-                                    iconColor = Color(0xFF6B3FA0),
-                                    onSurfaceColor = onSurfaceColor,
-                                    onSurfaceVariant = onSurfaceVariant,
-                                    primaryColor = primaryColor,
-                                    useOriginalIconColors = true,
-                                    onClick = { activeSubPage = "tor" }
-                                )
-
-                                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-
-                                SettingsRow(
-                                    title = Localizations.getString("yggdrasil_peers_title", appLanguage),
-                                    subtitle = Localizations.getString("yggdrasil_peers_desc", appLanguage),
-                                    iconRes = com.example.twopchat.R.drawable.ic_quick_link,
-                                    iconColor = Color(0xFFAB47BC),
-                                    onSurfaceColor = onSurfaceColor,
-                                    onSurfaceVariant = onSurfaceVariant,
-                                    primaryColor = primaryColor,
-                                    onClick = { activeSubPage = "yggdrasil_peers" }
-                                )
-                            }
-                        }
-
-                        // Section 3: Data & Notifications
-                        SettingsSectionHeader(Localizations.getString("sec_notifications_data", appLanguage), primaryColor)
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
-                            shape = RoundedCornerShape(20.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
-                        ) {
-                            Column {
                                 SettingsRow(
                                     title = Localizations.getString("notifications_sounds_title", appLanguage),
                                     subtitle = Localizations.getString("notifications_sounds_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_notifications,
-                                    iconColor = Color(0xFFEF5350),
+                                    iconColor = Color(0xFFEF4444),
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     primaryColor = primaryColor,
@@ -985,7 +1038,7 @@ fun SettingsTab(
                                     title = Localizations.getString("data_storage_title", appLanguage),
                                     subtitle = Localizations.getString("data_storage_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_database_storage,
-                                    iconColor = Color(0xFF26A69A),
+                                    iconColor = Color(0xFF14B8A6),
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     primaryColor = primaryColor,
@@ -995,24 +1048,11 @@ fun SettingsTab(
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 SettingsRow(
-                                    title = Localizations.getString("network_usage_title", appLanguage),
-                                    subtitle = Localizations.getString("network_usage_desc", appLanguage),
-                                    iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
-                                    iconColor = Color(0xFF42A5F5),
-                                    onSurfaceColor = onSurfaceColor,
-                                    onSurfaceVariant = onSurfaceVariant,
-                                    primaryColor = primaryColor,
-                                    onClick = { activeSubPage = "network_usage" },
-                                )
-
-                                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
-
-                                SettingsRow(
                                     title = Localizations.getString("language", appLanguage),
                                     subtitle = Localizations.getString("choose_app_language", appLanguage),
                                     value = appLanguage,
                                     iconRes = com.example.twopchat.R.drawable.ic_language_translate,
-                                    iconColor = Color(0xFFEC407A),
+                                    iconColor = Color(0xFFEC4899),
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     primaryColor = primaryColor,
@@ -1021,8 +1061,11 @@ fun SettingsTab(
                             }
                         }
 
-                        // Section 4: System & Help
-                        SettingsSectionHeader(Localizations.getString("sec_system_help", appLanguage), primaryColor)
+                        // Group 5: 📖 СПРАВОЧНИК И ОБУЧЕНИЕ (Help & Guides)
+                        SettingsSectionHeader(
+                            Localizations.tr(appLanguage, "📖 СПРАВОЧНИК И ОБУЧЕНИЕ", "📖 HELP & GUIDES", "📖 HILFE & ANLEITUNGEN", "📖 AYUDA Y GUÍAS", "📖 AIDE ET GUIDES", "📖 AJUDA E GUIAS"),
+                            Color(0xFF6366F1)
+                        )
                         Card(
                             colors = CardDefaults.cardColors(containerColor = surfaceColor),
                             shape = RoundedCornerShape(20.dp),
@@ -1035,7 +1078,7 @@ fun SettingsTab(
                                     title = Localizations.getString("help_reference", appLanguage),
                                     subtitle = Localizations.getString("help_reference_desc", appLanguage),
                                     iconRes = com.example.twopchat.R.drawable.ic_help_question,
-                                    iconColor = Color(0xFF7E57C2),
+                                    iconColor = Color(0xFF6366F1),
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     primaryColor = primaryColor,
@@ -1046,8 +1089,9 @@ fun SettingsTab(
 
                                 SettingsRow(
                                     title = Localizations.getString("net_diag_logs", appLanguage),
+                                    subtitle = if (appLanguage == "Русский") "Мониторинг событий сети и соединений live" else "Live monitoring of P2P network events",
                                     iconRes = com.example.twopchat.R.drawable.ic_menu_settings,
-                                    iconColor = Color(0xFF78909C),
+                                    iconColor = Color(0xFF64748B),
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     primaryColor = primaryColor,
@@ -1058,8 +1102,9 @@ fun SettingsTab(
 
                                 SettingsRow(
                                     title = Localizations.getString("export_app_logs", appLanguage),
+                                    subtitle = if (appLanguage == "Русский") "Поделиться файлом логов app.log" else "Share app.log file",
                                     iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
-                                    iconColor = Color(0xFF8D6E63),
+                                    iconColor = Color(0xFF78716C),
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     primaryColor = primaryColor,
@@ -1088,7 +1133,7 @@ fun SettingsTab(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Delete Account (Separate Standalone Card)
+                        // Delete Account (Danger Zone)
                         val dangerRed = Color(0xFFFF5252)
                         Card(
                             colors = CardDefaults.cardColors(containerColor = surfaceColor),
@@ -1099,6 +1144,7 @@ fun SettingsTab(
                         ) {
                             SettingsRow(
                                 title = Localizations.getString("delete_account", appLanguage),
+                                subtitle = if (appLanguage == "Русский") "Полное удаление ключей и истории сообщений" else "Permanently wipe identity keys and history",
                                 iconRes = com.example.twopchat.R.drawable.ic_delete,
                                 iconColor = dangerRed,
                                 onSurfaceColor = dangerRed,
