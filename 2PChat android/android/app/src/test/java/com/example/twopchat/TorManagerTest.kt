@@ -374,6 +374,33 @@ class TorManagerTest {
             com.example.twopchat.ui.main.formatInviteEndpoint("$onionHost:50002", 50001),
         )
     }
+
+    @Test
+    fun testParseDirectOnionAddress() {
+        val onionHost = "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion"
+        
+        // Raw onion host
+        val raw = com.example.twopchat.ui.main.parseDirectOnionAddress(onionHost, 50001)
+        org.junit.Assert.assertNotNull(raw)
+        assertEquals("$onionHost:50001", raw?.onionEndpoint)
+
+        // With port
+        val withPort = com.example.twopchat.ui.main.parseDirectOnionAddress("$onionHost:50005", 50001)
+        org.junit.Assert.assertNotNull(withPort)
+        assertEquals("$onionHost:50005", withPort?.onionEndpoint)
+
+        // With name
+        val withName = com.example.twopchat.ui.main.parseDirectOnionAddress("Alice $onionHost:50001", 50001)
+        org.junit.Assert.assertNotNull(withName)
+        assertEquals("Alice", withName?.nickname)
+        assertEquals("$onionHost:50001", withName?.onionEndpoint)
+
+        // Invite URL
+        val fromUrl = com.example.twopchat.ui.main.parseDirectOnionAddress("2pchat://connect?name=Bob&onion=$onionHost:50002", 50001)
+        org.junit.Assert.assertNotNull(fromUrl)
+        assertEquals("Bob", fromUrl?.nickname)
+        assertEquals("$onionHost:50002", fromUrl?.onionEndpoint)
+    }
 }
 
 

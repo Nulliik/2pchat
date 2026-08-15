@@ -57,6 +57,8 @@ import android.content.pm.PackageManager
 import com.example.twopchat.PythonBridge
 import com.example.twopchat.Chat
 import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.P2PPreferences
+import com.example.twopchat.TorManager
 import com.example.twopchat.canonicalNickname
 import com.example.twopchat.selectExternalIpv4
 import com.example.twopchat.validatedSearchNickname
@@ -180,6 +182,50 @@ internal fun classicPeerSearchRequest(value: String): PeerSearchRequest? {
         expectedLiveName = address.nickname,
         expectedFingerprint = null,
     )
+}
+
+internal data class DirectOnionTarget(
+    val nickname: String,
+    val onionEndpoint: String,
+)
+
+internal fun isDirectOnionAddress(value: String): Boolean {
+    val trimmed = value.trim()
+    return trimmed.contains(".onion", ignoreCase = true)
+}
+
+internal fun parseDirectOnionAddress(value: String, defaultPort: Int = 50001): DirectOnionTarget? {
+    val trimmed = value.trim()
+    if (!trimmed.contains(".onion", ignoreCase = true)) return null
+
+    if (trimmed.startsWith("2pchat://connect", ignoreCase = true)) {
+        val query = trimmed.substringAfter("?", "")
+        val queryParams = query.split("&").associate {
+            val idx = it.indexOf('=')
+            if (idx > 0) it.substring(0, idx) to it.substring(idx + 1) else it to ""
+        }
+        val rawOnion = queryParams["onion"]?.trim() ?: return null
+        val onion = try { java.net.URLDecoder.decode(rawOnion, "UTF-8") } catch (_: Exception) { rawOnion }
+        val formatted = formatInviteEndpoint(onion, defaultPort) ?: return null
+        val rawName = queryParams["name"]?.trim()?.let {
+            try { java.net.URLDecoder.decode(it, "UTF-8") } catch (_: Exception) { it }
+        }.orEmpty()
+        val name = rawName.ifEmpty { "Peer (${onion.take(8)}...)" }
+        return DirectOnionTarget(name, formatted)
+    }
+
+    val parts = if (trimmed.contains("#")) {
+        listOf(trimmed.substringBeforeLast("#").trim(), trimmed.substringAfterLast("#").trim())
+    } else if (trimmed.contains(" ") && trimmed.split(Regex("\\s+")).size == 2) {
+        trimmed.split(Regex("\\s+"))
+    } else {
+        listOf("", trimmed)
+    }
+
+    val possibleOnion = parts.last()
+    val formattedOnion = formatInviteEndpoint(possibleOnion, defaultPort) ?: return null
+    val name = parts.first().takeIf { it.isNotBlank() } ?: "Tor Peer (${formattedOnion.take(8)}...)"
+    return DirectOnionTarget(name, formattedOnion)
 }
 
 internal fun isContactInviteLink(value: String): Boolean =
@@ -432,13 +478,48 @@ fun ContactsTab(
                 } catch (e: Exception) {
                     Toast.makeText(context, "Invalid link/QR", Toast.LENGTH_SHORT).show()
                 }
+            } else if (isDirectOnionAddress(trimmed)) {
+                val directOnion = parseDirectOnionAddress(trimmed, P2PMessageRelay.listenerPort(context))
+                if (directOnion != null) {
+                    if (!P2PPreferences.isTorEnabled(context) && !TorManager.isTorRunning.value) {
+                        Toast.makeText(
+                            context,
+                            if (appLanguage == "Русский") "Для связи по .onion включите Tor в Настройках" else "Enable Tor in Settings to connect via .onion",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                    isResolvingInvite = true
+                    resolveInviteStatus = if (appLanguage == "Русский") "Подключение к скрытому сервису Tor..." else "Connecting to Tor hidden service..."
+                    com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(
+                        directOnion.nickname, "", directOnion.onionEndpoint,
+                    )
+                    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+                    if (!activeSet.contains(directOnion.nickname)) {
+                        sharedPrefs.edit()
+                            .putStringSet("active_chats", activeSet + directOnion.nickname)
+                            .putString("transport_${directOnion.nickname}", "Tor Onion")
+                            .apply()
+                    }
+                    com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(directOnion.nickname, directOnion.onionEndpoint)
+                    com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(context)
+                    resolveInviteStatus = ""
+                    isResolvingInvite = false
+                    onItemClick(Chat(directOnion.nickname))
+                } else {
+                    searchSummary = if (appLanguage == "Русский") {
+                        "Некорректный Tor .onion адрес."
+                    } else {
+                        "Invalid Tor .onion address."
+                    }
+                    searchResults = emptyList()
+                }
             } else {
                 val request = classicPeerSearchRequest(trimmed)
                 if (request == null) {
                     searchSummary = if (appLanguage == "Русский") {
-                        "Введите полный адрес в формате Имя#код. Поиск только по нику отключён."
+                        "Введите адрес (Имя#код), Tor .onion адрес или ссылку."
                     } else {
-                        "Enter the full Name#code address. Nickname-only search is disabled."
+                        "Enter address (Name#code), Tor .onion address or link."
                     }
                     searchResults = emptyList()
                 } else {
@@ -573,7 +654,7 @@ fun ContactsTab(
                 ) {
                     if (searchQuery.isEmpty()) {
                         Text(
-                            text = Localizations.tr(appLanguage, "Имя#код или ссылка 2PChat", "Name#code or 2PChat link", "Name#Code oder 2PChat-Link", "Nombre#código o enlace 2PChat", "Nom#code ou lien 2PChat", "Nome#código ou link 2PChat"),
+                            text = Localizations.tr(appLanguage, "Имя#код, .onion или ссылка", "Name#code, .onion or link", "Name#Code, .onion oder Link", "Nombre#código, .onion o enlace", "Nom#code, .onion ou lien", "Nome#código, .onion ou link"),
                             color = onSurfaceVariant.copy(alpha = 0.5f),
                             fontSize = 13.sp,
                             maxLines = 1,
@@ -760,7 +841,12 @@ fun ContactsTab(
             }
         }
 
-        if (discoveryCode.isNotEmpty()) {
+        val onionAddressCard: String? = remember {
+            P2PPreferences.getTorOnionHostname(context) ?: TorManager.onionAddress.value
+        }
+        val isTorDaemonRunning = TorManager.isTorRunning.value
+
+        if (discoveryCode.isNotEmpty() || onionAddressCard != null) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.6f)),
                 shape = RoundedCornerShape(16.dp),
@@ -769,51 +855,120 @@ fun ContactsTab(
                     .padding(bottom = 12.dp)
                     .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = Localizations.tr(appLanguage, "Ваш адрес для поиска", "Your search address", "Deine Suchadresse", "Tu dirección de búsqueda", "Votre adresse de recherche", "Seu endereço de busca"),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = onSurfaceVariant,
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = contactAddress,
-                            fontSize = 13.sp,
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                            color = primaryColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Surface(
-                        color = primaryColor.copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .clickable {
-                                copyTextToClipboard(context, "2PChat contact", contactAddress)
-                                Toast.makeText(
-                                    context,
-                                    if (appLanguage == "Русский") "Адрес скопирован" else "Address copied",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
+                    if (discoveryCode.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = Localizations.tr(appLanguage, "Ваш адрес для поиска (Трекеры)", "Your search address (Trackers)", "Deine Suchadresse (Tracker)", "Tu dirección de búsqueda (Trackers)", "Votre adresse de recherche (Trackers)", "Seu endereço de busca (Trackers)"),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = onSurfaceVariant,
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = contactAddress,
+                                    fontSize = 13.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    color = primaryColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
-                            .border(0.5.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
-                    ) {
-                        Text(
-                            text = Localizations.tr(appLanguage, "Копировать", "Copy", "Kopieren", "Copiar", "Copier", "Copiar"),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = primaryColor,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
+                            Surface(
+                                color = primaryColor.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .clickable {
+                                        copyTextToClipboard(context, "2PChat contact", contactAddress)
+                                        Toast.makeText(
+                                            context,
+                                            if (appLanguage == "Русский") "Адрес скопирован" else "Address copied",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                    .border(0.5.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                            ) {
+                                Text(
+                                    text = Localizations.tr(appLanguage, "Копировать", "Copy", "Kopieren", "Copiar", "Copier", "Copiar"),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryColor,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    if (onionAddressCard != null) {
+                        if (discoveryCode.isNotEmpty()) {
+                            HorizontalDivider(
+                                color = onSurfaceColor.copy(alpha = 0.06f),
+                                modifier = Modifier.padding(vertical = 8.dp),
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = Localizations.tr(appLanguage, "Ваш Tor .onion адрес", "Your Tor .onion address", "Deine Tor .onion Adresse", "Tu dirección Tor .onion", "Votre adresse Tor .onion", "Seu endereço Tor .onion"),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = onSurfaceVariant,
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = if (isTorDaemonRunning) "● Active" else "○ Standby",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isTorDaemonRunning) Color(0xFF4CAF50) else onSurfaceVariant.copy(alpha = 0.5f),
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = onionAddressCard,
+                                    fontSize = 12.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    color = primaryColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Surface(
+                                color = primaryColor.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .clickable {
+                                        copyTextToClipboard(context, "2PChat Tor Onion", onionAddressCard)
+                                        Toast.makeText(
+                                            context,
+                                            if (appLanguage == "Русский") "Tor Onion адрес скопирован" else "Tor Onion address copied",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                    .border(0.5.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                            ) {
+                                Text(
+                                    text = Localizations.tr(appLanguage, "Копировать", "Copy", "Kopieren", "Copiar", "Copier", "Copiar"),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryColor,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -825,6 +980,17 @@ fun ContactsTab(
                     "Ссылка приглашения распознана. Нажмите поиск для защищённого подключения."
                 } else {
                     "Invite link recognized. Tap search to connect securely."
+                },
+                color = primaryColor,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+            )
+        } else if (isDirectOnionAddress(searchQuery)) {
+            Text(
+                text = if (appLanguage == "Русский") {
+                    "Адрес Tor Onion распознан. Нажмите поиск для прямого подключения через Tor."
+                } else {
+                    "Tor Onion address recognized. Tap search to connect directly over Tor."
                 },
                 color = primaryColor,
                 fontSize = 11.sp,
@@ -999,19 +1165,25 @@ fun ContactsTab(
             val yggIp = remember { PythonBridge.getYggdrasilAddress() }
             val onionHost: String? = remember { com.example.twopchat.P2PPreferences.getTorOnionHostname(context) ?: com.example.twopchat.TorManager.onionAddress.value }
             val listenerPort = remember { P2PMessageRelay.listenerPort(context) }
+            var selectedQrMode by remember { mutableStateOf(if (onionHost != null && P2PPreferences.isTorEnabled(context)) "tor" else "standard") }
+
             val qrPayload = remember(
-                username, discoveryCode, fingerprint, localIp, qrPublicIpv4, yggIp, listenerPort, onionHost,
+                username, discoveryCode, fingerprint, localIp, qrPublicIpv4, yggIp, listenerPort, onionHost, selectedQrMode,
             ) {
-                buildContactQrPayload(
-                    nickname = username,
-                    discoveryCode = discoveryCode,
-                    fingerprint = fingerprint,
-                    localIpv4 = localIp.takeUnless { it == "127.0.0.1" }.orEmpty(),
-                    publicIpv4 = qrPublicIpv4,
-                    ipv6 = yggIp,
-                    listenerPort = listenerPort,
-                    onion = onionHost,
-                )
+                if (selectedQrMode == "tor" && onionHost != null) {
+                    "2pchat://connect?name=${android.net.Uri.encode(username)}&onion=${android.net.Uri.encode("$onionHost:$listenerPort")}&fp=${android.net.Uri.encode(fingerprint)}"
+                } else {
+                    buildContactQrPayload(
+                        nickname = username,
+                        discoveryCode = discoveryCode,
+                        fingerprint = fingerprint,
+                        localIpv4 = localIp.takeUnless { it == "127.0.0.1" }.orEmpty(),
+                        publicIpv4 = qrPublicIpv4,
+                        ipv6 = yggIp,
+                        listenerPort = listenerPort,
+                        onion = onionHost,
+                    )
+                }
             }
 
             val qrBitmap = com.example.twopchat.ui.common.rememberQrCodeBitmap(qrPayload)
@@ -1036,11 +1208,55 @@ fun ContactsTab(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = Localizations.tr(appLanguage, "Покажите этот QR другу — пусть отсканирует", "Show this QR to a friend to connect securely", "Zeige diesen QR-Code einem Freund für eine sichere Verbindung", "Muestra este QR a un amigo para conectarte de forma segura", "Montrez ce QR à un ami pour vous connecter en toute sécurité", "Mostre este QR para um amigo para se conectar com segurança"),
+                        text = if (selectedQrMode == "tor") {
+                            Localizations.tr(appLanguage, "Прямое и анонимное подключение через сеть Tor", "Direct and anonymous connection via Tor network", "Direkte und anonyme Verbindung über das Tor-Netzwerk", "Conexión directa y anónima a través de la red Tor", "Connexion directe et anonyme via le réseau Tor", "Conexão direta e anônima pela rede Tor")
+                        } else {
+                            Localizations.tr(appLanguage, "Покажите этот QR другу — пусть отсканирует", "Show this QR to a friend to connect securely", "Zeige diesen QR-Code einem Freund für eine sichere Verbindung", "Muestra este QR a un amigo para conectarte de forma segura", "Montrez ce QR à un ami pour vous connecter en toute sécurité", "Mostre este QR para um amigo para se conectar com segurança")
+                        },
                         fontSize = 12.sp,
                         color = onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
+
+                    if (onionHost != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            Surface(
+                                color = if (selectedQrMode == "standard") primaryColor else primaryColor.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .clickable { selectedQrMode = "standard" }
+                                    .border(0.5.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                            ) {
+                                Text(
+                                    text = Localizations.tr(appLanguage, "🌐 Стандартный", "🌐 Standard", "🌐 Standard", "🌐 Estándar", "🌐 Standard", "🌐 Padrão"),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (selectedQrMode == "standard") (if (primaryColor == MintGreen) StealthBlack else Color.White) else onSurfaceColor,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                color = if (selectedQrMode == "tor") primaryColor else primaryColor.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .clickable { selectedQrMode = "tor" }
+                                    .border(0.5.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                            ) {
+                                Text(
+                                    text = Localizations.tr(appLanguage, "🧅 Tor Onion", "🧅 Tor Onion", "🧅 Tor Onion", "🧅 Tor Onion", "🧅 Tor Onion", "🧅 Tor Onion"),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (selectedQrMode == "tor") (if (primaryColor == MintGreen) StealthBlack else Color.White) else onSurfaceColor,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
