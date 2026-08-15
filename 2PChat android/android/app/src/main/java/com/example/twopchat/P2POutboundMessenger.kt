@@ -215,8 +215,9 @@ internal class P2POutboundMessenger(
             try {
                 if (isPaused(context, peerName)) return@launch postResult(onResult, false)
                 val prefs = P2PPreferences.prefs(context)
-                val endpoint = peerEndpoints[peerName]
+                val rawEndpoint = peerEndpoints[peerName]
                     ?: prefs.getString(P2PPreferences.lastEndpoint(peerName), "").orEmpty()
+                val endpoint = P2PPreferences.getEffectiveEndpointsForPeer(context, peerName, rawEndpoint)
                 val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null)
                 log(context, "Requesting reconnection for $peerName at endpoint '$endpoint'", "INFO", null)
                 val success = PythonBridge.reconnectPeerSession(peerName, endpoint, fingerprint)

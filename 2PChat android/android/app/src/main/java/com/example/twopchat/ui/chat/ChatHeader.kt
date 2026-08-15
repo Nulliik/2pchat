@@ -55,6 +55,7 @@ internal fun ChatHeader(
     onClearHistory: () -> Unit,
     onDeleteChat: () -> Unit,
     onSetWallpaper: () -> Unit = {},
+    onOpenConnectionMode: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -181,6 +182,7 @@ internal fun ChatHeader(
                     appLanguage = appLanguage,
                     primaryColor = primaryColor,
                     onSurfaceVariant = onSurfaceVariant,
+                    onClick = onOpenConnectionMode,
                 )
             }
         }
@@ -356,6 +358,7 @@ internal fun ConnectionTypeBadge(
     primaryColor: Color,
     onSurfaceVariant: Color,
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
     val (badgeBg, contentColor, iconRes, label) = when (transportType) {
         TransportType.ONION -> {
@@ -407,6 +410,11 @@ internal fun ConnectionTypeBadge(
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
             .background(badgeBg)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(onClick = onClick)
+                } else Modifier
+            )
             .padding(horizontal = 6.dp, vertical = 2.dp),
     ) {
         if (iconRes != null) {
@@ -434,6 +442,15 @@ internal fun ConnectionTypeBadge(
             maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
+        if (onClick != null) {
+            Spacer(Modifier.width(2.dp))
+            Text(
+                text = "▾",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = contentColor.copy(alpha = 0.70f)
+            )
+        }
     }
 }
 

@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.sp
 import com.example.twopchat.R
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.P2PPreferences
+import com.example.twopchat.TransportType
 import com.example.twopchat.connectionTransportLabel
 import com.example.twopchat.copyTextToClipboard
 import com.example.twopchat.theme.StealthBlack
@@ -72,6 +74,7 @@ private fun formatDate(epochMs: Long, language: String): String {
     return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(epochMs))
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SharedMediaScreen(
     peerName: String,
@@ -144,6 +147,8 @@ fun SharedMediaScreen(
     val isDark = surfaceColor.luminance() < 0.5f
     val mainBg = if (isDark) Color(0xFF0C0E10) else Color(0xFFF4F6F9)
     val cardBg = if (isDark) Color(0xFF16191C) else Color(0xFFFFFFFF)
+
+    var showConnectionModeSheet by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -483,6 +488,59 @@ fun SharedMediaScreen(
                                 }
                             }
 
+                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
+
+                            // Connection Mode Row
+                            val transportPref = P2PPreferences.getPeerTransportPreference(context, peerName)
+                            val prefLabel = when (transportPref) {
+                                P2PPreferences.PeerTransportPreference.AUTO -> if (appLanguage == "Русский") "⚡ Авто" else "⚡ Auto"
+                                P2PPreferences.PeerTransportPreference.TOR_ONLY -> if (appLanguage == "Русский") "🟣 Только Tor" else "🟣 Tor Only"
+                                P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY -> if (appLanguage == "Русский") "🟢 Только Yggdrasil" else "🟢 Yggdrasil Only"
+                                P2PPreferences.PeerTransportPreference.DIRECT_ONLY -> if (appLanguage == "Русский") "🟢 Только Direct P2P" else "🟢 Direct P2P Only"
+                            }
+                            val transportType = P2PMessageRelay.getPeerTransportType(peerName)
+                            val activeLabel = when (transportType) {
+                                TransportType.ONION -> "Tor Onion"
+                                TransportType.DIRECT -> "Direct P2P"
+                                TransportType.YGGDRASIL -> "Yggdrasil"
+                                TransportType.DISCONNECTED -> if (appLanguage == "Русский") "Не в сети" else "Offline"
+                            }
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { showConnectionModeSheet = true }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_shield_status),
+                                    contentDescription = "Connection Mode",
+                                    tint = primaryColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = Localizations.tr(appLanguage, "Режим соединения", "Connection Mode", "Verbindungsmodus", "Modo de conexión", "Mode de connexion", "Modo de conexão"),
+                                        fontSize = 11.sp,
+                                        color = onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "$prefLabel ($activeLabel)",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = onSurfaceColor
+                                    )
+                                }
+                                Text(
+                                    text = "›",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = onSurfaceVariant.copy(alpha = 0.60f)
+                                )
+                            }
                         }
                     }
                 }
@@ -1022,6 +1080,18 @@ fun SharedMediaScreen(
                 }
             }
         }
+    }
+
+    if (showConnectionModeSheet && peerName != "Saved Messages") {
+        ConnectionModeBottomSheet(
+            peerName = peerName,
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = onSurfaceVariant,
+            onDismiss = { showConnectionModeSheet = false }
+        )
     }
 }
 

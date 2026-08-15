@@ -103,6 +103,7 @@ fun ChatScreen(
     var activeFullscreenBitmapOverrides by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
     var activeFullscreenVideo by remember { mutableStateOf<String?>(null) }
     var showProfileOverlay by remember { mutableStateOf(false) }
+    var showConnectionModeSheet by remember { mutableStateOf(false) }
 
     BackHandler {
         if (activeFullscreenImages.isNotEmpty()) {
@@ -112,6 +113,8 @@ fun ChatScreen(
             activeFullscreenVideo = null
         } else if (showProfileOverlay) {
             showProfileOverlay = false
+        } else if (showConnectionModeSheet) {
+            showConnectionModeSheet = false
         } else {
             onBack()
         }
@@ -1822,6 +1825,7 @@ fun ChatScreen(
                 onSearchModeChange = { isSearchMode = it },
                 onSearchQueryChange = { searchQuery = it },
                 onShowProfile = { showProfileOverlay = true },
+                onOpenConnectionMode = { showConnectionModeSheet = true },
                 onVerify = { showVerifyDialog = true },
                 onReconnect = {
                     Toast.makeText(
@@ -3527,6 +3531,18 @@ remove("pinned_msg_id_${peerName}")
                         }
                     }
                 }
+            )
+        }
+
+        if (showConnectionModeSheet && peerName != "Saved Messages") {
+            ConnectionModeBottomSheet(
+                peerName = peerName,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                onDismiss = { showConnectionModeSheet = false }
             )
         }
 

@@ -308,6 +308,7 @@ object P2PPreferences {
     fun unreadCount(peerName: String) = "unread_count_$peerName"
     fun draftMessage(peerName: String) = "draft_msg_$peerName"
     fun transport(peerName: String) = "transport_$peerName"
+    fun peerTransportPref(peerName: String) = "peer_transport_pref_$peerName"
     fun verifiedPeer(peerName: String) = "verified_peer_$peerName"
     fun pinnedMessageId(peerName: String) = "pinned_msg_id_$peerName"
     fun pinnedMessageText(peerName: String) = "pinned_msg_text_$peerName"
@@ -315,6 +316,43 @@ object P2PPreferences {
     fun pinnedBy(peerName: String) = "pinned_by_$peerName"
     fun pinnedStateVersion(peerName: String) = "pinned_state_version_$peerName"
     fun pinnedStateActor(peerName: String) = "pinned_state_actor_$peerName"
+
+    enum class PeerTransportPreference(val key: String) {
+        AUTO("auto"),
+        TOR_ONLY("tor"),
+        YGGDRASIL_ONLY("yggdrasil"),
+        DIRECT_ONLY("direct");
+
+        companion object {
+            fun fromKey(key: String?): PeerTransportPreference {
+                return entries.firstOrNull { it.key.equals(key, ignoreCase = true) } ?: AUTO
+            }
+        }
+    }
+
+    fun getPeerTransportPreference(context: Context, peerName: String): PeerTransportPreference {
+        val raw = prefs(context).getString(peerTransportPref(peerName), null)
+        return PeerTransportPreference.fromKey(raw)
+    }
+
+    fun setPeerTransportPreference(context: Context, peerName: String, pref: PeerTransportPreference) {
+        prefs(context).edit().putString(peerTransportPref(peerName), pref.key).apply()
+    }
+
+    fun getEffectiveEndpointsForPeer(context: Context, peerName: String, rawEndpoints: String? = null): String {
+        val endpoints = rawEndpoints?.takeIf { it.isNotBlank() }
+            ?: prefs(context).getString(lastEndpoint(peerName), "").orEmpty()
+        if (endpoints.isBlank()) return ""
+        val pref = getPeerTransportPreference(context, peerName)
+        val list = endpoints.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val filtered = when (pref) {
+            PeerTransportPreference.AUTO -> list
+            PeerTransportPreference.TOR_ONLY -> list.filter { it.contains(".onion", ignoreCase = true) }
+            PeerTransportPreference.YGGDRASIL_ONLY -> list.filter { it.startsWith("[") || (it.contains(":") && it.count { c -> c == ':' } > 1) }
+            PeerTransportPreference.DIRECT_ONLY -> list.filter { !it.contains(".onion", ignoreCase = true) && !it.startsWith("[") && it.count { c -> c == ':' } <= 1 }
+        }
+        return if (filtered.isNotEmpty()) filtered.joinToString(",") else endpoints
+    }
 
     fun setPeerOnionAddress(context: Context, peerName: String, onionAddress: String) {
         prefs(context).edit().putString(peerOnionAddress(peerName), onionAddress).apply()

@@ -48,4 +48,14 @@ class ConnectionTransportTest {
             connectionTransportLabel(null, null, "English"),
         )
     }
+
+    @Test
+    fun `parses PeerTransportPreference keys correctly`() {
+        assertEquals(P2PPreferences.PeerTransportPreference.AUTO, P2PPreferences.PeerTransportPreference.fromKey("auto"))
+        assertEquals(P2PPreferences.PeerTransportPreference.TOR_ONLY, P2PPreferences.PeerTransportPreference.fromKey("tor"))
+        assertEquals(P2PPreferences.PeerTransportPreference.YGGDRASIL_ONLY, P2PPreferences.PeerTransportPreference.fromKey("yggdrasil"))
+        assertEquals(P2PPreferences.PeerTransportPreference.DIRECT_ONLY, P2PPreferences.PeerTransportPreference.fromKey("direct"))
+        assertEquals(P2PPreferences.PeerTransportPreference.AUTO, P2PPreferences.PeerTransportPreference.fromKey("invalid"))
+        assertEquals(P2PPreferences.PeerTransportPreference.AUTO, P2PPreferences.PeerTransportPreference.fromKey(null))
+    }
 }
