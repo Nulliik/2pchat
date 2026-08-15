@@ -27,7 +27,7 @@ private fun isUsableExternalIpv4(value: String): Boolean {
     return !isLocalIpv4(value) && octets[0] != 0 && octets[0] < 224
 }
 
-internal fun isValidEndpoint(endpoint: String): Boolean {
+internal fun isValidSingleEndpoint(endpoint: String): Boolean {
     val trimmed = endpoint.trim()
     if (trimmed.isEmpty() || trimmed.length > 256) return false
     val lastColonIndex = trimmed.lastIndexOf(':')
@@ -50,9 +50,17 @@ internal fun isValidEndpoint(endpoint: String): Boolean {
     return true
 }
 
+internal fun isValidEndpoint(endpoint: String): Boolean {
+    val trimmed = endpoint.trim()
+    if (trimmed.isEmpty() || trimmed.length > 2048) return false
+    val parts = trimmed.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+    if (parts.isEmpty()) return false
+    return parts.all(::isValidSingleEndpoint)
+}
+
 /** Stable route order for QR probes: LAN IPv4, public IPv4, then IPv6. */
 internal fun orderedDirectEndpoints(endpoints: List<String>): List<String> =
-    endpoints.filter(::isValidEndpoint).distinct().sortedBy { endpoint ->
+    endpoints.filter(::isValidSingleEndpoint).distinct().sortedBy { endpoint ->
         when {
             isLocalIpv4(endpoint) -> 0
             numericIpv4Octets(endpoint) != null -> 1
