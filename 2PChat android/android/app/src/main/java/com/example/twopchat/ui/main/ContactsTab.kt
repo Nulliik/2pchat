@@ -486,23 +486,26 @@ fun ContactsTab(
                             Toast.LENGTH_LONG,
                         ).show()
                     }
+                    val existingPeerName = P2PPreferences.findPeerNameByEndpoint(context, directOnion.onionEndpoint)
+                    val effectiveName = existingPeerName ?: directOnion.nickname
+
                     isResolvingInvite = true
                     resolveInviteStatus = if (appLanguage == "Русский") "Подключение к скрытому сервису Tor..." else "Connecting to Tor hidden service..."
                     com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(
-                        directOnion.nickname, "", directOnion.onionEndpoint,
+                        effectiveName, "", directOnion.onionEndpoint,
                     )
                     val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-                    if (!activeSet.contains(directOnion.nickname)) {
+                    if (!activeSet.contains(effectiveName)) {
                         sharedPrefs.edit()
-                            .putStringSet("active_chats", activeSet + directOnion.nickname)
-                            .putString("transport_${directOnion.nickname}", "Tor Onion")
+                            .putStringSet("active_chats", activeSet + effectiveName)
+                            .putString("transport_${effectiveName}", "Tor Onion")
                             .apply()
                     }
-                    com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(directOnion.nickname, directOnion.onionEndpoint)
+                    com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, directOnion.onionEndpoint)
                     com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(context)
                     resolveInviteStatus = ""
                     isResolvingInvite = false
-                    onItemClick(Chat(directOnion.nickname))
+                    onItemClick(Chat(effectiveName))
                 } else {
                     searchSummary = if (appLanguage == "Русский") {
                         "Некорректный Tor .onion адрес."

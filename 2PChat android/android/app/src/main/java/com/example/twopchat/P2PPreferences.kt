@@ -198,6 +198,34 @@ object P2PPreferences {
         return null
     }
 
+    fun findPeerNameByEndpoint(context: Context, targetEndpoint: String): String? {
+        if (targetEndpoint.isBlank()) return null
+        val cleanTarget = targetEndpoint.trim().lowercase(java.util.Locale.US).removePrefix("[").removeSuffix("]")
+        val targetHost = if (cleanTarget.contains(":")) cleanTarget.substringBefore(":") else cleanTarget
+        if (targetHost.isBlank()) return null
+        val allEntries = prefs(context).all
+        for ((key, value) in allEntries) {
+            if ((key.startsWith("last_endpoint_") || key.startsWith("pending_peer_endpoint_")) && value is String) {
+                val endpoints = value.split(",")
+                for (ep in endpoints) {
+                    val cleanEp = ep.trim().lowercase(java.util.Locale.US).removePrefix("[").removeSuffix("]")
+                    val host = if (cleanEp.contains(":")) cleanEp.substringBefore(":") else cleanEp
+                    if (host == targetHost && host.isNotBlank()) {
+                        val peerName = if (key.startsWith("last_endpoint_")) {
+                            key.removePrefix("last_endpoint_")
+                        } else {
+                            key.removePrefix("pending_peer_endpoint_")
+                        }
+                        if (peerName.isNotBlank() && !peerName.startsWith("Peer (") && !peerName.startsWith("Tor Peer (")) {
+                            return peerName
+                        }
+                    }
+                }
+            }
+        }
+        return null
+    }
+
     fun updateFingerprintCache(fingerprint: String, peerName: String) {
         if (fingerprint.isNotBlank() && peerName.isNotBlank()) {
             fingerprintToPeerNameCache[fingerprint] = peerName
