@@ -679,121 +679,141 @@ fun ChatsTab(
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.height(10.dp))
+                                        Spacer(modifier = Modifier.height(10.dp))
 
-                                    // Node Pipeline Flow Row: [Guard Node] ──➔ [Middle Node] ──➔ [Exit Node]
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // 1. Guard Node Pill (Вход)
-                                        Box(
+                                        // Node Pipeline Flow Row: [Guard Node] ──➔ [Middle Node] ──➔ [Exit Node]
+                                        Row(
                                             modifier = Modifier
-                                                .weight(1f)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(Color(0xFF10B981).copy(alpha = 0.12f))
-                                                .border(0.75.dp, Color(0xFF10B981).copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                                                .padding(vertical = 8.dp, horizontal = 6.dp),
-                                            contentAlignment = Alignment.Center
+                                                .fillMaxWidth()
+                                                .height(IntrinsicSize.Min),
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(text = guardNode?.flagEmoji ?: "🛡️", fontSize = 12.sp)
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = guardNode?.countryCode ?: com.example.twopchat.data.Localizations.tr(
-                                                        appLanguage,
-                                                        ru = "Вход",
-                                                        en = "Guard",
-                                                        de = "Eingang",
-                                                        es = "Entrada",
-                                                        fr = "Entrée",
-                                                        pt = "Entrada"
-                                                    ),
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color(0xFF10B981)
-                                                )
+                                            // 1. Guard Node Pill (Вход)
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .fillMaxHeight()
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(Color(0xFF10B981).copy(alpha = 0.12f))
+                                                    .border(0.75.dp, Color(0xFF10B981).copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.Center
+                                                ) {
+                                                    Text(text = guardNode?.flagEmoji ?: "🛡️", fontSize = 11.sp)
+                                                    Spacer(modifier = Modifier.width(3.dp))
+                                                    Text(
+                                                        text = guardNode?.countryCode ?: com.example.twopchat.data.Localizations.tr(
+                                                            appLanguage,
+                                                            ru = "Вход",
+                                                            en = "Guard",
+                                                            de = "Eingang",
+                                                            es = "Entrada",
+                                                            fr = "Entrée",
+                                                            pt = "Entrada"
+                                                        ),
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFF10B981),
+                                                        maxLines = 1,
+                                                        softWrap = false
+                                                    )
+                                                }
                                             }
-                                        }
 
-                                        // Connector 1
-                                        Text(
-                                            text = "➔",
-                                            fontSize = 12.sp,
-                                            color = onSurfaceVariant.copy(alpha = 0.5f)
-                                        )
+                                            // Connector 1
+                                            Text(
+                                                text = "➔",
+                                                fontSize = 11.sp,
+                                                color = onSurfaceVariant.copy(alpha = 0.5f)
+                                            )
 
-                                        // 2. Middle Node Pill (Срединный)
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1.1f)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(primaryColor.copy(alpha = 0.12f))
-                                                .border(0.75.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                                                .padding(vertical = 8.dp, horizontal = 6.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(text = middleNode?.flagEmoji ?: "⚡", fontSize = 12.sp)
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = middleNode?.countryCode ?: com.example.twopchat.data.Localizations.tr(
-                                                        appLanguage,
-                                                        ru = "Срединный",
-                                                        en = "Middle",
-                                                        de = "Mitte",
-                                                        es = "Intermedio",
-                                                        fr = "Intermédiaire",
-                                                        pt = "Intermediário"
-                                                    ),
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = primaryColor
-                                                )
+                                            // 2. Middle Node Pill (Средн)
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .fillMaxHeight()
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(primaryColor.copy(alpha = 0.12f))
+                                                    .border(0.75.dp, primaryColor.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.Center
+                                                ) {
+                                                    Text(text = middleNode?.flagEmoji ?: "⚡", fontSize = 11.sp)
+                                                    Spacer(modifier = Modifier.width(3.dp))
+                                                    Text(
+                                                        text = middleNode?.countryCode ?: com.example.twopchat.data.Localizations.tr(
+                                                            appLanguage,
+                                                            ru = "Средн",
+                                                            en = "Middle",
+                                                            de = "Mitte",
+                                                            es = "Medio",
+                                                            fr = "Milieu",
+                                                            pt = "Médio"
+                                                        ),
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = primaryColor,
+                                                        maxLines = 1,
+                                                        softWrap = false
+                                                    )
+                                                }
                                             }
-                                        }
 
-                                        // Connector 2
-                                        Text(
-                                            text = "➔",
-                                            fontSize = 12.sp,
-                                            color = onSurfaceVariant.copy(alpha = 0.5f)
-                                        )
+                                            // Connector 2
+                                            Text(
+                                                text = "➔",
+                                                fontSize = 11.sp,
+                                                color = onSurfaceVariant.copy(alpha = 0.5f)
+                                            )
 
-                                        // 3. Exit Node Pill (Выход)
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(Color(0xFF3B82F6).copy(alpha = 0.12f))
-                                                .border(0.75.dp, Color(0xFF3B82F6).copy(alpha = 0.3f), RoundedCornerShape(12.dp))
-                                                .padding(vertical = 8.dp, horizontal = 6.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(text = exitNode?.flagEmoji ?: "🌍", fontSize = 12.sp)
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = exitNode?.countryCode ?: com.example.twopchat.data.Localizations.tr(
-                                                        appLanguage,
-                                                        ru = "Выход",
-                                                        en = "Exit",
-                                                        de = "Ausgang",
-                                                        es = "Salida",
-                                                        fr = "Sortie",
-                                                        pt = "Saída"
-                                                    ),
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color(0xFF3B82F6)
-                                                )
+                                            // 3. Exit Node Pill (Выход)
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .fillMaxHeight()
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(Color(0xFF3B82F6).copy(alpha = 0.12f))
+                                                    .border(0.75.dp, Color(0xFF3B82F6).copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.Center
+                                                ) {
+                                                    Text(text = exitNode?.flagEmoji ?: "🌍", fontSize = 11.sp)
+                                                    Spacer(modifier = Modifier.width(3.dp))
+                                                    Text(
+                                                        text = exitNode?.countryCode ?: com.example.twopchat.data.Localizations.tr(
+                                                            appLanguage,
+                                                            ru = "Выход",
+                                                            en = "Exit",
+                                                            de = "Ausgang",
+                                                            es = "Salida",
+                                                            fr = "Sortie",
+                                                            pt = "Saída"
+                                                        ),
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color(0xFF3B82F6),
+                                                        maxLines = 1,
+                                                        softWrap = false
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
 
                         Spacer(modifier = Modifier.height(8.dp))
 
@@ -837,33 +857,39 @@ fun ChatsTab(
                                 Spacer(modifier = Modifier.height(8.dp))
 
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(IntrinsicSize.Min),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     // Trackers Chip
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
+                                            .fillMaxHeight()
                                             .clip(RoundedCornerShape(10.dp))
                                             .clickable { onStatusPillClick(RadarNode.TRACKERS) }
                                             .background(if (heroTrackersOk == true) Color(0xFF10B981).copy(alpha = 0.12f) else onSurfaceVariant.copy(alpha = 0.12f))
                                             .border(0.5.dp, if (heroTrackersOk == true) Color(0xFF10B981).copy(alpha = 0.35f) else onSurfaceVariant.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
-                                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                                            .padding(vertical = 7.dp, horizontal = 4.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
                                             text = com.example.twopchat.data.Localizations.tr(
                                                 appLanguage,
-                                                ru = "📡 Трекеры: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
-                                                en = "📡 Trackers: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
-                                                de = "📡 Tracker: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
-                                                es = "📡 Rastreos: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
-                                                fr = "📡 Traqueurs: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
-                                                pt = "📡 Rastradores: ${if (heroTrackersOk == true) "9/9" else "0/9"}"
+                                                ru = "📡 Трек: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
+                                                en = "📡 Track: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
+                                                de = "📡 Track: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
+                                                es = "📡 Rast: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
+                                                fr = "📡 Traq: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
+                                                pt = "📡 Rast: ${if (heroTrackersOk == true) "9/9" else "0/9"}"
                                             ),
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (heroTrackersOk == true) Color(0xFF10B981) else onSurfaceVariant
+                                            color = if (heroTrackersOk == true) Color(0xFF10B981) else onSurfaceVariant,
+                                            maxLines = 1,
+                                            softWrap = false
                                         )
                                     }
 
@@ -871,11 +897,12 @@ fun ChatsTab(
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
+                                            .fillMaxHeight()
                                             .clip(RoundedCornerShape(10.dp))
                                             .clickable { onStatusPillClick(RadarNode.PEERS) }
                                             .background(if (heroActivePeers > 0) Color(0xFF10B981).copy(alpha = 0.12f) else onSurfaceVariant.copy(alpha = 0.12f))
                                             .border(0.5.dp, if (heroActivePeers > 0) Color(0xFF10B981).copy(alpha = 0.35f) else onSurfaceVariant.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
-                                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                                            .padding(vertical = 7.dp, horizontal = 4.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
@@ -890,7 +917,9 @@ fun ChatsTab(
                                             ),
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (heroActivePeers > 0) Color(0xFF10B981) else onSurfaceVariant
+                                            color = if (heroActivePeers > 0) Color(0xFF10B981) else onSurfaceVariant,
+                                            maxLines = 1,
+                                            softWrap = false
                                         )
                                     }
 
@@ -898,11 +927,12 @@ fun ChatsTab(
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
+                                            .fillMaxHeight()
                                             .clip(RoundedCornerShape(10.dp))
                                             .clickable { onStatusPillClick(RadarNode.ROUTER) }
                                             .background(if (heroUpnpOk == true) Color(0xFF10B981).copy(alpha = 0.12f) else onSurfaceVariant.copy(alpha = 0.12f))
                                             .border(0.5.dp, if (heroUpnpOk == true) Color(0xFF10B981).copy(alpha = 0.35f) else onSurfaceVariant.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
-                                            .padding(vertical = 6.dp, horizontal = 4.dp),
+                                            .padding(vertical = 7.dp, horizontal = 4.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(

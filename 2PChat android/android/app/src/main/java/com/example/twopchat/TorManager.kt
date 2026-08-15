@@ -112,12 +112,12 @@ object TorManager {
     private val _lastBootstrapFailureReason = MutableStateFlow<String?>(null)
     val lastBootstrapFailureReason: StateFlow<String?> = _lastBootstrapFailureReason.asStateFlow()
 
-    private val _circuitStatus = MutableStateFlow("[🛡️ Вход] ➔ [🔄 Срединный] ➔ [🌍 Выход]")
+    private val _circuitStatus = MutableStateFlow("[🛡️ Вход] ➔ [🔄 Средн] ➔ [🌍 Выход]")
     val circuitStatus: StateFlow<String> = _circuitStatus.asStateFlow()
 
     private val defaultNodes = listOf(
         TorCircuitNode(role = "Guard", countryCode = null, flagEmoji = "🛡️", name = "Вход"),
-        TorCircuitNode(role = "Middle", countryCode = null, flagEmoji = "⚡", name = "Срединный"),
+        TorCircuitNode(role = "Middle", countryCode = null, flagEmoji = "⚡", name = "Средн"),
         TorCircuitNode(role = "Exit", countryCode = null, flagEmoji = "🌍", name = "Выход")
     )
 
@@ -460,7 +460,7 @@ object TorManager {
             val cookieFile = File(appTorDir, "control_auth_cookie")
             if (!cookieFile.exists()) {
                 Log.w(TAG, "ControlPort auth cookie not found")
-                _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Срединный] ➔ [🌍 Выход (Обновлен)]"
+                _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Средн] ➔ [🌍 Выход (Обновлен)]"
                 return@withContext true
             }
             val hexAuthCookie = formatControlAuthCookie(cookieFile.readBytes())
@@ -501,13 +501,13 @@ object TorManager {
                     }
                 }
 
-                _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Срединный] ➔ [🌍 Выход (Обновлен)]"
+                _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Средн] ➔ [🌍 Выход (Обновлен)]"
                 Log.i(TAG, "[TOR] Successfully renewed Tor identity (SIGNAL NEWNYM)")
                 return@withContext true
             }
         } catch (exc: Exception) {
             Log.w(TAG, "Failed to send SIGNAL NEWNYM to ControlPort (${exc.javaClass.simpleName})")
-            _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Срединный] ➔ [🌍 Выход (Обновлен)]"
+            _circuitStatus.value = "[🛡️ Вход] ➔ [🔄 Средн] ➔ [🌍 Выход (Обновлен)]"
             return@withContext true
         } finally {
             _isRotatingCircuit.value = false
