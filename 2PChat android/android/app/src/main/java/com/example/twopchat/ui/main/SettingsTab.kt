@@ -2782,6 +2782,20 @@ fun SettingsTab(
                                     title = Localizations.getString("help_duress_title", appLanguage),
                                     description = Localizations.getString("help_duress_desc", appLanguage),
                                     primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor
+                                )
+
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_onion_exchange_title", appLanguage),
+                                    description = Localizations.getString("help_onion_exchange_desc", appLanguage),
+                                    primaryColor = primaryColor,
+                                    onSurfaceColor = onSurfaceColor
+                                )
+
+                                HelpAccordionItem(
+                                    title = Localizations.getString("help_transport_badges_title", appLanguage),
+                                    description = Localizations.getString("help_transport_badges_desc", appLanguage),
+                                    primaryColor = primaryColor,
                                     onSurfaceColor = onSurfaceColor,
                                     showDivider = false
                                 )

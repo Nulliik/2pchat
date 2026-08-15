@@ -159,6 +159,10 @@ object Localizations {
         "help_circuit_rotation_desc" to "The 'New Identity' action sends a SIGNAL NEWNYM command to the Tor ControlPort. This immediately rotates your Exit Node and active session IP. Use this if a node is throttled, blocked, or slow.",
         "help_sqlcipher_title" to "SQLCipher Database Encryption (AES-256)",
         "help_sqlcipher_desc" to "All local chats, profiles, and media in 2PChat are encrypted on-disk using SQLCipher (256-bit AES-CBC). Cryptographic keys are protected by hardware-backed Android/iOS Keystore, preventing extraction via physical access or backups.",
+        "help_onion_exchange_title" to "Automatic Onion Address Exchange",
+        "help_onion_exchange_desc" to "When establishing a session over any transport (LAN, Yggdrasil, or Trackers), peers automatically and anonymously exchange their v3 .onion addresses inside the encrypted Double Ratchet handshake for future direct Tor messaging.",
+        "help_transport_badges_title" to "Connection Type Badges (Direct / Tor / Disconnected)",
+        "help_transport_badges_desc" to "Chat header badges indicate the active transport: Green ('Direct / Yggdrasil') for high-speed local P2P or Yggdrasil mesh with latency stats; Purple ('Tor Onion') for full anonymous 3-hop Tor routing; Grey for connecting state.",
 
 
 
@@ -377,6 +381,10 @@ object Localizations {
         "help_circuit_rotation_desc" to "Функция «Сменить цепочку» отправляет сигнал SIGNAL NEWNYM в Tor ControlPort. Это мгновенно меняет выходной узел (Exit Node) и IP-адрес вашей сессии. Используйте это, если один из узлов заблокирован или работает медленно.",
         "help_sqlcipher_title" to "Шифрование базы данных SQLCipher (AES-256)",
         "help_sqlcipher_desc" to "Все сообщения, профили и файлы в 2PChat шифруются прямо на устройстве с помощью баз данных SQLCipher (AES-256-CBC). Ключи шифрования защищены в аппаратном Keystore Android/iOS, предотвращая извлечение данных при физическом доступе или бэкапе.",
+        "help_onion_exchange_title" to "Автоматический обмен .onion адресами",
+        "help_onion_exchange_desc" to "При первом установлении сессии по любому каналу (LAN, Yggdrasil или трекеры) приложения автоматически и анонимно обмениваются своими v3 .onion адресами внутри шифрованного канала Double Ratchet для будущих прямых анонимных подключений.",
+        "help_transport_badges_title" to "Индикаторы типа соединения (Direct / Tor / Disconnected)",
+        "help_transport_badges_desc" to "Бейджи в шапке чата отображают активный транспорт: Зелёный («Direct / Yggdrasil») — высокоскоростное прямое P2P-соединение с показателем пинга; Фиолетовый («Tor Onion») — полностью анонимный 3-узловой Tor-туннель; Серый — ожидание подключения.",
 
 
 
