@@ -329,6 +329,51 @@ class TorManagerTest {
         assertEquals("US", nodes[2].countryCode)
         assertEquals("🇺🇸", nodes[2].flagEmoji)
     }
+
+    @Test
+    fun testTorrcConfigStringGenerationWithHiddenService() {
+        val config = TorManager.generateTorrcContent(
+            dataDir = "/data/user/0/com.example.twopchat/files/app_tor",
+            socksPort = 9050,
+            controlPort = 9051,
+            hiddenServiceDir = "/data/user/0/com.example.twopchat/files/app_tor/hidden_service_v3",
+            hiddenServicePort = 50001,
+            hiddenServiceTargetPort = 50001,
+        )
+        assertTrue(config.contains("HiddenServiceDir /data/user/0/com.example.twopchat/files/app_tor/hidden_service_v3"))
+        assertTrue(config.contains("HiddenServicePort 50001 127.0.0.1:50001"))
+        assertTrue(config.contains("HiddenServiceVersion 3"))
+    }
+
+    @Test
+    fun testReadOnionHostname() {
+        val tempDir = File.createTempFile("tor_hs_", "_test")
+        tempDir.delete()
+        tempDir.mkdirs()
+        try {
+            assertNull(TorManager.readOnionHostname(tempDir))
+
+            val hostnameFile = File(tempDir, "hostname")
+            hostnameFile.writeText("exmpl567890abcdefghijklmnopqrstuvwxyz12345678901234.onion\n")
+            val hostname = TorManager.readOnionHostname(tempDir)
+            assertEquals("exmpl567890abcdefghijklmnopqrstuvwxyz12345678901234.onion", hostname)
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun testFormatInviteEndpointWithOnion() {
+        val onionHost = "exmpl567890abcdefghijklmnopqrstuvwxyz12345678901234.onion"
+        assertEquals(
+            "$onionHost:50001",
+            com.example.twopchat.ui.main.formatInviteEndpoint(onionHost, 50001),
+        )
+        assertEquals(
+            "$onionHost:50002",
+            com.example.twopchat.ui.main.formatInviteEndpoint("$onionHost:50002", 50001),
+        )
+    }
 }
 
 

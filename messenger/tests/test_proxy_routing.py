@@ -1,3 +1,4 @@
+import asyncio
 import json
 import socket
 
@@ -150,4 +151,83 @@ def test_tor_skips_udp_trackers(monkeypatch):
     }))
     filtered_direct = discovery_bridge._filter_enabled_trackers(trackers)
     assert "Torrent.eu.org UDP" in filtered_direct
+
+
+def test_onion_endpoint_sorting_and_transport_label():
+    from messenger import discovery_bridge
+
+    onion_ep = "v4kg3exmpl567890abcdefghijklmnopqrstuvwxyz1234567890123.onion:50001"
+    ygg_ep = "[200:1e2f:e608:fa24:5b27:32ef:e364:45fe]:50001"
+    ipv4_ep = "192.168.1.100:50001"
+
+    # Transport label
+    assert discovery_bridge._transport_for_endpoint(onion_ep) == "Tor Onion"
+    assert discovery_bridge._transport_for_endpoint(ygg_ep) == "Yggdrasil"
+    assert discovery_bridge._transport_for_endpoint(ipv4_ep) == "Direct P2P"
+
+    # IPv4 detection
+    assert discovery_bridge._is_ipv4_endpoint(onion_ep) is False
+    assert discovery_bridge._is_ipv4_endpoint(ygg_ep) is False
+    assert discovery_bridge._is_ipv4_endpoint(ipv4_ep) is True
+
+    # Sorting when Tor is active
+    discovery_bridge.configure_proxy(json.dumps({
+        "proxy_enabled": True,
+        "proxy_host": "127.0.0.1",
+        "proxy_port": 9050,
+    }))
+    endpoints = [ipv4_ep, ygg_ep, onion_ep]
+    sorted_endpoints = sorted(endpoints, key=discovery_bridge._endpoint_sort_key)
+    assert sorted_endpoints[0] == onion_ep
+    assert sorted_endpoints[1] == ygg_ep
+    assert sorted_endpoints[2] == ipv4_ep
+
+
+@pytest.mark.asyncio
+async def test_direct_transport_onion_connect_via_socks(monkeypatch):
+    from messenger.core.transport_direct import DirectTransport
+
+    socks_calls = []
+
+    class MockSocksSocket:
+        def __init__(self):
+            pass
+
+        def set_proxy(self, proxy_type, host, port, rdns=True):
+            socks_calls.append(("set_proxy", proxy_type, host, port, rdns))
+
+        def settimeout(self, timeout):
+            socks_calls.append(("settimeout", timeout))
+
+        def connect(self, dest):
+            socks_calls.append(("connect", dest))
+
+        def setblocking(self, mode):
+            socks_calls.append(("setblocking", mode))
+
+    import sys
+    import types
+    fake_socks = types.ModuleType("socks")
+    fake_socks.SOCKS5 = 2
+    fake_socks.socksocket = MockSocksSocket
+    monkeypatch.setitem(sys.modules, "socks", fake_socks)
+
+    async def fake_open_connection(*args, **kwargs):
+        sock = kwargs.get("sock")
+        assert sock is not None
+        return ("reader", "writer")
+
+    monkeypatch.setattr(asyncio, "open_connection", fake_open_connection)
+
+    transport = DirectTransport()
+    reader, writer = await transport.connect(
+        "exmpl567890abcdefghijklmnopqrstuvwxyz12345678901234.onion",
+        50001,
+        proxy_host="127.0.0.1",
+        proxy_port=9050,
+    )
+    assert reader == "reader"
+    assert writer == "writer"
+    assert ("set_proxy", 2, "127.0.0.1", 9050, True) in socks_calls
+    assert ("connect", ("exmpl567890abcdefghijklmnopqrstuvwxyz12345678901234.onion", 50001)) in socks_calls
 

@@ -89,9 +89,13 @@ object TorManager {
     private const val WEBTUNNEL_TRANSPORT = "webtunnel"
     private const val DIRECT_BOOTSTRAP_TIMEOUT_MS = 60000L
     private const val BRIDGE_BOOTSTRAP_TIMEOUT_MS = 180000L
+    const val DEFAULT_HIDDEN_SERVICE_PORT = 50001
 
     private val _isTorRunning = MutableStateFlow(false)
     val isTorRunning: StateFlow<Boolean> = _isTorRunning.asStateFlow()
+
+    private val _onionAddress = MutableStateFlow<String?>(null)
+    val onionAddress: StateFlow<String?> = _onionAddress.asStateFlow()
 
     @Volatile
     private var lastAppContext: Context? = null
@@ -365,6 +369,9 @@ object TorManager {
         controlPort: Int = DEFAULT_CONTROL_PORT,
         bridges: List<String> = emptyList(),
         bridgePluginPath: String? = null,
+        hiddenServiceDir: String? = null,
+        hiddenServicePort: Int = DEFAULT_HIDDEN_SERVICE_PORT,
+        hiddenServiceTargetPort: Int = DEFAULT_HIDDEN_SERVICE_PORT,
     ): String {
         val parsedBridges = parseBridgeLines(bridges)
         require(parsedBridges.error == null) {
@@ -378,6 +385,12 @@ object TorManager {
         sb.appendLine("SafeSocks 0")
         sb.appendLine("SafeLogging 1")
 
+        if (!hiddenServiceDir.isNullOrBlank()) {
+            sb.appendLine("HiddenServiceDir $hiddenServiceDir")
+            sb.appendLine("HiddenServicePort $hiddenServicePort 127.0.0.1:$hiddenServiceTargetPort")
+            sb.appendLine("HiddenServiceVersion 3")
+        }
+
         if (parsedBridges.bridges.isNotEmpty()) {
             sb.appendLine("UseBridges 1")
             require(!bridgePluginPath.isNullOrBlank()) { "Missing Lyrebird transport binary" }
@@ -389,6 +402,27 @@ object TorManager {
         }
 
         return sb.toString().trimEnd()
+    }
+
+    fun readOnionHostname(hiddenServiceDir: File): String? {
+        val hostnameFile = File(hiddenServiceDir, "hostname")
+        if (!hostnameFile.exists()) return null
+        return try {
+            val text = hostnameFile.readText().trim()
+            if (text.endsWith(".onion") && text.length >= 16) text else null
+        } catch (exc: Exception) {
+            null
+        }
+    }
+
+    internal fun readAndPublishOnionAddress(context: Context, hiddenServiceDir: File): String? {
+        val hostname = readOnionHostname(hiddenServiceDir)
+        if (hostname != null) {
+            _onionAddress.value = hostname
+            P2PPreferences.setTorOnionHostname(context, hostname)
+            Log.i(TAG, "[TOR] Onion service v3 active: $hostname")
+        }
+        return hostname
     }
 
     suspend fun waitForSocksPort(socksPort: Int = DEFAULT_SOCKS_PORT, timeoutMs: Long = 3000): Boolean = withContext(Dispatchers.IO) {
@@ -500,6 +534,9 @@ object TorManager {
         }
 
         lastAppContext = context.applicationContext
+        if (_onionAddress.value == null) {
+            _onionAddress.value = P2PPreferences.getTorOnionHostname(context)
+        }
         val bridgeConfiguration = parseBridgeLines(bridges)
         if (bridgeConfiguration.error != null) {
             _isTorRunning.value = false
@@ -577,11 +614,29 @@ object TorManager {
                 return
             }
 
+            val hsDir = File(appTorDir, "hidden_service_v3")
+            if (!hsDir.exists() && !hsDir.mkdirs()) {
+                throw IllegalStateException("Unable to create Tor hidden service directory")
+            }
+            hsDir.setReadable(false, false)
+            hsDir.setReadable(true, true)
+            hsDir.setWritable(false, false)
+            hsDir.setWritable(true, true)
+            hsDir.setExecutable(false, false)
+            hsDir.setExecutable(true, true)
+            try {
+                android.system.Os.chmod(hsDir.absolutePath, 448 /* 0700 */)
+            } catch (_: Throwable) {}
+
+            val listenerPort = P2PPreferences.listenerPort(context)
             val torrcFile = File(appTorDir, "torrc")
             val torrcContent = generateTorrcContent(
                 dataDir = appTorDir.absolutePath,
                 bridges = bridgeConfiguration.bridges,
                 bridgePluginPath = bridgePlugin?.absolutePath,
+                hiddenServiceDir = hsDir.absolutePath,
+                hiddenServicePort = listenerPort,
+                hiddenServiceTargetPort = listenerPort,
             )
             torrcFile.writeText(torrcContent)
 
@@ -691,6 +746,7 @@ object TorManager {
             if (isBootstrapReady(portReady, _bootstrapProgress.value)) {
                 if (!markRunning(runId)) return
                 Log.i(TAG, "SOCKS5 listener is ready and Tor bootstrapped to 100%")
+                readAndPublishOnionAddress(context, hsDir)
                 if (!enableTorProxy(context, runId)) return
 
                 while (currentCoroutineContext().isActive && runGate.isCurrent(runId) && startedProcess.isAlive) {

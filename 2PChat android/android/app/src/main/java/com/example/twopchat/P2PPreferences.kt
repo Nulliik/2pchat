@@ -23,6 +23,7 @@ object P2PPreferences {
     const val TOR_BRIDGES = "settings_tor_bridges"
     const val TOR_PUBLIC_BRIDGES_ENABLED = "settings_tor_public_bridges_enabled"
     const val TOR_TRANSPORT = "settings_tor_transport"
+    const val TOR_ONION_HOSTNAME = "settings_tor_onion_hostname"
     const val PROXY_HOST = "settings_proxy_host"
     const val PROXY_PORT = "settings_proxy_port"
     const val DEFAULT_PROXY_HOST = "127.0.0.1"
@@ -109,6 +110,12 @@ object P2PPreferences {
 
     fun setTorTransport(context: Context, transport: TorTransport): Boolean =
         prefs(context).edit().putString(TOR_TRANSPORT, transport.storedValue).commit()
+
+    fun getTorOnionHostname(context: Context): String? =
+        prefs(context).getString(TOR_ONION_HOSTNAME, null)?.takeIf { it.isNotBlank() }
+
+    fun setTorOnionHostname(context: Context, hostname: String?): Boolean =
+        prefs(context).edit().putString(TOR_ONION_HOSTNAME, hostname).commit()
 
     fun getEffectiveTorBridgeLines(context: Context): List<String> =
         TorBridgeCatalog.select(

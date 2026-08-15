@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -85,6 +86,8 @@ fun TorSettingsPage(
     val isRotatingBridge by TorManager.isRotatingBridge.collectAsState()
     val torBootstrapProgress by TorManager.bootstrapProgress.collectAsState()
     val torBootstrapFailure by TorManager.lastBootstrapFailureReason.collectAsState()
+    val onionAddress by TorManager.onionAddress.collectAsState()
+    var showOnionQr by remember { mutableStateOf(false) }
 
     var torUserRequested by remember {
         mutableStateOf(P2PPreferences.isTorEnabled(context) || isTorRunning || isTorConnecting)
@@ -238,6 +241,131 @@ fun TorSettingsPage(
                             else -> onSurfaceVariant.copy(alpha = 0.6f)
                         },
                     )
+                }
+            }
+
+            val activeOnion = onionAddress ?: P2PPreferences.getTorOnionHostname(context)
+            if (activeOnion != null) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = if (isRussian) "Скрытый сервис (Onion v3)" else "Onion v3 Hidden Service",
+                    color = onSurfaceColor,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                )
+                TorInnerCard(surfaceColor, onSurfaceColor) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = if (isRussian) "Постоянный .onion адрес" else "Permanent .onion address",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = onSurfaceColor,
+                            )
+                            Text(
+                                text = if (isTorRunning) "● " + (if (isRussian) "Активен" else "Active") else "○ " + (if (isRussian) "Ожидание" else "Standby"),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isTorRunning) Color(0xFF4CAF50) else onSurfaceVariant.copy(alpha = 0.6f),
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = if (isRussian) {
+                                "Позволяет общаться напрямую через Tor без Yggdrasil и трекеров"
+                            } else {
+                                "Allows direct P2P messaging over Tor without Yggdrasil or trackers"
+                            },
+                            fontSize = 12.sp,
+                            color = onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = onSurfaceColor.copy(alpha = 0.05f)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                text = activeOnion,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = onSurfaceColor,
+                                modifier = Modifier.padding(10.dp),
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+                            AssistChip(
+                                onClick = {
+                                    clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(activeOnion))
+                                    Toast.makeText(
+                                        context,
+                                        if (isRussian) "Onion-адрес скопирован" else "Onion address copied",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                },
+                                label = {
+                                    Text(
+                                        if (isRussian) "Копировать адрес" else "Copy address",
+                                        fontSize = 12.sp,
+                                    )
+                                },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    labelColor = onSurfaceColor,
+                                ),
+                            )
+                            AssistChip(
+                                onClick = { showOnionQr = !showOnionQr },
+                                label = {
+                                    Text(
+                                        if (showOnionQr) (if (isRussian) "Скрыть QR" else "Hide QR") else (if (isRussian) "Показать QR" else "Show QR"),
+                                        fontSize = 12.sp,
+                                    )
+                                },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    labelColor = onSurfaceColor,
+                                ),
+                            )
+                        }
+                        if (showOnionQr) {
+                            Spacer(Modifier.height(12.dp))
+                            Card(
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.White),
+                                modifier = Modifier
+                                    .size(200.dp)
+                                    .align(Alignment.CenterHorizontally)
+                                    .border(1.dp, onSurfaceColor.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                            ) {
+                                val listenerPort: Int = remember { P2PPreferences.listenerPort(context) }
+                                val onionPayload = "2pchat://connect?onion=$activeOnion:$listenerPort"
+                                val qrBitmap = com.example.twopchat.ui.common.rememberQrCodeBitmap(onionPayload)
+                                if (qrBitmap != null) {
+                                    androidx.compose.foundation.Image(
+                                        bitmap = qrBitmap.asImageBitmap(),
+                                        contentDescription = "Onion QR",
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(10.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 

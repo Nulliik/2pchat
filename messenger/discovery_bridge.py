@@ -702,11 +702,15 @@ def _format_endpoint(host: str, port: int) -> str:
 
 def _transport_for_endpoint(endpoint: str) -> str:
     host = endpoint.rsplit(":", 1)[0].strip("[]") if endpoint else ""
+    if host.endswith(".onion"):
+        return "Tor Onion"
     return "Yggdrasil" if ":" in host else "Direct P2P"
 
 
 def _is_ipv4_endpoint(endpoint: str) -> bool:
-    host = endpoint.rsplit(":", 1)[0].strip("[]") if endpoint else ""
+    if not endpoint or ".onion" in endpoint:
+        return False
+    host = endpoint.rsplit(":", 1)[0].strip("[]")
     return bool(host) and ":" not in host
 
 
@@ -810,8 +814,14 @@ def set_ipv4_enabled(enabled: bool):
 
 
 def _endpoint_sort_key(endpoint_str: str) -> tuple[int, str]:
-    # Prefer Yggdrasil IPv6 first (starts with "[") for reliability over NAT/firewalls, then fallback to IPv4.
-    return (0 if endpoint_str.startswith("[") else 1, endpoint_str)
+    proxy_active = get_proxy_configuration().get("enabled", False)
+    if proxy_active and ".onion" in endpoint_str:
+        return (0, endpoint_str)
+    if endpoint_str.startswith("["):
+        return (1, endpoint_str)
+    if ".onion" in endpoint_str:
+        return (2, endpoint_str)
+    return (3, endpoint_str)
 
 
 def _parse_endpoint_hosts(addresses, port: int):
@@ -1505,9 +1515,12 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
     result = sorted(dict.fromkeys(endpoints), key=_endpoint_sort_key)
     proxy_active = get_proxy_configuration().get("enabled", False)
     if proxy_active:
-        # When Tor is active, prioritize Yggdrasil IPv6 endpoints.
-        # If Yggdrasil IPv6 endpoints exist, return them exclusively to avoid attempting
+        # When Tor is active, prioritize .onion and Yggdrasil IPv6 endpoints.
+        # If .onion or Yggdrasil endpoints exist, return them exclusively to avoid attempting
         # dead connections to Tor exit node IPs.
+        onion_eps = [ep for ep in result if ".onion" in ep]
+        if onion_eps:
+            return onion_eps
         ygg_eps = [ep for ep in result if not _is_ipv4_endpoint(ep)]
         if ygg_eps:
             return ygg_eps
@@ -1562,10 +1575,11 @@ def announce_peer_endpoints(
     if proxy_active:
         # When Tor is active, outbound tracker connections route via Tor exit relays.
         # Trackers cannot forward incoming IPv4 traffic to clients behind Tor, and
-        # local private IPv4 is useless to remote peers. Therefore, when Tor is active
-        # and Yggdrasil IPv6 is available, strictly announce ONLY Yggdrasil IPv6 endpoints.
-        if local_yggdrasil_available:
-            endpoints = [ep for ep in endpoints if ":" in ep.host]
+        # local private IPv4 is useless to remote peers. Therefore, when Tor is active,
+        # strictly announce ONLY .onion and Yggdrasil IPv6 endpoints.
+        onion_or_ygg = [ep for ep in endpoints if ".onion" in ep.host or ":" in ep.host]
+        if onion_or_ygg:
+            endpoints = onion_or_ygg
     elif ipv4_policy == "never":
         # Never announce IPv4 endpoints
         endpoints = [ep for ep in endpoints if ":" in ep.host]
@@ -2487,9 +2501,19 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
     reader = None
     writer = None
     session = None
+    proxy_cfg = get_proxy_configuration()
+    connect_timeout = 30.0 if host.endswith(".onion") else 5.0
+    exchange_timeout = 20.0 if host.endswith(".onion") else 5.0
     try:
         reader, writer = await asyncio.wait_for(
-            transport_connect("direct", host, port), timeout=5.0
+            transport_connect(
+                "direct",
+                host,
+                port,
+                proxy_host=proxy_cfg["host"],
+                proxy_port=proxy_cfg["port"],
+            ),
+            timeout=connect_timeout,
         )
         _setup_socket_keepalive(writer)
         session = Session(
@@ -2501,7 +2525,7 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
             ack_timeout=MOBILE_ACK_TIMEOUT,
             max_retries=MOBILE_MAX_RETRIES,
         )
-        await asyncio.wait_for(session._exchange_keys(initiator=True, expected_fingerprint=expected_fingerprint), timeout=5.0)
+        await asyncio.wait_for(session._exchange_keys(initiator=True, expected_fingerprint=expected_fingerprint), timeout=exchange_timeout)
         if session.peer_fingerprint == fingerprint(identity_priv.public_key):
             await session.close()
             raise ValueError("refusing self connection")

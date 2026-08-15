@@ -20,7 +20,7 @@ def get_transport(scheme: str, **options) -> Transport:
 
 async def connect(scheme: str, host: str, port: int, **options):
     transport = get_transport(scheme, **options)
-    return await transport.connect(host, port)
+    return await transport.connect(host, port, **options)
 
 
 async def listen(scheme: str, host: str, port: int, **options):

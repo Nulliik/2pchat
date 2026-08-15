@@ -17,8 +17,24 @@ class DirectTransport(Transport):
     ACCEPT_QUEUE_SIZE = 64
 
     async def connect(
-        self, host: str, port: int
+        self, host: str, port: int, *, proxy_host: str = "127.0.0.1", proxy_port: int = 9050, **_options
     ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        clean_host = host.strip().strip("[]")
+        if clean_host.endswith(".onion"):
+            loop = asyncio.get_running_loop()
+
+            def _socks_connect():
+                import socks
+                s = socks.socksocket()
+                s.set_proxy(socks.SOCKS5, proxy_host, proxy_port, rdns=True)
+                s.settimeout(30.0)
+                s.connect((clean_host, port))
+                s.setblocking(False)
+                return s
+
+            sock = await loop.run_in_executor(None, _socks_connect)
+            return await asyncio.open_connection(sock=sock)
+
         return await asyncio.open_connection(host, port)
 
     async def listen(

@@ -106,6 +106,12 @@ internal fun invitePeerSearchRequest(
 internal fun formatInviteEndpoint(value: String?, defaultPort: Int = 50001): String? {
     val raw = value?.trim().orEmpty()
     if (raw.isEmpty()) return null
+    if (raw.endsWith(".onion", ignoreCase = true) && !raw.contains(":")) {
+        return if (Regex("^[a-zA-Z0-9.-]+\\.onion$", RegexOption.IGNORE_CASE).matches(raw)) "$raw:$defaultPort" else null
+    }
+    if (raw.contains(".onion:", ignoreCase = true)) {
+        return if (Regex("^[a-zA-Z0-9.-]+\\.onion:\\d{1,5}$", RegexOption.IGNORE_CASE).matches(raw)) raw else null
+    }
     if (Regex("^\\[[0-9A-Fa-f:]+]:\\d{1,5}$").matches(raw)) return raw
     if (Regex("^[0-9.]+:\\d{1,5}$").matches(raw)) return raw
     if (Regex("^[0-9.]+$").matches(raw)) return "$raw:$defaultPort"
@@ -121,6 +127,7 @@ internal fun buildContactQrPayload(
     publicIpv4: String,
     ipv6: String,
     listenerPort: Int,
+    onion: String? = null,
 ): String {
     val builder = StringBuilder("2pchat://connect?")
         .append("name=").append(android.net.Uri.encode(nickname))
@@ -136,6 +143,10 @@ internal fun buildContactQrPayload(
         ?.let { builder.append("&public_ip=").append(android.net.Uri.encode(it)) }
     formatInviteEndpoint(ipv6, listenerPort)?.let {
         builder.append("&ygg=").append(android.net.Uri.encode(it))
+    }
+    onion?.takeIf { it.isNotBlank() }?.let {
+        val onionEndpoint = if (it.contains(":")) it else "$it:$listenerPort"
+        builder.append("&onion=").append(android.net.Uri.encode(onionEndpoint))
     }
     return builder.toString()
 }
@@ -336,6 +347,7 @@ fun ContactsTab(
                     val directIp = uri.getQueryParameter("ip")
                     val publicIp = uri.getQueryParameter("public_ip")
                     val yggIp = uri.getQueryParameter("ygg")
+                    val onionEp = uri.getQueryParameter("onion")
                     val requestedGroupId = uri.getQueryParameter("group")
                     val groupInviteToken = uri.getQueryParameter("group_token")
                     val request = invitePeerSearchRequest(parsedName, token, expectedFp)
@@ -347,7 +359,7 @@ fun ContactsTab(
                             "Invalid link/QR: missing connection code"
                         }
                     } else {
-                        listOf(directIp, publicIp, yggIp)
+                        listOf(directIp, publicIp, yggIp, onionEp)
                             .mapNotNull(::formatInviteEndpoint)
                             .distinct()
                             .forEach { endpoint ->
@@ -985,9 +997,10 @@ fun ContactsTab(
         if (showQrPanel) {
             val localIp = remember { PythonBridge.getLocalIpAddress(false) }
             val yggIp = remember { PythonBridge.getYggdrasilAddress() }
+            val onionHost: String? = remember { com.example.twopchat.P2PPreferences.getTorOnionHostname(context) ?: com.example.twopchat.TorManager.onionAddress.value }
             val listenerPort = remember { P2PMessageRelay.listenerPort(context) }
             val qrPayload = remember(
-                username, discoveryCode, fingerprint, localIp, qrPublicIpv4, yggIp, listenerPort,
+                username, discoveryCode, fingerprint, localIp, qrPublicIpv4, yggIp, listenerPort, onionHost,
             ) {
                 buildContactQrPayload(
                     nickname = username,
@@ -997,6 +1010,7 @@ fun ContactsTab(
                     publicIpv4 = qrPublicIpv4,
                     ipv6 = yggIp,
                     listenerPort = listenerPort,
+                    onion = onionHost,
                 )
             }
 
