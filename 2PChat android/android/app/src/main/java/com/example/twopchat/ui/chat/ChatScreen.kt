@@ -447,93 +447,106 @@ fun ChatScreen(
     }
 
     LaunchedEffect(peerName, isActive) {
-        if (!isActive) return@LaunchedEffect
-        sharedPrefs.edit { putInt("unread_count_$peerName", 0) }
-        initialMessages.indices.forEach { index ->
-            val message = initialMessages[index]
-            val attachmentPath = message.attachmentUri
-            if (
-                !attachmentPath.isNullOrBlank() &&
-                "://" !in attachmentPath &&
-                !File(attachmentPath).isFile
-            ) {
-                initialMessages[index] = message.copy(attachmentUri = null)
-            }
+        if (!isActive) {
+            isHistoryLoading = false
+            return@LaunchedEffect
         }
-        com.example.twopchat.MessageNotificationService.clearHistory(context, peerName)
-        hasAppliedInitialScroll = false
-        isFastHistoryLoaded = false
-        isLoadingOlderHistory = false
-        newMessagesBelowCount = 0
-        // Re-entry may reuse a cached ViewModel. Move a fully read chat to its
-        // latest message immediately, but leave unread chats for the unread
-        // anchor applied after the fast history snapshot is loaded.
-        if (initialMessages.isNotEmpty() && unreadMessagesOnOpen <= 0) {
-            listState.scrollToItem(initialMessages.lastIndex)
-        }
-        // Navigation keeps the keyed ViewModel alive after leaving a chat. Refresh
-        // every time the entry becomes active so messages received on MainScreen
-        // are loaded from the database instead of leaving a stale in-memory list.
-        isHistoryLoading = initialMessages.isEmpty()
-        val localDefaults = when (peerName) {
-            "Saved Messages" -> listOf(
-                Message(
-                    "saved-messages-welcome",
-                    Localizations.getString("saved_messages_welcome", appLanguage),
-                    true,
-                    "",
-                    sentAtEpochMs = 0L,
-                )
-            )
-            else -> emptyList()
-        }
-
-        // Reading and decrypting a large SQLCipher history can take noticeable
-        // time. Fetch only the indexed recent unread rows first so every message
-        // received while the chat was inactive appears immediately.
-        val fastHistoryLimit = fastHistoryMessageLimit(unreadMessagesOnOpen)
-        val recentPersistedMessages = if (persistEnabled) {
-            withContext(Dispatchers.IO) {
-                db.getMessagesForPeerPaged(
-                    peerName = peerName,
-                    limit = fastHistoryLimit,
-                    offset = 0,
-                ).map { message ->
-                    repairMisclassifiedLocalImage(message).also { repaired ->
-                        if (repaired !== message) db.saveMessage(peerName, repaired)
-                    }
+        try {
+            sharedPrefs.edit { putInt("unread_count_$peerName", 0) }
+            initialMessages.indices.forEach { index ->
+                val message = initialMessages[index]
+                val attachmentPath = message.attachmentUri
+                if (
+                    !attachmentPath.isNullOrBlank() &&
+                    "://" !in attachmentPath &&
+                    !File(attachmentPath).isFile
+                ) {
+                    initialMessages[index] = message.copy(attachmentUri = null)
                 }
             }
-        } else {
-            emptyList()
-        }
-        var fastSnapshot = mergeRecentHistoryMessages(
-            currentMessages = initialMessages.toList(),
-            recentPersistedMessages = recentPersistedMessages,
-        )
-        if (fastSnapshot.isEmpty()) fastSnapshot = localDefaults
-        fastSnapshot = fastSnapshot.map { msg ->
-            if (msg.id == "saved-messages-welcome") {
-                msg.copy(text = Localizations.getString("saved_messages_welcome", appLanguage))
+            com.example.twopchat.MessageNotificationService.clearHistory(context, peerName)
+            hasAppliedInitialScroll = false
+            isLoadingOlderHistory = false
+            newMessagesBelowCount = 0
+            if (initialMessages.isNotEmpty() && unreadMessagesOnOpen <= 0) {
+                listState.scrollToItem(initialMessages.lastIndex)
+            }
+            isHistoryLoading = initialMessages.isEmpty()
+            val localDefaults = when (peerName) {
+                "Saved Messages" -> listOf(
+                    Message(
+                        "saved-messages-welcome",
+                        Localizations.getString("saved_messages_welcome", appLanguage),
+                        true,
+                        "",
+                        sentAtEpochMs = 0L,
+                    )
+                )
+                else -> emptyList()
+            }
+
+            val fastHistoryLimit = fastHistoryMessageLimit(unreadMessagesOnOpen)
+            val recentPersistedMessages = if (persistEnabled) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        db.getMessagesForPeerPaged(
+                            peerName = peerName,
+                            limit = fastHistoryLimit,
+                            offset = 0,
+                        ).map { message ->
+                            repairMisclassifiedLocalImage(message).also { repaired ->
+                                if (repaired !== message) {
+                                    try {
+                                        db.saveMessage(peerName, repaired)
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("ChatScreen", "Failed to update repaired message", e)
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.e("ChatScreen", "Failed to load messages for $peerName", e)
+                        emptyList()
+                    }
+                }
             } else {
-                msg
+                emptyList()
             }
-        }
-        loadedPersistedMessageCount = recentPersistedMessages.size
-        hasMoreHistory = persistEnabled && recentPersistedMessages.size >= fastHistoryLimit
-        if (fastSnapshot != initialMessages.toList()) {
-            initialMessages.clear()
-            initialMessages.addAll(fastSnapshot)
-        }
-        if (persistEnabled && recentPersistedMessages.isEmpty() && localDefaults.isNotEmpty()) {
-            withContext(Dispatchers.IO) {
-                localDefaults.forEach { db.saveMessage(peerName, it) }
+            var fastSnapshot = mergeRecentHistoryMessages(
+                currentMessages = initialMessages.toList(),
+                recentPersistedMessages = recentPersistedMessages,
+            )
+            if (fastSnapshot.isEmpty()) fastSnapshot = localDefaults
+            fastSnapshot = fastSnapshot.map { msg ->
+                if (msg.id == "saved-messages-welcome") {
+                    msg.copy(text = Localizations.getString("saved_messages_welcome", appLanguage))
+                } else {
+                    msg
+                }
             }
-            loadedPersistedMessageCount = localDefaults.size
-            hasMoreHistory = false
+            loadedPersistedMessageCount = recentPersistedMessages.size
+            hasMoreHistory = persistEnabled && recentPersistedMessages.size >= fastHistoryLimit
+            if (fastSnapshot != initialMessages.toList()) {
+                initialMessages.clear()
+                initialMessages.addAll(fastSnapshot)
+            }
+            if (persistEnabled && recentPersistedMessages.isEmpty() && localDefaults.isNotEmpty()) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        localDefaults.forEach { db.saveMessage(peerName, it) }
+                    } catch (e: Exception) {
+                        android.util.Log.e("ChatScreen", "Failed to persist local defaults", e)
+                    }
+                }
+                loadedPersistedMessageCount = localDefaults.size
+                hasMoreHistory = false
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("ChatScreen", "Unexpected error during chat history load for $peerName", e)
+        } finally {
+            isFastHistoryLoaded = true
+            isHistoryLoading = false
         }
-        isFastHistoryLoaded = true
-        isHistoryLoading = false
     }
 
     suspend fun loadOlderHistoryPage(preserveScrollPosition: Boolean = true): Boolean {

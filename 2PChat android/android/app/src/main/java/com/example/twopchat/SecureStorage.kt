@@ -3,6 +3,7 @@ package com.example.twopchat
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.util.Log
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -90,18 +91,23 @@ object SecureStorage {
 
         fun decrypt(value: String?): String? {
             if (value == null || !value.startsWith(PREFIX)) return value
-            val packed = Base64.decode(value.removePrefix(PREFIX), Base64.NO_WRAP)
-            require(packed.size > 12) { "Invalid encrypted value" }
-            cipher.init(
-                Cipher.DECRYPT_MODE,
-                secretKey,
-                GCMParameterSpec(128, packed, 0, 12),
-            )
-            val plainBytes = cipher.doFinal(packed, 12, packed.size - 12)
-            val result = String(plainBytes, Charsets.UTF_8)
-            SecurityUtils.zeroize(packed)
-            SecurityUtils.zeroize(plainBytes)
-            return result
+            return try {
+                val packed = Base64.decode(value.removePrefix(PREFIX), Base64.NO_WRAP)
+                if (packed.size <= 12) return value
+                cipher.init(
+                    Cipher.DECRYPT_MODE,
+                    secretKey,
+                    GCMParameterSpec(128, packed, 0, 12),
+                )
+                val plainBytes = cipher.doFinal(packed, 12, packed.size - 12)
+                val result = String(plainBytes, Charsets.UTF_8)
+                SecurityUtils.zeroize(packed)
+                SecurityUtils.zeroize(plainBytes)
+                result
+            } catch (e: Exception) {
+                Log.w("SecureStorage", "Failed to decrypt string: ${e.message}")
+                value
+            }
         }
     }
 

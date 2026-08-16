@@ -8,7 +8,7 @@ import androidx.lifecycle.ViewModel
 /** Configuration-stable owner for chat state which must outlive a Composable instance. */
 class ChatScreenViewModel : ViewModel() {
     val messages = mutableStateListOf<Message>()
-    val isHistoryLoading = mutableStateOf(true)
+    val isHistoryLoading = mutableStateOf(false)
     val loadedPersistedMessageCount = mutableIntStateOf(0)
     val hasMoreHistory = mutableStateOf(true)
     val isLoadingOlderHistory = mutableStateOf(false)

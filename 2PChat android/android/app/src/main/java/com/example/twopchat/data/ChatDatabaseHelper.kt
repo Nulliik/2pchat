@@ -376,6 +376,15 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         db.insertWithOnConflict(TABLE_MESSAGES, null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
+    private fun safeDec(stringCipher: SecureStorage.StringCipher, value: String?): String? {
+        if (value == null) return null
+        return try {
+            stringCipher.decrypt(value)
+        } catch (_: Exception) {
+            value
+        }
+    }
+
     private fun readMessageFromCursor(
         cursor: android.database.Cursor,
         stringCipher: SecureStorage.StringCipher,
@@ -398,24 +407,32 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val indexAlbumTypes = cursor.getColumnIndex(KEY_ALBUM_TYPES)
 
         val text = if (indexText != -1) {
-            stringCipher.decrypt(cursor.getString(indexText)).orEmpty()
+            safeDec(stringCipher, cursor.getString(indexText)).orEmpty()
         } else {
             ""
         }
         val isMe = if (indexIsMe != -1) cursor.getInt(indexIsMe) == 1 else false
         val timestamp = if (indexTimestamp != -1) cursor.getString(indexTimestamp) else ""
         val attachType = if (indexAttachType != -1) cursor.getString(indexAttachType) else null
-        val attachUri = if (indexAttachUri != -1) stringCipher.decrypt(cursor.getString(indexAttachUri)) else null
-        val attachName = if (indexAttachName != -1) stringCipher.decrypt(cursor.getString(indexAttachName)) else null
+        val attachUri = if (indexAttachUri != -1) safeDec(stringCipher, cursor.getString(indexAttachUri)) else null
+        val attachName = if (indexAttachName != -1) safeDec(stringCipher, cursor.getString(indexAttachName)) else null
         val replyToId = if (indexReplyToId != -1) cursor.getString(indexReplyToId) else null
-        val replyToText = if (indexReplyToText != -1) stringCipher.decrypt(cursor.getString(indexReplyToText)) else null
-        val replyToName = if (indexReplyToName != -1) stringCipher.decrypt(cursor.getString(indexReplyToName)) else null
+        val replyToText = if (indexReplyToText != -1) safeDec(stringCipher, cursor.getString(indexReplyToText)) else null
+        val replyToName = if (indexReplyToName != -1) safeDec(stringCipher, cursor.getString(indexReplyToName)) else null
         val status = if (indexStatus != -1) cursor.getString(indexStatus) else null
-        val reactions = if (indexReactions != -1) deserializeReactions(stringCipher.decrypt(cursor.getString(indexReactions))) else emptyMap()
+        val reactions = if (indexReactions != -1) {
+            try {
+                deserializeReactions(safeDec(stringCipher, cursor.getString(indexReactions)))
+            } catch (_: Exception) {
+                emptyMap()
+            }
+        } else {
+            emptyMap()
+        }
         val id = if (indexId != -1) cursor.getString(indexId) else java.util.UUID.randomUUID().toString()
         val sentAtEpochMs = if (indexSentAtMs != -1) cursor.getLong(indexSentAtMs) else 0L
         val isPinned = if (indexIsPinned != -1) cursor.getInt(indexIsPinned) == 1 else false
-        val rawAlbumUris = if (indexAlbumUris != -1) stringCipher.decrypt(cursor.getString(indexAlbumUris)) else null
+        val rawAlbumUris = if (indexAlbumUris != -1) safeDec(stringCipher, cursor.getString(indexAlbumUris)) else null
         val albumMediaUris = rawAlbumUris?.split("|||") ?: emptyList()
         val rawAlbumTypes = if (indexAlbumTypes != -1) cursor.getString(indexAlbumTypes) else null
         val albumMediaTypes = rawAlbumTypes?.split("|||") ?: emptyList()
