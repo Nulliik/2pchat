@@ -132,4 +132,31 @@ class ChatScreenViewModelTest {
         assertEquals((1..10).map(Int::toString), merged.map { it.id })
         assertEquals("stored 6", merged[5].text)
     }
+
+    @Test
+    fun viewModelDefaultsToHistoryLoadingFalse() {
+        val vm = ChatScreenViewModel()
+        org.junit.Assert.assertFalse(
+            "isHistoryLoading must default to false so opening chats does not hang on a spinner",
+            vm.isHistoryLoading.value,
+        )
+    }
+
+    @Test
+    fun mergeRecentHistoryHandlesDuplicateIdsGracefully() {
+        val msg1 = Message("1", "first", false, "12:00", sentAtEpochMs = 1000L)
+        val msg2 = Message("2", "second", false, "12:01", sentAtEpochMs = 2000L)
+        val msg1Updated = msg1.copy(text = "first updated", status = "READ")
+
+        val merged = mergeRecentHistoryMessages(
+            currentMessages = listOf(msg1, msg2),
+            recentPersistedMessages = listOf(msg1Updated),
+        )
+
+        assertEquals(2, merged.size)
+        assertEquals("first updated", merged[0].text)
+        assertEquals("READ", merged[0].status)
+        assertEquals("second", merged[1].text)
+    }
 }
+
