@@ -286,6 +286,22 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            var incognitoKeyboardEnabled by remember {
+                mutableStateOf(P2PPreferences.isIncognitoKeyboardEnabled(this@MainActivity))
+            }
+
+            DisposableEffect(sharedPrefs) {
+                val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                    if (key == P2PPreferences.INCOGNITO_KEYBOARD || key == null) {
+                        incognitoKeyboardEnabled = P2PPreferences.isIncognitoKeyboardEnabled(this@MainActivity)
+                    }
+                }
+                sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+                onDispose {
+                    sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener)
+                }
+            }
+
             _2PChatTheme(
                 darkTheme = isDarkTheme,
                 accentScheme = accentScheme,
@@ -293,11 +309,14 @@ class MainActivity : ComponentActivity() {
                 useAmoled = useAmoled,
                 animationsEnabled = !reduceMotionState.value,
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) { 
-                    val currentScreen = when {
+                com.example.twopchat.ui.util.P2PKeyboardOptions.IncognitoKeyboardScope(
+                    isIncognito = incognitoKeyboardEnabled
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) { 
+                        val currentScreen = when {
                         showSplash -> "splash"
                         isStealthDisguiseLocked && sharedPrefs.getBoolean("settings_stealth_disguise", false) -> "disguise"
                         isAppLocked && hasPasscodeConfigured -> "unlock"
@@ -401,6 +420,7 @@ class MainActivity : ComponentActivity() {
                     }
                 } 
             }
+        }
         }
     }
 
