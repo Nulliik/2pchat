@@ -541,6 +541,8 @@ fun ChatScreen(
                 loadedPersistedMessageCount = localDefaults.size
                 hasMoreHistory = false
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.e("ChatScreen", "Unexpected error during chat history load for $peerName", e)
         } finally {

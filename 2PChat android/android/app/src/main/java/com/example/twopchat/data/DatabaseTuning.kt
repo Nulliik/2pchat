@@ -26,9 +26,15 @@ object DatabaseTuning {
 
         for (pragma in PRAGMA_STATEMENTS) {
             try {
-                db.execSQL(pragma)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to execute $pragma", e)
+                db.rawQuery(pragma, null).use { cursor ->
+                    cursor.moveToFirst()
+                }
+            } catch (_: Exception) {
+                try {
+                    db.execSQL(pragma)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to execute $pragma", e)
+                }
             }
         }
     }
