@@ -5,6 +5,8 @@ import android.os.Handler
 import android.os.Looper
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.data.PendingControl
+import com.example.twopchat.security.ImageSanitizer
+import com.example.twopchat.security.TemporaryCacheSanitizer
 import com.example.twopchat.ui.chat.Message
 import org.json.JSONObject
 import java.io.File
@@ -140,6 +142,7 @@ internal class P2POutboundMessenger(
         }
         if (messageId.isNotBlank()) activeFileTransfers.add(messageId)
         scope.launch {
+            var tempSanitizedFile: File? = null
             try {
                 if (isPaused(context, peerName)) {
                     activeFileTransfers.remove(messageId)
@@ -148,11 +151,16 @@ internal class P2POutboundMessenger(
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
                 log(context, "Sending secure file via Python transport to $peerName", "INFO", null)
-                val previewBase64 = FileTransferPreview.createVideoPreviewBase64(filePath)
+
+                // Transparently strip EXIF metadata from outbound images
+                tempSanitizedFile = ImageSanitizer.sanitizeImageExif(context, filePath)
+                val effectiveFilePath = tempSanitizedFile?.absolutePath ?: filePath
+
+                val previewBase64 = FileTransferPreview.createVideoPreviewBase64(effectiveFilePath)
                 val success = PythonBridge.sendP2pFile(
                     peerName,
                     endpoint,
-                    filePath,
+                    effectiveFilePath,
                     fingerprint,
                     messageId,
                     caption,
@@ -173,7 +181,7 @@ internal class P2POutboundMessenger(
                         context,
                         peerName,
                         endpoint,
-                        File(filePath),
+                        File(effectiveFilePath),
                         direction = TrafficDirection.SENT,
                     )
                 }
@@ -188,6 +196,10 @@ internal class P2POutboundMessenger(
                 }
                 log(context, "Failed to send secure file", "ERROR", error)
                 postResult(onResult, false)
+            } finally {
+                tempSanitizedFile?.let {
+                    TemporaryCacheSanitizer.shredFile(it)
+                }
             }
         }
     }
@@ -404,17 +416,28 @@ internal class P2POutboundMessenger(
                     val success = if (hasAlbum) {
                         run {
                             for ((index, file) in albumFiles.withIndex()) {
-                                val fileSent = PythonBridge.sendP2pFile(
-                                    peerName = peerName,
-                                    endpoint = endpoint,
-                                    filePath = file.absolutePath,
-                                    expectedFingerprint = fingerprint,
-                                    messageId = "${message.id}_$index",
-                                    caption = if (index == 0) caption else "",
-                                    albumId = message.id,
-                                    albumIndex = index,
-                                    albumCount = albumFiles.size,
-                                )
+                                var tempSanitized: File? = null
+                                val fileToSend = try {
+                                    tempSanitized = ImageSanitizer.sanitizeImageExif(context, file.absolutePath)
+                                    tempSanitized ?: file
+                                } catch (e: Exception) {
+                                    file
+                                }
+                                val fileSent = try {
+                                    PythonBridge.sendP2pFile(
+                                        peerName = peerName,
+                                        endpoint = endpoint,
+                                        filePath = fileToSend.absolutePath,
+                                        expectedFingerprint = fingerprint,
+                                        messageId = "${message.id}_$index",
+                                        caption = if (index == 0) caption else "",
+                                        albumId = message.id,
+                                        albumIndex = index,
+                                        albumCount = albumFiles.size,
+                                    )
+                                } finally {
+                                    tempSanitized?.let { TemporaryCacheSanitizer.shredFile(it) }
+                                }
                                 if (!fileSent) return@run false
                                 NetworkTrafficStats.recordFile(
                                     context,
@@ -427,14 +450,26 @@ internal class P2POutboundMessenger(
                             true
                         }
                     } else if (attachmentFile != null) {
-                        PythonBridge.sendP2pFile(
-                            peerName,
-                            endpoint,
-                            attachmentFile.absolutePath,
-                            fingerprint,
-                            message.id,
-                            caption,
-                        )
+                        var tempSanitized: File? = null
+                        val fileToSend = try {
+                            tempSanitized = ImageSanitizer.sanitizeImageExif(context, attachmentFile.absolutePath)
+                            tempSanitized ?: attachmentFile
+                        } catch (e: Exception) {
+                            attachmentFile
+                        }
+                        val fileSent = try {
+                            PythonBridge.sendP2pFile(
+                                peerName,
+                                endpoint,
+                                fileToSend.absolutePath,
+                                fingerprint,
+                                message.id,
+                                caption,
+                            )
+                        } finally {
+                            tempSanitized?.let { TemporaryCacheSanitizer.shredFile(it) }
+                        }
+                        fileSent
                     } else {
                         PythonBridge.sendP2pMessage(peerName, endpoint, payload, fingerprint)
                     }
