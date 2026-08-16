@@ -1610,6 +1610,18 @@ object P2PMessageRelay {
 
             maintenanceCoordinator.start(appContext, port, ::isPlaceholderPeerName)
 
+            relayScope.launch {
+                var lastBroadcastedOnion: String? = null
+                TorManager.onionAddress.collect { onionHost ->
+                    if (!onionHost.isNullOrBlank() && onionHost != lastBroadcastedOnion) {
+                        lastBroadcastedOnion = onionHost
+                        log(appContext, "Tor onion service ready ($onionHost), broadcasting to known contacts")
+                        lastOnionShareAt.clear()
+                        shareOnionAddressWithKnownPeers(appContext)
+                    }
+                }
+            }
+
         } catch (e: Exception) {
             synchronized(startStopLock) {
                 isRunning = false
@@ -1780,6 +1792,21 @@ object P2PMessageRelay {
         }
     }
 
+    fun shareOnionAddressWithKnownPeers(context: Context) {
+        val appContext = context.applicationContext
+        val sharedPrefs = P2PPreferences.prefs(appContext)
+        val activeChats: Set<String> = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+        val allPeers: List<String> = (activeChats + _peerEndpoints.keys)
+            .filter { it.isNotBlank() && !isPlaceholderPeerName(it) }
+            .distinct()
+
+        log(appContext, "Broadcasting updated Tor .onion address to ${allPeers.size} known peers")
+        for (peerName in allPeers) {
+            val ep = _peerEndpoints[peerName].orEmpty()
+            shareOnionAddress(appContext, peerName, ep)
+        }
+    }
+
     fun shareOnionAddress(context: Context, peerName: String, endpoint: String = "") {
         val prefs = P2PPreferences.prefs(context)
         val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
@@ -1811,13 +1838,15 @@ object P2PMessageRelay {
                     return@launch
                 }
 
+                val resolvedEndpoint = endpoint.ifBlank { _peerEndpoints[peerName].orEmpty() }
+
                 if (!PythonBridge.isPeerOnline(peerName, expectedFingerprint)) {
-                    log(context, "Peer $peerName is offline; skipping onion share")
+                    log(context, "Peer $peerName is offline; onion address will be shared upon connection")
                     return@launch
                 }
 
                 log(context, "Sharing Tor .onion address with $peerName")
-                val success = PythonBridge.sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
+                val success = PythonBridge.sendP2pMessage(peerName, resolvedEndpoint, payload, expectedFingerprint)
                 if (success) lastOnionShareAt[shareKey] = System.currentTimeMillis()
                 log(context, "Onion address share status: $success")
             } catch (e: Exception) {
