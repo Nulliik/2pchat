@@ -1829,6 +1829,10 @@ fun GroupChatScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("edit_message_input"),
+                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                        context = context,
+                        capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                    ),
                     shape = RoundedCornerShape(12.dp)
                 )
             },
@@ -4220,6 +4224,10 @@ private fun CreatePollDialog(
                     value = question,
                     onValueChange = { question = it },
                     placeholder = { Text(if (appLanguage == "Русский") "Задайте вопрос..." else "Ask a question...") },
+                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                        context = context,
+                        capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                    ),
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(if (appLanguage == "Русский") "Варианты ответов:" else "Options:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -4230,6 +4238,10 @@ private fun CreatePollDialog(
                             options = options.toMutableList().also { it[index] = newText }
                         },
                         placeholder = { Text(if (appLanguage == "Русский") "Вариант ${index + 1}" else "Option ${index + 1}") },
+                        keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                            context = context,
+                            capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

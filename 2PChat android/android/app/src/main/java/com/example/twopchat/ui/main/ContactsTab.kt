@@ -662,20 +662,13 @@ fun ContactsTab(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    val isIncognito = remember(context) { com.example.twopchat.P2PPreferences.isIncognitoKeyboardEnabled(context) }
                     BasicTextField(
                         value = searchQuery,
                         onValueChange = updateSearchQuery,
                         singleLine = true,
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            autoCorrectEnabled = !isIncognito,
-                            platformImeOptions = if (isIncognito) {
-                                androidx.compose.ui.text.input.PlatformImeOptions(
-                                    privateImeOptions = "org.chromium.chrome.keyboard.incognito=true,com.google.android.inputmethod.latin.noMicrophoneKey=false"
-                                )
-                            } else {
-                                null
-                            }
+                        keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                            context = context,
+                            imeAction = androidx.compose.ui.text.input.ImeAction.Search,
                         ),
                         cursorBrush = SolidColor(primaryColor),
                         textStyle = TextStyle(

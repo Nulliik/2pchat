@@ -132,6 +132,10 @@ fun CreateGroupScreen(
                     },
                     isError = cleanTitle.isEmpty() && title.isNotEmpty(),
                     singleLine = true,
+                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                        context = context,
+                        capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                    ),
                     shape = RoundedCornerShape(14.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = primaryColor,
@@ -151,6 +155,10 @@ fun CreateGroupScreen(
                     placeholder = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "О чем эта группа...", "What is this group about...", "Worum geht es in dieser Gruppe...", "¿De qué trata este grupo...")) },
                     minLines = 2,
                     maxLines = 3,
+                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                        context = context,
+                        capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                    ),
                     shape = RoundedCornerShape(14.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = primaryColor,

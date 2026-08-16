@@ -923,6 +923,11 @@ fun GroupInfoScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("edit_group_title"),
+                        singleLine = true,
+                        keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                            context = context,
+                            capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                        ),
                         shape = RoundedCornerShape(12.dp)
                     )
                     OutlinedTextField(
@@ -930,6 +935,10 @@ fun GroupInfoScreen(
                         onValueChange = { description = it.take(2_000) },
                         label = { Text(if (appLanguage == "Русский") "Описание (опционально)" else "Description (optional)") },
                         modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                            context = context,
+                            capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                        ),
                         shape = RoundedCornerShape(12.dp)
                     )
                 }

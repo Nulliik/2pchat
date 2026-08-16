@@ -38,7 +38,7 @@ object P2PPreferences {
     const val INCOGNITO_KEYBOARD = "settings_incognito_keyboard"
 
     fun isIncognitoKeyboardEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(INCOGNITO_KEYBOARD, false)
+        prefs(context).getBoolean(INCOGNITO_KEYBOARD, true)
 
     fun setIncognitoKeyboardEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(INCOGNITO_KEYBOARD, enabled).apply()

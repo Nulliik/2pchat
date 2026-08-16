@@ -209,7 +209,6 @@ fun ConversationComposerRow(
 ) {
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
-    val isIncognito = remember(context) { P2PPreferences.isIncognitoKeyboardEnabled(context) }
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         IconButton(
             onClick = {
@@ -273,17 +272,10 @@ fun ConversationComposerRow(
                 onValueChange = onInputTextChange,
                 enabled = inputEnabled,
                 placeholder = { Text(placeholder, color = onSurfaceVariant.copy(alpha = 0.5f), fontSize = 14.sp) },
-                keyboardOptions = KeyboardOptions(
+                keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                    context = context,
                     capitalization = KeyboardCapitalization.Sentences,
-                    autoCorrectEnabled = !isIncognito,
                     keyboardType = KeyboardType.Text,
-                    platformImeOptions = if (isIncognito) {
-                        PlatformImeOptions(
-                            privateImeOptions = "org.chromium.chrome.keyboard.incognito=true,com.google.android.inputmethod.latin.noMicrophoneKey=false"
-                        )
-                    } else {
-                        null
-                    }
                 ),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = inputBackground,
