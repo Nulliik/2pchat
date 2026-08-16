@@ -885,6 +885,8 @@ def _record_public_addresses(provider) -> None:
 
 def _discover_public_ipv4_stun(timeout: float = 1.5) -> str | None:
     """Return the NAT-mapped IPv4 address from an RFC 5389 binding response."""
+    if get_proxy_configuration().get("enabled", False):
+        return None
     cookie = 0x2112A442
     transaction_id = os.urandom(12)
     request = struct.pack(">HHI12s", 0x0001, 0, cookie, transaction_id)
@@ -928,6 +930,8 @@ def _discover_public_ipv4_stun(timeout: float = 1.5) -> str | None:
 
 def discover_public_ipv4() -> str:
     """Refresh and return the externally observed IPv4 used in contact QR codes."""
+    if get_proxy_configuration().get("enabled", False):
+        return ""
     address = _discover_public_ipv4_stun()
     if address:
         public_address_observations.add(address)

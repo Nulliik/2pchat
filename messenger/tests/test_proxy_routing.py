@@ -433,3 +433,47 @@ async def test_smart_transport_disabled_proxy_skips_onion(monkeypatch):
     assert "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001" not in dialed
     assert dialed == ["[200:1e::5]:50001"]
 
+
+def test_stun_discovery_blocked_when_tor_proxy_enabled(monkeypatch):
+    dns_calls = []
+
+    def mock_getaddrinfo(host, port, *args, **kwargs):
+        dns_calls.append((host, port))
+        raise AssertionError("DNS lookup must NOT be called when Tor is active!")
+
+    monkeypatch.setattr(socket, "getaddrinfo", mock_getaddrinfo)
+    discovery_bridge.configure_proxy(json.dumps({
+        "proxy_enabled": True,
+        "proxy_host": "127.0.0.1",
+        "proxy_port": 9050,
+    }))
+
+    result = discovery_bridge._discover_public_ipv4_stun()
+    assert result is None
+    assert len(dns_calls) == 0
+
+    pub_ip = discovery_bridge.discover_public_ipv4()
+    assert pub_ip == ""
+    assert len(dns_calls) == 0
+
+
+def test_stun_discovery_allowed_when_tor_proxy_disabled(monkeypatch):
+    dns_calls = []
+
+    def mock_getaddrinfo(host, port, *args, **kwargs):
+        dns_calls.append((host, port))
+        raise OSError("Simulated offline STUN host")
+
+    monkeypatch.setattr(socket, "getaddrinfo", mock_getaddrinfo)
+    discovery_bridge.configure_proxy(json.dumps({
+        "proxy_enabled": False,
+        "proxy_host": "127.0.0.1",
+        "proxy_port": 9050,
+    }))
+
+    result = discovery_bridge._discover_public_ipv4_stun()
+    assert result is None
+    # When proxy is disabled, it should attempt STUN DNS resolution
+    assert len(dns_calls) > 0
+
+
