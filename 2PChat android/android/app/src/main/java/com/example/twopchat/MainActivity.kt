@@ -44,7 +44,11 @@ import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import android.widget.Toast
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.WindowRecomposerFactory
 import androidx.compose.ui.platform.WindowRecomposerPolicy
 import androidx.compose.ui.platform.createLifecycleAwareWindowRecomposer
@@ -56,8 +60,9 @@ import com.example.twopchat.ui.disguise.CurrencyRatesScreen
 @OptIn(InternalComposeUiApi::class)
 class MainActivity : ComponentActivity() {
     private var lastInteractionTime = System.currentTimeMillis()
-    private var lastStopTime = System.currentTimeMillis()
-    private val triggerLockCheckState = mutableIntStateOf(0)
+    private var pauseTime = 0L
+    private val isAppLockedState = mutableStateOf(false)
+    private val isStealthDisguiseLockedState = mutableStateOf(false)
     private val reduceMotionState = mutableStateOf(false)
     private val appMotionDurationScale = AppMotionDurationScale()
     private lateinit var appPreferences: SharedPreferences
@@ -96,8 +101,35 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun checkAutoLockOnResume() {
+        val prefs = P2PPreferences.prefs(this)
+        if (prefs.getBoolean("settings_stealth_disguise", false)) {
+            isStealthDisguiseLockedState.value = true
+        }
+
+        val hasPasscodeConfigured = prefs.getBoolean("settings_passcode", false) &&
+            !prefs.getString("passcode_value", null).isNullOrEmpty()
+
+        if (hasPasscodeConfigured && !isAppLockedState.value) {
+            val timeoutMinutes = prefs.getInt("passcode_autolock_minutes", 1)
+            val now = System.currentTimeMillis()
+            val elapsedSincePause = if (pauseTime > 0L) now - pauseTime else 0L
+            val elapsedSinceInteraction = now - lastInteractionTime
+            val effectiveElapsed = maxOf(elapsedSincePause, elapsedSinceInteraction)
+
+            if (effectiveElapsed >= timeoutMinutes * 60 * 1000L) {
+                isAppLockedState.value = true
+                P2PPreferences.setAppLocked(true)
+                SecureStorage.clearDbPassphrase()
+                com.example.twopchat.data.ChatDatabaseHelper.closeAllConnections()
+            }
+        }
+        pauseTime = 0L
+    }
+
     override fun onResume() {
         super.onResume()
+        checkAutoLockOnResume()
         applyScreenSecurity()
         val appContext = applicationContext
         val preferences = P2PPreferences.prefs(appContext)
@@ -130,6 +162,26 @@ class MainActivity : ComponentActivity() {
             }
         }
         com.example.twopchat.security.TemporaryCacheSanitizer.sanitizeTempCache(appContext)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        pauseTime = System.currentTimeMillis()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (pauseTime == 0L) {
+            pauseTime = System.currentTimeMillis()
+        }
+        com.example.twopchat.security.TemporaryCacheSanitizer.sanitizeTempCache(applicationContext)
+    }
+
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        if (!isAppLockedState.value) {
+            lastInteractionTime = System.currentTimeMillis()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -183,6 +235,20 @@ class MainActivity : ComponentActivity() {
 
         val sharedPrefs = P2PPreferences.prefs(this)
         appPreferences = sharedPrefs
+
+        val hasPasscodeConfiguredOnStart = sharedPrefs.getBoolean("settings_passcode", false) &&
+            !sharedPrefs.getString("passcode_value", null).isNullOrEmpty()
+        if (hasPasscodeConfiguredOnStart) {
+            isAppLockedState.value = true
+            P2PPreferences.setAppLocked(true)
+            SecureStorage.clearDbPassphrase()
+            com.example.twopchat.data.ChatDatabaseHelper.closeAllConnections()
+        }
+
+        if (sharedPrefs.getBoolean("settings_stealth_disguise", false)) {
+            isStealthDisguiseLockedState.value = true
+        }
+
         reduceMotionState.value = sharedPrefs.getBoolean(REDUCE_MOTION_SETTING, false)
         appMotionDurationScale.animationsEnabled = !reduceMotionState.value
         updateSystemAnimationScale()
@@ -241,38 +307,27 @@ class MainActivity : ComponentActivity() {
             val systemDefaultLanguage = if (java.util.Locale.getDefault().language == "ru") "Русский" else "English"
             var appLanguage by remember { mutableStateOf(sharedPrefs.getString("settings_language", systemDefaultLanguage) ?: systemDefaultLanguage) }
             
-            var isAppLocked by remember { mutableStateOf(sharedPrefs.getBoolean("settings_passcode", false)) }
+            var isAppLocked by isAppLockedState
+            var isStealthDisguiseLocked by isStealthDisguiseLockedState
             val hasPasscodeConfigured = remember(isAppLocked) {
-                !sharedPrefs.getString("passcode_value", null).isNullOrEmpty()
-            }
-            var isStealthDisguiseLocked by remember { mutableStateOf(sharedPrefs.getBoolean("settings_stealth_disguise", false)) }
-
-            // Check auto-lock on app start/resume
-            val triggerLockCheck = triggerLockCheckState.value
-            LaunchedEffect(triggerLockCheck) {
-                if (sharedPrefs.getBoolean("settings_stealth_disguise", false)) {
-                    isStealthDisguiseLocked = true
-                }
-                if (sharedPrefs.getBoolean("settings_passcode", false)) {
-                    val elapsed = System.currentTimeMillis() - maxOf(lastStopTime, lastInteractionTime)
-                    val timeoutMinutes = sharedPrefs.getInt("passcode_autolock_minutes", 1)
-                    if (elapsed >= timeoutMinutes * 60 * 1000) {
-                        isAppLocked = true
-                    }
-                }
+                sharedPrefs.getBoolean("settings_passcode", false) &&
+                    !sharedPrefs.getString("passcode_value", null).isNullOrEmpty()
             }
 
-            // Check inactivity timer during in-app usage
-            LaunchedEffect(isAppLocked) {
-                P2PPreferences.setAppLocked(isAppLocked)
-                if (sharedPrefs.getBoolean("settings_passcode", false) && !isAppLocked) {
-                    while (true) {
-                        kotlinx.coroutines.delay(5000) // check every 5 seconds
+            // Continuous foreground inactivity auto-lock check
+            LaunchedEffect(Unit) {
+                while (true) {
+                    kotlinx.coroutines.delay(1000L) // check every 1 second
+                    val passcodeActive = sharedPrefs.getBoolean("settings_passcode", false) &&
+                        !sharedPrefs.getString("passcode_value", null).isNullOrEmpty()
+                    if (passcodeActive && !isAppLockedState.value) {
                         val timeoutMinutes = sharedPrefs.getInt("passcode_autolock_minutes", 1)
                         val elapsed = System.currentTimeMillis() - lastInteractionTime
-                        if (elapsed >= timeoutMinutes * 60 * 1000) {
-                            isAppLocked = true
-                            break
+                        if (elapsed >= timeoutMinutes * 60 * 1000L) {
+                            isAppLockedState.value = true
+                            P2PPreferences.setAppLocked(true)
+                            SecureStorage.clearDbPassphrase()
+                            com.example.twopchat.data.ChatDatabaseHelper.closeAllConnections()
                         }
                     }
                 }
@@ -340,9 +395,11 @@ class MainActivity : ComponentActivity() {
                                 CurrencyRatesScreen(
                                     appLanguage = appLanguage,
                                     onUnlock = {
-                                        isStealthDisguiseLocked = false
-                                        if (hasPasscodeConfigured) {
-                                            isAppLocked = true
+                                        isStealthDisguiseLockedState.value = false
+                                        val hasPasscode = sharedPrefs.getBoolean("settings_passcode", false) &&
+                                            !sharedPrefs.getString("passcode_value", null).isNullOrEmpty()
+                                        if (hasPasscode) {
+                                            isAppLockedState.value = true
                                         }
                                     }
                                 )
@@ -354,8 +411,10 @@ class MainActivity : ComponentActivity() {
                                     surfaceColor = MaterialTheme.colorScheme.surface,
                                     onSurfaceColor = MaterialTheme.colorScheme.onSurface,
                                     onUnlock = {
-                                        isAppLocked = false
+                                        isAppLockedState.value = false
+                                        P2PPreferences.setAppLocked(false)
                                         lastInteractionTime = System.currentTimeMillis()
+                                        pauseTime = 0L
                                     },
                                     onDuressTriggered = {
                                         if (!AccountLifecycle.deleteAccount(applicationContext)) {
@@ -376,7 +435,8 @@ class MainActivity : ComponentActivity() {
                                         useCerulean = false
                                         useAmoled = false
                                         appLanguage = "English"
-                                        isAppLocked = false
+                                        isAppLockedState.value = false
+                                        P2PPreferences.setAppLocked(false)
                                         recreate()
                                     }
                                 )
@@ -418,27 +478,11 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                } 
-            }
+                }
+            } 
         }
-        }
     }
-
-    override fun onUserInteraction() {
-        super.onUserInteraction()
-        lastInteractionTime = System.currentTimeMillis()
-    }
-
-    override fun onStop() {
-        super.onStop()
-        lastStopTime = System.currentTimeMillis()
-        com.example.twopchat.security.TemporaryCacheSanitizer.sanitizeTempCache(applicationContext)
-    }
-
-    override fun onStart() {
-        super.onStart()
-        triggerLockCheckState.value += 1
-    }
+}
 
     override fun onDestroy() {
         if (::appPreferences.isInitialized) {
@@ -491,6 +535,9 @@ fun PasscodeUnlockScreen(
     onDuressTriggered: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val view = androidx.compose.ui.platform.LocalView.current
+    val hapticFeedback = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val sharedPrefs = remember { P2PPreferences.prefs(context) }
     var inputPin by remember { mutableStateOf("") }
     var showError by remember { mutableStateOf(false) }
     val lockPrefs = remember { context.getSharedPreferences("2pchat_lock_state", android.content.Context.MODE_PRIVATE) }
@@ -498,6 +545,50 @@ fun PasscodeUnlockScreen(
     var lockoutUntil by remember { mutableStateOf(lockPrefs.getLong("lockout_until", 0L)) }
     var lockoutTimeRemaining by remember {
         mutableStateOf(((lockoutUntil - System.currentTimeMillis()).coerceAtLeast(0L) / 1000L).toInt())
+    }
+
+    fun triggerKeyHaptic() {
+        if (sharedPrefs.getBoolean("settings_haptic_feedback", true)) {
+            val performed = view.performHapticFeedback(
+                HapticFeedbackConstants.KEYBOARD_TAP,
+                HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
+            )
+            if (!performed) {
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+        }
+    }
+
+    fun triggerErrorHaptic() {
+        if (sharedPrefs.getBoolean("settings_haptic_feedback", true)) {
+            val performed = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                view.performHapticFeedback(
+                    HapticFeedbackConstants.REJECT,
+                    HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
+                )
+            } else {
+                false
+            }
+            if (!performed) {
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+        }
+    }
+
+    fun triggerSuccessHaptic() {
+        if (sharedPrefs.getBoolean("settings_haptic_feedback", true)) {
+            val performed = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                view.performHapticFeedback(
+                    HapticFeedbackConstants.CONFIRM,
+                    HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
+                )
+            } else {
+                false
+            }
+            if (!performed) {
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+        }
     }
 
     LaunchedEffect(lockoutTimeRemaining > 0) {
@@ -602,6 +693,7 @@ fun PasscodeUnlockScreen(
                                 .border(0.5.dp, onSurfaceColor.copy(alpha = 0.1f), CircleShape)
                                 .clickable {
                                     if (lockoutTimeRemaining > 0) return@clickable
+                                    triggerKeyHaptic()
                                     showError = false
                                     when (digit) {
                                         "C" -> inputPin = ""
@@ -612,17 +704,19 @@ fun PasscodeUnlockScreen(
                                             if (inputPin.length < 4) {
                                                 inputPin += digit
                                                 if (inputPin.length == 4) {
-                                                    val sharedPrefs = P2PPreferences.prefs(context)
                                                     val correctPasscode = sharedPrefs.getString("passcode_value", "") ?: ""
                                                     val duressPasscode = sharedPrefs.getString("passcode_duress_value", "") ?: ""
                                                     
                                                     if (SecurityUtils.verifyAndMigratePasscode(inputPin, correctPasscode, sharedPrefs, "passcode_value")) {
+                                                        triggerSuccessHaptic()
                                                         failedAttempts = 0
                                                         lockPrefs.edit().clear().apply()
                                                         onUnlock()
                                                     } else if (duressPasscode.isNotEmpty() && SecurityUtils.verifyAndMigratePasscode(inputPin, duressPasscode, sharedPrefs, "passcode_duress_value")) {
+                                                        triggerSuccessHaptic()
                                                         onDuressTriggered()
                                                     } else {
+                                                        triggerErrorHaptic()
                                                         failedAttempts += 1
                                                         lockPrefs.edit().putInt("failed_attempts", failedAttempts).apply()
                                                         if (failedAttempts >= 5) {
