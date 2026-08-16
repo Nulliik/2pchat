@@ -35,6 +35,14 @@ object P2PPreferences {
     const val SOCKS5_PORT = "settings_socks5_port"
     const val DEFAULT_SOCKS5_HOST = "127.0.0.1"
     const val DEFAULT_SOCKS5_PORT = 1080
+    const val INCOGNITO_KEYBOARD = "settings_incognito_keyboard"
+
+    fun isIncognitoKeyboardEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(INCOGNITO_KEYBOARD, false)
+
+    fun setIncognitoKeyboardEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(INCOGNITO_KEYBOARD, enabled).apply()
+    }
 
     fun isHeroWidgetCollapsedByDefault(context: Context): Boolean =
         prefs(context).getBoolean(HERO_WIDGET_COLLAPSED_DEFAULT, false)

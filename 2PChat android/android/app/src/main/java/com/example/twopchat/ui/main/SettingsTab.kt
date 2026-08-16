@@ -171,6 +171,7 @@ fun SettingsTab(
     var notificationsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_notifications", true)) }
     var previewsEnabled by remember { mutableStateOf(sharedPrefs.getBoolean("settings_previews", false)) }
     var blockScreenshots by remember { mutableStateOf(sharedPrefs.getBoolean("settings_screenshots", true)) }
+    var incognitoKeyboard by remember { mutableStateOf(P2PPreferences.isIncognitoKeyboardEnabled(context)) }
     var passcodeLock by remember { mutableStateOf(sharedPrefs.getBoolean("settings_passcode", false)) }
     var wifiDiscovery by remember { mutableStateOf(sharedPrefs.getBoolean("settings_wifi", true)) }
     var listenerPortText by remember {
@@ -445,6 +446,15 @@ fun SettingsTab(
                                 subtitle = if (isRu) "Запрет создания снимков экрана и превью" else "Block screen capture and task switcher preview",
                                 valueBadge = if (allowScreenshots) "ON" else "OFF",
                                 keywords = listOf("screenshot", "screenshots", "скриншот", "скриншоты", "снимок", "экран", "capture"),
+                                onClick = { activeSubPage = "security" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Безопасность" else "Security",
+                                categoryColor = Color(0xFF66BB6A),
+                                title = if (isRu) "Клавиатура инкогнито" else "Incognito Keyboard",
+                                subtitle = if (isRu) "Запрос на отключение обучения клавиатуры и сохранения текста" else "Request keyboard to disable personalized learning and logging",
+                                valueBadge = if (incognitoKeyboard) "ON" else "OFF",
+                                keywords = listOf("incognito", "keyboard", "инкогнито", "клавиатура", "gboard", "swiftkey", "ime", "t9"),
                                 onClick = { activeSubPage = "security" }
                             ),
                             DeepSettingItem(
@@ -1671,6 +1681,29 @@ fun SettingsTab(
                                                     act.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
                                                 }
                                             }
+                                        },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
+                                    )
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                // Incognito Keyboard
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(Localizations.getString("incognito_keyboard", appLanguage), fontWeight = FontWeight.Medium, color = onSurfaceColor)
+                                        Text(Localizations.getString("incognito_keyboard_desc", appLanguage), fontSize = 12.sp, color = onSurfaceVariant)
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Switch(
+                                        checked = incognitoKeyboard,
+                                        onCheckedChange = {
+                                            incognitoKeyboard = it
+                                            P2PPreferences.setIncognitoKeyboardEnabled(context, it)
                                         },
                                         colors = SwitchDefaults.colors(checkedThumbColor = primaryColor, checkedTrackColor = primaryColor.copy(alpha = 0.3f))
                                     )

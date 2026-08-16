@@ -20,6 +20,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -27,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -34,9 +36,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PlatformImeOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.twopchat.P2PPreferences
 import com.example.twopchat.R
 import com.example.twopchat.VoiceMessageSupport
 import com.example.twopchat.theme.MintGreen
@@ -202,6 +208,8 @@ fun ConversationComposerRow(
     actionTestTag: String? = null,
 ) {
     val haptic = LocalHapticFeedback.current
+    val context = LocalContext.current
+    val isIncognito = remember(context) { P2PPreferences.isIncognitoKeyboardEnabled(context) }
     Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         IconButton(
             onClick = {
@@ -265,6 +273,18 @@ fun ConversationComposerRow(
                 onValueChange = onInputTextChange,
                 enabled = inputEnabled,
                 placeholder = { Text(placeholder, color = onSurfaceVariant.copy(alpha = 0.5f), fontSize = 14.sp) },
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences,
+                    autoCorrectEnabled = !isIncognito,
+                    keyboardType = KeyboardType.Text,
+                    platformImeOptions = if (isIncognito) {
+                        PlatformImeOptions(
+                            privateImeOptions = "org.chromium.chrome.keyboard.incognito=true,com.google.android.inputmethod.latin.noMicrophoneKey=false"
+                        )
+                    } else {
+                        null
+                    }
+                ),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = inputBackground,
                     unfocusedContainerColor = inputBackground,

@@ -63,6 +63,11 @@ class ProxySettingsTest {
     }
 
     @Test
+    fun testIncognitoKeyboardPreferenceKeys() {
+        assertEquals("settings_incognito_keyboard", P2PPreferences.INCOGNITO_KEYBOARD)
+    }
+
+    @Test
     fun testProxyPriorityResolution() {
         // 1. Tor active takes precedence over custom SOCKS5
         val torPriority = ProxyConfig.resolveProxyConfig(
