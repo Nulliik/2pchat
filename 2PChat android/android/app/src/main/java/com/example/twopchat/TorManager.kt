@@ -453,6 +453,32 @@ object TorManager {
         false
     }
 
+    fun isPortFree(port: Int, host: String = "127.0.0.1"): Boolean {
+        return try {
+            java.net.ServerSocket().use { serverSocket ->
+                serverSocket.reuseAddress = true
+                serverSocket.bind(java.net.InetSocketAddress(host, port))
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    suspend fun waitForPortsFree(
+        ports: List<Int> = listOf(DEFAULT_SOCKS_PORT, DEFAULT_CONTROL_PORT),
+        host: String = "127.0.0.1",
+        timeoutMs: Long = 3000L,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val startTime = System.nanoTime()
+        while (isActive && elapsedMillisSince(startTime) < timeoutMs) {
+            val allFree = ports.all { port -> isPortFree(port, host) }
+            if (allFree) return@withContext true
+            delay(100)
+        }
+        ports.all { port -> isPortFree(port, host) }
+    }
+
     suspend fun renewTorIdentity(context: Context): Boolean = withContext(Dispatchers.IO) {
         _isRotatingCircuit.value = true
         try {
@@ -531,7 +557,10 @@ object TorManager {
         }
         stopTor()
         scope.launch {
-            delay(500)
+            val freed = waitForPortsFree(listOf(DEFAULT_SOCKS_PORT, DEFAULT_CONTROL_PORT), timeoutMs = 3000L)
+            if (!freed) {
+                Log.w(TAG, "[TOR] Ports 9050/9051 not freed after stopTor() within timeout, proceeding to startTor anyway.")
+            }
             _isRotatingBridge.value = false
             startTor(context, effectiveBridges)
         }
@@ -665,6 +694,9 @@ object TorManager {
                 "Initialized embedded Tor configuration (Bridges active: ${bridgeConfiguration.bridges.isNotEmpty()})"
             )
 
+            if (!currentCoroutineContext().isActive || !runGate.isCurrent(runId)) return
+
+            waitForPortsFree(listOf(DEFAULT_SOCKS_PORT, DEFAULT_CONTROL_PORT), timeoutMs = 2500L)
             if (!currentCoroutineContext().isActive || !runGate.isCurrent(runId)) return
 
             val processBuilder = ProcessBuilder(

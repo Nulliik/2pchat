@@ -105,10 +105,34 @@ class TorManagerTest {
             bridgePluginPath = "/data/app/lib/liblyrebird.so"
         )
 
+        assertTrue(config.contains("SocksPort 127.0.0.1:9050 IsolateDestAddr IsolateDestPort"))
+        assertTrue(config.contains("IsolateDestAddr"))
+        assertTrue(config.contains("IsolateDestPort"))
         assertTrue(config.contains("UseBridges 1"))
         assertTrue(config.contains("ClientTransportPlugin obfs4,snowflake exec /data/app/lib/liblyrebird.so"))
         assertTrue(config.contains("Bridge obfs4 192.0.2.1:443 75263E44B1D414D3C6086716091A39DE46FDF1D0 cert=bW9jay1vYmZzNC1jZXJ0 iat-mode=0"))
         assertTrue(config.contains("Bridge snowflake 192.0.2.3:1 2B280B23E1107BB62AB6C19820C2D92660262B20"))
+    }
+
+    @Test
+    fun testSocksPortIncludesStreamIsolationFlagsForStandardAndBridgeConfigs() {
+        val standardConfig = TorManager.generateTorrcContent(
+            dataDir = "/data/user/0/com.example.twopchat/files/app_tor",
+            socksPort = 9050,
+            controlPort = 9051
+        )
+        assertTrue(standardConfig.contains("SocksPort 127.0.0.1:9050 IsolateDestAddr IsolateDestPort"))
+        assertTrue(standardConfig.contains("IsolateDestAddr"))
+
+        val bridgeConfig = TorManager.generateTorrcContent(
+            dataDir = "/data/user/0/com.example.twopchat/files/app_tor",
+            socksPort = 9150,
+            controlPort = 9151,
+            bridges = listOf("obfs4 192.0.2.1:443 75263E44B1D414D3C6086716091A39DE46FDF1D0 cert=bW9jay1vYmZzNC1jZXJ0 iat-mode=0"),
+            bridgePluginPath = "/data/app/lib/liblyrebird.so"
+        )
+        assertTrue(bridgeConfig.contains("SocksPort 127.0.0.1:9150 IsolateDestAddr IsolateDestPort"))
+        assertTrue(bridgeConfig.contains("IsolateDestAddr"))
     }
 
     @Test
@@ -437,6 +461,33 @@ class TorManagerTest {
         assertEquals("$onionHost:50001", formatted)
         org.junit.Assert.assertTrue(isValidPeerEndpointList(formatted!!))
         org.junit.Assert.assertTrue(isValidPeerEndpointList("192.168.1.5:50001,$formatted"))
+    }
+
+    @Test
+    fun testIsPortFreeAndWaitForPortsFree() = runBlocking {
+        // Pick an ephemeral port for testing
+        val testPort = 59123
+
+        // When nothing is bound, port should be free
+        assertTrue(TorManager.isPortFree(testPort))
+        assertTrue(TorManager.waitForPortsFree(listOf(testPort), timeoutMs = 500))
+
+        // Bind a server socket to testPort
+        val serverSocket = java.net.ServerSocket()
+        serverSocket.reuseAddress = true
+        serverSocket.bind(java.net.InetSocketAddress("127.0.0.1", testPort))
+
+        try {
+            // While socket is open, isPortFree should return false
+            assertFalse(TorManager.isPortFree(testPort))
+            assertFalse(TorManager.waitForPortsFree(listOf(testPort), timeoutMs = 200))
+        } finally {
+            serverSocket.close()
+        }
+
+        // After socket is closed, port should become free
+        assertTrue(TorManager.waitForPortsFree(listOf(testPort), timeoutMs = 1000))
+        assertTrue(TorManager.isPortFree(testPort))
     }
 }
 

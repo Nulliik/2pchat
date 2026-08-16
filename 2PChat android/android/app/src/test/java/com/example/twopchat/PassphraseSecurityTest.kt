@@ -28,6 +28,20 @@ class PassphraseSecurityTest {
         assertTrue(Arrays.equals(expectedNullChars, sampleChars))
     }
 
+    @Test
+    fun testSecureZeroizationOfByteArrayWithArraysFill() {
+        val sensitivePassphraseBytes = "my-secret-db-passphrase-12345".toByteArray(Charsets.UTF_8)
+        val copy = sensitivePassphraseBytes.clone()
+        assertTrue(Arrays.equals(copy, sensitivePassphraseBytes))
+
+        SecurityUtils.zeroize(sensitivePassphraseBytes)
+
+        for (b in sensitivePassphraseBytes) {
+            assertEquals(0.toByte(), b)
+        }
+        assertFalse(Arrays.equals(copy, sensitivePassphraseBytes))
+    }
+
     private fun charArray5Of(c1: Char, c2: Char, c3: Char, c4: Char, c5: Char): CharArray {
         return charArrayOf(c1, c2, c3, c4, c5)
     }

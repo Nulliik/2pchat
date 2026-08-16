@@ -138,19 +138,40 @@ object SecureStorage {
         val sharedPrefs = P2PPreferences.prefs(context)
         val enc = sharedPrefs.getString("db_passphrase_enc", null)
         if (enc != null) {
-            val dec = decrypt(enc)
-            if (dec != null) {
-                return dec.toByteArray(Charsets.UTF_8)
+            if (enc.startsWith(PREFIX)) {
+                val b64Ciphertext = enc.removePrefix(PREFIX)
+                val packed = Base64.decode(b64Ciphertext, Base64.NO_WRAP)
+                if (packed.size > 12) {
+                    val cipher = createCipher()
+                    cipher.init(
+                        Cipher.DECRYPT_MODE,
+                        key(),
+                        GCMParameterSpec(128, packed, 0, 12)
+                    )
+                    val plainBytes = cipher.doFinal(packed, 12, packed.size - 12)
+                    SecurityUtils.zeroize(packed)
+                    return plainBytes
+                }
+            } else {
+                return enc.toByteArray(Charsets.UTF_8)
             }
         }
-        val bytes = ByteArray(32)
-        java.security.SecureRandom().nextBytes(bytes)
-        val b64Str = Base64.encodeToString(bytes, Base64.NO_WRAP)
-        val encrypted = encrypt(b64Str)
-        sharedPrefs.edit().putString("db_passphrase_enc", encrypted).commit()
-        val result = b64Str.toByteArray(Charsets.UTF_8)
-        SecurityUtils.zeroize(bytes)
-        return result
+
+        val rawRandom = ByteArray(32)
+        java.security.SecureRandom().nextBytes(rawRandom)
+        val b64Passphrase = Base64.encode(rawRandom, Base64.NO_WRAP)
+        SecurityUtils.zeroize(rawRandom)
+
+        val cipher = createCipher()
+        cipher.init(Cipher.ENCRYPT_MODE, key())
+        val cipherBytes = cipher.doFinal(b64Passphrase)
+        val packed = cipher.iv + cipherBytes
+        val encString = PREFIX + Base64.encodeToString(packed, Base64.NO_WRAP)
+        SecurityUtils.zeroize(cipherBytes)
+        SecurityUtils.zeroize(packed)
+
+        sharedPrefs.edit().putString("db_passphrase_enc", encString).commit()
+        return b64Passphrase
     }
 
     /** Helper for fallback attempting decoded binary key if legacy database was created during raw byte window. */
@@ -158,9 +179,25 @@ object SecureStorage {
     fun getRawDecodedDbPassphraseFallback(context: android.content.Context): ByteArray? {
         val sharedPrefs = P2PPreferences.prefs(context)
         val enc = sharedPrefs.getString("db_passphrase_enc", null) ?: return null
-        val dec = decrypt(enc) ?: return null
+        if (enc.startsWith(PREFIX)) {
+            val b64Ciphertext = enc.removePrefix(PREFIX)
+            val packed = Base64.decode(b64Ciphertext, Base64.NO_WRAP)
+            if (packed.size <= 12) return null
+            val cipher = createCipher()
+            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, packed, 0, 12))
+            val plainBytes = cipher.doFinal(packed, 12, packed.size - 12)
+            SecurityUtils.zeroize(packed)
+            return try {
+                val decoded = Base64.decode(plainBytes, Base64.NO_WRAP)
+                SecurityUtils.zeroize(plainBytes)
+                decoded
+            } catch (_: Exception) {
+                SecurityUtils.zeroize(plainBytes)
+                null
+            }
+        }
         return try {
-            Base64.decode(dec, Base64.NO_WRAP)
+            Base64.decode(enc, Base64.NO_WRAP)
         } catch (_: Exception) {
             null
         }
