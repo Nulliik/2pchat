@@ -315,16 +315,14 @@ def test_smart_transport_categorization():
 
 
 @pytest.mark.asyncio
-async def test_smart_transport_fallback_execution_order(monkeypatch):
+async def test_smart_transport_tor_enabled_fail_closed_when_onion_fails(monkeypatch, caplog):
     dialed = []
 
     async def mock_dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint=None):
         dialed.append(ep)
         if ".onion" in ep:
-            raise ConnectionError("Tor circuit failed")
-        if "[" in ep:
-            return "mock_session_ygg"
-        return "mock_session_direct"
+            raise ConnectionError("Tor circuit timeout")
+        return "mock_session_clearnet"
 
     monkeypatch.setattr(discovery_bridge, "_dial_identified_endpoint", mock_dial_identified_endpoint)
     discovery_bridge.configure_proxy(json.dumps({
@@ -339,13 +337,45 @@ async def test_smart_transport_fallback_execution_order(monkeypatch):
         "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001",
     ]
 
-    sess, ep = await discovery_bridge._dial_fastest_endpoint(endpoints, None, None, None)
-    assert sess == "mock_session_ygg"
-    assert ep == "[200:1e::5]:50001"
-    # Verify Onion was attempted first, then Yggdrasil, and Direct was not needed
-    assert dialed[0] == "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001"
-    assert dialed[1] == "[200:1e::5]:50001"
+    with pytest.raises(ConnectionError) as exc_info:
+        await discovery_bridge._dial_fastest_endpoint(endpoints, None, None, None)
+
+    assert "Refusing clearnet fallback to prevent IP leak" in str(exc_info.value)
+    # Crucial security invariant: Onion was attempted, but NO connection attempt was made to IPv4 or Yggdrasil
+    assert dialed == ["ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001"]
     assert "192.168.1.50:50001" not in dialed
+    assert "[200:1e::5]:50001" not in dialed
+
+    assert "[SECURITY] Tor enabled but .onion unreachable. Refusing clearnet fallback to prevent IP leak." in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_smart_transport_tor_enabled_rejects_clearnet_only_endpoints(monkeypatch, caplog):
+    dialed = []
+
+    async def mock_dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint=None):
+        dialed.append(ep)
+        return "mock_session_direct"
+
+    monkeypatch.setattr(discovery_bridge, "_dial_identified_endpoint", mock_dial_identified_endpoint)
+    discovery_bridge.configure_proxy(json.dumps({
+        "proxy_enabled": True,
+        "proxy_host": "127.0.0.1",
+        "proxy_port": 9050,
+    }))
+
+    endpoints = [
+        "192.168.1.50:50001",
+        "[200:1e::5]:50001",
+    ]
+
+    with pytest.raises(ConnectionError) as exc_info:
+        await discovery_bridge._dial_fastest_endpoint(endpoints, None, None, None)
+
+    assert "Refusing clearnet fallback" in str(exc_info.value)
+    assert len(dialed) == 0
+
+    assert "[SECURITY] Tor enabled but .onion unreachable. Refusing clearnet fallback to prevent IP leak." in caplog.text
 
 
 @pytest.mark.asyncio

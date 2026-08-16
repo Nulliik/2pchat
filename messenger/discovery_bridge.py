@@ -2528,7 +2528,12 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
     writer = None
     session = None
     proxy_cfg = get_proxy_configuration()
+    proxy_enabled = proxy_cfg.get("enabled", False)
     is_onion = host.lower().endswith(".onion")
+    if proxy_enabled and not is_onion:
+        print("[SECURITY] Tor enabled but attempted to dial non-onion endpoint. Refusing clearnet fallback to prevent IP leak.")
+        raise ConnectionError(f"[SECURITY] Tor enabled: refusing to connect to non-onion endpoint {endpoint_str}")
+
     connect_timeout = 15.0 if is_onion else 5.0
     exchange_timeout = 10.0 if is_onion else 5.0
     try:
@@ -2652,6 +2657,8 @@ async def _dial_fastest_endpoint(
     """
     Sequentially attempt tiers (Tier 1: Tor Onion -> Tier 2: Yggdrasil -> Tier 3: Direct/Trackers)
     with concurrent Happy Eyeballs racing within each tier.
+    When Tor proxy is enabled, strictly enforces Fail-Closed policy: only Tier 1 (Tor Onion)
+    endpoints are attempted, and clearnet/non-Tor fallback is forbidden to prevent IP leaks.
     Returns (connected_session, connected_endpoint).
     """
     proxy_cfg = get_proxy_configuration()
@@ -2661,21 +2668,89 @@ async def _dial_fastest_endpoint(
     if not valid_eps:
         raise ConnectionError(f"All candidate endpoints are in cooldown: {endpoints}")
 
-    # Group valid endpoints into priority tiers
-    tiers: dict[int, list[str]] = {0: [], 1: [], 2: []}
+    # If Tor proxy is enabled, enforce Fail-Closed: only allow .onion endpoints
+    if proxy_enabled:
+        onion_eps = [ep for ep in valid_eps if _categorize_endpoint_tier(ep, proxy_enabled=True) == 0]
+        if not onion_eps:
+            print("[SECURITY] Tor enabled but .onion unreachable. Refusing clearnet fallback to prevent IP leak.")
+            raise ConnectionError(
+                f"[SECURITY] Tor enabled but no .onion endpoints available for {expected_fingerprint or valid_eps}. Refusing clearnet fallback to prevent IP leak."
+            )
+
+        print(f"[SMART-FALLBACK] Tor enabled (Fail-Closed): Attempting Tier 1 (Tor Onion): {onion_eps}")
+
+        # Single .onion endpoint
+        if len(onion_eps) == 1:
+            ep = onion_eps[0]
+            try:
+                sess = await _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+                print(f"[SMART-FALLBACK] Succeeded via Tier 1 (Tor Onion): {ep}")
+                return sess, ep
+            except Exception as err:
+                print(f"[SMART-FALLBACK] Tier 1 (Tor Onion) endpoint {ep} failed: {err}")
+                print("[SECURITY] Tor enabled but .onion unreachable. Refusing clearnet fallback to prevent IP leak.")
+                raise ConnectionError(
+                    f"[SECURITY] Tor enabled but .onion unreachable ({err}). Refusing clearnet fallback to prevent IP leak."
+                ) from err
+
+        # Multiple .onion endpoints: race concurrently (Happy Eyeballs)
+        tasks = {
+            asyncio.create_task(
+                _dial_identified_endpoint(ep, identity_priv, signing_key, trust_store, expected_fingerprint)
+            ): ep
+            for ep in onion_eps
+        }
+
+        winning_session = None
+        winning_ep = ""
+        last_error = None
+
+        try:
+            pending = set(tasks.keys())
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    ep = tasks[task]
+                    try:
+                        res = task.result()
+                        if winning_session is None:
+                            winning_session = res
+                            winning_ep = ep
+                        else:
+                            asyncio.create_task(_invalidate_session(res))
+                    except Exception as err:
+                        last_error = err
+
+                if winning_session is not None:
+                    break
+        finally:
+            for t in tasks.keys():
+                if not t.done():
+                    t.cancel()
+
+        if winning_session is not None:
+            print(f"[SMART-FALLBACK] Succeeded via Tier 1 (Tor Onion): {winning_ep}")
+            return winning_session, winning_ep
+
+        print("[SECURITY] Tor enabled but .onion unreachable. Refusing clearnet fallback to prevent IP leak.")
+        raise ConnectionError(
+            f"[SECURITY] Tor enabled but .onion unreachable. Refusing clearnet fallback to prevent IP leak. Last error: {last_error}"
+        )
+
+    # When Tor proxy is disabled: Group valid endpoints into priority tiers (Tier 2: Yggdrasil -> Tier 3: Direct/Trackers)
+    tiers: dict[int, list[str]] = {1: [], 2: []}
     for ep in valid_eps:
-        tier_idx = _categorize_endpoint_tier(ep, proxy_enabled)
+        tier_idx = _categorize_endpoint_tier(ep, proxy_enabled=False)
         if tier_idx in tiers:
             tiers[tier_idx].append(ep)
 
     tier_names = {
-        0: "Tier 1 (Tor Onion)",
         1: "Tier 2 (Yggdrasil)",
         2: "Tier 3 (Direct/Trackers)",
     }
 
     last_error = None
-    for tier_idx in (0, 1, 2):
+    for tier_idx in (1, 2):
         tier_eps = tiers[tier_idx]
         if not tier_eps:
             continue
