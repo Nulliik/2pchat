@@ -219,6 +219,10 @@ fun SettingsTab(
                         placeholder = {
                             Text(if (appLanguage == "Русский") "Расскажите немного о себе..." else "Tell something about yourself...")
                         },
+                        keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                            context = context,
+                            capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                        ),
                         singleLine = false,
                         maxLines = 3,
                         modifier = Modifier.fillMaxWidth()
@@ -347,6 +351,10 @@ fun SettingsTab(
                                         color = onSurfaceVariant.copy(alpha = 0.6f)
                                     )
                                 },
+                                keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                                    context = context,
+                                    imeAction = androidx.compose.ui.text.input.ImeAction.Search,
+                                ),
                                 leadingIcon = {
                                     Icon(
                                         painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_search),
@@ -1904,6 +1912,11 @@ fun SettingsTab(
                                             onValueChange = { value ->
                                                 listenerPortText = value.filter(Char::isDigit).take(5)
                                             },
+                                            keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                                                context = context,
+                                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                                                imeAction = androidx.compose.ui.text.input.ImeAction.Done,
+                                            ),
                                             singleLine = true,
                                             isError = listenerPortText.isNotEmpty() && !listenerPortValid,
                                             modifier = Modifier.weight(1f),
@@ -3189,8 +3202,9 @@ fun SettingsTab(
                             }
                         },
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                            context = context,
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
                         ),
                         singleLine = true,
                         colors = TextFieldDefaults.colors(
@@ -3286,8 +3300,9 @@ fun SettingsTab(
                             }
                         },
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                            context = context,
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
                         ),
                         singleLine = true,
                         colors = TextFieldDefaults.colors(
@@ -3493,8 +3508,9 @@ fun SettingsTab(
                             }
                         },
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                            context = context,
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
                         ),
                         singleLine = true,
                         colors = TextFieldDefaults.colors(
@@ -3849,11 +3865,16 @@ fun LanguageSettingsPage(
             }
             Spacer(modifier = Modifier.width(12.dp))
             if (isSearching) {
+                val searchContext = androidx.compose.ui.platform.LocalContext.current
                 BasicTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     textStyle = TextStyle(fontSize = 15.sp, color = onSurfaceColor),
                     singleLine = true,
+                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                        context = searchContext,
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Search,
+                    ),
                     modifier = Modifier
                         .weight(1f)
                         .height(44.dp)

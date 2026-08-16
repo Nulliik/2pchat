@@ -786,6 +786,10 @@ fun NetworkDiagnosticsDialog(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
+                            keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                                context = context,
+                                imeAction = androidx.compose.ui.text.input.ImeAction.Search,
+                            ),
                             placeholder = {
                                 Text(
                                     text = if (appLanguage == "Русский") "Поиск по логам..." else "Search logs...",

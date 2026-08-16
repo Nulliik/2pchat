@@ -39,6 +39,7 @@ fun AlbumPreviewModal(
     onDismiss: () -> Unit,
     onSendAlbum: (finalFiles: List<File>, caption: String) -> Unit,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var captionText by remember { mutableStateOf("") }
     val currentFiles = remember(files) { mutableStateListOf<File>().apply { addAll(files) } }
     var selectedPreviewIndex by remember { mutableIntStateOf(0) }
@@ -308,6 +309,10 @@ fun AlbumPreviewModal(
                             },
                             modifier = Modifier.weight(1f),
                             maxLines = 4,
+                            keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                                context = context,
+                                capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                            ),
                             shape = RoundedCornerShape(24.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = primaryColor,

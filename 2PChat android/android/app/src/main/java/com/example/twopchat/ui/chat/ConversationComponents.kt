@@ -60,6 +60,7 @@ fun ConversationSearchHeader(
     onQueryChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -82,6 +83,10 @@ fun ConversationSearchHeader(
             onValueChange = onQueryChange,
             placeholder = { Text(placeholder, color = onSurfaceVariant, fontSize = 14.sp) },
             singleLine = true,
+            keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                context = context,
+                imeAction = androidx.compose.ui.text.input.ImeAction.Search,
+            ),
             modifier = Modifier.weight(1f),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = primaryColor,

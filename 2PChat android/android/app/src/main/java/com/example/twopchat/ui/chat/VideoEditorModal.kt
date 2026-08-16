@@ -191,7 +191,11 @@ fun VideoEditorModal(
                             focusedTextColor = onSurfaceColor,
                             unfocusedTextColor = onSurfaceColor
                         ),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                            context = context,
+                            capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Done,
+                        ),
                         maxLines = 4
                     )
 

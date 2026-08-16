@@ -220,7 +220,10 @@ fun CurrencyRatesScreen(
                             }
                         },
                         placeholder = { Text("0.00", color = Color.Gray) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                            context = context,
+                            keyboardType = KeyboardType.Number,
+                        ),
                         singleLine = true,
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = Color(0xFF0F172A),

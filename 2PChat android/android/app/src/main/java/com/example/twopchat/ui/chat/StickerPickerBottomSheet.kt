@@ -125,6 +125,10 @@ internal fun StickerPickerBottomSheet(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
+                keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                    context = context,
+                    imeAction = androidx.compose.ui.text.input.ImeAction.Search,
+                ),
                 placeholder = {
                     Text(
                         if (appLanguage == "Русский") "Поиск стикеров по emoji..." else "Search stickers by emoji...",

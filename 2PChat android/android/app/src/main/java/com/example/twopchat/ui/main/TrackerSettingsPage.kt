@@ -228,6 +228,10 @@ fun TrackerSettingsPage(
                                     settingsChanged()
                                 }
                             },
+                            keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                                context = context,
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri,
+                            ),
                             label = { Text(if (isRussian) "Хост прокси" else "Proxy Host") },
                             singleLine = true,
                             modifier = Modifier.weight(2f),
@@ -242,6 +246,10 @@ fun TrackerSettingsPage(
                                     settingsChanged()
                                 }
                             },
+                            keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                                context = context,
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                            ),
                             label = { Text(if (isRussian) "Порт" else "Port") },
                             singleLine = true,
                             modifier = Modifier.weight(1f),
@@ -541,6 +549,7 @@ internal fun AddTrackerDialog(
     onAdd: (String, String) -> String?,
 ) {
     val isRussian = appLanguage == "Русский"
+    val dialogContext = androidx.compose.ui.platform.LocalContext.current
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -552,6 +561,10 @@ internal fun AddTrackerDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; error = null },
+                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                        context = dialogContext,
+                        capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Words,
+                    ),
                     label = { Text(if (isRussian) "Название" else "Name") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -560,6 +573,10 @@ internal fun AddTrackerDialog(
                 OutlinedTextField(
                     value = url,
                     onValueChange = { url = it; error = null },
+                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                        context = dialogContext,
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri,
+                    ),
                     label = { Text("URL") },
                     placeholder = { Text("https://tracker.example/announce") },
                     singleLine = true,

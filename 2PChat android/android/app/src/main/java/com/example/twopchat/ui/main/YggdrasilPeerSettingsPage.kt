@@ -616,6 +616,7 @@ private fun AddYggdrasilPeerDialog(
     onDismiss: () -> Unit,
     onAdd: (String, String) -> String?,
 ) {
+    val dialogContext = androidx.compose.ui.platform.LocalContext.current
     var name by remember { mutableStateOf("") }
     var uri by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -627,6 +628,10 @@ private fun AddYggdrasilPeerDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it; error = null },
+                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                        context = dialogContext,
+                        capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Words,
+                    ),
                     label = { Text(if (isRussian) "Название" else "Name") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -635,6 +640,10 @@ private fun AddYggdrasilPeerDialog(
                 OutlinedTextField(
                     value = uri,
                     onValueChange = { uri = it; error = null },
+                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                        context = dialogContext,
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri,
+                    ),
                     label = { Text("URI") },
                     placeholder = { Text("tls://peer.example:443") },
                     singleLine = true,

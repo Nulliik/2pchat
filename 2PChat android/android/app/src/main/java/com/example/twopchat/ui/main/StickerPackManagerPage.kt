@@ -617,9 +617,13 @@ private fun EmojiAssignDialog(
                 Spacer(Modifier.height(14.dp))
 
                 // Custom Input Field (No "🎭" fallback!)
+                val context = androidx.compose.ui.platform.LocalContext.current
                 OutlinedTextField(
                     value = emoji,
                     onValueChange = { emoji = it.take(16) },
+                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                        context = context,
+                    ),
                     singleLine = true,
                     placeholder = {
                         Text(
@@ -1166,6 +1170,7 @@ private fun PackNameDialog(
     onConfirm: (String) -> Unit,
 ) {
     var value by remember(title, initialValue) { mutableStateOf(initialValue) }
+    val dialogContext = androidx.compose.ui.platform.LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -1173,6 +1178,10 @@ private fun PackNameDialog(
             OutlinedTextField(
                 value = value,
                 onValueChange = { value = it.take(80) },
+                keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                    context = dialogContext,
+                    capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                ),
                 singleLine = true,
                 label = {
                     Text(if (appLanguage == "Русский") "Название" else "Name")

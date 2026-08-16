@@ -122,10 +122,15 @@ fun RecipientPickerDialog(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Search Bar
+                val context = androidx.compose.ui.platform.LocalContext.current
                 var searchQuery by remember { mutableStateOf("") }
                 BasicTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
+                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                        context = context,
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Search,
+                    ),
                     singleLine = true,
                     textStyle = TextStyle(
                         color = onSurfaceColor,

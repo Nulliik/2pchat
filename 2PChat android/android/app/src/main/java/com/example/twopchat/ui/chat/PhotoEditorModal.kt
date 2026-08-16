@@ -692,6 +692,10 @@ fun PhotoEditorModal(
                             ),
                             shape = RoundedCornerShape(20.dp),
                             singleLine = true,
+                            keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                                context = context,
+                                capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                            ),
                             modifier = Modifier
                                 .weight(1f)
                                 .heightIn(min = 44.dp)

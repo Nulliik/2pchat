@@ -769,6 +769,7 @@ private fun AddBridgeDialog(
     onDismiss: () -> Unit,
     onAdd: (String) -> String?,
 ) {
+    val dialogContext = androidx.compose.ui.platform.LocalContext.current
     var text by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
@@ -789,6 +790,9 @@ private fun AddBridgeDialog(
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it; error = null },
+                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
+                        context = dialogContext,
+                    ),
                     placeholder = { Text("obfs4 1.2.3.4:1234 FINGERPRINT cert=… iat-mode=0", fontSize = 11.sp) },
                     minLines = 3,
                     maxLines = 6,
