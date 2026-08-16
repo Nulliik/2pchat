@@ -177,7 +177,6 @@ object P2PMessageRelay {
                 val liveEndpoint = _peerEndpoints[peerName]
                     ?: prefs.getString("last_endpoint_$peerName", null)?.takeIf { it.isNotBlank() }
                 val savedOnion = P2PPreferences.getPeerOnionAddress(appContext, peerName)
-                    ?: ChatDatabaseHelper.getInstance(appContext).getPeerOnionAddress(peerName)
                 val endpoint = when {
                     liveEndpoint != null && savedOnion != null && !liveEndpoint.contains(savedOnion) ->
                         "$liveEndpoint,$savedOnion"
@@ -714,7 +713,6 @@ object P2PMessageRelay {
                 ?.takeIf { it.isNotBlank() }
                 ?.let { rememberAuthenticatedPeerEndpoint(peerName, it) }
             val savedOnion = P2PPreferences.getPeerOnionAddress(appContext, peerName)
-                ?: ChatDatabaseHelper.getInstance(appContext).getPeerOnionAddress(peerName)
             if (savedOnion != null) {
                 rememberAuthenticatedPeerEndpoint(peerName, savedOnion)
             }

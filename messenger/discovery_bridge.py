@@ -87,12 +87,12 @@ _noisy_ip_counts = {}
 _ip_ban_lock = threading.Lock()
 
 # Tracks consecutive connection failures per endpoint string.
-# Format: {endpoint_str: (failure_count, first_failure_monotonic_time)}
+# Format: {endpoint_str: (failure_count, last_failure_monotonic_time)}
 # After _STALE_EP_THRESHOLD consecutive failures the endpoint is put into a
 # _STALE_EP_COOLDOWN-second cooldown so we stop hammering a dead address.
 _stale_endpoint_failures: dict = {}
 _stale_ep_lock = threading.Lock()
-_STALE_EP_THRESHOLD = 4       # failures before cooldown
+_STALE_EP_THRESHOLD = 2       # failures before cooldown (reduced to quickly skip dead endpoints)
 _STALE_EP_COOLDOWN  = 300     # seconds (5 min) to skip a stale endpoint
 
 
@@ -100,8 +100,8 @@ def _record_endpoint_failure(endpoint: str) -> None:
     """Record one consecutive connection failure for *endpoint*."""
     now = time.monotonic()
     with _stale_ep_lock:
-        count, first = _stale_endpoint_failures.get(endpoint, (0, now))
-        _stale_endpoint_failures[endpoint] = (count + 1, first)
+        count, _ = _stale_endpoint_failures.get(endpoint, (0, now))
+        _stale_endpoint_failures[endpoint] = (count + 1, now)
         if count + 1 >= _STALE_EP_THRESHOLD:
             print(
                 f"[ENDPOINT] {endpoint} has failed {count + 1} times in a row; "
@@ -121,12 +121,11 @@ def _is_endpoint_in_cooldown(endpoint: str) -> bool:
         return False
     now = time.monotonic()
     with _stale_ep_lock:
-        count, first = _stale_endpoint_failures.get(endpoint, (0, now))
+        count, last_failure = _stale_endpoint_failures.get(endpoint, (0, now))
         if count < _STALE_EP_THRESHOLD:
             return False
-        # Cooldown expires after _STALE_EP_COOLDOWN seconds since the LAST
-        # failure (approximated by now - first + small margin).
-        if now - first >= _STALE_EP_COOLDOWN:
+        # Cooldown expires after _STALE_EP_COOLDOWN seconds since the LAST failure.
+        if now - last_failure >= _STALE_EP_COOLDOWN:
             # Cooldown expired – give it another chance
             _stale_endpoint_failures.pop(endpoint, None)
             return False
@@ -1491,6 +1490,8 @@ async def _resolve_peer_endpoints_async(peer_fingerprint: str) -> list[str]:
     async def _query(tracker_name: str):
         try:
             tracker = _configured_tracker(tracker_name)
+            if get_proxy_configuration().get("enabled", False) and getattr(tracker, "discovery_scheme", "") != "http-tracker":
+                return []
             provider = _tracker_provider(
                 tracker,
                 peer_port=listener_port,
@@ -2534,12 +2535,20 @@ async def _dial_endpoint(endpoint_str: str, identity_priv, signing_key, trust_st
     proxy_cfg = get_proxy_configuration()
     proxy_enabled = proxy_cfg.get("enabled", False)
     is_onion = host.lower().endswith(".onion")
+    is_ygg = endpoint_str.startswith("[") or (":" in endpoint_str and endpoint_str.count(":") > 1)
     if proxy_enabled and not is_onion:
         print("[SECURITY] Tor enabled but attempted to dial non-onion endpoint. Refusing clearnet fallback to prevent IP leak.")
         raise ConnectionError(f"[SECURITY] Tor enabled: refusing to connect to non-onion endpoint {endpoint_str}")
 
-    connect_timeout = 15.0 if is_onion else 5.0
-    exchange_timeout = 10.0 if is_onion else 5.0
+    if is_onion:
+        connect_timeout = 8.0
+        exchange_timeout = 6.0
+    elif is_ygg:
+        connect_timeout = 3.5
+        exchange_timeout = 3.5
+    else:
+        connect_timeout = 2.0
+        exchange_timeout = 2.5
     try:
         reader, writer = await asyncio.wait_for(
             transport_connect(
@@ -2681,6 +2690,9 @@ async def _dial_fastest_endpoint(
                 f"[SECURITY] Tor enabled but no .onion endpoints available for {expected_fingerprint or valid_eps}. Refusing clearnet fallback to prevent IP leak."
             )
 
+        if len(onion_eps) > 4:
+            onion_eps = onion_eps[:4]
+
         print(f"[SMART-FALLBACK] Tor enabled (Fail-Closed): Attempting Tier 1 (Tor Onion): {onion_eps}")
 
         # Single .onion endpoint
@@ -2758,6 +2770,9 @@ async def _dial_fastest_endpoint(
         tier_eps = tiers[tier_idx]
         if not tier_eps:
             continue
+        # Limit Tier 3 (Direct/Trackers) candidates to top 4 freshest endpoints to avoid socket exhaustion
+        if tier_idx == 2 and len(tier_eps) > 4:
+            tier_eps = tier_eps[:4]
 
         tier_name = tier_names[tier_idx]
         print(f"[SMART-FALLBACK] Attempting {tier_name}: {tier_eps}")

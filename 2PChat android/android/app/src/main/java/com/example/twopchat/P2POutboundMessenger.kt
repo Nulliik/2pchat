@@ -14,6 +14,8 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 internal class P2POutboundMessenger(
     private val peerEndpoints: Map<String, String>,
@@ -28,6 +30,10 @@ internal class P2POutboundMessenger(
 
     private val peerFailureBackoffMs = ConcurrentHashMap<String, Long>()
     private val lastPeerFailureAt = ConcurrentHashMap<String, Long>()
+    private val peerSendLocks = ConcurrentHashMap<String, Mutex>()
+
+    private fun getPeerLock(peerName: String): Mutex =
+        peerSendLocks.computeIfAbsent(peerName) { Mutex() }
 
     private fun isPaused(context: Context, peerName: String): Boolean =
         peerName != "Direct Peer" && P2PPreferences.isPeerIdentityChangePending(context, peerName)
@@ -50,12 +56,17 @@ internal class P2POutboundMessenger(
                 .getString(P2PPreferences.lastEndpoint(peerName), null),
             onionEndpoint = P2PPreferences.getPeerOnionAddress(context, peerName),
         ) ?: run {
-            log(
-                context,
-                "No valid transport endpoint for $peerName; peer is offline",
-                "DEBUG",
-                null,
-            )
+            val lastFail = lastPeerFailureAt[peerName] ?: 0L
+            val now = System.currentTimeMillis()
+            if (now - lastFail > 10_000L) {
+                lastPeerFailureAt[peerName] = now
+                log(
+                    context,
+                    "No valid transport endpoint for $peerName; peer is offline",
+                    "DEBUG",
+                    null,
+                )
+            }
             return postResult(onResult, false)
         }
         sendResolvedMessage(context, peerName, endpoint, text, onResult)
@@ -79,33 +90,42 @@ internal class P2POutboundMessenger(
             return postResult(onResult, false)
         }
         scope.launch {
-            try {
-                val fingerprint = P2PPreferences.prefs(context)
-                    .getString(P2PPreferences.peerFingerprint(peerName), null)
-                log(context, "Sending secure message via Python transport", "INFO", null)
-                val success = PythonBridge.sendP2pMessage(peerName, endpoint, text, fingerprint)
-                if (success) {
-                    peerFailureBackoffMs.remove(peerName)
-                    lastPeerFailureAt.remove(peerName)
-                    NetworkTrafficStats.recordMessage(
-                        context,
-                        peerName,
-                        endpoint,
-                        text,
-                        TrafficDirection.SENT,
-                    )
-                } else {
-                    val currentBackoff = peerFailureBackoffMs[peerName] ?: 1000L
-                    lastPeerFailureAt[peerName] = System.currentTimeMillis()
-                    val nextBackoff = (currentBackoff * 2).coerceAtMost(30_000L)
-                    val jitterFactor = java.util.concurrent.ThreadLocalRandom.current().nextDouble(0.85, 1.15)
-                    peerFailureBackoffMs[peerName] = (nextBackoff * jitterFactor).toLong()
+            val lock = getPeerLock(peerName)
+            lock.withLock {
+                val currentLastFail = lastPeerFailureAt[peerName] ?: 0L
+                val currentBackoff = peerFailureBackoffMs[peerName] ?: 0L
+                val currentNow = System.currentTimeMillis()
+                if (currentNow - currentLastFail < currentBackoff) {
+                    return@withLock postResult(onResult, false)
                 }
-                log(context, "Secure message send: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
-                postResult(onResult, success)
-            } catch (error: Exception) {
-                log(context, "Failed to send secure message", "ERROR", error)
-                postResult(onResult, false)
+                try {
+                    val fingerprint = P2PPreferences.prefs(context)
+                        .getString(P2PPreferences.peerFingerprint(peerName), null)
+                    log(context, "Sending secure message via Python transport", "INFO", null)
+                    val success = PythonBridge.sendP2pMessage(peerName, endpoint, text, fingerprint)
+                    if (success) {
+                        peerFailureBackoffMs.remove(peerName)
+                        lastPeerFailureAt.remove(peerName)
+                        NetworkTrafficStats.recordMessage(
+                            context,
+                            peerName,
+                            endpoint,
+                            text,
+                            TrafficDirection.SENT,
+                        )
+                    } else {
+                        val currentBackoffVal = peerFailureBackoffMs[peerName] ?: 1000L
+                        lastPeerFailureAt[peerName] = System.currentTimeMillis()
+                        val nextBackoff = (currentBackoffVal * 2).coerceAtMost(30_000L)
+                        val jitterFactor = java.util.concurrent.ThreadLocalRandom.current().nextDouble(0.85, 1.15)
+                        peerFailureBackoffMs[peerName] = (nextBackoff * jitterFactor).toLong()
+                    }
+                    log(context, "Secure message send: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
+                    postResult(onResult, success)
+                } catch (error: Exception) {
+                    log(context, "Failed to send secure message", "ERROR", error)
+                    postResult(onResult, false)
+                }
             }
         }
     }
