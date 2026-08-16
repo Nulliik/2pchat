@@ -477,3 +477,63 @@ def test_stun_discovery_allowed_when_tor_proxy_disabled(monkeypatch):
     assert len(dns_calls) > 0
 
 
+@pytest.mark.asyncio
+async def test_group_onion_routing_when_peer_has_mixed_endpoints(monkeypatch):
+    dialed = []
+
+    async def mock_dial_identified(ep, *args, **kwargs):
+        dialed.append(ep)
+        if ep.endswith(".onion:50001"):
+            return "mock_onion_session"
+        raise ConnectionError("clearnet dial attempted")
+
+    monkeypatch.setattr(discovery_bridge, "_dial_identified_endpoint", mock_dial_identified)
+
+    discovery_bridge.configure_proxy(json.dumps({
+        "proxy_enabled": True,
+        "proxy_host": "127.0.0.1",
+        "proxy_port": 9050,
+    }))
+
+    group_member_endpoints = [
+        "192.168.1.100:50001",
+        "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001",
+    ]
+
+    sess, ep = await discovery_bridge._dial_fastest_endpoint(group_member_endpoints, None, None, None)
+    assert sess == "mock_session_onion" or sess == "mock_onion_session"
+    assert ep == "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001"
+    # Guaranteed that clearnet IPv4 was never dialed
+    assert "192.168.1.100:50001" not in dialed
+    assert dialed == ["ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001"]
+
+
+@pytest.mark.asyncio
+async def test_group_onion_fail_closed_prevents_clearnet_leak_on_timeout(monkeypatch):
+    dialed = []
+
+    async def mock_dial_identified(ep, *args, **kwargs):
+        dialed.append(ep)
+        raise ConnectionError("Simulated Tor SOCKS5 circuit timeout")
+
+    monkeypatch.setattr(discovery_bridge, "_dial_identified_endpoint", mock_dial_identified)
+
+    discovery_bridge.configure_proxy(json.dumps({
+        "proxy_enabled": True,
+        "proxy_host": "127.0.0.1",
+        "proxy_port": 9050,
+    }))
+
+    group_member_endpoints = [
+        "ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001",
+        "203.0.113.50:50001",
+    ]
+
+    with pytest.raises(ConnectionError) as exc_info:
+        await discovery_bridge._dial_fastest_endpoint(group_member_endpoints, None, None, None)
+
+    assert "Refusing clearnet fallback to prevent IP leak" in str(exc_info.value)
+    # The clearnet IPv4 endpoint must never be dialed
+    assert "203.0.113.50:50001" not in dialed
+
+

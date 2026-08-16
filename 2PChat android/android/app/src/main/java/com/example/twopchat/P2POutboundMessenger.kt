@@ -82,10 +82,6 @@ internal class P2POutboundMessenger(
             try {
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
-                if (peerName != "Direct Peer" && !PythonBridge.isPeerOnline(peerName, fingerprint)) {
-                    log(context, "Peer $peerName is offline; message will be delivered via offline queue when connected", "INFO", null)
-                    return@launch postResult(onResult, false)
-                }
                 log(context, "Sending secure message via Python transport", "INFO", null)
                 val success = PythonBridge.sendP2pMessage(peerName, endpoint, text, fingerprint)
                 if (success) {

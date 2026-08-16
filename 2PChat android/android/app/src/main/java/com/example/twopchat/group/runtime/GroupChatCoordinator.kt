@@ -89,6 +89,8 @@ import com.example.twopchat.group.ui.PendingGroupInvitesUiState
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.io.File
+import com.example.twopchat.security.ImageSanitizer
+import com.example.twopchat.security.TemporaryCacheSanitizer
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -5377,10 +5379,24 @@ object GroupChatCoordinator {
                     }
                 }
             }
+            val effectiveFile = if (ImageSanitizer.isSanitizableImage(destination.absolutePath)) {
+                val sanitized = ImageSanitizer.sanitizeImageExif(context, destination.absolutePath)
+                if (sanitized != null) {
+                    val sanitizedDest = File(directory, "sanitized_${destination.nameWithoutExtension}.jpg")
+                    sanitized.copyTo(sanitizedDest, overwrite = true)
+                    TemporaryCacheSanitizer.shredFile(sanitized)
+                    TemporaryCacheSanitizer.shredFile(destination)
+                    sanitizedDest
+                } else {
+                    destination
+                }
+            } else {
+                destination
+            }
             StagedAttachment(
                 directory = directory,
-                file = destination,
-                mimeType = inferredMime,
+                file = effectiveFile,
+                mimeType = if (effectiveFile != destination) "image/jpeg" else inferredMime,
             )
         }.onFailure {
             Log.w(TAG, "Could not stage group attachment: ${it.message}")

@@ -25,6 +25,8 @@ class GroupSyncWorker(
         GroupChatCoordinator.initialize(applicationContext)
         GroupChatCoordinator.runAntiEntropy()
         Result.success()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
     } catch (_: Exception) {
         Result.retry()
     }
