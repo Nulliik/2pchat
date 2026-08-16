@@ -130,6 +130,8 @@ class GroupWireProtocolInstrumentedTest {
             adminOnlyPosting = true,
             groupAvatarDataB64 = Base64.encodeToString(byteArrayOf(1, 2, 3), Base64.NO_WRAP),
             groupAvatarSigned = true,
+            groupWallpaperDataB64 = Base64.encodeToString(byteArrayOf(4, 5, 6), Base64.NO_WRAP),
+            groupWallpaperSigned = true,
         )
         val signed = unsigned.copy(
             signatureBase64 = GroupIdentitySignatures.sign(unsigned.canonicalForSignature()),
@@ -152,11 +154,18 @@ class GroupWireProtocolInstrumentedTest {
         )
         assertFalse(parsed.copy(title = "tampered title").verifySignature())
         assertFalse(parsed.copy(groupAvatarDataB64 = "dGFtcGVyZWQ=").verifySignature())
+        assertFalse(parsed.copy(groupWallpaperDataB64 = "dGFtcGVyZWQ=").verifySignature())
         val oversizedAvatar = JSONObject(GroupWireProtocol.inviteToJson(signed).toString()).apply {
             put("group_avatar_data", "A".repeat(GroupWireProtocol.MAX_GROUP_AVATAR_BASE64_CHARS + 1))
         }
         assertThrows(IllegalArgumentException::class.java) {
             GroupWireProtocol.parseInvite(oversizedAvatar)
+        }
+        val oversizedWallpaper = JSONObject(GroupWireProtocol.inviteToJson(signed).toString()).apply {
+            put("group_wallpaper_data", "A".repeat(GroupWireProtocol.MAX_GROUP_WALLPAPER_BASE64_CHARS + 1))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            GroupWireProtocol.parseInvite(oversizedWallpaper)
         }
     }
 

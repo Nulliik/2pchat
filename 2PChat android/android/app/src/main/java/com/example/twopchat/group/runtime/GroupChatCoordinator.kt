@@ -1654,6 +1654,7 @@ object GroupChatCoordinator {
             GroupControlFrames.inviteResponseToJson(response),
         )
         val savedAvatarPath = persistGroupInviteAvatar(invite)
+        persistGroupInviteWallpaper(invite)
         val existingGroup = db().getGroup(invite.groupId)
         if (existingGroup == null) {
             db().createGroup(
@@ -3913,6 +3914,15 @@ object GroupChatCoordinator {
                         }.getOrNull()
                     }
                 }
+                val groupWallpaperB64 = applicationContext?.let { ctx ->
+                    File(ctx.filesDir, "group_wallpapers/${groupId}.jpg")
+                        .takeIf { it.exists() && it.length() <= GroupWireProtocol.MAX_GROUP_WALLPAPER_BYTES }
+                        ?.let { file ->
+                            runCatching {
+                                Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+                            }.getOrNull()
+                        }
+                }
                 val unsigned = GroupInvite(
                     inviteId = inviteId,
                     groupId = groupId,
@@ -3920,6 +3930,8 @@ object GroupChatCoordinator {
                     description = group.description,
                     groupAvatarDataB64 = groupAvatarB64,
                     groupAvatarSigned = groupAvatarB64 != null,
+                    groupWallpaperDataB64 = groupWallpaperB64,
+                    groupWallpaperSigned = groupWallpaperB64 != null,
                     adminOnlyPosting = group.adminOnlyPosting,
                     epoch = group.currentEpoch,
                     epochSecretBase64 = epochKey.keyMaterial.base64(),
@@ -4741,6 +4753,32 @@ object GroupChatCoordinator {
         }.getOrElse { error ->
             Log.w(TAG, "Rejected invalid group avatar for ${invite.groupId}: ${error.message}")
             avatarFile.takeIf(File::exists)?.absolutePath
+        }
+    }
+
+    private fun persistGroupInviteWallpaper(invite: GroupInvite): String? {
+        val context = applicationContext ?: return null
+        val wallpaperFile = File(context.filesDir, "group_wallpapers/${invite.groupId}.jpg")
+        val encoded = invite.groupWallpaperDataB64?.takeIf { invite.groupWallpaperSigned }
+            ?: return wallpaperFile.takeIf(File::exists)?.absolutePath
+        return runCatching {
+            require(encoded.length <= GroupWireProtocol.MAX_GROUP_WALLPAPER_BASE64_CHARS)
+            val bytes = Base64.decode(encoded, Base64.NO_WRAP)
+            require(bytes.size <= GroupWireProtocol.MAX_GROUP_WALLPAPER_BYTES)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            require(bounds.outMimeType?.startsWith("image/") == true)
+            require(bounds.outWidth in 1..4_096 && bounds.outHeight in 1..4_096)
+            require(bounds.outWidth.toLong() * bounds.outHeight.toLong() <= 16_000_000L)
+            wallpaperFile.parentFile?.mkdirs()
+            wallpaperFile.writeBytes(bytes)
+            P2PPreferences.prefs(context).edit()
+                .putString("group_wallpaper_${invite.groupId}", wallpaperFile.absolutePath)
+                .apply()
+            wallpaperFile.absolutePath
+        }.getOrElse { error ->
+            Log.w(TAG, "Rejected invalid group wallpaper for ${invite.groupId}: ${error.message}")
+            wallpaperFile.takeIf(File::exists)?.absolutePath
         }
     }
 

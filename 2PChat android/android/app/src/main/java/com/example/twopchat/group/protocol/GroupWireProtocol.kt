@@ -30,6 +30,8 @@ object GroupWireProtocol {
     const val MAX_GROUP_MEMBERS_IN_INVITE = 10_000
     const val MAX_GROUP_AVATAR_BYTES = 500_000
     const val MAX_GROUP_AVATAR_BASE64_CHARS = 666_668
+    const val MAX_GROUP_WALLPAPER_BYTES = 500_000
+    const val MAX_GROUP_WALLPAPER_BASE64_CHARS = 666_668
     const val MAX_HLC_LOGICAL = HybridLogicalClock.MAX_LOGICAL_COUNTER
 
     fun isGroupFrame(json: JSONObject): Boolean =
@@ -179,9 +181,20 @@ object GroupWireProtocol {
                     }
                 },
             groupAvatarSigned = json.optBoolean("group_avatar_signed", false),
+            groupWallpaperDataB64 = json.optString("group_wallpaper_data", "")
+                .ifBlank { null }
+                ?.also {
+                    require(it.length <= MAX_GROUP_WALLPAPER_BASE64_CHARS) {
+                        "group wallpaper payload is too large"
+                    }
+                },
+            groupWallpaperSigned = json.optBoolean("group_wallpaper_signed", false),
         ).also {
             require(!it.groupAvatarSigned || it.groupAvatarDataB64 != null) {
                 "signed group avatar payload is missing"
+            }
+            require(!it.groupWallpaperSigned || it.groupWallpaperDataB64 != null) {
+                "signed group wallpaper payload is missing"
             }
         }
     }
@@ -196,6 +209,8 @@ object GroupWireProtocol {
         put("admin_only_posting", invite.adminOnlyPosting)
         invite.groupAvatarDataB64?.let { put("group_avatar_data", it) }
         if (invite.groupAvatarSigned) put("group_avatar_signed", true)
+        invite.groupWallpaperDataB64?.let { put("group_wallpaper_data", it) }
+        if (invite.groupWallpaperSigned) put("group_wallpaper_signed", true)
         put("epoch", invite.epoch)
         put("epoch_secret", invite.epochSecretBase64)
         put("owner_fingerprint", invite.ownerFingerprint)
@@ -443,6 +458,8 @@ data class GroupInvite(
     val adminOnlyPosting: Boolean = false,
     val groupAvatarDataB64: String? = null,
     val groupAvatarSigned: Boolean = false,
+    val groupWallpaperDataB64: String? = null,
+    val groupWallpaperSigned: Boolean = false,
 ) {
     fun canonicalForSignature(): String = buildString {
         append("2pchat-group-invite-signature-v1\n")
@@ -483,6 +500,11 @@ data class GroupInvite(
             requireNotNull(groupAvatarDataB64)
             append("group_avatar_signed=v1\n")
             append("group_avatar_data=").append(groupAvatarDataB64).append('\n')
+        }
+        if (groupWallpaperSigned) {
+            requireNotNull(groupWallpaperDataB64)
+            append("group_wallpaper_signed=v1\n")
+            append("group_wallpaper_data=").append(groupWallpaperDataB64).append('\n')
         }
     }
 

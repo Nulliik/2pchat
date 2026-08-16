@@ -131,6 +131,14 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         DatabaseTuning.applyOptimizations(db)
     }
 
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        // Some installations reached schema version 11 before the peers table
+        // was created. CREATE TABLE IF NOT EXISTS repairs that harmlessly on
+        // the next open and prevents repeated failed peer lookups at startup.
+        createPeersTable(db)
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
         val createTable = ("CREATE TABLE " + TABLE_MESSAGES + "("
                 + KEY_ID + " TEXT PRIMARY KEY,"
@@ -554,7 +562,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             arrayOf(peerName),
             null,
             null,
-            "rowid DESC",
+            // The (peer_name, sent_at_ms) index can serve this ordering directly.
+            // Keep rowid as a deterministic fallback for legacy rows whose
+            // sent_at_ms value predates that column and is therefore zero.
+            "$KEY_SENT_AT_MS DESC, rowid DESC",
             limitClause
         )
         cursor.use {
@@ -578,7 +589,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             arrayOf(peerName),
             null,
             null,
-            "rowid DESC",
+            "$KEY_SENT_AT_MS DESC, rowid DESC",
             "1"
         )
         cursor.use {
