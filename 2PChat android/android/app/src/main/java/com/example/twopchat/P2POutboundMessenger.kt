@@ -49,6 +49,31 @@ internal class P2POutboundMessenger(
         }
     }
 
+    internal fun normalizePeerKeyForTest(peerName: String): String =
+        normalizePeerKey(peerName)
+
+    internal fun recordFailureForTest(peerName: String, failureTimeMs: Long = System.currentTimeMillis()) {
+        val key = normalizePeerKey(peerName)
+        val currentBackoff = peerFailureBackoffMs[key] ?: 1000L
+        lastPeerFailureAt[key] = failureTimeMs
+        val nextBackoff = (currentBackoff * 2).coerceAtMost(30_000L)
+        val jitterFactor = java.util.concurrent.ThreadLocalRandom.current().nextDouble(0.85, 1.15)
+        peerFailureBackoffMs[key] = (nextBackoff * jitterFactor).toLong()
+    }
+
+    internal fun getFailureBackoffMs(peerName: String): Long? =
+        peerFailureBackoffMs[normalizePeerKey(peerName)]
+
+    internal fun getLastFailureAtMs(peerName: String): Long? =
+        lastPeerFailureAt[normalizePeerKey(peerName)]
+
+    internal fun isPeerInBackoff(peerName: String, nowMs: Long = System.currentTimeMillis()): Boolean {
+        val key = normalizePeerKey(peerName)
+        val lastFail = lastPeerFailureAt[key] ?: 0L
+        val backoff = peerFailureBackoffMs[key] ?: 0L
+        return nowMs - lastFail < backoff
+    }
+
     private fun isPaused(context: Context, peerName: String): Boolean =
         peerName != "Direct Peer" && P2PPreferences.isPeerIdentityChangePending(context, peerName)
 
