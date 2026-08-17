@@ -32,8 +32,22 @@ internal class P2POutboundMessenger(
     private val lastPeerFailureAt = ConcurrentHashMap<String, Long>()
     private val peerSendLocks = ConcurrentHashMap<String, Mutex>()
 
+    private fun normalizePeerKey(peerName: String): String =
+        peerName.trim().lowercase()
+
     private fun getPeerLock(peerName: String): Mutex =
-        peerSendLocks.computeIfAbsent(peerName) { Mutex() }
+        peerSendLocks.computeIfAbsent(normalizePeerKey(peerName)) { Mutex() }
+
+    fun resetPeerBackoffs(peerName: String? = null) {
+        if (peerName != null) {
+            val key = normalizePeerKey(peerName)
+            peerFailureBackoffMs.remove(key)
+            lastPeerFailureAt.remove(key)
+        } else {
+            peerFailureBackoffMs.clear()
+            lastPeerFailureAt.clear()
+        }
+    }
 
     private fun isPaused(context: Context, peerName: String): Boolean =
         peerName != "Direct Peer" && P2PPreferences.isPeerIdentityChangePending(context, peerName)
@@ -56,10 +70,11 @@ internal class P2POutboundMessenger(
                 .getString(P2PPreferences.lastEndpoint(peerName), null),
             onionEndpoint = P2PPreferences.getPeerOnionAddress(context, peerName),
         ) ?: run {
-            val lastFail = lastPeerFailureAt[peerName] ?: 0L
+            val peerKey = normalizePeerKey(peerName)
+            val lastFail = lastPeerFailureAt[peerKey] ?: 0L
             val now = System.currentTimeMillis()
             if (now - lastFail > 10_000L) {
-                lastPeerFailureAt[peerName] = now
+                lastPeerFailureAt[peerKey] = now
                 log(
                     context,
                     "No valid transport endpoint for $peerName; peer is offline",
@@ -83,8 +98,9 @@ internal class P2POutboundMessenger(
             log(context, "Blocked message to $peerName while its identity change awaits confirmation", "ERROR", null)
             return postResult(onResult, false)
         }
-        val lastFail = lastPeerFailureAt[peerName] ?: 0L
-        val backoff = peerFailureBackoffMs[peerName] ?: 0L
+        val peerKey = normalizePeerKey(peerName)
+        val lastFail = lastPeerFailureAt[peerKey] ?: 0L
+        val backoff = peerFailureBackoffMs[peerKey] ?: 0L
         val now = System.currentTimeMillis()
         if (now - lastFail < backoff) {
             return postResult(onResult, false)
@@ -92,8 +108,8 @@ internal class P2POutboundMessenger(
         scope.launch {
             val lock = getPeerLock(peerName)
             lock.withLock {
-                val currentLastFail = lastPeerFailureAt[peerName] ?: 0L
-                val currentBackoff = peerFailureBackoffMs[peerName] ?: 0L
+                val currentLastFail = lastPeerFailureAt[peerKey] ?: 0L
+                val currentBackoff = peerFailureBackoffMs[peerKey] ?: 0L
                 val currentNow = System.currentTimeMillis()
                 if (currentNow - currentLastFail < currentBackoff) {
                     return@withLock postResult(onResult, false)
@@ -104,8 +120,8 @@ internal class P2POutboundMessenger(
                     log(context, "Sending secure message via Python transport", "INFO", null)
                     val success = PythonBridge.sendP2pMessage(peerName, endpoint, text, fingerprint)
                     if (success) {
-                        peerFailureBackoffMs.remove(peerName)
-                        lastPeerFailureAt.remove(peerName)
+                        peerFailureBackoffMs.remove(peerKey)
+                        lastPeerFailureAt.remove(peerKey)
                         NetworkTrafficStats.recordMessage(
                             context,
                             peerName,
@@ -114,11 +130,11 @@ internal class P2POutboundMessenger(
                             TrafficDirection.SENT,
                         )
                     } else {
-                        val currentBackoffVal = peerFailureBackoffMs[peerName] ?: 1000L
-                        lastPeerFailureAt[peerName] = System.currentTimeMillis()
+                        val currentBackoffVal = peerFailureBackoffMs[peerKey] ?: 1000L
+                        lastPeerFailureAt[peerKey] = System.currentTimeMillis()
                         val nextBackoff = (currentBackoffVal * 2).coerceAtMost(30_000L)
                         val jitterFactor = java.util.concurrent.ThreadLocalRandom.current().nextDouble(0.85, 1.15)
-                        peerFailureBackoffMs[peerName] = (nextBackoff * jitterFactor).toLong()
+                        peerFailureBackoffMs[peerKey] = (nextBackoff * jitterFactor).toLong()
                     }
                     log(context, "Secure message send: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
                     postResult(onResult, success)
@@ -371,7 +387,8 @@ internal class P2POutboundMessenger(
     }
 
     fun processOfflineQueue(context: Context, peerName: String, endpoint: String) {
-        if (endpoint.isBlank() || isPaused(context, peerName) || !processingOfflineQueues.add(peerName)) return
+        val peerKey = normalizePeerKey(peerName)
+        if (endpoint.isBlank() || isPaused(context, peerName) || !processingOfflineQueues.add(peerKey)) return
         scope.launch {
             try {
                 if (isPaused(context, peerName)) return@launch
@@ -391,7 +408,7 @@ internal class P2POutboundMessenger(
                         log(context, "Paused offline queue for $peerName after an identity change", "ERROR", null)
                         break
                     }
-                val payload = if (message.replyToId != null) JSONObject().apply {
+                    val payload = if (message.replyToId != null) JSONObject().apply {
                         put("type", "reply")
                         put("message_id", message.id)
                         put("text", message.text)
@@ -475,20 +492,43 @@ internal class P2POutboundMessenger(
                         }
                         val fileSent = try {
                             PythonBridge.sendP2pFile(
-                                peerName,
-                                endpoint,
-                                fileToSend.absolutePath,
-                                fingerprint,
-                                message.id,
-                                caption,
+                                peerName = peerName,
+                                endpoint = endpoint,
+                                filePath = fileToSend.absolutePath,
+                                expectedFingerprint = fingerprint,
+                                messageId = message.id,
+                                caption = caption,
+                                albumId = "",
+                                albumIndex = -1,
+                                albumCount = 0,
                             )
                         } finally {
                             tempSanitized?.let { TemporaryCacheSanitizer.shredFile(it) }
                         }
+                        if (fileSent) {
+                            NetworkTrafficStats.recordFile(
+                                context,
+                                peerName,
+                                endpoint,
+                                attachmentFile,
+                                direction = TrafficDirection.SENT,
+                            )
+                        }
                         fileSent
                     } else {
-                        PythonBridge.sendP2pMessage(peerName, endpoint, payload, fingerprint)
+                        val msgSent = PythonBridge.sendP2pMessage(peerName, endpoint, payload, fingerprint)
+                        if (msgSent) {
+                            NetworkTrafficStats.recordMessage(
+                                context,
+                                peerName,
+                                endpoint,
+                                payload,
+                                TrafficDirection.SENT,
+                            )
+                        }
+                        msgSent
                     }
+
                     if (!success) {
                         log(context, "Failed to send pending message ${message.id}, stopping queue processing.", "INFO", null)
                         break
@@ -523,7 +563,7 @@ internal class P2POutboundMessenger(
             } catch (error: Exception) {
                 log(context, "Error in processOfflineQueue: ${error.message}", "ERROR", error)
             } finally {
-                processingOfflineQueues.remove(peerName)
+                processingOfflineQueues.remove(peerKey)
             }
         }
     }

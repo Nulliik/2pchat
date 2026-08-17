@@ -100,3 +100,39 @@ async def test_adaptive_timeout_constants_selection(monkeypatch):
     with pytest.raises(Exception):
         await discovery_bridge._dial_endpoint("ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001", None, None, None)
     assert 8.0 in recorded_timeouts
+
+
+def test_reset_stale_endpoint_cooldowns():
+    ep1 = "1.1.1.1:50001"
+    ep2 = "2.2.2.2:50001"
+    for _ in range(2):
+        _record_endpoint_failure(ep1)
+        _record_endpoint_failure(ep2)
+
+    assert _is_endpoint_in_cooldown(ep1)
+    assert _is_endpoint_in_cooldown(ep2)
+
+    discovery_bridge.reset_stale_endpoint_cooldowns()
+
+    assert not _is_endpoint_in_cooldown(ep1)
+    assert not _is_endpoint_in_cooldown(ep2)
+
+
+def test_categorize_endpoint_tier():
+    # When proxy is enabled:
+    # Tor Onion is Tier 1 (0)
+    assert _categorize_endpoint_tier("ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001", proxy_enabled=True) == 0
+    # Yggdrasil IPv6 is Tier 2 (1)
+    assert _categorize_endpoint_tier("[200:1e::5]:50001", proxy_enabled=True) == 1
+    assert _categorize_endpoint_tier("200:1e::5:50001", proxy_enabled=True) == 1
+    # Direct IPv4 is Tier 3 (2)
+    assert _categorize_endpoint_tier("192.168.1.1:50001", proxy_enabled=True) == 2
+
+    # When proxy is disabled:
+    # Tor Onion is Tier 4 (3 - skipped/inactive)
+    assert _categorize_endpoint_tier("ta325zop5al47taygtk2d7sobpiozy5mku5mbk2u4hpcrovumvrna4ad.onion:50001", proxy_enabled=False) == 3
+    # Yggdrasil IPv6 remains Tier 2 (1)
+    assert _categorize_endpoint_tier("[200:1e::5]:50001", proxy_enabled=False) == 1
+    # Direct IPv4 remains Tier 3 (2)
+    assert _categorize_endpoint_tier("192.168.1.1:50001", proxy_enabled=False) == 2
+

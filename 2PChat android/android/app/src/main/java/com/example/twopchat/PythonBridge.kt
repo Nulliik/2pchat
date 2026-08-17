@@ -906,6 +906,18 @@ object PythonBridge {
         }
     }
 
+    fun resetStaleEndpointCooldowns(): Boolean {
+        if (!isInitialized) return false
+        return try {
+            val bridge = getDiscoveryBridgeModule() ?: return false
+            bridge.callAttr("reset_stale_endpoint_cooldowns")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error resetting stale endpoint cooldowns", e)
+            false
+        }
+    }
+
     fun isUpnpMapped(): Boolean {
         if (!isInitialized) return false
         return try {

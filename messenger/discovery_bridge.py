@@ -132,6 +132,14 @@ def _is_endpoint_in_cooldown(endpoint: str) -> bool:
         return True
 
 
+def reset_stale_endpoint_cooldowns() -> None:
+    """Clear all recorded endpoint failures, cooldowns, and reconnect backoffs (e.g. on network change or manual retry)."""
+    with _stale_ep_lock:
+        _stale_endpoint_failures.clear()
+    with _reconnect_backoff_lock:
+        _reconnect_backoff.clear()
+
+
 # Exponential reconnect backoff per peer
 _reconnect_backoff: dict = {}  # key -> (next_allowed_monotonic_time, delay_seconds)
 _reconnect_backoff_lock = threading.Lock()

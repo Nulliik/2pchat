@@ -165,6 +165,7 @@ object P2PMessageRelay {
             }
             lastManualRefreshAt = now
             val appContext = context.applicationContext
+            resetPeerBackoffs()
             // Do not reconnect with stale discovery data while a fresh
             // announcement is still running on another coroutine.
             refreshAnnouncementNow(appContext)
@@ -187,6 +188,11 @@ object P2PMessageRelay {
                 PythonBridge.reconnectPeerSession(peerName, endpoint, fingerprint)
             }
         }
+
+    fun resetPeerBackoffs(peerName: String? = null) {
+        PythonBridge.resetStaleEndpointCooldowns()
+        outboundMessenger.resetPeerBackoffs(peerName)
+    }
 
     private const val MAX_TRACKED_PEER_ENDPOINTS = 512
     private val _peerEndpoints = mutableStateMapOf<String, String>()
