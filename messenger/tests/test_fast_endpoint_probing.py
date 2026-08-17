@@ -17,10 +17,12 @@ from messenger.discovery_bridge import (
 @pytest.fixture(autouse=True)
 def reset_discovery_state():
     configure_proxy(json.dumps({"proxy_enabled": False}))
+    discovery_bridge.set_ipv4_enabled(True)
     with discovery_bridge._stale_ep_lock:
         discovery_bridge._stale_endpoint_failures.clear()
     yield
     configure_proxy(json.dumps({"proxy_enabled": False}))
+    discovery_bridge.set_ipv4_enabled(True)
     with discovery_bridge._stale_ep_lock:
         discovery_bridge._stale_endpoint_failures.clear()
 
@@ -73,6 +75,8 @@ async def test_dial_fastest_endpoint_caps_tier3_to_four_candidates(monkeypatch):
 @pytest.mark.asyncio
 async def test_adaptive_timeout_constants_selection(monkeypatch):
     recorded_timeouts = []
+
+    monkeypatch.setattr(discovery_bridge, "get_proxy_configuration", lambda: {"enabled": False, "host": "127.0.0.1", "port": 9050})
 
     async def mock_transport_connect(transport, host, port, **kwargs):
         raise ConnectionError("not connected")
