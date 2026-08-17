@@ -9,6 +9,7 @@ import android.util.Log
 import com.example.twopchat.P2PMessageRelay
 import com.example.twopchat.P2PPreferences
 import com.example.twopchat.PythonBridge
+import com.example.twopchat.StickerSupport
 import com.example.twopchat.group.attachments.GroupAttachmentManifest
 import com.example.twopchat.group.attachments.GroupAttachmentStore
 import com.example.twopchat.group.attachments.MAX_ATTACHMENT_BYTES
@@ -2235,7 +2236,7 @@ object GroupChatCoordinator {
             }
         }
         if (inserted) replicateStoredEvent(group, event, json, senderPeerName)
-        if (inserted && event.kind == GroupEventKind.MEDIA && shouldSeedAttachment(group, stored)) {
+        if (inserted && event.kind == GroupEventKind.MEDIA) {
             val manifestsToSeed = mutableListOf<GroupAttachmentManifest>()
             payload.optJSONArray("attachments")?.let { arr ->
                 for (i in 0 until arr.length()) {
@@ -2249,16 +2250,24 @@ object GroupChatCoordinator {
                     runCatching { GroupAttachmentManifest.fromJson(manifestJson) }.getOrNull()?.let { manifestsToSeed.add(it) }
                 }
             }
-            for (manifest in manifestsToSeed) {
-                attachmentManifests[
-                    attachmentManifestKey(group.groupId, event.eventId)
-                ] = manifest
-                requestMissingAttachmentBlocks(
-                    group.groupId,
-                    event.eventId,
-                    manifest,
-                    preferredPeerName = senderPeerName,
-                )
+            val isSmallMediaOrSticker = manifestsToSeed.any {
+                it.mimeType.contains("sticker") ||
+                it.mimeType.startsWith("audio/") ||
+                StickerSupport.isStickerFileName(it.fileName) ||
+                it.plaintextSize <= 512 * 1024L
+            }
+            if (isSmallMediaOrSticker || shouldSeedAttachment(group, stored)) {
+                for (manifest in manifestsToSeed) {
+                    attachmentManifests[
+                        attachmentManifestKey(group.groupId, event.eventId)
+                    ] = manifest
+                    requestMissingAttachmentBlocks(
+                        group.groupId,
+                        event.eventId,
+                        manifest,
+                        preferredPeerName = senderPeerName,
+                    )
+                }
             }
         }
         refreshGroup(group.groupId)
