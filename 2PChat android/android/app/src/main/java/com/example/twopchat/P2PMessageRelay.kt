@@ -1522,6 +1522,11 @@ object P2PMessageRelay {
                     // half-open sessions must never create visible Peer (...)
                     // chats or leave placeholder preference keys behind.
                     if (isPlaceholderPeerName(resolvedPeerName)) {
+                        // The TCP source address of an incoming connection is
+                        // not a reverse endpoint, but the authenticated session
+                        // itself is live. Publish presence without persisting
+                        // that unusable address so the UI and sender agree.
+                        publishPeerOnline(resolvedPeerName, canonicalTransport)
                         log(appContext, "Authenticated unnamed session awaiting identity information")
                         return true
                     }

@@ -730,7 +730,11 @@ object PythonBridge {
         if (!isInitialized) return false
         return try {
             val bridge = getDiscoveryBridgeModule() ?: return false
-            val isOnline = bridge.callAttr("is_peer_online", peerName, expectedFingerprint)
+            val isOnline = bridge.callAttr(
+                "is_peer_online",
+                peerName,
+                resolveLiveFingerprint(peerName, expectedFingerprint),
+            )
             isOnline.toBoolean()
         } catch (_: Exception) {
             false
@@ -738,13 +742,24 @@ object PythonBridge {
     }
 
     fun sendP2pMessage(peerName: String, endpoint: String, text: String, expectedFingerprint: String? = null): Boolean {
-        if (!isInitialized || !isValidEndpoint(endpoint)) {
-            if (!isValidEndpoint(endpoint)) Log.w(TAG, "Rejected message send attempt to invalid endpoint: $endpoint")
+        if (!isInitialized) return false
+        val normalizedEndpoint = endpoint.trim()
+        val resolvedFingerprint = resolveLiveFingerprint(peerName, expectedFingerprint)
+        // An inbound connection has no reusable reverse TCP endpoint: its source
+        // port belongs to the caller. The Python core can write through an
+        // existing authenticated session without dialing when endpoint is empty.
+        if (normalizedEndpoint.isEmpty()) {
+            if (!isPeerOnline(peerName, resolvedFingerprint)) {
+                Log.w(TAG, "Rejected cached-session send to offline peer: $peerName")
+                return false
+            }
+        } else if (!isValidEndpoint(normalizedEndpoint)) {
+            Log.w(TAG, "Rejected message send attempt to invalid endpoint: $endpoint")
             return false
         }
         return try {
             val bridge = getDiscoveryBridgeModule() ?: return false
-            val success = bridge.callAttr("send_p2p_message", peerName, endpoint, text, expectedFingerprint)
+            val success = bridge.callAttr("send_p2p_message", peerName, normalizedEndpoint, text, resolvedFingerprint)
             success.toBoolean()
         } catch (e: Exception) {
             Log.e(TAG, "Error sending P2P message via Python", e)
@@ -855,6 +870,22 @@ object PythonBridge {
             Log.e(TAG, "Error getting active peer fingerprints", e)
             emptyList()
         }
+    }
+
+    /**
+     * Incoming sessions are displayed before their identity card arrives as
+     * "Peer (first-eight-fingerprint-chars)". Resolve that UI-only label only
+     * against a unique authenticated, live fingerprint; never guess by name.
+     */
+    private fun resolveLiveFingerprint(peerName: String, expectedFingerprint: String?): String? {
+        expectedFingerprint?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+        val prefix = Regex("^Peer \\(([A-Za-z0-9+/]{8})\\)$")
+            .matchEntire(peerName.trim())
+            ?.groupValues
+            ?.getOrNull(1)
+            ?: return null
+        val matches = getActivePeerFingerprints().filter { it.startsWith(prefix) }
+        return matches.singleOrNull()
     }
 
     fun rememberPeerName(fingerprint: String, peerName: String): Boolean {

@@ -88,13 +88,20 @@ internal class P2POutboundMessenger(
         text: String,
         onResult: (Boolean) -> Unit = {},
     ) {
+        val fingerprint = P2PPreferences.prefs(context)
+            .getString(P2PPreferences.peerFingerprint(peerName), null)
         val endpoint = resolvePeerEndpoint(
             peerName = peerName,
             liveEndpoint = peerEndpoints[peerName],
             persistedEndpoint = P2PPreferences.prefs(context)
                 .getString(P2PPreferences.lastEndpoint(peerName), null),
             onionEndpoint = P2PPreferences.getPeerOnionAddress(context, peerName),
-        ) ?: run {
+        ) ?: if (PythonBridge.isPeerOnline(peerName, fingerprint)) {
+            // An incoming peer has no dialable reverse endpoint. An empty
+            // endpoint explicitly means: use only the live authenticated session.
+            log(context, "Sending to $peerName through its active incoming session", "DEBUG", null)
+            ""
+        } else run {
             val peerKey = normalizePeerKey(peerName)
             val lastFail = lastPeerFailureAt[peerKey] ?: 0L
             val now = System.currentTimeMillis()
