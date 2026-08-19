@@ -126,3 +126,102 @@ func TestFileTransferManagerCancellation(t *testing.T) {
 		t.Fatal("expected error due to transfer cancellation, got nil")
 	}
 }
+
+func TestReceiveChunkOutOfOrderAndDuplicate(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFilePath := filepath.Join(tmpDir, "sample.bin")
+	testData := make([]byte, 256*1024) // 4 chunks of 64KB
+	rand.Read(testData)
+
+	if err := os.WriteFile(testFilePath, testData, 0600); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	mgr := NewFileTransferManager(nil)
+
+	var metaPayload string
+	var chunkPayloads []string
+
+	err := mgr.SendFileStream(
+		context.Background(),
+		"peer_fp_abc",
+		"msg_scramble",
+		testFilePath,
+		"sample.bin",
+		"scrambled caption",
+		"🚀",
+		func(payload []byte) error {
+			if metaPayload == "" {
+				metaPayload = EncodeMetadataB64(payload)
+			} else {
+				chunkPayloads = append(chunkPayloads, EncodeMetadataB64(payload))
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("SendFileStream failed: %v", err)
+	}
+
+	downloadsDir := filepath.Join(tmpDir, "downloads")
+	receiver := NewFileTransferManager(nil)
+
+	// Deliver metadata first
+	res, err := receiver.ReceiveChunk("peer_fp_abc", "msg_scramble", metaPayload, downloadsDir)
+	if err != nil || res != nil {
+		t.Fatalf("unexpected metadata result: res=%v, err=%v", res, err)
+	}
+
+	// Deliver chunks scrambled: [2, 0, 1, 1 (duplicate), 3]
+	scrambledIndices := []int{2, 0, 1, 1, 3}
+	var assembled *AssembledFile
+
+	for _, idx := range scrambledIndices {
+		payloadB64 := chunkPayloads[idx]
+		res, err := receiver.ReceiveChunk("peer_fp_abc", "msg_scramble", payloadB64, downloadsDir)
+		if err != nil {
+			t.Fatalf("ReceiveChunk failed on chunk %d: %v", idx, err)
+		}
+		if res != nil {
+			assembled = res
+		}
+	}
+
+	if assembled == nil {
+		t.Fatal("expected file to be fully assembled and decrypted")
+	}
+
+	savedBytes, err := os.ReadFile(assembled.FilePath)
+	if err != nil {
+		t.Fatalf("failed to read assembled file: %v", err)
+	}
+
+	if !bytes.Equal(savedBytes, testData) {
+		t.Fatal("assembled file plaintext does not match original data")
+	}
+}
+
+func TestReapIncompleteTransfers(t *testing.T) {
+	mgr := NewFileTransferManager(nil)
+
+	mgr.inbound["stale_1"] = &InboundFileTransfer{
+		MessageID: "stale_1",
+		StartTime: time.Now().Add(-20 * time.Minute),
+	}
+	mgr.inbound["fresh_1"] = &InboundFileTransfer{
+		MessageID: "fresh_1",
+		StartTime: time.Now().Add(-2 * time.Minute),
+	}
+
+	reaped := mgr.ReapIncompleteTransfers(15 * time.Minute)
+	if reaped != 1 {
+		t.Fatalf("expected 1 reaped transfer, got %d", reaped)
+	}
+
+	if _, exists := mgr.inbound["stale_1"]; exists {
+		t.Fatal("expected stale_1 to be reaped")
+	}
+	if _, exists := mgr.inbound["fresh_1"]; !exists {
+		t.Fatal("expected fresh_1 to remain")
+	}
+}

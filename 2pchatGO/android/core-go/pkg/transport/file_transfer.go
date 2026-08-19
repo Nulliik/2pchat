@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"twopchat/core/pkg/crypto"
 )
 
 // FileProgressCallback is invoked periodically as bytes are transmitted or received.
@@ -50,6 +52,22 @@ func NewFileTransferManager(progressCb FileProgressCallback) *FileTransferManage
 		inbound:      make(map[string]*InboundFileTransfer),
 		onProgress:   progressCb,
 	}
+}
+
+// ReapIncompleteTransfers cleans up abandoned inbound transfers older than maxAge.
+func (m *FileTransferManager) ReapIncompleteTransfers(maxAge time.Duration) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	now := time.Now()
+	reaped := 0
+	for id, transfer := range m.inbound {
+		if now.Sub(transfer.StartTime) > maxAge {
+			delete(m.inbound, id)
+			reaped++
+		}
+	}
+	return reaped
 }
 
 // CancelTransfer cancels an ongoing file transfer task by messageId.
@@ -213,9 +231,17 @@ func (m *FileTransferManager) ReceiveChunk(
 	}
 
 	m.mu.Lock()
-	chunkIdx := len(transfer.Chunks)
-	transfer.Chunks[chunkIdx] = payload
-	transfer.Received += int64(len(payload))
+	var chunkIdx int
+	if len(payload) >= crypto.SecretBoxNonceSize {
+		chunkIdx = int(binary.BigEndian.Uint64(payload[FileNoncePrefixSize:crypto.SecretBoxNonceSize]))
+	} else {
+		chunkIdx = len(transfer.Chunks)
+	}
+
+	if _, alreadyHave := transfer.Chunks[chunkIdx]; !alreadyHave {
+		transfer.Chunks[chunkIdx] = payload
+		transfer.Received += int64(len(payload))
+	}
 	isComplete := len(transfer.Chunks) >= transfer.Meta.NumChunks
 	m.mu.Unlock()
 
