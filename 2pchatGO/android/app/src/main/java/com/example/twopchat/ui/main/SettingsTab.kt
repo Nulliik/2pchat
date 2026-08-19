@@ -48,6 +48,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.SecureFlagPolicy
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
@@ -200,6 +202,7 @@ fun SettingsTab(
     var showLauncherIconsPicker by remember { mutableStateOf(false) }
     var showThemesPicker by remember { mutableStateOf(false) }
     var showSeedBackupDialog by remember { mutableStateOf(false) }
+    var showPinForBackupDialog by remember { mutableStateOf(false) }
     var isSearchingSettings by remember { mutableStateOf(false) }
     var settingsSearchQuery by remember { mutableStateOf("") }
     val isTorRunning by TorManager.isTorRunning.collectAsState()
@@ -1840,7 +1843,13 @@ fun SettingsTab(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { showSeedBackupDialog = true }
+                                        .clickable {
+                                            if (sharedPrefs.contains("passcode_value")) {
+                                                showPinForBackupDialog = true
+                                            } else {
+                                                showSeedBackupDialog = true
+                                            }
+                                        }
                                         .padding(vertical = 4.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
@@ -3229,7 +3238,101 @@ fun SettingsTab(
         )
     }
 
-    // Account Seed Phrase Backup Dialog
+    // PIN Verification Dialog before showing Seed Phrase
+    if (showPinForBackupDialog) {
+        var verifyPin by remember { mutableStateOf("") }
+        var verifyPinError by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = {
+                showPinForBackupDialog = false
+                verifyPin = ""
+                verifyPinError = false
+            },
+            title = {
+                Text(
+                    text = if (appLanguage == "Русский") "Подтверждение PIN-кода" else "Confirm Passcode",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = if (appLanguage == "Русский") "Введите ваш PIN-код для просмотра резервной копии ключей" else "Enter your passcode to view recovery seed phrase",
+                        fontSize = 13.sp,
+                        color = onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = verifyPin,
+                        onValueChange = {
+                            if (it.length <= 12) {
+                                verifyPin = it
+                                verifyPinError = false
+                            }
+                        },
+                        label = { Text("PIN") },
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword
+                        ),
+                        isError = verifyPinError,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = primaryColor,
+                            focusedLabelColor = primaryColor
+                        )
+                    )
+                    if (verifyPinError) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Неверный PIN-код" else "Incorrect passcode",
+                            color = Color(0xFFEF5350),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val correctPin = sharedPrefs.getString("passcode_value", "") ?: ""
+                        if (com.example.twopchat.SecurityUtils.verifyAndMigratePasscode(verifyPin, correctPin, sharedPrefs, "passcode_value")) {
+                            showPinForBackupDialog = false
+                            verifyPin = ""
+                            verifyPinError = false
+                            showSeedBackupDialog = true
+                        } else {
+                            verifyPinError = true
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = primaryColor,
+                        contentColor = if (primaryColor == MintGreen) StealthBlack else Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(if (appLanguage == "Русский") "Подтвердить" else "Confirm", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showPinForBackupDialog = false
+                    verifyPin = ""
+                    verifyPinError = false
+                }) {
+                    Text(Localizations.getString("cancel", appLanguage), color = onSurfaceVariant)
+                }
+            },
+            containerColor = surfaceColor,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    // Account Seed Phrase Backup Dialog (FLAG_SECURE + Sensitive Clipboard)
     if (showSeedBackupDialog) {
         val mnemonic = remember { com.example.twopchat.NativeBridge.getLocalSeedMnemonic() ?: "" }
         val words = remember(mnemonic) {
@@ -3238,6 +3341,7 @@ fun SettingsTab(
 
         AlertDialog(
             onDismissRequest = { showSeedBackupDialog = false },
+            properties = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn),
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("🔑", fontSize = 20.sp)
@@ -3357,8 +3461,27 @@ fun SettingsTab(
                         if (mnemonic.isNotBlank()) {
                             val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                             val clip = android.content.ClipData.newPlainText("2PChat Recovery Phrase", mnemonic)
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                clip.description.extras = android.os.PersistableBundle().apply {
+                                    putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true)
+                                }
+                            }
                             clipboard.setPrimaryClip(clip)
                             Toast.makeText(context, Localizations.getString("phrase_copied", appLanguage), Toast.LENGTH_SHORT).show()
+
+                            // Auto-clear clipboard after 45 seconds
+                            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                                kotlinx.coroutines.delay(45_000L)
+                                runCatching {
+                                    if (clipboard.primaryClip?.getItemAt(0)?.text?.toString() == mnemonic) {
+                                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                                            clipboard.clearPrimaryClip()
+                                        } else {
+                                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("", ""))
+                                        }
+                                    }
+                                }
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
