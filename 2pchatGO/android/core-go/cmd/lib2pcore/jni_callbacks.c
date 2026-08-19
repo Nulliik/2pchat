@@ -31,11 +31,25 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     return JNI_VERSION_1_6;
 }
 
-void callbackOnPeerConnected(const char *peerFP, const char *endpoint) {
-    if (g_jvm == NULL || g_nativeBridgeClass == NULL || g_midOnPeerConnected == NULL) return;
+static JNIEnv* getJNIEnv(void) {
+    if (g_jvm == NULL) return NULL;
     JNIEnv *env = NULL;
-    jint res = (*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL);
+    jint res = (*g_jvm)->GetEnv(g_jvm, (void**)&env, JNI_VERSION_1_6);
     if (res == JNI_OK && env != NULL) {
+        return env;
+    }
+    if (res == JNI_EDETACHED) {
+        if ((*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL) == JNI_OK) {
+            return env;
+        }
+    }
+    return NULL;
+}
+
+void callbackOnPeerConnected(const char *peerFP, const char *endpoint) {
+    if (g_nativeBridgeClass == NULL || g_midOnPeerConnected == NULL) return;
+    JNIEnv *env = getJNIEnv();
+    if (env != NULL) {
         jstring jFP = (*env)->NewStringUTF(env, peerFP);
         jstring jEndp = (*env)->NewStringUTF(env, endpoint);
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnPeerConnected, jFP, jEndp);
@@ -45,10 +59,9 @@ void callbackOnPeerConnected(const char *peerFP, const char *endpoint) {
 }
 
 void callbackOnPeerDisconnected(const char *peerFP, const char *reason) {
-    if (g_jvm == NULL || g_nativeBridgeClass == NULL || g_midOnPeerDisconnected == NULL) return;
-    JNIEnv *env = NULL;
-    jint res = (*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL);
-    if (res == JNI_OK && env != NULL) {
+    if (g_nativeBridgeClass == NULL || g_midOnPeerDisconnected == NULL) return;
+    JNIEnv *env = getJNIEnv();
+    if (env != NULL) {
         jstring jFP = (*env)->NewStringUTF(env, peerFP);
         jstring jReason = (*env)->NewStringUTF(env, reason);
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnPeerDisconnected, jFP, jReason);
@@ -58,10 +71,9 @@ void callbackOnPeerDisconnected(const char *peerFP, const char *reason) {
 }
 
 void callbackOnMessageReceived(const char *peerFP, const jbyte *payload, jsize len, const char *messageID) {
-    if (g_jvm == NULL || g_nativeBridgeClass == NULL || g_midOnMessageReceived == NULL) return;
-    JNIEnv *env = NULL;
-    jint res = (*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL);
-    if (res == JNI_OK && env != NULL) {
+    if (g_nativeBridgeClass == NULL || g_midOnMessageReceived == NULL) return;
+    JNIEnv *env = getJNIEnv();
+    if (env != NULL) {
         jstring jFP = (*env)->NewStringUTF(env, peerFP);
         jbyteArray jArr = (*env)->NewByteArray(env, len);
         if (len > 0 && payload != NULL) {
@@ -76,10 +88,9 @@ void callbackOnMessageReceived(const char *peerFP, const jbyte *payload, jsize l
 }
 
 void callbackOnError(int code, const char *msg) {
-    if (g_jvm == NULL || g_nativeBridgeClass == NULL || g_midOnError == NULL) return;
-    JNIEnv *env = NULL;
-    jint res = (*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL);
-    if (res == JNI_OK && env != NULL) {
+    if (g_nativeBridgeClass == NULL || g_midOnError == NULL) return;
+    JNIEnv *env = getJNIEnv();
+    if (env != NULL) {
         jstring jMsg = (*env)->NewStringUTF(env, msg);
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnError, (jint)code, jMsg);
         (*env)->DeleteLocalRef(env, jMsg);
@@ -87,10 +98,9 @@ void callbackOnError(int code, const char *msg) {
 }
 
 void callbackOnPeerDiscovered(const char *infoHashHex, const char *endpoint, const char *source) {
-    if (g_jvm == NULL || g_nativeBridgeClass == NULL || g_midOnPeerDiscovered == NULL) return;
-    JNIEnv *env = NULL;
-    jint res = (*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL);
-    if (res == JNI_OK && env != NULL) {
+    if (g_nativeBridgeClass == NULL || g_midOnPeerDiscovered == NULL) return;
+    JNIEnv *env = getJNIEnv();
+    if (env != NULL) {
         jstring jHash = (*env)->NewStringUTF(env, infoHashHex);
         jstring jEndp = (*env)->NewStringUTF(env, endpoint);
         jstring jSrc = (*env)->NewStringUTF(env, source);
@@ -102,10 +112,9 @@ void callbackOnPeerDiscovered(const char *infoHashHex, const char *endpoint, con
 }
 
 void callbackOnFileProgress(const char *peerFP, const char *messageID, jlong transferred, jlong total, jdouble speedKbps) {
-    if (g_jvm == NULL || g_nativeBridgeClass == NULL || g_midOnFileProgress == NULL) return;
-    JNIEnv *env = NULL;
-    jint res = (*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL);
-    if (res == JNI_OK && env != NULL) {
+    if (g_nativeBridgeClass == NULL || g_midOnFileProgress == NULL) return;
+    JNIEnv *env = getJNIEnv();
+    if (env != NULL) {
         jstring jFP = (*env)->NewStringUTF(env, peerFP);
         jstring jMsgID = (*env)->NewStringUTF(env, messageID);
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnFileProgress, jFP, jMsgID, transferred, total, speedKbps);

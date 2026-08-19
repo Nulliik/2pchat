@@ -1,6 +1,10 @@
 package com.example.twopchat
 
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -361,42 +365,80 @@ object NativeBridge {
         }
     }
 
+    private val bridgeScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.SupervisorJob())
+
     // --- JNI Callbacks from Go to Kotlin ---
 
     @JvmStatic
     fun onPeerConnected(peerFP: String, endpoint: String) {
         Log.i(TAG, "[P2P] Peer connected: $peerFP @ $endpoint")
-        onPeerConnectedListener?.invoke(peerFP, endpoint)
+        bridgeScope.launch {
+            try {
+                onPeerConnectedListener?.invoke(peerFP, endpoint)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error in onPeerConnectedListener", e)
+            }
+        }
     }
 
     @JvmStatic
     fun onPeerDisconnected(peerFP: String, reason: String) {
         Log.i(TAG, "[P2P] Peer disconnected: $peerFP, reason: $reason")
-        onPeerDisconnectedListener?.invoke(peerFP, reason)
+        bridgeScope.launch {
+            try {
+                onPeerDisconnectedListener?.invoke(peerFP, reason)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error in onPeerDisconnectedListener", e)
+            }
+        }
     }
 
     @JvmStatic
     fun onMessageReceived(peerFP: String, payload: ByteArray, messageID: String) {
         Log.d(TAG, "[P2P] Message received from $peerFP, ID: $messageID (${payload.size} bytes)")
-        onMessageReceivedListener?.invoke(peerFP, payload, messageID)
+        bridgeScope.launch {
+            try {
+                onMessageReceivedListener?.invoke(peerFP, payload, messageID)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error in onMessageReceivedListener", e)
+            }
+        }
     }
 
     @JvmStatic
     fun onError(code: Int, message: String) {
         Log.e(TAG, "[P2P] Native error ($code): $message")
-        onErrorListener?.invoke(code, message)
+        bridgeScope.launch {
+            try {
+                onErrorListener?.invoke(code, message)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error in onErrorListener", e)
+            }
+        }
     }
 
     @JvmStatic
     fun onPeerDiscovered(infoHashHex: String, endpoint: String, source: String) {
         Log.i(TAG, "[P2P-Discovery] Discovered peer for $infoHashHex @ $endpoint (source: $source)")
-        onPeerDiscoveredListener?.invoke(infoHashHex, endpoint, source)
+        bridgeScope.launch {
+            try {
+                onPeerDiscoveredListener?.invoke(infoHashHex, endpoint, source)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error in onPeerDiscoveredListener", e)
+            }
+        }
     }
 
     @JvmStatic
     fun onFileProgress(peerFP: String, messageID: String, transferred: Long, total: Long, speedKbps: Double) {
         Log.d(TAG, "[P2P-File] Progress for $messageID: $transferred / $total bytes ($speedKbps kbps)")
-        onFileProgressListener?.invoke(peerFP, messageID, transferred, total, speedKbps)
+        bridgeScope.launch {
+            try {
+                onFileProgressListener?.invoke(peerFP, messageID, transferred, total, speedKbps)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Error in onFileProgressListener", e)
+            }
+        }
     }
 
     fun triggerNatTraversal(): Boolean {
