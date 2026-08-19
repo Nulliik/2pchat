@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -467,6 +468,61 @@ func (m *SessionManager) ConfigureLocalIdentity(nickname, privB64, aboutMe strin
 		_ = m.discoverySvc.RegisterInfoHash(fp)
 	}
 	return true
+}
+
+// GetLocalSeedMnemonic exports the 24-word BIP-39 mnemonic phrase representing the local account seed.
+func (m *SessionManager) GetLocalSeedMnemonic() (string, error) {
+	m.mu.RLock()
+	id := m.identity
+	m.mu.RUnlock()
+
+	if id == nil {
+		if err := m.Init(); err != nil {
+			return "", err
+		}
+		m.mu.RLock()
+		id = m.identity
+		m.mu.RUnlock()
+	}
+
+	if id == nil || id.Private == nil {
+		return "", errors.New("local identity not initialized")
+	}
+
+	seed := id.Private.Bytes()
+	defer crypto.Zeroize(seed)
+
+	return crypto.MnemonicFromSeed(seed)
+}
+
+// RestoreFromMnemonic restores the local identity from a 24-word BIP-39 mnemonic phrase or raw hex/base64 seed.
+func (m *SessionManager) RestoreFromMnemonic(nickname, mnemonicOrHex, aboutMe string) error {
+	trimmed := strings.TrimSpace(mnemonicOrHex)
+	var seed []byte
+	var err error
+
+	if len(strings.Fields(trimmed)) == 24 {
+		seed, err = crypto.SeedFromMnemonic(trimmed)
+		if err != nil {
+			return fmt.Errorf("invalid mnemonic: %w", err)
+		}
+	} else {
+		// Fallback: try decoding raw hex (64 chars) or base64 (44 chars)
+		seed, err = hex.DecodeString(trimmed)
+		if err != nil || len(seed) != 32 {
+			seed, err = base64.StdEncoding.DecodeString(trimmed)
+			if err != nil || len(seed) != 32 {
+				return errors.New("invalid seed format: expected 24 BIP-39 words, 64 hex characters, or 32-byte Base64")
+			}
+		}
+	}
+	defer crypto.Zeroize(seed)
+
+	b64Seed := base64.StdEncoding.EncodeToString(seed)
+	if !m.ConfigureLocalIdentity(nickname, b64Seed, aboutMe) {
+		return errors.New("failed to configure identity from seed")
+	}
+	return nil
 }
 
 // SetTorProxy updates Tor SOCKS5 proxy settings.

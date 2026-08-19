@@ -469,11 +469,33 @@ object NativeBridge {
         }
     }
 
+    fun getLocalSeedMnemonic(): String? {
+        if (!isLoaded) return null
+        return try {
+            nativeGetLocalSeedMnemonic()
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeGetLocalSeedMnemonic failed", e)
+            null
+        }
+    }
+
+    fun restoreFromMnemonic(nickname: String, mnemonic: String, aboutMe: String = ""): Boolean {
+        if (!isLoaded) return false
+        return try {
+            nativeRestoreFromMnemonic(nickname, mnemonic, aboutMe)
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeRestoreFromMnemonic failed", e)
+            false
+        }
+    }
+
     // --- Native JNI declarations ---
     private external fun nativeSetStorageDir(dir: String)
     private external fun nativeInit(): Boolean
     private external fun nativeEcho(msg: String): String?
     private external fun nativeGetLocalIdentityJSON(): String?
+    private external fun nativeGetLocalSeedMnemonic(): String?
+    private external fun nativeRestoreFromMnemonic(nickname: String, mnemonic: String, aboutMe: String): Boolean
     private external fun nativeGetFingerprint(pub: ByteArray): String?
     private external fun nativeGetSafetyNumber(
         myPub: ByteArray,

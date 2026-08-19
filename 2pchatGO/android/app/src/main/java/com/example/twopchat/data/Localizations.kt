@@ -231,7 +231,23 @@ object Localizations {
         "copy_link" to "Copy",
         "share_link" to "Share",
         "waiting_peer" to "Waiting for connection...",
-        "reset_link" to "Reset"
+        "reset_link" to "Reset",
+
+        // Seed Backup & Recovery
+        "seed_backup_title" to "Account Backup & Recovery Phrase",
+        "seed_backup_desc" to "24-word phrase to restore account on another device",
+        "seed_backup_dialog_title" to "Your Recovery Phrase",
+        "seed_backup_warning" to "Never share these 24 words with anyone. Anyone with this phrase can restore and access your account.",
+        "copy_phrase" to "Copy Phrase",
+        "phrase_copied" to "Recovery phrase copied to clipboard",
+        "restore_account_btn" to "I already have an account (Restore)",
+        "restore_account_title" to "Restore Account",
+        "restore_account_desc" to "Enter your 24-word recovery phrase or raw seed key to restore your profile.",
+        "enter_seed_placeholder" to "word1 word2 word3 ... word24 (or 64-char hex)",
+        "paste_from_clipboard" to "Paste from Clipboard",
+        "restore_btn" to "Restore Account",
+        "invalid_seed_error" to "Invalid phrase or checksum error. Please check your words.",
+        "account_restored_success" to "Account successfully restored!"
     )
 
     private val ruStrings = mapOf(
@@ -465,7 +481,23 @@ object Localizations {
         "copy_link" to "Копировать",
         "share_link" to "Поделиться",
         "waiting_peer" to "Ожидание подключения...",
-        "reset_link" to "Сбросить"
+        "reset_link" to "Сбросить",
+
+        // Seed Backup & Recovery
+        "seed_backup_title" to "Резервная копия ключей (Seed)",
+        "seed_backup_desc" to "24 слова для восстановления профиля на новом устройстве",
+        "seed_backup_dialog_title" to "Ваша фраза восстановления",
+        "seed_backup_warning" to "Никогда не передавайте эту фразу. Любой человек с этими 24 словами получит полный доступ к вашему аккаунту и перепискам.",
+        "copy_phrase" to "Скопировать фразу",
+        "phrase_copied" to "Фраза восстановления скопирована в буфер",
+        "restore_account_btn" to "У меня уже есть аккаунт (Восстановить)",
+        "restore_account_title" to "Восстановление аккаунта",
+        "restore_account_desc" to "Введите вашу мнемоническую фразу из 24 слов или hex-ключ для восстановления профиля.",
+        "enter_seed_placeholder" to "слово1 слово2 слово3 ... слово24 (или 64 hex-символа)",
+        "paste_from_clipboard" to "Вставить из буфера",
+        "restore_btn" to "Восстановить аккаунт",
+        "invalid_seed_error" to "Неверная фраза или ошибка контрольной суммы. Проверьте введенные слова.",
+        "account_restored_success" to "Аккаунт успешно восстановлен!"
     )
 
     private val deStrings = mapOf(

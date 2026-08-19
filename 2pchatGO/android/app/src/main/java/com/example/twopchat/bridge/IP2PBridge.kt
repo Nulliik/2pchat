@@ -57,4 +57,6 @@ interface IP2PBridge {
     ): List<Map<String, Any>>
     fun updatePeerNameMapping(fingerprint: String, peerName: String) {}
     fun updateTrackers(trackers: List<String>): Boolean = false
+    fun getLocalSeedMnemonic(): String? = null
+    fun restoreFromMnemonic(nickname: String, mnemonic: String, aboutMe: String = ""): Boolean = false
 }

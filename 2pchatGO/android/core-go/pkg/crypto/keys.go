@@ -182,6 +182,22 @@ func IdentityKeyPairFromSeed(seed []byte) (*IdentityKeyPair, error) {
 	}, nil
 }
 
+// Fingerprint returns the Base64 fingerprint of the public X25519 identity key.
+func (k *IdentityKeyPair) Fingerprint() string {
+	if k == nil || k.Public == nil {
+		return ""
+	}
+	return Fingerprint(k.Public[:])
+}
+
+// Seed returns the 32-byte seed representation of the private key.
+func (k *IdentityKeyPair) Seed() []byte {
+	if k == nil || k.Private == nil {
+		return nil
+	}
+	return k.Private.Bytes()
+}
+
 // Fingerprint returns the Base64 representation of a 32-byte public key.
 func Fingerprint(pub []byte) string {
 	return base64.StdEncoding.EncodeToString(pub)

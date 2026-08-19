@@ -56,6 +56,7 @@ fun OnboardingScreen(
     var profileBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var pendingCropUri by remember { mutableStateOf<Uri?>(null) }
     var showYggdrasilDialog by remember { mutableStateOf(false) }
+    var showRestoreDialog by remember { mutableStateOf(false) }
 
     fun startYggdrasilAndComplete() {
         try {
@@ -192,6 +193,140 @@ fun OnboardingScreen(
         )
     }
 
+    // Account Restore Dialog
+    if (showRestoreDialog) {
+        var restoreNick by remember { mutableStateOf("") }
+        var restorePhrase by remember { mutableStateOf("") }
+        var restoreError by remember { mutableStateOf<String?>(null) }
+        var isRestoring by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { if (!isRestoring) showRestoreDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🔑", fontSize = 20.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = Localizations.getString("restore_account_title", appLanguage),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = onSurfaceColor
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = Localizations.getString("restore_account_desc", appLanguage),
+                        fontSize = 13.sp,
+                        color = onSurfaceColor.copy(alpha = 0.8f)
+                    )
+
+                    OutlinedTextField(
+                        value = restoreNick,
+                        onValueChange = { restoreNick = it; restoreError = null },
+                        label = { Text(Localizations.getString("placeholder_username", appLanguage)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = primaryColor,
+                            focusedLabelColor = primaryColor
+                        )
+                    )
+
+                    OutlinedTextField(
+                        value = restorePhrase,
+                        onValueChange = { restorePhrase = it; restoreError = null },
+                        label = { Text(Localizations.getString("seed_backup_dialog_title", appLanguage)) },
+                        placeholder = { Text(Localizations.getString("enter_seed_placeholder", appLanguage), fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth().height(120.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = primaryColor,
+                            focusedLabelColor = primaryColor
+                        )
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                val clipText = clipboard.primaryClip?.getItemAt(0)?.text?.toString()?.trim()
+                                if (!clipText.isNullOrBlank()) {
+                                    restorePhrase = clipText
+                                    restoreError = null
+                                }
+                            }
+                        ) {
+                            Text("📋 " + Localizations.getString("paste_from_clipboard", appLanguage), color = primaryColor, fontSize = 12.sp)
+                        }
+                    }
+
+                    if (restoreError != null) {
+                        Text(
+                            text = restoreError!!,
+                            color = Color(0xFFEF5350),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmedNick = restoreNick.trim().ifEmpty { "User" }
+                        val trimmedPhrase = restorePhrase.trim()
+                        if (trimmedPhrase.isBlank()) {
+                            restoreError = Localizations.getString("invalid_seed_error", appLanguage)
+                            return@Button
+                        }
+
+                        isRestoring = true
+                        val success = NativeBridge.restoreFromMnemonic(trimmedNick, trimmedPhrase, "")
+                        if (success) {
+                            sharedPrefs.edit()
+                                .putString("username_profile", trimmedNick)
+                                .putBoolean("onboarding_complete", true)
+                                .apply()
+                            android.widget.Toast.makeText(context, Localizations.getString("account_restored_success", appLanguage), android.widget.Toast.LENGTH_SHORT).show()
+                            showRestoreDialog = false
+                            onComplete()
+                        } else {
+                            isRestoring = false
+                            restoreError = Localizations.getString("invalid_seed_error", appLanguage)
+                        }
+                    },
+                    enabled = !isRestoring,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = primaryColor,
+                        contentColor = if (primaryColor == MintGreen) StealthBlack else Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(Localizations.getString("restore_btn", appLanguage), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showRestoreDialog = false },
+                    enabled = !isRestoring
+                ) {
+                    Text(Localizations.getString("close", appLanguage), color = onSurfaceColor.copy(alpha = 0.6f))
+                }
+            },
+            containerColor = surfaceColor,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -260,7 +395,7 @@ fun OnboardingScreen(
                     label = "step_transition"
                 ) { step ->
                     when (step) {
-                        1 -> WelcomeStep(appLanguage, primaryColor, onSurfaceColor)
+                        1 -> WelcomeStep(appLanguage, primaryColor, onSurfaceColor, onRestoreClick = { showRestoreDialog = true })
                         2 -> KeySafetyStep(appLanguage, primaryColor, onSurfaceColor)
                         3 -> PrivacyStep(appLanguage, primaryColor, onSurfaceColor)
                         4 -> RegisterStep(
@@ -352,7 +487,12 @@ fun OnboardingScreen(
 }
 
 @Composable
-fun WelcomeStep(appLanguage: String, primaryColor: Color, onSurfaceColor: Color) {
+fun WelcomeStep(
+    appLanguage: String,
+    primaryColor: Color,
+    onSurfaceColor: Color,
+    onRestoreClick: () -> Unit = {}
+) {
     val animationsEnabled = com.example.twopchat.LocalAppAnimationsEnabled.current
     val infiniteTransition = if (animationsEnabled) rememberInfiniteTransition(label = "pulse") else null
     val pulseScale = infiniteTransition?.animateFloat(
@@ -435,6 +575,25 @@ fun WelcomeStep(appLanguage: String, primaryColor: Color, onSurfaceColor: Color)
                     lineHeight = 21.sp
                 )
             }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        OutlinedButton(
+            onClick = onRestoreClick,
+            shape = RoundedCornerShape(16.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryColor),
+            border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor.copy(alpha = 0.4f)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp)
+                .height(48.dp)
+        ) {
+            Text(
+                text = "🔑 " + Localizations.getString("restore_account_btn", appLanguage),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }

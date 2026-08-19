@@ -114,6 +114,52 @@ func Java_com_example_twopchat_NativeBridge_nativeGetLocalIdentityJSON(env *C.JN
 	return C.createJString(env, cResp)
 }
 
+//export Java_com_example_twopchat_NativeBridge_nativeGetLocalSeedMnemonic
+func Java_com_example_twopchat_NativeBridge_nativeGetLocalSeedMnemonic(env *C.JNIEnv, clazz C.jclass) C.jstring {
+	mnemonic, err := bridge.GetManager().GetLocalSeedMnemonic()
+	if err != nil {
+		return C.nullJString()
+	}
+	cResp := C.CString(mnemonic)
+	defer C.free(unsafe.Pointer(cResp))
+	return C.createJString(env, cResp)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeRestoreFromMnemonic
+func Java_com_example_twopchat_NativeBridge_nativeRestoreFromMnemonic(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jNickname C.jstring,
+	jMnemonic C.jstring,
+	jAboutMe C.jstring,
+) C.jboolean {
+	var nickname, mnemonic, aboutMe string
+
+	cNick := C.getJStringUTFChars(env, jNickname)
+	if cNick != nil {
+		nickname = C.GoString(cNick)
+		C.releaseJStringUTFChars(env, jNickname, cNick)
+	}
+
+	cMnemonic := C.getJStringUTFChars(env, jMnemonic)
+	if cMnemonic != nil {
+		mnemonic = C.GoString(cMnemonic)
+		C.releaseJStringUTFChars(env, jMnemonic, cMnemonic)
+	}
+
+	cAbout := C.getJStringUTFChars(env, jAboutMe)
+	if cAbout != nil {
+		aboutMe = C.GoString(cAbout)
+		C.releaseJStringUTFChars(env, jAboutMe, cAbout)
+	}
+
+	err := bridge.GetManager().RestoreFromMnemonic(nickname, mnemonic, aboutMe)
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
 //export Java_com_example_twopchat_NativeBridge_nativeGetFingerprint
 func Java_com_example_twopchat_NativeBridge_nativeGetFingerprint(env *C.JNIEnv, clazz C.jclass, jPub C.jbyteArray) C.jstring {
 	length := int(C.getByteArrayLength(env, jPub))

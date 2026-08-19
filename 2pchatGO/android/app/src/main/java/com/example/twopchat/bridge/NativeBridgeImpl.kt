@@ -353,4 +353,10 @@ class NativeBridgeImpl : IP2PBridge {
             )
         )
     }
+
+    override fun getLocalSeedMnemonic(): String? =
+        NativeBridge.getLocalSeedMnemonic()
+
+    override fun restoreFromMnemonic(nickname: String, mnemonic: String, aboutMe: String): Boolean =
+        NativeBridge.restoreFromMnemonic(nickname, mnemonic, aboutMe)
 }

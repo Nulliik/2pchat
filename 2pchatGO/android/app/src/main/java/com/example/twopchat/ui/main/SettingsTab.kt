@@ -199,6 +199,7 @@ fun SettingsTab(
     var showSetDuressDialog by remember { mutableStateOf(false) }
     var showLauncherIconsPicker by remember { mutableStateOf(false) }
     var showThemesPicker by remember { mutableStateOf(false) }
+    var showSeedBackupDialog by remember { mutableStateOf(false) }
     var isSearchingSettings by remember { mutableStateOf(false) }
     var settingsSearchQuery by remember { mutableStateOf("") }
     val isTorRunning by TorManager.isTorRunning.collectAsState()
@@ -1834,6 +1835,31 @@ fun SettingsTab(
                                         }
                                     }
                                 }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showSeedBackupDialog = true }
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = Localizations.getString("seed_backup_title", appLanguage),
+                                            fontWeight = FontWeight.Medium,
+                                            color = onSurfaceColor
+                                        )
+                                        Text(
+                                            text = Localizations.getString("seed_backup_desc", appLanguage),
+                                            fontSize = 12.sp,
+                                            color = onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Text(text = "❯", fontSize = 12.sp, color = onSurfaceVariant)
+                                }
                             }
                         }
 
@@ -3196,6 +3222,157 @@ fun SettingsTab(
             confirmButton = {
                 TextButton(onClick = { showDisguiseInstructionDialog = false }) {
                     Text(text = if (appLanguage == "Русский") "Понятно" else "Understood", color = primaryColor)
+                }
+            },
+            containerColor = surfaceColor,
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
+
+    // Account Seed Phrase Backup Dialog
+    if (showSeedBackupDialog) {
+        val mnemonic = remember { com.example.twopchat.NativeBridge.getLocalSeedMnemonic() ?: "" }
+        val words = remember(mnemonic) {
+            if (mnemonic.isNotBlank()) mnemonic.split(" ") else emptyList()
+        }
+
+        AlertDialog(
+            onDismissRequest = { showSeedBackupDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🔑", fontSize = 20.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = Localizations.getString("seed_backup_dialog_title", appLanguage),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = onSurfaceColor
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFEF5350).copy(alpha = 0.12f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF5350).copy(alpha = 0.3f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Text("⚠️", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = Localizations.getString("seed_backup_warning", appLanguage),
+                                fontSize = 12.sp,
+                                color = onSurfaceColor.copy(alpha = 0.9f),
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+
+                    if (words.size == 24) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            color = surfaceVariant.copy(alpha = 0.5f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor.copy(alpha = 0.2f))
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                for (row in 0 until 12) {
+                                    val idx1 = row
+                                    val idx2 = row + 12
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 3.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        // Column 1 (Words 1-12)
+                                        Row(
+                                            modifier = Modifier.weight(1f),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "${idx1 + 1}.",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = primaryColor,
+                                                modifier = Modifier.width(24.dp)
+                                            )
+                                            Text(
+                                                text = words[idx1],
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = onSurfaceColor,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        // Column 2 (Words 13-24)
+                                        Row(
+                                            modifier = Modifier.weight(1f),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "${idx2 + 1}.",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = primaryColor,
+                                                modifier = Modifier.width(24.dp)
+                                            )
+                                            Text(
+                                                text = words[idx2],
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = onSurfaceColor,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = if (appLanguage == "Русский") "Ключ не инициализирован" else "Key not initialized",
+                            color = onSurfaceVariant,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (mnemonic.isNotBlank()) {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("2PChat Recovery Phrase", mnemonic)
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, Localizations.getString("phrase_copied", appLanguage), Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = primaryColor,
+                        contentColor = if (primaryColor == MintGreen) StealthBlack else Color.White
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(Localizations.getString("copy_phrase", appLanguage), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSeedBackupDialog = false }) {
+                    Text(Localizations.getString("close", appLanguage), color = onSurfaceVariant)
                 }
             },
             containerColor = surfaceColor,
