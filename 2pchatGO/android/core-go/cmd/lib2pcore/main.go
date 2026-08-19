@@ -259,6 +259,21 @@ func Java_com_example_twopchat_NativeBridge_nativeIsPeerOnline(
 	clazz C.jclass,
 	jPeerFP C.jstring,
 ) C.jboolean {
+	defer func() {
+		if r := recover(); r != nil {
+			// Catch any unexpected panic safely
+		}
+	}()
+
+	if env == nil {
+		return C.JNI_FALSE
+	}
+
+	mgr := bridge.GetManager()
+	if mgr == nil {
+		return C.JNI_FALSE
+	}
+
 	cFP := C.getJStringUTFChars(env, jPeerFP)
 	if cFP == nil {
 		return C.JNI_FALSE
@@ -266,7 +281,11 @@ func Java_com_example_twopchat_NativeBridge_nativeIsPeerOnline(
 	peerFP := C.GoString(cFP)
 	C.releaseJStringUTFChars(env, jPeerFP, cFP)
 
-	if bridge.GetManager().IsPeerOnline(peerFP) {
+	if peerFP == "" {
+		return C.JNI_FALSE
+	}
+
+	if mgr.IsPeerOnline(peerFP) {
 		return C.JNI_TRUE
 	}
 	return C.JNI_FALSE

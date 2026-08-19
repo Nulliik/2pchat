@@ -378,8 +378,15 @@ func (m *Manager) SendMessage(peerFP, text string) (string, error) {
 
 // IsPeerOnline returns true if there is an active online session for peerFP or endpoint.
 func (m *Manager) IsPeerOnline(peerFP string) bool {
+	if m == nil || peerFP == "" {
+		return false
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+
+	if len(m.sessions) == 0 {
+		return false
+	}
 
 	if s, exists := m.sessions[peerFP]; exists && s.IsOnline() {
 		return true

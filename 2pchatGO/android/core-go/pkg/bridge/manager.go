@@ -506,6 +506,9 @@ func (m *SessionManager) SendMessage(peerFP, text string) (string, error) {
 
 // IsPeerOnline checks if there is an active connection to peerFP.
 func (m *SessionManager) IsPeerOnline(peerFP string) bool {
+	if m == nil || peerFP == "" {
+		return false
+	}
 	m.mu.RLock()
 	nm := m.netManager
 	m.mu.RUnlock()

@@ -84,6 +84,9 @@ internal class RelayMaintenanceCoordinator(
                         val endpoint = peerEndpoints[peerName]
                             ?: prefs.getString("last_endpoint_$peerName", null)?.takeIf { it.isNotBlank() }
                             ?: continue
+                        if (endpoint.contains(".onion") && !TorManager.isTorRunning.value) {
+                            continue
+                        }
                         val currentDelay = reconnectDelayMs[peerName] ?: 5_000L
                         if (now - (lastReconnectAttemptAt[peerName] ?: 0L) < currentDelay) continue
                         lastReconnectAttemptAt[peerName] = now
