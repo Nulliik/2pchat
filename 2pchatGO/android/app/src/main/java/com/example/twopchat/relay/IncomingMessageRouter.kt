@@ -323,7 +323,7 @@ internal class IncomingMessageRouter(
             attachmentType = attachment?.attachmentType,
             attachmentUri = attachment?.attachmentUri,
             attachmentName = attachment?.attachmentName,
-            status = "READ",
+            status = "DELIVERED",
         )
         persistAndDispatch(context, sender, message, message.text, true)
     }
