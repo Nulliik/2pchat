@@ -46,6 +46,12 @@ static JNIEnv* getJNIEnv(void) {
     return NULL;
 }
 
+static void checkAndClearException(JNIEnv *env) {
+    if (env != NULL && (*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+    }
+}
+
 void callbackOnPeerConnected(const char *peerFP, const char *endpoint) {
     if (g_nativeBridgeClass == NULL || g_midOnPeerConnected == NULL) return;
     JNIEnv *env = getJNIEnv();
@@ -53,6 +59,7 @@ void callbackOnPeerConnected(const char *peerFP, const char *endpoint) {
         jstring jFP = (*env)->NewStringUTF(env, peerFP);
         jstring jEndp = (*env)->NewStringUTF(env, endpoint);
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnPeerConnected, jFP, jEndp);
+        checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jFP);
         (*env)->DeleteLocalRef(env, jEndp);
     }
@@ -65,6 +72,7 @@ void callbackOnPeerDisconnected(const char *peerFP, const char *reason) {
         jstring jFP = (*env)->NewStringUTF(env, peerFP);
         jstring jReason = (*env)->NewStringUTF(env, reason);
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnPeerDisconnected, jFP, jReason);
+        checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jFP);
         (*env)->DeleteLocalRef(env, jReason);
     }
@@ -81,6 +89,7 @@ void callbackOnMessageReceived(const char *peerFP, const jbyte *payload, jsize l
         }
         jstring jMsgID = (*env)->NewStringUTF(env, messageID);
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnMessageReceived, jFP, jArr, jMsgID);
+        checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jFP);
         (*env)->DeleteLocalRef(env, jArr);
         (*env)->DeleteLocalRef(env, jMsgID);
@@ -93,6 +102,7 @@ void callbackOnError(int code, const char *msg) {
     if (env != NULL) {
         jstring jMsg = (*env)->NewStringUTF(env, msg);
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnError, (jint)code, jMsg);
+        checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jMsg);
     }
 }
@@ -105,6 +115,7 @@ void callbackOnPeerDiscovered(const char *infoHashHex, const char *endpoint, con
         jstring jEndp = (*env)->NewStringUTF(env, endpoint);
         jstring jSrc = (*env)->NewStringUTF(env, source);
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnPeerDiscovered, jHash, jEndp, jSrc);
+        checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jHash);
         (*env)->DeleteLocalRef(env, jEndp);
         (*env)->DeleteLocalRef(env, jSrc);
@@ -118,6 +129,7 @@ void callbackOnFileProgress(const char *peerFP, const char *messageID, jlong tra
         jstring jFP = (*env)->NewStringUTF(env, peerFP);
         jstring jMsgID = (*env)->NewStringUTF(env, messageID);
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnFileProgress, jFP, jMsgID, transferred, total, speedKbps);
+        checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jFP);
         (*env)->DeleteLocalRef(env, jMsgID);
     }
