@@ -289,25 +289,12 @@ class NativeBridgeImpl : IP2PBridge {
     }
 
     override fun isPeerOnline(peerName: String, expectedFingerprint: String?): Boolean {
-        // Fast-path: Check memory cache first to avoid unnecessary JNI transitions
+        // In-memory state updated in real-time via onPeerConnected and onPeerDisconnected callbacks.
+        // Purely in-memory lookup eliminates JNI thread contention and CGO stack unwinding issues.
         if (!expectedFingerprint.isNullOrBlank() && onlinePeers[expectedFingerprint] == true) return true
         val fp = nameToFpMap[peerName]
         if (!fp.isNullOrBlank() && onlinePeers[fp] == true) return true
         if (onlinePeers[peerName] == true) return true
-
-        // Fallback: Query native core if not found in cache
-        if (!expectedFingerprint.isNullOrBlank() && NativeBridge.isPeerOnline(expectedFingerprint)) {
-            onlinePeers[expectedFingerprint] = true
-            return true
-        }
-        if (!fp.isNullOrBlank() && NativeBridge.isPeerOnline(fp)) {
-            onlinePeers[fp] = true
-            return true
-        }
-        if (peerName.isNotBlank() && NativeBridge.isPeerOnline(peerName)) {
-            onlinePeers[peerName] = true
-            return true
-        }
         return false
     }
 
