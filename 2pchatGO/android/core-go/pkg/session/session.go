@@ -54,6 +54,7 @@ type Session struct {
 
 	sendMu    sync.Mutex
 	closeOnce sync.Once
+	closeChan chan struct{}
 	online    int32
 	counter   uint64
 
@@ -102,6 +103,7 @@ func NewSession(
 		localIdentity:   localId,
 		localPrekeyPriv: prekeyPriv,
 		localPrekeyPub:  prekeyPub,
+		closeChan:       make(chan struct{}),
 		messageQueue:    make(chan map[string]any, MessageQueueCapacity),
 		pendingAcks:     make(map[string]chan bool),
 		receivedIDs:     make(map[string]bool),
@@ -458,6 +460,8 @@ func (s *Session) SendReliable(msg map[string]any) (string, error) {
 		}
 
 		select {
+		case <-s.closeChan:
+			return "", ErrSessionClosed
 		case <-ackChan:
 			return msgID, nil
 		case <-time.After(delay):
@@ -522,6 +526,9 @@ func (s *Session) Close() error {
 	var err error
 	s.closeOnce.Do(func() {
 		atomic.StoreInt32(&s.online, 0)
+		if s.closeChan != nil {
+			close(s.closeChan)
+		}
 		if s.drState != nil {
 			s.drState.Zeroize()
 		}

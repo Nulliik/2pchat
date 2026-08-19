@@ -172,16 +172,33 @@ func (s *DiscoveryService) AnnounceAll() {
 	}
 	port := s.listenPort
 	peerID := s.peerID
+	parentCtx := s.ctx
 	s.mu.RUnlock()
 
 	if len(trackers) == 0 || len(hashes) == 0 {
 		return
 	}
 
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+
+	// Limit concurrent tracker network queries to 8 workers to prevent socket storms
+	sem := make(chan struct{}, 8)
+
 	for hashKey, hashVal := range hashes {
 		for _, trackerURL := range trackers {
+			select {
+			case <-parentCtx.Done():
+				return
+			default:
+			}
+
+			sem <- struct{}{}
 			go func(tURL, hKey string, hVal [20]byte) {
-				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+				defer func() { <-sem }()
+
+				ctx, cancel := context.WithTimeout(parentCtx, 8*time.Second)
 				defer cancel()
 
 				res, err := s.announceSingle(ctx, tURL, hVal, peerID, port)

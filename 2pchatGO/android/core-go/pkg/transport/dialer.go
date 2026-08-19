@@ -151,6 +151,12 @@ func (d *AdaptiveDialer) DialContext(ctx context.Context, network, address strin
 
 		go func() {
 			conn, err := torDialer.Dial("tcp", address)
+			if ctx.Err() != nil {
+				if conn != nil {
+					_ = conn.Close()
+				}
+				return
+			}
 			resChan <- dialResult{conn: conn, err: err}
 		}()
 
