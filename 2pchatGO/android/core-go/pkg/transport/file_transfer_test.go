@@ -225,3 +225,188 @@ func TestReapIncompleteTransfers(t *testing.T) {
 		t.Fatal("expected fresh_1 to remain")
 	}
 }
+
+func TestResumableFileTransfer(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFilePath := filepath.Join(tmpDir, "resume_video.mp4")
+	testData := make([]byte, 512*1024) // 8 chunks of 64KB
+	rand.Read(testData)
+
+	if err := os.WriteFile(testFilePath, testData, 0600); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	downloadsDir := filepath.Join(tmpDir, "downloads")
+	receiver := NewFileTransferManager(nil)
+
+	// Step 1: Sender sends first half [0, 1, 2, 3]
+	sender1 := NewFileTransferManager(nil)
+	var metaB64 string
+	var firstHalfChunks []string
+
+	_ = sender1.SendFileStream(
+		context.Background(),
+		"peer_sender",
+		"msg_resume_1",
+		testFilePath,
+		"resume_video.mp4",
+		"video caption",
+		"🎥",
+		func(payload []byte) error {
+			if metaB64 == "" {
+				metaB64 = EncodeMetadataB64(payload)
+			} else if len(firstHalfChunks) < 4 {
+				firstHalfChunks = append(firstHalfChunks, EncodeMetadataB64(payload))
+			}
+			return nil
+		},
+	)
+
+	// Deliver metadata to receiver
+	res1, err := receiver.ReceiveChunk("peer_sender", "msg_resume_1", metaB64, downloadsDir)
+	if err != nil || res1 != nil {
+		t.Fatalf("unexpected meta receive result: %v", err)
+	}
+
+	// Deliver first 4 chunks
+	for idx, chunkB64 := range firstHalfChunks {
+		res, err := receiver.ReceiveChunk("peer_sender", "msg_resume_1", chunkB64, downloadsDir)
+		if err != nil || res != nil {
+			t.Fatalf("unexpected chunk %d receive result: %v", idx, err)
+		}
+	}
+
+	// Step 2: Resume sender from chunk 4
+	var secondHalfChunks []string
+
+	err = sender1.SendFileStreamWithResume(
+		context.Background(),
+		"peer_sender",
+		"msg_resume_1",
+		testFilePath,
+		"resume_video.mp4",
+		"video caption",
+		"🎥",
+		4, // resume from chunk 4
+		func(payload []byte) error {
+			// Skip metadata frame on second half collection
+			if meta, _ := DecodeMetadataJSON(payload); meta == nil {
+				secondHalfChunks = append(secondHalfChunks, EncodeMetadataB64(payload))
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("SendFileStreamWithResume failed: %v", err)
+	}
+
+	if len(secondHalfChunks) != 4 {
+		t.Fatalf("expected 4 resumed chunks, got %d", len(secondHalfChunks))
+	}
+
+	// Deliver remaining 4 chunks to the receiver
+	var finalAssembled *AssembledFile
+	for idx, chunkB64 := range secondHalfChunks {
+		res, err := receiver.ReceiveChunk("peer_sender", "msg_resume_1", chunkB64, downloadsDir)
+		if err != nil {
+			t.Fatalf("ReceiveChunk error on chunk %d: %v", idx+4, err)
+		}
+		if res != nil {
+			finalAssembled = res
+		}
+	}
+
+	if finalAssembled == nil {
+		t.Fatal("expected file to be completely assembled after resume")
+	}
+
+	savedBytes, err := os.ReadFile(finalAssembled.FilePath)
+	if err != nil {
+		t.Fatalf("failed to read saved file: %v", err)
+	}
+
+	if !bytes.Equal(savedBytes, testData) {
+		t.Fatal("resumed file plaintext does not match original data")
+	}
+}
+
+func TestDiskBackedLowMemoryStreaming(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFilePath := filepath.Join(tmpDir, "stream_audio.ogg")
+	testData := make([]byte, 256*1024) // 4 chunks of 64KB
+	rand.Read(testData)
+
+	if err := os.WriteFile(testFilePath, testData, 0600); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
+	downloadsDir := filepath.Join(tmpDir, "downloads")
+	sender := NewFileTransferManager(nil)
+	receiver := NewFileTransferManager(nil)
+
+	var metaB64 string
+	var chunkB64s []string
+
+	err := sender.SendFileStream(
+		context.Background(),
+		"peer_sender",
+		"msg_stream_1",
+		testFilePath,
+		"stream_audio.ogg",
+		"voice note",
+		"🎤",
+		func(payload []byte) error {
+			if metaB64 == "" {
+				metaB64 = EncodeMetadataB64(payload)
+			} else {
+				chunkB64s = append(chunkB64s, EncodeMetadataB64(payload))
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("SendFileStream failed: %v", err)
+	}
+
+	// Deliver metadata
+	_, err = receiver.ReceiveChunk("peer_sender", "msg_stream_1", metaB64, downloadsDir)
+	if err != nil {
+		t.Fatalf("ReceiveChunk metadata failed: %v", err)
+	}
+
+	// Verify that .part file was created on disk immediately
+	partPath := filepath.Join(downloadsDir, ".part_msg_stream_1")
+	if _, err := os.Stat(partPath); err != nil {
+		t.Fatalf("expected .part file to exist on disk during streaming, got: %v", err)
+	}
+
+	// Stream all chunks
+	var finalAssembled *AssembledFile
+	for idx, chunk := range chunkB64s {
+		res, err := receiver.ReceiveChunk("peer_sender", "msg_stream_1", chunk, downloadsDir)
+		if err != nil {
+			t.Fatalf("ReceiveChunk chunk %d failed: %v", idx, err)
+		}
+		if res != nil {
+			finalAssembled = res
+		}
+	}
+
+	if finalAssembled == nil {
+		t.Fatal("expected file to be assembled")
+	}
+
+	// Verify that .part file was atomically renamed (no longer exists under .part name)
+	if _, err := os.Stat(partPath); !os.IsNotExist(err) {
+		t.Fatal("expected .part file to be removed after assembly")
+	}
+
+	// Verify final file on disk matches original
+	saved, err := os.ReadFile(finalAssembled.FilePath)
+	if err != nil {
+		t.Fatalf("failed to read saved file: %v", err)
+	}
+	if !bytes.Equal(saved, testData) {
+		t.Fatal("saved file does not match original data")
+	}
+}

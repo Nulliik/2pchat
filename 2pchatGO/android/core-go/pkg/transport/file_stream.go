@@ -94,6 +94,10 @@ func EncryptFileStream(
 	emoji string,
 	chunkSize int,
 ) (*FileMetadata, <-chan *EncryptedChunk, error) {
+	if rs, ok := r.(io.ReadSeeker); ok {
+		return EncryptFileStreamWithResume(rs, fileSize, fileName, caption, emoji, chunkSize, 0)
+	}
+
 	if chunkSize <= 0 {
 		chunkSize = DefaultChunkSize
 	}
@@ -174,6 +178,178 @@ func EncryptFileStream(
 	}()
 
 	return meta, chunkChan, nil
+}
+
+// EncryptFileStreamWithResume streams chunks starting at startChunkIdx from an io.ReadSeeker.
+func EncryptFileStreamWithResume(
+	r io.ReadSeeker,
+	fileSize int64,
+	fileName string,
+	caption string,
+	emoji string,
+	chunkSize int,
+	startChunkIdx int,
+) (*FileMetadata, <-chan *EncryptedChunk, error) {
+	if chunkSize <= 0 {
+		chunkSize = DefaultChunkSize
+	}
+
+	var fileID [FileIDSize]byte
+	if _, err := rand.Read(fileID[:]); err != nil {
+		return nil, nil, err
+	}
+
+	fileKey := make([]byte, crypto.SecretBoxKeySize)
+	if _, err := rand.Read(fileKey); err != nil {
+		return nil, nil, err
+	}
+
+	var noncePrefix [FileNoncePrefixSize]byte
+	if _, err := rand.Read(noncePrefix[:]); err != nil {
+		return nil, nil, err
+	}
+
+	numChunks := int((fileSize + int64(chunkSize) - 1) / int64(chunkSize))
+	if numChunks == 0 {
+		numChunks = 1
+	}
+
+	// Compute overall file SHA-256 hash
+	hasher := sha256.New()
+	if _, err := r.Seek(0, io.SeekStart); err == nil {
+		_, _ = io.Copy(hasher, io.LimitReader(r, fileSize))
+	}
+
+	meta := &FileMetadata{
+		FileID:          fileID[:],
+		FileKey:         fileKey,
+		FileNoncePrefix: noncePrefix[:],
+		FileSize:        fileSize,
+		NumChunks:       numChunks,
+		FileHash:        hasher.Sum(nil),
+		FileName:        fileName,
+		Caption:         caption,
+		Emoji:           emoji,
+	}
+
+	chunkChan := make(chan *EncryptedChunk, 4)
+
+	go func() {
+		defer close(chunkChan)
+
+		if startChunkIdx > 0 {
+			offset := int64(startChunkIdx) * int64(chunkSize)
+			if _, err := r.Seek(offset, io.SeekStart); err != nil {
+				chunkChan <- &EncryptedChunk{Error: err}
+				return
+			}
+		} else {
+			if _, err := r.Seek(0, io.SeekStart); err != nil {
+				chunkChan <- &EncryptedChunk{Error: err}
+				return
+			}
+		}
+
+		buf := make([]byte, chunkSize)
+		chunkIndex := startChunkIdx
+
+		for chunkIndex < numChunks {
+			n, readErr := io.ReadFull(r, buf)
+			if n > 0 {
+				// Nonce = 16-byte prefix + 8-byte big-endian uint64 chunk index = 24 bytes
+				var nonce [crypto.SecretBoxNonceSize]byte
+				copy(nonce[:FileNoncePrefixSize], meta.FileNoncePrefix)
+				binary.BigEndian.PutUint64(nonce[FileNoncePrefixSize:], uint64(chunkIndex))
+
+				encrypted, err := crypto.SecretBoxEncryptWithNonce(meta.FileKey, nonce[:], buf[:n])
+				if err != nil {
+					chunkChan <- &EncryptedChunk{Error: err}
+					return
+				}
+
+				chunkChan <- &EncryptedChunk{
+					Index:   chunkIndex,
+					Payload: encrypted,
+				}
+				chunkIndex++
+			}
+
+			if readErr != nil {
+				if errors.Is(readErr, io.EOF) || errors.Is(readErr, io.ErrUnexpectedEOF) {
+					break
+				}
+				chunkChan <- &EncryptedChunk{Error: readErr}
+				return
+			}
+		}
+	}()
+
+	return meta, chunkChan, nil
+}
+
+// EncryptFileStreamFromMeta streams chunks from r starting at startChunkIdx using an existing FileMetadata.
+func EncryptFileStreamFromMeta(
+	r io.ReadSeeker,
+	meta *FileMetadata,
+	chunkSize int,
+	startChunkIdx int,
+) (<-chan *EncryptedChunk, error) {
+	if chunkSize <= 0 {
+		chunkSize = DefaultChunkSize
+	}
+
+	chunkChan := make(chan *EncryptedChunk, 4)
+
+	go func() {
+		defer close(chunkChan)
+
+		if startChunkIdx > 0 {
+			offset := int64(startChunkIdx) * int64(chunkSize)
+			if _, err := r.Seek(offset, io.SeekStart); err != nil {
+				chunkChan <- &EncryptedChunk{Error: err}
+				return
+			}
+		} else {
+			if _, err := r.Seek(0, io.SeekStart); err != nil {
+				chunkChan <- &EncryptedChunk{Error: err}
+				return
+			}
+		}
+
+		buf := make([]byte, chunkSize)
+		chunkIndex := startChunkIdx
+
+		for chunkIndex < meta.NumChunks {
+			n, readErr := io.ReadFull(r, buf)
+			if n > 0 {
+				var nonce [crypto.SecretBoxNonceSize]byte
+				copy(nonce[:FileNoncePrefixSize], meta.FileNoncePrefix)
+				binary.BigEndian.PutUint64(nonce[FileNoncePrefixSize:], uint64(chunkIndex))
+
+				encrypted, err := crypto.SecretBoxEncryptWithNonce(meta.FileKey, nonce[:], buf[:n])
+				if err != nil {
+					chunkChan <- &EncryptedChunk{Error: err}
+					return
+				}
+
+				chunkChan <- &EncryptedChunk{
+					Index:   chunkIndex,
+					Payload: encrypted,
+				}
+				chunkIndex++
+			}
+
+			if readErr != nil {
+				if errors.Is(readErr, io.EOF) || errors.Is(readErr, io.ErrUnexpectedEOF) {
+					break
+				}
+				chunkChan <- &EncryptedChunk{Error: readErr}
+				return
+			}
+		}
+	}()
+
+	return chunkChan, nil
 }
 
 // DecryptFileChunks reassembles a file from ordered encrypted chunks and validates integrity.

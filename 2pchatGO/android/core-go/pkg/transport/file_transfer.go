@@ -1,11 +1,14 @@
 package transport
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,14 +20,16 @@ import (
 // FileProgressCallback is invoked periodically as bytes are transmitted or received.
 type FileProgressCallback func(peerFP string, messageID string, transferred int64, total int64, speedKbps float64)
 
-// InboundFileTransfer holds the state of an incoming chunked file transfer.
+// InboundFileTransfer holds the state of an incoming chunked file transfer backed by a disk .part file.
 type InboundFileTransfer struct {
-	MessageID string
-	PeerFP    string
-	Meta      *FileMetadata
-	Chunks    map[int][]byte
-	Received  int64
-	StartTime time.Time
+	MessageID      string
+	PeerFP         string
+	Meta           *FileMetadata
+	PartPath       string
+	PartFile       *os.File
+	ReceivedChunks map[int]bool
+	ReceivedBytes  int64
+	StartTime      time.Time
 }
 
 // AssembledFile represents a completed and decrypted inbound file.
@@ -42,6 +47,7 @@ type FileTransferManager struct {
 	mu           sync.RWMutex
 	cancelTokens map[string]context.CancelFunc
 	inbound      map[string]*InboundFileTransfer
+	outbound     map[string]*FileMetadata
 	onProgress   FileProgressCallback
 }
 
@@ -50,11 +56,12 @@ func NewFileTransferManager(progressCb FileProgressCallback) *FileTransferManage
 	return &FileTransferManager{
 		cancelTokens: make(map[string]context.CancelFunc),
 		inbound:      make(map[string]*InboundFileTransfer),
+		outbound:     make(map[string]*FileMetadata),
 		onProgress:   progressCb,
 	}
 }
 
-// ReapIncompleteTransfers cleans up abandoned inbound transfers older than maxAge.
+// ReapIncompleteTransfers cleans up abandoned inbound transfers older than maxAge and removes stale .part files.
 func (m *FileTransferManager) ReapIncompleteTransfers(maxAge time.Duration) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -63,24 +70,43 @@ func (m *FileTransferManager) ReapIncompleteTransfers(maxAge time.Duration) int 
 	reaped := 0
 	for id, transfer := range m.inbound {
 		if now.Sub(transfer.StartTime) > maxAge {
+			if transfer.PartFile != nil {
+				_ = transfer.PartFile.Close()
+			}
+			if transfer.PartPath != "" {
+				_ = os.Remove(transfer.PartPath)
+			}
 			delete(m.inbound, id)
+			delete(m.outbound, id)
 			reaped++
 		}
 	}
 	return reaped
 }
 
-// CancelTransfer cancels an ongoing file transfer task by messageId.
+// CancelTransfer cancels an ongoing file transfer task by messageId and frees associated .part files.
 func (m *FileTransferManager) CancelTransfer(messageID string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	var found bool
 	if cancel, exists := m.cancelTokens[messageID]; exists {
 		cancel()
 		delete(m.cancelTokens, messageID)
-		return true
+		found = true
 	}
-	return false
+	if transfer, exists := m.inbound[messageID]; exists {
+		if transfer.PartFile != nil {
+			_ = transfer.PartFile.Close()
+		}
+		if transfer.PartPath != "" {
+			_ = os.Remove(transfer.PartPath)
+		}
+		delete(m.inbound, messageID)
+		found = true
+	}
+	delete(m.outbound, messageID)
+	return found
 }
 
 // SendFileStream reads a file from disk, encrypts it in 64KB chunks, and dispatches frames.
@@ -92,6 +118,21 @@ func (m *FileTransferManager) SendFileStream(
 	fileName string,
 	caption string,
 	emoji string,
+	sendFrame func(payload []byte) error,
+) error {
+	return m.SendFileStreamWithResume(ctx, peerFP, messageID, filePath, fileName, caption, emoji, 0, sendFrame)
+}
+
+// SendFileStreamWithResume reads a file from disk starting from startChunkIdx, encrypts in 64KB chunks, and dispatches frames.
+func (m *FileTransferManager) SendFileStreamWithResume(
+	ctx context.Context,
+	peerFP string,
+	messageID string,
+	filePath string,
+	fileName string,
+	caption string,
+	emoji string,
+	startChunkIdx int,
 	sendFrame func(payload []byte) error,
 ) error {
 	fileInfo, err := os.Stat(filePath)
@@ -122,9 +163,30 @@ func (m *FileTransferManager) SendFileStream(
 		m.mu.Unlock()
 	}()
 
-	meta, chunkChan, err := EncryptFileStream(file, fileSize, fileName, caption, emoji, DefaultChunkSize)
-	if err != nil {
-		return fmt.Errorf("failed to initialize file stream encryption: %w", err)
+	m.mu.RLock()
+	cachedMeta, metaExists := m.outbound[messageID]
+	m.mu.RUnlock()
+
+	var meta *FileMetadata
+	var chunkChan <-chan *EncryptedChunk
+
+	if metaExists && cachedMeta != nil {
+		meta = cachedMeta
+		ch, err := EncryptFileStreamFromMeta(file, meta, DefaultChunkSize, startChunkIdx)
+		if err != nil {
+			return fmt.Errorf("failed to resume file stream encryption: %w", err)
+		}
+		chunkChan = ch
+	} else {
+		newMeta, ch, err := EncryptFileStreamWithResume(file, fileSize, fileName, caption, emoji, DefaultChunkSize, startChunkIdx)
+		if err != nil {
+			return fmt.Errorf("failed to initialize file stream encryption: %w", err)
+		}
+		meta = newMeta
+		chunkChan = ch
+		m.mu.Lock()
+		m.outbound[messageID] = meta
+		m.mu.Unlock()
 	}
 
 	// Send metadata frame first
@@ -138,7 +200,10 @@ func (m *FileTransferManager) SendFileStream(
 	}
 
 	startTime := time.Now()
-	var transferredBytes int64
+	transferredBytes := int64(startChunkIdx) * int64(DefaultChunkSize)
+	if transferredBytes > fileSize {
+		transferredBytes = fileSize
+	}
 
 	for {
 		select {
@@ -183,7 +248,7 @@ func (m *FileTransferManager) SendFileStream(
 	}
 }
 
-// ReceiveChunk processes an incoming file chunk, reassembles when complete, and decrypts to disk.
+// ReceiveChunk processes an incoming file chunk, streams decrypted slice to disk (.part file), and renames when complete.
 func (m *FileTransferManager) ReceiveChunk(
 	peerFP string,
 	messageID string,
@@ -203,10 +268,10 @@ func (m *FileTransferManager) ReceiveChunk(
 	transfer, exists := m.inbound[messageID]
 	if !exists {
 		transfer = &InboundFileTransfer{
-			MessageID: messageID,
-			PeerFP:    peerFP,
-			Chunks:    make(map[int][]byte),
-			StartTime: time.Now(),
+			MessageID:      messageID,
+			PeerFP:         peerFP,
+			ReceivedChunks: make(map[int]bool),
+			StartTime:      time.Now(),
 		}
 		m.inbound[messageID] = transfer
 	}
@@ -218,6 +283,13 @@ func (m *FileTransferManager) ReceiveChunk(
 		if err == nil && meta != nil && meta.NumChunks > 0 {
 			m.mu.Lock()
 			transfer.Meta = meta
+			if err := os.MkdirAll(downloadsDir, 0755); err == nil {
+				transfer.PartPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s", messageID))
+				partFile, err := os.OpenFile(transfer.PartPath, os.O_CREATE|os.O_RDWR, 0600)
+				if err == nil {
+					transfer.PartFile = partFile
+				}
+			}
 			m.mu.Unlock()
 			if m.onProgress != nil {
 				m.onProgress(peerFP, messageID, 0, meta.FileSize, 0)
@@ -231,27 +303,57 @@ func (m *FileTransferManager) ReceiveChunk(
 	}
 
 	m.mu.Lock()
+	if transfer.PartFile == nil {
+		if err := os.MkdirAll(downloadsDir, 0755); err == nil {
+			transfer.PartPath = filepath.Join(downloadsDir, fmt.Sprintf(".part_%s", messageID))
+			partFile, err := os.OpenFile(transfer.PartPath, os.O_CREATE|os.O_RDWR, 0600)
+			if err == nil {
+				transfer.PartFile = partFile
+			}
+		}
+	}
+
 	var chunkIdx int
 	if len(payload) >= crypto.SecretBoxNonceSize {
 		chunkIdx = int(binary.BigEndian.Uint64(payload[FileNoncePrefixSize:crypto.SecretBoxNonceSize]))
 	} else {
-		chunkIdx = len(transfer.Chunks)
+		chunkIdx = len(transfer.ReceivedChunks)
 	}
 
-	if _, alreadyHave := transfer.Chunks[chunkIdx]; !alreadyHave {
-		transfer.Chunks[chunkIdx] = payload
-		transfer.Received += int64(len(payload))
+	if !transfer.ReceivedChunks[chunkIdx] {
+		// Decrypt chunk on the fly
+		plaintext, err := crypto.SecretBoxDecrypt(transfer.Meta.FileKey, payload)
+		if err != nil {
+			m.mu.Unlock()
+			return nil, fmt.Errorf("failed to decrypt chunk %d: %w", chunkIdx, err)
+		}
+
+		if transfer.PartFile != nil {
+			offset := int64(chunkIdx) * int64(DefaultChunkSize)
+			if _, err := transfer.PartFile.WriteAt(plaintext, offset); err != nil {
+				m.mu.Unlock()
+				return nil, fmt.Errorf("failed to write chunk %d to part file: %w", chunkIdx, err)
+			}
+		}
+
+		transfer.ReceivedChunks[chunkIdx] = true
+		transfer.ReceivedBytes += int64(len(plaintext))
 	}
-	isComplete := len(transfer.Chunks) >= transfer.Meta.NumChunks
+	isComplete := len(transfer.ReceivedChunks) >= transfer.Meta.NumChunks
+	receivedBytes := transfer.ReceivedBytes
+	totalBytes := transfer.Meta.FileSize
+	partFile := transfer.PartFile
+	partPath := transfer.PartPath
+	meta := transfer.Meta
 	m.mu.Unlock()
 
 	if m.onProgress != nil {
 		elapsed := time.Since(transfer.StartTime).Seconds()
 		speed := 0.0
 		if elapsed > 0 {
-			speed = (float64(transfer.Received) * 8 / 1024) / elapsed
+			speed = (float64(receivedBytes) * 8 / 1024) / elapsed
 		}
-		m.onProgress(peerFP, messageID, transfer.Received, transfer.Meta.FileSize, speed)
+		m.onProgress(peerFP, messageID, receivedBytes, totalBytes, speed)
 	}
 
 	if isComplete {
@@ -259,16 +361,27 @@ func (m *FileTransferManager) ReceiveChunk(
 		delete(m.inbound, messageID)
 		m.mu.Unlock()
 
-		plaintext, err := DecryptFileChunks(transfer.Meta, transfer.Chunks)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decrypt file chunks: %w", err)
+		if partFile != nil {
+			_ = partFile.Sync()
+			if _, err := partFile.Seek(0, io.SeekStart); err == nil && len(meta.FileHash) > 0 {
+				hasher := sha256.New()
+				if _, err := io.Copy(hasher, io.LimitReader(partFile, meta.FileSize)); err == nil {
+					calculatedHash := hasher.Sum(nil)
+					if !bytes.Equal(calculatedHash, meta.FileHash) {
+						_ = partFile.Close()
+						_ = os.Remove(partPath)
+						return nil, errors.New("file SHA-256 checksum mismatch: data corrupted")
+					}
+				}
+			}
+			_ = partFile.Close()
 		}
 
 		if err := os.MkdirAll(downloadsDir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create downloads directory: %w", err)
 		}
 
-		fileName := transfer.Meta.FileName
+		fileName := meta.FileName
 		if fileName == "" {
 			fileName = fmt.Sprintf("file_%s", messageID)
 		}
@@ -282,19 +395,43 @@ func (m *FileTransferManager) ReceiveChunk(
 			targetPath = filepath.Join(downloadsDir, fmt.Sprintf("%s_%d%s", stem, time.Now().UnixMilli(), ext))
 		}
 
-		if err := os.WriteFile(targetPath, plaintext, 0644); err != nil {
-			return nil, fmt.Errorf("failed to write decrypted file to %s: %w", targetPath, err)
+		// Atomically move .part file to final destination
+		if err := os.Rename(partPath, targetPath); err != nil {
+			if cpErr := copyFile(partPath, targetPath); cpErr != nil {
+				return nil, fmt.Errorf("failed to move completed file to %s: %w", targetPath, cpErr)
+			}
+			_ = os.Remove(partPath)
 		}
+
+		// Truncate to exact fileSize in case part file had padding
+		_ = os.Truncate(targetPath, meta.FileSize)
 
 		return &AssembledFile{
 			MessageID: messageID,
 			FilePath:  targetPath,
 			FileName:  filepath.Base(targetPath),
-			Caption:   transfer.Meta.Caption,
-			Emoji:     transfer.Meta.Emoji,
-			FileSize:  int64(len(plaintext)),
+			Caption:   meta.Caption,
+			Emoji:     meta.Emoji,
+			FileSize:  meta.FileSize,
 		}, nil
 	}
 
 	return nil, nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
 }
