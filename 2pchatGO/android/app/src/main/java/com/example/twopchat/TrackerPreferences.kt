@@ -59,6 +59,30 @@ object TrackerPreferences {
     fun announceEnabled(context: Context): Boolean =
         P2PPreferences.prefs(context).getBoolean(ANNOUNCE_ENABLED, true)
 
+    fun getActiveTrackerUrls(context: Context): List<String> {
+        val disabled = disabledBuiltIns(context)
+        val protocols = enabledProtocols(context)
+        val clearnetEnabled = clearnetTrackersEnabled(context)
+        val yggEnabled = yggTrackersEnabled(context)
+
+        val builtins = builtInTrackers.filter { tracker ->
+            tracker.name !in disabled &&
+            tracker.protocol in protocols &&
+            if (tracker.name.contains("Yggdrasil", ignoreCase = true)) yggEnabled else clearnetEnabled
+        }.map { it.url }
+
+        val customs = customTrackers(context).filter { tracker ->
+            tracker.enabled && tracker.protocol in protocols
+        }.map { it.url }
+
+        val all = (builtins + customs).distinct()
+        return if (all.isNotEmpty()) all else listOf(
+            "udp://tracker.openbittorrent.com:6969",
+            "udp://tracker.opentrackr.org:1337/announce",
+            "https://tracker.tamersunion.org:443/announce",
+        )
+    }
+
     fun setAnnounceEnabled(context: Context, enabled: Boolean) {
         P2PPreferences.prefs(context).edit().putBoolean(ANNOUNCE_ENABLED, enabled).apply()
     }

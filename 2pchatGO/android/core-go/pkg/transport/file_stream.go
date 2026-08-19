@@ -31,6 +31,7 @@ type FileMetadata struct {
 	NumChunks       int    `json:"num_chunks"`
 	FileHash        []byte `json:"-"`
 	FileName        string `json:"file_name,omitempty"`
+	Caption         string `json:"caption,omitempty"`
 
 	// Wire Base64 JSON fields
 	FileIDB64          string `json:"file_id"`
@@ -88,6 +89,7 @@ func EncryptFileStream(
 	r io.Reader,
 	fileSize int64,
 	fileName string,
+	caption string,
 	chunkSize int,
 ) (*FileMetadata, <-chan *EncryptedChunk, error) {
 	if chunkSize <= 0 {
@@ -121,6 +123,7 @@ func EncryptFileStream(
 		FileSize:        fileSize,
 		NumChunks:       numChunks,
 		FileName:        fileName,
+		Caption:         caption,
 	}
 
 	chunkChan := make(chan *EncryptedChunk, 4)

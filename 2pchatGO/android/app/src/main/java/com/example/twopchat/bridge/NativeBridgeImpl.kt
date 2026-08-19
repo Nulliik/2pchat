@@ -117,11 +117,8 @@ class NativeBridgeImpl : IP2PBridge {
         force: Boolean,
         rendezvousCode: String?,
     ): Boolean {
-        val trackers = listOf(
-            "udp://tracker.openbittorrent.com:6969",
-            "udp://tracker.opentrackr.org:1337/announce",
-            "https://tracker.tamersunion.org:443/announce",
-        )
+        val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        val trackers = com.example.twopchat.TrackerPreferences.getActiveTrackerUrls(context)
 
         val hashes = mutableListOf<String>()
         if (fingerprint.isNotBlank()) {
@@ -250,7 +247,7 @@ class NativeBridgeImpl : IP2PBridge {
 
         val target = activeFP ?: expectedFingerprint?.takeIf { it.isNotBlank() } ?: nameToFpMap[peerName] ?: peerName
         val fileName = File(filePath).name
-        val resId = NativeBridge.sendFile(target, filePath, messageId, fileName)
+        val resId = NativeBridge.sendFile(target, filePath, messageId, fileName, caption)
         return resId != null
     }
 

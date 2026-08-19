@@ -42,6 +42,7 @@ func TestFileTransferManagerSendAndCancel(t *testing.T) {
 		"msg_id_456",
 		testFilePath,
 		"testfile.bin",
+		"test caption",
 		func(payload []byte) error {
 			if decodedMeta == nil {
 				meta, err := DecodeMetadataJSON(payload)
@@ -112,6 +113,7 @@ func TestFileTransferManagerCancellation(t *testing.T) {
 		"cancel_msg_id",
 		testFilePath,
 		"largefile.bin",
+		"",
 		func(payload []byte) error {
 			time.Sleep(10 * time.Millisecond)
 			return nil

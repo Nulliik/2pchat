@@ -455,7 +455,7 @@ func (m *SessionManager) SendMessage(peerFP, text string) (string, error) {
 }
 
 // SendFile streams a local file to a connected peer in 64KB chunks.
-func (m *SessionManager) SendFile(peerFP, filePath, messageID, fileName string) (string, error) {
+func (m *SessionManager) SendFile(peerFP, filePath, messageID, fileName, caption string) (string, error) {
 	m.mu.RLock()
 	nm := m.netManager
 	m.mu.RUnlock()
@@ -464,7 +464,7 @@ func (m *SessionManager) SendFile(peerFP, filePath, messageID, fileName string) 
 		return "", errors.New("network manager not initialized")
 	}
 
-	return nm.SendFile(peerFP, filePath, messageID, fileName)
+	return nm.SendFile(peerFP, filePath, messageID, fileName, caption)
 }
 
 // CancelFile cancels an active file transfer by messageID.

@@ -247,7 +247,7 @@ func TestLargeFileStreamingWithIntegrity(t *testing.T) {
 
 	// 2. Stream and Encrypt in 64KB chunks
 	reader := bytes.NewReader(originalData)
-	meta, chunkChan, err := transport.EncryptFileStream(reader, int64(fileSize), "backup_archive.tar.enc", 64*1024)
+	meta, chunkChan, err := transport.EncryptFileStream(reader, int64(fileSize), "backup_archive.tar.enc", "backup caption", 64*1024)
 	if err != nil {
 		t.Fatalf("EncryptFileStream failed: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestLargeFileStreamingWithIntegrity(t *testing.T) {
 
 	// Start transfer and cancel immediately after first chunk
 	cancelCalled := false
-	err = transferMgr.SendFileStream(transferCtx, "peer-fp-abc", testMessageID, "", "test.bin", func(payload []byte) error {
+	err = transferMgr.SendFileStream(transferCtx, "peer-fp-abc", testMessageID, "", "test.bin", "", func(payload []byte) error {
 		if !cancelCalled {
 			cancelCalled = true
 			cancel() // Cancel context mid-transfer

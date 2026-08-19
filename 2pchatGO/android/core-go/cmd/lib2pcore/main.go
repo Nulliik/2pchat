@@ -261,6 +261,7 @@ func Java_com_example_twopchat_NativeBridge_nativeSendFile(
 	jFilePath C.jstring,
 	jMessageID C.jstring,
 	jFileName C.jstring,
+	jCaption C.jstring,
 ) C.jstring {
 	cFP := C.getJStringUTFChars(env, jPeerFP)
 	if cFP == nil {
@@ -290,7 +291,14 @@ func Java_com_example_twopchat_NativeBridge_nativeSendFile(
 		C.releaseJStringUTFChars(env, jFileName, cName)
 	}
 
-	metaID, err := bridge.GetManager().SendFile(peerFP, filePath, messageID, fileName)
+	var caption string
+	cCaption := C.getJStringUTFChars(env, jCaption)
+	if cCaption != nil {
+		caption = C.GoString(cCaption)
+		C.releaseJStringUTFChars(env, jCaption, cCaption)
+	}
+
+	metaID, err := bridge.GetManager().SendFile(peerFP, filePath, messageID, fileName, caption)
 	if err != nil {
 		return C.nullJString()
 	}

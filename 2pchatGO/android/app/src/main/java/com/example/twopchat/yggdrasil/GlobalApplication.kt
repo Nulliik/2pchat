@@ -16,8 +16,16 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
     private var currentState: State = State.Disabled
     private var updaterConnections: Int = 0
 
+    companion object {
+        lateinit var appContext: Context
+            private set
+
+        fun getContext(): Context = appContext
+    }
+
     override fun onCreate() {
         super.onCreate()
+        appContext = applicationContext
         System.loadLibrary("sqlcipher")
         val prefs = yggdrasilPrefs(applicationContext)
         if (!prefs.contains(PREF_KEY_ENABLED)) {

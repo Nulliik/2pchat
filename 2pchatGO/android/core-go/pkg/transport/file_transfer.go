@@ -30,6 +30,7 @@ type AssembledFile struct {
 	MessageID string
 	FilePath  string
 	FileName  string
+	Caption   string
 	FileSize  int64
 }
 
@@ -70,6 +71,7 @@ func (m *FileTransferManager) SendFileStream(
 	messageID string,
 	filePath string,
 	fileName string,
+	caption string,
 	sendFrame func(payload []byte) error,
 ) error {
 	fileInfo, err := os.Stat(filePath)
@@ -100,7 +102,7 @@ func (m *FileTransferManager) SendFileStream(
 		m.mu.Unlock()
 	}()
 
-	meta, chunkChan, err := EncryptFileStream(file, fileSize, fileName, DefaultChunkSize)
+	meta, chunkChan, err := EncryptFileStream(file, fileSize, fileName, caption, DefaultChunkSize)
 	if err != nil {
 		return fmt.Errorf("failed to initialize file stream encryption: %w", err)
 	}
@@ -260,6 +262,7 @@ func (m *FileTransferManager) ReceiveChunk(
 			MessageID: messageID,
 			FilePath:  targetPath,
 			FileName:  filepath.Base(targetPath),
+			Caption:   transfer.Meta.Caption,
 			FileSize:  int64(len(plaintext)),
 		}, nil
 	}

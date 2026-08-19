@@ -166,10 +166,10 @@ object NativeBridge {
         }
     }
 
-    fun sendFile(peerFingerprint: String, filePath: String, messageId: String = "", fileName: String = ""): String? {
+    fun sendFile(peerFingerprint: String, filePath: String, messageId: String = "", fileName: String = "", caption: String = ""): String? {
         if (!isLoaded) return null
         return try {
-            nativeSendFile(peerFingerprint, filePath, messageId, fileName)
+            nativeSendFile(peerFingerprint, filePath, messageId, fileName, caption)
         } catch (e: Throwable) {
             Log.e(TAG, "nativeSendFile failed", e)
             null
@@ -412,7 +412,7 @@ object NativeBridge {
     private external fun nativeStopListener(): Boolean
     private external fun nativeConnectPeer(endpoint: String, expectedFingerprint: String): Boolean
     private external fun nativeSendMessage(peerFingerprint: String, text: String): String?
-    private external fun nativeSendFile(peerFingerprint: String, filePath: String, messageId: String, fileName: String): String?
+    private external fun nativeSendFile(peerFingerprint: String, filePath: String, messageId: String, fileName: String, caption: String): String?
     private external fun nativeCancelFile(messageId: String): Boolean
     private external fun nativeSetTorProxy(enabled: Boolean, proxyAddr: String)
     private external fun nativeSetOnionAddress(address: String)
