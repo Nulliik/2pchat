@@ -278,6 +278,7 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 					"file_path":  assembled.FilePath,
 					"file_name":  assembled.FileName,
 					"caption":    assembled.Caption,
+					"emoji":      assembled.Emoji,
 					"size":       assembled.FileSize,
 					"mime":       guessMimeType(assembled.FileName),
 				}
@@ -372,7 +373,7 @@ func (m *Manager) SendMessage(peerFP, text string) (string, error) {
 }
 
 // SendFile streams a local file to a connected peer in 64KB chunks.
-func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption string) (string, error) {
+func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji string) (string, error) {
 	m.mu.RLock()
 	s, exists := m.sessions[peerFP]
 	if !exists || !s.IsOnline() {
@@ -411,6 +412,7 @@ func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption string
 			filePath,
 			fileName,
 			caption,
+			emoji,
 			func(payload []byte) error {
 				chunkMsg := map[string]any{
 					"type":       string(TypeFileChunk),

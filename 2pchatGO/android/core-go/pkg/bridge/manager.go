@@ -231,6 +231,51 @@ func (m *SessionManager) StopDiscovery() error {
 	return nil
 }
 
+// UpdateTrackers updates the list of active BitTorrent trackers on the fly.
+func (m *SessionManager) UpdateTrackers(trackersJSON string) error {
+	m.mu.RLock()
+	svc := m.discoverySvc
+	m.mu.RUnlock()
+
+	if svc == nil {
+		return errors.New("discovery service not initialized")
+	}
+
+	var trackers []string
+	if err := json.Unmarshal([]byte(trackersJSON), &trackers); err != nil {
+		return fmt.Errorf("invalid trackers JSON: %w", err)
+	}
+
+	svc.SetTrackers(trackers)
+	return nil
+}
+
+// ReloadIdentity resets cached identity keys and reloads from disk.
+func (m *SessionManager) ReloadIdentity() error {
+	m.mu.Lock()
+	m.identity = nil
+	m.prekeyPriv = nil
+	m.netManager = nil
+	m.discoverySvc = nil
+	m.mu.Unlock()
+
+	if err := m.Init(); err != nil {
+		return err
+	}
+
+	m.mu.RLock()
+	id := m.identity
+	disc := m.discoverySvc
+	m.mu.RUnlock()
+
+	if disc != nil && id != nil {
+		fp := crypto.Fingerprint(id.Public.Bytes())
+		_ = disc.RegisterInfoHash(fp)
+	}
+
+	return nil
+}
+
 // AnnounceSelf registers an info hash and announces to all trackers.
 func (m *SessionManager) AnnounceSelf(infoHashHex string, port int) error {
 	if err := m.Init(); err != nil {
@@ -455,7 +500,7 @@ func (m *SessionManager) SendMessage(peerFP, text string) (string, error) {
 }
 
 // SendFile streams a local file to a connected peer in 64KB chunks.
-func (m *SessionManager) SendFile(peerFP, filePath, messageID, fileName, caption string) (string, error) {
+func (m *SessionManager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji string) (string, error) {
 	m.mu.RLock()
 	nm := m.netManager
 	m.mu.RUnlock()
@@ -464,7 +509,7 @@ func (m *SessionManager) SendFile(peerFP, filePath, messageID, fileName, caption
 		return "", errors.New("network manager not initialized")
 	}
 
-	return nm.SendFile(peerFP, filePath, messageID, fileName, caption)
+	return nm.SendFile(peerFP, filePath, messageID, fileName, caption, emoji)
 }
 
 // CancelFile cancels an active file transfer by messageID.

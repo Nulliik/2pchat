@@ -262,6 +262,7 @@ func Java_com_example_twopchat_NativeBridge_nativeSendFile(
 	jMessageID C.jstring,
 	jFileName C.jstring,
 	jCaption C.jstring,
+	jEmoji C.jstring,
 ) C.jstring {
 	cFP := C.getJStringUTFChars(env, jPeerFP)
 	if cFP == nil {
@@ -298,7 +299,14 @@ func Java_com_example_twopchat_NativeBridge_nativeSendFile(
 		C.releaseJStringUTFChars(env, jCaption, cCaption)
 	}
 
-	metaID, err := bridge.GetManager().SendFile(peerFP, filePath, messageID, fileName, caption)
+	var emoji string
+	cEmoji := C.getJStringUTFChars(env, jEmoji)
+	if cEmoji != nil {
+		emoji = C.GoString(cEmoji)
+		C.releaseJStringUTFChars(env, jEmoji, cEmoji)
+	}
+
+	metaID, err := bridge.GetManager().SendFile(peerFP, filePath, messageID, fileName, caption, emoji)
 	if err != nil {
 		return C.nullJString()
 	}
@@ -396,6 +404,38 @@ func Java_com_example_twopchat_NativeBridge_nativeStartDiscovery(
 	}
 
 	err := bridge.GetManager().StartDiscovery(trackersJSON, infoHashesJSON, int(jPort))
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeUpdateTrackers
+func Java_com_example_twopchat_NativeBridge_nativeUpdateTrackers(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jTrackersJSON C.jstring,
+) C.jboolean {
+	var trackersJSON string
+	cTrackers := C.getJStringUTFChars(env, jTrackersJSON)
+	if cTrackers != nil {
+		trackersJSON = C.GoString(cTrackers)
+		C.releaseJStringUTFChars(env, jTrackersJSON, cTrackers)
+	}
+
+	err := bridge.GetManager().UpdateTrackers(trackersJSON)
+	if err != nil {
+		return C.JNI_FALSE
+	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeReloadIdentity
+func Java_com_example_twopchat_NativeBridge_nativeReloadIdentity(
+	env *C.JNIEnv,
+	clazz C.jclass,
+) C.jboolean {
+	err := bridge.GetManager().ReloadIdentity()
 	if err != nil {
 		return C.JNI_FALSE
 	}

@@ -47,7 +47,7 @@ internal object IncomingMessageParser {
             } else {
                 file
             }
-            val caption = json.optString("caption").ifBlank { json.optString("text", "") }.trim()
+            val caption = json.optString("caption").ifBlank { json.optString("emoji") }.ifBlank { json.optString("text", "") }.trim()
             val displayMsg = if (caption.isNotBlank()) caption else VoiceMessageSupport.displayMessage(attachmentType, fileName)
             val albumId = json.optString("album_id").take(128)
             val albumIndex = json.optInt("album_index", -1)

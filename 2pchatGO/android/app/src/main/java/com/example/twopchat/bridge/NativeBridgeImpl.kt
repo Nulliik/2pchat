@@ -247,8 +247,13 @@ class NativeBridgeImpl : IP2PBridge {
 
         val target = activeFP ?: expectedFingerprint?.takeIf { it.isNotBlank() } ?: nameToFpMap[peerName] ?: peerName
         val fileName = File(filePath).name
-        val resId = NativeBridge.sendFile(target, filePath, messageId, fileName, caption)
+        val emoji = if (caption.length in 1..4 && caption.any { Character.isSurrogate(it) || Character.getType(it) == Character.OTHER_SYMBOL.toInt() }) caption else ""
+        val resId = NativeBridge.sendFile(target, filePath, messageId, fileName, caption, emoji)
         return resId != null
+    }
+
+    override fun updateTrackers(trackers: List<String>): Boolean {
+        return NativeBridge.updateTrackers(trackers)
     }
 
     override fun cancelFile(peerName: String, messageId: String, expectedFingerprint: String?): Boolean {

@@ -56,4 +56,5 @@ interface IP2PBridge {
         sharedCode: String? = null,
     ): List<Map<String, Any>>
     fun updatePeerNameMapping(fingerprint: String, peerName: String) {}
+    fun updateTrackers(trackers: List<String>): Boolean = false
 }

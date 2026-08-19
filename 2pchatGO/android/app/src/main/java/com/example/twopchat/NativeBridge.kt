@@ -166,10 +166,10 @@ object NativeBridge {
         }
     }
 
-    fun sendFile(peerFingerprint: String, filePath: String, messageId: String = "", fileName: String = "", caption: String = ""): String? {
+    fun sendFile(peerFingerprint: String, filePath: String, messageId: String = "", fileName: String = "", caption: String = "", emoji: String = ""): String? {
         if (!isLoaded) return null
         return try {
-            nativeSendFile(peerFingerprint, filePath, messageId, fileName, caption)
+            nativeSendFile(peerFingerprint, filePath, messageId, fileName, caption, emoji)
         } catch (e: Throwable) {
             Log.e(TAG, "nativeSendFile failed", e)
             null
@@ -239,6 +239,27 @@ object NativeBridge {
             nativeStopDiscovery()
         } catch (e: Throwable) {
             Log.e(TAG, "nativeStopDiscovery failed", e)
+            false
+        }
+    }
+
+    fun updateTrackers(trackers: List<String>): Boolean {
+        if (!isLoaded) return false
+        return try {
+            val trackersJson = org.json.JSONArray(trackers).toString()
+            nativeUpdateTrackers(trackersJson)
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeUpdateTrackers failed", e)
+            false
+        }
+    }
+
+    fun reloadIdentity(): Boolean {
+        if (!isLoaded) return false
+        return try {
+            nativeReloadIdentity()
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeReloadIdentity failed", e)
             false
         }
     }
@@ -412,13 +433,15 @@ object NativeBridge {
     private external fun nativeStopListener(): Boolean
     private external fun nativeConnectPeer(endpoint: String, expectedFingerprint: String): Boolean
     private external fun nativeSendMessage(peerFingerprint: String, text: String): String?
-    private external fun nativeSendFile(peerFingerprint: String, filePath: String, messageId: String, fileName: String, caption: String): String?
+    private external fun nativeSendFile(peerFingerprint: String, filePath: String, messageId: String, fileName: String, caption: String, emoji: String): String?
     private external fun nativeCancelFile(messageId: String): Boolean
     private external fun nativeSetTorProxy(enabled: Boolean, proxyAddr: String)
     private external fun nativeSetOnionAddress(address: String)
     private external fun nativeGetOnionAddress(): String?
     private external fun nativeStartDiscovery(trackersJSON: String, infoHashesJSON: String, port: Int): Boolean
     private external fun nativeStopDiscovery(): Boolean
+    private external fun nativeUpdateTrackers(trackersJSON: String): Boolean
+    private external fun nativeReloadIdentity(): Boolean
     private external fun nativeAnnounceSelf(infoHashHex: String, port: Int): Boolean
     private external fun nativeProbePeer(endpointsJSON: String, expectedFingerprint: String): Boolean
     private external fun nativeGetLocalSigningPublicKey(): String?

@@ -132,6 +132,7 @@ object ProfileBackupManager {
 
             // Re-initialize Go Core with the restored cryptographic keys
             NativeBridge.setStorageDir(filesDir.absolutePath)
+            NativeBridge.reloadIdentity()
             NativeBridge.initialize()
 
             val activeIdentity = NativeBridge.getLocalIdentity()

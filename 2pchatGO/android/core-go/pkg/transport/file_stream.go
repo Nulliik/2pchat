@@ -32,6 +32,7 @@ type FileMetadata struct {
 	FileHash        []byte `json:"-"`
 	FileName        string `json:"file_name,omitempty"`
 	Caption         string `json:"caption,omitempty"`
+	Emoji           string `json:"emoji,omitempty"`
 
 	// Wire Base64 JSON fields
 	FileIDB64          string `json:"file_id"`
@@ -90,6 +91,7 @@ func EncryptFileStream(
 	fileSize int64,
 	fileName string,
 	caption string,
+	emoji string,
 	chunkSize int,
 ) (*FileMetadata, <-chan *EncryptedChunk, error) {
 	if chunkSize <= 0 {
@@ -124,6 +126,7 @@ func EncryptFileStream(
 		NumChunks:       numChunks,
 		FileName:        fileName,
 		Caption:         caption,
+		Emoji:           emoji,
 	}
 
 	chunkChan := make(chan *EncryptedChunk, 4)

@@ -14,7 +14,7 @@ func TestFileStreamingRoundtrip(t *testing.T) {
 	rand.Read(originalData)
 
 	r := bytes.NewReader(originalData)
-	meta, chunkChan, err := EncryptFileStream(r, int64(originalSize), "test_doc.pdf", "test caption", 64*1024)
+	meta, chunkChan, err := EncryptFileStream(r, int64(originalSize), "test_doc.pdf", "test caption", "🚀", 64*1024)
 	if err != nil {
 		t.Fatalf("EncryptFileStream failed: %v", err)
 	}
