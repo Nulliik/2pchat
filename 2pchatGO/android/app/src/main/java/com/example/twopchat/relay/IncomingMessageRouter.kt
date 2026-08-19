@@ -296,6 +296,10 @@ internal class IncomingMessageRouter(
                         handleFileProgress(sender, json, listeners)
                         return
                     }
+                    "file_meta", "file_chunk" -> {
+                        log(context, "Consumed raw file chunk message: $msgType", "DEBUG", null)
+                        return
+                    }
                     else -> {
                         if (msgType.isNotEmpty()) {
                             log(context, "Silently consumed control message of type: $msgType", "DEBUG", null)

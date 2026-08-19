@@ -65,11 +65,14 @@ func (m *SessionManager) SetCallbacks(cb session.EventCallbacks, onPeerDisc disc
 	m.onPeerDisc = onPeerDisc
 }
 
-// SetStorageDir sets the persistent directory for cryptographic keys.
+// SetStorageDir sets the persistent directory for cryptographic keys and downloads.
 func (m *SessionManager) SetStorageDir(dir string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.storageDir = dir
+	if m.netManager != nil {
+		m.netManager.SetStorageDir(dir)
+	}
 }
 
 // Init initializes the local Go crypto engine, keys, network manager, and discovery service.
@@ -158,6 +161,9 @@ func (m *SessionManager) Init() error {
 			m.torEnabled,
 			m.callbacks,
 		)
+		if effectiveDir != "" {
+			m.netManager.SetStorageDir(effectiveDir)
+		}
 		if m.onionAddress != "" {
 			m.netManager.SetOnionAddress(m.onionAddress)
 		}

@@ -2,9 +2,11 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +35,7 @@ type Manager struct {
 	peerEndp        map[string]string
 	callbacks       EventCallbacks
 	fileTransferMgr *transport.FileTransferManager
+	storageDir      string
 	nickname        string
 	fingerprint     string
 	onionAddress    string
@@ -249,11 +252,88 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 			continue
 		}
 
+		if msgType == string(TypeFileChunk) {
+			msgID, _ := msg["message_id"].(string)
+			if msgID == "" {
+				msgID, _ = msg["id"].(string)
+			}
+			payloadStr, _ := msg["payload"].(string)
+
+			m.mu.RLock()
+			storageDir := m.storageDir
+			m.mu.RUnlock()
+			if storageDir == "" {
+				storageDir = "/data/user/0/com.example.twopchat/files"
+			}
+			downloadsDir := filepath.Join(storageDir, "config", "downloads")
+
+			assembled, err := m.fileTransferMgr.ReceiveChunk(peerFP, msgID, payloadStr, downloadsDir)
+			if err != nil {
+				continue
+			}
+			if assembled != nil {
+				fileMsg := map[string]any{
+					"type":       "file",
+					"message_id": assembled.MessageID,
+					"file_path":  assembled.FilePath,
+					"file_name":  assembled.FileName,
+					"size":       assembled.FileSize,
+					"mime":       guessMimeType(assembled.FileName),
+				}
+				rawFileMsg, err := json.Marshal(fileMsg)
+				if err == nil && m.callbacks.OnMessageReceived != nil {
+					m.callbacks.OnMessageReceived(peerFP, rawFileMsg, assembled.MessageID)
+				}
+			}
+			continue
+		}
+
 		raw, err := EncodeMessage(msg)
 		if err == nil && m.callbacks.OnMessageReceived != nil {
 			msgID, _ := msg["id"].(string)
 			m.callbacks.OnMessageReceived(peerFP, raw, msgID)
 		}
+	}
+}
+
+// SetStorageDir updates the base application storage directory for files/downloads.
+func (m *Manager) SetStorageDir(dir string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.storageDir = dir
+}
+
+func guessMimeType(fileName string) string {
+	ext := strings.ToLower(filepath.Ext(fileName))
+	switch ext {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
+	case ".gif":
+		return "image/gif"
+	case ".mp4":
+		return "video/mp4"
+	case ".mov":
+		return "video/quicktime"
+	case ".ogg":
+		return "audio/ogg"
+	case ".m4a":
+		return "audio/mp4"
+	case ".mp3":
+		return "audio/mpeg"
+	case ".pdf":
+		return "application/pdf"
+	case ".zip":
+		return "application/zip"
+	case ".json":
+		return "application/json"
+	case ".txt":
+		return "text/plain"
+	default:
+		return "application/octet-stream"
 	}
 }
 
