@@ -3,13 +3,18 @@ package com.example.twopchat
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.selects.onTimeout
+import kotlinx.coroutines.selects.select
 import java.util.concurrent.ConcurrentHashMap
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 internal class RelayMaintenanceCoordinator(
     private val scope: CoroutineScope,
     private val isRunning: () -> Boolean,
@@ -24,18 +29,50 @@ internal class RelayMaintenanceCoordinator(
     private var sessionJob: Job? = null
     private var announceJob: Job? = null
 
+    private val wakeupSignal = Channel<Unit>(Channel.CONFLATED)
+    @Volatile
+    private var screenOffTimestamp: Long? = null
+
+    fun triggerImmediateMaintenance(reason: String = "EVENT") {
+        wakeupSignal.trySend(Unit)
+    }
+
+    fun onScreenOff() {
+        if (screenOffTimestamp == null) {
+            screenOffTimestamp = System.currentTimeMillis()
+        }
+    }
+
+    fun onScreenOn(context: Context? = null) {
+        screenOffTimestamp = null
+        triggerImmediateMaintenance("SCREEN_ON")
+    }
+
     fun start(context: Context, port: Int, isPlaceholderPeerName: (String) -> Boolean) {
         stop()
         val appContext = context.applicationContext
+        val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+
         sessionJob = scope.launch {
             var lastWakeLockRefreshAt = System.currentTimeMillis()
             while (isActive && isRunning()) {
                 try {
                     val now = System.currentTimeMillis()
-                    if (now - lastWakeLockRefreshAt >= 8 * 60 * 1000L) {
+                    val isInteractive = powerManager?.isInteractive ?: true
+                    val isDeviceIdle = powerManager?.isDeviceIdleMode ?: false
+                    val isPowerSave = powerManager?.isPowerSaveMode ?: false
+
+                    if (isInteractive && !isDeviceIdle) {
+                        screenOffTimestamp = null
+                    } else if (screenOffTimestamp == null) {
+                        screenOffTimestamp = now
+                    }
+
+                    if (isInteractive && now - lastWakeLockRefreshAt >= 8 * 60 * 1000L) {
                         lastWakeLockRefreshAt = now
                         P2PRelayService.refreshWakeLock()
                     }
+
                     val prefs = P2PPreferences.prefs(appContext)
                     val oneOnOneChats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
                         .filterNot { it == "Saved Messages" || isPlaceholderPeerName(it) }
@@ -45,6 +82,7 @@ internal class RelayMaintenanceCoordinator(
                     val chats = (oneOnOneChats + groupMemberPeers).distinct()
                     val presenceVersions = chats.associateWith(presenceVersion)
                     val bridge = com.example.twopchat.bridge.P2PBridgeProvider.get(appContext)
+
                     Handler(Looper.getMainLooper()).post {
                         for (peerName in chats) {
                             val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
@@ -98,14 +136,36 @@ internal class RelayMaintenanceCoordinator(
                 } catch (error: Exception) {
                     log(appContext, "Error maintaining saved peer sessions", "ERROR", error)
                 }
-                delay(10_000)
+
+                val currentScreenOffDuration = if (screenOffTimestamp != null) {
+                    System.currentTimeMillis() - screenOffTimestamp!!
+                } else 0L
+
+                val isInteractiveNow = powerManager?.isInteractive ?: true
+                val isDeviceIdleNow = powerManager?.isDeviceIdleMode ?: false
+                val isPowerSaveNow = powerManager?.isPowerSaveMode ?: false
+
+                val nextPollIntervalMs = AdaptiveMaintenancePolicy.computeSessionPollInterval(
+                    isInteractive = isInteractiveNow,
+                    isDeviceIdleMode = isDeviceIdleNow,
+                    isPowerSaveMode = isPowerSaveNow,
+                    screenOffDurationMs = currentScreenOffDuration,
+                )
+
+                // Responsive sleep: Wait for the adaptive timeout OR wake up instantly on external event
+                select<Unit> {
+                    wakeupSignal.onReceive {
+                        // Woken up by screen on, network available, or manual trigger
+                    }
+                    onTimeout(nextPollIntervalMs) {
+                        // Adaptive poll interval expired
+                    }
+                }
             }
         }
 
         announceJob = scope.launch {
             var lastAddresses = emptyList<String>()
-            var candidateAddresses = emptyList<String>()
-            var stableCandidateSamples = 0
             var lastAnnounceTime = 0L
             while (isActive && isRunning()) {
                 try {
@@ -144,7 +204,14 @@ internal class RelayMaintenanceCoordinator(
                 } catch (error: Exception) {
                     log(appContext, "Error in periodic announce", "ERROR", error)
                 }
-                delay(25_000)
+
+                val isInteractiveNow = powerManager?.isInteractive ?: true
+                val isDeviceIdleNow = powerManager?.isDeviceIdleMode ?: false
+                val announceInterval = AdaptiveMaintenancePolicy.computeAnnounceInterval(
+                    isInteractive = isInteractiveNow,
+                    isDeviceIdleMode = isDeviceIdleNow,
+                )
+                delay(announceInterval)
             }
         }
     }
@@ -156,5 +223,6 @@ internal class RelayMaintenanceCoordinator(
         announceJob = null
         lastReconnectAttemptAt.clear()
         reconnectDelayMs.clear()
+        screenOffTimestamp = null
     }
 }

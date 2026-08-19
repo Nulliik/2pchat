@@ -307,6 +307,18 @@ object P2PMessageRelay {
         log = ::log,
     )
 
+    fun triggerMaintenanceWakeup(reason: String = "EVENT") {
+        maintenanceCoordinator.triggerImmediateMaintenance(reason)
+    }
+
+    fun onScreenOff() {
+        maintenanceCoordinator.onScreenOff()
+    }
+
+    fun onScreenOn(context: Context? = null) {
+        maintenanceCoordinator.onScreenOn(context)
+    }
+
     private fun publishPeerOnline(
         peerName: String,
         transport: String?,

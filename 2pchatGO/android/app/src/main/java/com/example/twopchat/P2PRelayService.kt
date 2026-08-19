@@ -4,9 +4,15 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
@@ -25,7 +31,48 @@ import kotlinx.coroutines.launch
 class P2PRelayService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var isReceiverRegistered = false
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val powerAndScreenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_ON,
+                Intent.ACTION_USER_PRESENT -> {
+                    Log.d(TAG, "Screen became active: ${intent.action}")
+                    acquireWifiLock()
+                    refreshLocks()
+                    P2PMessageRelay.onScreenOn(context)
+                    P2PMessageRelay.triggerImmediateReconnect(context)
+                }
+                Intent.ACTION_SCREEN_OFF -> {
+                    Log.d(TAG, "Screen turned off -> entering adaptive battery saver mode")
+                    P2PMessageRelay.onScreenOff()
+                    // Release aggressive high-perf Wi-Fi lock to allow Wi-Fi radio power-saving (DTIM)
+                    releaseWifiLock()
+                }
+                PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED -> {
+                    val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                    val isIdle = powerManager?.isDeviceIdleMode == true
+                    Log.d(TAG, "Device idle/Doze mode changed: isIdle=$isIdle")
+                    if (!isIdle) {
+                        acquireWifiLock()
+                        refreshLocks()
+                        P2PMessageRelay.onScreenOn(context)
+                        P2PMessageRelay.triggerImmediateReconnect(context)
+                    } else {
+                        P2PMessageRelay.onScreenOff()
+                        releaseWifiLock()
+                    }
+                }
+                PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> {
+                    Log.d(TAG, "Power save mode changed")
+                    P2PMessageRelay.triggerMaintenanceWakeup("POWER_SAVE_CHANGED")
+                }
+            }
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -62,6 +109,8 @@ class P2PRelayService : Service() {
             return
         }
 
+        registerReceiversAndNetworkCallbacks()
+
         serviceScope.launch(Dispatchers.IO) {
             GroupWorkScheduler.schedule(applicationContext)
         }
@@ -93,6 +142,7 @@ class P2PRelayService : Service() {
     }
 
     override fun onDestroy() {
+        unregisterReceiversAndNetworkCallbacks()
         releaseLocks()
         P2PMessageRelay.stopServer()
         serviceScope.cancel()
@@ -101,6 +151,70 @@ class P2PRelayService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun registerReceiversAndNetworkCallbacks() {
+        try {
+            if (!isReceiverRegistered) {
+                val filter = IntentFilter().apply {
+                    addAction(Intent.ACTION_SCREEN_ON)
+                    addAction(Intent.ACTION_SCREEN_OFF)
+                    addAction(Intent.ACTION_USER_PRESENT)
+                    addAction(PowerManager.ACTION_DEVICE_IDLE_MODE_CHANGED)
+                    addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+                }
+                registerReceiver(powerAndScreenReceiver, filter)
+                isReceiverRegistered = true
+            }
+
+            if (networkCallback == null) {
+                val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                val callback = object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        Log.i(TAG, "Network became available -> triggering fast reconnect")
+                        NativeBridge.onNetworkChanged()
+                        P2PMessageRelay.triggerImmediateReconnect(applicationContext)
+                        P2PMessageRelay.triggerMaintenanceWakeup("NETWORK_AVAILABLE")
+                    }
+
+                    override fun onLost(network: Network) {
+                        Log.i(TAG, "Network lost -> notifying native bridge")
+                        NativeBridge.onNetworkChanged()
+                        P2PMessageRelay.triggerMaintenanceWakeup("NETWORK_LOST")
+                    }
+
+                    override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                        if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                            networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                            P2PMessageRelay.triggerMaintenanceWakeup("NETWORK_VALIDATED")
+                        }
+                    }
+                }
+                val request = NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .build()
+                connectivityManager?.registerNetworkCallback(request, callback)
+                networkCallback = callback
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to register power/network listeners", e)
+        }
+    }
+
+    private fun unregisterReceiversAndNetworkCallbacks() {
+        try {
+            if (isReceiverRegistered) {
+                unregisterReceiver(powerAndScreenReceiver)
+                isReceiverRegistered = false
+            }
+            networkCallback?.let {
+                val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+                connectivityManager?.unregisterNetworkCallback(it)
+                networkCallback = null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to unregister power/network listeners", e)
+        }
+    }
 
     private fun acquireLocks() {
         try {
@@ -111,10 +225,20 @@ class P2PRelayService : Service() {
                     "2PChat:P2PRelayServiceWakeLock",
                 )?.apply {
                     setReferenceCounted(false)
-                    acquire(10 * 60 * 1000L) // 10-minute timeout; re-acquired on next ping cycle
+                    acquire(10 * 60 * 1000L) // 10-minute timeout; refreshed on next active cycle
                 }
             }
-            if (wifiLock == null) {
+            acquireWifiLock()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to acquire WakeLock / WifiLock", e)
+        }
+    }
+
+    private fun acquireWifiLock() {
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            val isInteractive = powerManager?.isInteractive ?: true
+            if (isInteractive && wifiLock == null) {
                 val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
                 @Suppress("DEPRECATION")
                 wifiLock = wifiManager?.createWifiLock(
@@ -126,7 +250,18 @@ class P2PRelayService : Service() {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to acquire WakeLock / WifiLock", e)
+            Log.e(TAG, "Failed to acquire WifiLock", e)
+        }
+    }
+
+    private fun releaseWifiLock() {
+        try {
+            wifiLock?.let {
+                if (it.isHeld) it.release()
+            }
+            wifiLock = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to release WifiLock", e)
         }
     }
 
@@ -149,10 +284,7 @@ class P2PRelayService : Service() {
                 if (it.isHeld) it.release()
             }
             wakeLock = null
-            wifiLock?.let {
-                if (it.isHeld) it.release()
-            }
-            wifiLock = null
+            releaseWifiLock()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to release WakeLock / WifiLock", e)
         }
