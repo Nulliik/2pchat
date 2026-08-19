@@ -115,7 +115,7 @@ internal class RelayMaintenanceCoordinator(
                     val fingerprint = bridge.getLocalFingerprint()
                     if (username.isNotBlank() && fingerprint !in setOf("Loading...", "Not Initialized", "Error")) {
                         val yggAddr = P2PMessageRelay.getYggdrasilAddress()
-                        val yggReady = prefs.getBoolean("settings_yggdrasil", true) &&
+                        val yggReady = prefs.getBoolean("settings_yggdrasil", false) &&
                             yggAddr.isNotBlank() && yggAddr != "N/A" && yggAddr != "unavailable"
                         val addresses = buildList {
                             if (prefs.getBoolean("settings_ipv4", true)) {

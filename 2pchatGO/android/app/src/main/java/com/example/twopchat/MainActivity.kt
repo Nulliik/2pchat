@@ -142,7 +142,7 @@ class MainActivity : ComponentActivity() {
             P2PMessageRelay.triggerImmediateReconnect(appContext)
         }
         if (
-            preferences.getBoolean("settings_yggdrasil", true) &&
+            preferences.getBoolean("settings_yggdrasil", false) &&
             android.net.VpnService.prepare(appContext) == null
         ) {
             runCatching {
@@ -217,7 +217,7 @@ class MainActivity : ComponentActivity() {
 
         // Start Yggdrasil VPN service automatically if enabled and prepared
         val yggPrefs = P2PPreferences.prefs(this)
-        if (yggPrefs.getBoolean("settings_yggdrasil", true)) {
+        if (yggPrefs.getBoolean("settings_yggdrasil", false)) {
             if (android.net.VpnService.prepare(applicationContext) == null) {
                 val yggIntent = Intent(applicationContext, com.example.twopchat.yggdrasil.PacketTunnelProvider::class.java).apply {
                     action = com.example.twopchat.yggdrasil.PacketTunnelProvider.ACTION_START

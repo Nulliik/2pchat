@@ -84,7 +84,7 @@ fun YggdrasilPeerSettingsPage(
     var applyError by remember { mutableStateOf<String?>(null) }
     val sharedPrefs = remember(context) { P2PPreferences.prefs(context) }
     var yggdrasilRouting by remember {
-        mutableStateOf(sharedPrefs.getBoolean("settings_yggdrasil", true))
+        mutableStateOf(sharedPrefs.getBoolean("settings_yggdrasil", false))
     }
 
     val vpnLauncher = rememberLauncherForActivityResult(
@@ -108,7 +108,7 @@ fun YggdrasilPeerSettingsPage(
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key?.startsWith("yggdrasil_") == true) revision++
             if (key == "settings_yggdrasil") {
-                yggdrasilRouting = sharedPrefs.getBoolean("settings_yggdrasil", true)
+                yggdrasilRouting = sharedPrefs.getBoolean("settings_yggdrasil", false)
             }
         }
         sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
@@ -144,7 +144,7 @@ fun YggdrasilPeerSettingsPage(
             delay(300)
             applying = true
             try {
-                val yggdrasilEnabled = sharedPrefs.getBoolean("settings_yggdrasil", true)
+                val yggdrasilEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
                 if (yggdrasilEnabled && VpnService.prepare(context) == null) {
                     ContextCompat.startForegroundService(
                         context,

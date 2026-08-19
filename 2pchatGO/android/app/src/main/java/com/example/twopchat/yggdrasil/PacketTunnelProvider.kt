@@ -77,10 +77,11 @@ open class PacketTunnelProvider: VpnService() {
             return START_NOT_STICKY
         }
         val preferences = yggdrasilPrefs(this)
-        val enabled = preferences.getBoolean(PREF_KEY_ENABLED, true)
+        val enabled = preferences.getBoolean(PREF_KEY_ENABLED, false)
         return when (intent.action ?: ACTION_STOP) {
             ACTION_STOP -> {
                 Log.d(TAG, "Stopping...")
+                preferences.edit().putBoolean(PREF_KEY_ENABLED, false).apply()
                 stop(); START_NOT_STICKY
             }
             ACTION_START -> {
@@ -97,6 +98,11 @@ open class PacketTunnelProvider: VpnService() {
             }
             ACTION_CONNECT -> {
                 Log.d(TAG, "Connecting...")
+                if (!enabled) {
+                    Log.d(TAG, "Yggdrasil is disabled in settings; ignoring ACTION_CONNECT")
+                    stop(stopService = true)
+                    return START_NOT_STICKY
+                }
                 if (isTunnelHealthy()) {
                     connect()
                 } else {

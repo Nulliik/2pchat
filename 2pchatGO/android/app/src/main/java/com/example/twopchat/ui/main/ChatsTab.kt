@@ -415,7 +415,7 @@ fun ChatsTab(
                                             var refreshSucceeded = true
                                             try {
                                                 val prefs = com.example.twopchat.P2PPreferences.prefs(context)
-                                                val yggEnabled = prefs.getBoolean("settings_yggdrasil", true)
+                                                val yggEnabled = prefs.getBoolean("settings_yggdrasil", false)
                                                 if (yggEnabled && VpnService.prepare(context) == null) {
                                                     context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
                                                         action = PacketTunnelProvider.ACTION_STOP
