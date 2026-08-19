@@ -24,6 +24,15 @@ func TestClassifyTier(t *testing.T) {
 	if ClassifyTier("[200:1234::1]:50001") != TierYggdrasil {
 		t.Fatal("Expected TierYggdrasil for 200:: IPv6")
 	}
+	if ClassifyTier("[2a00:1450:4001:828::200e]:50001") != TierDirectIPv6 {
+		t.Fatal("Expected TierDirectIPv6 for global mobile IPv6")
+	}
+	if ClassifyTier("[2001:db8::1]:50001") != TierDirectIPv6 {
+		t.Fatal("Expected TierDirectIPv6 for 2001:: public IPv6")
+	}
+	if ClassifyTier("[fe80::1]:50001") != TierLAN {
+		t.Fatal("Expected TierLAN for link-local IPv6")
+	}
 	if ClassifyTier("abcdef123456.onion:50001") != TierTor {
 		t.Fatal("Expected TierTor for .onion")
 	}

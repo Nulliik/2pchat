@@ -16,9 +16,17 @@ func TestAdaptiveDialerClassification(t *testing.T) {
 		t.Fatal("Expected TransportTor for .onion address")
 	}
 
-	// IPv6 must route to Yggdrasil / direct IPv6
+	// Yggdrasil IPv6 must route to Yggdrasil
 	if dialer.ClassifyEndpoint("[200:1234:5678::1]:50001") != TransportYggdrasil {
-		t.Fatal("Expected TransportYggdrasil for IPv6 address")
+		t.Fatal("Expected TransportYggdrasil for 200::/7 Yggdrasil address")
+	}
+
+	// Global Mobile IPv6 must route to Direct
+	if dialer.ClassifyEndpoint("[2a00:1450:4001:828::200e]:50001") != TransportDirect {
+		t.Fatal("Expected TransportDirect for global mobile IPv6 address")
+	}
+	if dialer.ClassifyEndpoint("[2001:db8::1]:50001") != TransportDirect {
+		t.Fatal("Expected TransportDirect for 2001:: global IPv6 address")
 	}
 
 	// IPv4 must route to Direct

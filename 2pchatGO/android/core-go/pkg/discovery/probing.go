@@ -13,16 +13,29 @@ import (
 type ProbingTier int
 
 const (
-	TierLAN       ProbingTier = 1 // Local Wi-Fi / Hotspot (timeout: 500ms)
-	TierWANDirect ProbingTier = 2 // Public WAN IPv4/IPv6 (timeout: 2s)
-	TierYggdrasil ProbingTier = 3 // Yggdrasil Mesh IPv6 (timeout: 3s)
-	TierTor       ProbingTier = 4 // Tor Onion hidden service (timeout: 8s)
+	TierLAN        ProbingTier = 1 // Local Wi-Fi / Hotspot / Private IP (timeout: 500ms)
+	TierDirectIPv6 ProbingTier = 2 // Direct Global / Mobile IPv6 (timeout: 1.5s)
+	TierWANDirect  ProbingTier = 3 // Public WAN IPv4 (STUN / UPnP mapped) (timeout: 2s)
+	TierYggdrasil  ProbingTier = 4 // Yggdrasil Mesh IPv6 (200::/7) (timeout: 3s)
+	TierTor        ProbingTier = 5 // Tor Onion hidden service (timeout: 8s)
 )
 
 var (
 	ErrNoViableEndpoints  = errors.New("no viable endpoints available or all connections timed out")
 	ErrEndpointInCooldown = errors.New("endpoint is currently in failure cooldown")
 )
+
+var yggdrasilSubnet = func() *net.IPNet {
+	_, subnet, _ := net.ParseCIDR("200::/7")
+	return subnet
+}()
+
+func isYggdrasilIP(ip net.IP) bool {
+	if ip == nil || ip.To4() != nil {
+		return false
+	}
+	return yggdrasilSubnet != nil && yggdrasilSubnet.Contains(ip)
+}
 
 // EndpointDialer defines the signature for establishing a connection to an endpoint.
 type EndpointDialer func(ctx context.Context, endpoint string) (net.Conn, error)
@@ -42,7 +55,7 @@ func NewFastTieredProber() *FastTieredProber {
 	}
 }
 
-// ClassifyTier determines the ProbingTier for a given endpoint.
+// ClassifyTier determines the ProbingTier for a given endpoint per Transport Priority Cascade.
 func ClassifyTier(endpoint string) ProbingTier {
 	host := endpoint
 	if strings.Contains(endpoint, ":") {
@@ -59,12 +72,14 @@ func ClassifyTier(endpoint string) ProbingTier {
 
 	ip := net.ParseIP(host)
 	if ip != nil {
-		if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+		if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 			return TierLAN
 		}
-		// Yggdrasil IP range: 200::/7 (0200::/7 or 0300::/7)
-		if ip.To4() == nil && (strings.HasPrefix(ip.String(), "2") || strings.HasPrefix(ip.String(), "3")) {
+		if isYggdrasilIP(ip) {
 			return TierYggdrasil
+		}
+		if ip.To4() == nil {
+			return TierDirectIPv6
 		}
 		return TierWANDirect
 	}
@@ -77,6 +92,8 @@ func GetTierTimeout(tier ProbingTier) time.Duration {
 	switch tier {
 	case TierLAN:
 		return 500 * time.Millisecond
+	case TierDirectIPv6:
+		return 1500 * time.Millisecond
 	case TierWANDirect:
 		return 2 * time.Second
 	case TierYggdrasil:
@@ -155,13 +172,14 @@ func (p *FastTieredProber) ProbeFast(
 		}
 	}
 
-	// Staggered multi-tier launch sequence
-	tiers := []ProbingTier{TierLAN, TierWANDirect, TierYggdrasil, TierTor}
+	// Staggered multi-tier launch sequence (Happy Eyeballs RFC 8305 cascade)
+	tiers := []ProbingTier{TierLAN, TierDirectIPv6, TierWANDirect, TierYggdrasil, TierTor}
 	staggerDelays := map[ProbingTier]time.Duration{
-		TierLAN:       0,
-		TierWANDirect: 100 * time.Millisecond,
-		TierYggdrasil: 250 * time.Millisecond,
-		TierTor:       400 * time.Millisecond,
+		TierLAN:        0,
+		TierDirectIPv6: 50 * time.Millisecond,
+		TierWANDirect:  150 * time.Millisecond,
+		TierYggdrasil:  300 * time.Millisecond,
+		TierTor:        500 * time.Millisecond,
 	}
 
 	for _, tier := range tiers {

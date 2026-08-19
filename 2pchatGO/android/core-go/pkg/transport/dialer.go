@@ -83,6 +83,19 @@ func (d *AdaptiveDialer) SetTorProxy(enabled bool, addr string) {
 	d.initTorDialer()
 }
 
+var yggdrasilSubnet = func() *net.IPNet {
+	_, subnet, _ := net.ParseCIDR("200::/7")
+	return subnet
+}()
+
+// IsYggdrasilIP returns true if the given IP falls within the Yggdrasil 200::/7 address space.
+func IsYggdrasilIP(ip net.IP) bool {
+	if ip == nil || ip.To4() != nil {
+		return false
+	}
+	return yggdrasilSubnet != nil && yggdrasilSubnet.Contains(ip)
+}
+
 // IsPrivateOrLocalIP returns true if the host is a loopback, private RFC1918, link-local, or unspecified IP.
 func IsPrivateOrLocalIP(host string) bool {
 	ip := net.ParseIP(host)
@@ -110,12 +123,19 @@ func (d *AdaptiveDialer) ClassifyEndpoint(address string) TransportType {
 		return TransportTor
 	}
 
-	if IsPrivateOrLocalIP(host) {
+	ip := net.ParseIP(host)
+	if ip != nil {
+		if IsPrivateOrLocalIP(host) {
+			return TransportDirect
+		}
+		if IsYggdrasilIP(ip) {
+			return TransportYggdrasil
+		}
+		// Direct public IPv4 or direct global mobile IPv6
+		if d.proxyEnabled {
+			return TransportTor
+		}
 		return TransportDirect
-	}
-
-	if strings.Contains(host, ":") {
-		return TransportYggdrasil
 	}
 
 	if d.proxyEnabled {

@@ -432,12 +432,17 @@ object P2PPreferences {
         }
     }
 
+    fun isYggdrasilEndpoint(endpoint: String): Boolean {
+        val clean = endpoint.trim().trim('[', ']').lowercase()
+        return clean.startsWith("200:") || clean.startsWith("300:") || clean.startsWith("0200:") || clean.startsWith("0300:")
+    }
+
     fun filterEndpointsByPreference(endpoints: List<String>, pref: PeerTransportPreference): List<String> {
         return when (pref) {
             PeerTransportPreference.AUTO -> endpoints
             PeerTransportPreference.TOR_ONLY -> endpoints.filter { it.contains(".onion", ignoreCase = true) }
-            PeerTransportPreference.YGGDRASIL_ONLY -> endpoints.filter { it.startsWith("[") || (it.contains(":") && it.count { c -> c == ':' } > 1) }
-            PeerTransportPreference.DIRECT_ONLY -> endpoints.filter { !it.contains(".onion", ignoreCase = true) && !it.startsWith("[") && it.count { c -> c == ':' } <= 1 }
+            PeerTransportPreference.YGGDRASIL_ONLY -> endpoints.filter { isYggdrasilEndpoint(it) }
+            PeerTransportPreference.DIRECT_ONLY -> endpoints.filter { !it.contains(".onion", ignoreCase = true) && !isYggdrasilEndpoint(it) }
         }
     }
 
