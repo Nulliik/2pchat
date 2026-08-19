@@ -35,6 +35,10 @@ open class PacketTunnelProvider: VpnService() {
         const val ACTION_CONNECT = "com.example.twopchat.yggdrasil.PacketTunnelProvider.CONNECT"
         const val ACTION_REGENERATE_KEYS = "com.example.twopchat.yggdrasil.PacketTunnelProvider.REGENERATE_KEYS"
         const val ACTION_RELOAD_PEERS = "com.example.twopchat.yggdrasil.PacketTunnelProvider.RELOAD_PEERS"
+
+        @Volatile
+        var isTunnelActive: Boolean = false
+            internal set
     }
 
     private var yggdrasil = Yggdrasil()
@@ -58,6 +62,7 @@ open class PacketTunnelProvider: VpnService() {
     }
 
     override fun onDestroy() {
+        isTunnelActive = false
         // Finish our side of the VPN before Service teardown. Calling stopSelf()
         // from onDestroy() can leave VpnService.Callback bound to an already
         // destroyed service until the system notices the closed TUN descriptor.
@@ -66,8 +71,12 @@ open class PacketTunnelProvider: VpnService() {
     }
 
     override fun onRevoke() {
-        // The platform has already deactivated the interface. Close native and
-        // file-descriptor resources before asking the service to stop.
+        Log.i(TAG, "VPN permission revoked by system or another VPN connected -> stopping Yggdrasil and marking disabled")
+        isTunnelActive = false
+        // When another VPN starts, Android revokes our VPN slot.
+        // We MUST update preferences to disabled so we don't aggressively fight the user's other VPN!
+        yggdrasilPrefs(this).edit().putBoolean(PREF_KEY_ENABLED, false).apply()
+        com.example.twopchat.P2PPreferences.prefs(this).edit().putBoolean("settings_yggdrasil", false).apply()
         stop()
     }
 
@@ -262,6 +271,8 @@ open class PacketTunnelProvider: VpnService() {
             updater()
         }
 
+        isTunnelActive = true
+
         val intent = Intent(YGG_STATE_INTENT)
         intent.putExtra("state", STATE_ENABLED)
         intent.setPackage(packageName)
@@ -269,6 +280,7 @@ open class PacketTunnelProvider: VpnService() {
     }
 
     private fun stop(stopService: Boolean = true) {
+        isTunnelActive = false
         val wasStarted = started.getAndSet(false)
         if (wasStarted) {
             runCatching { yggdrasil.stop() }
