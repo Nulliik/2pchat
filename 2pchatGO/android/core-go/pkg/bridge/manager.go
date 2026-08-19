@@ -119,7 +119,7 @@ func (m *SessionManager) Init() error {
 				keyData := make([]byte, 96)
 				copy(keyData[:32], id.Private.Bytes())
 				copy(keyData[32:96], id.Signing)
-				_ = os.WriteFile(keyPath, keyData, 0600)
+				_ = atomicWriteFile(keyPath, keyData, 0600)
 			}
 		}
 		m.identity = id
@@ -145,7 +145,7 @@ func (m *SessionManager) Init() error {
 				return fmt.Errorf("failed to generate signed prekey: %w", err)
 			}
 			if prekeyPath != "" {
-				_ = os.WriteFile(prekeyPath, priv.Bytes(), 0600)
+				_ = atomicWriteFile(prekeyPath, priv.Bytes(), 0600)
 			}
 		}
 		m.prekeyPriv = priv
@@ -250,11 +250,17 @@ func (m *SessionManager) UpdateTrackers(trackersJSON string) error {
 	return nil
 }
 
-// ReloadIdentity resets cached identity keys and reloads from disk.
+// ReloadIdentity resets cached identity keys, wipes them from memory, and reloads from disk.
 func (m *SessionManager) ReloadIdentity() error {
 	m.mu.Lock()
-	m.identity = nil
-	m.prekeyPriv = nil
+	if m.identity != nil {
+		m.identity.Zeroize()
+		m.identity = nil
+	}
+	if m.prekeyPriv != nil {
+		crypto.Zeroize(m.prekeyPriv[:])
+		m.prekeyPriv = nil
+	}
 	m.netManager = nil
 	m.discoverySvc = nil
 	m.mu.Unlock()
@@ -407,7 +413,7 @@ func (m *SessionManager) GetBoundPort() int {
 	return nm.Port()
 }
 
-// ConfigureLocalIdentity imports identity and updates manager state.
+// ConfigureLocalIdentity imports identity and updates manager state and persists to disk.
 func (m *SessionManager) ConfigureLocalIdentity(nickname, privB64, aboutMe string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -422,9 +428,43 @@ func (m *SessionManager) ConfigureLocalIdentity(nickname, privB64, aboutMe strin
 		return false
 	}
 
+	if m.identity != nil {
+		m.identity.Zeroize()
+	}
 	m.identity = idKey
+
+	// Generate fresh signed prekey for new identity
+	newPrekeyPriv, newPrekeyPub, err := crypto.GenerateX25519Keypair()
+	if err == nil {
+		if m.prekeyPriv != nil {
+			crypto.Zeroize(m.prekeyPriv[:])
+		}
+		m.prekeyPriv = newPrekeyPriv
+		m.prekeyPub = newPrekeyPub
+	}
+
+	// Persist new keys atomically to disk
+	effectiveDir := m.storageDir
+	if effectiveDir != "" {
+		keyPath := filepath.Join(effectiveDir, "identity_v1.key")
+		keyData := make([]byte, 96)
+		copy(keyData[:32], idKey.Private.Bytes())
+		copy(keyData[32:96], idKey.Signing)
+		_ = atomicWriteFile(keyPath, keyData, 0600)
+
+		if newPrekeyPriv != nil {
+			prekeyPath := filepath.Join(effectiveDir, "prekey_v1.key")
+			_ = atomicWriteFile(prekeyPath, newPrekeyPriv.Bytes(), 0600)
+		}
+	}
+
 	if m.netManager != nil {
 		m.netManager.SetNickname(nickname)
+		m.netManager.SetIdentity(idKey, newPrekeyPriv, newPrekeyPub)
+	}
+	if m.discoverySvc != nil {
+		fp := crypto.Fingerprint(idKey.Public.Bytes())
+		_ = m.discoverySvc.RegisterInfoHash(fp)
 	}
 	return true
 }
@@ -837,5 +877,14 @@ func (m *SessionManager) OnNetworkChanged() error {
 		return svc.RefreshAnnouncement()
 	}
 	return nil
+}
+
+// atomicWriteFile safely writes data to a temporary file before atomic rename to prevent corruption.
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	tmpPath := fmt.Sprintf("%s.tmp.%d", path, time.Now().UnixNano())
+	if err := os.WriteFile(tmpPath, data, perm); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 

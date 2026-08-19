@@ -107,6 +107,23 @@ func (m *Manager) SetNickname(nick string) {
 	m.nickname = nick
 }
 
+// SetIdentity dynamically updates the local identity and prekeys used for handshakes.
+func (m *Manager) SetIdentity(id *crypto.IdentityKeyPair, prekeyPriv *crypto.X25519PrivateKey, prekeyPub *crypto.X25519PublicKey) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if id != nil {
+		m.identity = id
+		m.fingerprint = crypto.Fingerprint(id.Public.Bytes())
+	}
+	if prekeyPriv != nil {
+		m.prekeyPriv = prekeyPriv
+	}
+	if prekeyPub != nil {
+		m.prekeyPub = prekeyPub
+	}
+}
+
 // Port returns the bound listening port.
 func (m *Manager) Port() int {
 	return m.listener.Port()
