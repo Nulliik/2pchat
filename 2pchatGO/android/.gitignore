@@ -1,0 +1,15 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+.externalNativeBuild/
+.cxx/
+captures/
+build/
+.DS_Store
+/*.png
+core-go/bin/
+*.test
+*.prof
+*.log
+

@@ -1,0 +1,154 @@
+package crypto
+
+import (
+	"bytes"
+	"crypto/rand"
+	"testing"
+)
+
+func TestGroupIdentitySignAndVerify(t *testing.T) {
+	privKey, pubKey, err := GenerateEd25519Keypair()
+	if err != nil {
+		t.Fatalf("GenerateEd25519Keypair failed: %v", err)
+	}
+
+	payload := "event_id:12345|group_id:group_xyz|action:post_message|author:alice"
+
+	sigB64, err := SignGroupPayload(privKey, payload)
+	if err != nil {
+		t.Fatalf("SignGroupPayload failed: %v", err)
+	}
+
+	if sigB64 == "" {
+		t.Fatal("expected non-empty signature base64")
+	}
+
+	// Verify valid signature
+	if !VerifyGroupPayload(pubKey, payload, sigB64) {
+		t.Fatal("VerifyGroupPayload returned false for valid signature")
+	}
+
+	// Verify signature rejected on tampered payload
+	tampered := payload + "|tampered"
+	if VerifyGroupPayload(pubKey, tampered, sigB64) {
+		t.Fatal("VerifyGroupPayload succeeded on tampered payload")
+	}
+
+	// Verify signature rejected with wrong public key
+	_, otherPubKey, _ := GenerateEd25519Keypair()
+	if VerifyGroupPayload(otherPubKey, payload, sigB64) {
+		t.Fatal("VerifyGroupPayload succeeded with wrong public key")
+	}
+}
+
+func TestGroupEpochAEADEncryptAndDecrypt(t *testing.T) {
+	epochSecret := make([]byte, GroupAEADKeySize)
+	if _, err := rand.Read(epochSecret); err != nil {
+		t.Fatalf("rand.Read failed: %v", err)
+	}
+
+	aad := []byte("group_id:abc|epoch:42")
+	plaintext := []byte("Secret group message payload 12345!")
+
+	nonceB64, ciphertextB64, err := GroupEncrypt(epochSecret, aad, plaintext)
+	if err != nil {
+		t.Fatalf("GroupEncrypt failed: %v", err)
+	}
+
+	if nonceB64 == "" || ciphertextB64 == "" {
+		t.Fatal("expected non-empty nonce and ciphertext")
+	}
+
+	// Decrypt with matching AAD and secret
+	decrypted, err := GroupDecrypt(epochSecret, aad, nonceB64, ciphertextB64)
+	if err != nil {
+		t.Fatalf("GroupDecrypt failed: %v", err)
+	}
+
+	if !bytes.Equal(decrypted, plaintext) {
+		t.Fatalf("decrypted text %q does not match original plaintext %q", decrypted, plaintext)
+	}
+
+	// Decrypt fails with mismatched AAD
+	wrongAAD := []byte("group_id:abc|epoch:43")
+	_, err = GroupDecrypt(epochSecret, wrongAAD, nonceB64, ciphertextB64)
+	if err == nil {
+		t.Fatal("expected decryption failure with mismatched AAD")
+	}
+
+	// Decrypt fails with wrong secret
+	wrongSecret := make([]byte, GroupAEADKeySize)
+	rand.Read(wrongSecret)
+	_, err = GroupDecrypt(wrongSecret, aad, nonceB64, ciphertextB64)
+	if err == nil {
+		t.Fatal("expected decryption failure with wrong epoch secret")
+	}
+}
+
+func TestSenderKeysRatchetProgression(t *testing.T) {
+	seed := make([]byte, KeySize)
+	rand.Read(seed)
+
+	senderState, err := NewSenderSessionState(seed)
+	if err != nil {
+		t.Fatalf("NewSenderSessionState failed: %v", err)
+	}
+
+	// Step 0
+	k0, err := senderState.RatchetKeyForIteration(0)
+	if err != nil {
+		t.Fatalf("RatchetKeyForIteration(0) failed: %v", err)
+	}
+	if k0.Iteration != 0 || len(k0.CipherKey) != KeySize || len(k0.Nonce) != GroupAEADNonceSize {
+		t.Fatalf("invalid key0 properties: %+v", k0)
+	}
+
+	// Step 2 (skipping 1)
+	k2, err := senderState.RatchetKeyForIteration(2)
+	if err != nil {
+		t.Fatalf("RatchetKeyForIteration(2) failed: %v", err)
+	}
+	if k2.Iteration != 2 {
+		t.Fatalf("expected iteration 2, got %d", k2.Iteration)
+	}
+
+	// Retrieve skipped step 1
+	k1, err := senderState.RatchetKeyForIteration(1)
+	if err != nil {
+		t.Fatalf("RatchetKeyForIteration(1) failed to retrieve from cache: %v", err)
+	}
+	if k1.Iteration != 1 {
+		t.Fatalf("expected iteration 1, got %d", k1.Iteration)
+	}
+
+	// Double retrieval of consumed key should fail
+	_, err = senderState.RatchetKeyForIteration(1)
+	if err == nil {
+		t.Fatal("expected error on re-using consumed message key 1")
+	}
+}
+
+func TestSenderSessionStateZeroize(t *testing.T) {
+	seed := make([]byte, KeySize)
+	for i := range seed {
+		seed[i] = byte(i + 1)
+	}
+
+	senderState, err := NewSenderSessionState(seed)
+	if err != nil {
+		t.Fatalf("failed to create sender state: %v", err)
+	}
+
+	_, _ = senderState.RatchetKeyForIteration(2) // Creates skipped keys
+
+	senderState.Zeroize()
+
+	for i, b := range senderState.ChainKey.Seed {
+		if b != 0 {
+			t.Fatalf("Chain key seed byte %d was not zeroed", i)
+		}
+	}
+	if len(senderState.SkippedKeys) != 0 {
+		t.Fatalf("Expected skipped keys to be cleared, got %d", len(senderState.SkippedKeys))
+	}
+}

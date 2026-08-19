@@ -1,0 +1,370 @@
+package session
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"strings"
+	"sync"
+	"time"
+	"twopchat/core/pkg/crypto"
+	"twopchat/core/pkg/transport"
+)
+
+// EventCallbacks defines JNI/Kotlin callback hooks for networking events.
+type EventCallbacks struct {
+	OnPeerConnected    func(peerFP, endpoint string)
+	OnPeerDisconnected func(peerFP, reason string)
+	OnMessageReceived  func(peerFP string, payload []byte, messageID string)
+	OnError            func(code int, message string)
+	OnFileProgress     func(peerFP string, messageID string, transferred int64, total int64, speedKbps float64)
+}
+
+// Manager manages P2P listening, outbound dialing, active sessions, and connection arbitration.
+type Manager struct {
+	mu              sync.RWMutex
+	identity        *crypto.IdentityKeyPair
+	prekeyPriv      *crypto.X25519PrivateKey
+	prekeyPub       *crypto.X25519PublicKey
+	dialer          *transport.AdaptiveDialer
+	listener        *transport.AsyncListener
+	sessions        map[string]*Session
+	peerEndp        map[string]string
+	callbacks       EventCallbacks
+	fileTransferMgr *transport.FileTransferManager
+	nickname        string
+	fingerprint     string
+	onionAddress    string
+}
+
+// NewManager creates a new network session Manager.
+func NewManager(
+	id *crypto.IdentityKeyPair,
+	prekeyPriv *crypto.X25519PrivateKey,
+	prekeyPub *crypto.X25519PublicKey,
+	torProxy string,
+	proxyEnabled bool,
+	callbacks EventCallbacks,
+) *Manager {
+	m := &Manager{
+		identity:    id,
+		prekeyPriv:  prekeyPriv,
+		prekeyPub:   prekeyPub,
+		dialer:      transport.NewAdaptiveDialer(torProxy, proxyEnabled, 10*time.Second),
+		listener:    transport.NewAsyncListener(),
+		sessions:    make(map[string]*Session),
+		peerEndp:    make(map[string]string),
+		callbacks:   callbacks,
+		fingerprint: crypto.Fingerprint(id.Public.Bytes()),
+	}
+	m.fileTransferMgr = transport.NewFileTransferManager(func(peerFP, msgID string, transferred, total int64, speed float64) {
+		if m.callbacks.OnFileProgress != nil {
+			m.callbacks.OnFileProgress(peerFP, msgID, transferred, total, speed)
+		}
+	})
+	return m
+}
+
+// StartListener starts the dual-stack TCP listener on the specified port.
+func (m *Manager) StartListener(port int) error {
+	return m.listener.Start(port, func(conn net.Conn) {
+		m.handleIncomingConnection(conn)
+	})
+}
+
+// StopListener stops the TCP listener.
+func (m *Manager) StopListener() error {
+	return m.listener.Stop()
+}
+
+// SetTorProxy updates the Tor SOCKS5 proxy configuration.
+func (m *Manager) SetTorProxy(enabled bool, addr string) {
+	m.dialer.SetTorProxy(enabled, addr)
+}
+
+// SetOnionAddress sets the local Tor v3 .onion hidden service hostname.
+func (m *Manager) SetOnionAddress(addr string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onionAddress = strings.TrimSpace(addr)
+}
+
+// GetOnionAddress returns the configured local Tor v3 .onion hostname.
+func (m *Manager) GetOnionAddress() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.onionAddress
+}
+
+// SetNickname sets the local user nickname for outgoing messages.
+func (m *Manager) SetNickname(nick string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.nickname = nick
+}
+
+// Port returns the bound listening port.
+func (m *Manager) Port() int {
+	return m.listener.Port()
+}
+
+// Fingerprint returns the local identity fingerprint.
+func (m *Manager) Fingerprint() string {
+	return m.fingerprint
+}
+
+func (m *Manager) handleIncomingConnection(conn net.Conn) {
+	sess, err := NewSession(
+		conn,
+		false, // responder
+		m.identity,
+		m.prekeyPriv,
+		m.prekeyPub,
+		"", // accept any valid key during incoming connection
+		10*time.Second,
+	)
+	if err != nil {
+		if m.callbacks.OnError != nil {
+			m.callbacks.OnError(1, fmt.Sprintf("Incoming handshake failed: %v", err))
+		}
+		return
+	}
+
+	m.mu.RLock()
+	onion := m.onionAddress
+	m.mu.RUnlock()
+
+	endpoint := conn.RemoteAddr().String()
+	if onion != "" && (strings.HasPrefix(endpoint, "127.0.0.1:") || strings.HasPrefix(endpoint, "[::1]:")) {
+		sess.SetTorTransport(true)
+	}
+
+	peerFP := sess.PeerFingerprint()
+	m.RegisterSession(sess, peerFP, endpoint, false)
+}
+
+// ConnectPeer dials a remote peer endpoint and establishes an encrypted X3DH session.
+func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := m.dialer.DialContext(ctx, "tcp", endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial endpoint %s: %w", endpoint, err)
+	}
+
+	sess, err := NewSession(
+		conn,
+		true, // initiator
+		m.identity,
+		m.prekeyPriv,
+		m.prekeyPub,
+		expectedFingerprint,
+		10*time.Second,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("initiator handshake failed with %s: %w", endpoint, err)
+	}
+
+	if strings.HasSuffix(strings.ToLower(endpoint), ".onion") || m.dialer.ClassifyEndpoint(endpoint) == transport.TransportTor {
+		sess.SetTorTransport(true)
+	}
+
+	peerFP := sess.PeerFingerprint()
+	m.RegisterSession(sess, peerFP, endpoint, true)
+	return sess, nil
+}
+
+// RegisterSession handles tie-breaking and registers the active session.
+func (m *Manager) RegisterSession(newSess *Session, peerFP, endpoint string, initiator bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	existing, exists := m.sessions[peerFP]
+	if exists && existing.IsOnline() {
+		// Tie-breaking: the peer with lexicographically smaller fingerprint keeps outbound dial
+		preferInitiator := m.fingerprint < peerFP
+		existingIsPreferred := existing.initiator == preferInitiator
+		newIsPreferred := initiator == preferInitiator
+
+		if existingIsPreferred || !newIsPreferred {
+			// Reject new duplicate connection
+			go func() { _ = newSess.Close() }()
+			return
+		}
+
+		// Replace existing with new preferred connection
+		go func() { _ = existing.Close() }()
+	}
+
+	m.sessions[peerFP] = newSess
+	m.peerEndp[peerFP] = endpoint
+
+	if m.callbacks.OnPeerConnected != nil {
+		m.callbacks.OnPeerConnected(peerFP, endpoint)
+	}
+
+	go m.dispatchSessionMessages(newSess, peerFP)
+}
+
+func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
+	disconnectedNotified := false
+	defer func() {
+		m.mu.Lock()
+		wasActive := false
+		if current, ok := m.sessions[peerFP]; ok && current == s {
+			delete(m.sessions, peerFP)
+			wasActive = true
+		}
+		m.mu.Unlock()
+
+		if wasActive && !disconnectedNotified && m.callbacks.OnPeerDisconnected != nil {
+			m.callbacks.OnPeerDisconnected(peerFP, "connection terminated")
+		}
+	}()
+
+	for msg := range s.Messages() {
+		msgType, _ := msg["type"].(string)
+
+		if msgType == string(TypeStatus) {
+			if state, _ := msg["state"].(string); state == "offline" {
+				reason, _ := msg["reason"].(string)
+				m.mu.Lock()
+				if current, ok := m.sessions[peerFP]; ok && current == s {
+					delete(m.sessions, peerFP)
+				}
+				m.mu.Unlock()
+
+				disconnectedNotified = true
+				if m.callbacks.OnPeerDisconnected != nil {
+					m.callbacks.OnPeerDisconnected(peerFP, reason)
+				}
+				return
+			}
+			continue
+		}
+
+		if msgType == string(TypeAck) {
+			continue
+		}
+
+		raw, err := EncodeMessage(msg)
+		if err == nil && m.callbacks.OnMessageReceived != nil {
+			msgID, _ := msg["id"].(string)
+			m.callbacks.OnMessageReceived(peerFP, raw, msgID)
+		}
+	}
+}
+
+// SendMessage sends a text message to a connected peer.
+func (m *Manager) SendMessage(peerFP, text string) (string, error) {
+	m.mu.RLock()
+	s, exists := m.sessions[peerFP]
+	if !exists || !s.IsOnline() {
+		// Fallback: if caller passed a nickname or endpoint instead of full fingerprint, find matching active session
+		for fp, sess := range m.sessions {
+			if sess.IsOnline() && (fp == peerFP || m.peerEndp[fp] == peerFP) {
+				s = sess
+				exists = true
+				break
+			}
+		}
+		if !exists && len(m.sessions) == 1 {
+			for _, sess := range m.sessions {
+				if sess.IsOnline() {
+					s = sess
+					exists = true
+					break
+				}
+			}
+		}
+	}
+	nick := m.nickname
+	m.mu.RUnlock()
+
+	if !exists || !s.IsOnline() {
+		return "", errors.New("peer is not connected")
+	}
+
+	return s.SendChat(text, nick)
+}
+
+// SendFile streams a local file to a connected peer in 64KB chunks.
+func (m *Manager) SendFile(peerFP, filePath, messageID, fileName string) (string, error) {
+	m.mu.RLock()
+	s, exists := m.sessions[peerFP]
+	if !exists || !s.IsOnline() {
+		for fp, sess := range m.sessions {
+			if sess.IsOnline() && (fp == peerFP || m.peerEndp[fp] == peerFP) {
+				s = sess
+				exists = true
+				break
+			}
+		}
+		if !exists && len(m.sessions) == 1 {
+			for _, sess := range m.sessions {
+				if sess.IsOnline() {
+					s = sess
+					exists = true
+					break
+				}
+			}
+		}
+	}
+	m.mu.RUnlock()
+
+	if !exists || !s.IsOnline() {
+		return "", errors.New("peer is not connected")
+	}
+
+	if messageID == "" {
+		messageID = fmt.Sprintf("file_%d", time.Now().UnixNano())
+	}
+
+	go func() {
+		_ = m.fileTransferMgr.SendFileStream(
+			context.Background(),
+			peerFP,
+			messageID,
+			filePath,
+			fileName,
+			func(payload []byte) error {
+				chunkMsg := map[string]any{
+					"type":       string(TypeFileChunk),
+					"message_id": messageID,
+					"payload":    strings.TrimSpace(transport.EncodeMetadataB64(payload)),
+				}
+				_, err := s.SendReliable(chunkMsg)
+				return err
+			},
+		)
+	}()
+
+	return messageID, nil
+}
+
+// CancelFile cancels an active file transfer by messageID.
+func (m *Manager) CancelFile(messageID string) bool {
+	return m.fileTransferMgr.CancelTransfer(messageID)
+}
+
+// GetSession returns an active session for the peer if present.
+func (m *Manager) GetSession(peerFP string) *Session {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.sessions[peerFP]
+}
+
+// Close closes the manager, listener, and all active sessions.
+func (m *Manager) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	_ = m.listener.Stop()
+	for _, s := range m.sessions {
+		_ = s.Close()
+	}
+	m.sessions = make(map[string]*Session)
+	return nil
+}

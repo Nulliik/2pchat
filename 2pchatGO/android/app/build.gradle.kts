@@ -1,0 +1,165 @@
+import java.security.MessageDigest
+
+plugins {
+  alias(libs.plugins.android.application)
+  alias(libs.plugins.compose.compiler)
+  alias(libs.plugins.kotlin.serialization)
+}
+
+val pluggableTransportBinaries by configurations.creating
+val generatedBridgeJniLibs = layout.buildDirectory.dir("generated/jniLibs/bridgeTransport")
+val expectedLyrebirdSha256 = "2d70a38393ee6f1760a65a33dd971210efa06b5a355ebea829196b61fd9fd11a"
+val unpackBridgeTransportBinaries by tasks.registering(Sync::class) {
+    from({ pluggableTransportBinaries.map { zipTree(it) } })
+    into(generatedBridgeJniLibs)
+    doFirst {
+        val artifacts = pluggableTransportBinaries.files
+        check(artifacts.size == 1) { "Expected exactly one Lyrebird artifact" }
+        val artifact = artifacts.single()
+        val digest = MessageDigest.getInstance("SHA-256")
+        artifact.inputStream().buffered().use { input ->
+            val buffer = ByteArray(8192)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        check(actual == expectedLyrebirdSha256) {
+            "Lyrebird artifact checksum mismatch"
+        }
+    }
+}
+
+android {
+    namespace = "com.example.twopchat"
+    compileSdk = 37
+    ndkVersion = "26.1.10909125"
+    defaultConfig {
+        applicationId = "com.example.twopchat"
+        minSdk = 24
+        targetSdk = 36
+        versionCode = 7
+        versionName = "0.0.7"
+        ndk {
+            abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    buildFeatures {
+      compose = true
+      aidl = false
+      buildConfig = false
+      shaders = false
+    }
+
+    testOptions {
+      unitTests.isReturnDefaultValues = true
+    }
+
+    packaging {
+      resources {
+        excludes += "/META-INF/{AL2.0,LGPL2.1}"
+      }
+      jniLibs {
+        useLegacyPackaging = true
+        keepDebugSymbols.add("**/libgojni.so")
+        keepDebugSymbols.add("**/liblyrebird.so")
+        keepDebugSymbols.add("**/lib2pcore.so")
+      }
+    }
+    sourceSets.getByName("main").jniLibs.directories.add(
+        generatedBridgeJniLibs.get().asFile.absolutePath
+    )
+}
+
+tasks.named("preBuild") {
+    dependsOn(unpackBridgeTransportBinaries)
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+  // Reproducible standalone Tor managed transport. Keeping this executable
+  // outside the runtime classpath avoids a second gomobile/libgojni runtime.
+  add(pluggableTransportBinaries.name, "org.briarproject:lyrebird-android:0.6.2")
+
+  val composeBom = platform(libs.androidx.compose.bom)
+  implementation(composeBom)
+  androidTestImplementation(composeBom)
+
+  // Core Android dependencies
+  implementation(libs.androidx.core.ktx)
+  implementation(libs.androidx.lifecycle.runtime.ktx)
+  implementation(libs.androidx.activity.compose)
+
+  // Arch Components
+  implementation(libs.androidx.lifecycle.runtime.compose)
+  implementation(libs.androidx.lifecycle.viewmodel.compose)
+  implementation("androidx.lifecycle:lifecycle-process:2.8.7")
+  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+  implementation("androidx.work:work-runtime:2.11.2")
+  implementation("com.github.penfeizhou.android.animation:awebp:3.0.5")
+
+  // Compose
+  implementation(libs.androidx.compose.ui)
+  implementation(libs.androidx.compose.ui.tooling.preview)
+  implementation(libs.androidx.compose.material3)
+  implementation("androidx.compose.material:material-icons-core")
+  // Tooling
+  debugImplementation(libs.androidx.compose.ui.tooling)
+  // Instrumented tests
+  androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+  debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+  // Local tests: jUnit, coroutines, Android runner
+  testImplementation(libs.junit)
+  testImplementation(libs.kotlinx.coroutines.test)
+
+  // Instrumented tests: jUnit rules and runners
+  androidTestImplementation(libs.androidx.test.core)
+  androidTestImplementation(libs.androidx.test.ext.junit)
+  androidTestImplementation(libs.androidx.test.runner)
+  androidTestImplementation(libs.androidx.test.espresso.core)
+
+  // Navigation
+  implementation(libs.androidx.navigation3.ui)
+  implementation(libs.androidx.navigation3.runtime)
+  implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+
+  // Yggdrasil dependencies
+  implementation(files("libs/yggdrasil.aar"))
+  implementation("androidx.preference:preference-ktx:1.2.1")
+  implementation("androidx.security:security-crypto:1.1.0")
+  implementation("net.zetetic:sqlcipher-android:4.6.1")
+  implementation("androidx.sqlite:sqlite:2.3.1")
+
+  // Media3 ExoPlayer for Video Player
+  implementation("androidx.media3:media3-exoplayer:1.5.1")
+  implementation("androidx.media3:media3-ui:1.5.1")
+
+  // QR Code Generation & Scanning
+  implementation("com.google.zxing:core:3.5.3")
+  implementation("com.google.mlkit:barcode-scanning:17.3.0")
+  implementation("androidx.camera:camera-camera2:1.4.1")
+  implementation("androidx.camera:camera-lifecycle:1.4.1")
+  implementation("androidx.camera:camera-view:1.4.1")
+
+  // Embedded Tor & NetCipher dependencies
+  implementation("info.guardianproject:tor-android:0.4.9.11")
+  implementation("info.guardianproject:jtorctl:0.4.5.7")
+  implementation("info.guardianproject.netcipher:netcipher:2.1.0")
+}

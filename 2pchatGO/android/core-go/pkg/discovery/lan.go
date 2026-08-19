@@ -1,0 +1,176 @@
+package discovery
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+const (
+	DefaultLANPort        = 50002
+	DefaultBeaconInterval = 5 * time.Second
+	LANServiceName        = "2pchat"
+)
+
+// LANBeacon represents the payload broadcast over local subnet.
+type LANBeacon struct {
+	Service     string `json:"service"`
+	Fingerprint string `json:"fingerprint"`
+	Port        int    `json:"port"`
+	Timestamp   int64  `json:"timestamp"`
+}
+
+// LANDiscoveryHandler is called when a local peer is detected via LAN broadcast.
+type LANDiscoveryHandler func(peerFP string, endpoint string)
+
+// LANEngine handles local network peer discovery via UDP broadcast/multicast.
+type LANEngine struct {
+	mu          sync.Mutex
+	fingerprint string
+	tcpPort     int
+	udpPort     int
+	running     int32
+	listener    *net.UDPConn
+	handler     LANDiscoveryHandler
+	ctx         context.Context
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
+}
+
+// NewLANEngine creates a new LAN discovery engine.
+func NewLANEngine(fingerprint string, tcpPort, udpPort int, handler LANDiscoveryHandler) *LANEngine {
+	if udpPort <= 0 {
+		udpPort = DefaultLANPort
+	}
+	return &LANEngine{
+		fingerprint: fingerprint,
+		tcpPort:     tcpPort,
+		udpPort:     udpPort,
+		handler:     handler,
+	}
+}
+
+// Start launches the background LAN beacon listener and periodic broadcaster.
+func (e *LANEngine) Start() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if atomic.LoadInt32(&e.running) == 1 {
+		return nil
+	}
+
+	lAddr := &net.UDPAddr{Port: e.udpPort}
+	conn, err := net.ListenUDP("udp4", lAddr)
+	if err != nil {
+		return fmt.Errorf("failed to bind LAN UDP listener on port %d: %w", e.udpPort, err)
+	}
+
+	e.listener = conn
+	e.ctx, e.cancel = context.WithCancel(context.Background())
+	atomic.StoreInt32(&e.running, 1)
+
+	e.wg.Add(2)
+	go e.listenLoop(conn)
+	go e.broadcastLoop()
+
+	return nil
+}
+
+func (e *LANEngine) listenLoop(conn *net.UDPConn) {
+	defer e.wg.Done()
+	buf := make([]byte, 1024)
+
+	for {
+		n, rAddr, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			return
+		}
+
+		var beacon LANBeacon
+		if err := json.Unmarshal(buf[:n], &beacon); err != nil {
+			continue
+		}
+
+		if beacon.Service != LANServiceName || beacon.Fingerprint == e.fingerprint || beacon.Port <= 0 {
+			continue // Ignore our own beacons and foreign packets
+		}
+
+		endpoint := net.JoinHostPort(rAddr.IP.String(), strconv.Itoa(beacon.Port))
+		if e.handler != nil {
+			e.handler(beacon.Fingerprint, endpoint)
+		}
+	}
+}
+
+func (e *LANEngine) broadcastLoop() {
+	defer e.wg.Done()
+	ticker := time.NewTicker(DefaultBeaconInterval)
+	defer ticker.Stop()
+
+	// Initial broadcast on start
+	e.sendBeacon()
+
+	for {
+		select {
+		case <-e.ctx.Done():
+			return
+		case <-ticker.C:
+			e.sendBeacon()
+		}
+	}
+}
+
+func (e *LANEngine) sendBeacon() {
+	beacon := LANBeacon{
+		Service:     LANServiceName,
+		Fingerprint: e.fingerprint,
+		Port:        e.tcpPort,
+		Timestamp:   time.Now().Unix(),
+	}
+
+	data, err := json.Marshal(beacon)
+	if err != nil {
+		return
+	}
+
+	// Send to 255.255.255.255:udpPort
+	bAddr := &net.UDPAddr{
+		IP:   net.IPv4bcast,
+		Port: e.udpPort,
+	}
+
+	conn, err := net.DialUDP("udp4", nil, bAddr)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	_, _ = conn.Write(data)
+}
+
+// Stop halts the LAN broadcaster and closes the UDP socket.
+func (e *LANEngine) Stop() error {
+	e.mu.Lock()
+	if atomic.LoadInt32(&e.running) == 0 {
+		e.mu.Unlock()
+		return nil
+	}
+
+	atomic.StoreInt32(&e.running, 0)
+	if e.cancel != nil {
+		e.cancel()
+	}
+	if e.listener != nil {
+		_ = e.listener.Close()
+		e.listener = nil
+	}
+	e.mu.Unlock()
+
+	e.wg.Wait()
+	return nil
+}
