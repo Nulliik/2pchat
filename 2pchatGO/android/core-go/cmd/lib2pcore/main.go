@@ -253,6 +253,25 @@ func Java_com_example_twopchat_NativeBridge_nativeSendMessage(
 	return C.createJString(env, cID)
 }
 
+//export Java_com_example_twopchat_NativeBridge_nativeIsPeerOnline
+func Java_com_example_twopchat_NativeBridge_nativeIsPeerOnline(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPeerFP C.jstring,
+) C.jboolean {
+	cFP := C.getJStringUTFChars(env, jPeerFP)
+	if cFP == nil {
+		return C.JNI_FALSE
+	}
+	peerFP := C.GoString(cFP)
+	C.releaseJStringUTFChars(env, jPeerFP, cFP)
+
+	if bridge.GetManager().IsPeerOnline(peerFP) {
+		return C.JNI_TRUE
+	}
+	return C.JNI_FALSE
+}
+
 //export Java_com_example_twopchat_NativeBridge_nativeSendFile
 func Java_com_example_twopchat_NativeBridge_nativeSendFile(
 	env *C.JNIEnv,

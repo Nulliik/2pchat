@@ -284,9 +284,17 @@ class NativeBridgeImpl : IP2PBridge {
     }
 
     override fun isPeerOnline(peerName: String, expectedFingerprint: String?): Boolean {
-        if (nameToFpMap[peerName]?.let { onlinePeers[it] == true } == true) return true
+        if (!expectedFingerprint.isNullOrBlank()) {
+            if (NativeBridge.isPeerOnline(expectedFingerprint)) return true
+            if (onlinePeers[expectedFingerprint] == true) return true
+        }
+        val fp = nameToFpMap[peerName]
+        if (!fp.isNullOrBlank()) {
+            if (NativeBridge.isPeerOnline(fp)) return true
+            if (onlinePeers[fp] == true) return true
+        }
+        if (NativeBridge.isPeerOnline(peerName)) return true
         if (onlinePeers[peerName] == true) return true
-        if (!expectedFingerprint.isNullOrBlank() && onlinePeers[expectedFingerprint] == true) return true
         return false
     }
 

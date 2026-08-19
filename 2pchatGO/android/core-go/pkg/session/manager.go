@@ -234,14 +234,18 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 			if state, _ := msg["state"].(string); state == "offline" {
 				reason, _ := msg["reason"].(string)
 				m.mu.Lock()
+				wasActive := false
 				if current, ok := m.sessions[peerFP]; ok && current == s {
 					delete(m.sessions, peerFP)
+					wasActive = true
 				}
 				m.mu.Unlock()
 
-				disconnectedNotified = true
-				if m.callbacks.OnPeerDisconnected != nil {
-					m.callbacks.OnPeerDisconnected(peerFP, reason)
+				if wasActive {
+					disconnectedNotified = true
+					if m.callbacks.OnPeerDisconnected != nil {
+						m.callbacks.OnPeerDisconnected(peerFP, reason)
+					}
 				}
 				return
 			}
@@ -370,6 +374,22 @@ func (m *Manager) SendMessage(peerFP, text string) (string, error) {
 	}
 
 	return s.SendChat(text, nick)
+}
+
+// IsPeerOnline returns true if there is an active online session for peerFP or endpoint.
+func (m *Manager) IsPeerOnline(peerFP string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if s, exists := m.sessions[peerFP]; exists && s.IsOnline() {
+		return true
+	}
+	for fp, sess := range m.sessions {
+		if sess.IsOnline() && (fp == peerFP || m.peerEndp[fp] == peerFP) {
+			return true
+		}
+	}
+	return false
 }
 
 // SendFile streams a local file to a connected peer in 64KB chunks.

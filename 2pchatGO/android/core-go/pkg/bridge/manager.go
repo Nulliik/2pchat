@@ -499,6 +499,18 @@ func (m *SessionManager) SendMessage(peerFP, text string) (string, error) {
 	return nm.SendMessage(peerFP, text)
 }
 
+// IsPeerOnline checks if there is an active connection to peerFP.
+func (m *SessionManager) IsPeerOnline(peerFP string) bool {
+	m.mu.RLock()
+	nm := m.netManager
+	m.mu.RUnlock()
+
+	if nm == nil {
+		return false
+	}
+	return nm.IsPeerOnline(peerFP)
+}
+
 // SendFile streams a local file to a connected peer in 64KB chunks.
 func (m *SessionManager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji string) (string, error) {
 	m.mu.RLock()

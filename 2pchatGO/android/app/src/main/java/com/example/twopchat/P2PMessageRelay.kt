@@ -1828,6 +1828,7 @@ object P2PMessageRelay {
                             }
                             apply()
                         }
+                    getBridge(appContext).updatePeerNameMapping(fingerprint, resolvedPeerName)
                     log(appContext, "Secure Double Ratchet session established")
                     publishPeerOnline(
                         peerName = resolvedPeerName,
@@ -1863,6 +1864,10 @@ object P2PMessageRelay {
 
                 override fun onSessionClosed(peerName: String, fingerprint: String) {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
+                    if (getBridge(appContext).isPeerOnline(resolvedPeerName, fingerprint)) {
+                        log(appContext, "Secure session closed but active connection still online for $resolvedPeerName")
+                        return
+                    }
                     log(appContext, "Secure Double Ratchet session closed")
                     schedulePeerOffline(resolvedPeerName)
                 }
