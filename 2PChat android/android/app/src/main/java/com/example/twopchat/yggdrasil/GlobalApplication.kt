@@ -21,7 +21,11 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
         System.loadLibrary("sqlcipher")
         val prefs = yggdrasilPrefs(applicationContext)
         if (!prefs.contains(PREF_KEY_ENABLED)) {
-            prefs.edit().putBoolean(PREF_KEY_ENABLED, true).apply()
+            // A VpnService cannot establish its TUN device until the user has
+            // approved Android's VPN consent dialog. Starting it optimistically
+            // from the first network callback makes establish() return null and
+            // leaves a fresh install looking permanently offline.
+            prefs.edit().putBoolean(PREF_KEY_ENABLED, false).apply()
         }
         config = ConfigurationProxy(applicationContext)
         val callback = NetworkStateCallback(this)

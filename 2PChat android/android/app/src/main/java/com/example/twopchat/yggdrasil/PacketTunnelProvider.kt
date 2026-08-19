@@ -172,6 +172,16 @@ open class PacketTunnelProvider: VpnService() {
     }
 
     private fun startTunnel() {
+        // Network callbacks can arrive before the user accepts the Android VPN
+        // consent dialog (or after the OS revokes a prior grant). Do not start
+        // the native router in that state: Builder.establish() only returns
+        // null, which previously looked like a broken Yggdrasil connection.
+        if (VpnService.prepare(this) != null) {
+            Log.w(TAG, "VPN consent is missing; Yggdrasil tunnel was not started")
+            updateRuntimeState("", STATE_DISABLED)
+            stop(stopService = true)
+            return
+        }
 
         val notification = createServiceNotification(this, State.Enabled)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {

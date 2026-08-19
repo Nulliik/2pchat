@@ -22,7 +22,7 @@ class NetworkStateCallback(val context: Context) : ConnectivityManager.NetworkCa
         Log.d(TAG, "onAvailable")
 
         val preferences = yggdrasilPrefs(context)
-        if (preferences.getBoolean(PREF_KEY_ENABLED, true)) {
+        if (preferences.getBoolean(PREF_KEY_ENABLED, false) && VpnService.prepare(context) == null) {
             scope.launch {
                 // The message often arrives before the connection is fully established
                 delay(1000)

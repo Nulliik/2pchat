@@ -21,7 +21,9 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
         System.loadLibrary("sqlcipher")
         val prefs = yggdrasilPrefs(applicationContext)
         if (!prefs.contains(PREF_KEY_ENABLED)) {
-            prefs.edit().putBoolean(PREF_KEY_ENABLED, true).apply()
+            // Wait for explicit VPN consent. Starting from a network callback
+            // before it is granted makes Builder.establish() return null.
+            prefs.edit().putBoolean(PREF_KEY_ENABLED, false).apply()
         }
         config = ConfigurationProxy(applicationContext)
         val callback = NetworkStateCallback(this)

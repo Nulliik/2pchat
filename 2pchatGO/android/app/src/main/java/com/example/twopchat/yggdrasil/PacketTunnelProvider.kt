@@ -172,6 +172,15 @@ open class PacketTunnelProvider: VpnService() {
     }
 
     private fun startTunnel() {
+        // A network callback may run before Android has granted VPN consent,
+        // or after it revoked a previous grant. Avoid starting native Yggdrasil
+        // when Builder.establish() cannot create its TUN descriptor.
+        if (VpnService.prepare(this) != null) {
+            Log.w(TAG, "VPN consent is missing; Yggdrasil tunnel was not started")
+            updateRuntimeState("", STATE_DISABLED)
+            stop(stopService = true)
+            return
+        }
 
         val notification = createServiceNotification(this, State.Enabled)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
