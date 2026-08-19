@@ -381,6 +381,11 @@ func (m *SessionManager) StopListener() error {
 	return nm.StopListener()
 }
 
+// Close stops the listener and cleans up resources.
+func (m *SessionManager) Close() error {
+	return m.StopListener()
+}
+
 // GetLocalFingerprint returns the local identity fingerprint string.
 func (m *SessionManager) GetLocalFingerprint() string {
 	m.mu.RLock()
