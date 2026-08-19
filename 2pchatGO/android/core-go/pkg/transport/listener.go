@@ -70,12 +70,9 @@ func (l *AsyncListener) acceptLoop(listener net.Listener, handler ConnectionHand
 			if atomic.LoadInt32(&l.running) == 0 {
 				return // Normal shutdown
 			}
-			var netErr net.Error
-			if errors.As(err, &netErr) && netErr.Timeout() {
-				time.Sleep(10 * time.Millisecond)
-				continue
-			}
-			return
+			// Transient accept error (network switch, socket abort, or temporary OS error)
+			time.Sleep(50 * time.Millisecond)
+			continue
 		}
 
 		// Handle each incoming connection asynchronously in its own goroutine
