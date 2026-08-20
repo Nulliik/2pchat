@@ -320,7 +320,14 @@ func (m *SessionManager) ProbePeer(endpointsJSON, expectedFingerprint string) er
 	m.mu.RUnlock()
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		timeout := 15 * time.Second
+		for _, ep := range endpoints {
+			if strings.HasSuffix(strings.ToLower(ep), ".onion") {
+				timeout = 45 * time.Second
+				break
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
 		conn, winEndpoint, err := svc.ProbeFast(ctx, endpoints, func(c context.Context, ep string) (net.Conn, error) {

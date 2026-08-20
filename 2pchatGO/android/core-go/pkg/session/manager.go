@@ -168,7 +168,11 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 
 // ConnectPeer dials a remote peer endpoint and establishes an encrypted X3DH session.
 func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	timeout := 15 * time.Second
+	if strings.HasSuffix(strings.ToLower(endpoint), ".onion") || (m.dialer != nil && m.dialer.ClassifyEndpoint(endpoint) == transport.TransportTor) {
+		timeout = 45 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	conn, err := m.dialer.DialContext(ctx, "tcp", endpoint)

@@ -59,6 +59,21 @@ open class PacketTunnelProvider: VpnService() {
     override fun onCreate() {
         super.onCreate()
         config = ConfigurationProxy(applicationContext)
+        val notification = createServiceNotification(this, State.Disabled)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                ServiceCompat.startForeground(
+                    this,
+                    SERVICE_NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                )
+            } else {
+                startForeground(SERVICE_NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to startForeground in onCreate", e)
+        }
     }
 
     override fun onDestroy() {

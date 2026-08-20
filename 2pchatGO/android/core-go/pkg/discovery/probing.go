@@ -99,7 +99,7 @@ func GetTierTimeout(tier ProbingTier) time.Duration {
 	case TierYggdrasil:
 		return 3 * time.Second
 	case TierTor:
-		return 8 * time.Second
+		return 35 * time.Second
 	default:
 		return 3 * time.Second
 	}

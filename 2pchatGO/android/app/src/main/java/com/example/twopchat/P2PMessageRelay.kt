@@ -2151,11 +2151,18 @@ object P2PMessageRelay {
                     return@launch
                 }
 
-                val resolvedEndpoint = endpoint.ifBlank { _peerEndpoints[peerName].orEmpty() }
+                val resolvedEndpoint = endpoint.ifBlank {
+                    resolvePeerEndpoint(
+                        peerName = peerName,
+                        liveEndpoint = _peerEndpoints[peerName],
+                        persistedEndpoint = prefs.getString(P2PPreferences.lastEndpoint(peerName), null),
+                        onionEndpoint = P2PPreferences.getPeerOnionAddress(context, peerName),
+                    ).orEmpty()
+                }
                 val bridge = getBridge(context)
 
-                if (!bridge.isPeerOnline(peerName, expectedFingerprint)) {
-                    log(context, "Peer $peerName is offline; onion address will be shared upon connection")
+                if (!bridge.isPeerOnline(peerName, expectedFingerprint) && resolvedEndpoint.isBlank()) {
+                    log(context, "Peer $peerName is offline and has no reachable endpoint; onion address will be shared upon connection")
                     return@launch
                 }
 

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	DefaultDialTimeout = 10 * time.Second
+	DefaultDialTimeout = 30 * time.Second
 	DefaultTorProxy    = "127.0.0.1:9050"
 )
 
@@ -194,7 +194,11 @@ func (d *AdaptiveDialer) DialContext(ctx context.Context, network, address strin
 
 // Dial is a convenience wrapper around DialContext.
 func (d *AdaptiveDialer) Dial(network, address string) (net.Conn, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), d.timeout)
+	timeout := d.timeout
+	if d.ClassifyEndpoint(address) == TransportTor {
+		timeout = 45 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return d.DialContext(ctx, network, address)
 }
