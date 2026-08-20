@@ -33,6 +33,7 @@ type Manager struct {
 	listener        *transport.AsyncListener
 	sessions        map[string]*Session
 	peerEndp        map[string]string
+	peerNames       map[string]string
 	callbacks       EventCallbacks
 	fileTransferMgr *transport.FileTransferManager
 	storageDir      string
@@ -58,6 +59,7 @@ func NewManager(
 		listener:    transport.NewAsyncListener(),
 		sessions:    make(map[string]*Session),
 		peerEndp:    make(map[string]string),
+		peerNames:   make(map[string]string),
 		callbacks:   callbacks,
 		fingerprint: crypto.Fingerprint(id.Public.Bytes()),
 	}
@@ -199,7 +201,6 @@ func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, e
 // RegisterSession handles tie-breaking and registers the active session.
 func (m *Manager) RegisterSession(newSess *Session, peerFP, endpoint string, initiator bool) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	existing, exists := m.sessions[peerFP]
 	if exists && existing.IsOnline() {
@@ -210,6 +211,7 @@ func (m *Manager) RegisterSession(newSess *Session, peerFP, endpoint string, ini
 
 		if existingIsPreferred || !newIsPreferred {
 			// Reject new duplicate connection
+			m.mu.Unlock()
 			go func() { _ = newSess.Close() }()
 			return
 		}
@@ -220,9 +222,11 @@ func (m *Manager) RegisterSession(newSess *Session, peerFP, endpoint string, ini
 
 	m.sessions[peerFP] = newSess
 	m.peerEndp[peerFP] = endpoint
+	onConnCb := m.callbacks.OnPeerConnected
+	m.mu.Unlock()
 
-	if m.callbacks.OnPeerConnected != nil {
-		m.callbacks.OnPeerConnected(peerFP, endpoint)
+	if onConnCb != nil {
+		onConnCb(peerFP, endpoint)
 	}
 
 	go m.dispatchSessionMessages(newSess, peerFP)
@@ -360,26 +364,51 @@ func guessMimeType(fileName string) string {
 	}
 }
 
+// UpdatePeerNameMapping maps a peer's identity fingerprint to a nickname for fallback lookup.
+func (m *Manager) UpdatePeerNameMapping(peerFP, nickname string) {
+	if peerFP == "" || nickname == "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.peerNames == nil {
+		m.peerNames = make(map[string]string)
+	}
+	m.peerNames[nickname] = peerFP
+	m.peerNames[peerFP] = nickname
+}
+
 // SendMessage sends a text message to a connected peer.
 func (m *Manager) SendMessage(peerFP, text string) (string, error) {
 	m.mu.RLock()
 	s, exists := m.sessions[peerFP]
 	if !exists || !s.IsOnline() {
-		// Fallback: if caller passed a nickname or endpoint instead of full fingerprint, find matching active session
-		for fp, sess := range m.sessions {
-			if sess.IsOnline() && (fp == peerFP || m.peerEndp[fp] == peerFP) {
+		// 1. Resolve peerFP as a nickname from peerNames map
+		if actualFP, ok := m.peerNames[peerFP]; ok {
+			if sess, ok := m.sessions[actualFP]; ok && sess.IsOnline() {
 				s = sess
 				exists = true
-				break
 			}
 		}
-		if !exists && len(m.sessions) == 1 {
-			for _, sess := range m.sessions {
-				if sess.IsOnline() {
+	}
+	if !exists || !s.IsOnline() {
+		// 2. Fallback: match by endpoint or case-insensitive nickname in peerNames
+		for fp, sess := range m.sessions {
+			if sess.IsOnline() {
+				if fp == peerFP || m.peerEndp[fp] == peerFP || strings.EqualFold(m.peerNames[fp], peerFP) {
 					s = sess
 					exists = true
 					break
 				}
+			}
+		}
+	}
+	if !exists && len(m.sessions) == 1 {
+		for _, sess := range m.sessions {
+			if sess.IsOnline() {
+				s = sess
+				exists = true
+				break
 			}
 		}
 	}
@@ -408,9 +437,16 @@ func (m *Manager) IsPeerOnline(peerFP string) bool {
 	if s, exists := m.sessions[peerFP]; exists && s.IsOnline() {
 		return true
 	}
-	for fp, sess := range m.sessions {
-		if sess.IsOnline() && (fp == peerFP || m.peerEndp[fp] == peerFP) {
+	if actualFP, ok := m.peerNames[peerFP]; ok {
+		if s, exists := m.sessions[actualFP]; exists && s.IsOnline() {
 			return true
+		}
+	}
+	for fp, sess := range m.sessions {
+		if sess.IsOnline() {
+			if fp == peerFP || m.peerEndp[fp] == peerFP || strings.EqualFold(m.peerNames[fp], peerFP) {
+				return true
+			}
 		}
 	}
 	return false

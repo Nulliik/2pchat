@@ -22,23 +22,23 @@ type DiscoveryCallback func(infoHashHex string, endpoint string, source string)
 
 // DiscoveryService manages tracker queries, LAN beacons, and peer endpoint discovery.
 type DiscoveryService struct {
-	mu          sync.RWMutex
-	fingerprint string
-	peerID      [20]byte
-	listenPort  int
-	torEnabled  bool
-	trackers    []string
-	infoHashes  map[string][20]byte
-	udpClient   *UDPTrackerClient
-	httpClient  *HTTPTrackerClient
-	lanEngine   *LANEngine
-	prober      *FastTieredProber
-	callback    DiscoveryCallback
-	running     int32
+	mu           sync.RWMutex
+	fingerprint  string
+	peerID       [20]byte
+	listenPort   int
+	torEnabled   bool
+	trackers     []string
+	infoHashes   map[string][20]byte
+	udpClient    *UDPTrackerClient
+	httpClient   *HTTPTrackerClient
+	lanEngine    *LANEngine
+	prober       *FastTieredProber
+	callback     DiscoveryCallback
+	running      int32
 	onionAddress string
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
 }
 
 // NewDiscoveryService creates a new unified DiscoveryService.
@@ -277,4 +277,3 @@ func (s *DiscoveryService) Stop() error {
 	s.wg.Wait()
 	return nil
 }
-

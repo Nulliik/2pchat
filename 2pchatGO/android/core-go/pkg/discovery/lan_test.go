@@ -78,4 +78,3 @@ func TestLANEngineRefreshAnnouncement(t *testing.T) {
 		t.Errorf("RefreshAnnouncement failed: %v", err)
 	}
 }
-

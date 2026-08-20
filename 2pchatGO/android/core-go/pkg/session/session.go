@@ -565,4 +565,3 @@ func (s *Session) SetTorTransport(isTor bool) {
 		s.ackTimeout = DefaultAckTimeout
 	}
 }
-

@@ -113,8 +113,7 @@ internal class RelayMaintenanceCoordinator(
 
                     for (peerName in chats) {
                         if (P2PPreferences.isPeerIdentityChangePending(appContext, peerName)) continue
-                        val isVerified = P2PPreferences.isPeerVerified(appContext, peerName)
-                        val fingerprint = if (isVerified) prefs.getString("peer_fingerprint_$peerName", "").orEmpty() else ""
+                        val fingerprint = prefs.getString("peer_fingerprint_$peerName", "").orEmpty()
                         if (bridge.isPeerOnline(peerName, fingerprint)) {
                             reconnectDelayMs.remove(peerName)
                             continue

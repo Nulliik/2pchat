@@ -389,3 +389,121 @@ func TestAdaptiveAckTimeoutForTor(t *testing.T) {
 	}
 }
 
+func TestManagerNicknameMappingAndCallbackDeadlockFreedom(t *testing.T) {
+	aliceId, _ := crypto.GenerateIdentityKeyPair()
+	bobId, _ := crypto.GenerateIdentityKeyPair()
+
+	alicePrekeyPriv, alicePrekeyPub, _ := crypto.GenerateX25519Keypair()
+	bobPrekeyPriv, bobPrekeyPub, _ := crypto.GenerateX25519Keypair()
+
+	aliceFP := crypto.Fingerprint(aliceId.Public.Bytes())
+	bobFP := crypto.Fingerprint(bobId.Public.Bytes())
+
+	var aliceMgr *Manager
+	var bobMgr *Manager
+
+	connectedCh := make(chan bool, 2)
+	messageReceivedCh := make(chan string, 2)
+
+	aliceMgr = NewManager(
+		aliceId,
+		alicePrekeyPriv,
+		alicePrekeyPub,
+		"",
+		false,
+		EventCallbacks{
+			OnPeerConnected: func(peerFP, endpoint string) {
+				// Verify deadlock safety: calling SendMessage or IsPeerOnline inside OnPeerConnected
+				// MUST NOT DEADLOCK because Manager mutex is released before calling OnPeerConnected.
+				if !aliceMgr.IsPeerOnline(peerFP) {
+					t.Errorf("Alice expected peer %s to be online during callback", peerFP)
+				}
+				// Also send a message directly from inside callback
+				_, err := aliceMgr.SendMessage("Bob", "Hello from Alice OnPeerConnected callback!")
+				if err != nil {
+					t.Errorf("Alice SendMessage from inside callback failed: %v", err)
+				}
+				connectedCh <- true
+			},
+			OnMessageReceived: func(peerFP string, payload []byte, messageID string) {
+				messageReceivedCh <- string(payload)
+			},
+		},
+	)
+	aliceMgr.SetNickname("Alice")
+
+	bobMgr = NewManager(
+		bobId,
+		bobPrekeyPriv,
+		bobPrekeyPub,
+		"",
+		false,
+		EventCallbacks{
+			OnPeerConnected: func(peerFP, endpoint string) {
+				if !bobMgr.IsPeerOnline(peerFP) {
+					t.Errorf("Bob expected peer %s to be online during callback", peerFP)
+				}
+				connectedCh <- true
+			},
+			OnMessageReceived: func(peerFP string, payload []byte, messageID string) {
+				messageReceivedCh <- string(payload)
+			},
+		},
+	)
+	bobMgr.SetNickname("Bob")
+
+	// Update nickname mappings on both sides
+	aliceMgr.UpdatePeerNameMapping(bobFP, "Bob")
+	bobMgr.UpdatePeerNameMapping(aliceFP, "Alice")
+
+	if err := bobMgr.StartListener(0); err != nil {
+		t.Fatalf("Bob failed to start listener: %v", err)
+	}
+	defer bobMgr.StopListener()
+
+	bobPort := bobMgr.Port()
+	bobEndpoint := fmt.Sprintf("127.0.0.1:%d", bobPort)
+
+	// Alice dials Bob
+	_, err := aliceMgr.ConnectPeer(bobEndpoint, bobFP)
+	if err != nil {
+		t.Fatalf("Alice ConnectPeer failed: %v", err)
+	}
+
+	// Wait for both connected callbacks
+	for i := 0; i < 2; i++ {
+		select {
+		case <-connectedCh:
+		case <-time.After(3 * time.Second):
+			t.Fatalf("Timed out waiting for OnPeerConnected callback %d", i)
+		}
+	}
+
+	// Verify Bob received the message Alice sent from inside her callback
+	select {
+	case payload := <-messageReceivedCh:
+		if payload == "" {
+			t.Fatalf("Expected non-empty message payload")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("Timed out waiting for message at Bob")
+	}
+
+	// Verify Bob can send a message back to Alice by nickname
+	msgID, err := bobMgr.SendMessage("Alice", "Hello Alice, reply from Bob!")
+	if err != nil {
+		t.Fatalf("Bob SendMessage by nickname failed: %v", err)
+	}
+	if msgID == "" {
+		t.Fatalf("Expected non-empty message ID")
+	}
+
+	select {
+	case payload := <-messageReceivedCh:
+		if payload == "" {
+			t.Fatalf("Expected non-empty reply payload at Alice")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatalf("Timed out waiting for reply at Alice")
+	}
+}

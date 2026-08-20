@@ -587,6 +587,17 @@ func (m *SessionManager) ConnectPeer(endpoint, expectedFingerprint string) error
 	return nil
 }
 
+// UpdatePeerNameMapping registers a mapping between peer fingerprint and nickname for lookup.
+func (m *SessionManager) UpdatePeerNameMapping(peerFP, nickname string) {
+	m.mu.RLock()
+	nm := m.netManager
+	m.mu.RUnlock()
+
+	if nm != nil {
+		nm.UpdatePeerNameMapping(peerFP, nickname)
+	}
+}
+
 // SendMessage sends a text message to a connected peer.
 func (m *SessionManager) SendMessage(peerFP, text string) (string, error) {
 	m.mu.RLock()
@@ -943,4 +954,3 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	}
 	return os.Rename(tmpPath, path)
 }
-

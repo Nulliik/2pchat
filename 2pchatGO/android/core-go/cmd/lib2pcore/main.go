@@ -6,10 +6,10 @@ package main
 import "C"
 import (
 	"fmt"
-	"unsafe"
 	"twopchat/core/pkg/bridge"
 	"twopchat/core/pkg/crypto"
 	"twopchat/core/pkg/session"
+	"unsafe"
 )
 
 func init() {
@@ -265,6 +265,31 @@ func Java_com_example_twopchat_NativeBridge_nativeConnectPeer(
 	if err != nil {
 		return C.JNI_FALSE
 	}
+	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeUpdatePeerNameMapping
+func Java_com_example_twopchat_NativeBridge_nativeUpdatePeerNameMapping(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jPeerFP C.jstring,
+	jNickname C.jstring,
+) C.jboolean {
+	cFP := C.getJStringUTFChars(env, jPeerFP)
+	if cFP == nil {
+		return C.JNI_FALSE
+	}
+	peerFP := C.GoString(cFP)
+	C.releaseJStringUTFChars(env, jPeerFP, cFP)
+
+	cNick := C.getJStringUTFChars(env, jNickname)
+	if cNick == nil {
+		return C.JNI_FALSE
+	}
+	nickname := C.GoString(cNick)
+	C.releaseJStringUTFChars(env, jNickname, cNick)
+
+	bridge.GetManager().UpdatePeerNameMapping(peerFP, nickname)
 	return C.JNI_TRUE
 }
 
@@ -764,6 +789,3 @@ func Java_com_example_twopchat_NativeBridge_nativeOnNetworkChanged(
 	}
 	return C.JNI_TRUE
 }
-
-
-

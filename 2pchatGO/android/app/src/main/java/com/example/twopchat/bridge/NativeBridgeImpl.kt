@@ -3,6 +3,7 @@ package com.example.twopchat.bridge
 import android.util.Log
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.P2PPreferences
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -41,28 +42,58 @@ class NativeBridgeImpl : IP2PBridge {
         setupNativeCallbacks()
     }
 
+    private fun resolvePeerName(fingerprint: String): String? {
+        if (fingerprint.isBlank()) return null
+        peerNameMap[fingerprint]?.let { return it }
+        val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        val name = P2PPreferences.findPeerNameByFingerprint(appContext, fingerprint)
+        if (!name.isNullOrBlank()) {
+            peerNameMap[fingerprint] = name
+            nameToFpMap[name] = fingerprint
+            NativeBridge.updatePeerNameMapping(fingerprint, name)
+            return name
+        }
+        return null
+    }
+
+    private fun resolveFingerprint(peerName: String): String? {
+        if (peerName.isBlank()) return null
+        nameToFpMap[peerName]?.let { return it }
+        val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        val fp = P2PPreferences.prefs(appContext).getString(P2PPreferences.peerFingerprint(peerName), null)
+        if (!fp.isNullOrBlank()) {
+            nameToFpMap[peerName] = fp
+            peerNameMap[fp] = peerName
+            NativeBridge.updatePeerNameMapping(fp, peerName)
+            return fp
+        }
+        return null
+    }
+
     private fun setupNativeCallbacks() {
         NativeBridge.onPeerConnectedListener = { peerFP, endpoint ->
             Log.i(TAG, "[GoCore] Peer connected: $peerFP @ $endpoint")
+            val resolvedName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
             onlinePeers[peerFP] = true
-            val peerName = peerNameMap[peerFP] ?: peerFP
-            onlinePeers[peerName] = true
-            nameToFpMap[peerName] = peerFP
-            sessionListener?.onSessionEstablished(peerName, peerFP, endpoint, "direct", "")
+            onlinePeers[resolvedName] = true
+            nameToFpMap[resolvedName] = peerFP
+            peerNameMap[peerFP] = resolvedName
+            NativeBridge.updatePeerNameMapping(peerFP, resolvedName)
+            sessionListener?.onSessionEstablished(resolvedName, peerFP, endpoint, "direct", "")
             flushPendingMessages(peerFP)
         }
 
         NativeBridge.onPeerDisconnectedListener = { peerFP, reason ->
             Log.i(TAG, "[GoCore] Peer disconnected: $peerFP, reason: $reason")
+            val resolvedName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
             onlinePeers[peerFP] = false
-            val peerName = peerNameMap[peerFP] ?: peerFP
-            onlinePeers[peerName] = false
-            sessionListener?.onSessionClosed(peerName, peerFP)
+            onlinePeers[resolvedName] = false
+            sessionListener?.onSessionClosed(resolvedName, peerFP)
         }
 
         NativeBridge.onMessageReceivedListener = { peerFP, payload, messageID ->
             val payloadStr = String(payload, Charsets.UTF_8)
-            val senderName = peerNameMap[peerFP] ?: peerFP
+            val senderName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
             messageListener?.onMessageReceived(senderName, payloadStr)
         }
 
@@ -76,7 +107,7 @@ class NativeBridgeImpl : IP2PBridge {
         }
 
         NativeBridge.onFileProgressListener = { peerFP, messageID, transferred, total, speed ->
-            val senderName = peerNameMap[peerFP] ?: peerFP
+            val senderName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
             messageListener?.onFileProgress(senderName, messageID, transferred, total, speed)
         }
     }
@@ -90,6 +121,7 @@ class NativeBridgeImpl : IP2PBridge {
             peerNameMap[fingerprint] = peerName
             nameToFpMap[peerName] = fingerprint
             onlinePeers[peerName] = (onlinePeers[fingerprint] == true)
+            NativeBridge.updatePeerNameMapping(fingerprint, peerName)
             flushPendingMessages(fingerprint)
         }
     }
@@ -136,48 +168,51 @@ class NativeBridgeImpl : IP2PBridge {
     }
 
     override fun sendP2pMessage(peerName: String, endpoint: String, payload: String, expectedFingerprint: String?): Boolean {
-        val activeFP = when {
-            nameToFpMap[peerName]?.let { onlinePeers[it] == true } == true -> nameToFpMap[peerName]!!
-            !expectedFingerprint.isNullOrBlank() && onlinePeers[expectedFingerprint] == true -> expectedFingerprint
-            onlinePeers[peerName] == true -> nameToFpMap[peerName] ?: peerName
-            else -> null
-        }
+        val resolvedFP = expectedFingerprint?.takeIf { it.isNotBlank() }
+            ?: resolveFingerprint(peerName)
+            ?: nameToFpMap[peerName]
 
-        if (activeFP == null && endpoint.isNotBlank()) {
-            val targetKey = expectedFingerprint?.takeIf { it.isNotBlank() } ?: peerName
+        val isLive = (resolvedFP != null && onlinePeers[resolvedFP] == true) || (onlinePeers[peerName] == true)
+
+        if (!isLive && endpoint.isNotBlank()) {
+            val targetKey = resolvedFP ?: peerName
             val queue = pendingMessages.getOrPut(targetKey) { ConcurrentLinkedQueue() }
             pruneExpiredPending(queue)
             queue.add(PendingMessage(payload, System.currentTimeMillis()))
-            if (targetKey != peerName) {
-                val nameQueue = pendingMessages.getOrPut(peerName) { ConcurrentLinkedQueue() }
-                pruneExpiredPending(nameQueue)
-                nameQueue.add(PendingMessage(payload, System.currentTimeMillis()))
-            }
+
             val candidateList = endpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
             if (candidateList.size > 1) {
-                NativeBridge.probePeer(candidateList, expectedFingerprint.orEmpty())
+                NativeBridge.probePeer(candidateList, resolvedFP.orEmpty())
             } else {
-                NativeBridge.connectPeer(endpoint, expectedFingerprint.orEmpty())
+                NativeBridge.connectPeer(endpoint, resolvedFP.orEmpty())
             }
             return true
         }
 
-        val target = activeFP ?: expectedFingerprint?.takeIf { it.isNotBlank() } ?: nameToFpMap[peerName] ?: peerName
+        val target = resolvedFP ?: peerName
         val msgId = NativeBridge.sendMessage(target, payload)
         return msgId != null
     }
 
     private fun flushPendingMessages(peerFingerprint: String) {
-        val peerName = peerNameMap[peerFingerprint]
+        val peerName = resolvePeerName(peerFingerprint) ?: peerNameMap[peerFingerprint]
         val queuesToFlush = mutableListOf<ConcurrentLinkedQueue<PendingMessage>>()
         pendingMessages.remove(peerFingerprint)?.let { queuesToFlush.add(it) }
-        if (peerName != null) {
+        if (peerName != null && peerName != peerFingerprint) {
             pendingMessages.remove(peerName)?.let { queuesToFlush.add(it) }
+        }
+        if (peerName != null) {
+            for (key in pendingMessages.keys()) {
+                if (key.equals(peerName, ignoreCase = true)) {
+                    pendingMessages.remove(key)?.let { queuesToFlush.add(it) }
+                }
+            }
         }
         if (queuesToFlush.isEmpty()) return
 
         Thread {
             val now = System.currentTimeMillis()
+            val target = peerFingerprint.ifBlank { peerName ?: "" }
             for (queue in queuesToFlush) {
                 while (true) {
                     val pending = queue.poll() ?: break
@@ -185,12 +220,12 @@ class NativeBridgeImpl : IP2PBridge {
                         Log.d(TAG, "[GoCore] Discarded expired pending message for $peerFingerprint (age: ${now - pending.timestampMs}ms)")
                         continue
                     }
-                    if (NativeBridge.sendMessage(peerFingerprint, pending.payload) == null) {
+                    if (NativeBridge.sendMessage(target, pending.payload) == null) {
                         // Preserve the unsent tail for a later reconnect if not expired
                         if (!pending.isExpired(MESSAGE_TTL_MS, System.currentTimeMillis())) {
                             queue.add(pending)
                         }
-                        pendingMessages.merge(peerFingerprint, queue) { current, queued ->
+                        pendingMessages.merge(target, queue) { current, queued ->
                             while (true) current.poll()?.let { queued.add(it) } ?: break
                             queued
                         }
@@ -229,23 +264,22 @@ class NativeBridgeImpl : IP2PBridge {
         albumIndex: Int,
         albumCount: Int,
     ): Boolean {
-        val activeFP = when {
-            nameToFpMap[peerName]?.let { onlinePeers[it] == true } == true -> nameToFpMap[peerName]!!
-            !expectedFingerprint.isNullOrBlank() && onlinePeers[expectedFingerprint] == true -> expectedFingerprint
-            onlinePeers[peerName] == true -> nameToFpMap[peerName] ?: peerName
-            else -> null
-        }
+        val resolvedFP = expectedFingerprint?.takeIf { it.isNotBlank() }
+            ?: resolveFingerprint(peerName)
+            ?: nameToFpMap[peerName]
 
-        if (activeFP == null && endpoint.isNotBlank()) {
+        val isLive = (resolvedFP != null && onlinePeers[resolvedFP] == true) || (onlinePeers[peerName] == true)
+
+        if (!isLive && endpoint.isNotBlank()) {
             val candidateList = endpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
             if (candidateList.size > 1) {
-                NativeBridge.probePeer(candidateList, expectedFingerprint.orEmpty())
+                NativeBridge.probePeer(candidateList, resolvedFP.orEmpty())
             } else {
-                NativeBridge.connectPeer(endpoint, expectedFingerprint.orEmpty())
+                NativeBridge.connectPeer(endpoint, resolvedFP.orEmpty())
             }
         }
 
-        val target = activeFP ?: expectedFingerprint?.takeIf { it.isNotBlank() } ?: nameToFpMap[peerName] ?: peerName
+        val target = resolvedFP ?: peerName
         val fileName = File(filePath).name
         val emoji = if (caption.length in 1..4 && caption.any { Character.isSurrogate(it) || Character.getType(it) == Character.OTHER_SYMBOL.toInt() }) caption else ""
         val resId = NativeBridge.sendFile(target, filePath, messageId, fileName, caption, emoji)

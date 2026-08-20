@@ -91,12 +91,7 @@ internal class P2POutboundMessenger(
         text: String,
         onResult: (Boolean) -> Unit = {},
     ) {
-        val isVerified = P2PPreferences.isPeerVerified(context, peerName)
-        val fingerprint = if (isVerified) {
-            P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null)
-        } else {
-            null
-        }
+        val fingerprint = P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null)
         val isLive = getBridge(context).isPeerOnline(peerName, fingerprint)
         val endpoint = resolvePeerEndpoint(
             peerName = peerName,
@@ -150,12 +145,7 @@ internal class P2POutboundMessenger(
                     return@withLock postResult(onResult, false)
                 }
                 try {
-                    val isVerified = P2PPreferences.isPeerVerified(context, peerName)
-                    val fingerprint = if (isVerified) {
-                        P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
-                    } else {
-                        ""
-                    }
+                    val fingerprint = P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
                     log(context, "Sending secure message via active P2P bridge", "INFO", null)
                     val success = getBridge(context).sendP2pMessage(peerName, endpoint, text, fingerprint)
                     if (success) {
@@ -300,8 +290,7 @@ internal class P2POutboundMessenger(
                 val rawEndpoint = peerEndpoints[peerName]
                     ?: prefs.getString(P2PPreferences.lastEndpoint(peerName), "").orEmpty()
                 val endpoint = P2PPreferences.getEffectiveEndpointsForPeer(context, peerName, rawEndpoint)
-                val isVerified = P2PPreferences.isPeerVerified(context, peerName)
-                val fingerprint = if (isVerified) prefs.getString(P2PPreferences.peerFingerprint(peerName), null) else null
+                val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null)
                 if (endpoint.isBlank()) {
                     log(context, "Cannot reconnect to $peerName: endpoint is unknown. Peer must share invite link or Tor .onion address", "WARNING", null)
                     return@launch postResult(onResult, false)

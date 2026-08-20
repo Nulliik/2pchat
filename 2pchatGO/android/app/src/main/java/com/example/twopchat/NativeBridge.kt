@@ -160,6 +160,16 @@ object NativeBridge {
         }
     }
 
+    fun updatePeerNameMapping(peerFingerprint: String, nickname: String): Boolean {
+        if (!isLoaded || peerFingerprint.isBlank() || nickname.isBlank()) return false
+        return try {
+            nativeUpdatePeerNameMapping(peerFingerprint, nickname)
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeUpdatePeerNameMapping failed", e)
+            false
+        }
+    }
+
     fun sendMessage(peerFingerprint: String, text: String): String? {
         if (!isLoaded) return null
         return try {
@@ -506,6 +516,7 @@ object NativeBridge {
     private external fun nativeStartListener(port: Int): Boolean
     private external fun nativeStopListener(): Boolean
     private external fun nativeConnectPeer(endpoint: String, expectedFingerprint: String): Boolean
+    private external fun nativeUpdatePeerNameMapping(peerFingerprint: String, nickname: String): Boolean
     private external fun nativeSendMessage(peerFingerprint: String, text: String): String?
     private external fun nativeIsPeerOnline(peerFingerprint: String): Boolean
     private external fun nativeSendFile(peerFingerprint: String, filePath: String, messageId: String, fileName: String, caption: String, emoji: String): String?

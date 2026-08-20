@@ -13,7 +13,7 @@ import (
 
 const (
 	// Keep this encrypted-packet version in lockstep with Python's double_ratchet.py.
-	PacketVersion        = 4
+	PacketVersion = 4
 	// The X3DH JSON handshake is independently versioned by Python's session.py.
 	HandshakeVersion     = 3
 	HeaderFlagObfuscated = 0x01
