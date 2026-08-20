@@ -309,6 +309,63 @@ object NativeBridge {
         }
     }
 
+    fun setLocalYggdrasilIP(ip: String) {
+        if (!isLoaded) return
+        try {
+            nativeSetLocalYggdrasilIP(ip)
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeSetLocalYggdrasilIP failed", e)
+        }
+    }
+
+    fun searchPeers(
+        query: String,
+        sharedCode: String = "",
+        expectedLiveName: String = "",
+        expectedFingerprint: String = "",
+        directCandidates: List<String> = emptyList(),
+    ): List<Map<String, Any>> {
+        if (!isLoaded) return emptyList()
+        return try {
+            val directJson = JSONArray(directCandidates).toString()
+            val resJson = nativeSearchPeers(
+                query,
+                sharedCode,
+                expectedLiveName,
+                expectedFingerprint,
+                directJson,
+            ) ?: return emptyList()
+
+            val jsonArray = JSONArray(resJson)
+            val results = mutableListOf<Map<String, Any>>()
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                val map = mutableMapOf<String, Any>()
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    if (k == "endpoints") {
+                        val epsArray = obj.optJSONArray("endpoints")
+                        val epsList = mutableListOf<String>()
+                        if (epsArray != null) {
+                            for (j in 0 until epsArray.length()) {
+                                epsList.add(epsArray.getString(j))
+                            }
+                        }
+                        map[k] = epsList
+                    } else {
+                        map[k] = obj.get(k)
+                    }
+                }
+                results.add(map)
+            }
+            results
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeSearchPeers failed", e)
+            emptyList()
+        }
+    }
+
     fun onNetworkChanged(): Boolean {
         if (!isLoaded) return false
         return try {
@@ -548,6 +605,14 @@ object NativeBridge {
     private external fun nativeGroupDecrypt(epochSecret: ByteArray, authenticatedData: ByteArray, nonceBase64: String, ciphertextBase64: String): ByteArray?
     private external fun nativeTriggerNatTraversal(): Boolean
     private external fun nativeGetNatDiagnosticsJSON(): String?
+    private external fun nativeSetLocalYggdrasilIP(ip: String)
+    private external fun nativeSearchPeers(
+        query: String,
+        sharedCode: String,
+        expectedLiveName: String,
+        expectedFingerprint: String,
+        directCandidatesJSON: String,
+    ): String?
     private external fun nativeOnNetworkChanged(): Boolean
 }
 

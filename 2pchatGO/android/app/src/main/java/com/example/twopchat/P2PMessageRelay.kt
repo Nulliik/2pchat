@@ -318,7 +318,7 @@ object P2PMessageRelay {
         maintenanceCoordinator.onScreenOn(context)
     }
 
-    private fun publishPeerOnline(
+    fun publishPeerOnline(
         peerName: String,
         transport: String?,
         endpoint: String = "",
@@ -997,18 +997,40 @@ object P2PMessageRelay {
                                     sharedPrefs.edit()
                                         .putString("peer_fingerprint_$payloadNickname", sender)
                                         .apply()
+                                    P2PPreferences.updateFingerprintCache(sender, payloadNickname)
                                     getBridge(appContext).updatePeerNameMapping(sender, payloadNickname)
                                     resolvedSender = payloadNickname
+                                    publishPeerOnline(payloadNickname, "DIRECT P2P")
                                 }
                             }
                             if (GroupChatCoordinator.handleIncoming(appContext, resolvedSender, json)) {
                                 return
                             }
                             when (json.optString("type")) {
-                                "chat" -> {
-                                    val body = json.optString("body")
-                                    val nickname = json.optString("nickname").takeIf { it.isNotBlank() }
-                                    val msgId = json.optString("id")
+                                "identity_info" -> {
+                                    val nickname = json.optString("nickname").ifEmpty { json.optString("sender") }.takeIf { it.isNotBlank() }
+                                    val fp = json.optString("fingerprint").ifEmpty { sender }
+                                    if (nickname != null && isValidNickname(nickname)) {
+                                        sharedPrefs.edit()
+                                            .putString("peer_fingerprint_$nickname", fp)
+                                            .apply()
+                                        P2PPreferences.updateFingerprintCache(fp, nickname)
+                                        getBridge(appContext).updatePeerNameMapping(fp, nickname)
+                                        handlePeerNicknameReceived(appContext, sender, nickname, json.optString("about_me"))
+                                        publishPeerOnline(nickname, "DIRECT P2P")
+                                    }
+                                    return
+                                }
+                                "chat", "text", "reply", "sticker" -> {
+                                    val body = json.optString("text").ifEmpty { json.optString("body") }
+                                    val nickname = json.optString("nickname").ifEmpty { json.optString("sender").ifEmpty { json.optString("sender_name") } }.takeIf { it.isNotBlank() }
+                                    val msgId = json.optString("message_id").ifEmpty { json.optString("id") }
+                                    val replyToId = json.optString("reply_to_id").takeIf { it.isNotBlank() }
+                                    val replyToText = json.optString("reply_to_text").takeIf { it.isNotBlank() }
+                                    val replyToName = json.optString("reply_to_name").takeIf { it.isNotBlank() }
+                                    val attachmentType = json.optString("attachment_type").ifEmpty { if (json.optString("type") == "sticker") "STICKER" else null }
+                                    val attachmentUri = json.optString("attachment_uri").takeIf { it.isNotBlank() }
+                                    val attachmentName = json.optString("attachment_name").takeIf { it.isNotBlank() }
                                     val effectiveSender = if (resolvedSender == sender && nickname != null) {
                                         nickname
                                     } else {
@@ -1018,9 +1040,11 @@ object P2PMessageRelay {
                                         sharedPrefs.edit()
                                             .putString("peer_fingerprint_$nickname", sender)
                                             .apply()
+                                        P2PPreferences.updateFingerprintCache(sender, nickname)
                                     }
+                                    publishPeerOnline(effectiveSender, "DIRECT P2P")
                                     val trimmedBody = body.trim()
-                                    if (trimmedBody.startsWith("{")) {
+                                    if (trimmedBody.startsWith("{") && json.optString("type") == "chat") {
                                         onMessageReceived(effectiveSender, trimmedBody)
                                         return
                                     }
@@ -1030,6 +1054,12 @@ object P2PMessageRelay {
                                         text = body,
                                         isMe = false,
                                         timestamp = time,
+                                        replyToId = replyToId,
+                                        replyToText = replyToText,
+                                        replyToName = replyToName,
+                                        attachmentType = attachmentType,
+                                        attachmentUri = attachmentUri,
+                                        attachmentName = attachmentName,
                                         status = "SENT"
                                     )
                                     persistAndDispatchIncoming(appContext, effectiveSender, rxMsg)

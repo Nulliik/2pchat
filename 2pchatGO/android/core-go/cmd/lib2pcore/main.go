@@ -263,6 +263,9 @@ func Java_com_example_twopchat_NativeBridge_nativeConnectPeer(
 
 	err := bridge.GetManager().ConnectPeer(endpoint, expectedFP)
 	if err != nil {
+		// Surface handshake failures to logcat.  A false JNI result otherwise
+		// leaves the UI indistinguishable from a genuinely offline peer.
+		fmt.Printf("P2P connect rejected for %s (expected fingerprint %q): %v\n", endpoint, expectedFP, err)
 		return C.JNI_FALSE
 	}
 	return C.JNI_TRUE
@@ -627,6 +630,73 @@ func Java_com_example_twopchat_NativeBridge_nativeProbePeer(
 		return C.JNI_FALSE
 	}
 	return C.JNI_TRUE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSetLocalYggdrasilIP
+func Java_com_example_twopchat_NativeBridge_nativeSetLocalYggdrasilIP(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jIP C.jstring,
+) {
+	cIP := C.getJStringUTFChars(env, jIP)
+	if cIP == nil {
+		return
+	}
+	ip := C.GoString(cIP)
+	C.releaseJStringUTFChars(env, jIP, cIP)
+	bridge.GetManager().SetLocalYggdrasilIP(ip)
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeSearchPeers
+func Java_com_example_twopchat_NativeBridge_nativeSearchPeers(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jQuery C.jstring,
+	jSharedCode C.jstring,
+	jExpectedLiveName C.jstring,
+	jExpectedFP C.jstring,
+	jDirectCandidatesJSON C.jstring,
+) C.jstring {
+	var query, sharedCode, expectedLiveName, expectedFP, directCandidatesJSON string
+
+	cQuery := C.getJStringUTFChars(env, jQuery)
+	if cQuery != nil {
+		query = C.GoString(cQuery)
+		C.releaseJStringUTFChars(env, jQuery, cQuery)
+	}
+
+	cShared := C.getJStringUTFChars(env, jSharedCode)
+	if cShared != nil {
+		sharedCode = C.GoString(cShared)
+		C.releaseJStringUTFChars(env, jSharedCode, cShared)
+	}
+
+	cLive := C.getJStringUTFChars(env, jExpectedLiveName)
+	if cLive != nil {
+		expectedLiveName = C.GoString(cLive)
+		C.releaseJStringUTFChars(env, jExpectedLiveName, cLive)
+	}
+
+	cFP := C.getJStringUTFChars(env, jExpectedFP)
+	if cFP != nil {
+		expectedFP = C.GoString(cFP)
+		C.releaseJStringUTFChars(env, jExpectedFP, cFP)
+	}
+
+	cDirect := C.getJStringUTFChars(env, jDirectCandidatesJSON)
+	if cDirect != nil {
+		directCandidatesJSON = C.GoString(cDirect)
+		C.releaseJStringUTFChars(env, jDirectCandidatesJSON, cDirect)
+	}
+
+	resJSON, err := bridge.GetManager().SearchPeers(query, sharedCode, expectedLiveName, expectedFP, directCandidatesJSON)
+	if err != nil {
+		return C.nullJString()
+	}
+
+	cResp := C.CString(resJSON)
+	defer C.free(unsafe.Pointer(cResp))
+	return C.createJString(env, cResp)
 }
 
 func readJByteArray(env *C.JNIEnv, arr C.jbyteArray) []byte {

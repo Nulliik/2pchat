@@ -3,10 +3,12 @@ package discovery
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,23 +24,24 @@ type DiscoveryCallback func(infoHashHex string, endpoint string, source string)
 
 // DiscoveryService manages tracker queries, LAN beacons, and peer endpoint discovery.
 type DiscoveryService struct {
-	mu           sync.RWMutex
-	fingerprint  string
-	peerID       [20]byte
-	listenPort   int
-	torEnabled   bool
-	trackers     []string
-	infoHashes   map[string][20]byte
-	udpClient    *UDPTrackerClient
-	httpClient   *HTTPTrackerClient
-	lanEngine    *LANEngine
-	prober       *FastTieredProber
-	callback     DiscoveryCallback
-	running      int32
-	onionAddress string
-	ctx          context.Context
-	cancel       context.CancelFunc
-	wg           sync.WaitGroup
+	mu               sync.RWMutex
+	fingerprint      string
+	peerID           [20]byte
+	listenPort       int
+	torEnabled       bool
+	localYggdrasilIP string
+	trackers         []string
+	infoHashes       map[string][20]byte
+	udpClient        *UDPTrackerClient
+	httpClient       *HTTPTrackerClient
+	lanEngine        *LANEngine
+	prober           *FastTieredProber
+	callback         DiscoveryCallback
+	running          int32
+	onionAddress     string
+	ctx              context.Context
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
 }
 
 // NewDiscoveryService creates a new unified DiscoveryService.
@@ -73,6 +76,16 @@ func NewDiscoveryService(
 	return s
 }
 
+// SetLocalYggdrasilIP updates the local IPv6 address to announce to trackers.
+func (s *DiscoveryService) SetLocalYggdrasilIP(ip string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.localYggdrasilIP = strings.Trim(strings.TrimSpace(ip), "[]")
+	if s.httpClient != nil {
+		s.httpClient.SetLocalYggdrasilIP(s.localYggdrasilIP)
+	}
+}
+
 // SetOnionAddress sets the local Tor v3 .onion hidden service hostname.
 func (s *DiscoveryService) SetOnionAddress(addr string) {
 	s.mu.Lock()
@@ -95,30 +108,115 @@ func (s *DiscoveryService) SetTrackers(trackers []string) {
 	copy(s.trackers, trackers)
 }
 
-// RegisterInfoHash adds an info hash (20 bytes hex or raw) to announce/discover.
-func (s *DiscoveryService) RegisterInfoHash(hashHex string) error {
+// RegisterInfoHash adds an info hash (20 bytes hex, raw, or base64) to announce/discover.
+func (s *DiscoveryService) RegisterInfoHash(hashStr string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	hashStr = strings.TrimSpace(hashStr)
 	var h [20]byte
-	b, err := hex.DecodeString(hashHex)
-	if err == nil && len(b) == 20 {
-		copy(h[:], b)
-	} else if len(hashHex) == 20 {
-		copy(h[:], []byte(hashHex))
-	} else {
-		return fmt.Errorf("invalid info hash format: %s", hashHex)
+
+	if len(hashStr) == 40 {
+		b, err := hex.DecodeString(hashStr)
+		if err == nil && len(b) == 20 {
+			copy(h[:], b)
+			s.infoHashes[strings.ToLower(hashStr)] = h
+			return nil
+		}
 	}
 
-	s.infoHashes[hashHex] = h
-	return nil
+	if len(hashStr) == 20 {
+		copy(h[:], []byte(hashStr))
+		hexStr := hex.EncodeToString(h[:])
+		s.infoHashes[hexStr] = h
+		return nil
+	}
+
+	if b64, err := base64.StdEncoding.DecodeString(hashStr); err == nil {
+		if len(b64) == 20 {
+			copy(h[:], b64)
+			hexStr := hex.EncodeToString(h[:])
+			s.infoHashes[hexStr] = h
+			return nil
+		}
+	}
+
+	return fmt.Errorf("invalid info hash format: %s", hashStr)
+}
+
+// RegisterRendezvous computes and registers the rendezvous info hash for nickname + sharedCode.
+func (s *DiscoveryService) RegisterRendezvous(nickname, sharedCode string) string {
+	h := DeriveRendezvousKey(nickname, sharedCode)
+	hexKey := hex.EncodeToString(h[:])
+	s.mu.Lock()
+	s.infoHashes[hexKey] = h
+	s.mu.Unlock()
+	return hexKey
 }
 
 // UnregisterInfoHash removes an info hash from active tracking.
 func (s *DiscoveryService) UnregisterInfoHash(hashHex string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.infoHashes, hashHex)
+	delete(s.infoHashes, strings.ToLower(hashHex))
+}
+
+// ResolvePeers queries all active trackers for the rendezvous key and returns discovered endpoints.
+func (s *DiscoveryService) ResolvePeers(ctx context.Context, nickname, sharedCode string) ([]PeerEndpoint, error) {
+	infoHash := DeriveRendezvousKey(nickname, sharedCode)
+
+	s.mu.RLock()
+	trackers := make([]string, len(s.trackers))
+	copy(trackers, s.trackers)
+	port := s.listenPort
+	peerID := s.peerID
+	s.mu.RUnlock()
+
+	if len(trackers) == 0 {
+		return nil, fmt.Errorf("no discovery trackers configured")
+	}
+
+	var resultsMu sync.Mutex
+	discovered := make(map[string]PeerEndpoint)
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+
+	for _, trackerURL := range trackers {
+		wg.Add(1)
+		go func(tURL string) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
+
+			reqCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+			defer cancel()
+
+			res, err := s.announceSingle(reqCtx, tURL, infoHash, peerID, port)
+			if err == nil && res != nil {
+				resultsMu.Lock()
+				for _, peer := range res.Peers {
+					epStr := peer.String()
+					if epStr != "" {
+						discovered[epStr] = peer
+					}
+				}
+				resultsMu.Unlock()
+			}
+		}(trackerURL)
+	}
+
+	wg.Wait()
+
+	out := make([]PeerEndpoint, 0, len(discovered))
+	for _, ep := range discovered {
+		out = append(out, ep)
+	}
+	return out, nil
 }
 
 // Start initiates background LAN discovery and periodic tracker announces.

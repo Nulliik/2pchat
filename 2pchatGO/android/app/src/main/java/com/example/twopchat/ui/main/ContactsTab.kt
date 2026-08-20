@@ -489,7 +489,7 @@ fun ContactsTab(
                                             .apply()
                                     }
                                     if (endpointStr.isNotBlank() && endpointStr != request.expectedLiveName) {
-                                        com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(request.expectedLiveName, endpointStr)
+                                        com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(request.expectedLiveName, endpointStr, context)
                                     }
                                     com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(context)
                                     if (!requestedGroupId.isNullOrBlank() && !groupInviteToken.isNullOrBlank()) {
@@ -552,7 +552,7 @@ fun ContactsTab(
                             .putString("transport_${effectiveName}", "Tor Onion")
                             .apply()
                     }
-                    com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, directOnion.onionEndpoint)
+                    com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, directOnion.onionEndpoint, context)
                     com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(context)
                     resolveInviteStatus = ""
                     isResolvingInvite = false
@@ -583,7 +583,7 @@ fun ContactsTab(
                             .putString("transport_${effectiveName}", "DIRECT P2P")
                             .apply()
                     }
-                    com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, directIP.endpoint)
+                    com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, directIP.endpoint, context)
                     com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(context)
                     resolveInviteStatus = ""
                     isResolvingInvite = false
@@ -752,6 +752,9 @@ fun ContactsTab(
                         keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
                             context = context,
                             imeAction = androidx.compose.ui.text.input.ImeAction.Search,
+                        ),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                            onSearch = { performSearch(searchQuery) }
                         ),
                         cursorBrush = SolidColor(primaryColor),
                         textStyle = TextStyle(
@@ -1143,10 +1146,17 @@ fun ContactsTab(
                                 val tokenVal = "2pchat_inv_" + tokenBytes.joinToString("") { "%02x".format(it) }
                                 val onion = com.example.twopchat.TorManager.getOnionAddress(context).orEmpty()
                                 val onionQuery = if (onion.isNotEmpty()) "&onion=${android.net.Uri.encode(onion)}" else ""
-                                inviteLinkState = "2pchat://connect?token=$tokenVal&name=$username&fp=$fingerprint$onionQuery"
+                                val ygg = P2PMessageRelay.getYggdrasilAddress()
+                                val yggQuery = formatInviteEndpoint(ygg, P2PMessageRelay.listenerPort(context))
+                                    ?.let { "&ygg=${android.net.Uri.encode(it)}" }
+                                    .orEmpty()
+                                inviteLinkState = "2pchat://connect?token=$tokenVal&name=$username&fp=$fingerprint$yggQuery$onionQuery"
                                 coroutineScope.launch(Dispatchers.IO) {
                                     P2PBridgeProvider.get(context).announceSelf(
-                                        tokenVal,
+                                        // The invite resolver uses the public profile name plus
+                                        // the token.  Publish under exactly the same rendezvous
+                                        // key; publishing token/token made every invite invisible.
+                                        username,
                                         fingerprint,
                                         P2PMessageRelay.listenerPort(context),
                                         rendezvousCode = tokenVal,

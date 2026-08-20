@@ -219,7 +219,16 @@ object P2PPreferences {
                 }
             }
         }
-        return fingerprintToPeerNameCache[fingerprint]
+        fingerprintToPeerNameCache[fingerprint]?.let { return it }
+        val allEntries = prefs(context).all
+        for ((key, value) in allEntries) {
+            if (key.startsWith("peer_fingerprint_") && value == fingerprint) {
+                val peerName = key.removePrefix("peer_fingerprint_")
+                fingerprintToPeerNameCache[fingerprint] = peerName
+                return peerName
+            }
+        }
+        return null
     }
 
     fun findPeerByDiscoveryToken(context: Context, discoveryToken: String): Pair<String, String>? {

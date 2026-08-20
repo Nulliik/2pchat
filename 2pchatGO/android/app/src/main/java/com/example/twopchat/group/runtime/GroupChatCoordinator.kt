@@ -4675,32 +4675,37 @@ object GroupChatCoordinator {
 
     private fun getKnownContacts(): List<GroupContactSummary> {
         val context = applicationContext ?: return emptyList()
-        val prefs = P2PPreferences.prefs(context)
-        val contactNames = mutableSetOf<String>()
-        prefs.getStringSet("active_chats", emptySet())?.let { contactNames.addAll(it) }
-        prefs.all.keys.forEach { key ->
-            if (key.startsWith("peer_fingerprint_")) {
-                val peerName = key.removePrefix("peer_fingerprint_")
-                if (peerName.isNotBlank() && peerName != "Saved Messages") {
-                    contactNames.add(peerName)
+        return try {
+            val prefs = P2PPreferences.prefs(context)
+            val contactNames = mutableSetOf<String>()
+            prefs.getStringSet("active_chats", emptySet())?.let { contactNames.addAll(it) }
+            prefs.all.keys.forEach { key ->
+                if (key.startsWith("peer_fingerprint_")) {
+                    val peerName = key.removePrefix("peer_fingerprint_")
+                    if (peerName.isNotBlank() && peerName != "Saved Messages") {
+                        contactNames.add(peerName)
+                    }
                 }
             }
-        }
-        contactNames.remove("Saved Messages")
+            contactNames.remove("Saved Messages")
 
-        return contactNames
-            .asSequence()
-            .mapNotNull { peerName ->
-                val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
-                GroupContactSummary(
-                    contactId = peerName,
-                    displayName = peerName,
-                    secondaryText = if (fingerprint.isNotBlank()) fingerprint.take(16) else peerName,
-                    isOnline = P2PMessageRelay.peerSessionStates[peerName] == true,
-                )
-            }
-            .sortedBy { it.displayName.lowercase(Locale.ROOT) }
-            .toList()
+            contactNames
+                .asSequence()
+                .mapNotNull { peerName ->
+                    val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
+                    GroupContactSummary(
+                        contactId = peerName,
+                        displayName = peerName,
+                        secondaryText = if (fingerprint.isNotBlank()) fingerprint.take(16) else peerName,
+                        isOnline = P2PMessageRelay.peerSessionStates[peerName] == true,
+                    )
+                }
+                .sortedBy { it.displayName.lowercase(Locale.ROOT) }
+                .toList()
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Encrypted preferences are unavailable; omitting persisted contacts", e)
+            emptyList()
+        }
     }
 
     private fun refreshCreateState() {

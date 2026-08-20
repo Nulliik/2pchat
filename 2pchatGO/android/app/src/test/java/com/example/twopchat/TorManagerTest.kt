@@ -500,8 +500,8 @@ class TorManagerTest {
 
     @Test
     fun testIsPortFreeAndWaitForPortsFree() = runBlocking {
-        // Pick an ephemeral port for testing
-        val testPort = 59123
+        // Pick an available ephemeral port for testing
+        val testPort = java.net.ServerSocket(0).use { it.localPort }
 
         // When nothing is bound, port should be free
         assertTrue(TorManager.isPortFree(testPort))

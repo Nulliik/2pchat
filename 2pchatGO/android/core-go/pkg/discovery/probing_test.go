@@ -97,6 +97,25 @@ func TestFastTieredProberRace(t *testing.T) {
 	}
 }
 
+func TestFastTieredProberPrefersYggdrasilOverWAN(t *testing.T) {
+	prober := NewFastTieredProber()
+	ygg := "[200:182d:e207:ca9b:8205:5f82:3aa:c4f7]:50001"
+	wan := "31.58.79.18:50001"
+
+	conn, winner, err := prober.ProbeFast(context.Background(), []string{wan, ygg}, func(ctx context.Context, endpoint string) (net.Conn, error) {
+		server, client := net.Pipe()
+		go server.Close()
+		return client, nil
+	})
+	if err != nil {
+		t.Fatalf("ProbeFast failed: %v", err)
+	}
+	defer conn.Close()
+	if winner != ygg {
+		t.Fatalf("expected Yggdrasil endpoint to win over WAN, got %s", winner)
+	}
+}
+
 func TestFastTieredProberCooldown(t *testing.T) {
 	prober := NewFastTieredProber()
 

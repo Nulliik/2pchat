@@ -29,6 +29,24 @@ func TestParseCompactIPv4Peers(t *testing.T) {
 	}
 }
 
+func TestParseCompactIPv6Peers(t *testing.T) {
+	// Yggdrasil IPv6: 200:1e2f:e608:eb3a:2bf:1e62:87ba:e2f7 on port 50001
+	ip := net.ParseIP("200:1e2f:e608:eb3a:2bf:1e62:87ba:e2f7")
+	raw := make([]byte, 18)
+	copy(raw[0:16], ip.To16())
+	binary.BigEndian.PutUint16(raw[16:18], 50001)
+
+	peers := ParseCompactIPv6Peers(raw)
+	if len(peers) != 1 {
+		t.Fatalf("Expected 1 IPv6 peer, got %d", len(peers))
+	}
+
+	expectedRaw := "[200:1e2f:e608:eb3a:2bf:1e62:87ba:e2f7]:50001"
+	if peers[0].String() != expectedRaw {
+		t.Fatalf("IPv6 endpoint string mismatch: got %s, expected %s", peers[0].String(), expectedRaw)
+	}
+}
+
 func TestParseUDPAnnounceResponse(t *testing.T) {
 	// Construct simulated BEP 15 UDP Announce Response
 	buf := make([]byte, 20+6)
@@ -49,6 +67,32 @@ func TestParseUDPAnnounceResponse(t *testing.T) {
 	}
 	if res.Peers[0].Raw != "127.0.0.1:8080" {
 		t.Fatalf("Peer address mismatch: %s", res.Peers[0].Raw)
+	}
+}
+
+func TestParseUDPAnnounceResponseIPv6(t *testing.T) {
+	// 18 bytes IPv6 payload in UDP response
+	yggIP := net.ParseIP("200:182d:e207:ca9b:8205:5f82:3aa:c4f7")
+	buf := make([]byte, 20+18)
+	binary.BigEndian.PutUint32(buf[0:4], uint32(ActionAnnounce))
+	binary.BigEndian.PutUint32(buf[4:8], 12345) // txID
+	binary.BigEndian.PutUint32(buf[8:12], 1800) // interval
+	binary.BigEndian.PutUint32(buf[12:16], 1)   // leechers
+	binary.BigEndian.PutUint32(buf[16:20], 5)   // seeders
+	copy(buf[20:36], yggIP.To16())
+	binary.BigEndian.PutUint16(buf[36:38], 50001)
+
+	res, err := ParseUDPAnnounceResponse(buf, 12345, true)
+	if err != nil {
+		t.Fatalf("ParseUDPAnnounceResponseIPv6 failed: %v", err)
+	}
+
+	if len(res.Peers) != 1 {
+		t.Fatalf("Expected 1 peer, got %d", len(res.Peers))
+	}
+	expectedRaw := "[200:182d:e207:ca9b:8205:5f82:3aa:c4f7]:50001"
+	if res.Peers[0].String() != expectedRaw {
+		t.Fatalf("Peer mismatch: got %s, expected %s", res.Peers[0].String(), expectedRaw)
 	}
 }
 
@@ -74,6 +118,28 @@ func TestParseHTTPAnnounceResponse(t *testing.T) {
 	}
 	if len(res.Peers) != 1 || res.Peers[0].Raw != "127.0.0.1:8080" {
 		t.Fatalf("Expected peer 127.0.0.1:8080, got: %+v", res.Peers)
+	}
+}
+
+func TestParseHTTPAnnounceResponsePeers6(t *testing.T) {
+	// BEP 7: peers6 containing 18-byte Yggdrasil IPv6
+	yggIP := net.ParseIP("200:182d:e207:ca9b:8205:5f82:3aa:c4f7")
+	raw18 := make([]byte, 18)
+	copy(raw18[0:16], yggIP.To16())
+	binary.BigEndian.PutUint16(raw18[16:18], 50001)
+
+	bencoded := []byte("d8:intervali900e6:peers618:" + string(raw18) + "e")
+	res, err := ParseHTTPAnnounceResponse(bencoded)
+	if err != nil {
+		t.Fatalf("ParseHTTPAnnounceResponsePeers6 failed: %v", err)
+	}
+
+	if len(res.Peers) != 1 {
+		t.Fatalf("Expected 1 peer from peers6, got %d", len(res.Peers))
+	}
+	expectedRaw := "[200:182d:e207:ca9b:8205:5f82:3aa:c4f7]:50001"
+	if res.Peers[0].String() != expectedRaw {
+		t.Fatalf("peers6 endpoint mismatch: got %s, expected %s", res.Peers[0].String(), expectedRaw)
 	}
 }
 

@@ -101,17 +101,19 @@ class PeerSearchTest {
     }
 
     @Test
-    fun `orders QR routes as local IPv4 then external IPv4 then IPv6`() {
+    fun `orders QR routes as LAN then Yggdrasil then other IPv6 then external IPv4`() {
         assertEquals(
             listOf(
                 "192.168.1.20:50001",
+                "[200:1234::20]:50001",
+                "[2001:db8::20]:50001",
                 "203.0.113.20:50001",
-                "[200:db8::20]:50001",
             ),
             orderedDirectEndpoints(listOf(
-                "[200:db8::20]:50001",
+                "[2001:db8::20]:50001",
                 "203.0.113.20:50001",
                 "192.168.1.20:50001",
+                "[200:1234::20]:50001",
             )),
         )
     }

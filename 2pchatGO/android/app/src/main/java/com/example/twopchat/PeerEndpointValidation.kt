@@ -46,8 +46,11 @@ fun orderedDirectEndpoints(endpoints: List<String>): List<String> {
             val host = endpoint.substringBeforeLast(':').removeSurrounding("[", "]")
             when {
                 host.startsWith("192.168.") || host.startsWith("10.") || (host.startsWith("172.") && host.split(".").getOrNull(1)?.toIntOrNull() in 16..31) -> 0
-                !host.contains(':') -> 1
-                else -> 2
+                // Yggdrasil owns 0200::/7 and 0300::/7. It is the preferred
+                // non-LAN route, ahead of stale public/WAN endpoints.
+                host.startsWith("200:") || host.startsWith("300:") || host.startsWith("0200:") || host.startsWith("0300:") -> 1
+                host.contains(':') -> 2
+                else -> 3
             }
         }
     )

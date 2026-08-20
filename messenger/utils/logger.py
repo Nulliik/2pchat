@@ -18,6 +18,6 @@ def setup_logger(name: str = "messenger", level: int = logging.INFO) -> logging.
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-        logger.propagate = False
+        logger.propagate = True
 
     return logger

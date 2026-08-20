@@ -79,6 +79,10 @@ class NativeBridgeImpl : IP2PBridge {
             nameToFpMap[resolvedName] = peerFP
             peerNameMap[peerFP] = resolvedName
             NativeBridge.updatePeerNameMapping(peerFP, resolvedName)
+            P2PPreferences.updateFingerprintCache(peerFP, resolvedName)
+            if (!P2PMessageRelay.isPlaceholderPeerName(resolvedName)) {
+                P2PMessageRelay.publishPeerOnline(resolvedName, "DIRECT P2P", endpoint)
+            }
             sessionListener?.onSessionEstablished(resolvedName, peerFP, endpoint, "direct", "")
             flushPendingMessages(peerFP)
         }

@@ -131,6 +131,13 @@ func (m *Manager) Port() int {
 	return m.listener.Port()
 }
 
+// SetCallbacks dynamically updates JNI/Kotlin event callbacks.
+func (m *Manager) SetCallbacks(cb EventCallbacks) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.callbacks = cb
+}
+
 // Fingerprint returns the local identity fingerprint.
 func (m *Manager) Fingerprint() string {
 	return m.fingerprint
@@ -163,11 +170,21 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 	}
 
 	peerFP := sess.PeerFingerprint()
+	if peerFP == m.fingerprint {
+		_ = sess.Close()
+		if m.callbacks.OnError != nil {
+			m.callbacks.OnError(1, "refusing self connection")
+		}
+		return
+	}
 	m.RegisterSession(sess, peerFP, endpoint, false)
 }
 
 // ConnectPeer dials a remote peer endpoint and establishes an encrypted X3DH session.
 func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, error) {
+	if expectedFingerprint != "" && expectedFingerprint == m.fingerprint {
+		return nil, fmt.Errorf("refusing self connection")
+	}
 	timeout := 15 * time.Second
 	if strings.HasSuffix(strings.ToLower(endpoint), ".onion") || (m.dialer != nil && m.dialer.ClassifyEndpoint(endpoint) == transport.TransportTor) {
 		timeout = 45 * time.Second
@@ -198,6 +215,10 @@ func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, e
 	}
 
 	peerFP := sess.PeerFingerprint()
+	if peerFP == m.fingerprint {
+		_ = sess.Close()
+		return nil, fmt.Errorf("refusing self connection")
+	}
 	m.RegisterSession(sess, peerFP, endpoint, true)
 	return sess, nil
 }
@@ -233,6 +254,23 @@ func (m *Manager) RegisterSession(newSess *Session, peerFP, endpoint string, ini
 		onConnCb(peerFP, endpoint)
 	}
 
+	go func() {
+		m.mu.RLock()
+		nick := m.nickname
+		fp := m.fingerprint
+		port := m.Port()
+		m.mu.RUnlock()
+		if nick != "" {
+			infoMsg := map[string]any{
+				"type":        string(TypeIdentityInfo),
+				"nickname":    nick,
+				"fingerprint": fp,
+				"listen_port": port,
+			}
+			_, _ = newSess.SendReliable(infoMsg)
+		}
+	}()
+
 	go m.dispatchSessionMessages(newSess, peerFP)
 }
 
@@ -254,6 +292,31 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 
 	for msg := range s.Messages() {
 		msgType, _ := msg["type"].(string)
+
+		if msgType == string(TypeIdentityProbe) {
+			m.mu.RLock()
+			nick := m.nickname
+			fp := m.fingerprint
+			port := m.Port()
+			m.mu.RUnlock()
+			if nick != "" {
+				infoMsg := map[string]any{
+					"type":        string(TypeIdentityInfo),
+					"nickname":    nick,
+					"fingerprint": fp,
+					"listen_port": port,
+				}
+				go func() { _, _ = s.SendReliable(infoMsg) }()
+			}
+			continue
+		}
+
+		if msgType == string(TypeIdentityInfo) {
+			if remoteNick, ok := msg["nickname"].(string); ok && remoteNick != "" {
+				m.UpdatePeerNameMapping(peerFP, remoteNick)
+			}
+			continue
+		}
 
 		if msgType == string(TypeStatus) {
 			if state, _ := msg["state"].(string); state == "offline" {

@@ -173,12 +173,14 @@ func (p *FastTieredProber) ProbeFast(
 	}
 
 	// Staggered multi-tier launch sequence (Happy Eyeballs RFC 8305 cascade)
-	tiers := []ProbingTier{TierLAN, TierDirectIPv6, TierWANDirect, TierYggdrasil, TierTor}
+	// Prefer the configured mesh over public Internet routes.  A LAN endpoint
+	// remains first because it is both local and substantially cheaper.
+	tiers := []ProbingTier{TierLAN, TierYggdrasil, TierDirectIPv6, TierWANDirect, TierTor}
 	staggerDelays := map[ProbingTier]time.Duration{
 		TierLAN:        0,
-		TierDirectIPv6: 50 * time.Millisecond,
-		TierWANDirect:  150 * time.Millisecond,
-		TierYggdrasil:  300 * time.Millisecond,
+		TierYggdrasil:  50 * time.Millisecond,
+		TierDirectIPv6: 150 * time.Millisecond,
+		TierWANDirect:  300 * time.Millisecond,
 		TierTor:        500 * time.Millisecond,
 	}
 
