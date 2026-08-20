@@ -537,7 +537,7 @@ fun ChatScreen(
             if (persistEnabled && recentPersistedMessages.isEmpty() && localDefaults.isNotEmpty()) {
                 withContext(Dispatchers.IO) {
                     try {
-                        localDefaults.forEach { db.saveMessage(peerName, it) }
+                        db.saveMessages(peerName, localDefaults)
                     } catch (e: Exception) {
                         android.util.Log.e("ChatScreen", "Failed to persist local defaults", e)
                     }

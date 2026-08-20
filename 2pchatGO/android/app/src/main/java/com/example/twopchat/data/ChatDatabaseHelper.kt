@@ -178,41 +178,6 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                    OR $KEY_MESSAGE_TEXT LIKE '{"about_me":%' 
                    OR $KEY_MESSAGE_TEXT LIKE '{"type":"status"%'
             """.trimIndent())
-
-            val idsToDelete = mutableListOf<String>()
-            db.query(TABLE_MESSAGES, arrayOf(KEY_ID, KEY_MESSAGE_TEXT), null, null, null, null, null).use { cursor ->
-                val idIdx = cursor.getColumnIndex(KEY_ID)
-                val textIdx = cursor.getColumnIndex(KEY_MESSAGE_TEXT)
-                while (cursor.moveToNext()) {
-                    val id = cursor.getString(idIdx)
-                    val rawText = cursor.getString(textIdx) ?: continue
-                    val decrypted = dec(rawText)
-                    val trimmed = decrypted.trim()
-                    if (trimmed.startsWith("{") && (
-                            trimmed.contains("\"type\":\"heartbeat\"") ||
-                            trimmed.contains("\"type\":\"identity_info\"") ||
-                            trimmed.contains("\"type\":\"status\"") ||
-                            trimmed.contains("\"type\":\"ping\"") ||
-                            trimmed.contains("\"type\":\"pong\"") ||
-                            trimmed.contains("\"type\":\"ack\"")
-                        )
-                    ) {
-                        idsToDelete.add(id)
-                    }
-                }
-            }
-            if (idsToDelete.isNotEmpty()) {
-                db.beginTransaction()
-                try {
-                    for (id in idsToDelete) {
-                        db.delete(TABLE_MESSAGES, "$KEY_ID = ?", arrayOf(id))
-                    }
-                    db.setTransactionSuccessful()
-                } finally {
-                    db.endTransaction()
-                }
-                Log.i(TAG, "Purged ${idsToDelete.size} leaked control messages from SQLite database")
-            }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to purge leaked control messages from SQLite", e)
         }
@@ -435,6 +400,45 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val pExisting = priority[existing.lowercase()] ?: 0
         val pIncoming = priority[incoming.lowercase()] ?: 0
         return pExisting > pIncoming
+    }
+
+    fun saveMessages(peerName: String, messages: List<Message>) {
+        if (messages.isEmpty()) return
+        val db = this.safeWritableDatabase
+        db.beginTransactionNonExclusive()
+        try {
+            for (msg in messages) {
+                val existingStatus = getMessageStatusById(db, msg.id)
+                val finalStatus = if (existingStatus != null && isHigherPriorityStatus(existingStatus, msg.status)) {
+                    existingStatus
+                } else {
+                    msg.status
+                }
+                val values = ContentValues().apply {
+                    put(KEY_ID, msg.id)
+                    put(KEY_PEER_NAME, peerName)
+                    put(KEY_MESSAGE_TEXT, enc(msg.text))
+                    put(KEY_IS_ME, if (msg.isMe) 1 else 0)
+                    put(KEY_TIMESTAMP, msg.timestamp)
+                    put(KEY_ATTACHMENT_TYPE, msg.attachmentType)
+                    put(KEY_ATTACHMENT_URI, encNullable(msg.attachmentUri))
+                    put(KEY_ATTACHMENT_NAME, encNullable(msg.attachmentName))
+                    put(KEY_REPLY_TO_ID, msg.replyToId)
+                    put(KEY_REPLY_TO_TEXT, encNullable(msg.replyToText))
+                    put(KEY_REPLY_TO_NAME, encNullable(msg.replyToName))
+                    put(KEY_STATUS, finalStatus)
+                    put(KEY_REACTIONS, encNullable(serializeReactions(msg.reactions)))
+                    put(KEY_SENT_AT_MS, msg.sentAtEpochMs)
+                    put(KEY_IS_PINNED, if (msg.isPinned) 1 else 0)
+                    put(KEY_ALBUM_URIS, encNullable(if (msg.albumMediaUris.isNotEmpty()) msg.albumMediaUris.joinToString("|||") else null))
+                    put(KEY_ALBUM_TYPES, if (msg.albumMediaTypes.isNotEmpty()) msg.albumMediaTypes.joinToString("|||") else null)
+                }
+                db.insertWithOnConflict(TABLE_MESSAGES, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
     }
 
     fun saveMessage(peerName: String, msg: Message) {
@@ -1165,23 +1169,17 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     }
 
     private fun checkAndMigrateDatabase(context: Context, dbFile: java.io.File, pass: ByteArray) {
-        if (!dbFile.exists()) return
-        try {
-            val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, pass, null, SQLiteDatabase.OPEN_READWRITE, null)
-            db.close()
-            return
-        } catch (e: Exception) {
-            val msg = e.message ?: ""
-            if (!msg.contains("file is not a database") && !msg.contains("not a database")) {
-                return
+        if (!dbFile.exists() || dbFile.length() < 16) return
+        val isPlaintext = try {
+            java.io.FileInputStream(dbFile).use { input ->
+                val header = ByteArray(16)
+                val read = input.read(header)
+                read == 16 && header.contentEquals("SQLite format 3\u0000".toByteArray(Charsets.US_ASCII))
             }
+        } catch (_: Exception) {
+            false
         }
-        try {
-            val unencryptedDb = SQLiteDatabase.openDatabase(dbFile.absolutePath, null as ByteArray?, null, SQLiteDatabase.OPEN_READWRITE, null)
-            unencryptedDb.close()
-        } catch (e: Exception) {
-            return
-        }
+        if (!isPlaintext) return
         val tempFile = java.io.File(dbFile.parentFile, "$DATABASE_NAME.encrypted.tmp")
         if (tempFile.exists()) tempFile.delete()
         var source: SQLiteDatabase? = null
