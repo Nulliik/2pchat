@@ -660,7 +660,10 @@ private fun decodeSampledBitmapFromUri(context: Context, uri: Uri, maxDim: Int =
                 sampleSize *= 2
             }
         }
-        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val decodeOptions = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.RGB_565
+        }
         context.contentResolver.openInputStream(uri)?.use { stream ->
             BitmapFactory.decodeStream(stream, null, decodeOptions)
         }
@@ -683,7 +686,10 @@ private fun decodeSampledBitmapFromFile(path: String, maxDim: Int = 1920): Bitma
                 sampleSize *= 2
             }
         }
-        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val decodeOptions = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = Bitmap.Config.RGB_565
+        }
         BitmapFactory.decodeFile(path, decodeOptions)
     } catch (e: Exception) {
         null

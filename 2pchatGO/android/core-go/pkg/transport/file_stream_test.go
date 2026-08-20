@@ -51,3 +51,44 @@ func TestFileStreamingRoundtrip(t *testing.T) {
 		t.Fatal("Reassembled file data does not match original")
 	}
 }
+
+func TestChunkBufferPoolZeroization(t *testing.T) {
+	bufPtr := getChunkBuffer(DefaultChunkSize)
+	for i := range *bufPtr {
+		(*bufPtr)[i] = 0xAA
+	}
+
+	putChunkBuffer(bufPtr, DefaultChunkSize)
+
+	// Fetch buffer again from pool and verify it was sanitized
+	newBufPtr := getChunkBuffer(DefaultChunkSize)
+	defer putChunkBuffer(newBufPtr, DefaultChunkSize)
+
+	for i, b := range *newBufPtr {
+		if b != 0 {
+			t.Fatalf("Buffer not zeroized at byte index %d (got 0x%02x)", i, b)
+		}
+	}
+}
+
+func BenchmarkEncryptFileStream(b *testing.B) {
+	fileSize := 1024 * 1024 // 1 MB
+	data := make([]byte, fileSize)
+	rand.Read(data)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		r := bytes.NewReader(data)
+		_, chunkChan, err := EncryptFileStream(r, int64(fileSize), "bench.bin", "", "", DefaultChunkSize)
+		if err != nil {
+			b.Fatalf("EncryptFileStream failed: %v", err)
+		}
+		for chunk := range chunkChan {
+			if chunk.Error != nil {
+				b.Fatalf("Chunk error: %v", chunk.Error)
+			}
+		}
+	}
+}

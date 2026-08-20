@@ -994,7 +994,7 @@ object StickerSupport {
                 source.absolutePath,
                 BitmapFactory.Options().apply {
                     inSampleSize = sampleSize
-                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                    inPreferredConfig = Bitmap.Config.RGB_565
                 },
             )
         } ?: return null

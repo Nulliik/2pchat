@@ -175,7 +175,10 @@ object GifStorageManager {
             }
             BitmapFactory.decodeFile(
                 file.absolutePath,
-                BitmapFactory.Options().apply { inSampleSize = sample },
+                BitmapFactory.Options().apply {
+                    inSampleSize = sample
+                    inPreferredConfig = Bitmap.Config.RGB_565
+                },
             )
         }
     } catch (_: Exception) {

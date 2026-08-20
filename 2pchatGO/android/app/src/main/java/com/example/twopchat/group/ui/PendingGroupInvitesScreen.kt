@@ -1,5 +1,6 @@
 package com.example.twopchat.group.ui
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
@@ -212,13 +213,16 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
         } else {
             invite.groupAvatarUri?.let { uriStr ->
                 runCatching {
+                    val options = BitmapFactory.Options().apply {
+                        inPreferredConfig = Bitmap.Config.RGB_565
+                    }
                     if (uriStr.startsWith("content://")) {
                         context.contentResolver.openInputStream(Uri.parse(uriStr))?.use { stream ->
-                            BitmapFactory.decodeStream(stream)
+                            BitmapFactory.decodeStream(stream, null, options)
                         }
                     } else {
                         val file = File(uriStr)
-                        if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+                        if (file.exists()) BitmapFactory.decodeFile(file.absolutePath, options) else null
                     }
                 }.getOrNull()
             }

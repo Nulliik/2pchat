@@ -36,7 +36,10 @@ internal class AvatarManager {
             while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) sample *= 2
             val bitmap = BitmapFactory.decodeByteArray(
                 bytes, 0, bytes.size,
-                BitmapFactory.Options().apply { inSampleSize = sample }
+                BitmapFactory.Options().apply {
+                    inSampleSize = sample
+                    inPreferredConfig = Bitmap.Config.RGB_565
+                }
             )
             if (bitmap != null) {
                 Handler(Looper.getMainLooper()).post {

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 	"twopchat/core/pkg/crypto"
 )
 
@@ -21,6 +22,33 @@ const (
 	// FileNoncePrefixSize is 16 bytes.
 	FileNoncePrefixSize = 16
 )
+
+// chunkBufferPool provides reusable 64KB buffers to minimize GC allocations during file streaming.
+var chunkBufferPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, DefaultChunkSize)
+		return &b
+	},
+}
+
+func getChunkBuffer(size int) *[]byte {
+	if size == DefaultChunkSize {
+		return chunkBufferPool.Get().(*[]byte)
+	}
+	b := make([]byte, size)
+	return &b
+}
+
+func putChunkBuffer(bufPtr *[]byte, size int) {
+	if bufPtr == nil {
+		return
+	}
+	// Zeroize memory before returning buffer to pool per Rule §8
+	crypto.Zeroize(*bufPtr)
+	if size == DefaultChunkSize {
+		chunkBufferPool.Put(bufPtr)
+	}
+}
 
 // FileMetadata contains the encryption and integrity parameters for a transferred file.
 type FileMetadata struct {
@@ -139,7 +167,9 @@ func EncryptFileStream(
 		defer close(chunkChan)
 
 		hasher := sha256.New()
-		buf := make([]byte, chunkSize)
+		bufPtr := getChunkBuffer(chunkSize)
+		defer putChunkBuffer(bufPtr, chunkSize)
+		buf := *bufPtr
 		chunkIndex := 0
 
 		for {
@@ -250,7 +280,9 @@ func EncryptFileStreamWithResume(
 			}
 		}
 
-		buf := make([]byte, chunkSize)
+		bufPtr := getChunkBuffer(chunkSize)
+		defer putChunkBuffer(bufPtr, chunkSize)
+		buf := *bufPtr
 		chunkIndex := startChunkIdx
 
 		for chunkIndex < numChunks {
@@ -316,7 +348,9 @@ func EncryptFileStreamFromMeta(
 			}
 		}
 
-		buf := make([]byte, chunkSize)
+		bufPtr := getChunkBuffer(chunkSize)
+		defer putChunkBuffer(bufPtr, chunkSize)
+		buf := *bufPtr
 		chunkIndex := startChunkIdx
 
 		for chunkIndex < meta.NumChunks {

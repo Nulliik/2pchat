@@ -1728,9 +1728,7 @@ fun ChatScreen(
                 P2PMessageRelay.sendReadReceipt(context, peerName, endpoint, messageId)
             }
             withContext(Dispatchers.IO) {
-                visibleUnreadIds.forEach { messageId ->
-                    db.updateMessageStatus(messageId, "READ")
-                }
+                db.batchUpdateMessageStatuses(visibleUnreadIds.associateWith { "READ" })
             }
 
             val unreadKey = "unread_count_$peerName"

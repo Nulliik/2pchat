@@ -138,7 +138,7 @@ internal class PeerAvatarCache(
                 }
                 val options = BitmapFactory.Options().apply {
                     inSampleSize = sample
-                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                    inPreferredConfig = Bitmap.Config.RGB_565
                 }
                 BitmapFactory.decodeByteArray(image, 0, image.size, options)
             }

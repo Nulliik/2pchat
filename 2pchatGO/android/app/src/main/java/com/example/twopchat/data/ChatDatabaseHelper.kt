@@ -33,7 +33,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        private const val DATABASE_VERSION = 11
+        private const val DATABASE_VERSION = 12
         private const val TABLE_MESSAGES = "messages"
         private const val TABLE_PENDING_CONTROLS = "pending_controls"
         private const val TABLE_PEERS = "peers"
@@ -157,6 +157,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         // was created. CREATE TABLE IF NOT EXISTS repairs that harmlessly on
         // the next open and prevents repeated failed peer lookups at startup.
         createPeersTable(db)
+        createCompositeIndices(db)
         if (!isControlPurged) {
             synchronized(migrationLock) {
                 if (!isControlPurged) {
@@ -238,6 +239,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 + KEY_ALBUM_TYPES + " TEXT" + ")")
         db.execSQL(createTable)
         createMessagePeerIndex(db)
+        createCompositeIndices(db)
         createPendingControlsTable(db)
         createPeersTable(db)
     }
@@ -337,6 +339,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         }
         if (oldVersion < 11) {
             createPeersTable(db)
+        }
+        if (oldVersion < 12) {
+            createCompositeIndices(db)
         }
     }
 
@@ -789,6 +794,34 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         }
     }
 
+    fun batchUpdateMessageStatuses(updates: Map<String, String>) {
+        if (updates.isEmpty()) return
+        val db = this.safeWritableDatabase
+        db.beginTransactionNonExclusive()
+        try {
+            for ((id, status) in updates) {
+                var mergedStatus = status
+                db.rawQuery(
+                    "SELECT $KEY_STATUS FROM $TABLE_MESSAGES WHERE $KEY_ID = ?",
+                    arrayOf(id),
+                ).use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        mergedStatus = MessageDeliveryStatus.merge(cursor.getString(0), status)
+                    }
+                }
+                val values = ContentValues().apply {
+                    put(KEY_STATUS, mergedStatus)
+                }
+                db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
+            }
+            db.setTransactionSuccessful()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to batch update message statuses", e)
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     fun updateMessageReactions(id: String, reactions: Map<String, List<String>>) {
         try {
             val db = this.safeWritableDatabase
@@ -1111,6 +1144,21 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             "CREATE INDEX IF NOT EXISTS messages_peer_sent " +
                 "ON $TABLE_MESSAGES($KEY_PEER_NAME, $KEY_SENT_AT_MS)"
         )
+    }
+
+    private fun createCompositeIndices(db: SQLiteDatabase) {
+        try {
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_messages_status_sent " +
+                    "ON $TABLE_MESSAGES($KEY_STATUS, $KEY_SENT_AT_MS)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_messages_peer_id " +
+                    "ON $TABLE_MESSAGES($KEY_PEER_NAME, $KEY_ID)"
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to create composite message indices", e)
+        }
     }
 
     private fun checkAndMigrateDatabase(context: Context, dbFile: java.io.File, pass: ByteArray) {
