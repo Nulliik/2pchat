@@ -182,15 +182,18 @@ func (p *FastTieredProber) ProbeFast(
 		TierTor:        500 * time.Millisecond,
 	}
 
+	startTime := time.Now()
 	for _, tier := range tiers {
 		eps := tierGroups[tier]
 		if len(eps) > 0 {
-			delay := staggerDelays[tier]
-			if delay > 0 {
+			targetOffset := staggerDelays[tier]
+			elapsed := time.Since(startTime)
+			if targetOffset > elapsed {
+				sleepDuration := targetOffset - elapsed
 				select {
 				case <-raceCtx.Done():
 					break
-				case <-time.After(delay):
+				case <-time.After(sleepDuration):
 				}
 			}
 			if raceCtx.Err() == nil {

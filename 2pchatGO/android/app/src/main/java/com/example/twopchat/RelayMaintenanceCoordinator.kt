@@ -137,8 +137,9 @@ internal class RelayMaintenanceCoordinator(
                     log(appContext, "Error maintaining saved peer sessions", "ERROR", error)
                 }
 
-                val currentScreenOffDuration = if (screenOffTimestamp != null) {
-                    System.currentTimeMillis() - screenOffTimestamp!!
+                val ts = screenOffTimestamp
+                val currentScreenOffDuration = if (ts != null) {
+                    System.currentTimeMillis() - ts
                 } else 0L
 
                 val isInteractiveNow = powerManager?.isInteractive ?: true

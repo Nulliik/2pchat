@@ -331,6 +331,7 @@ func (m *FileTransferManager) ReceiveChunk(
 		if transfer.PartFile != nil {
 			offset := int64(chunkIdx) * int64(DefaultChunkSize)
 			if _, err := transfer.PartFile.WriteAt(plaintext, offset); err != nil {
+				crypto.Zeroize(plaintext)
 				m.mu.Unlock()
 				return nil, fmt.Errorf("failed to write chunk %d to part file: %w", chunkIdx, err)
 			}
@@ -338,6 +339,7 @@ func (m *FileTransferManager) ReceiveChunk(
 
 		transfer.ReceivedChunks[chunkIdx] = true
 		transfer.ReceivedBytes += int64(len(plaintext))
+		crypto.Zeroize(plaintext)
 	}
 	isComplete := len(transfer.ReceivedChunks) >= transfer.Meta.NumChunks
 	receivedBytes := transfer.ReceivedBytes

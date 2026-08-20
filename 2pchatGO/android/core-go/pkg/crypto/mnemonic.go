@@ -20,6 +20,7 @@ func MnemonicFromSeed(seed []byte) (string, error) {
 	checksum := hasher.Sum(nil)[0]
 
 	combined := append(append([]byte(nil), seed...), checksum)
+	defer Zeroize(combined)
 	bits := new(big.Int).SetBytes(combined)
 
 	// In big.Int, the total number of bits is 264
@@ -58,21 +59,24 @@ func SeedFromMnemonic(mnemonic string) ([]byte, error) {
 	}
 
 	raw := bits.Bytes()
+	defer Zeroize(raw)
 	// Combined length must be 33 bytes (32 bytes entropy + 1 byte checksum)
 	combined := make([]byte, 33)
 	copy(combined[33-len(raw):], raw)
+	defer Zeroize(combined)
 
-	seed := combined[:32]
 	checksum := combined[32]
 
 	hasher := sha256.New()
-	hasher.Write(seed)
+	hasher.Write(combined[:32])
 	expectedChecksum := hasher.Sum(nil)[0]
 
 	if checksum != expectedChecksum {
 		return nil, errors.New("invalid mnemonic checksum: verification failed")
 	}
 
+	seed := make([]byte, 32)
+	copy(seed, combined[:32])
 	return seed, nil
 }
 
