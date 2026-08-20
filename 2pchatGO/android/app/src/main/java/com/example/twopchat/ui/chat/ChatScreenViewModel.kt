@@ -93,7 +93,9 @@ internal fun mergeHistorySnapshot(
         }
     }
     currentMessages.forEach { message ->
-        if (message.id !in merged) merged[message.id] = message
+        if (message.id !in merged && message.status == "PENDING") {
+            merged[message.id] = message
+        }
     }
     return merged.values.toList()
 }

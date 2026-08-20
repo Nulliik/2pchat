@@ -1448,8 +1448,26 @@ fun ChatsTab(
                             onClick = {
                                 coroutineScope.launch(Dispatchers.IO) {
                                     val db = ChatDatabaseHelper.getInstance(context)
-                                    db.clearMessagesForPeer(peer.name)
-                                    sharedPrefs.edit().remove("last_msg_${peer.name}").apply()
+                                    val fp = sharedPrefs.getString("peer_fingerprint_${peer.name}", null)
+                                    val aliases = listOfNotNull(fp).filter { it.isNotBlank() }
+                                    db.clearMessagesForPeer(peer.name, aliases)
+                                    sharedPrefs.edit {
+                                        remove("last_msg_${peer.name}")
+                                        remove("unread_count_${peer.name}")
+                                        remove(com.example.twopchat.P2PPreferences.pinnedMessageId(peer.name))
+                                        remove(com.example.twopchat.P2PPreferences.pinnedMessageText(peer.name))
+                                        remove(com.example.twopchat.P2PPreferences.pinnedMessageSender(peer.name))
+                                        remove(com.example.twopchat.P2PPreferences.pinnedBy(peer.name))
+                                        aliases.forEach { alias ->
+                                            remove("last_msg_$alias")
+                                            remove("unread_count_$alias")
+                                            remove(com.example.twopchat.P2PPreferences.pinnedMessageId(alias))
+                                            remove(com.example.twopchat.P2PPreferences.pinnedMessageText(alias))
+                                            remove(com.example.twopchat.P2PPreferences.pinnedMessageSender(alias))
+                                            remove(com.example.twopchat.P2PPreferences.pinnedBy(alias))
+                                        }
+                                    }
+                                    com.example.twopchat.MessageNotificationService.clearHistory(context, peer.name)
                                     withContext(Dispatchers.Main) {
                                         chatListRevision++
                                         activeMenuPeer = null

@@ -512,10 +512,14 @@ fun ChatScreen(
             } else {
                 emptyList()
             }
-            var fastSnapshot = mergeRecentHistoryMessages(
-                currentMessages = initialMessages.toList(),
-                recentPersistedMessages = recentPersistedMessages,
-            )
+            var fastSnapshot = if (recentPersistedMessages.isEmpty() && persistEnabled) {
+                initialMessages.filter { it.status == "PENDING" }
+            } else {
+                mergeRecentHistoryMessages(
+                    currentMessages = initialMessages.toList(),
+                    recentPersistedMessages = recentPersistedMessages,
+                )
+            }
             if (fastSnapshot.isEmpty()) fastSnapshot = localDefaults
             fastSnapshot = fastSnapshot.map { msg ->
                 if (msg.id == "saved-messages-welcome") {
@@ -1867,9 +1871,29 @@ fun ChatScreen(
                     Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
                 },
                 onClearHistory = {
-                    persistDatabase { db.clearMessagesForPeer(peerName) }
+                    val fp = sharedPrefs.getString("peer_fingerprint_$peerName", null)
+                    val aliases = listOfNotNull(fp).filter { it.isNotBlank() }
+                    persistDatabase { db.clearMessagesForPeer(peerName, aliases) }
                     initialMessages.clear()
-                    sharedPrefs.edit { remove("last_msg_$peerName") }
+                    chatViewModel.loadedPersistedMessageCount.intValue = 0
+                    chatViewModel.hasMoreHistory.value = false
+                    sharedPrefs.edit {
+                        remove("last_msg_$peerName")
+                        remove("unread_count_$peerName")
+                        remove(P2PPreferences.pinnedMessageId(peerName))
+                        remove(P2PPreferences.pinnedMessageText(peerName))
+                        remove(P2PPreferences.pinnedMessageSender(peerName))
+                        remove(P2PPreferences.pinnedBy(peerName))
+                        aliases.forEach { alias ->
+                            remove("last_msg_$alias")
+                            remove("unread_count_$alias")
+                            remove(P2PPreferences.pinnedMessageId(alias))
+                            remove(P2PPreferences.pinnedMessageText(alias))
+                            remove(P2PPreferences.pinnedMessageSender(alias))
+                            remove(P2PPreferences.pinnedBy(alias))
+                        }
+                    }
+                    com.example.twopchat.MessageNotificationService.clearHistory(context, peerName)
                 },
                 onDeleteChat = {
                     P2PMessageRelay.deleteChat(context, peerName)

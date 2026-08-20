@@ -759,9 +759,12 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         return messageIds
     }
 
-    fun clearMessagesForPeer(peerName: String) {
+    fun clearMessagesForPeer(peerName: String, aliases: Collection<String> = emptyList()) {
+        val names = (listOf(peerName) + aliases).filter { it.isNotBlank() }.distinct()
+        if (names.isEmpty()) return
         val db = this.safeWritableDatabase
-        db.delete(TABLE_MESSAGES, "$KEY_PEER_NAME = ?", arrayOf(peerName))
+        val whereClause = names.joinToString(" OR ") { "LOWER($KEY_PEER_NAME) = LOWER(?)" }
+        db.delete(TABLE_MESSAGES, whereClause, names.toTypedArray())
     }
 
     fun deleteMessage(id: String) {

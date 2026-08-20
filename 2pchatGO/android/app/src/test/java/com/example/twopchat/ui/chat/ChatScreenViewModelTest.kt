@@ -158,5 +158,21 @@ class ChatScreenViewModelTest {
         assertEquals("READ", merged[0].status)
         assertEquals("second", merged[1].text)
     }
+
+    @Test
+    fun mergeRecentHistoryReturnsCurrentMessagesWhenRecentPersistedIsEmpty() {
+        val staleInMemoryMessages = listOf(
+            Message("1", "Hi", false, "18:15", status = "SENT"),
+            Message("2", "Hey", false, "18:19", status = "SENT"),
+        )
+        val emptyRecent = emptyList<Message>()
+
+        val merged = mergeRecentHistoryMessages(
+            currentMessages = staleInMemoryMessages,
+            recentPersistedMessages = emptyRecent,
+        )
+
+        assertEquals(staleInMemoryMessages, merged)
+    }
 }
 
