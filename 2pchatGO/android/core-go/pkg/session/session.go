@@ -339,6 +339,7 @@ func (s *Session) readerLoop() {
 	defer func() {
 		s.emitOffline(closeReason)
 		_ = s.Close()
+		close(s.messageQueue)
 	}()
 
 	for {

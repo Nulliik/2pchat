@@ -293,6 +293,23 @@ func Java_com_example_twopchat_NativeBridge_nativeUpdatePeerNameMapping(
 	return C.JNI_TRUE
 }
 
+//export Java_com_example_twopchat_NativeBridge_nativeSetNickname
+func Java_com_example_twopchat_NativeBridge_nativeSetNickname(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jNickname C.jstring,
+) C.jboolean {
+	cNick := C.getJStringUTFChars(env, jNickname)
+	if cNick == nil {
+		return C.JNI_FALSE
+	}
+	nickname := C.GoString(cNick)
+	C.releaseJStringUTFChars(env, jNickname, cNick)
+
+	bridge.GetManager().SetNickname(nickname)
+	return C.JNI_TRUE
+}
+
 //export Java_com_example_twopchat_NativeBridge_nativeSendMessage
 func Java_com_example_twopchat_NativeBridge_nativeSendMessage(
 	env *C.JNIEnv,

@@ -370,6 +370,8 @@ func guessMimeType(fileName string) string {
 
 // UpdatePeerNameMapping maps a peer's identity fingerprint to a nickname for fallback lookup.
 func (m *Manager) UpdatePeerNameMapping(peerFP, nickname string) {
+	peerFP = strings.TrimSpace(peerFP)
+	nickname = strings.TrimSpace(nickname)
 	if peerFP == "" || nickname == "" {
 		return
 	}
@@ -379,16 +381,27 @@ func (m *Manager) UpdatePeerNameMapping(peerFP, nickname string) {
 		m.peerNames = make(map[string]string)
 	}
 	m.peerNames[nickname] = peerFP
+	m.peerNames[strings.ToLower(nickname)] = peerFP
 	m.peerNames[peerFP] = nickname
 }
 
 // SendMessage sends a text message to a connected peer.
 func (m *Manager) SendMessage(peerFP, text string) (string, error) {
+	peerFP = strings.TrimSpace(peerFP)
 	m.mu.RLock()
 	s, exists := m.sessions[peerFP]
 	if !exists || !s.IsOnline() {
 		// 1. Resolve peerFP as a nickname from peerNames map
 		if actualFP, ok := m.peerNames[peerFP]; ok {
+			if sess, ok := m.sessions[actualFP]; ok && sess.IsOnline() {
+				s = sess
+				exists = true
+			}
+		}
+	}
+	if !exists || !s.IsOnline() {
+		// 1b. Case-insensitive nickname lookup
+		if actualFP, ok := m.peerNames[strings.ToLower(peerFP)]; ok {
 			if sess, ok := m.sessions[actualFP]; ok && sess.IsOnline() {
 				s = sess
 				exists = true
@@ -407,7 +420,7 @@ func (m *Manager) SendMessage(peerFP, text string) (string, error) {
 			}
 		}
 	}
-	if !exists && len(m.sessions) == 1 {
+	if !exists && len(m.sessions) == 1 && (peerFP == "" || peerFP == "Direct Peer" || strings.HasPrefix(peerFP, "Peer (") || strings.HasPrefix(peerFP, "Tor Peer (")) {
 		for _, sess := range m.sessions {
 			if sess.IsOnline() {
 				s = sess
@@ -428,6 +441,7 @@ func (m *Manager) SendMessage(peerFP, text string) (string, error) {
 
 // IsPeerOnline returns true if there is an active online session for peerFP or endpoint.
 func (m *Manager) IsPeerOnline(peerFP string) bool {
+	peerFP = strings.TrimSpace(peerFP)
 	if m == nil || peerFP == "" {
 		return false
 	}
@@ -446,6 +460,11 @@ func (m *Manager) IsPeerOnline(peerFP string) bool {
 			return true
 		}
 	}
+	if actualFP, ok := m.peerNames[strings.ToLower(peerFP)]; ok {
+		if s, exists := m.sessions[actualFP]; exists && s.IsOnline() {
+			return true
+		}
+	}
 	for fp, sess := range m.sessions {
 		if sess.IsOnline() {
 			if fp == peerFP || m.peerEndp[fp] == peerFP || strings.EqualFold(m.peerNames[fp], peerFP) {
@@ -458,23 +477,31 @@ func (m *Manager) IsPeerOnline(peerFP string) bool {
 
 // SendFile streams a local file to a connected peer in 64KB chunks.
 func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji string) (string, error) {
+	peerFP = strings.TrimSpace(peerFP)
 	m.mu.RLock()
 	s, exists := m.sessions[peerFP]
 	if !exists || !s.IsOnline() {
+		if actualFP, ok := m.peerNames[peerFP]; ok {
+			if sess, ok := m.sessions[actualFP]; ok && sess.IsOnline() {
+				s = sess
+				exists = true
+			}
+		}
+	}
+	if !exists || !s.IsOnline() {
+		if actualFP, ok := m.peerNames[strings.ToLower(peerFP)]; ok {
+			if sess, ok := m.sessions[actualFP]; ok && sess.IsOnline() {
+				s = sess
+				exists = true
+			}
+		}
+	}
+	if !exists || !s.IsOnline() {
 		for fp, sess := range m.sessions {
-			if sess.IsOnline() && (fp == peerFP || m.peerEndp[fp] == peerFP) {
+			if sess.IsOnline() && (fp == peerFP || m.peerEndp[fp] == peerFP || strings.EqualFold(m.peerNames[fp], peerFP)) {
 				s = sess
 				exists = true
 				break
-			}
-		}
-		if !exists && len(m.sessions) == 1 {
-			for _, sess := range m.sessions {
-				if sess.IsOnline() {
-					s = sess
-					exists = true
-					break
-				}
 			}
 		}
 	}

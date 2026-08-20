@@ -56,8 +56,8 @@ void callbackOnPeerConnected(const char *peerFP, const char *endpoint) {
     if (g_nativeBridgeClass == NULL || g_midOnPeerConnected == NULL) return;
     JNIEnv *env = getJNIEnv();
     if (env != NULL) {
-        jstring jFP = (*env)->NewStringUTF(env, peerFP);
-        jstring jEndp = (*env)->NewStringUTF(env, endpoint);
+        jstring jFP = (*env)->NewStringUTF(env, peerFP ? peerFP : "");
+        jstring jEndp = (*env)->NewStringUTF(env, endpoint ? endpoint : "");
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnPeerConnected, jFP, jEndp);
         checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jFP);
@@ -69,8 +69,8 @@ void callbackOnPeerDisconnected(const char *peerFP, const char *reason) {
     if (g_nativeBridgeClass == NULL || g_midOnPeerDisconnected == NULL) return;
     JNIEnv *env = getJNIEnv();
     if (env != NULL) {
-        jstring jFP = (*env)->NewStringUTF(env, peerFP);
-        jstring jReason = (*env)->NewStringUTF(env, reason);
+        jstring jFP = (*env)->NewStringUTF(env, peerFP ? peerFP : "");
+        jstring jReason = (*env)->NewStringUTF(env, reason ? reason : "");
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnPeerDisconnected, jFP, jReason);
         checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jFP);
@@ -82,12 +82,12 @@ void callbackOnMessageReceived(const char *peerFP, const jbyte *payload, jsize l
     if (g_nativeBridgeClass == NULL || g_midOnMessageReceived == NULL) return;
     JNIEnv *env = getJNIEnv();
     if (env != NULL) {
-        jstring jFP = (*env)->NewStringUTF(env, peerFP);
+        jstring jFP = (*env)->NewStringUTF(env, peerFP ? peerFP : "");
         jbyteArray jArr = (*env)->NewByteArray(env, len);
         if (len > 0 && payload != NULL) {
             (*env)->SetByteArrayRegion(env, jArr, 0, len, payload);
         }
-        jstring jMsgID = (*env)->NewStringUTF(env, messageID);
+        jstring jMsgID = (*env)->NewStringUTF(env, messageID ? messageID : "");
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnMessageReceived, jFP, jArr, jMsgID);
         checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jFP);
@@ -100,7 +100,7 @@ void callbackOnError(int code, const char *msg) {
     if (g_nativeBridgeClass == NULL || g_midOnError == NULL) return;
     JNIEnv *env = getJNIEnv();
     if (env != NULL) {
-        jstring jMsg = (*env)->NewStringUTF(env, msg);
+        jstring jMsg = (*env)->NewStringUTF(env, msg ? msg : "");
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnError, (jint)code, jMsg);
         checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jMsg);
@@ -111,9 +111,9 @@ void callbackOnPeerDiscovered(const char *infoHashHex, const char *endpoint, con
     if (g_nativeBridgeClass == NULL || g_midOnPeerDiscovered == NULL) return;
     JNIEnv *env = getJNIEnv();
     if (env != NULL) {
-        jstring jHash = (*env)->NewStringUTF(env, infoHashHex);
-        jstring jEndp = (*env)->NewStringUTF(env, endpoint);
-        jstring jSrc = (*env)->NewStringUTF(env, source);
+        jstring jHash = (*env)->NewStringUTF(env, infoHashHex ? infoHashHex : "");
+        jstring jEndp = (*env)->NewStringUTF(env, endpoint ? endpoint : "");
+        jstring jSrc = (*env)->NewStringUTF(env, source ? source : "");
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnPeerDiscovered, jHash, jEndp, jSrc);
         checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jHash);
@@ -126,8 +126,8 @@ void callbackOnFileProgress(const char *peerFP, const char *messageID, jlong tra
     if (g_nativeBridgeClass == NULL || g_midOnFileProgress == NULL) return;
     JNIEnv *env = getJNIEnv();
     if (env != NULL) {
-        jstring jFP = (*env)->NewStringUTF(env, peerFP);
-        jstring jMsgID = (*env)->NewStringUTF(env, messageID);
+        jstring jFP = (*env)->NewStringUTF(env, peerFP ? peerFP : "");
+        jstring jMsgID = (*env)->NewStringUTF(env, messageID ? messageID : "");
         (*env)->CallStaticVoidMethod(env, g_nativeBridgeClass, g_midOnFileProgress, jFP, jMsgID, transferred, total, speedKbps);
         checkAndClearException(env);
         (*env)->DeleteLocalRef(env, jFP);

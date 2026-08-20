@@ -594,6 +594,17 @@ func (m *SessionManager) ConnectPeer(endpoint, expectedFingerprint string) error
 	return nil
 }
 
+// SetNickname sets the local user nickname for outgoing messages.
+func (m *SessionManager) SetNickname(nickname string) {
+	m.mu.RLock()
+	nm := m.netManager
+	m.mu.RUnlock()
+
+	if nm != nil {
+		nm.SetNickname(nickname)
+	}
+}
+
 // UpdatePeerNameMapping registers a mapping between peer fingerprint and nickname for lookup.
 func (m *SessionManager) UpdatePeerNameMapping(peerFP, nickname string) {
 	m.mu.RLock()

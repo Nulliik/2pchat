@@ -499,9 +499,20 @@ object NativeBridge {
         }
     }
 
+    fun setNickname(nickname: String): Boolean {
+        if (!isLoaded || nickname.isBlank()) return false
+        return try {
+            nativeSetNickname(nickname)
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeSetNickname failed", e)
+            false
+        }
+    }
+
     // --- Native JNI declarations ---
     private external fun nativeSetStorageDir(dir: String)
     private external fun nativeInit(): Boolean
+    private external fun nativeSetNickname(nickname: String): Boolean
     private external fun nativeEcho(msg: String): String?
     private external fun nativeGetLocalIdentityJSON(): String?
     private external fun nativeGetLocalSeedMnemonic(): String?

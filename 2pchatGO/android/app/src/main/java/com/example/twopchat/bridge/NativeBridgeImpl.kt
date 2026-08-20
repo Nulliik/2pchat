@@ -127,6 +127,9 @@ class NativeBridgeImpl : IP2PBridge {
     }
 
     override fun configureLocalIdentity(username: String, fingerprint: String, aboutMe: String): Boolean {
+        if (username.isNotBlank()) {
+            NativeBridge.setNickname(username)
+        }
         return NativeBridge.initialize()
     }
 

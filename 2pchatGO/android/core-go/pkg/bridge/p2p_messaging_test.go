@@ -183,3 +183,110 @@ func TestP2PConnectionAndMessaging(t *testing.T) {
 
 	t.Log("✅ TestP2PConnectionAndMessaging: PASS")
 }
+
+// TestP2PBidirectionalMessagingByNickname verifies bidirectional messaging when peers address each other by nickname
+func TestP2PBidirectionalMessagingByNickname(t *testing.T) {
+	aliceConnected := make(chan string, 1)
+	bobConnected := make(chan string, 1)
+	aliceReceived := make(chan string, 10)
+	bobReceived := make(chan string, 10)
+
+	alice := &bridge.SessionManager{}
+	alice.SetStorageDir(t.TempDir())
+	alice.SetCallbacks(session.EventCallbacks{
+		OnPeerConnected: func(peerFP, endpoint string) {
+			select {
+			case aliceConnected <- peerFP:
+			default:
+			}
+		},
+		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			aliceReceived <- string(payload)
+		},
+	}, nil)
+	if err := alice.Init(); err != nil {
+		t.Fatalf("Failed to initialize Alice: %v", err)
+	}
+	defer alice.Close()
+	alice.SetNickname("Alice")
+
+	bob := &bridge.SessionManager{}
+	bob.SetStorageDir(t.TempDir())
+	bob.SetCallbacks(session.EventCallbacks{
+		OnPeerConnected: func(peerFP, endpoint string) {
+			select {
+			case bobConnected <- peerFP:
+			default:
+			}
+		},
+		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			bobReceived <- string(payload)
+		},
+	}, nil)
+	if err := bob.Init(); err != nil {
+		t.Fatalf("Failed to initialize Bob: %v", err)
+	}
+	defer bob.Close()
+	bob.SetNickname("Bob")
+
+	if err := bob.StartListener(0); err != nil {
+		t.Fatalf("Bob start listener failed: %v", err)
+	}
+	bobPort := bob.GetBoundPort()
+	bobEndpoint := fmt.Sprintf("127.0.0.1:%d", bobPort)
+	bobFP := bob.GetLocalFingerprint()
+	aliceFP := alice.GetLocalFingerprint()
+
+	// Register nicknames
+	alice.UpdatePeerNameMapping(bobFP, "Bob")
+	bob.UpdatePeerNameMapping(aliceFP, "Alice")
+
+	// Connect Alice -> Bob
+	if err := alice.ConnectPeer(bobEndpoint, bobFP); err != nil {
+		t.Fatalf("ConnectPeer failed: %v", err)
+	}
+
+	select {
+	case <-aliceConnected:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timeout waiting for Alice connection")
+	}
+
+	select {
+	case <-bobConnected:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timeout waiting for Bob connection")
+	}
+
+	// 1. Alice sends to Bob by exact nickname "Bob"
+	msg1 := "Hello Bob by nickname!"
+	if _, err := alice.SendMessage("Bob", msg1); err != nil {
+		t.Fatalf("Alice SendMessage by nickname 'Bob' failed: %v", err)
+	}
+
+	select {
+	case rx := <-bobReceived:
+		if !strings.Contains(rx, msg1) {
+			t.Fatalf("Bob received unexpected payload: %s", rx)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timeout waiting for Bob to receive message from Alice")
+	}
+
+	// 2. Bob replies to Alice by case-insensitive nickname "alice"
+	msg2 := "Hello Alice by lowercase nickname!"
+	if _, err := bob.SendMessage("alice", msg2); err != nil {
+		t.Fatalf("Bob SendMessage by nickname 'alice' failed: %v", err)
+	}
+
+	select {
+	case rx := <-aliceReceived:
+		if !strings.Contains(rx, msg2) {
+			t.Fatalf("Alice received unexpected payload: %s", rx)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timeout waiting for Alice to receive reply from Bob")
+	}
+
+	t.Log("✅ TestP2PBidirectionalMessagingByNickname: PASS")
+}
