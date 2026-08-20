@@ -147,12 +147,16 @@ internal fun ChatMessageList(
             }
         }
     }
+    val selectedIds = remember(selectedMessages.size) {
+        selectedMessages.mapTo(HashSet(selectedMessages.size)) { it.id }
+    }
     val onSelectionChange = remember(selectedMessages) {
         { message: Message, selected: Boolean ->
             if (selected) {
-                if (message !in selectedMessages) selectedMessages.add(message)
+                if (message.id !in selectedIds) selectedMessages.add(message)
             } else {
-                selectedMessages.remove(message)
+                val index = selectedMessages.indexOfFirst { it.id == message.id }
+                if (index >= 0) selectedMessages.removeAt(index)
             }
             Unit
         }
@@ -253,13 +257,14 @@ internal fun ChatMessageList(
                     isTyping ||
                     peerName == "Saved Messages"
                 )
+            val isSelected = msg.id in selectedIds
             if (isSearchMode && searchQuery.isNotEmpty() && onJumpToMessage != null) {
                 Box(modifier = Modifier.fillMaxWidth().clickable { onJumpToMessage(msg) }) {
                     ChatMessageBubble(
                         index = index,
                         msg = msg,
                         isAnimatedMediaEnabled = msg.id in activeAnimatedGifMessageIds,
-                        isSelected = msg in selectedMessages,
+                        isSelected = isSelected,
                         onSelectionChange = onSelectionChange,
                         isSelectMode = isSelectMode,
                         isRead = isRead,
@@ -289,7 +294,7 @@ internal fun ChatMessageList(
                     index = index,
                     msg = msg,
                     isAnimatedMediaEnabled = msg.id in activeAnimatedGifMessageIds,
-                    isSelected = msg in selectedMessages,
+                    isSelected = isSelected,
                     onSelectionChange = onSelectionChange,
                     isSelectMode = isSelectMode,
                     isRead = isRead,

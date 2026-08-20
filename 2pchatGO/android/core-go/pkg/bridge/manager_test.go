@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -239,5 +240,123 @@ func TestManagerNatTraversal(t *testing.T) {
 	mgr.SetTorProxy(true, "127.0.0.1:9050")
 	if !mgr.TriggerNatTraversal() {
 		t.Fatalf("TriggerNatTraversal in Tor mode returned false")
+	}
+}
+
+func TestConcurrentCallbacksNoDeadlock(t *testing.T) {
+	var mgr *SessionManager
+	var wg sync.WaitGroup
+
+	cbCount := 0
+	var cbMu sync.Mutex
+
+	callbacks := session.EventCallbacks{
+		OnPeerConnected: func(peerFP, endpoint string) {
+			cbMu.Lock()
+			cbCount++
+			cbMu.Unlock()
+
+			// Re-entrant call back into SessionManager during callback
+			_ = mgr.IsPeerOnline(peerFP)
+			mgr.UpdatePeerNameMapping(peerFP, "Nickname-"+peerFP)
+			_ = mgr.GetLocalFingerprint()
+			_ = mgr.GetOnionAddress()
+		},
+		OnPeerDisconnected: func(peerFP, reason string) {
+			cbMu.Lock()
+			cbCount++
+			cbMu.Unlock()
+
+			_ = mgr.IsPeerOnline(peerFP)
+			_ = mgr.GetLocalFingerprint()
+		},
+		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
+			cbMu.Lock()
+			cbCount++
+			cbMu.Unlock()
+
+			_ = mgr.IsPeerOnline(peerFP)
+			mgr.UpdatePeerNameMapping(peerFP, "User-"+peerFP)
+		},
+		OnError: func(code int, msg string) {
+			cbMu.Lock()
+			cbCount++
+			cbMu.Unlock()
+
+			_ = mgr.GetLocalFingerprint()
+		},
+		OnFileProgress: func(peerFP, msgID string, transferred, total int64, speed float64) {
+			cbMu.Lock()
+			cbCount++
+			cbMu.Unlock()
+
+			_ = mgr.IsPeerOnline(peerFP)
+		},
+	}
+
+	mgr = &SessionManager{
+		sessions:  make(map[string]*crypto.SessionState),
+		torProxy:  "127.0.0.1:9050",
+		dialer:    transport.NewAdaptiveDialer("127.0.0.1:9050", false, 5*time.Second),
+		callbacks: callbacks,
+	}
+
+	if err := mgr.Init(); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// 100 concurrent workers exercising callbacks and manager methods simultaneously
+	goroutines := 100
+	wg.Add(goroutines)
+
+	for i := 0; i < goroutines; i++ {
+		workerID := i
+		go func() {
+			defer wg.Done()
+			fp := fmt.Sprintf("test-fingerprint-%d", workerID)
+			ep := fmt.Sprintf("127.0.0.1:%d", 10000+workerID)
+
+			// Concurrently trigger manager methods and callbacks
+			mgr.UpdatePeerNameMapping(fp, fmt.Sprintf("Nick-%d", workerID))
+			_ = mgr.IsPeerOnline(fp)
+			_ = mgr.GetLocalFingerprint()
+
+			if callbacks.OnPeerConnected != nil {
+				callbacks.OnPeerConnected(fp, ep)
+			}
+			if callbacks.OnMessageReceived != nil {
+				callbacks.OnMessageReceived(fp, []byte(fmt.Sprintf("hello from worker %d", workerID)), fmt.Sprintf("msg-%d", workerID))
+			}
+			if callbacks.OnFileProgress != nil {
+				callbacks.OnFileProgress(fp, fmt.Sprintf("msg-%d", workerID), 1024, 2048, 100.5)
+			}
+			if callbacks.OnError != nil {
+				callbacks.OnError(1, "simulated transient error")
+			}
+			if callbacks.OnPeerDisconnected != nil {
+				callbacks.OnPeerDisconnected(fp, "clean shutdown")
+			}
+		}()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Succeeded without deadlock
+	case <-time.After(5 * time.Second):
+		t.Fatalf("TestConcurrentCallbacksNoDeadlock TIMED OUT (Deadlock detected in JNI callback path)")
+	}
+
+	cbMu.Lock()
+	totalExecuted := cbCount
+	cbMu.Unlock()
+
+	if totalExecuted < goroutines*5 {
+		t.Fatalf("Expected at least %d callback executions, got %d", goroutines*5, totalExecuted)
 	}
 }

@@ -64,33 +64,48 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         private const val KEY_FINGERPRINT = "fingerprint"
         private const val KEY_UPDATED_AT_MS = "updated_at_ms"
         private const val TAG = "ChatDatabaseHelper"
-        private val dbLock = Any()
+        private val instanceLock = Any()
+        private val migrationLock = Any()
         private val activeHelpers = java.util.Collections.newSetFromMap(java.util.WeakHashMap<ChatDatabaseHelper, Boolean>())
         @Volatile private var instance: ChatDatabaseHelper? = null
         @Volatile private var isMigrationChecked = false
+        @Volatile private var isControlPurged = false
 
-        fun getInstance(context: Context): ChatDatabaseHelper =
-            instance ?: synchronized(dbLock) {
+        fun getInstance(context: Context): ChatDatabaseHelper {
+            val localInstance = instance
+            if (localInstance != null) {
+                return localInstance
+            }
+            return synchronized(instanceLock) {
                 instance ?: ChatDatabaseHelper(context.applicationContext).also { instance = it }
             }
+        }
 
         fun closeAllConnections() {
-            synchronized(dbLock) {
-                for (helper in activeHelpers) {
-                    try {
-                        helper.close()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to close database connection", e)
+            synchronized(instanceLock) {
+                synchronized(activeHelpers) {
+                    for (helper in activeHelpers) {
+                        try {
+                            helper.close()
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to close database connection", e)
+                        }
                     }
+                    activeHelpers.clear()
                 }
-                activeHelpers.clear()
                 instance = null
                 isMigrationChecked = false
+                isControlPurged = false
             }
         }
     }
 
     init {
+        try {
+            setWriteAheadLoggingEnabled(true)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to setWriteAheadLoggingEnabled on helper", e)
+        }
         synchronized(activeHelpers) {
             activeHelpers.add(this)
         }
@@ -99,7 +114,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     private val safeWritableDatabase: SQLiteDatabase
         get() {
             if (!isMigrationChecked) {
-                synchronized(dbLock) {
+                synchronized(migrationLock) {
                     if (!isMigrationChecked) {
                         val pass = SecureStorage.getOrGenerateDbPassphrase(context)
                         val dbFile = context.getDatabasePath(DATABASE_NAME)
@@ -114,7 +129,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     private val safeReadableDatabase: SQLiteDatabase
         get() {
             if (!isMigrationChecked) {
-                synchronized(dbLock) {
+                synchronized(migrationLock) {
                     if (!isMigrationChecked) {
                         val pass = SecureStorage.getOrGenerateDbPassphrase(context)
                         val dbFile = context.getDatabasePath(DATABASE_NAME)
@@ -128,6 +143,11 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
+        try {
+            db.enableWriteAheadLogging()
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not enable Write-Ahead Logging (WAL) in onConfigure", e)
+        }
         DatabaseTuning.applyOptimizations(db)
     }
 
@@ -137,7 +157,14 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         // was created. CREATE TABLE IF NOT EXISTS repairs that harmlessly on
         // the next open and prevents repeated failed peer lookups at startup.
         createPeersTable(db)
-        purgeLeakedControlMessages(db)
+        if (!isControlPurged) {
+            synchronized(migrationLock) {
+                if (!isControlPurged) {
+                    purgeLeakedControlMessages(db)
+                    isControlPurged = true
+                }
+            }
+        }
     }
 
     private fun purgeLeakedControlMessages(db: SQLiteDatabase) {

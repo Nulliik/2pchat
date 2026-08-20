@@ -30,6 +30,8 @@ data class Message(
 
 object MessageTimestampFormatter {
     private val headerCache = ConcurrentHashMap<String, String>()
+    private val messageTimeCache = ConcurrentHashMap<String, String>()
+    private val formatters = ConcurrentHashMap<String, ThreadLocal<SimpleDateFormat>>()
 
     fun format(
         message: Message,
@@ -37,19 +39,22 @@ object MessageTimestampFormatter {
         nowEpochMs: Long = System.currentTimeMillis(),
         timeZone: TimeZone = TimeZone.getDefault(),
     ): String {
-        val base = if (message.sentAtEpochMs <= 0L) {
-            val raw = message.timestamp
-            if (raw == "вчера" || raw == "yesterday" || raw == "Yesterday") "" else raw
-        } else {
-            val locale = if (language == "Русский") Locale.forLanguageTag("ru") else Locale.ENGLISH
-            val sent = Calendar.getInstance(timeZone).apply { timeInMillis = message.sentAtEpochMs }
-            formatDate("HH:mm", locale, timeZone, sent)
-        }
-        val isEdited = message.status?.contains("edited") == true
-        return if (isEdited) {
-            if (base.contains("edited") || base.contains("(ред.)")) base else base + (if (language == "Русский") " (ред.)" else " (edited)")
-        } else {
-            base
+        val cacheKey = "${message.id}|${message.status.orEmpty()}|${message.sentAtEpochMs}|$language|${timeZone.id}"
+        return messageTimeCache.getOrPut(cacheKey) {
+            val base = if (message.sentAtEpochMs <= 0L) {
+                val raw = message.timestamp
+                if (raw == "вчера" || raw == "yesterday" || raw == "Yesterday") "" else raw
+            } else {
+                val locale = if (language == "Русский") Locale.forLanguageTag("ru") else Locale.ENGLISH
+                val sent = Calendar.getInstance(timeZone).apply { timeInMillis = message.sentAtEpochMs }
+                formatDate("HH:mm", locale, timeZone, sent)
+            }
+            val isEdited = message.status?.contains("edited") == true
+            if (isEdited) {
+                if (base.contains("edited") || base.contains("(ред.)")) base else base + (if (language == "Русский") " (ред.)" else " (edited)")
+            } else {
+                base
+            }
         }
     }
 
@@ -84,9 +89,11 @@ object MessageTimestampFormatter {
         timeZone: TimeZone = TimeZone.getDefault(),
     ): Boolean {
         if (firstEpochMs <= 0L || secondEpochMs <= 0L) return false
-        val cal1 = Calendar.getInstance(timeZone).apply { timeInMillis = firstEpochMs }
-        val cal2 = Calendar.getInstance(timeZone).apply { timeInMillis = secondEpochMs }
-        return !isSameDate(cal1, cal2)
+        val offset1 = timeZone.getOffset(firstEpochMs)
+        val offset2 = timeZone.getOffset(secondEpochMs)
+        val day1 = (firstEpochMs + offset1) / 86_400_000L
+        val day2 = (secondEpochMs + offset2) / 86_400_000L
+        return day1 != day2
     }
 
     private fun isSameDate(left: Calendar, right: Calendar): Boolean =
@@ -94,7 +101,6 @@ object MessageTimestampFormatter {
             left.get(Calendar.YEAR) == right.get(Calendar.YEAR) &&
             left.get(Calendar.DAY_OF_YEAR) == right.get(Calendar.DAY_OF_YEAR)
 
-    @Synchronized
     private fun formatDate(
         pattern: String,
         locale: Locale,
@@ -102,11 +108,11 @@ object MessageTimestampFormatter {
         calendar: Calendar,
     ): String {
         val key = "$pattern|${locale.toLanguageTag()}|${timeZone.id}"
-        val formatter = formatters.getOrPut(key) {
-            SimpleDateFormat(pattern, locale).apply { this.timeZone = timeZone }
+        val threadLocal = formatters.getOrPut(key) {
+            ThreadLocal.withInitial {
+                SimpleDateFormat(pattern, locale).apply { this.timeZone = timeZone }
+            }
         }
-        return formatter.format(calendar.time)
+        return threadLocal.get()?.format(calendar.time).orEmpty()
     }
-
-    private val formatters = mutableMapOf<String, SimpleDateFormat>()
 }

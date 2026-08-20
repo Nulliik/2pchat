@@ -1,5 +1,8 @@
 package com.example.twopchat.ui.chat.state
 
+import androidx.compose.runtime.Immutable
+
+@Immutable
 sealed interface ChatScreenEffect {
     data class ShowToast(val message: String) : ChatScreenEffect
     data class CopyToClipboard(val label: String, val text: String) : ChatScreenEffect

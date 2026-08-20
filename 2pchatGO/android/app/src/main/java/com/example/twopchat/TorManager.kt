@@ -789,6 +789,7 @@ object TorManager {
             }
             val startedProcess = processBuilder.start()
             process = startedProcess
+            applyBackgroundPriority(startedProcess)
             if (!attachProcess(runId, startedProcess)) {
                 terminateProcess(startedProcess)
                 return
@@ -796,6 +797,9 @@ object TorManager {
             Log.i(TAG, "Started embedded Tor process")
 
             logReaderJob = scope.launch {
+                try {
+                    android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                } catch (_: Exception) {}
                 try {
                     startedProcess.inputStream.bufferedReader().useLines { lines ->
                         lines.forEach { line ->
@@ -1081,6 +1085,40 @@ object TorManager {
             scope.launch(Dispatchers.IO) {
                 ProxyConfig.updateNetworkProxy(context)
             }
+        }
+    }
+
+    private fun applyBackgroundPriority(process: Process?) {
+        try {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to set calling thread priority to BACKGROUND", e)
+        }
+        if (process == null) return
+        try {
+            val pid = getProcessPid(process)
+            if (pid > 0) {
+                android.os.Process.setThreadPriority(pid, android.os.Process.THREAD_PRIORITY_BACKGROUND)
+                Log.i(TAG, "Applied THREAD_PRIORITY_BACKGROUND to Tor process (PID: $pid)")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not apply background priority to Tor process", e)
+        }
+    }
+
+    private fun getProcessPid(process: Process): Int {
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                try {
+                    val pidMethod = process.javaClass.getMethod("pid")
+                    return (pidMethod.invoke(process) as Long).toInt()
+                } catch (_: NoSuchMethodException) {}
+            }
+            val pidField = process.javaClass.getDeclaredField("pid")
+            pidField.isAccessible = true
+            pidField.getInt(process)
+        } catch (_: Exception) {
+            -1
         }
     }
 }
