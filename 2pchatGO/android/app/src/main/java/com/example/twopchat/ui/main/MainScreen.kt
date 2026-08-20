@@ -122,10 +122,11 @@ fun MainScreen(
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
-    // Trigger system VPN activation prompt if onboarding was just completed
+    // Trigger system VPN activation prompt if onboarding was just completed and Yggdrasil is enabled
     LaunchedEffect(Unit) {
         val promptAlreadyShown = sharedPrefs.getBoolean("yggdrasil_prompt_shown", false)
-        if (!promptAlreadyShown) {
+        val yggdrasilEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
+        if (!promptAlreadyShown && yggdrasilEnabled) {
             sharedPrefs.edit().putBoolean("yggdrasil_prompt_shown", true).apply()
             
             // Re-toggle service to force Android system VPN connection request dialog
@@ -136,7 +137,7 @@ fun MainScreen(
                 context.stopService(stopIntent)
             } catch (_: Exception) {}
 
-            val vpnPrepareIntent = VpnService.prepare(context)
+            val vpnPrepareIntent = try { VpnService.prepare(context) } catch (_: Exception) { null }
             if (vpnPrepareIntent != null) {
                 try {
                     vpnPrepareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

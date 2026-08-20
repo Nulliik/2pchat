@@ -58,21 +58,23 @@ fun OnboardingScreen(
     var showYggdrasilDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
 
-    fun startYggdrasilAndComplete() {
-        try {
-            sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
-            ContextCompat.startForegroundService(
-                context,
-                Intent(context, PacketTunnelProvider::class.java).apply {
-                    action = PacketTunnelProvider.ACTION_START
-                },
-            )
-            onComplete()
-        } catch (error: RuntimeException) {
-            android.util.Log.e("OnboardingScreen", "Unable to start Yggdrasil VPN", error)
-            sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
-            showYggdrasilDialog = true
+    fun startYggdrasilAndComplete(enableYggdrasil: Boolean = true) {
+        showYggdrasilDialog = false
+        sharedPrefs.edit().putBoolean("settings_yggdrasil", enableYggdrasil).apply()
+        if (enableYggdrasil) {
+            try {
+                ContextCompat.startForegroundService(
+                    context,
+                    Intent(context, PacketTunnelProvider::class.java).apply {
+                        action = PacketTunnelProvider.ACTION_START
+                    },
+                )
+            } catch (error: Exception) {
+                android.util.Log.e("OnboardingScreen", "Unable to start Yggdrasil VPN service", error)
+                sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
+            }
         }
+        onComplete()
     }
 
     LaunchedEffect(profilePhotoUri) {
@@ -84,11 +86,11 @@ fun OnboardingScreen(
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK && VpnService.prepare(context) == null) {
-            startYggdrasilAndComplete()
+        if (result.resultCode == Activity.RESULT_OK) {
+            startYggdrasilAndComplete(enableYggdrasil = true)
         } else {
-            sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
-            showYggdrasilDialog = true
+            // User dismissed or denied VPN prompt, proceed into app with Yggdrasil disabled
+            startYggdrasilAndComplete(enableYggdrasil = false)
         }
     }
 
@@ -134,7 +136,10 @@ fun OnboardingScreen(
     // Yggdrasil Activation Prompt Dialog (Step 5 trigger)
     if (showYggdrasilDialog) {
         AlertDialog(
-            onDismissRequest = { showYggdrasilDialog = false },
+            onDismissRequest = {
+                showYggdrasilDialog = false
+                startYggdrasilAndComplete(enableYggdrasil = false)
+            },
             title = {
                 Text(
                     text = Localizations.getString("enable_yggdrasil_prompt_title", appLanguage),
@@ -154,12 +159,20 @@ fun OnboardingScreen(
                 Button(
                     onClick = {
                         showYggdrasilDialog = false
-                        val vpnPrepareIntent = VpnService.prepare(context)
+                        val vpnPrepareIntent = try {
+                            VpnService.prepare(context)
+                        } catch (e: Exception) {
+                            null
+                        }
                         if (vpnPrepareIntent != null) {
-                            sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
-                            vpnPermissionLauncher.launch(vpnPrepareIntent)
+                            try {
+                                vpnPermissionLauncher.launch(vpnPrepareIntent)
+                            } catch (e: Exception) {
+                                android.util.Log.e("OnboardingScreen", "Failed to launch VPN permission intent", e)
+                                startYggdrasilAndComplete(enableYggdrasil = false)
+                            }
                         } else {
-                            startYggdrasilAndComplete()
+                            startYggdrasilAndComplete(enableYggdrasil = true)
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -178,8 +191,7 @@ fun OnboardingScreen(
                 TextButton(
                     onClick = {
                         showYggdrasilDialog = false
-                        sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
-                        onComplete()
+                        startYggdrasilAndComplete(enableYggdrasil = false)
                     }
                 ) {
                     Text(
