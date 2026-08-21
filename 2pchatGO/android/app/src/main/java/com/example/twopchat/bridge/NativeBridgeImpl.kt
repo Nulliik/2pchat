@@ -79,10 +79,6 @@ class NativeBridgeImpl : IP2PBridge {
             nameToFpMap[resolvedName] = peerFP
             peerNameMap[peerFP] = resolvedName
             NativeBridge.updatePeerNameMapping(peerFP, resolvedName)
-            P2PPreferences.updateFingerprintCache(peerFP, resolvedName)
-            if (!P2PMessageRelay.isPlaceholderPeerName(resolvedName)) {
-                P2PMessageRelay.publishPeerOnline(resolvedName, "DIRECT P2P", endpoint)
-            }
             sessionListener?.onSessionEstablished(resolvedName, peerFP, endpoint, "direct", "")
             flushPendingMessages(peerFP)
         }
@@ -179,9 +175,16 @@ class NativeBridgeImpl : IP2PBridge {
             ?: resolveFingerprint(peerName)
             ?: nameToFpMap[peerName]
 
-        val isLive = (resolvedFP != null && onlinePeers[resolvedFP] == true) || (onlinePeers[peerName] == true)
+        val target = resolvedFP ?: peerName
 
-        if (!isLive && endpoint.isNotBlank()) {
+        // Attempt direct send through Go Core first. Go Core is the authoritative single source of truth for active sessions.
+        val msgId = NativeBridge.sendMessage(target, payload)
+        if (msgId != null) {
+            return true
+        }
+
+        // If Go Core has no active session for this peer, queue for background delivery and initiate dialing
+        if (endpoint.isNotBlank()) {
             val targetKey = resolvedFP ?: peerName
             val queue = pendingMessages.getOrPut(targetKey) { ConcurrentLinkedQueue() }
             pruneExpiredPending(queue)
@@ -193,12 +196,9 @@ class NativeBridgeImpl : IP2PBridge {
             } else {
                 NativeBridge.connectPeer(endpoint, resolvedFP.orEmpty())
             }
-            return true
         }
 
-        val target = resolvedFP ?: peerName
-        val msgId = NativeBridge.sendMessage(target, payload)
-        return msgId != null
+        return false
     }
 
     private fun flushPendingMessages(peerFingerprint: String) {
