@@ -15,15 +15,15 @@ import (
 )
 
 const (
-	// DefaultChunkSize is 64 KB.
-	DefaultChunkSize = 65536
+	// DefaultChunkSize is 256 KiB.
+	DefaultChunkSize = 256 * 1024
 	// FileIDSize is 12 bytes.
 	FileIDSize = 12
 	// FileNoncePrefixSize is 16 bytes.
 	FileNoncePrefixSize = 16
 )
 
-// chunkBufferPool provides reusable 64KB buffers to minimize GC allocations during file streaming.
+// chunkBufferPool provides reusable 256 KiB buffers to minimize GC allocations during file streaming.
 var chunkBufferPool = sync.Pool{
 	New: func() any {
 		b := make([]byte, DefaultChunkSize)

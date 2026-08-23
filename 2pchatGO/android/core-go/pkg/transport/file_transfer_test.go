@@ -130,7 +130,7 @@ func TestFileTransferManagerCancellation(t *testing.T) {
 func TestReceiveChunkOutOfOrderAndDuplicate(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFilePath := filepath.Join(tmpDir, "sample.bin")
-	testData := make([]byte, 256*1024) // 4 chunks of 64KB
+	testData := make([]byte, 1024*1024) // 4 chunks of 256 KiB
 	rand.Read(testData)
 
 	if err := os.WriteFile(testFilePath, testData, 0600); err != nil {
@@ -229,7 +229,7 @@ func TestReapIncompleteTransfers(t *testing.T) {
 func TestResumableFileTransfer(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFilePath := filepath.Join(tmpDir, "resume_video.mp4")
-	testData := make([]byte, 512*1024) // 8 chunks of 64KB
+	testData := make([]byte, 2*1024*1024) // 8 chunks of 256 KiB
 	rand.Read(testData)
 
 	if err := os.WriteFile(testFilePath, testData, 0600); err != nil {
@@ -333,7 +333,7 @@ func TestResumableFileTransfer(t *testing.T) {
 func TestDiskBackedLowMemoryStreaming(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFilePath := filepath.Join(tmpDir, "stream_audio.ogg")
-	testData := make([]byte, 256*1024) // 4 chunks of 64KB
+	testData := make([]byte, 1024*1024) // 4 chunks of 256 KiB
 	rand.Read(testData)
 
 	if err := os.WriteFile(testFilePath, testData, 0600); err != nil {

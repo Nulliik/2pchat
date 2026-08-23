@@ -52,6 +52,12 @@ func TestFileStreamingRoundtrip(t *testing.T) {
 	}
 }
 
+func TestDefaultChunkSizeIs256KiB(t *testing.T) {
+	if DefaultChunkSize != 256*1024 {
+		t.Fatalf("DefaultChunkSize = %d, want %d", DefaultChunkSize, 256*1024)
+	}
+}
+
 func TestChunkBufferPoolZeroization(t *testing.T) {
 	bufPtr := getChunkBuffer(DefaultChunkSize)
 	for i := range *bufPtr {

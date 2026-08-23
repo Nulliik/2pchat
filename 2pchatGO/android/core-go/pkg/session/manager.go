@@ -617,7 +617,7 @@ func (m *Manager) IsPeerOnline(peerFP string) bool {
 	return exists
 }
 
-// SendFile streams a local file to a connected peer in 64KB chunks.
+// SendFile streams a local file to a connected peer in 256 KiB chunks.
 func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji string) (string, error) {
 	m.mu.RLock()
 	s, exists := m.resolveSessionLocked(peerFP)

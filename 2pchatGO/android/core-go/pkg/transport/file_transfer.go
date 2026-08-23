@@ -111,7 +111,7 @@ func (m *FileTransferManager) CancelTransfer(messageID string) bool {
 	return found
 }
 
-// SendFileStream reads a file from disk, encrypts it in 64KB chunks, and dispatches frames.
+// SendFileStream reads a file from disk, encrypts it in 256 KiB chunks, and dispatches frames.
 func (m *FileTransferManager) SendFileStream(
 	ctx context.Context,
 	peerFP string,
@@ -125,7 +125,7 @@ func (m *FileTransferManager) SendFileStream(
 	return m.SendFileStreamWithResume(ctx, peerFP, messageID, filePath, fileName, caption, emoji, 0, sendFrame)
 }
 
-// SendFileStreamWithResume reads a file from disk starting from startChunkIdx, encrypts in 64KB chunks, and dispatches frames.
+// SendFileStreamWithResume reads a file from disk starting from startChunkIdx, encrypts in 256 KiB chunks, and dispatches frames.
 func (m *FileTransferManager) SendFileStreamWithResume(
 	ctx context.Context,
 	peerFP string,
