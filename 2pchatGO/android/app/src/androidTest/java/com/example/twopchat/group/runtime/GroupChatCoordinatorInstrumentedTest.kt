@@ -5,7 +5,7 @@ import android.util.Base64
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.twopchat.NativeBridge
-import com.example.twopchat.P2PPreferences
+import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.group.crypto.EpochAeadGroupCrypto
 import com.example.twopchat.group.crypto.GroupIdentitySignatures
 import com.example.twopchat.group.model.GroupPermission

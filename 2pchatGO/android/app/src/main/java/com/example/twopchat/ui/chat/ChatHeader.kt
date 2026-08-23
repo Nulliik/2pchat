@@ -21,10 +21,10 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.R
-import com.example.twopchat.TransportType
-import com.example.twopchat.connectionTransportLabel
+import com.example.twopchat.relay.TransportType
+import com.example.twopchat.relay.connectionTransportLabel
 import com.example.twopchat.data.Localizations
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -56,6 +56,7 @@ internal fun ChatHeader(
     onDeleteChat: () -> Unit,
     onSetWallpaper: () -> Unit = {},
     onOpenConnectionMode: () -> Unit = {},
+    onBlockPeer: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
@@ -118,8 +119,10 @@ internal fun ChatHeader(
             peerName.contains(" ") -> peerName.split(" ").joinToString("") { it.take(1) }
             else -> peerName.take(2).uppercase()
         }
-        val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
-        val isMismatch = com.example.twopchat.P2PPreferences.prefs(context)
+        // Query Go Core as source of truth: avoids stale-RAM false-negative when the
+        // fingerprint↔nickname mapping has not yet propagated to peerSessionStates.
+        val isOnline = P2PMessageRelay.isPeerOnline(context, peerName)
+        val isMismatch = com.example.twopchat.config.P2PPreferences.prefs(context)
             .getBoolean("fingerprint_mismatch_$peerName", false)
         val shieldColor = when {
             isMismatch -> Color(0xFFF44336)
@@ -309,6 +312,18 @@ internal fun ChatHeader(
                     }
                 )
                 if (!savedMessages) {
+                    DropdownMenuItem(
+                        text = { Text(Localizations.tr(appLanguage, "Заблокировать", "Block User", "Benutzer blockieren", "Bloquear usuario", "Bloquer l'utilisateur", "Bloquear usuário"), color = Color.Red) },
+                        onClick = { showMenu = false; onBlockPeer() },
+                        leadingIcon = {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_block),
+                                contentDescription = "Block User",
+                                tint = Color.Red,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text(Localizations.tr(appLanguage, "Удалить чат", "Delete Chat", "Chat löschen", "Eliminar chat", "Supprimer le chat", "Excluir conversa"), color = Color.Red) },
                         onClick = { showMenu = false; showDeleteDialog = true },

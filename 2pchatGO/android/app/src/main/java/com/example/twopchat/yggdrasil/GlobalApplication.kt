@@ -26,7 +26,27 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
     override fun onCreate() {
         super.onCreate()
         appContext = applicationContext
-        System.loadLibrary("sqlcipher")
+
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                android.util.Log.e("FATAL_CRASH", "Uncaught exception in thread ${thread.name}", throwable)
+                val sw = java.io.StringWriter()
+                throwable.printStackTrace(java.io.PrintWriter(sw))
+                com.example.twopchat.AppLog.append(
+                    applicationContext,
+                    "[FATAL_CRASH] Thread: ${thread.name}\n$sw\n"
+                )
+            } catch (_: Throwable) {}
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+
+        try {
+            System.loadLibrary("sqlcipher")
+        } catch (e: Throwable) {
+            android.util.Log.e("GlobalApplication", "Failed to load sqlcipher", e)
+        }
+
         val prefs = yggdrasilPrefs(applicationContext)
         if (!prefs.contains(PREF_KEY_ENABLED)) {
             // Wait for explicit VPN consent. Starting from a network callback
@@ -61,14 +81,18 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
     override fun onStateChange(state: State) {
         if (state != currentState) {
             if (state != State.Disabled) {
-                val notification = createServiceNotification(this, state)
-                val notificationManager: NotificationManager =
-                    this.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.notify(SERVICE_NOTIFICATION_ID, notification)
+                runCatching {
+                    val notification = createServiceNotification(this, state)
+                    val notificationManager: NotificationManager =
+                        this.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    notificationManager.notify(SERVICE_NOTIFICATION_ID, notification)
+                }.onFailure {
+                    android.util.Log.w("GlobalApplication", "Could not post Yggdrasil service notification", it)
+                }
             }
             if (state == State.Connected) {
-                com.example.twopchat.P2PMessageRelay.refreshAnnouncement(this)
-                com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(this)
+                com.example.twopchat.relay.P2PMessageRelay.refreshAnnouncement(this)
+                com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(this)
             }
             currentState = state
         }

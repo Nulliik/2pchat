@@ -85,18 +85,33 @@ object NativeBridge {
         }
     }
 
+    @Volatile
+    private var cachedLocalIdentity: LocalIdentity? = null
+
     fun getLocalIdentity(): LocalIdentity? {
         if (!isLoaded) return null
-        val jsonStr = nativeGetLocalIdentityJSON() ?: return null
+        val cached = cachedLocalIdentity
+        if (cached != null && cached.fingerprint.isNotBlank()) {
+            return cached
+        }
+        val jsonStr = try {
+            nativeGetLocalIdentityJSON()
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeGetLocalIdentityJSON failed", e)
+            null
+        } ?: return null
+
         return try {
             val json = JSONObject(jsonStr)
-            LocalIdentity(
+            val identity = LocalIdentity(
                 identityPub = json.optString("identityPub"),
                 verifyPub = json.optString("verifyPub"),
                 signedPrekeyPub = json.optString("signedPrekeyPub"),
                 prekeySignature = json.optString("prekeySignature"),
                 fingerprint = json.optString("fingerprint"),
             )
+            cachedLocalIdentity = identity
+            identity
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse local identity JSON", e)
             null
@@ -280,6 +295,7 @@ object NativeBridge {
 
     fun reloadIdentity(): Boolean {
         if (!isLoaded) return false
+        cachedLocalIdentity = null
         return try {
             nativeReloadIdentity()
         } catch (e: Throwable) {
@@ -306,63 +322,6 @@ object NativeBridge {
         } catch (e: Throwable) {
             Log.e(TAG, "nativeProbePeer failed", e)
             false
-        }
-    }
-
-    fun setLocalYggdrasilIP(ip: String) {
-        if (!isLoaded) return
-        try {
-            nativeSetLocalYggdrasilIP(ip)
-        } catch (e: Throwable) {
-            Log.e(TAG, "nativeSetLocalYggdrasilIP failed", e)
-        }
-    }
-
-    fun searchPeers(
-        query: String,
-        sharedCode: String = "",
-        expectedLiveName: String = "",
-        expectedFingerprint: String = "",
-        directCandidates: List<String> = emptyList(),
-    ): List<Map<String, Any>> {
-        if (!isLoaded) return emptyList()
-        return try {
-            val directJson = JSONArray(directCandidates).toString()
-            val resJson = nativeSearchPeers(
-                query,
-                sharedCode,
-                expectedLiveName,
-                expectedFingerprint,
-                directJson,
-            ) ?: return emptyList()
-
-            val jsonArray = JSONArray(resJson)
-            val results = mutableListOf<Map<String, Any>>()
-            for (i in 0 until jsonArray.length()) {
-                val obj = jsonArray.getJSONObject(i)
-                val map = mutableMapOf<String, Any>()
-                val keys = obj.keys()
-                while (keys.hasNext()) {
-                    val k = keys.next()
-                    if (k == "endpoints") {
-                        val epsArray = obj.optJSONArray("endpoints")
-                        val epsList = mutableListOf<String>()
-                        if (epsArray != null) {
-                            for (j in 0 until epsArray.length()) {
-                                epsList.add(epsArray.getString(j))
-                            }
-                        }
-                        map[k] = epsList
-                    } else {
-                        map[k] = obj.get(k)
-                    }
-                }
-                results.add(map)
-            }
-            results
-        } catch (e: Throwable) {
-            Log.e(TAG, "nativeSearchPeers failed", e)
-            emptyList()
         }
     }
 
@@ -548,6 +507,7 @@ object NativeBridge {
 
     fun restoreFromMnemonic(nickname: String, mnemonic: String, aboutMe: String = ""): Boolean {
         if (!isLoaded) return false
+        cachedLocalIdentity = null
         return try {
             nativeRestoreFromMnemonic(nickname, mnemonic, aboutMe)
         } catch (e: Throwable) {
@@ -558,11 +518,32 @@ object NativeBridge {
 
     fun setNickname(nickname: String): Boolean {
         if (!isLoaded || nickname.isBlank()) return false
+        cachedLocalIdentity = null
         return try {
             nativeSetNickname(nickname)
         } catch (e: Throwable) {
             Log.e(TAG, "nativeSetNickname failed", e)
             false
+        }
+    }
+
+    fun sendMessageBinary(peerFingerprint: String, buffer: java.nio.ByteBuffer, offset: Int, length: Int): String? {
+        if (!isLoaded || !buffer.isDirect) return null
+        return try {
+            nativeSendMessageBinary(peerFingerprint, buffer, offset, length)
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeSendMessageBinary failed", e)
+            null
+        }
+    }
+
+    fun sendRawBytes(peerFingerprint: String, payload: ByteArray): String? {
+        if (!isLoaded) return null
+        return try {
+            nativeSendRawBytes(peerFingerprint, payload)
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeSendRawBytes failed", e)
+            null
         }
     }
 
@@ -586,6 +567,8 @@ object NativeBridge {
     private external fun nativeConnectPeer(endpoint: String, expectedFingerprint: String): Boolean
     private external fun nativeUpdatePeerNameMapping(peerFingerprint: String, nickname: String): Boolean
     private external fun nativeSendMessage(peerFingerprint: String, text: String): String?
+    private external fun nativeSendMessageBinary(peerFingerprint: String, directBuffer: java.nio.ByteBuffer, offset: Int, length: Int): String?
+    private external fun nativeSendRawBytes(peerFingerprint: String, payload: ByteArray): String?
     private external fun nativeIsPeerOnline(peerFingerprint: String): Boolean
     private external fun nativeSendFile(peerFingerprint: String, filePath: String, messageId: String, fileName: String, caption: String, emoji: String): String?
     private external fun nativeCancelFile(messageId: String): Boolean
@@ -605,14 +588,6 @@ object NativeBridge {
     private external fun nativeGroupDecrypt(epochSecret: ByteArray, authenticatedData: ByteArray, nonceBase64: String, ciphertextBase64: String): ByteArray?
     private external fun nativeTriggerNatTraversal(): Boolean
     private external fun nativeGetNatDiagnosticsJSON(): String?
-    private external fun nativeSetLocalYggdrasilIP(ip: String)
-    private external fun nativeSearchPeers(
-        query: String,
-        sharedCode: String,
-        expectedLiveName: String,
-        expectedFingerprint: String,
-        directCandidatesJSON: String,
-    ): String?
     private external fun nativeOnNetworkChanged(): Boolean
 }
 

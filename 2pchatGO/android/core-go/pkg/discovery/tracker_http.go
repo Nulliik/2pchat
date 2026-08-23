@@ -6,21 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 	"twopchat/core/pkg/transport"
 )
 
 // HTTPTrackerClient implements HTTP/HTTPS BitTorrent tracker announces.
 type HTTPTrackerClient struct {
-	httpClient       *http.Client
-	torEnabled       bool
-	timeout          time.Duration
-	localYggdrasilIP string
+	httpClient *http.Client
+	torEnabled bool
+	timeout    time.Duration
 }
 
 // NewHTTPTrackerClient creates a new HTTP tracker client.
@@ -47,11 +44,6 @@ func NewHTTPTrackerClient(dialer *transport.AdaptiveDialer, torEnabled bool, tim
 		torEnabled: torEnabled,
 		timeout:    timeout,
 	}
-}
-
-// SetLocalYggdrasilIP sets the local IPv6 address to announce to trackers.
-func (c *HTTPTrackerClient) SetLocalYggdrasilIP(ip string) {
-	c.localYggdrasilIP = strings.Trim(strings.TrimSpace(ip), "[]")
 }
 
 // urlEncodeBinary creates raw percent-encoded byte string for info_hash/peer_id without escaping UTF-8.
@@ -88,10 +80,6 @@ func (c *HTTPTrackerClient) Announce(
 	q.Set("compact", "1")
 	q.Set("numwant", "50")
 	q.Set("event", "started")
-
-	if c.localYggdrasilIP != "" {
-		q.Set("ipv6", c.localYggdrasilIP)
-	}
 
 	rawQuery := q.Encode()
 	if rawQuery != "" {
@@ -130,6 +118,7 @@ func ParseHTTPAnnounceResponse(data []byte) (*AnnounceResult, error) {
 		return nil, errors.New("empty HTTP tracker response")
 	}
 
+	// Simple bencode dictionary scanner
 	// Checks for 'failure reason'
 	if idx := bytes.Index(data, []byte("14:failure reason")); idx != -1 {
 		return nil, fmt.Errorf("%w: %s", ErrTrackerResponse, string(data[idx:]))
@@ -137,7 +126,6 @@ func ParseHTTPAnnounceResponse(data []byte) (*AnnounceResult, error) {
 
 	res := &AnnounceResult{
 		Interval: 60,
-		Peers:    make([]PeerEndpoint, 0),
 	}
 
 	// Look for interval (e.g. 8:intervali1800e)
@@ -150,7 +138,7 @@ func ParseHTTPAnnounceResponse(data []byte) (*AnnounceResult, error) {
 		}
 	}
 
-	// 1. Look for compact IPv4 peers string (e.g. 5:peers<len>:<data>)
+	// Look for compact peers string (e.g. 5:peers<len>:<data>)
 	if peerIdx := bytes.Index(data, []byte("5:peers")); peerIdx != -1 {
 		start := peerIdx + 7
 		if colon := bytes.IndexByte(data[start:], ':'); colon != -1 {
@@ -159,117 +147,11 @@ func ParseHTTPAnnounceResponse(data []byte) (*AnnounceResult, error) {
 				dataStart := start + colon + 1
 				if dataStart+peerLen <= len(data) {
 					peersBinary := data[dataStart : dataStart+peerLen]
-					res.Peers = append(res.Peers, ParseCompactIPv4Peers(peersBinary)...)
+					res.Peers = ParseCompactIPv4Peers(peersBinary)
 				}
 			}
 		}
-	}
-
-	// 2. Look for compact IPv6 peers string (BEP 7: 6:peers6<len>:<data>)
-	if peer6Idx := bytes.Index(data, []byte("6:peers6")); peer6Idx != -1 {
-		start := peer6Idx + 8
-		if colon := bytes.IndexByte(data[start:], ':'); colon != -1 {
-			lenStr := string(data[start : start+colon])
-			if peer6Len, err := strconv.Atoi(lenStr); err == nil {
-				dataStart := start + colon + 1
-				if dataStart+peer6Len <= len(data) {
-					peersBinary := data[dataStart : dataStart+peer6Len]
-					res.Peers = append(res.Peers, ParseCompactIPv6Peers(peersBinary)...)
-				}
-			}
-		}
-	}
-
-	// 3. Fallback: Parse dictionary peer list e.g. [{ip: ..., port: ...}] or [onion: ..., port: ...]
-	if dictIdx := bytes.Index(data, []byte("5:peersl")); dictIdx != -1 {
-		dictData := data[dictIdx+7:]
-		res.Peers = append(res.Peers, parseBencodeDictPeers(dictData)...)
 	}
 
 	return res, nil
-}
-
-func parseBencodeDictPeers(data []byte) []PeerEndpoint {
-	var peers []PeerEndpoint
-	pos := 0
-	for pos < len(data) && data[pos] != 'e' {
-		if data[pos] != 'd' {
-			pos++
-			continue
-		}
-		pos++ // skip 'd'
-		var ipStr string
-		var port int
-
-		for pos < len(data) && data[pos] != 'e' {
-			// read key
-			colon := bytes.IndexByte(data[pos:], ':')
-			if colon == -1 {
-				break
-			}
-			klen, err := strconv.Atoi(string(data[pos : pos+colon]))
-			if err != nil {
-				break
-			}
-			kStart := pos + colon + 1
-			if kStart+klen > len(data) {
-				break
-			}
-			key := string(data[kStart : kStart+klen])
-			pos = kStart + klen
-
-			// read value
-			if key == "ip" || key == "host" || key == "onion" {
-				if vcolon := bytes.IndexByte(data[pos:], ':'); vcolon != -1 {
-					vlen, err := strconv.Atoi(string(data[pos : pos+vcolon]))
-					if err == nil {
-						vStart := pos + vcolon + 1
-						if vStart+vlen <= len(data) {
-							ipStr = string(data[vStart : vStart+vlen])
-							pos = vStart + vlen
-						}
-					}
-				}
-			} else if key == "port" {
-				if data[pos] == 'i' {
-					pos++
-					if eIdx := bytes.IndexByte(data[pos:], 'e'); eIdx != -1 {
-						port, _ = strconv.Atoi(string(data[pos : pos+eIdx]))
-						pos += eIdx + 1
-					}
-				}
-			} else {
-				// skip arbitrary value
-				if data[pos] == 'i' {
-					if eIdx := bytes.IndexByte(data[pos:], 'e'); eIdx != -1 {
-						pos += eIdx + 1
-					} else {
-						break
-					}
-				} else if vcolon := bytes.IndexByte(data[pos:], ':'); vcolon != -1 {
-					vlen, err := strconv.Atoi(string(data[pos : pos+vcolon]))
-					if err == nil {
-						pos = pos + vcolon + 1 + vlen
-					} else {
-						break
-					}
-				} else {
-					pos++
-				}
-			}
-		}
-
-		if ipStr != "" && port > 0 {
-			ip := net.ParseIP(strings.Trim(ipStr, "[]"))
-			peers = append(peers, PeerEndpoint{
-				IP:   ip,
-				Port: port,
-				Raw:  net.JoinHostPort(ipStr, strconv.Itoa(port)),
-			})
-		}
-		if pos < len(data) && data[pos] == 'e' {
-			pos++ // skip dict 'e'
-		}
-	}
-	return peers
 }

@@ -174,29 +174,37 @@ func InitializeSessionFromPreKey(
 
 	dh1, err := DH(localIdentity.Private, remotePrekey.SignedPrekeyPub)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("DH(identity, prekey) failed: %w", err)
 	}
+	defer Zeroize(dh1)
+
 	dh2, err := DH(localEphemeral.Private, remotePrekey.IdentityPub)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("DH(ephemeral, identity) failed: %w", err)
 	}
+	defer Zeroize(dh2)
+
 	dh3, err := DH(localEphemeral.Private, remotePrekey.SignedPrekeyPub)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("DH(ephemeral, prekey) failed: %w", err)
 	}
+	defer Zeroize(dh3)
 
 	material := append(append(dh1, dh2...), dh3...)
+	defer Zeroize(material)
+
 	if remotePrekey.OneTimePrekeyPub != nil {
 		dh4, err := DH(localEphemeral.Private, remotePrekey.OneTimePrekeyPub)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("DH(ephemeral, onetime) failed: %w", err)
 		}
+		defer Zeroize(dh4)
 		material = append(material, dh4...)
 	}
 
 	rootKey, sendChainKey, recvChainKey, headerKey, err := deriveFourKeys(material)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("deriveFourKeys failed: %w", err)
 	}
 
 	return &SessionState{
@@ -224,29 +232,37 @@ func RespondToPreKeyInit(
 ) (*SessionState, error) {
 	dh1, err := DH(signedPrekey, initiatorIdentityPub)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("DH(prekey, initiator_id) failed: %w", err)
 	}
+	defer Zeroize(dh1)
+
 	dh2, err := DH(localIdentity.Private, initiatorEphemeralPub)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("DH(identity, initiator_eph) failed: %w", err)
 	}
+	defer Zeroize(dh2)
+
 	dh3, err := DH(signedPrekey, initiatorEphemeralPub)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("DH(prekey, initiator_eph) failed: %w", err)
 	}
+	defer Zeroize(dh3)
 
 	material := append(append(dh1, dh2...), dh3...)
+	defer Zeroize(material)
+
 	if localOneTimePrekey != nil {
 		dh4, err := DH(localOneTimePrekey, initiatorEphemeralPub)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("DH(onetime, initiator_eph) failed: %w", err)
 		}
+		defer Zeroize(dh4)
 		material = append(material, dh4...)
 	}
 
 	rootKey, recvChainKey, sendChainKey, headerKey, err := deriveFourKeys(material)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("deriveFourKeys failed: %w", err)
 	}
 
 	return &SessionState{
@@ -270,31 +286,44 @@ func (s *SessionState) RatchetStep(newRemoteDHPub *X25519PublicKey) error {
 	// Step 1: derive new root key + receive chain key
 	dhOut, err := DH(s.DHSendKey, newRemoteDHPub)
 	if err != nil {
-		return err
+		return fmt.Errorf("DH ratchet step 1 failed: %w", err)
 	}
+	defer Zeroize(dhOut)
+
 	input1 := append(append([]byte(nil), s.RootKey...), dhOut...)
+	defer Zeroize(input1)
+
 	rkCk, err := HKDFSHA256(input1, nil, []byte("DH-RATCHET"), 64)
 	if err != nil {
-		return err
+		return fmt.Errorf("HKDF ratchet step 1 failed: %w", err)
 	}
+	defer Zeroize(rkCk)
+
 	s.RootKey = append([]byte(nil), rkCk[:32]...)
 	s.RecvChainKey = append([]byte(nil), rkCk[32:64]...)
 
 	// Step 2: advance our sending key
 	newPriv, _, err := GenerateX25519Keypair()
 	if err != nil {
-		return err
+		return fmt.Errorf("GenerateX25519Keypair ratchet step 2 failed: %w", err)
 	}
 	s.DHSendKey = newPriv
+
 	dhOut2, err := DH(s.DHSendKey, newRemoteDHPub)
 	if err != nil {
-		return err
+		return fmt.Errorf("DH ratchet step 2 failed: %w", err)
 	}
+	defer Zeroize(dhOut2)
+
 	input2 := append(append([]byte(nil), s.RootKey...), dhOut2...)
+	defer Zeroize(input2)
+
 	rkCk2, err := HKDFSHA256(input2, nil, []byte("DH-RATCHET"), 64)
 	if err != nil {
-		return err
+		return fmt.Errorf("HKDF ratchet step 2 failed: %w", err)
 	}
+	defer Zeroize(rkCk2)
+
 	s.RootKey = append([]byte(nil), rkCk2[:32]...)
 	s.SendChainKey = append([]byte(nil), rkCk2[32:64]...)
 
@@ -316,18 +345,25 @@ func (s *SessionState) PrimeSendRatchet() error {
 	}
 	newPriv, _, err := GenerateX25519Keypair()
 	if err != nil {
-		return err
+		return fmt.Errorf("GenerateX25519Keypair PrimeSendRatchet failed: %w", err)
 	}
 	s.DHSendKey = newPriv
+
 	dhOut, err := DH(s.DHSendKey, s.DHRecvKeyPub)
 	if err != nil {
-		return err
+		return fmt.Errorf("DH PrimeSendRatchet failed: %w", err)
 	}
+	defer Zeroize(dhOut)
+
 	input := append(append([]byte(nil), s.RootKey...), dhOut...)
+	defer Zeroize(input)
+
 	rkCk, err := HKDFSHA256(input, nil, []byte("DH-RATCHET"), 64)
 	if err != nil {
-		return err
+		return fmt.Errorf("HKDF PrimeSendRatchet failed: %w", err)
 	}
+	defer Zeroize(rkCk)
+
 	s.RootKey = append([]byte(nil), rkCk[:32]...)
 	s.SendChainKey = append([]byte(nil), rkCk[32:64]...)
 	s.SendIdx = 0

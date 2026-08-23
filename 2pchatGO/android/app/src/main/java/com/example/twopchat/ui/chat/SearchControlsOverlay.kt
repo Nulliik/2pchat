@@ -28,7 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.relay.P2PMessageRelay
 
 import java.util.Calendar
 import java.util.TimeZone

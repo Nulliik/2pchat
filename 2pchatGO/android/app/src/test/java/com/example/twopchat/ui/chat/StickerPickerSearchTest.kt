@@ -1,7 +1,6 @@
 package com.example.twopchat.ui.chat
 
-import com.example.twopchat.BuiltinSticker
-import com.example.twopchat.BuiltinStickerPack
+import com.example.twopchat.media.*
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

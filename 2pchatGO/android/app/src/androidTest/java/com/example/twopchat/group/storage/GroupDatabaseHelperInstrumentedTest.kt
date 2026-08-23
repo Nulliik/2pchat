@@ -3,7 +3,7 @@ package com.example.twopchat.group.storage
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.example.twopchat.SecureStorage
+import com.example.twopchat.security.SecureStorage
 import net.zetetic.database.sqlcipher.SQLiteDatabase
 import org.junit.After
 import org.junit.Assert.assertArrayEquals

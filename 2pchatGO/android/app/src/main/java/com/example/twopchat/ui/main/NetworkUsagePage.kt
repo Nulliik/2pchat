@@ -1,5 +1,6 @@
 package com.example.twopchat.ui.main
 
+import com.example.twopchat.relay.*
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -33,11 +34,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.twopchat.NetworkTrafficSnapshot
-import com.example.twopchat.NetworkTrafficStats
-import com.example.twopchat.TrafficCategory
-import com.example.twopchat.TrafficCounter
-import com.example.twopchat.TrafficProtocol
+import com.example.twopchat.relay.NetworkTrafficSnapshot
+import com.example.twopchat.relay.NetworkTrafficStats
+import com.example.twopchat.relay.TrafficCategory
+import com.example.twopchat.relay.TrafficCounter
+import com.example.twopchat.relay.TrafficProtocol
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -223,7 +224,7 @@ private fun TrafficSummaryCard(
             text = (if (isRussian) "С " else "Since ") + DateFormat.getDateTimeInstance(
                 DateFormat.MEDIUM,
                 DateFormat.SHORT,
-                if (isRussian) Locale("ru") else Locale.getDefault(),
+                if (isRussian) Locale.forLanguageTag("ru") else Locale.getDefault(),
             ).format(Date(snapshot.startedAtMs)),
             color = onSurfaceVariant,
             fontSize = 11.sp,

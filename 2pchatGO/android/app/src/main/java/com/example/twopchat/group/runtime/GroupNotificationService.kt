@@ -7,7 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
-import com.example.twopchat.P2PPreferences
+import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.R
 
 internal object GroupNotificationService {

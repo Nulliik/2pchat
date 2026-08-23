@@ -6,8 +6,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import com.example.twopchat.orderedDirectEndpoints
-import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.relay.orderedDirectEndpoints
+import com.example.twopchat.relay.P2PMessageRelay
 
 @RunWith(AndroidJUnit4::class)
 class PeerSearchInstrumentedTest {

@@ -147,7 +147,8 @@ func (u *UPnPMapper) DiscoverAndMapPort(ctx context.Context, port int) error {
 	// Query External IP
 	u.externalIP = u.queryExternalIP(ctx)
 
-	// Start periodic renewal
+	// Start periodic renewal with fresh channel
+	u.stopRenewCh = make(chan struct{})
 	go u.renewLoop()
 
 	return nil

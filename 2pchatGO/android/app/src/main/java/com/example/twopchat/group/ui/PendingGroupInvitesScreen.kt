@@ -58,7 +58,7 @@ fun PendingGroupInvitesScreen(
     modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
+    val appLanguage = remember(context) { com.example.twopchat.config.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
     val primaryColor = MaterialTheme.colorScheme.primary
@@ -182,7 +182,7 @@ fun PendingGroupInvitesScreen(
 @Composable
 private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController) {
     val context = LocalContext.current
-    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
+    val appLanguage = remember(context) { com.example.twopchat.config.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
 
     val initials = invite.groupTitle.take(2).uppercase().ifBlank { "GP" }
     val inviterInitials = invite.inviterName.take(2).uppercase().ifBlank { "U" }
@@ -204,10 +204,10 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
     }
 
     val inviterAvatarBitmap = remember(invite.inviterName) {
-        com.example.twopchat.P2PMessageRelay.peerAvatars[invite.inviterName]
+        com.example.twopchat.relay.P2PMessageRelay.peerAvatars[invite.inviterName]
     }
     val groupAvatarBitmap = remember(invite.groupAvatarUri, invite.groupTitle) {
-        val cached = com.example.twopchat.P2PMessageRelay.peerAvatars[invite.groupTitle]
+        val cached = com.example.twopchat.relay.P2PMessageRelay.peerAvatars[invite.groupTitle]
         if (cached != null) {
             cached
         } else {

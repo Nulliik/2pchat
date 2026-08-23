@@ -40,10 +40,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.R
 import com.example.twopchat.data.Localizations
-import com.example.twopchat.P2PMessageRelay
-import com.example.twopchat.P2PPreferences
-import com.example.twopchat.TransportType
-import com.example.twopchat.connectionTransportLabel
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.relay.TransportType
+import com.example.twopchat.relay.connectionTransportLabel
 import com.example.twopchat.copyTextToClipboard
 import com.example.twopchat.theme.StealthBlack
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -113,7 +113,7 @@ fun SharedMediaScreen(
         }.reversed()
     }
     val mediaUris = remember(mediaList) {
-        mediaList.filter { it.attachmentType == "IMAGE" }.map { it.attachmentUri!! }
+        mediaList.filter { it.attachmentType == "IMAGE" }.mapNotNull { it.attachmentUri }
     }
     val filesList = remember(messages) {
         messages.filter {
@@ -463,11 +463,11 @@ fun SharedMediaScreen(
 
                         // Personal Search Address Row
                         val fingerprint = remember(currentPeerName) {
-                            val sp = com.example.twopchat.P2PPreferences.prefs(context)
+                            val sp = com.example.twopchat.config.P2PPreferences.prefs(context)
                             sp.getString("peer_fingerprint_$currentPeerName", "") ?: ""
                         }
                         val stableCode = remember(currentPeerName, fingerprint) {
-                            val sp = com.example.twopchat.P2PPreferences.prefs(context)
+                            val sp = com.example.twopchat.config.P2PPreferences.prefs(context)
                             val savedCode = sp.getString("discovery_code_$currentPeerName", null)
                             if (!savedCode.isNullOrBlank()) {
                                 savedCode
@@ -502,7 +502,7 @@ fun SharedMediaScreen(
                         )
 
                         val peerAboutMe = remember(currentPeerName) {
-                            val sp = com.example.twopchat.P2PPreferences.prefs(context)
+                            val sp = com.example.twopchat.config.P2PPreferences.prefs(context)
                             sp.getString("peer_about_me_$currentPeerName", "") ?: ""
                         }
                         if (peerAboutMe.isNotEmpty()) {
@@ -619,14 +619,14 @@ fun SharedMediaScreen(
                         .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
                         .clip(RoundedCornerShape(16.dp))
                 ) {
-                    ScrollableTabRow(
+                    PrimaryScrollableTabRow(
                         selectedTabIndex = selectedTab,
                         containerColor = Color.Transparent,
                         contentColor = primaryColor,
                         edgePadding = 8.dp,
-                        indicator = { tabPositions ->
-                            TabRowDefaults.SecondaryIndicator(
-                                modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                        indicator = {
+                            TabRowDefaults.PrimaryIndicator(
+                                modifier = Modifier.tabIndicatorOffset(selectedTab),
                                 color = primaryColor
                             )
                         },
@@ -671,7 +671,7 @@ fun SharedMediaScreen(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 rowItems.forEach { item ->
-                                    val uri = item.attachmentUri!!
+                                    val uri = item.attachmentUri.orEmpty()
                                     val isSelected = selectedItems.contains(item)
                                     Box(
                                         modifier = Modifier
@@ -807,9 +807,10 @@ fun SharedMediaScreen(
                         }
                     } else {
                         items(filesList) { item ->
-                            val file = File(item.attachmentUri!!)
-                            val exists = file.exists()
-                            val fileSize = if (exists) formatFileSize(file.length()) else "n/a"
+                            val filePath = item.attachmentUri
+                            val file = filePath?.let(::File)
+                            val exists = file?.exists() == true
+                            val fileSize = if (exists && file != null) formatFileSize(file.length()) else "n/a"
                             val fileDate = formatDate(item.sentAtEpochMs, appLanguage)
 
                             val isSelected = selectedItems.contains(item)

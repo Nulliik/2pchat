@@ -28,16 +28,18 @@ class NetworkStateCallback(val context: Context) : ConnectivityManager.NetworkCa
                 // The message often arrives before the connection is fully established
                 delay(1000)
                 if (!yggdrasilPrefs(context).getBoolean(PREF_KEY_ENABLED, false) || !PacketTunnelProvider.isTunnelActive) return@launch
-                val intent = Intent(context, PacketTunnelProvider::class.java)
-                intent.action = PacketTunnelProvider.ACTION_CONNECT
-                try {
-                    context.startService(intent)
-                } catch (e: IllegalStateException) {
+                runCatching {
+                    val intent = Intent(context, PacketTunnelProvider::class.java)
+                    intent.action = PacketTunnelProvider.ACTION_CONNECT
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         context.startForegroundService(intent)
+                    } else {
+                        context.startService(intent)
                     }
+                }.onFailure {
+                    Log.w(TAG, "Could not reconnect PacketTunnelProvider on network available", it)
                 }
-                com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(context)
+                com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(context)
             }
         }
     }

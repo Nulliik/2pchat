@@ -112,7 +112,7 @@
         </provider>
 
         <service
-            android:name=".P2PRelayService"
+            android:name=".service.P2PRelayService"
             android:foregroundServiceType="specialUse"
             android:exported="false">
             <property
@@ -144,7 +144,7 @@
         </receiver>
 
         <receiver
-            android:name=".NotificationActionReceiver"
+            android:name=".service.NotificationActionReceiver"
             android:enabled="true"
             android:exported="false">
             <intent-filter>

@@ -1,7 +1,7 @@
 package com.example.twopchat.yggdrasil
 
 import android.content.Context
-import com.example.twopchat.P2PPreferences
+import com.example.twopchat.config.*
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI

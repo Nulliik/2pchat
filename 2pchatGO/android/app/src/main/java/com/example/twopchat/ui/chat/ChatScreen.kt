@@ -14,18 +14,14 @@ import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import androidx.core.content.edit
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.data.Localizations
-import com.example.twopchat.P2PMessageRelay
-import com.example.twopchat.P2PPreferences
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.tor.*
 import com.example.twopchat.bridge.P2PBridgeProvider
 import com.example.twopchat.copyTextToClipboard
-import com.example.twopchat.SecureStorage
+import com.example.twopchat.security.*
 import com.example.twopchat.R
-import com.example.twopchat.VoiceMessageSupport
-import com.example.twopchat.BuiltinSticker
-import com.example.twopchat.StickerSendRateLimiter
-import com.example.twopchat.StickerSupport
-import com.example.twopchat.GifStorageManager
-import com.example.twopchat.StoredGif
+import com.example.twopchat.media.*
 import androidx.core.content.ContextCompat
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -215,7 +211,7 @@ fun ChatScreen(
         }
         pendingDownloadMsg = null
     }
-    val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
+    val sharedPrefs = remember(context) { com.example.twopchat.config.P2PPreferences.prefs(context) }
     var profilePhotoUri by remember {
         mutableStateOf(sharedPrefs.getString("profile_photo_uri", null))
     }
@@ -244,6 +240,7 @@ fun ChatScreen(
     var showPinnedSheet by remember { mutableStateOf(false) }
     var isMuted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("mute_notifications_${peerName}", false)) }
     var isBlocked by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("blocked_peer_${peerName}", false)) }
+    var showHardBlockDialog by remember { mutableStateOf(false) }
     var isForwardingRestricted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("restrict_forwarding_${peerName}", false)) }
     var forwardingNotificationPill by remember(peerName) { mutableStateOf<String?>(null) }
     
@@ -373,15 +370,17 @@ fun ChatScreen(
     val initialMessages = chatViewModel.messages
     val pinnedMessagesList = remember(initialMessages, pinnedMsgId, pinnedMsgText) {
         val dbPinned = initialMessages.filter { it.isPinned }
+        val pId = pinnedMsgId
+        val pText = pinnedMsgText
         if (dbPinned.isNotEmpty()) {
             dbPinned
-        } else if (pinnedMsgId != null && pinnedMsgText != null) {
-            val found = initialMessages.find { it.id == pinnedMsgId }
+        } else if (pId != null && pText != null) {
+            val found = initialMessages.find { it.id == pId }
             if (found != null) listOf(found)
             else listOf(
                 Message(
-                    id = pinnedMsgId!!,
-                    text = pinnedMsgText!!,
+                    id = pId,
+                    text = pText,
                     isMe = pinnedMsgSender == "You",
                     timestamp = "",
                     isPinned = true
@@ -464,7 +463,7 @@ fun ChatScreen(
                     initialMessages[index] = message.copy(attachmentUri = null)
                 }
             }
-            com.example.twopchat.MessageNotificationService.clearHistory(context, peerName)
+            com.example.twopchat.relay.MessageNotificationService.clearHistory(context, peerName)
             hasAppliedInitialScroll = false
             isLoadingOlderHistory = false
             newMessagesBelowCount = 0
@@ -655,7 +654,9 @@ fun ChatScreen(
         }
         val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-        val initialStatus = if (endpoint != null || peerName == "Saved Messages") "SENT" else "PENDING"
+            ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
+        val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+        val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
         val outMsg = Message(
             id = newMessageId(),
             text = "Voice message",
@@ -677,7 +678,7 @@ fun ChatScreen(
         }
         sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt("You: Voice message")) }
 
-        if (endpoint != null && peerName != "Saved Messages") {
+        if (peerName != "Saved Messages") {
             P2PMessageRelay.sendFile(context, peerName, endpoint, recording.file.absolutePath, outMsg.id) { success ->
                 if (!success) {
                     persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
@@ -752,7 +753,7 @@ fun ChatScreen(
         }
 
         if (peerName == "Saved Messages") return@LaunchedEffect
-        val endpoint = P2PMessageRelay.peerEndpoints[peerName] ?: return@LaunchedEffect
+        val endpoint = P2PMessageRelay.peerEndpoints[peerName] ?: ""
         val isCurrentlyTyping = inputText.isNotEmpty()
         if (isCurrentlyTyping != myTypingState) {
             myTypingState = isCurrentlyTyping
@@ -953,7 +954,7 @@ fun ChatScreen(
             P2PMessageRelay.activeChatPeerName = peerName
             P2PMessageRelay.registerMessageListener(messageListener)
             sharedPrefs.edit { putInt("unread_count_$peerName", 0) }
-            com.example.twopchat.MessageNotificationService.cancelNotificationForPeer(context, peerName)
+            com.example.twopchat.relay.MessageNotificationService.cancelNotificationForPeer(context, peerName)
         }
         onDispose {
             // Use atomic CAS to avoid clearing the name that was already set
@@ -1024,7 +1025,9 @@ fun ChatScreen(
                 return@launch
             }
             val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-            val initialStatus = if (endpoint != null || peerName == "Saved Messages") "SENT" else "PENDING"
+                ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
+            val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+            val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
             val outMsg = Message(
                 id = newMessageId(),
                 text = sticker.emoji,
@@ -1051,7 +1054,7 @@ fun ChatScreen(
             val lastText = if (appLanguage == "Русский") "Вы: Стикер" else "You: Sticker"
             sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt(lastText)) }
 
-            if (endpoint != null && peerName != "Saved Messages") {
+            if (peerName != "Saved Messages") {
                 P2PMessageRelay.sendFile(
                     context = context,
                     peerName = peerName,
@@ -1104,7 +1107,9 @@ fun ChatScreen(
             storedGifs = withContext(Dispatchers.IO) { GifStorageManager.list(context) }
             val file = File(stored.filePath)
             val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-            val initialStatus = if (endpoint != null || peerName == "Saved Messages") "SENT" else "PENDING"
+                ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
+            val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+            val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
             val outMsg = Message(
                 id = newMessageId(),
                 text = "GIF",
@@ -1133,7 +1138,7 @@ fun ChatScreen(
                     SecureStorage.encrypt(if (appLanguage == "Русский") "Вы: GIF" else "You: GIF"),
                 )
             }
-            if (endpoint != null && peerName != "Saved Messages") {
+            if (peerName != "Saved Messages") {
                 P2PMessageRelay.sendFile(
                     context,
                     peerName,
@@ -1246,7 +1251,9 @@ fun ChatScreen(
 
         val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-        val initialStatus = if (endpoint != null) "SENT" else "PENDING"
+            ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
+        val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+        val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
 
         if (tempFiles.size == 1) {
             val file = tempFiles.first()
@@ -1272,7 +1279,7 @@ fun ChatScreen(
             if (persistEnabled || initialStatus == "PENDING") {
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
-            if (endpoint != null && peerName != "Saved Messages") {
+            if (peerName != "Saved Messages") {
                 P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, customCaption) { success ->
                     if (!success) {
                         persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
@@ -1304,7 +1311,7 @@ fun ChatScreen(
             if (persistEnabled || initialStatus == "PENDING") {
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
-            if (endpoint != null && peerName != "Saved Messages") {
+            if (peerName != "Saved Messages") {
                 coroutineScope.launch(Dispatchers.IO) {
                     for ((idx, file) in tempFiles.withIndex()) {
                         val fileCaption = if (idx == 0) customCaption else ""
@@ -1472,7 +1479,9 @@ fun ChatScreen(
                 if (file.exists()) {
                     val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                    val initialStatus = if (endpoint != null) "SENT" else "PENDING"
+                        ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
+                    val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+                    val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
                     val msgText = caption.ifBlank { if (appLanguage == "Русский") "Фотография" else "Sent an image" }
                     val outMsg = Message(
                         id = newMessageId(),
@@ -1489,7 +1498,7 @@ fun ChatScreen(
                     if (persistEnabled || initialStatus == "PENDING") {
                         persistDatabase { db.saveMessage(peerName, outMsg) }
                     }
-                    if (endpoint != null && peerName != "Saved Messages") {
+                    if (peerName != "Saved Messages") {
                         P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, caption.trim()) { success ->
                             if (!success) {
                                 persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
@@ -1507,9 +1516,10 @@ fun ChatScreen(
         )
     }
 
-    if (pendingAlbumFiles != null) {
+    val albumFiles = pendingAlbumFiles
+    if (albumFiles != null) {
         AlbumPreviewModal(
-            files = pendingAlbumFiles!!,
+            files = albumFiles,
             appLanguage = appLanguage,
             primaryColor = MaterialTheme.colorScheme.primary,
             surfaceColor = MaterialTheme.colorScheme.surface,
@@ -1584,7 +1594,9 @@ fun ChatScreen(
             if (tempFile != null) {
                 val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                 val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                val initialStatus = if (endpoint != null) "SENT" else "PENDING"
+                    ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
+                val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+                val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
                 // Some document providers return extensionless generated names
                 // for photos and stickers. Preserve their MIME type instead of
                 // rendering them forever as generic sent_file_* attachments.
@@ -1605,7 +1617,7 @@ fun ChatScreen(
                 if (persistEnabled || initialStatus == "PENDING") {
                     persistDatabase { db.saveMessage(peerName, outMsg) }
                 }
-                if (endpoint != null && peerName != "Saved Messages") {
+                if (peerName != "Saved Messages") {
                     P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath, outMsg.id) { success ->
                         if (!success) {
                             persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
@@ -1630,9 +1642,10 @@ fun ChatScreen(
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
-    if (editingVideoPath != null) {
+    val videoToEdit = editingVideoPath
+    if (videoToEdit != null) {
         VideoEditorModal(
-            videoPath = editingVideoPath!!,
+            videoPath = videoToEdit,
             appLanguage = appLanguage,
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
@@ -1647,7 +1660,9 @@ fun ChatScreen(
                 if (file.exists()) {
                     val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                    val initialStatus = if (endpoint != null) "SENT" else "PENDING"
+                        ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
+                    val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
+                    val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
                     val msgText = caption.ifBlank { if (appLanguage == "Русский") "Видеозапись" else "Sent a video" }
                     val outMsg = Message(
                         id = newMessageId(),
@@ -1664,7 +1679,7 @@ fun ChatScreen(
                     if (persistEnabled || initialStatus == "PENDING") {
                         persistDatabase { db.saveMessage(peerName, outMsg) }
                     }
-                    if (endpoint != null && peerName != "Saved Messages") {
+                    if (peerName != "Saved Messages") {
                         P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, caption.trim()) { success ->
                             if (!success) {
                                 persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
@@ -1787,9 +1802,10 @@ fun ChatScreen(
     Box(
         modifier = modifier.fillMaxSize()
     ) {
-        if (wallpaperBitmap != null) {
+        val wpBitmap = wallpaperBitmap
+        if (wpBitmap != null) {
             Image(
-                bitmap = wallpaperBitmap!!.asImageBitmap(),
+                bitmap = wpBitmap.asImageBitmap(),
                 contentDescription = "Wallpaper",
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                 modifier = Modifier
@@ -1844,6 +1860,7 @@ fun ChatScreen(
                 onShowProfile = { showProfileOverlay = true },
                 onOpenConnectionMode = { showConnectionModeSheet = true },
                 onVerify = { showVerifyDialog = true },
+                onBlockPeer = { showHardBlockDialog = true },
                 onReconnect = {
                     Toast.makeText(
                         context,
@@ -1893,7 +1910,7 @@ fun ChatScreen(
                             remove(P2PPreferences.pinnedBy(alias))
                         }
                     }
-                    com.example.twopchat.MessageNotificationService.clearHistory(context, peerName)
+                    com.example.twopchat.relay.MessageNotificationService.clearHistory(context, peerName)
                 },
                 onDeleteChat = {
                     P2PMessageRelay.deleteChat(context, peerName)
@@ -2130,14 +2147,15 @@ fun ChatScreen(
                     .align(Alignment.CenterHorizontally)
                     .padding(bottom = 6.dp)
             ) {
-                if (forwardingNotificationPill != null) {
+                val forwardPill = forwardingNotificationPill
+                if (forwardPill != null) {
                     Surface(
                         color = Color.Black.copy(alpha = 0.65f),
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.padding(horizontal = 24.dp)
                     ) {
                         Text(
-                            text = forwardingNotificationPill!!,
+                            text = forwardPill,
                             color = Color.White,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Medium,
@@ -2458,8 +2476,9 @@ fun ChatScreen(
         }
 
         // Message Options Overlay Panel
-        if (selectedMessageForOptions != null) {
-            val msg = selectedMessageForOptions!!
+        val optionsMsg = selectedMessageForOptions
+        if (optionsMsg != null) {
+            val msg = optionsMsg
             AlertDialog(
                 onDismissRequest = { selectedMessageForOptions = null },
                 confirmButton = {},
@@ -3247,6 +3266,69 @@ remove("pinned_msg_id_${peerName}")
                 },
                 containerColor = surfaceColor,
                 shape = RoundedCornerShape(20.dp)
+            )
+        }
+
+        if (showHardBlockDialog) {
+            AlertDialog(
+                onDismissRequest = { showHardBlockDialog = false },
+                title = {
+                    Text(
+                        if (appLanguage == "Русский") "Блокировка и приватность" else "Block & Privacy",
+                        fontWeight = FontWeight.Bold,
+                        color = onSurfaceColor,
+                    )
+                },
+                text = {
+                    Text(
+                        if (appLanguage == "Русский") {
+                            "Этот пользователь знает ваш текущий Tor Onion-адрес. Сменить Tor-адрес сейчас (Hard Block), чтобы навсегда исключить возможность контакта?"
+                        } else {
+                            "This user knows your current Tor .onion address. Rotate Onion address now (Hard Block) to permanently prevent further contact?"
+                        },
+                        fontSize = 13.sp,
+                        color = onSurfaceVariant,
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            sharedPrefs.edit().putBoolean("blocked_peer_$peerName", true).apply()
+                            isBlocked = true
+                            showHardBlockDialog = false
+                            Toast.makeText(context, if (appLanguage == "Русский") "Пользователь заблокирован. Смена Tor-адреса..." else "User blocked. Rotating Tor address...", Toast.LENGTH_SHORT).show()
+                            coroutineScope.launch {
+                                TorManager.rotateOnionAddress(context)
+                            }
+                        }
+                    ) {
+                        Text(
+                            if (appLanguage == "Русский") "Сменить Tor и заблокировать" else "Rotate & Block",
+                            color = primaryColor,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(
+                            onClick = {
+                                sharedPrefs.edit().putBoolean("blocked_peer_$peerName", true).apply()
+                                isBlocked = true
+                                showHardBlockDialog = false
+                                Toast.makeText(context, if (appLanguage == "Русский") "Пользователь заблокирован" else "User blocked", Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Text(if (appLanguage == "Русский") "Только заблокировать" else "Block Only", color = Color.Red)
+                        }
+                        TextButton(
+                            onClick = { showHardBlockDialog = false }
+                        ) {
+                            Text(if (appLanguage == "Русский") "Отмена" else "Cancel", color = onSurfaceVariant)
+                        }
+                    }
+                },
+                containerColor = surfaceColor,
             )
         }
 

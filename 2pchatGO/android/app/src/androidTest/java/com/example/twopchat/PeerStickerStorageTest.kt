@@ -2,6 +2,10 @@ package com.example.twopchat
 
 import android.util.Base64
 import androidx.test.core.app.ApplicationProvider
+import com.example.twopchat.media.AttachmentCategory
+import com.example.twopchat.media.AttachmentStorageManager
+import com.example.twopchat.media.BuiltinSticker
+import com.example.twopchat.media.StickerSupport
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream

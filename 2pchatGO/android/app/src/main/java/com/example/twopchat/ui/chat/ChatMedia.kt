@@ -16,11 +16,10 @@ import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import androidx.core.content.edit
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.data.Localizations
-import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.copyTextToClipboard
-import com.example.twopchat.SecureStorage
 import com.example.twopchat.R
-import com.example.twopchat.VoiceMessageSupport
+import com.example.twopchat.media.*
 import androidx.core.content.ContextCompat
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory

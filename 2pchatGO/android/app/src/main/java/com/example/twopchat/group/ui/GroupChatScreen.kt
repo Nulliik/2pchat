@@ -1,7 +1,7 @@
 package com.example.twopchat.group.ui
 
 import android.widget.Toast
-import com.example.twopchat.P2PPreferences
+import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.group.ui.components.GroupMentionSuggestionBar
 import androidx.compose.ui.draw.shadow
@@ -104,14 +104,12 @@ import androidx.compose.runtime.DisposableEffect
 import com.example.twopchat.ui.chat.VoiceRecorder
 import com.example.twopchat.ui.chat.VoiceMessagePlayer
 import com.example.twopchat.ui.chat.PhotoEditorModal
-import com.example.twopchat.ui.chat.VideoEditorModal
-import com.example.twopchat.VoiceMessageSupport
+import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.ui.chat.AnimatedGifImage
-import com.example.twopchat.ui.chat.GifContentScale
 import com.example.twopchat.ui.chat.AnimatedStickerImage
+import com.example.twopchat.ui.chat.GifContentScale
 import com.example.twopchat.ui.chat.GifLibraryBottomSheet
-import com.example.twopchat.StoredGif
-import com.example.twopchat.GifStorageManager
+import com.example.twopchat.ui.chat.VideoEditorModal
 import com.example.twopchat.ui.chat.AttachmentPanel
 import com.example.twopchat.ui.chat.ChatAttachmentAction
 import com.example.twopchat.ui.chat.ConversationComposerRow
@@ -131,9 +129,7 @@ import com.example.twopchat.ui.chat.SearchBottomBarPill
 import com.example.twopchat.ui.chat.matchesCategoryFilter
 import com.example.twopchat.ui.chat.matchesDateFilter
 import com.example.twopchat.group.runtime.GroupChatCoordinator
-import com.example.twopchat.P2PMessageRelay
-import com.example.twopchat.StickerSupport
-import com.example.twopchat.BuiltinSticker
+import com.example.twopchat.media.*
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -651,7 +647,7 @@ fun GroupChatScreen(
     }
 
     val profilePhotoUri = remember(prefsWallpaperVersion) {
-        com.example.twopchat.P2PPreferences.prefs(context).getString("profile_photo_uri", null)
+        com.example.twopchat.config.P2PPreferences.prefs(context).getString("profile_photo_uri", null)
     }
     val myAvatarBitmap by produceState<Bitmap?>(
         initialValue = null,
@@ -1646,7 +1642,7 @@ fun GroupChatScreen(
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
                                     .clickable {
-                                        com.example.twopchat.GifStorageManager.save(context, java.io.File(filePath))
+                                        GifStorageManager.save(context, java.io.File(filePath))
                                         Toast.makeText(context, "Сохранено в Мои GIF", Toast.LENGTH_SHORT).show()
                                         selectedMessageForOptions = null
                                     }
@@ -2040,9 +2036,10 @@ fun GroupChatScreen(
         )
     }
 
-    if (pendingAlbumFiles != null) {
+    val albumFiles = pendingAlbumFiles
+    if (albumFiles != null) {
         AlbumPreviewModal(
-            files = pendingAlbumFiles!!,
+            files = albumFiles,
             appLanguage = appLanguage,
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
@@ -2282,7 +2279,7 @@ fun GroupChatScreen(
                                 items = receipts,
                                 key = { index, receipt -> if (receipt.memberId.isNotBlank()) receipt.memberId else "${receipt.displayName}_$index" },
                             ) { _, receipt ->
-                                val avatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[receipt.avatarPeerName]
+                                val avatarBitmap = com.example.twopchat.relay.P2PMessageRelay.peerAvatars[receipt.avatarPeerName]
                                 val initials = receipt.displayName.take(2).uppercase().ifBlank { "M" }
                                 val avatarBgColor = remember(receipt.displayName) {
                                     val colors = listOf(
@@ -2462,7 +2459,7 @@ fun GroupChatScreen(
                         java.io.FileOutputStream(targetFile).use { out ->
                             selectedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
                         }
-                        com.example.twopchat.P2PPreferences.prefs(context).edit().apply {
+                        com.example.twopchat.config.P2PPreferences.prefs(context).edit().apply {
                             putString("group_wallpaper_${state.groupId}", targetFile.absolutePath)
                             putInt("group_wallpaper_dimming_${state.groupId}", dimming)
                             putBoolean("group_wallpaper_blur_${state.groupId}", isBlur)
@@ -2558,7 +2555,7 @@ private fun GroupChatHeader(
     onOpenWallpaper: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
+    val appLanguage = remember(context) { com.example.twopchat.config.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
     val primaryColor = MaterialTheme.colorScheme.primary
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
@@ -3094,7 +3091,7 @@ private fun GroupMessageCard(
                 )
                 colors[abs(message.authorName.hashCode()) % colors.size]
             }
-            val peerAvatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[message.authorName]
+            val peerAvatarBitmap = com.example.twopchat.relay.P2PMessageRelay.peerAvatars[message.authorName]
 
             Box(
                 modifier = Modifier
@@ -4029,7 +4026,7 @@ private fun GroupSearchResultsListViewOverlay(
             ) {
                 itemsIndexed(matchedIndices) { matchPointer, messageIndex ->
                     val msg = messages.getOrNull(messageIndex) ?: return@itemsIndexed
-                    val avatarBitmap = if (msg.isMine) myAvatarBitmap else com.example.twopchat.P2PMessageRelay.peerAvatars[msg.authorName]
+                    val avatarBitmap = if (msg.isMine) myAvatarBitmap else com.example.twopchat.relay.P2PMessageRelay.peerAvatars[msg.authorName]
                     val displayName = if (msg.isMine) {
                         if (appLanguage == "Русский") "Вы" else "You"
                     } else {
@@ -4233,7 +4230,7 @@ private fun CreatePollDialog(
     onCreatePoll: (question: String, options: List<String>, isAnonymous: Boolean) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
+    val appLanguage = remember(context) { com.example.twopchat.config.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
     var question by remember { mutableStateOf("") }
     var options by remember { mutableStateOf(listOf("", "")) }
     var isAnonymous by remember { mutableStateOf(false) }

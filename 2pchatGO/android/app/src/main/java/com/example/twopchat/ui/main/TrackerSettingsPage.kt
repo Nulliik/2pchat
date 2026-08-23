@@ -43,12 +43,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.twopchat.BuiltInTracker
-import com.example.twopchat.CustomTracker
-import com.example.twopchat.P2PMessageRelay
-import com.example.twopchat.P2PPreferences
-import com.example.twopchat.ProxyConfig
-import com.example.twopchat.TrackerPreferences
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.config.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 

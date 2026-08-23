@@ -123,8 +123,9 @@ fun DirectChatWallpaperModal(
         if (selectedPreset != null) return@LaunchedEffect
         previewBitmap = withContext(Dispatchers.IO) {
             try {
-                if (selectedUri != null) {
-                    decodeSampledBitmapFromUri(context, selectedUri!!)
+                val uri = selectedUri
+                if (uri != null) {
+                    decodeSampledBitmapFromUri(context, uri)
                 } else if (!currentWallpaperPath.isNullOrBlank()) {
                     decodeSampledBitmapFromFile(currentWallpaperPath)
                 } else {
@@ -156,9 +157,10 @@ fun DirectChatWallpaperModal(
                 .onSizeChanged { containerSize = it }
         ) {
             // Live Preview Background with Pinch-to-Zoom & Pan Gesture Support
-            if (previewBitmap != null) {
+            val preview = previewBitmap
+            if (preview != null) {
                 Image(
-                    bitmap = previewBitmap!!.asImageBitmap(),
+                    bitmap = preview.asImageBitmap(),
                     contentDescription = "Wallpaper Preview",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier

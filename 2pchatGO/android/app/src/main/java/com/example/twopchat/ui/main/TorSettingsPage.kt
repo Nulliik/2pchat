@@ -1,6 +1,7 @@
 package com.example.twopchat.ui.main
 
 import android.widget.Toast
+import com.example.twopchat.tor.*
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -64,14 +65,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.twopchat.P2PMessageRelay
-import com.example.twopchat.P2PPreferences
-import com.example.twopchat.ProxyConfig
-import com.example.twopchat.TorBridgeCatalog
-import com.example.twopchat.TorBridgeValidationError
-import com.example.twopchat.TorManager
-import com.example.twopchat.TorStatusFormatter
-import com.example.twopchat.TorTransport
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.config.ProxyConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -96,6 +92,8 @@ fun TorSettingsPage(
     val torBootstrapFailure by TorManager.lastBootstrapFailureReason.collectAsState()
     val torOnionAddress by TorManager.onionAddress.collectAsState()
     var showOnionQr by remember { mutableStateOf(false) }
+    var showRotateOnionDialog by remember { mutableStateOf(false) }
+    var isRotatingOnion by remember { mutableStateOf(false) }
 
     var torUserRequested by remember {
         mutableStateOf(P2PPreferences.isTorEnabled(context) || isTorRunning || isTorConnecting)
@@ -362,6 +360,23 @@ fun TorSettingsPage(
                                     labelColor = onSurfaceColor,
                                 ),
                             )
+                            AssistChip(
+                                onClick = { showRotateOnionDialog = true },
+                                enabled = !isRotatingOnion && isTorRunning,
+                                label = {
+                                    Text(
+                                        if (isRotatingOnion) {
+                                            if (isRussian) "Смена адреса..." else "Rotating..."
+                                        } else {
+                                            if (isRussian) "Сменить адрес" else "Rotate Address"
+                                        },
+                                        fontSize = 12.sp,
+                                    )
+                                },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    labelColor = if (isRotatingOnion) primaryColor else onSurfaceColor,
+                                ),
+                            )
                         }
                         if (showOnionQr) {
                             Spacer(Modifier.height(12.dp))
@@ -515,7 +530,10 @@ fun TorSettingsPage(
                             )
                             if (updated != previous && (torUserRequested || isTorRunning || isTorConnecting)) {
                                 TorManager.stopTor()
-                                TorManager.startTor(context, updated)
+                                scope.launch(Dispatchers.IO) {
+                                    TorManager.waitForPortsFree(listOf(9050, 9051), timeoutMs = 3000L)
+                                    TorManager.startTor(context, updated)
+                                }
                             }
                         } else {
                             Toast.makeText(
@@ -538,14 +556,15 @@ fun TorSettingsPage(
                             savedBridgeLines = updated
                             if (torUserRequested || isTorRunning || isTorConnecting) {
                                 TorManager.stopTor()
-                                TorManager.startTor(
-                                    context,
-                                    TorBridgeCatalog.select(
-                                        customBridges = updated,
-                                        publicBridgesEnabled = publicTorBridgesEnabled,
-                                        transport = torTransport,
-                                    ),
+                                val bridgesToStart = TorBridgeCatalog.select(
+                                    customBridges = updated,
+                                    publicBridgesEnabled = publicTorBridgesEnabled,
+                                    transport = torTransport,
                                 )
+                                scope.launch(Dispatchers.IO) {
+                                    TorManager.waitForPortsFree(listOf(9050, 9051), timeoutMs = 3000L)
+                                    TorManager.startTor(context, bridgesToStart)
+                                }
                             }
                         } else {
                             Toast.makeText(
@@ -585,14 +604,15 @@ fun TorSettingsPage(
                         showAddBridgeDialog = false
                         if (torUserRequested || isTorRunning || isTorConnecting) {
                             TorManager.stopTor()
-                            TorManager.startTor(
-                                context,
-                                TorBridgeCatalog.select(
-                                    customBridges = updated,
-                                    publicBridgesEnabled = publicTorBridgesEnabled,
-                                    transport = torTransport,
-                                ),
+                            val bridgesToStart = TorBridgeCatalog.select(
+                                customBridges = updated,
+                                publicBridgesEnabled = publicTorBridgesEnabled,
+                                transport = torTransport,
                             )
+                            scope.launch(Dispatchers.IO) {
+                                TorManager.waitForPortsFree(listOf(9050, 9051), timeoutMs = 3000L)
+                                TorManager.startTor(context, bridgesToStart)
+                            }
                         }
                         null
                     } else {
@@ -600,6 +620,67 @@ fun TorSettingsPage(
                     }
                 }
             },
+        )
+    }
+
+    if (showRotateOnionDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isRotatingOnion) showRotateOnionDialog = false },
+            title = {
+                Text(
+                    if (isRussian) "Сменить Tor Onion-адрес?" else "Rotate Tor Onion Address?",
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor,
+                )
+            },
+            text = {
+                Text(
+                    if (isRussian) {
+                        "Сгенерирует новый .onion ключ и автоматически разошлет его вашим доверенным контактам. Заблокированные пользователи навсегда потеряют связь с вашим узлом."
+                    } else {
+                        "Generates a new .onion keypair and broadcasts it only to trusted non-blocked contacts. Blocked users will permanently lose access to your node."
+                    },
+                    fontSize = 13.sp,
+                    color = onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRotateOnionDialog = false
+                        isRotatingOnion = true
+                        scope.launch {
+                            val newAddr = TorManager.rotateOnionAddress(context)
+                            isRotatingOnion = false
+                            if (newAddr != null) {
+                                Toast.makeText(
+                                    context,
+                                    if (isRussian) "Новый адрес сгенерирован и разослан" else "New Tor address generated & broadcasted",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    if (isRussian) "Ошибка при смене адреса Tor" else "Failed to rotate Tor address",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        }
+                    },
+                    enabled = !isRotatingOnion,
+                ) {
+                    Text(if (isRussian) "Сменить адрес" else "Rotate Address", color = primaryColor, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showRotateOnionDialog = false },
+                    enabled = !isRotatingOnion,
+                ) {
+                    Text(if (isRussian) "Отмена" else "Cancel", color = onSurfaceVariant)
+                }
+            },
+            containerColor = surfaceColor,
         )
     }
 }

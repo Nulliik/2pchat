@@ -1,6 +1,7 @@
 package com.example.twopchat.yggdrasil
 
 import android.content.Context
+import com.example.twopchat.config.P2PPreferences
 
 fun yggdrasilPrefs(context: Context) =
-    com.example.twopchat.P2PPreferences.prefs(context)
+    P2PPreferences.prefs(context)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -44,8 +45,8 @@ func (hp *HolePuncher) Punch(ctx context.Context, remoteEndpoints []string, maxA
 
 	validEndpoints := make([]string, 0, len(remoteEndpoints))
 	for _, ep := range remoteEndpoints {
-		ep = stringsTrimSpace(ep)
-		if ep != "" && !stringsHasSuffix(ep, ".onion") && !stringsContains(ep, ".onion:") {
+		ep = strings.TrimSpace(ep)
+		if ep != "" && !strings.HasSuffix(ep, ".onion") && !strings.Contains(ep, ".onion:") {
 			validEndpoints = append(validEndpoints, ep)
 		}
 	}
@@ -84,10 +85,15 @@ func (hp *HolePuncher) Punch(ctx context.Context, remoteEndpoints []string, maxA
 
 				conn, err := hp.dialWithReuse(ctxTimeout, target, roundInterval)
 				if err == nil && conn != nil {
+					won := false
 					once.Do(func() {
+						won = true
 						close(done)
 						resCh <- punchResult{conn: conn, ep: target}
 					})
+					if !won {
+						_ = conn.Close()
+					}
 					return
 				}
 
@@ -130,29 +136,4 @@ func (hp *HolePuncher) dialWithReuse(ctx context.Context, target string, timeout
 	}
 
 	return dialer.DialContext(ctx, "tcp", target)
-}
-
-func stringsTrimSpace(s string) string {
-	start := 0
-	end := len(s)
-	for start < end && (s[start] == ' ' || s[start] == '\t' || s[start] == '\n' || s[start] == '\r') {
-		start++
-	}
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t' || s[end-1] == '\n' || s[end-1] == '\r') {
-		end--
-	}
-	return s[start:end]
-}
-
-func stringsHasSuffix(s, suffix string) bool {
-	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
-}
-
-func stringsContains(s, substr string) bool {
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

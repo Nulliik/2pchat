@@ -2,6 +2,7 @@ package com.example.twopchat.ui.main
 
 import android.widget.Toast
 import android.content.Context
+import com.example.twopchat.tor.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,11 +39,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.bridge.P2PBridgeProvider
-import com.example.twopchat.ProxyConfig
-import com.example.twopchat.P2PMessageRelay
-import com.example.twopchat.P2PPreferences
-import com.example.twopchat.TorManager
-import com.example.twopchat.connectionTransportLabel
+import com.example.twopchat.config.ProxyConfig
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.tor.*
+import com.example.twopchat.relay.connectionTransportLabel
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
@@ -173,14 +174,20 @@ private fun shareLogFile(context: Context) {
 private fun getTrackerPing(announceUrl: String): Long {
     val startTime = System.currentTimeMillis()
     try {
-        val host = java.net.URI(announceUrl).host ?: return -1L
-        if (host.contains(':') || host.matches(Regex("\\d{1,3}(?:\\.\\d{1,3}){3}"))) {
-            java.net.InetAddress.getByName(host)
+        val clean = announceUrl.trim()
+        val host = when {
+            clean.startsWith("udp://", ignoreCase = true) -> clean.removePrefix("udp://").substringBefore('/').substringBeforeLast(':').trim('[', ']')
+            clean.startsWith("http://", ignoreCase = true) -> clean.removePrefix("http://").substringBefore('/').substringBeforeLast(':').trim('[', ']')
+            clean.startsWith("https://", ignoreCase = true) -> clean.removePrefix("https://").substringBefore('/').substringBeforeLast(':').trim('[', ']')
+            else -> java.net.URI(clean).host ?: return -1L
+        }
+        if (host.isBlank()) return -1L
+        if (host.contains(':')) {
             return -3L
         }
         java.net.InetAddress.getByName(host)
         return (System.currentTimeMillis() - startTime).coerceAtLeast(0L)
-    } catch (e: Exception) {
+    } catch (_: Exception) {
         return -1L
     }
 }
@@ -1170,29 +1177,22 @@ private fun NodeDetailContent(
                 val announceRtt = Regex("announce_rtt=(\\d+)ms").find(status)?.groupValues?.get(1)?.toLongOrNull()
                 val pending = status.contains("PENDING", ignoreCase = true)
                 val failed = status.contains("FAIL", ignoreCase = true)
-                val pingText = if (announceRtt != null) {
-                     "RTT ${announceRtt}ms"
-                } else if (pending) {
-                    if (appLanguage == "Русский") "опрос..." else "probing..."
-                } else if (failed) {
-                    if (appLanguage == "Русский") "ошибка" else "failed"
-                } else if (ping == null) {
-                    if (appLanguage == "Русский") "нет данных" else "not checked"
-                } else if (ping == -2L) {
-                    if (appLanguage == "Русский") "Yggdrasil выкл." else "Yggdrasil off"
-                } else if (ping == -3L) {
-                    "IPv6 literal"
-                } else if (ping < 0) {
-                    if (appLanguage == "Русский") "DNS недоступен" else "DNS unavailable"
-                } else if (ping == 0L) {
-                    "DNS <1ms"
-                } else {
-                    "DNS ${ping}ms"
-                }
                 val skipped = status.contains("SKIPPED", ignoreCase = true)
                 val announceOk = status.contains("announce=OK", ignoreCase = true) || status.contains("resolve=OK", ignoreCase = true)
+                val pingText = when {
+                    announceRtt != null -> "RTT ${announceRtt}ms"
+                    pending -> if (appLanguage == "Русский") "опрос..." else "probing..."
+                    failed -> if (appLanguage == "Русский") "ошибка" else "failed"
+                    ping == -2L -> if (appLanguage == "Русский") "Yggdrasil выкл." else "Yggdrasil off"
+                    ping == -3L -> if (announceOk) "IPv6 (OK)" else "IPv6"
+                    ping != null && ping >= 0L -> "DNS ${ping}ms"
+                    announceOk -> if (appLanguage == "Русский") "Активен (Go)" else "Active (Go)"
+                    ping == null -> if (appLanguage == "Русский") "нет данных" else "not checked"
+                    else -> if (appLanguage == "Русский") "DNS недоступен" else "DNS unavailable"
+                }
                 val pingColor = when {
-                    ping != null && ping >= 0L -> Color(0xFF4CAF50)
+                    announceOk || (ping != null && ping >= 0L) -> Color(0xFF4CAF50)
+                    failed -> Color(0xFFFF5252)
                     ping == -2L || ping == -3L || skipped -> onSurfaceVariant
                     ping == null -> Color(0xFFFFD740)
                     else -> Color(0xFFFF5252)
@@ -1339,7 +1339,7 @@ private fun NodeDetailContent(
                         endpoint = P2PMessageRelay.peerEndpoints[name],
                         appLanguage = appLanguage,
                     )
-                    val isEstablished = P2PMessageRelay.peerSessionStates[name] == true
+                    val isEstablished = P2PMessageRelay.isPeerOnline(context, name)
                     Card(
                         colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.3f)),
                         modifier = Modifier.fillMaxWidth().border(0.5.dp, onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))

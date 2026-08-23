@@ -1,6 +1,7 @@
 package com.example.twopchat.ui.main
 
 import android.content.Intent
+import com.example.twopchat.config.*
 import android.net.VpnService
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -50,7 +51,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.example.twopchat.P2PPreferences
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.yggdrasil.ConfigurationProxy
 import com.example.twopchat.yggdrasil.CustomYggdrasilPeer
@@ -94,7 +94,9 @@ fun YggdrasilPeerSettingsPage(
                 val intent = Intent(context, PacketTunnelProvider::class.java).apply {
                     action = PacketTunnelProvider.ACTION_START
                 }
-                context.startService(intent)
+                runCatching {
+                    androidx.core.content.ContextCompat.startForegroundService(context, intent)
+                }
                 yggdrasilRouting = true
                 sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
             } else {
@@ -217,7 +219,9 @@ fun YggdrasilPeerSettingsPage(
                                                 val intent = Intent(context, PacketTunnelProvider::class.java).apply {
                                                     action = PacketTunnelProvider.ACTION_START
                                                 }
-                                                context.startService(intent)
+                                                runCatching {
+                                                    androidx.core.content.ContextCompat.startForegroundService(context, intent)
+                                                }
                                                 yggdrasilRouting = true
                                                 sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
                                             }
@@ -225,7 +229,9 @@ fun YggdrasilPeerSettingsPage(
                                             val intent = Intent(context, PacketTunnelProvider::class.java).apply {
                                                 action = PacketTunnelProvider.ACTION_STOP
                                             }
-                                            context.startService(intent)
+                                            runCatching {
+                                                context.startService(intent)
+                                            }
                                             yggdrasilRouting = false
                                             sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
                                         }

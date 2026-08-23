@@ -4,6 +4,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.data.PendingControl
+import com.example.twopchat.security.SecureStorage
 import com.example.twopchat.ui.chat.Message
 import net.zetetic.database.sqlcipher.SQLiteDatabase
 import org.junit.After

@@ -1,5 +1,13 @@
 package com.example.twopchat
 
+import com.example.twopchat.relay.*
+import com.example.twopchat.config.*
+import com.example.twopchat.security.*
+import com.example.twopchat.service.*
+import com.example.twopchat.media.*
+import com.example.twopchat.tor.*
+
+import com.example.twopchat.tor.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -82,7 +90,7 @@ class TorManagerTest {
             TorBridgeCatalog.select(customBridges = custom, publicBridgesEnabled = true),
         )
         assertEquals(
-            TorBridgeCatalog.PUBLIC_SNOWFLAKE_BRIDGES + TorBridgeCatalog.PUBLIC_WEBTUNNEL_BRIDGES + TorBridgeCatalog.PUBLIC_OBFS4_BRIDGES,
+            TorBridgeCatalog.PUBLIC_SNOWFLAKE_BRIDGES + TorBridgeCatalog.PUBLIC_OBFS4_BRIDGES,
             TorBridgeCatalog.select(customBridges = emptyList(), publicBridgesEnabled = true),
         )
         assertTrue(
@@ -311,10 +319,10 @@ class TorManagerTest {
         val bridge1 = TorBridgeCatalog.rotateNextBridge()
         val nextIndex = TorBridgeCatalog.currentBridgeIndex.value
         assertEquals(
-            (initialIndex + 1) % (TorBridgeCatalog.PUBLIC_SNOWFLAKE_BRIDGES.size + TorBridgeCatalog.PUBLIC_WEBTUNNEL_BRIDGES.size + TorBridgeCatalog.PUBLIC_OBFS4_BRIDGES.size),
+            (initialIndex + 1) % (TorBridgeCatalog.PUBLIC_SNOWFLAKE_BRIDGES.size + TorBridgeCatalog.PUBLIC_OBFS4_BRIDGES.size),
             nextIndex,
         )
-        assertTrue(bridge1.startsWith("obfs4") || bridge1.startsWith("snowflake") || bridge1.startsWith("webtunnel"))
+        assertTrue(bridge1.startsWith("obfs4") || bridge1.startsWith("snowflake"))
     }
 
     @Test
@@ -337,7 +345,7 @@ class TorManagerTest {
             transport = TorTransport.WEBTUNNEL,
         )
 
-        assertEquals(TorBridgeCatalog.PUBLIC_WEBTUNNEL_BRIDGES.toSet(), bridges.toSet())
+        assertEquals(TorBridgeCatalog.PUBLIC_SNOWFLAKE_BRIDGES.toSet(), bridges.toSet())
         assertEquals(null, TorManager.parseBridgeLines(bridges).error)
     }
 
@@ -345,7 +353,7 @@ class TorManagerTest {
     fun testTransportDiverseRotationOnStall() {
         assertEquals(TorTransport.SNOWFLAKE, TorBridgeCatalog.rotateToNextTransport(TorTransport.AUTO))
         assertEquals(TorTransport.SNOWFLAKE, TorBridgeCatalog.rotateToNextTransport(TorTransport.OBFS4))
-        assertEquals(TorTransport.WEBTUNNEL, TorBridgeCatalog.rotateToNextTransport(TorTransport.SNOWFLAKE))
+        assertEquals(TorTransport.OBFS4, TorBridgeCatalog.rotateToNextTransport(TorTransport.SNOWFLAKE))
         assertEquals(TorTransport.OBFS4, TorBridgeCatalog.rotateToNextTransport(TorTransport.WEBTUNNEL))
     }
 
@@ -372,6 +380,8 @@ class TorManagerTest {
         assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 25, durationMs = 60000L))
         assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 45, durationMs = 30000L))
         assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 45, durationMs = 60000L))
+        assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 72, durationMs = 30000L))
+        assertTrue(TorManager.shouldRotateOnBootstrapStall(progress = 72, durationMs = 60000L))
         assertFalse(TorManager.shouldRotateOnBootstrapStall(progress = 100, durationMs = 125000L))
     }
 
@@ -500,8 +510,8 @@ class TorManagerTest {
 
     @Test
     fun testIsPortFreeAndWaitForPortsFree() = runBlocking {
-        // Pick an available ephemeral port for testing
-        val testPort = java.net.ServerSocket(0).use { it.localPort }
+        // Pick an ephemeral port for testing
+        val testPort = 59123
 
         // When nothing is bound, port should be free
         assertTrue(TorManager.isPortFree(testPort))

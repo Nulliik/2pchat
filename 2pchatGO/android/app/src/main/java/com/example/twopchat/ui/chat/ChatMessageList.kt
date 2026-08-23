@@ -1,5 +1,6 @@
 package com.example.twopchat.ui.chat
 
+import com.example.twopchat.media.*
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -115,7 +116,7 @@ internal fun ChatMessageList(
             val paths = currentMessages
                 .asSequence()
                 .filter {
-                    it.attachmentType == com.example.twopchat.GifStorageManager.ATTACHMENT_TYPE
+                    it.attachmentType == GifStorageManager.ATTACHMENT_TYPE
                 }
                 .mapNotNull { it.attachmentUri }
                 .filter { java.io.File(it).isFile }
@@ -174,7 +175,7 @@ internal fun ChatMessageList(
                     .filter { it.index in displayMessages.indices }
                     .filter {
                         displayMessages[it.index].attachmentType ==
-                            com.example.twopchat.GifStorageManager.ATTACHMENT_TYPE
+                            GifStorageManager.ATTACHMENT_TYPE
                     }
                     .sortedBy {
                         kotlin.math.abs(it.offset + it.size / 2 - viewportCenter)

@@ -13,7 +13,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PlatformImeOptions
-import com.example.twopchat.P2PPreferences
+import com.example.twopchat.config.*
 
 object P2PKeyboardOptions {
     const val INCOGNITO_PRIVATE_IME_OPTIONS =

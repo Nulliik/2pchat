@@ -10,6 +10,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
 
+import com.example.twopchat.media.*
+
 /**
  * Strips all EXIF metadata (such as GPS coordinates, camera model, timestamps)
  * from outbound images before transmission by decoding the raw pixel buffer and
@@ -25,10 +27,15 @@ object ImageSanitizer {
 
     /**
      * Determines whether the given file path has an image extension that
-     * should undergo EXIF sanitization.
+     * should undergo EXIF sanitization. Stickers and sticker packs are excluded
+     * so their WebP/pack format, transparency, and filename prefix are preserved.
      */
     fun isSanitizableImage(filePath: String): Boolean {
         if (filePath.isBlank()) return false
+        val fileName = File(filePath).name.lowercase()
+        if (fileName.contains("sticker") || StickerSupport.isStickerFileName(fileName) || StickerSupport.isStickerPackFileName(fileName)) {
+            return false
+        }
         val ext = filePath.substringAfterLast('.', "").lowercase()
         return ext in SANITIZABLE_EXTENSIONS
     }

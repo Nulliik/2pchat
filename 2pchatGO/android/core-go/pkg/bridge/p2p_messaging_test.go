@@ -201,7 +201,9 @@ func TestP2PBidirectionalMessagingByNickname(t *testing.T) {
 			}
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
-			aliceReceived <- string(payload)
+			if strings.Contains(string(payload), `"type":"chat"`) {
+				aliceReceived <- string(payload)
+			}
 		},
 	}, nil)
 	if err := alice.Init(); err != nil {
@@ -220,7 +222,9 @@ func TestP2PBidirectionalMessagingByNickname(t *testing.T) {
 			}
 		},
 		OnMessageReceived: func(peerFP string, payload []byte, msgID string) {
-			bobReceived <- string(payload)
+			if strings.Contains(string(payload), `"type":"chat"`) {
+				bobReceived <- string(payload)
+			}
 		},
 	}, nil)
 	if err := bob.Init(); err != nil {

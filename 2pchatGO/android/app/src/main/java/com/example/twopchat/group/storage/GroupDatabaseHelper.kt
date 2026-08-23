@@ -2,7 +2,7 @@ package com.example.twopchat.group.storage
 
 import android.content.ContentValues
 import android.content.Context
-import com.example.twopchat.SecureStorage
+import com.example.twopchat.security.*
 import net.zetetic.database.sqlcipher.SQLiteDatabase
 import net.zetetic.database.sqlcipher.SQLiteOpenHelper
 

@@ -34,7 +34,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.example.twopchat.P2PPreferences
+import com.example.twopchat.config.*
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.bridge.P2PBridgeProvider
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
@@ -117,9 +117,10 @@ fun OnboardingScreen(
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
 
-    if (pendingCropUri != null) {
+    val cropUri = pendingCropUri
+    if (cropUri != null) {
         ImageCropper(
-            imageUri = pendingCropUri!!,
+            imageUri = cropUri,
             onCropSuccess = { localPath ->
                 profilePhotoUri = localPath
                 sharedPrefs.edit().putString("profile_photo_uri", localPath).apply()
@@ -281,9 +282,10 @@ fun OnboardingScreen(
                         }
                     }
 
-                    if (restoreError != null) {
+                    val errorText = restoreError
+                    if (errorText != null) {
                         Text(
-                            text = restoreError!!,
+                            text = errorText,
                             color = Color(0xFFEF5350),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium

@@ -1,7 +1,7 @@
 package com.example.twopchat.data.repository
 
 import android.content.Context
-import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.ui.chat.Message
 import java.io.File

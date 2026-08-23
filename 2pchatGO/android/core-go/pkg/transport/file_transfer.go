@@ -22,14 +22,16 @@ type FileProgressCallback func(peerFP string, messageID string, transferred int6
 
 // InboundFileTransfer holds the state of an incoming chunked file transfer backed by a disk .part file.
 type InboundFileTransfer struct {
-	MessageID      string
-	PeerFP         string
-	Meta           *FileMetadata
-	PartPath       string
-	PartFile       *os.File
-	ReceivedChunks map[int]bool
-	ReceivedBytes  int64
-	StartTime      time.Time
+	MessageID         string
+	PeerFP            string
+	Meta              *FileMetadata
+	PartPath          string
+	PartFile          *os.File
+	ReceivedChunks    map[int]bool
+	ReceivedBytes     int64
+	StartTime         time.Time
+	LastProgressTime  time.Time
+	LastProgressBytes int64
 }
 
 // AssembledFile represents a completed and decrypted inbound file.
@@ -204,6 +206,8 @@ func (m *FileTransferManager) SendFileStreamWithResume(
 	if transferredBytes > fileSize {
 		transferredBytes = fileSize
 	}
+	lastReportTime := startTime
+	lastReportBytes := transferredBytes
 
 	for {
 		select {
@@ -237,12 +241,26 @@ func (m *FileTransferManager) SendFileStreamWithResume(
 			}
 
 			if m.onProgress != nil {
-				elapsed := time.Since(startTime).Seconds()
-				speed := 0.0
-				if elapsed > 0 {
-					speed = (float64(transferredBytes) * 8 / 1024) / elapsed
+				now := time.Now()
+				isFirst := chunk.Index == 0
+				isLast := transferredBytes >= fileSize
+				timeDelta := now.Sub(lastReportTime)
+				byteDelta := transferredBytes - lastReportBytes
+				minByteDelta := fileSize / 100 // 1%
+				if minByteDelta < int64(DefaultChunkSize) {
+					minByteDelta = int64(DefaultChunkSize)
 				}
-				m.onProgress(peerFP, messageID, transferredBytes, fileSize, speed)
+
+				if isFirst || isLast || timeDelta >= 100*time.Millisecond || byteDelta >= minByteDelta {
+					elapsed := now.Sub(startTime).Seconds()
+					speed := 0.0
+					if elapsed > 0 {
+						speed = (float64(transferredBytes) * 8 / 1024) / elapsed
+					}
+					m.onProgress(peerFP, messageID, transferredBytes, fileSize, speed)
+					lastReportTime = now
+					lastReportBytes = transferredBytes
+				}
 			}
 		}
 	}
@@ -347,10 +365,28 @@ func (m *FileTransferManager) ReceiveChunk(
 	partFile := transfer.PartFile
 	partPath := transfer.PartPath
 	meta := transfer.Meta
+	startTime := transfer.StartTime
+	lastProgressTime := transfer.LastProgressTime
+	lastProgressBytes := transfer.LastProgressBytes
+
+	now := time.Now()
+	isFirst := len(transfer.ReceivedChunks) == 1
+	timeDelta := now.Sub(lastProgressTime)
+	byteDelta := receivedBytes - lastProgressBytes
+	minByteDelta := totalBytes / 100 // 1%
+	if minByteDelta < int64(DefaultChunkSize) {
+		minByteDelta = int64(DefaultChunkSize)
+	}
+
+	shouldReportProgress := m.onProgress != nil && (isFirst || isComplete || timeDelta >= 100*time.Millisecond || byteDelta >= minByteDelta)
+	if shouldReportProgress {
+		transfer.LastProgressTime = now
+		transfer.LastProgressBytes = receivedBytes
+	}
 	m.mu.Unlock()
 
-	if m.onProgress != nil {
-		elapsed := time.Since(transfer.StartTime).Seconds()
+	if shouldReportProgress {
+		elapsed := now.Sub(startTime).Seconds()
 		speed := 0.0
 		if elapsed > 0 {
 			speed = (float64(receivedBytes) * 8 / 1024) / elapsed

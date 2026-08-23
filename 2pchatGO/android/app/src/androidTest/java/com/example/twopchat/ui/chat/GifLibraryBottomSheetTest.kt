@@ -16,7 +16,8 @@ import androidx.compose.ui.test.moveBy
 import androidx.compose.ui.test.up
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
-import com.example.twopchat.StoredGif
+import com.example.twopchat.media.GifStorageManager
+import com.example.twopchat.media.StoredGif
 import java.io.File
 import org.junit.After
 import org.junit.Assert.assertTrue

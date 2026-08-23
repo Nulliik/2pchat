@@ -3,6 +3,10 @@ package com.example.twopchat
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.example.twopchat.relay.NetworkTrafficStats
+import com.example.twopchat.relay.TrafficCategory
+import com.example.twopchat.relay.TrafficDirection
+import com.example.twopchat.relay.TrafficProtocol
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

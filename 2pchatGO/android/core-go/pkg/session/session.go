@@ -3,6 +3,7 @@ package session
 import (
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,10 +17,10 @@ import (
 )
 
 const (
-	DefaultAckTimeout       = 3 * time.Second
-	TorAckTimeout           = 8 * time.Second
-	DefaultMaxRetries       = 3
-	DefaultHandshakeTimeout = 10 * time.Second
+	DefaultAckTimeout       = 5 * time.Second
+	TorAckTimeout           = 12 * time.Second
+	DefaultMaxRetries       = 2
+	DefaultHandshakeTimeout = 30 * time.Second
 	MessageQueueCapacity    = 256
 	MaxReceivedIDsHistory   = 4096
 )
@@ -138,7 +139,7 @@ func (s *Session) performHandshake(expectedFingerprint string) error {
 func (s *Session) performInitiatorHandshake(expectedFingerprint string) error {
 	eph, err := crypto.GenerateIdentityKeyPair()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to generate ephemeral keypair: %w", err)
 	}
 
 	prekeySig := crypto.SignPreKey(s.localIdentity.Signing, s.localPrekeyPub)
@@ -164,40 +165,55 @@ func (s *Session) performInitiatorHandshake(expectedFingerprint string) error {
 
 	rawInit, err := json.Marshal(initPayload)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal init handshake: %w", err)
 	}
 
 	if err := transport.WriteFrame(s.conn, rawInit); err != nil {
-		return err
+		return fmt.Errorf("failed to write init handshake frame: %w", err)
 	}
 
 	rawReply, err := transport.ReadFrame(s.conn, transport.MaxHandshakeSize)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read reply handshake frame: %w", err)
 	}
 
 	var replyPayload HandshakeJSON
 	if err := json.Unmarshal(rawReply, &replyPayload); err != nil {
-		return err
+		return fmt.Errorf("failed to unmarshal reply handshake JSON: %w", err)
 	}
 
 	if replyPayload.Role != "reply" || replyPayload.Version != crypto.HandshakeVersion {
-		return errors.New("invalid reply handshake packet")
+		return fmt.Errorf("invalid reply handshake packet: role=%s, version=%d", replyPayload.Role, replyPayload.Version)
 	}
 
-	remoteIdBytes, _ := base64.StdEncoding.DecodeString(replyPayload.IdentityPub)
-	remoteVerifyBytes, _ := base64.StdEncoding.DecodeString(replyPayload.VerifyPub)
-	remotePrekeyBytes, _ := base64.StdEncoding.DecodeString(replyPayload.SignedPrekeyPub)
-	remotePrekeySig, _ := base64.StdEncoding.DecodeString(replyPayload.PrekeySignature)
-	remoteSessionSig, _ := base64.StdEncoding.DecodeString(replyPayload.Signature)
+	remoteIdBytes, err := base64.StdEncoding.DecodeString(replyPayload.IdentityPub)
+	if err != nil {
+		return fmt.Errorf("failed to decode remote IdentityPub: %w", err)
+	}
+	remoteVerifyBytes, err := base64.StdEncoding.DecodeString(replyPayload.VerifyPub)
+	if err != nil {
+		return fmt.Errorf("failed to decode remote VerifyPub: %w", err)
+	}
+	remotePrekeyBytes, err := base64.StdEncoding.DecodeString(replyPayload.SignedPrekeyPub)
+	if err != nil {
+		return fmt.Errorf("failed to decode remote SignedPrekeyPub: %w", err)
+	}
+	remotePrekeySig, err := base64.StdEncoding.DecodeString(replyPayload.PrekeySignature)
+	if err != nil {
+		return fmt.Errorf("failed to decode remote PrekeySignature: %w", err)
+	}
+	remoteSessionSig, err := base64.StdEncoding.DecodeString(replyPayload.Signature)
+	if err != nil {
+		return fmt.Errorf("failed to decode remote Signature: %w", err)
+	}
 
 	remoteIdPub, err := crypto.X25519PublicKeyFromBytes(remoteIdBytes)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid remote identity key: %w", err)
 	}
 	remotePrekeyPub, err := crypto.X25519PublicKeyFromBytes(remotePrekeyBytes)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid remote signed prekey: %w", err)
 	}
 
 	// Verify signatures
@@ -231,7 +247,7 @@ func (s *Session) performInitiatorHandshake(expectedFingerprint string) error {
 
 	drState, err := crypto.InitializeSessionFromPreKey(s.localIdentity, bundle, eph)
 	if err != nil {
-		return err
+		return fmt.Errorf("InitializeSessionFromPreKey failed: %w", err)
 	}
 	s.drState = drState
 	return nil
@@ -240,24 +256,42 @@ func (s *Session) performInitiatorHandshake(expectedFingerprint string) error {
 func (s *Session) performResponderHandshake(expectedFingerprint string) error {
 	rawInit, err := transport.ReadFrame(s.conn, transport.MaxHandshakeSize)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read init handshake frame: %w", err)
 	}
 
 	var initPayload HandshakeJSON
 	if err := json.Unmarshal(rawInit, &initPayload); err != nil {
-		return err
+		return fmt.Errorf("failed to unmarshal init handshake JSON: %w", err)
 	}
 
 	if initPayload.Role != "init" || initPayload.Version != crypto.HandshakeVersion {
-		return errors.New("responder expected init handshake")
+		return fmt.Errorf("responder expected init handshake, got role=%s, version=%d", initPayload.Role, initPayload.Version)
 	}
 
-	remoteIdBytes, _ := base64.StdEncoding.DecodeString(initPayload.IdentityPub)
-	remoteVerifyBytes, _ := base64.StdEncoding.DecodeString(initPayload.VerifyPub)
-	remotePrekeyBytes, _ := base64.StdEncoding.DecodeString(initPayload.SignedPrekeyPub)
-	remotePrekeySig, _ := base64.StdEncoding.DecodeString(initPayload.PrekeySignature)
-	remoteSessionSig, _ := base64.StdEncoding.DecodeString(initPayload.Signature)
-	remoteEphBytes, _ := base64.StdEncoding.DecodeString(initPayload.EphemeralPub)
+	remoteIdBytes, err := base64.StdEncoding.DecodeString(initPayload.IdentityPub)
+	if err != nil {
+		return fmt.Errorf("failed to decode initiator IdentityPub: %w", err)
+	}
+	remoteVerifyBytes, err := base64.StdEncoding.DecodeString(initPayload.VerifyPub)
+	if err != nil {
+		return fmt.Errorf("failed to decode initiator VerifyPub: %w", err)
+	}
+	remotePrekeyBytes, err := base64.StdEncoding.DecodeString(initPayload.SignedPrekeyPub)
+	if err != nil {
+		return fmt.Errorf("failed to decode initiator SignedPrekeyPub: %w", err)
+	}
+	remotePrekeySig, err := base64.StdEncoding.DecodeString(initPayload.PrekeySignature)
+	if err != nil {
+		return fmt.Errorf("failed to decode initiator PrekeySignature: %w", err)
+	}
+	remoteSessionSig, err := base64.StdEncoding.DecodeString(initPayload.Signature)
+	if err != nil {
+		return fmt.Errorf("failed to decode initiator Signature: %w", err)
+	}
+	remoteEphBytes, err := base64.StdEncoding.DecodeString(initPayload.EphemeralPub)
+	if err != nil {
+		return fmt.Errorf("failed to decode initiator EphemeralPub: %w", err)
+	}
 
 	// Verify signatures
 	toVerifyPrekey := append([]byte(crypto.SignedPrekeyContext), remotePrekeyBytes...)
@@ -296,20 +330,20 @@ func (s *Session) performResponderHandshake(expectedFingerprint string) error {
 
 	rawReply, err := json.Marshal(replyPayload)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal reply handshake: %w", err)
 	}
 
 	if err := transport.WriteFrame(s.conn, rawReply); err != nil {
-		return err
+		return fmt.Errorf("failed to write reply handshake frame: %w", err)
 	}
 
 	remoteIdPub, err := crypto.X25519PublicKeyFromBytes(remoteIdBytes)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid remote identity public key: %w", err)
 	}
 	remoteEphPub, err := crypto.X25519PublicKeyFromBytes(remoteEphBytes)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid remote ephemeral public key: %w", err)
 	}
 
 	s.peerFingerprint = crypto.Fingerprint(remoteIdBytes)
@@ -328,7 +362,7 @@ func (s *Session) performResponderHandshake(expectedFingerprint string) error {
 		remoteEphPub,
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("RespondToPreKeyInit failed: %w", err)
 	}
 	s.drState = drState
 	return nil
@@ -354,6 +388,43 @@ func (s *Session) readerLoop() {
 			continue
 		}
 
+		if len(plaintext) > 0 && plaintext[0] == 0x02 {
+			if len(plaintext) >= 3 {
+				idLen := int(binary.BigEndian.Uint16(plaintext[1:3]))
+				if len(plaintext) >= 3+idLen {
+					msgID := string(plaintext[3 : 3+idLen])
+					payload := plaintext[3+idLen:]
+
+					_ = s.sendAck(msgID)
+
+					s.receivedIDsMu.Lock()
+					if s.receivedIDs[msgID] {
+						s.receivedIDsMu.Unlock()
+						continue
+					}
+					s.receivedIDs[msgID] = true
+					s.receivedOrder = append(s.receivedOrder, msgID)
+					if len(s.receivedOrder) > MaxReceivedIDsHistory {
+						oldest := s.receivedOrder[0]
+						s.receivedOrder = s.receivedOrder[1:]
+						delete(s.receivedIDs, oldest)
+					}
+					s.receivedIDsMu.Unlock()
+
+					msgMap := map[string]any{
+						"type":    "binary",
+						"id":      msgID,
+						"payload": payload,
+					}
+					select {
+					case s.messageQueue <- msgMap:
+					default:
+					}
+					continue
+				}
+			}
+		}
+
 		msgMap, err := DecodeMessage(plaintext)
 		if err != nil {
 			continue
@@ -362,7 +433,11 @@ func (s *Session) readerLoop() {
 		msgType, _ := msgMap["type"].(string)
 
 		if msgType == string(TypeAck) {
-			if ackID, ok := msgMap["ack_id"].(string); ok {
+			ackID, _ := msgMap["ack_id"].(string)
+			if ackID == "" {
+				ackID, _ = msgMap["id"].(string)
+			}
+			if ackID != "" {
 				s.pendingAcksMu.Lock()
 				if ch, exists := s.pendingAcks[ackID]; exists {
 					select {
@@ -376,7 +451,11 @@ func (s *Session) readerLoop() {
 		}
 
 		// Send ACK for messages carrying an ID
-		if msgID, ok := msgMap["id"].(string); ok && msgID != "" {
+		msgID, ok := msgMap["id"].(string)
+		if !ok || msgID == "" {
+			msgID, _ = msgMap["message_id"].(string)
+		}
+		if msgID != "" {
 			_ = s.sendAck(msgID)
 
 			s.receivedIDsMu.Lock()
@@ -475,8 +554,63 @@ func (s *Session) SendReliable(msg map[string]any) (string, error) {
 	return "", ErrAckTimeout
 }
 
+// SendReliableBinary sends an arbitrary binary wire message payload and waits for the peer's ACK.
+func (s *Session) SendReliableBinary(payload []byte) (string, error) {
+	msgID := fmt.Sprintf("%d-%d", time.Now().UnixNano(), atomic.AddUint64(&s.counter, 1))
+
+	// Construct binary packet: [0x02 Magic] [2 bytes ID Len] [ID Bytes] [Payload Bytes]
+	idBytes := []byte(msgID)
+	frame := make([]byte, 1+2+len(idBytes)+len(payload))
+	frame[0] = 0x02
+	binary.BigEndian.PutUint16(frame[1:3], uint16(len(idBytes)))
+	copy(frame[3:3+len(idBytes)], idBytes)
+	copy(frame[3+len(idBytes):], payload)
+
+	ackChan := make(chan bool, 1)
+	s.pendingAcksMu.Lock()
+	s.pendingAcks[msgID] = ackChan
+	s.pendingAcksMu.Unlock()
+
+	defer func() {
+		s.pendingAcksMu.Lock()
+		delete(s.pendingAcks, msgID)
+		s.pendingAcksMu.Unlock()
+	}()
+
+	delay := s.AckTimeout()
+	if delay <= 0 {
+		delay = DefaultAckTimeout
+	}
+	for attempt := 0; attempt <= s.maxRetries; attempt++ {
+		if err := s.sendEncryptedFrame(frame); err != nil {
+			return "", err
+		}
+
+		select {
+		case <-s.closeChan:
+			return "", ErrSessionClosed
+		case <-ackChan:
+			return msgID, nil
+		case <-time.After(delay):
+			if attempt < s.maxRetries {
+				delay = time.Duration(float64(delay) * 1.5)
+			}
+		}
+	}
+
+	return "", ErrAckTimeout
+}
+
 // SendChat sends a chat message reliably over the Double Ratchet channel.
 func (s *Session) SendChat(body, nickname string) (string, error) {
+	trimmed := strings.TrimSpace(body)
+	if strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}") {
+		var rawMap map[string]any
+		if err := json.Unmarshal([]byte(trimmed), &rawMap); err == nil && rawMap["type"] != nil {
+			return s.SendReliable(rawMap)
+		}
+	}
+
 	c := atomic.AddUint64(&s.counter, 1)
 	msgID := fmt.Sprintf("%d-%d", time.Now().UnixNano(), c)
 	msg := NewChatMessage(msgID, body, nickname)

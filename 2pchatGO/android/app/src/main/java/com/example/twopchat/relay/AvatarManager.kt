@@ -6,16 +6,30 @@ import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
-import com.example.twopchat.PeerAvatarCache
+import com.example.twopchat.relay.PeerAvatarCache
 import java.io.ByteArrayOutputStream
 
-internal class AvatarManager {
-    private val avatarCache = PeerAvatarCache()
-    val peerAvatars = avatarCache.avatars
+internal class AvatarManager(
+    private val sharedAvatarCache: PeerAvatarCache,
+) {
+    val peerAvatars = sharedAvatarCache.avatars
 
     fun loadPersistedAvatars(context: Context, log: (Context, String, String, Throwable?) -> Unit) {
-        avatarCache.loadPersisted(context) { error ->
+        sharedAvatarCache.loadPersisted(context) { error ->
             log(context, "Error loading avatars: ${error.message}", "ERROR", error)
+        }
+    }
+
+    fun putAlias(fromKey: String, toKey: String, context: Context? = null) {
+        if (fromKey.isBlank() || toKey.isBlank() || fromKey == toKey) return
+        val bitmap = peerAvatars[fromKey] ?: return
+        Handler(Looper.getMainLooper()).post {
+            sharedAvatarCache.put(toKey, bitmap)
+        }
+        if (context != null) {
+            try {
+                sharedAvatarCache.savePersisted(context, toKey, bitmap)
+            } catch (_: Throwable) {}
         }
     }
 
@@ -23,6 +37,8 @@ internal class AvatarManager {
         context: Context,
         sender: String,
         b64: String,
+        effectiveName: String? = null,
+        fingerprint: String? = null,
         log: (Context, String, String, Throwable?) -> Unit
     ) {
         if (b64.isEmpty() || b64.length > 2_000_000) return
@@ -42,15 +58,23 @@ internal class AvatarManager {
                 }
             )
             if (bitmap != null) {
+                val keys = listOfNotNull(
+                    sender.takeIf { it.isNotBlank() },
+                    effectiveName?.takeIf { it.isNotBlank() },
+                    fingerprint?.takeIf { it.isNotBlank() }
+                ).distinct()
                 Handler(Looper.getMainLooper()).post {
-                    avatarCache.put(sender, bitmap)
+                    for (k in keys) {
+                        sharedAvatarCache.put(k, bitmap)
+                    }
                 }
-                log(context, "Received and cached an authenticated peer avatar", "INFO", null)
-                try {
-                    avatarCache.savePersisted(context, sender, bitmap)
-                    log(context, "Saved an encrypted peer avatar", "INFO", null)
-                } catch (saveEx: Exception) {
-                    log(context, "Failed to save avatar file: ${saveEx.message}", "ERROR", saveEx)
+                log(context, "Received and cached an authenticated peer avatar for ${effectiveName ?: sender}", "INFO", null)
+                for (k in keys) {
+                    try {
+                        sharedAvatarCache.savePersisted(context, k, bitmap)
+                    } catch (saveEx: Exception) {
+                        log(context, "Failed to save avatar file for $k: ${saveEx.message}", "ERROR", saveEx)
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -59,6 +83,6 @@ internal class AvatarManager {
     }
 
     fun clear() {
-        avatarCache.clear()
+        sharedAvatarCache.clear()
     }
 }

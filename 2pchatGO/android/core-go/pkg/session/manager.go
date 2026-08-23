@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -21,6 +22,57 @@ type EventCallbacks struct {
 	OnMessageReceived  func(peerFP string, payload []byte, messageID string)
 	OnError            func(code int, message string)
 	OnFileProgress     func(peerFP string, messageID string, transferred int64, total int64, speedKbps float64)
+}
+
+const (
+	maxConcurrentHandshakes = 16
+	ipRateLimitWindow       = 5 * time.Second
+	maxHandshakesPerWindow  = 10
+)
+
+type ipRateLimiter struct {
+	mu      sync.Mutex
+	history map[string][]time.Time
+}
+
+func newIPRateLimiter() *ipRateLimiter {
+	return &ipRateLimiter{
+		history: make(map[string][]time.Time),
+	}
+}
+
+func (l *ipRateLimiter) allow(ip string) bool {
+	if ip == "" || ip == "127.0.0.1" || ip == "::1" || ip == "localhost" {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := time.Now()
+	cutoff := now.Add(-ipRateLimitWindow)
+
+	timestamps := l.history[ip]
+	valid := timestamps[:0]
+	for _, t := range timestamps {
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
+	}
+
+	if len(valid) >= maxHandshakesPerWindow {
+		l.history[ip] = valid
+		return false
+	}
+
+	l.history[ip] = append(valid, now)
+	if len(l.history) > 1024 {
+		for k, v := range l.history {
+			if len(v) == 0 || v[len(v)-1].Before(cutoff) {
+				delete(l.history, k)
+			}
+		}
+	}
+	return true
 }
 
 // Manager manages P2P listening, outbound dialing, active sessions, and connection arbitration.
@@ -40,6 +92,8 @@ type Manager struct {
 	nickname        string
 	fingerprint     string
 	onionAddress    string
+	handshakeSem    chan struct{}
+	rateLimiter     *ipRateLimiter
 }
 
 // NewManager creates a new network session Manager.
@@ -52,16 +106,18 @@ func NewManager(
 	callbacks EventCallbacks,
 ) *Manager {
 	m := &Manager{
-		identity:    id,
-		prekeyPriv:  prekeyPriv,
-		prekeyPub:   prekeyPub,
-		dialer:      transport.NewAdaptiveDialer(torProxy, proxyEnabled, 10*time.Second),
-		listener:    transport.NewAsyncListener(),
-		sessions:    make(map[string]*Session),
-		peerEndp:    make(map[string]string),
-		peerNames:   make(map[string]string),
-		callbacks:   callbacks,
-		fingerprint: crypto.Fingerprint(id.Public.Bytes()),
+		identity:     id,
+		prekeyPriv:   prekeyPriv,
+		prekeyPub:    prekeyPub,
+		dialer:       transport.NewAdaptiveDialer(torProxy, proxyEnabled, 10*time.Second),
+		listener:     transport.NewAsyncListener(),
+		sessions:     make(map[string]*Session),
+		peerEndp:     make(map[string]string),
+		peerNames:    make(map[string]string),
+		callbacks:    callbacks,
+		fingerprint:  crypto.Fingerprint(id.Public.Bytes()),
+		handshakeSem: make(chan struct{}, maxConcurrentHandshakes),
+		rateLimiter:  newIPRateLimiter(),
 	}
 	m.fileTransferMgr = transport.NewFileTransferManager(func(peerFP, msgID string, transferred, total int64, speed float64) {
 		if m.callbacks.OnFileProgress != nil {
@@ -88,11 +144,19 @@ func (m *Manager) SetTorProxy(enabled bool, addr string) {
 	m.dialer.SetTorProxy(enabled, addr)
 }
 
-// SetOnionAddress sets the local Tor v3 .onion hidden service hostname.
+// SetOnionAddress sets the local Tor v3 .onion hidden service hostname and purges obsolete routes.
 func (m *Manager) SetOnionAddress(addr string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.onionAddress = strings.TrimSpace(addr)
+	newAddr := strings.TrimSpace(addr)
+	if m.onionAddress != "" && m.onionAddress != newAddr {
+		for fp, ep := range m.peerEndp {
+			if strings.Contains(ep, m.onionAddress) {
+				delete(m.peerEndp, fp)
+			}
+		}
+	}
+	m.onionAddress = newAddr
 }
 
 // GetOnionAddress returns the configured local Tor v3 .onion hostname.
@@ -131,19 +195,41 @@ func (m *Manager) Port() int {
 	return m.listener.Port()
 }
 
-// SetCallbacks dynamically updates JNI/Kotlin event callbacks.
-func (m *Manager) SetCallbacks(cb EventCallbacks) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.callbacks = cb
-}
-
 // Fingerprint returns the local identity fingerprint.
 func (m *Manager) Fingerprint() string {
 	return m.fingerprint
 }
 
 func (m *Manager) handleIncomingConnection(conn net.Conn) {
+	// 1. IP Rate Limiting Check
+	remoteAddr := conn.RemoteAddr().String()
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	if !m.rateLimiter.allow(host) {
+		_ = conn.Close()
+		if m.callbacks.OnError != nil {
+			m.callbacks.OnError(1, fmt.Sprintf("Incoming connection rejected: rate limit exceeded for %s", host))
+		}
+		return
+	}
+
+	// 2. Concurrency Semaphore Guard
+	select {
+	case m.handshakeSem <- struct{}{}:
+		defer func() { <-m.handshakeSem }()
+	default:
+		_ = conn.Close()
+		if m.callbacks.OnError != nil {
+			m.callbacks.OnError(1, "Incoming connection rejected: handshake concurrency limit reached")
+		}
+		return
+	}
+
+	// 3. Pre-handshake socket deadline guard (prevents slowloris DoS)
+	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
+
 	sess, err := NewSession(
 		conn,
 		false, // responder
@@ -151,7 +237,7 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 		m.prekeyPriv,
 		m.prekeyPub,
 		"", // accept any valid key during incoming connection
-		10*time.Second,
+		30*time.Second,
 	)
 	if err != nil {
 		if m.callbacks.OnError != nil {
@@ -170,21 +256,11 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 	}
 
 	peerFP := sess.PeerFingerprint()
-	if peerFP == m.fingerprint {
-		_ = sess.Close()
-		if m.callbacks.OnError != nil {
-			m.callbacks.OnError(1, "refusing self connection")
-		}
-		return
-	}
 	m.RegisterSession(sess, peerFP, endpoint, false)
 }
 
 // ConnectPeer dials a remote peer endpoint and establishes an encrypted X3DH session.
 func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, error) {
-	if expectedFingerprint != "" && expectedFingerprint == m.fingerprint {
-		return nil, fmt.Errorf("refusing self connection")
-	}
 	timeout := 15 * time.Second
 	if strings.HasSuffix(strings.ToLower(endpoint), ".onion") || (m.dialer != nil && m.dialer.ClassifyEndpoint(endpoint) == transport.TransportTor) {
 		timeout = 45 * time.Second
@@ -204,7 +280,7 @@ func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, e
 		m.prekeyPriv,
 		m.prekeyPub,
 		expectedFingerprint,
-		10*time.Second,
+		30*time.Second,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("initiator handshake failed with %s: %w", endpoint, err)
@@ -215,10 +291,6 @@ func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, e
 	}
 
 	peerFP := sess.PeerFingerprint()
-	if peerFP == m.fingerprint {
-		_ = sess.Close()
-		return nil, fmt.Errorf("refusing self connection")
-	}
 	m.RegisterSession(sess, peerFP, endpoint, true)
 	return sess, nil
 }
@@ -248,28 +320,27 @@ func (m *Manager) RegisterSession(newSess *Session, peerFP, endpoint string, ini
 	m.sessions[peerFP] = newSess
 	m.peerEndp[peerFP] = endpoint
 	onConnCb := m.callbacks.OnPeerConnected
+	nick := m.nickname
+	localFP := m.fingerprint
+	port := m.listener.Port()
 	m.mu.Unlock()
 
 	if onConnCb != nil {
 		onConnCb(peerFP, endpoint)
 	}
 
-	go func() {
-		m.mu.RLock()
-		nick := m.nickname
-		fp := m.fingerprint
-		port := m.Port()
-		m.mu.RUnlock()
-		if nick != "" {
-			infoMsg := map[string]any{
+	// Automatic identity_info exchange upon session establishment (full parity with Python discovery_bridge.py)
+	if nick != "" {
+		go func() {
+			identityMsg := map[string]any{
 				"type":        string(TypeIdentityInfo),
 				"nickname":    nick,
-				"fingerprint": fp,
+				"fingerprint": localFP,
 				"listen_port": port,
 			}
-			_, _ = newSess.SendReliable(infoMsg)
-		}
-	}()
+			_, _ = newSess.SendReliable(identityMsg)
+		}()
+	}
 
 	go m.dispatchSessionMessages(newSess, peerFP)
 }
@@ -293,27 +364,21 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 	for msg := range s.Messages() {
 		msgType, _ := msg["type"].(string)
 
-		if msgType == string(TypeIdentityProbe) {
-			m.mu.RLock()
-			nick := m.nickname
-			fp := m.fingerprint
-			port := m.Port()
-			m.mu.RUnlock()
-			if nick != "" {
-				infoMsg := map[string]any{
-					"type":        string(TypeIdentityInfo),
-					"nickname":    nick,
-					"fingerprint": fp,
-					"listen_port": port,
-				}
-				go func() { _, _ = s.SendReliable(infoMsg) }()
-			}
-			continue
-		}
-
 		if msgType == string(TypeIdentityInfo) {
-			if remoteNick, ok := msg["nickname"].(string); ok && remoteNick != "" {
-				m.UpdatePeerNameMapping(peerFP, remoteNick)
+			nick, _ := msg["nickname"].(string)
+			claimedFP, _ := msg["fingerprint"].(string)
+			nick = strings.TrimSpace(nick)
+			if claimedFP == "" {
+				claimedFP = peerFP
+			}
+			if nick != "" {
+				m.UpdatePeerNameMapping(peerFP, nick)
+				m.UpdatePeerNameMapping(claimedFP, nick)
+			}
+			raw, err := EncodeMessage(msg)
+			if err == nil && m.callbacks.OnMessageReceived != nil {
+				msgID, _ := msg["id"].(string)
+				m.callbacks.OnMessageReceived(peerFP, raw, msgID)
 			}
 			continue
 		}
@@ -355,7 +420,7 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 			storageDir := m.storageDir
 			m.mu.RUnlock()
 			if storageDir == "" {
-				storageDir = "/data/user/0/com.example.twopchat/files"
+				storageDir = os.TempDir()
 			}
 			downloadsDir := filepath.Join(storageDir, "config", "downloads")
 
@@ -380,6 +445,16 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 				}
 			}
 			continue
+		}
+
+		if msgType == "binary" {
+			if payloadBytes, ok := msg["payload"].([]byte); ok {
+				msgID, _ := msg["id"].(string)
+				if m.callbacks.OnMessageReceived != nil {
+					m.callbacks.OnMessageReceived(peerFP, payloadBytes, msgID)
+				}
+				continue
+			}
 		}
 
 		raw, err := EncodeMessage(msg)
@@ -448,50 +523,65 @@ func (m *Manager) UpdatePeerNameMapping(peerFP, nickname string) {
 	m.peerNames[peerFP] = nickname
 }
 
-// SendMessage sends a text message to a connected peer.
-func (m *Manager) SendMessage(peerFP, text string) (string, error) {
+// resolveSessionLocked finds an active online session matching peerFP, nickname, or 1-on-1 fallback.
+// Caller MUST hold at least m.mu.RLock().
+func (m *Manager) resolveSessionLocked(peerFP string) (*Session, bool) {
 	peerFP = strings.TrimSpace(peerFP)
-	m.mu.RLock()
-	s, exists := m.sessions[peerFP]
-	if !exists || !s.IsOnline() {
-		// 1. Resolve peerFP as a nickname from peerNames map
-		if actualFP, ok := m.peerNames[peerFP]; ok {
-			if sess, ok := m.sessions[actualFP]; ok && sess.IsOnline() {
-				s = sess
-				exists = true
+	if peerFP == "" && len(m.sessions) == 1 {
+		for _, s := range m.sessions {
+			if s != nil && s.IsOnline() {
+				return s, true
 			}
 		}
 	}
-	if !exists || !s.IsOnline() {
-		// 1b. Case-insensitive nickname lookup
-		if actualFP, ok := m.peerNames[strings.ToLower(peerFP)]; ok {
-			if sess, ok := m.sessions[actualFP]; ok && sess.IsOnline() {
-				s = sess
-				exists = true
+	if peerFP == "" {
+		return nil, false
+	}
+
+	// 1. Direct fingerprint match
+	if s, exists := m.sessions[peerFP]; exists && s.IsOnline() {
+		return s, true
+	}
+
+	// 2. Nickname map lookup (exact match)
+	if actualFP, ok := m.peerNames[peerFP]; ok {
+		if s, exists := m.sessions[actualFP]; exists && s.IsOnline() {
+			return s, true
+		}
+	}
+
+	// 3. Nickname map lookup (case-insensitive)
+	if actualFP, ok := m.peerNames[strings.ToLower(peerFP)]; ok {
+		if s, exists := m.sessions[actualFP]; exists && s.IsOnline() {
+			return s, true
+		}
+	}
+
+	// 4. Fallback search by endpoint or matching nickname
+	for fp, sess := range m.sessions {
+		if sess.IsOnline() {
+			if fp == peerFP || m.peerEndp[fp] == peerFP || strings.EqualFold(m.peerNames[fp], peerFP) {
+				return sess, true
 			}
 		}
 	}
-	if !exists || !s.IsOnline() {
-		// 2. Fallback: match by endpoint or case-insensitive nickname in peerNames
-		for fp, sess := range m.sessions {
-			if sess.IsOnline() {
-				if fp == peerFP || m.peerEndp[fp] == peerFP || strings.EqualFold(m.peerNames[fp], peerFP) {
-					s = sess
-					exists = true
-					break
-				}
-			}
-		}
-	}
-	if !exists && len(m.sessions) == 1 && (peerFP == "" || peerFP == "Direct Peer" || strings.HasPrefix(peerFP, "Peer (") || strings.HasPrefix(peerFP, "Tor Peer (")) {
+
+	// 5. 1-on-1 fallback: If there is exactly one active session, route all messages to it (parity with Python discovery_bridge.py)
+	if len(m.sessions) == 1 {
 		for _, sess := range m.sessions {
 			if sess.IsOnline() {
-				s = sess
-				exists = true
-				break
+				return sess, true
 			}
 		}
 	}
+
+	return nil, false
+}
+
+// SendMessage sends a text message to a connected peer.
+func (m *Manager) SendMessage(peerFP, text string) (string, error) {
+	m.mu.RLock()
+	s, exists := m.resolveSessionLocked(peerFP)
 	nick := m.nickname
 	m.mu.RUnlock()
 
@@ -502,72 +592,35 @@ func (m *Manager) SendMessage(peerFP, text string) (string, error) {
 	return s.SendChat(text, nick)
 }
 
+// SendMessageBinary sends a raw binary message payload to a connected peer.
+func (m *Manager) SendMessageBinary(peerFP string, payload []byte) (string, error) {
+	m.mu.RLock()
+	s, exists := m.resolveSessionLocked(peerFP)
+	m.mu.RUnlock()
+
+	if !exists || !s.IsOnline() {
+		return "", errors.New("peer is not connected")
+	}
+
+	return s.SendReliableBinary(payload)
+}
+
 // IsPeerOnline returns true if there is an active online session for peerFP or endpoint.
 func (m *Manager) IsPeerOnline(peerFP string) bool {
-	peerFP = strings.TrimSpace(peerFP)
-	if m == nil || peerFP == "" {
+	if m == nil {
 		return false
 	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	if len(m.sessions) == 0 {
-		return false
-	}
-
-	if s, exists := m.sessions[peerFP]; exists && s.IsOnline() {
-		return true
-	}
-	if actualFP, ok := m.peerNames[peerFP]; ok {
-		if s, exists := m.sessions[actualFP]; exists && s.IsOnline() {
-			return true
-		}
-	}
-	if actualFP, ok := m.peerNames[strings.ToLower(peerFP)]; ok {
-		if s, exists := m.sessions[actualFP]; exists && s.IsOnline() {
-			return true
-		}
-	}
-	for fp, sess := range m.sessions {
-		if sess.IsOnline() {
-			if fp == peerFP || m.peerEndp[fp] == peerFP || strings.EqualFold(m.peerNames[fp], peerFP) {
-				return true
-			}
-		}
-	}
-	return false
+	_, exists := m.resolveSessionLocked(peerFP)
+	return exists
 }
 
 // SendFile streams a local file to a connected peer in 64KB chunks.
 func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji string) (string, error) {
-	peerFP = strings.TrimSpace(peerFP)
 	m.mu.RLock()
-	s, exists := m.sessions[peerFP]
-	if !exists || !s.IsOnline() {
-		if actualFP, ok := m.peerNames[peerFP]; ok {
-			if sess, ok := m.sessions[actualFP]; ok && sess.IsOnline() {
-				s = sess
-				exists = true
-			}
-		}
-	}
-	if !exists || !s.IsOnline() {
-		if actualFP, ok := m.peerNames[strings.ToLower(peerFP)]; ok {
-			if sess, ok := m.sessions[actualFP]; ok && sess.IsOnline() {
-				s = sess
-				exists = true
-			}
-		}
-	}
-	if !exists || !s.IsOnline() {
-		for fp, sess := range m.sessions {
-			if sess.IsOnline() && (fp == peerFP || m.peerEndp[fp] == peerFP || strings.EqualFold(m.peerNames[fp], peerFP)) {
-				s = sess
-				exists = true
-				break
-			}
-		}
-	}
+	s, exists := m.resolveSessionLocked(peerFP)
 	m.mu.RUnlock()
 
 	if !exists || !s.IsOnline() {

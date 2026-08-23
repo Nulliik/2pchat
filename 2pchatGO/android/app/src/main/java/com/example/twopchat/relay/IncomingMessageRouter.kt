@@ -3,10 +3,10 @@ package com.example.twopchat.relay
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import com.example.twopchat.P2PMessageRelay
-import com.example.twopchat.P2PPreferences
-import com.example.twopchat.SecureStorage
-import com.example.twopchat.VoiceMessageSupport
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.config.*
+import com.example.twopchat.security.*
+import com.example.twopchat.media.*
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.ui.chat.Message
 import org.json.JSONObject
@@ -42,7 +42,7 @@ internal class IncomingMessageRouter(
             try {
                 val json = JSONObject(trimmed)
                 val payloadNickname = json.optString("nickname").ifEmpty { json.optString("sender").ifEmpty { json.optString("sender_name") } }
-                if (payloadNickname.isNotBlank() && com.example.twopchat.isValidNickname(payloadNickname)) {
+                if (payloadNickname.isNotBlank() && isValidNickname(payloadNickname)) {
                     P2PMessageRelay.handlePeerNicknameReceived(context, sender, payloadNickname, null)
                 }
                 val msgType = json.optString("type")
@@ -127,14 +127,21 @@ internal class IncomingMessageRouter(
                         return
                     }
                     "profile_avatar_share", "identity_info" -> {
-                        val b64 = json.optString("avatar_base64").takeIf { it.isNotBlank() }
-                        if (b64 != null) {
-                            avatarManager.handleAvatarShare(context, sender, b64, log)
-                        }
                         val nickname = json.optString("nickname").ifEmpty { json.optString("sender") }.takeIf { it.isNotBlank() }
                         val aboutMe = json.optString("about_me").takeIf { it.isNotBlank() }
                         val fingerprint = json.optString("fingerprint").takeIf { it.isNotBlank() }
                         val effectiveName = nickname ?: sender
+                        val b64 = json.optString("avatar_base64").takeIf { it.isNotBlank() }
+                        if (b64 != null) {
+                            avatarManager.handleAvatarShare(
+                                context = context,
+                                sender = sender,
+                                b64 = b64,
+                                effectiveName = effectiveName,
+                                fingerprint = fingerprint,
+                                log = log,
+                            )
+                        }
                         if (fingerprint != null && nickname != null) {
                             P2PPreferences.prefs(context).edit().putString("peer_fingerprint_$nickname", fingerprint).apply()
                             P2PMessageRelay.getBridge(context).updatePeerNameMapping(fingerprint, nickname)
@@ -313,8 +320,8 @@ internal class IncomingMessageRouter(
         }
 
         // Regular text message or file payload
-        val attachment = com.example.twopchat.IncomingMessageParser.parseAttachment(context, text)
-        val plainText = text.takeIf { attachment == null } ?: attachment!!.displayMessage
+        val attachment = IncomingMessageParser.parseAttachment(context, text)
+        val plainText = attachment?.displayMessage ?: text
         val message = Message(
             id = attachment?.messageId?.ifBlank { java.util.UUID.randomUUID().toString() } ?: java.util.UUID.randomUUID().toString(),
             text = plainText,

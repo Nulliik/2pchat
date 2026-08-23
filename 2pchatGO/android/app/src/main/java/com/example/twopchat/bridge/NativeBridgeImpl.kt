@@ -2,8 +2,8 @@ package com.example.twopchat.bridge
 
 import android.util.Log
 import com.example.twopchat.NativeBridge
-import com.example.twopchat.P2PMessageRelay
-import com.example.twopchat.P2PPreferences
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.config.P2PPreferences
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -40,13 +40,39 @@ class NativeBridgeImpl : IP2PBridge {
     init {
         NativeBridge.initialize()
         setupNativeCallbacks()
+        loadPersistedPeerMappings()
+    }
+
+    private fun loadPersistedPeerMappings() {
+        try {
+            val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+            val prefs = P2PPreferences.prefs(appContext)
+            val activeChats = prefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+            for (peerName in activeChats) {
+                if (peerName.isNotBlank() && !P2PMessageRelay.isPlaceholderPeerName(peerName)) {
+                    val fp = prefs.getString("peer_fingerprint_$peerName", null)
+                    if (!fp.isNullOrBlank()) {
+                        peerNameMap[fp] = peerName
+                        nameToFpMap[peerName] = fp
+                        NativeBridge.updatePeerNameMapping(fp, peerName)
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
     }
 
     private fun resolvePeerName(fingerprint: String): String? {
         if (fingerprint.isBlank()) return null
         peerNameMap[fingerprint]?.let { return it }
         val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
-        val name = P2PPreferences.findPeerNameByFingerprint(appContext, fingerprint)
+        var name = P2PPreferences.findPeerNameByFingerprint(appContext, fingerprint)
+        if (name.isNullOrBlank()) {
+            name = try {
+                com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getPeerNameByFingerprint(fingerprint)
+            } catch (_: Throwable) {
+                null
+            }
+        }
         if (!name.isNullOrBlank()) {
             peerNameMap[fingerprint] = name
             nameToFpMap[name] = fingerprint
@@ -60,7 +86,14 @@ class NativeBridgeImpl : IP2PBridge {
         if (peerName.isBlank()) return null
         nameToFpMap[peerName]?.let { return it }
         val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
-        val fp = P2PPreferences.prefs(appContext).getString(P2PPreferences.peerFingerprint(peerName), null)
+        var fp = P2PPreferences.prefs(appContext).getString(P2PPreferences.peerFingerprint(peerName), null)
+        if (fp.isNullOrBlank()) {
+            fp = try {
+                com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getPeerFingerprint(peerName)
+            } catch (_: Throwable) {
+                null
+            }
+        }
         if (!fp.isNullOrBlank()) {
             nameToFpMap[peerName] = fp
             peerNameMap[fp] = peerName
@@ -73,14 +106,33 @@ class NativeBridgeImpl : IP2PBridge {
     private fun setupNativeCallbacks() {
         NativeBridge.onPeerConnectedListener = { peerFP, endpoint ->
             Log.i(TAG, "[GoCore] Peer connected: $peerFP @ $endpoint")
+            // CRITICAL: populate bidirectional name↔fp maps BEFORE setting onlinePeers.
+            // Any concurrent isPeerOnline(nickname, fp) call must find the mapping already
+            // present; otherwise it returns false and causes offline UI / skipped avatar share.
             val resolvedName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
+            if (resolvedName != peerFP) {
+                nameToFpMap[resolvedName] = peerFP
+                peerNameMap[peerFP] = resolvedName
+                NativeBridge.updatePeerNameMapping(peerFP, resolvedName)
+            }
+            // Now mark online under BOTH the fingerprint key and the resolved nickname key.
             onlinePeers[peerFP] = true
             onlinePeers[resolvedName] = true
-            nameToFpMap[resolvedName] = peerFP
-            peerNameMap[peerFP] = resolvedName
-            NativeBridge.updatePeerNameMapping(peerFP, resolvedName)
+            // Reset send backoff so the first message after reconnect is never silently dropped
+            P2PMessageRelay.resetPeerBackoffs(peerFP)
+            if (resolvedName != peerFP) {
+                P2PMessageRelay.resetPeerBackoffs(resolvedName)
+            }
+            // Clear avatar share cooldown so the profile is immediately re-shared on reconnect
+            P2PMessageRelay.clearAvatarShareCooldown(peerFP)
+            if (resolvedName != peerFP) {
+                P2PMessageRelay.clearAvatarShareCooldown(resolvedName)
+            }
             sessionListener?.onSessionEstablished(resolvedName, peerFP, endpoint, "direct", "")
             flushPendingMessages(peerFP)
+            if (resolvedName != peerFP) {
+                flushPendingMessages(resolvedName)
+            }
         }
 
         NativeBridge.onPeerDisconnectedListener = { peerFP, reason ->
@@ -93,6 +145,38 @@ class NativeBridgeImpl : IP2PBridge {
 
         NativeBridge.onMessageReceivedListener = { peerFP, payload, messageID ->
             val payloadStr = String(payload, Charsets.UTF_8)
+            // If the message contains identity_info or profile_avatar_share with a nickname, bind securely!
+            if (payloadStr.startsWith("{")) {
+                try {
+                    val json = org.json.JSONObject(payloadStr)
+                    val mtype = json.optString("type")
+                    if (mtype == "identity_info" || mtype == "profile_avatar_share") {
+                        val remoteNick = json.optString("nickname").trim()
+                        val claimedFP = json.optString("fingerprint").trim().ifBlank { peerFP }
+                        // Rule §14: Claimed fingerprint must match the authenticated transport session peerFP
+                        if (claimedFP == peerFP && remoteNick.isNotBlank() && !P2PMessageRelay.isPlaceholderPeerName(remoteNick)) {
+                            val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+                            val existingFP = P2PPreferences.prefs(appContext).getString(P2PPreferences.peerFingerprint(remoteNick), null)
+                            if (existingFP.isNullOrBlank() || existingFP == peerFP) {
+                                peerNameMap[peerFP] = remoteNick
+                                nameToFpMap[remoteNick] = peerFP
+                                onlinePeers[remoteNick] = true
+                                onlinePeers[peerFP] = true
+                                P2PPreferences.prefs(appContext).edit()
+                                    .putString(P2PPreferences.peerFingerprint(remoteNick), peerFP)
+                                    .apply()
+                                NativeBridge.updatePeerNameMapping(peerFP, remoteNick)
+                                sessionListener?.onSessionEstablished(remoteNick, peerFP, "", "direct", "")
+                            } else {
+                                Log.w(TAG, "[Security] TOFU key change detected for $remoteNick: existing=$existingFP, incoming=$peerFP")
+                                P2PPreferences.recordPendingPeerIdentity(appContext, remoteNick, peerFP, "")
+                            }
+                        } else if (claimedFP != peerFP) {
+                            Log.w(TAG, "[Security] Dropping spoofed $mtype packet claiming $claimedFP on session $peerFP")
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
             val senderName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
             messageListener?.onMessageReceived(senderName, payloadStr)
         }
@@ -153,7 +237,7 @@ class NativeBridgeImpl : IP2PBridge {
         rendezvousCode: String?,
     ): Boolean {
         val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
-        val trackers = com.example.twopchat.TrackerPreferences.getActiveTrackerUrls(context)
+        val trackers = com.example.twopchat.config.TrackerPreferences.getActiveTrackerUrls(context)
 
         val hashes = mutableListOf<String>()
         if (fingerprint.isNotBlank()) {
@@ -177,25 +261,58 @@ class NativeBridgeImpl : IP2PBridge {
 
         val target = resolvedFP ?: peerName
 
-        // Attempt direct send through Go Core first. Go Core is the authoritative single source of truth for active sessions.
+        // 1. Attempt direct send through Go Core first. Go Core is the authoritative single source of truth for active sessions.
         val msgId = NativeBridge.sendMessage(target, payload)
         if (msgId != null) {
             return true
         }
 
-        // If Go Core has no active session for this peer, queue for background delivery and initiate dialing
-        if (endpoint.isNotBlank()) {
+        // 2. If Go Core has no active session, resolve endpoints and initiate connection
+        val fullEndpoint = if (endpoint.isNotBlank()) {
+            endpoint
+        } else {
+            val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+            P2PPreferences.getPeerOnionAddress(context, peerName)
+                ?: try {
+                    com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerOnionAddress(peerName).orEmpty()
+                } catch (_: Throwable) { "" }
+        }
+
+        if (fullEndpoint.isNotBlank()) {
+            val candidateList = fullEndpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            val hasDirect = candidateList.any { !it.contains(".onion", ignoreCase = true) }
+
+            // Always enqueue the message first so it is never dropped during background connection/handshake
             val targetKey = resolvedFP ?: peerName
             val queue = pendingMessages.getOrPut(targetKey) { ConcurrentLinkedQueue() }
             pruneExpiredPending(queue)
             queue.add(PendingMessage(payload, System.currentTimeMillis()))
 
-            val candidateList = endpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
             if (candidateList.size > 1) {
                 NativeBridge.probePeer(candidateList, resolvedFP.orEmpty())
             } else {
-                NativeBridge.connectPeer(endpoint, resolvedFP.orEmpty())
+                NativeBridge.connectPeer(fullEndpoint, resolvedFP.orEmpty())
             }
+
+            // If a direct LAN/Wi-Fi endpoint is available, do a short fast-probe check (up to 800ms)
+            if (hasDirect) {
+                val deadline = System.currentTimeMillis() + 800L
+                while (System.currentTimeMillis() < deadline) {
+                    if (isPeerOnline(peerName, resolvedFP)) {
+                        flushPendingMessages(resolvedFP ?: targetKey)
+                        return true
+                    }
+                    try {
+                        Thread.sleep(100L)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                }
+            }
+
+            // Message is safely queued in pendingMessages and will be flushed upon handshake completion.
+            // Returning true confirms successful dispatch to the delivery subsystem.
+            return true
         }
 
         return false
@@ -275,18 +392,39 @@ class NativeBridgeImpl : IP2PBridge {
             ?: resolveFingerprint(peerName)
             ?: nameToFpMap[peerName]
 
-        val isLive = (resolvedFP != null && onlinePeers[resolvedFP] == true) || (onlinePeers[peerName] == true)
+        val target = resolvedFP ?: peerName
+        val isLive = isPeerOnline(peerName, resolvedFP)
 
-        if (!isLive && endpoint.isNotBlank()) {
-            val candidateList = endpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val fullEndpoint = if (endpoint.isNotBlank()) {
+            endpoint
+        } else {
+            val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+            P2PPreferences.getPeerOnionAddress(context, peerName)
+                ?: try {
+                    com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerOnionAddress(peerName).orEmpty()
+                } catch (_: Throwable) { "" }
+        }
+
+        if (!isLive && fullEndpoint.isNotBlank()) {
+            val candidateList = fullEndpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            val hasOnion = candidateList.any { it.contains(".onion") }
             if (candidateList.size > 1) {
                 NativeBridge.probePeer(candidateList, resolvedFP.orEmpty())
             } else {
-                NativeBridge.connectPeer(endpoint, resolvedFP.orEmpty())
+                NativeBridge.connectPeer(fullEndpoint, resolvedFP.orEmpty())
+            }
+
+            val waitBudgetMs = if (hasOnion) 12_000L else 4_000L
+            val pollIntervalMs = 150L
+            val deadline = System.currentTimeMillis() + waitBudgetMs
+            while (System.currentTimeMillis() < deadline) {
+                if (isPeerOnline(peerName, resolvedFP)) {
+                    break
+                }
+                try { Thread.sleep(pollIntervalMs) } catch (_: InterruptedException) { break }
             }
         }
 
-        val target = resolvedFP ?: peerName
         val fileName = File(filePath).name
         val emoji = if (caption.length in 1..4 && caption.any { Character.isSurrogate(it) || Character.getType(it) == Character.OTHER_SYMBOL.toInt() }) caption else ""
         val resId = NativeBridge.sendFile(target, filePath, messageId, fileName, caption, emoji)
@@ -306,19 +444,24 @@ class NativeBridgeImpl : IP2PBridge {
 
     override fun reconnectPeerSession(peerName: String, endpoint: String, fingerprint: String?): Boolean {
         if (endpoint.isBlank()) return false
-        if (endpoint.contains(".onion") && !com.example.twopchat.TorManager.isTorRunning.value) {
-            Log.d(TAG, "[GoCore] Tor is not ready yet; deferring connection to .onion endpoint for $peerName")
-            return false
-        }
         if (!fingerprint.isNullOrBlank()) {
             peerNameMap[fingerprint] = peerName
             nameToFpMap[peerName] = fingerprint
         }
-        val candidateList = endpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val rawCandidates = endpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        val isTorRunning = com.example.twopchat.tor.TorManager.isTorRunning.value
+        val isTorConnecting = com.example.twopchat.tor.TorManager.isTorConnecting.value
+        val candidateList = rawCandidates.filter { candidate ->
+            !candidate.contains(".onion", ignoreCase = true) || (isTorRunning && !isTorConnecting)
+        }
+        if (candidateList.isEmpty()) {
+            Log.d(TAG, "[GoCore] Tor is not ready yet; deferring connection to .onion endpoint for $peerName")
+            return false
+        }
         return if (candidateList.size > 1) {
             NativeBridge.probePeer(candidateList, fingerprint.orEmpty())
         } else {
-            NativeBridge.connectPeer(endpoint, fingerprint.orEmpty())
+            NativeBridge.connectPeer(candidateList.first(), fingerprint.orEmpty())
         }
     }
 
@@ -330,13 +473,20 @@ class NativeBridgeImpl : IP2PBridge {
     }
 
     override fun isPeerOnline(peerName: String, expectedFingerprint: String?): Boolean {
-        // In-memory state updated in real-time via onPeerConnected and onPeerDisconnected callbacks.
-        // Purely in-memory lookup eliminates JNI thread contention and CGO stack unwinding issues.
-        if (!expectedFingerprint.isNullOrBlank() && onlinePeers[expectedFingerprint] == true) return true
-        val fp = nameToFpMap[peerName]
-        if (!fp.isNullOrBlank() && onlinePeers[fp] == true) return true
-        if (onlinePeers[peerName] == true) return true
-        return false
+        // Go Core is the authoritative single source of truth for active sessions.
+        val targetFP = expectedFingerprint?.takeIf { it.isNotBlank() }
+            ?: nameToFpMap[peerName]
+            ?: resolveFingerprint(peerName)
+
+        if (!targetFP.isNullOrBlank()) {
+            val isOnline = NativeBridge.isPeerOnline(targetFP)
+            onlinePeers[targetFP] = isOnline
+            onlinePeers[peerName] = isOnline
+            return isOnline
+        }
+        val isOnline = NativeBridge.isPeerOnline(peerName)
+        onlinePeers[peerName] = isOnline
+        return isOnline || (onlinePeers[peerName] == true)
     }
 
     override fun shutdownAllSessions(): Boolean {
@@ -376,7 +526,9 @@ class NativeBridgeImpl : IP2PBridge {
             .toByteArray()
             .joinToString("") { "%02x".format(it) }
 
-        NativeBridge.startDiscovery(infoHashes = listOf(infoHash))
+        val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        val trackers = com.example.twopchat.config.TrackerPreferences.getActiveTrackerUrls(appContext)
+        NativeBridge.startDiscovery(trackers = trackers, infoHashes = listOf(infoHash))
 
         val knownCandidates = mutableListOf<String>()
         knownCandidates.addAll(P2PMessageRelay.localDiscoveryEndpoints(resultName))

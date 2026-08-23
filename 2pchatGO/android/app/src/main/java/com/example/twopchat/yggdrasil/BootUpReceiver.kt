@@ -8,7 +8,7 @@ import android.net.VpnService
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
-import com.example.twopchat.P2PRelayService
+import com.example.twopchat.service.P2PRelayService
 
 class BootUpReceiver : BroadcastReceiver() {
 
@@ -21,10 +21,15 @@ class BootUpReceiver : BroadcastReceiver() {
             Log.w(TAG, "Wrong action: ${intent.action}")
             return
         }
-        ContextCompat.startForegroundService(
-            context,
-            Intent(context, P2PRelayService::class.java),
-        )
+        runCatching {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, P2PRelayService::class.java),
+            )
+        }.onFailure {
+            Log.w(TAG, "Failed to start P2PRelayService on boot", it)
+        }
+
         val preferences = yggdrasilPrefs(context)
         if (!preferences.getBoolean(PREF_KEY_ENABLED, false)) {
             Log.i(TAG, "Yggdrasil disabled, not starting service")
@@ -37,16 +42,22 @@ class BootUpReceiver : BroadcastReceiver() {
         val vpnIntent = VpnService.prepare(context)
         if (vpnIntent != null) {
             Log.i(TAG, "Need to ask for VPN permission")
-            val notification = createPermissionMissingNotification(context)
-            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.notify(444, notification)
+            runCatching {
+                val notification = createPermissionMissingNotification(context)
+                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                manager.notify(444, notification)
+            }.onFailure {
+                Log.w(TAG, "Failed to post permission missing notification on boot", it)
+            }
         } else {
-            // БАГ 4 ИСПРАВЛЕН: На Android 8+ (API 26+) startService() из BroadcastReceiver в фоне
-            // выбрасывает IllegalStateException. Нужно использовать startForegroundService().
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
-            } else {
-                context.startService(serviceIntent)
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(serviceIntent)
+                } else {
+                    context.startService(serviceIntent)
+                }
+            }.onFailure {
+                Log.w(TAG, "Failed to start PacketTunnelProvider on boot", it)
             }
         }
     }

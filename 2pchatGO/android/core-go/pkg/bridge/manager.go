@@ -39,10 +39,6 @@ type SessionManager struct {
 	upnpMapper   *transport.UPnPMapper
 	natDiag      *transport.NATDiagnostics
 	holePuncher  *transport.HolePuncher
-	nickname     string
-	// localYggdrasilIP may arrive from the Android VPN before Init creates
-	// discoverySvc. Keep it here so the first tracker announce includes it.
-	localYggdrasilIP string
 }
 
 var (
@@ -68,9 +64,6 @@ func (m *SessionManager) SetCallbacks(cb session.EventCallbacks, onPeerDisc disc
 	defer m.mu.Unlock()
 	m.callbacks = cb
 	m.onPeerDisc = onPeerDisc
-	if m.netManager != nil {
-		m.netManager.SetCallbacks(cb)
-	}
 }
 
 // SetStorageDir sets the persistent directory for cryptographic keys and downloads.
@@ -175,9 +168,6 @@ func (m *SessionManager) Init() error {
 		if m.onionAddress != "" {
 			m.netManager.SetOnionAddress(m.onionAddress)
 		}
-		if m.nickname != "" {
-			m.netManager.SetNickname(m.nickname)
-		}
 	}
 
 	if m.discoverySvc == nil {
@@ -195,9 +185,6 @@ func (m *SessionManager) Init() error {
 		)
 		if m.onionAddress != "" {
 			m.discoverySvc.SetOnionAddress(m.onionAddress)
-		}
-		if m.localYggdrasilIP != "" {
-			m.discoverySvc.SetLocalYggdrasilIP(m.localYggdrasilIP)
 		}
 	}
 
@@ -372,13 +359,6 @@ func (m *SessionManager) ProbePeer(endpointsJSON, expectedFingerprint string) er
 		}
 
 		peerFP := sess.PeerFingerprint()
-		if peerFP == m.GetLocalFingerprint() {
-			_ = sess.Close()
-			if m.callbacks.OnError != nil {
-				m.callbacks.OnError(3, "refusing self connection")
-			}
-			return
-		}
 		if nm != nil {
 			nm.RegisterSession(sess, peerFP, winEndpoint, true)
 		}
@@ -616,10 +596,9 @@ func (m *SessionManager) ConnectPeer(endpoint, expectedFingerprint string) error
 
 // SetNickname sets the local user nickname for outgoing messages.
 func (m *SessionManager) SetNickname(nickname string) {
-	m.mu.Lock()
-	m.nickname = nickname
+	m.mu.RLock()
 	nm := m.netManager
-	m.mu.Unlock()
+	m.mu.RUnlock()
 
 	if nm != nil {
 		nm.SetNickname(nickname)
@@ -648,6 +627,19 @@ func (m *SessionManager) SendMessage(peerFP, text string) (string, error) {
 	}
 
 	return nm.SendMessage(peerFP, text)
+}
+
+// SendMessageBinary sends a raw binary message payload to a connected peer.
+func (m *SessionManager) SendMessageBinary(peerFP string, payload []byte) (string, error) {
+	m.mu.RLock()
+	nm := m.netManager
+	m.mu.RUnlock()
+
+	if nm == nil {
+		return "", errors.New("network manager not initialized")
+	}
+
+	return nm.SendMessageBinary(peerFP, payload)
 }
 
 // IsPeerOnline checks if there is an active connection to peerFP.
@@ -971,224 +963,6 @@ func (m *SessionManager) GetPublicEndpoint() string {
 		}
 	}
 	return ""
-}
-
-// GetFingerprint returns the local identity fingerprint.
-func (m *SessionManager) GetFingerprint() string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.identity != nil {
-		return crypto.Fingerprint(m.identity.Public.Bytes())
-	}
-	return ""
-}
-
-// SetLocalYggdrasilIP sets the local Yggdrasil IPv6 address.
-func (m *SessionManager) SetLocalYggdrasilIP(ip string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.localYggdrasilIP = strings.Trim(strings.TrimSpace(ip), "[]")
-	if m.discoverySvc != nil {
-		m.discoverySvc.SetLocalYggdrasilIP(m.localYggdrasilIP)
-	}
-}
-
-// VerifyLiveEndpoint performs an authenticated live probe against a remote endpoint.
-func (m *SessionManager) VerifyLiveEndpoint(
-	ctx context.Context,
-	endpoint, expectedNickname, expectedFingerprint string,
-) (map[string]any, error) {
-	m.mu.RLock()
-	dialer := m.dialer
-	id := m.identity
-	prePriv := m.prekeyPriv
-	prePub := m.prekeyPub
-	m.mu.RUnlock()
-
-	if dialer == nil || id == nil || prePriv == nil || prePub == nil {
-		return nil, errors.New("crypto/network not initialized")
-	}
-
-	conn, err := dialer.DialContext(ctx, "tcp", endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("dial failed: %w", err)
-	}
-	defer conn.Close()
-
-	probeTimeout := 4 * time.Second
-	sess, err := session.NewSession(conn, true, id, prePriv, prePub, expectedFingerprint, probeTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("handshake failed: %w", err)
-	}
-	defer sess.Close()
-	if sess.PeerFingerprint() == crypto.Fingerprint(id.Public.Bytes()) {
-		return nil, errors.New("refusing self connection")
-	}
-
-	// Send identity_probe
-	probeMsg := map[string]any{
-		"type": string(session.TypeIdentityProbe),
-	}
-	if _, err := sess.SendReliable(probeMsg); err != nil {
-		return nil, fmt.Errorf("failed to send identity_probe: %w", err)
-	}
-
-	// Wait for identity_info response
-	timer := time.NewTimer(3 * time.Second)
-	defer timer.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-timer.C:
-			return nil, errors.New("identity_info timeout")
-		case msg, ok := <-sess.Messages():
-			if !ok {
-				return nil, errors.New("session closed during probe")
-			}
-			msgType, _ := msg["type"].(string)
-			if msgType == string(session.TypeIdentityInfo) {
-				remoteNick, _ := msg["nickname"].(string)
-				remoteFP := sess.PeerFingerprint()
-
-				if expectedNickname != "" {
-					if discovery.NormalizeNickname(remoteNick) != discovery.NormalizeNickname(expectedNickname) {
-						return nil, fmt.Errorf("nickname mismatch: expected %s, got %s", expectedNickname, remoteNick)
-					}
-				}
-
-				if expectedFingerprint != "" && remoteFP != expectedFingerprint {
-					return nil, fmt.Errorf("fingerprint mismatch: expected %s, got %s", expectedFingerprint, remoteFP)
-				}
-
-				return map[string]any{
-					"nickname":            remoteNick,
-					"fingerprint":         remoteFP,
-					"endpoint":            endpoint,
-					"verified":            true,
-					"ownership_verified":  true,
-					"verification_reason": "authenticated live response",
-				}, nil
-			}
-		}
-	}
-}
-
-// SearchPeers resolves tracker peers and performs live endpoint verification.
-func (m *SessionManager) SearchPeers(
-	query, sharedCode, expectedLiveName, expectedFingerprint, directCandidatesJSON string,
-) (string, error) {
-	if err := m.Init(); err != nil {
-		return "[]", err
-	}
-
-	m.mu.RLock()
-	svc := m.discoverySvc
-	localYggdrasilIP := m.localYggdrasilIP
-	m.mu.RUnlock()
-
-	var directCandidates []string
-	if directCandidatesJSON != "" {
-		_ = json.Unmarshal([]byte(directCandidatesJSON), &directCandidates)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
-	defer cancel()
-
-	candidateEndpoints := make(map[string]bool)
-	for _, ep := range directCandidates {
-		if endpoint := strings.TrimSpace(ep); endpoint != "" && !isLocalDiscoveryEndpoint(endpoint, localYggdrasilIP) {
-			candidateEndpoints[endpoint] = true
-		}
-	}
-
-	if svc != nil {
-		trackerPeers, _ := svc.ResolvePeers(ctx, query, sharedCode)
-		for _, p := range trackerPeers {
-			epStr := p.String()
-			if epStr != "" && !isLocalDiscoveryEndpoint(epStr, localYggdrasilIP) {
-				candidateEndpoints[epStr] = true
-			}
-		}
-	}
-
-	if len(candidateEndpoints) == 0 {
-		return "[]", nil
-	}
-
-	targetName := query
-	if expectedLiveName != "" {
-		targetName = expectedLiveName
-	}
-
-	type verifiedResult struct {
-		peer map[string]any
-		err  error
-	}
-
-	resultsChan := make(chan verifiedResult, len(candidateEndpoints))
-	var wg sync.WaitGroup
-
-	for ep := range candidateEndpoints {
-		wg.Add(1)
-		go func(endpoint string) {
-			defer wg.Done()
-			pCtx, pCancel := context.WithTimeout(ctx, 4*time.Second)
-			defer pCancel()
-
-			res, err := m.VerifyLiveEndpoint(pCtx, endpoint, targetName, expectedFingerprint)
-			resultsChan <- verifiedResult{peer: res, err: err}
-		}(ep)
-	}
-
-	wg.Wait()
-	close(resultsChan)
-
-	var verifiedPeers []map[string]any
-	allEndpoints := make([]string, 0, len(candidateEndpoints))
-	for ep := range candidateEndpoints {
-		allEndpoints = append(allEndpoints, ep)
-	}
-
-	for r := range resultsChan {
-		if r.err == nil && r.peer != nil {
-			r.peer["endpoints"] = allEndpoints
-			verifiedPeers = append(verifiedPeers, r.peer)
-			break // Once a live verified instance is found, return it
-		}
-	}
-
-	// Tracker replies are compact endpoint records and carry no authenticated
-	// identity metadata. Python only exposes an unverified result when the
-	// discovery descriptor itself evidences the requested identity; the Go
-	// tracker protocol has no such descriptor, so never label an unchecked
-	// endpoint as the searched peer.
-	if len(verifiedPeers) == 0 {
-		return "[]", nil
-	}
-
-	data, err := json.Marshal(verifiedPeers)
-	if err != nil {
-		return "[]", err
-	}
-	return string(data), nil
-}
-
-// isLocalDiscoveryEndpoint rejects addresses that can only route back to this
-// device. Do this before opening a probe: a tracker can echo the announcer's
-// own record, and such a reply must never be presented as another user.
-func isLocalDiscoveryEndpoint(endpoint, localYggdrasilIP string) bool {
-	host, _, err := net.SplitHostPort(strings.TrimSpace(endpoint))
-	if err != nil {
-		return false
-	}
-	host = strings.Trim(strings.TrimSpace(host), "[]")
-	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-		return true
-	}
-	localYggdrasilIP = strings.Trim(strings.TrimSpace(localYggdrasilIP), "[]")
-	return localYggdrasilIP != "" && strings.EqualFold(host, localYggdrasilIP)
 }
 
 // OnNetworkChanged handles network connectivity transitions (e.g. Wi-Fi reconnect) by re-announcing discovery.

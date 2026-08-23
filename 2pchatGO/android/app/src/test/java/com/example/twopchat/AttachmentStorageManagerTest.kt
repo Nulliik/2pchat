@@ -1,5 +1,13 @@
 package com.example.twopchat
 
+import com.example.twopchat.relay.*
+import com.example.twopchat.config.*
+import com.example.twopchat.security.*
+import com.example.twopchat.service.*
+import com.example.twopchat.media.*
+import com.example.twopchat.tor.*
+
+import com.example.twopchat.media.*
 import java.io.File
 import java.nio.file.Files
 import org.junit.Assert.assertFalse

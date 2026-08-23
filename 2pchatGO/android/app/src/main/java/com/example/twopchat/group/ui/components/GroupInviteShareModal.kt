@@ -20,8 +20,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.example.twopchat.P2PMessageRelay
-import com.example.twopchat.P2PPreferences
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.R
 import com.example.twopchat.bridge.P2PBridgeProvider
 import com.example.twopchat.ui.main.buildContactQrPayload

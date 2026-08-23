@@ -148,12 +148,14 @@ func TestManagerConnectionAndMessaging(t *testing.T) {
 			},
 			OnMessageReceived: func(peerFP string, payload []byte, messageID string) {
 				m, _ := DecodeMessage(payload)
-				mu.Lock()
-				aliceReceivedMsg, _ = m["body"].(string)
-				mu.Unlock()
-				select {
-				case aliceGotMsg <- true:
-				default:
+				if body, ok := m["body"].(string); ok && body != "" {
+					mu.Lock()
+					aliceReceivedMsg = body
+					mu.Unlock()
+					select {
+					case aliceGotMsg <- true:
+					default:
+					}
 				}
 			},
 		},
@@ -179,12 +181,14 @@ func TestManagerConnectionAndMessaging(t *testing.T) {
 			},
 			OnMessageReceived: func(peerFP string, payload []byte, messageID string) {
 				m, _ := DecodeMessage(payload)
-				mu.Lock()
-				bobReceivedMsg, _ = m["body"].(string)
-				mu.Unlock()
-				select {
-				case bobGotMsg <- true:
-				default:
+				if body, ok := m["body"].(string); ok && body != "" {
+					mu.Lock()
+					bobReceivedMsg = body
+					mu.Unlock()
+					select {
+					case bobGotMsg <- true:
+					default:
+					}
 				}
 			},
 		},
@@ -355,31 +359,31 @@ func TestSessionRapidBidirectionalExchange(t *testing.T) {
 }
 
 func TestAdaptiveAckTimeoutForTor(t *testing.T) {
-	if DefaultAckTimeout != 3*time.Second {
-		t.Fatalf("Expected DefaultAckTimeout 3s, got %v", DefaultAckTimeout)
+	if DefaultAckTimeout != 5*time.Second {
+		t.Fatalf("Expected DefaultAckTimeout 5s, got %v", DefaultAckTimeout)
 	}
-	if TorAckTimeout != 8*time.Second {
-		t.Fatalf("Expected TorAckTimeout 8s, got %v", TorAckTimeout)
+	if TorAckTimeout != 12*time.Second {
+		t.Fatalf("Expected TorAckTimeout 12s, got %v", TorAckTimeout)
 	}
 
 	s := &Session{
 		ackTimeout: DefaultAckTimeout,
 	}
 
-	if s.AckTimeout() != 3*time.Second {
-		t.Fatalf("Expected initial AckTimeout to be 3s, got %v", s.AckTimeout())
+	if s.AckTimeout() != 5*time.Second {
+		t.Fatalf("Expected initial AckTimeout to be 5s, got %v", s.AckTimeout())
 	}
 
 	// Switch to Tor transport
 	s.SetTorTransport(true)
 	if s.AckTimeout() != TorAckTimeout {
-		t.Fatalf("Expected AckTimeout after SetTorTransport(true) to be 8s, got %v", s.AckTimeout())
+		t.Fatalf("Expected AckTimeout after SetTorTransport(true) to be 12s, got %v", s.AckTimeout())
 	}
 
 	// Switch back to Direct
 	s.SetTorTransport(false)
 	if s.AckTimeout() != DefaultAckTimeout {
-		t.Fatalf("Expected AckTimeout after SetTorTransport(false) to be 3s, got %v", s.AckTimeout())
+		t.Fatalf("Expected AckTimeout after SetTorTransport(false) to be 5s, got %v", s.AckTimeout())
 	}
 
 	// Custom timeout

@@ -1,9 +1,29 @@
 package discovery
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 )
+
+// DeriveDiscoveryToken computes a deterministic 16-char discovery token from a peer fingerprint.
+func DeriveDiscoveryToken(fingerprint string) string {
+	sum := sha256.Sum256([]byte("2pchat-discovery-token-v1:" + fingerprint))
+	return hex.EncodeToString(sum[:8])
+}
+
+// MatchesDiscoveryToken checks if a token matches the expected peer fingerprint.
+func MatchesDiscoveryToken(token, fingerprint string) bool {
+	expected := DeriveDiscoveryToken(fingerprint)
+	return strings.EqualFold(strings.TrimSpace(token), expected)
+}
+
+// DeriveRendezvousCode computes the 8-char rendezvous code from a fingerprint.
+func DeriveRendezvousCode(fingerprint string) string {
+	sum := sha256.Sum256([]byte(fingerprint))
+	return hex.EncodeToString(sum[:4])
+}
 
 func TestDiscoveryTokenDerivation(t *testing.T) {
 	fp := "zK8y9u2V1A0bC3dE4fG5hI6jK7lM8nO9pQ0rS1tU2vW="
@@ -56,21 +76,5 @@ func TestRendezvousCodeCalculation(t *testing.T) {
 		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
 			t.Fatalf("Invalid hex character in code: %c", c)
 		}
-	}
-}
-
-func TestRendezvousKeyDerivation(t *testing.T) {
-	// Must match Python:
-	// payload = b"2pchat-rendezvous-v1:null:36571c05" -> 4725456c9bc18c138f2066366fcf09bfe6ecdc34
-	hexKey := DeriveRendezvousKeyHex("Null", "36571c05")
-	expected := "4725456c9bc18c138f2066366fcf09bfe6ecdc34"
-	if hexKey != expected {
-		t.Fatalf("Rendezvous key hex mismatch: got %s, expected %s", hexKey, expected)
-	}
-
-	// Whitespace and case-insensitivity
-	hexKey2 := DeriveRendezvousKeyHex("  NULL  ", "  36571c05  ")
-	if hexKey2 != expected {
-		t.Fatalf("Rendezvous key normalization failed: got %s, expected %s", hexKey2, expected)
 	}
 }

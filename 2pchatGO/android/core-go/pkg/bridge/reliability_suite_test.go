@@ -230,11 +230,11 @@ func TestAbruptDisconnectAndReconnection(t *testing.T) {
 
 func TestAdaptiveAckTimeoutTorVsDirect(t *testing.T) {
 	// Verify configured timeouts
-	if session.DefaultAckTimeout != 3*time.Second {
-		t.Errorf("Expected DefaultAckTimeout=3s, got %v", session.DefaultAckTimeout)
+	if session.DefaultAckTimeout != 5*time.Second {
+		t.Errorf("Expected DefaultAckTimeout=5s, got %v", session.DefaultAckTimeout)
 	}
-	if session.TorAckTimeout != 8*time.Second {
-		t.Errorf("Expected TorAckTimeout=8s, got %v", session.TorAckTimeout)
+	if session.TorAckTimeout != 12*time.Second {
+		t.Errorf("Expected TorAckTimeout=12s, got %v", session.TorAckTimeout)
 	}
 
 	// 1. Direct Session gets DefaultAckTimeout (3s)
@@ -277,7 +277,7 @@ func TestAdaptiveAckTimeoutTorVsDirect(t *testing.T) {
 	}
 	t.Logf("✅ Direct session AckTimeout verified: %v", aliceSess.AckTimeout())
 
-	// 2. Set Tor Transport -> AckTimeout automatically switches to TorAckTimeout (8s)
+	// 2. Set Tor Transport -> AckTimeout automatically switches to TorAckTimeout (12s)
 	aliceSess.SetTorTransport(true)
 	if aliceSess.AckTimeout() != session.TorAckTimeout {
 		t.Errorf("Expected Tor session AckTimeout %v, got %v", session.TorAckTimeout, aliceSess.AckTimeout())

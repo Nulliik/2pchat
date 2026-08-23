@@ -4,7 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.runtime.mutableStateMapOf
-import com.example.twopchat.PeerPresenceVersionTracker
+import com.example.twopchat.relay.PeerPresenceVersionTracker
 import java.util.concurrent.ConcurrentHashMap
 
 private const val OFFLINE_UI_GRACE_MS = 2_500L

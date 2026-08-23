@@ -42,9 +42,9 @@ import androidx.compose.ui.text.input.PlatformImeOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.twopchat.P2PPreferences
+import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.R
-import com.example.twopchat.VoiceMessageSupport
+import com.example.twopchat.media.*
 import com.example.twopchat.theme.MintGreen
 import com.example.twopchat.theme.StealthBlack
 

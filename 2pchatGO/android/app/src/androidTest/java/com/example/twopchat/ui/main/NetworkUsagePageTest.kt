@@ -5,10 +5,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
-import com.example.twopchat.NetworkTrafficStats
-import com.example.twopchat.TrafficCategory
-import com.example.twopchat.TrafficDirection
-import com.example.twopchat.TrafficProtocol
+import com.example.twopchat.relay.NetworkTrafficStats
+import com.example.twopchat.relay.TrafficCategory
+import com.example.twopchat.relay.TrafficDirection
+import com.example.twopchat.relay.TrafficProtocol
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule

@@ -48,9 +48,9 @@ object IdentityKeyStore {
         val ciphertext = cipher.doFinal(plainBytes)
         val payload = byteArrayOf(cipher.iv.size.toByte()) + cipher.iv + ciphertext
         val result = Base64.encodeToString(payload, Base64.NO_WRAP)
-        com.example.twopchat.SecurityUtils.zeroize(plainBytes)
-        com.example.twopchat.SecurityUtils.zeroize(ciphertext)
-        com.example.twopchat.SecurityUtils.zeroize(payload)
+        SecurityUtils.zeroize(plainBytes)
+        SecurityUtils.zeroize(ciphertext)
+        SecurityUtils.zeroize(payload)
         return result
     }
 
@@ -67,10 +67,10 @@ object IdentityKeyStore {
         }
         val plainBytes = cipher.doFinal(ciphertext)
         val result = plainBytes.toString(Charsets.UTF_8)
-        com.example.twopchat.SecurityUtils.zeroize(payload)
-        com.example.twopchat.SecurityUtils.zeroize(iv)
-        com.example.twopchat.SecurityUtils.zeroize(ciphertext)
-        com.example.twopchat.SecurityUtils.zeroize(plainBytes)
+        SecurityUtils.zeroize(payload)
+        SecurityUtils.zeroize(iv)
+        SecurityUtils.zeroize(ciphertext)
+        SecurityUtils.zeroize(plainBytes)
         return result
     }
 

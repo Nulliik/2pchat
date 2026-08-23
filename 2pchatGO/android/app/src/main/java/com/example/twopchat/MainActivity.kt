@@ -1,6 +1,11 @@
 package com.example.twopchat
 
 import android.os.Bundle
+import com.example.twopchat.config.*
+import com.example.twopchat.relay.*
+import com.example.twopchat.security.*
+import com.example.twopchat.service.*
+import com.example.twopchat.tor.*
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -135,11 +140,15 @@ class MainActivity : ComponentActivity() {
             preferences.getBoolean("onboarding_completed", false) &&
                 !preferences.getString("username_profile", null).isNullOrBlank()
         if (hasLocalIdentity) {
-            androidx.core.content.ContextCompat.startForegroundService(
-                appContext,
-                Intent(appContext, P2PRelayService::class.java),
-            )
-            P2PMessageRelay.triggerImmediateReconnect(appContext)
+            runCatching {
+                androidx.core.content.ContextCompat.startForegroundService(
+                    appContext,
+                    Intent(appContext, P2PRelayService::class.java),
+                )
+                P2PMessageRelay.triggerImmediateReconnect(appContext)
+            }.onFailure {
+                android.util.Log.w("MainActivity", "Could not start P2PRelayService on resume", it)
+            }
         }
         if (
             preferences.getBoolean("settings_yggdrasil", false) &&

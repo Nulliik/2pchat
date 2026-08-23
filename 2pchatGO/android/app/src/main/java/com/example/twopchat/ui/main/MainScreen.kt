@@ -45,7 +45,7 @@ import androidx.navigation3.runtime.NavKey
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.bridge.P2PBridgeProvider
 import com.example.twopchat.Chat
-import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
@@ -89,7 +89,7 @@ fun MainScreen(
             P2PBridgeProvider.get(context).getLocalFingerprint()
         }
     }
-    val sharedPrefs = remember { com.example.twopchat.P2PPreferences.prefs(context) }
+    val sharedPrefs = remember { com.example.twopchat.config.P2PPreferences.prefs(context) }
     var activeIconAlias by remember { mutableStateOf(sharedPrefs.getString("active_icon_alias", "MainActivityAliasDefault") ?: "MainActivityAliasDefault") }
 
     var mainActiveChatsSet by remember {

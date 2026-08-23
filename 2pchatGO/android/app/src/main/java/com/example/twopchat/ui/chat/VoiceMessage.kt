@@ -28,7 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.R
-import com.example.twopchat.VoiceMessageSupport
+import com.example.twopchat.media.*
 import com.example.twopchat.theme.StealthBlack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

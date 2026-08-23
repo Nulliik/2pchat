@@ -41,8 +41,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.filled.Close
-import com.example.twopchat.P2PPreferences
-import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.ui.common.QrCodeImage
 import com.example.twopchat.ui.main.buildContactQrPayload
 import androidx.compose.material3.DropdownMenu
@@ -108,7 +108,7 @@ import com.example.twopchat.ui.chat.AttachmentImageCache
 import com.example.twopchat.ui.chat.GifContentScale
 import com.example.twopchat.ui.chat.AnimatedStickerImage
 import com.example.twopchat.ui.chat.EmptyStateView
-import com.example.twopchat.StickerSupport
+import com.example.twopchat.media.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -1494,15 +1494,15 @@ private fun GroupMemberCard(
                 } else null
             }
             val memberAvatarBitmap = if (member.isCurrentUser) {
-                com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName] ?: myAvatarBitmap
+                com.example.twopchat.relay.P2PMessageRelay.peerAvatars[member.displayName] ?: myAvatarBitmap
             } else {
-                com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName]
+                com.example.twopchat.relay.P2PMessageRelay.peerAvatars[member.displayName]
             }
 
             val cleanDisplayName = remember(member.displayName, member.isCurrentUser) {
                 if (member.displayName.isBlank() || member.displayName.equals("null", ignoreCase = true)) {
                     if (member.isCurrentUser) {
-                        val saved = com.example.twopchat.P2PPreferences.prefs(context).getString("username_profile", null)
+                        val saved = com.example.twopchat.config.P2PPreferences.prefs(context).getString("username_profile", null)
                         saved?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) } ?: "Пользователь"
                     } else "Участник"
                 } else member.displayName
@@ -2129,9 +2129,10 @@ private fun MediaGridCell(
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        if (thumbnail != null) {
+        val thumb = thumbnail
+        if (thumb != null) {
             Image(
-                bitmap = thumbnail!!.asImageBitmap(),
+                bitmap = thumb.asImageBitmap(),
                 contentDescription = attachment.fileName,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
@@ -2242,14 +2243,14 @@ private fun MemberProfileModal(
         } else null
     }
     val memberAvatarBitmap = if (member.isCurrentUser) {
-        com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName] ?: myAvatarBitmap
+        com.example.twopchat.relay.P2PMessageRelay.peerAvatars[member.displayName] ?: myAvatarBitmap
     } else {
-        com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName]
+        com.example.twopchat.relay.P2PMessageRelay.peerAvatars[member.displayName]
     }
     val cleanDisplayName = remember(member.displayName, member.isCurrentUser) {
         if (member.displayName.isBlank() || member.displayName.equals("null", ignoreCase = true)) {
             if (member.isCurrentUser) {
-                val saved = com.example.twopchat.P2PPreferences.prefs(context).getString("username_profile", null)
+                val saved = com.example.twopchat.config.P2PPreferences.prefs(context).getString("username_profile", null)
                 saved?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) } ?: "Пользователь"
             } else "Участник"
         } else member.displayName
@@ -2257,7 +2258,7 @@ private fun MemberProfileModal(
 
     LaunchedEffect(member.displayName) {
         withContext(Dispatchers.IO) {
-            fullMemberAvatarBitmap = com.example.twopchat.P2PMessageRelay.getOriginalAvatar(context, member.displayName)
+            fullMemberAvatarBitmap = com.example.twopchat.relay.P2PMessageRelay.getOriginalAvatar(context, member.displayName)
         }
     }
 
@@ -2356,9 +2357,10 @@ private fun MemberProfileModal(
                             .clickable { showFullMemberAvatar = true },
                         contentAlignment = Alignment.Center
                     ) {
-                        if ((fullMemberAvatarBitmap ?: memberAvatarBitmap) != null) {
+                        val memberAvatar = fullMemberAvatarBitmap ?: memberAvatarBitmap
+                        if (memberAvatar != null) {
                             Image(
-                                bitmap = (fullMemberAvatarBitmap ?: memberAvatarBitmap)!!.asImageBitmap(),
+                                bitmap = memberAvatar.asImageBitmap(),
                                 contentDescription = member.displayName,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize().clip(CircleShape)

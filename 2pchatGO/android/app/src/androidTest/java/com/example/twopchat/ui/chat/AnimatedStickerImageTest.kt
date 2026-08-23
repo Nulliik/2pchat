@@ -15,7 +15,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
-import com.example.twopchat.StickerSupport
+import com.example.twopchat.media.StickerSupport
 import java.io.File
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue

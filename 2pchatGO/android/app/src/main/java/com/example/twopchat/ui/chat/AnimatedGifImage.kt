@@ -29,7 +29,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.viewinterop.AndroidView
-import com.example.twopchat.GifStorageManager
+import com.example.twopchat.media.*
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
@@ -74,12 +74,13 @@ internal fun AnimatedGifImage(
         validatedPath,
         targetMaxDimensionPx,
     ) {
-        value = if (validatedPath != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        val path = validatedPath
+        value = if (path != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             withContext(Dispatchers.IO) {
                 animatedGifDecodeSlots.withPermit {
                     runCatching {
                         ImageDecoder.decodeDrawable(
-                            ImageDecoder.createSource(File(validatedPath!!)),
+                            ImageDecoder.createSource(File(path)),
                         ) { decoder, info, _ ->
                             val width = info.size.width.coerceAtLeast(1)
                             val height = info.size.height.coerceAtLeast(1)
@@ -105,11 +106,12 @@ internal fun AnimatedGifImage(
         initialValue = null,
         validatedPath,
     ) {
-        value = if (validatedPath != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+        val path = validatedPath
+        value = if (path != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             withContext(Dispatchers.IO) {
                 animatedGifDecodeSlots.withPermit {
                     @Suppress("DEPRECATION")
-                    Movie.decodeFile(validatedPath!!)
+                    Movie.decodeFile(path)
                 }
             }
         } else {

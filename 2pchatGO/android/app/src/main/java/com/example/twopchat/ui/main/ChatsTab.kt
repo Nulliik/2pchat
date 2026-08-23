@@ -3,8 +3,10 @@ package com.example.twopchat.ui.main
 import android.widget.Toast
 import android.content.Intent
 import android.content.Context
+import com.example.twopchat.security.*
 import androidx.core.content.edit
 import android.net.VpnService
+import com.example.twopchat.tor.*
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import org.json.JSONArray
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -51,14 +53,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.twopchat.ProxyConfig
+import com.example.twopchat.config.ProxyConfig
 import com.example.twopchat.Chat
 import com.example.twopchat.CreateGroup
 import com.example.twopchat.GroupConversation
 import com.example.twopchat.GroupInvites
-import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.group.runtime.GroupChatCoordinator
-import com.example.twopchat.canonicalConnectionTransport
+import com.example.twopchat.relay.canonicalConnectionTransport
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
@@ -92,7 +94,7 @@ fun ChatsTab(
 ) {
     val context = LocalContext.current
     val chatsViewModel: ChatsViewModel = viewModel(factory = ChatsViewModel.factory(context))
-    val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
+    val sharedPrefs = remember(context) { com.example.twopchat.config.P2PPreferences.prefs(context) }
     var activeChatsSet by chatsViewModel.activeChatsSet
     var chatListRevision by chatsViewModel.chatListRevision
     var profilePhotoUri by chatsViewModel.profilePhotoUri
@@ -107,6 +109,7 @@ fun ChatsTab(
     }
     var currentUsername by chatsViewModel.currentUsername
     var activeMenuPeer by remember { mutableStateOf<PeerItem?>(null) }
+    var peerToHardBlock by remember { mutableStateOf<String?>(null) }
     var activeMenuGroup by remember { mutableStateOf<com.example.twopchat.group.ui.GroupSummary?>(null) }
     var groupToDelete by remember { mutableStateOf<com.example.twopchat.group.ui.GroupSummary?>(null) }
     val groupSummaries by GroupChatCoordinator.summaries.collectAsState()
@@ -125,17 +128,17 @@ fun ChatsTab(
     // Read relay SnapshotState maps during composition so route changes are
     // visible immediately even when SharedPreferences hasn't changed.
     val peerNames = remember(activeChatsSet, chatListRevision) {
-        activeChatsSet.filter { !com.example.twopchat.P2PMessageRelay.isPlaceholderPeerName(it) && it != "null" && it.isNotBlank() }.toList()
+        activeChatsSet.filter { !com.example.twopchat.relay.P2PMessageRelay.isPlaceholderPeerName(it) && it != "null" && it.isNotBlank() }.toList()
     }
     val peers = remember(peerNames, chatListRevision, appLanguage) {
         peerNames.map { name ->
-            val draft = sharedPrefs.getString(com.example.twopchat.P2PPreferences.draftMessage(name), null)?.takeIf { it.isNotBlank() }
+            val draft = sharedPrefs.getString(com.example.twopchat.config.P2PPreferences.draftMessage(name), null)?.takeIf { it.isNotBlank() }
             val hasDraft = draft != null
             val draftPrefix = if (appLanguage == "Русский") "Черновик: " else "Draft: "
             val lastMsg = if (hasDraft) {
                 "$draftPrefix$draft"
             } else {
-                com.example.twopchat.SecureStorage.decrypt(
+                SecureStorage.decrypt(
                     sharedPrefs.getString("last_msg_$name", null)
                 ) ?: "No messages yet"
             }
@@ -171,9 +174,9 @@ fun ChatsTab(
     var isRefreshingAll by chatsViewModel.isRefreshingAll
     val heroScope = rememberCoroutineScope()
 
-    val isTorRunning by com.example.twopchat.TorManager.isTorRunning.collectAsState()
-    val isTorConnecting by com.example.twopchat.TorManager.isTorConnecting.collectAsState()
-    val torBootstrapProgress by com.example.twopchat.TorManager.bootstrapProgress.collectAsState()
+    val isTorRunning by TorManager.isTorRunning.collectAsState()
+    val isTorConnecting by TorManager.isTorConnecting.collectAsState()
+    val torBootstrapProgress by TorManager.bootstrapProgress.collectAsState()
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
 
     val activeHandshakesLabel = remember(appLanguage) {
@@ -197,15 +200,15 @@ fun ChatsTab(
         com.example.twopchat.group.runtime.GroupChatCoordinator.activeChatsSubTab = pagerState.currentPage
     }
 
-    val heroPrefs = remember { com.example.twopchat.P2PPreferences.prefs(context) }
+    val heroPrefs = remember { com.example.twopchat.config.P2PPreferences.prefs(context) }
     var isHeroCollapsed by remember {
-        mutableStateOf(heroPrefs.getBoolean(com.example.twopchat.P2PPreferences.HERO_WIDGET_COLLAPSED_DEFAULT, false))
+        mutableStateOf(heroPrefs.getBoolean(com.example.twopchat.config.P2PPreferences.HERO_WIDGET_COLLAPSED_DEFAULT, false))
     }
 
     DisposableEffect(heroPrefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
-            if (key == com.example.twopchat.P2PPreferences.HERO_WIDGET_COLLAPSED_DEFAULT) {
-                isHeroCollapsed = prefs.getBoolean(com.example.twopchat.P2PPreferences.HERO_WIDGET_COLLAPSED_DEFAULT, false)
+            if (key == com.example.twopchat.config.P2PPreferences.HERO_WIDGET_COLLAPSED_DEFAULT) {
+                isHeroCollapsed = prefs.getBoolean(com.example.twopchat.config.P2PPreferences.HERO_WIDGET_COLLAPSED_DEFAULT, false)
             }
         }
         heroPrefs.registerOnSharedPreferenceChangeListener(listener)
@@ -414,7 +417,7 @@ fun ChatsTab(
                                         heroScope.launch {
                                             var refreshSucceeded = true
                                             try {
-                                                val prefs = com.example.twopchat.P2PPreferences.prefs(context)
+                                                val prefs = com.example.twopchat.config.P2PPreferences.prefs(context)
                                                 val yggEnabled = prefs.getBoolean("settings_yggdrasil", false)
                                                 if (yggEnabled && VpnService.prepare(context) == null) {
                                                     context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
@@ -535,10 +538,10 @@ fun ChatsTab(
                                             fontWeight = FontWeight.Bold,
                                             color = onSurfaceColor
                                         )
-                                        val isRotatingBridge by com.example.twopchat.TorManager.isRotatingBridge.collectAsState()
-                                        val isSlowBootstrap by com.example.twopchat.TorManager.isSlowBootstrap.collectAsState()
+                                        val isRotatingBridge by TorManager.isRotatingBridge.collectAsState()
+                                        val isSlowBootstrap by TorManager.isSlowBootstrap.collectAsState()
                                         Text(
-                                            text = com.example.twopchat.TorStatusFormatter.formatStatus(
+                                            text = TorStatusFormatter.formatStatus(
                                                 isRunning = isTorRunning,
                                                 isConnecting = isTorConnecting,
                                                 appLanguage = appLanguage,
@@ -560,20 +563,20 @@ fun ChatsTab(
                                     checked = isTorRunning || isTorConnecting,
                                     onCheckedChange = { enable ->
                                         if (enable) {
-                                            com.example.twopchat.P2PPreferences.prefs(context).edit()
-                                                .putBoolean(com.example.twopchat.P2PPreferences.TOR_ENABLED, true)
+                                            com.example.twopchat.config.P2PPreferences.prefs(context).edit()
+                                                .putBoolean(com.example.twopchat.config.P2PPreferences.TOR_ENABLED, true)
                                                 .apply()
-                                            com.example.twopchat.TorManager.startTor(context)
+                                            TorManager.startTor(context)
                                             Toast.makeText(
                                                 context,
-                                                com.example.twopchat.TorStatusFormatter.getActivationToast(appLanguage),
+                                                TorStatusFormatter.getActivationToast(appLanguage),
                                                 Toast.LENGTH_SHORT
                                             ).show()
                                         } else {
-                                            com.example.twopchat.P2PPreferences.prefs(context).edit()
-                                                .putBoolean(com.example.twopchat.P2PPreferences.TOR_ENABLED, false)
+                                            com.example.twopchat.config.P2PPreferences.prefs(context).edit()
+                                                .putBoolean(com.example.twopchat.config.P2PPreferences.TOR_ENABLED, false)
                                                 .apply()
-                                            com.example.twopchat.TorManager.stopTor()
+                                            TorManager.stopTor()
                                             heroScope.launch(Dispatchers.IO) {
                                                 ProxyConfig.updateNetworkProxy(context)
                                             }
@@ -582,8 +585,8 @@ fun ChatsTab(
                                 )
                             }
                             if (isTorRunning) {
-                                val isRotatingCircuit by com.example.twopchat.TorManager.isRotatingCircuit.collectAsState()
-                                val circuitNodes by com.example.twopchat.TorManager.circuitNodes.collectAsState()
+                                val isRotatingCircuit by TorManager.isRotatingCircuit.collectAsState()
+                                val circuitNodes by TorManager.circuitNodes.collectAsState()
                                 val guardNode = circuitNodes.getOrNull(0)
                                 val middleNode = circuitNodes.getOrNull(1)
                                 val exitNode = circuitNodes.getOrNull(2)
@@ -622,7 +625,7 @@ fun ChatsTab(
                                                 .clip(RoundedCornerShape(10.dp))
                                                 .clickable(enabled = !isRotatingCircuit) {
                                                     heroScope.launch {
-                                                        val ok = com.example.twopchat.TorManager.renewTorIdentity(context)
+                                                        val ok = TorManager.renewTorIdentity(context)
                                                         if (ok) {
                                                             Toast.makeText(
                                                                 context,
@@ -1289,8 +1292,9 @@ fun ChatsTab(
         }
     }
 
-    if (activeMenuPeer != null) {
-            val peer = activeMenuPeer!!
+    val menuPeer = activeMenuPeer
+    if (menuPeer != null) {
+            val peer = menuPeer
             val isPinned = peer.isPinned
             val isMuted = sharedPrefs.getBoolean("mute_notifications_${peer.name}", false)
             val isBlocked = sharedPrefs.getBoolean("blocked_peer_${peer.name}", false)
@@ -1343,7 +1347,7 @@ fun ChatsTab(
                                             .fillMaxSize()
                                             .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
                                     ) {
-                                        val avatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[peer.name]
+                                        val avatarBitmap = com.example.twopchat.relay.P2PMessageRelay.peerAvatars[peer.name]
                                         if (avatarBitmap != null) {
                                             Image(
                                                 bitmap = avatarBitmap.asImageBitmap(),
@@ -1369,7 +1373,7 @@ fun ChatsTab(
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
-                                    val isRaw = com.example.twopchat.P2PMessageRelay.isRawFingerprint(peer.name) ||
+                                    val isRaw = com.example.twopchat.relay.P2PMessageRelay.isRawFingerprint(peer.name) ||
                                         (peer.name.length == 44 && peer.name.endsWith("="))
                                     val peerDisplayName = if (isRaw) "${peer.name.take(8)}...${peer.name.takeLast(6)}" else peer.name
                                     Text(
@@ -1382,7 +1386,7 @@ fun ChatsTab(
                                     val statusText = if (peer.name == Localizations.getString("saved_messages_title", appLanguage)) {
                                         if (appLanguage == "Русский") "Личное облако" else "Personal storage"
                                     } else {
-                                        val isOnline = com.example.twopchat.P2PMessageRelay.peerSessionStates[peer.name] == true
+                                        val isOnline = com.example.twopchat.relay.P2PMessageRelay.peerSessionStates[peer.name] == true
                                         if (isOnline) {
                                             if (appLanguage == "Русский") "В сети" else "Online"
                                         } else {
@@ -1392,7 +1396,7 @@ fun ChatsTab(
                                     Text(
                                         text = statusText,
                                         fontSize = 11.sp,
-                                        color = if (peer.name != Localizations.getString("saved_messages_title", appLanguage) && com.example.twopchat.P2PMessageRelay.peerSessionStates[peer.name] == true) primaryColor else onSurfaceVariant
+                                        color = if (peer.name != Localizations.getString("saved_messages_title", appLanguage) && com.example.twopchat.relay.P2PMessageRelay.peerSessionStates[peer.name] == true) primaryColor else onSurfaceVariant
                                     )
                                 }
                             }
@@ -1454,20 +1458,20 @@ fun ChatsTab(
                                     sharedPrefs.edit {
                                         remove("last_msg_${peer.name}")
                                         remove("unread_count_${peer.name}")
-                                        remove(com.example.twopchat.P2PPreferences.pinnedMessageId(peer.name))
-                                        remove(com.example.twopchat.P2PPreferences.pinnedMessageText(peer.name))
-                                        remove(com.example.twopchat.P2PPreferences.pinnedMessageSender(peer.name))
-                                        remove(com.example.twopchat.P2PPreferences.pinnedBy(peer.name))
+                                        remove(com.example.twopchat.config.P2PPreferences.pinnedMessageId(peer.name))
+                                        remove(com.example.twopchat.config.P2PPreferences.pinnedMessageText(peer.name))
+                                        remove(com.example.twopchat.config.P2PPreferences.pinnedMessageSender(peer.name))
+                                        remove(com.example.twopchat.config.P2PPreferences.pinnedBy(peer.name))
                                         aliases.forEach { alias ->
                                             remove("last_msg_$alias")
                                             remove("unread_count_$alias")
-                                            remove(com.example.twopchat.P2PPreferences.pinnedMessageId(alias))
-                                            remove(com.example.twopchat.P2PPreferences.pinnedMessageText(alias))
-                                            remove(com.example.twopchat.P2PPreferences.pinnedMessageSender(alias))
-                                            remove(com.example.twopchat.P2PPreferences.pinnedBy(alias))
+                                            remove(com.example.twopchat.config.P2PPreferences.pinnedMessageId(alias))
+                                            remove(com.example.twopchat.config.P2PPreferences.pinnedMessageText(alias))
+                                            remove(com.example.twopchat.config.P2PPreferences.pinnedMessageSender(alias))
+                                            remove(com.example.twopchat.config.P2PPreferences.pinnedBy(alias))
                                         }
                                     }
-                                    com.example.twopchat.MessageNotificationService.clearHistory(context, peer.name)
+                                    com.example.twopchat.relay.MessageNotificationService.clearHistory(context, peer.name)
                                     withContext(Dispatchers.Main) {
                                         chatListRevision++
                                         activeMenuPeer = null
@@ -1488,15 +1492,15 @@ fun ChatsTab(
                                 iconTint = if (isBlocked) primaryColor else Color.Red,
                                 iconRes = com.example.twopchat.R.drawable.ic_block,
                                 onClick = {
-                                    sharedPrefs.edit().putBoolean("blocked_peer_${peer.name}", !isBlocked).apply()
-                                    chatListRevision++
-                                    activeMenuPeer = null
-                                    val toastMsg = if (isBlocked) {
-                                        if (appLanguage == "Русский") "Пользователь разблокирован" else "User unblocked"
+                                    if (isBlocked) {
+                                        sharedPrefs.edit().putBoolean("blocked_peer_${peer.name}", false).apply()
+                                        chatListRevision++
+                                        activeMenuPeer = null
+                                        Toast.makeText(context, if (appLanguage == "Русский") "Пользователь разблокирован" else "User unblocked", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        if (appLanguage == "Русский") "Пользователь заблокирован" else "User blocked"
+                                        peerToHardBlock = peer.name
+                                        activeMenuPeer = null
                                     }
-                                    Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
                                 }
                             )
                         }
@@ -1508,7 +1512,7 @@ fun ChatsTab(
                                 textColor = Color.Red,
                                 iconTint = Color.Red,
                                 onClick = {
-                                    com.example.twopchat.P2PMessageRelay.deleteChat(context, peer.name)
+                                    com.example.twopchat.relay.P2PMessageRelay.deleteChat(context, peer.name)
                                     chatListRevision++
                                     activeMenuPeer = null
                                     Toast.makeText(context, if (appLanguage == "Русский") "Чат удален" else "Chat deleted", Toast.LENGTH_SHORT).show()
@@ -1520,8 +1524,74 @@ fun ChatsTab(
             }
     }
 
-    if (activeMenuGroup != null) {
-        val groupSummary = activeMenuGroup!!
+    val blockPeer = peerToHardBlock
+    if (blockPeer != null) {
+        val targetPeer = blockPeer
+        AlertDialog(
+            onDismissRequest = { peerToHardBlock = null },
+            title = {
+                Text(
+                    if (appLanguage == "Русский") "Блокировка и приватность" else "Block & Privacy",
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor,
+                )
+            },
+            text = {
+                Text(
+                    if (appLanguage == "Русский") {
+                        "Этот пользователь знает ваш текущий Tor Onion-адрес. Сменить Tor-адрес сейчас (Hard Block), чтобы навсегда исключить возможность контакта?"
+                    } else {
+                        "This user knows your current Tor .onion address. Rotate Onion address now (Hard Block) to permanently prevent further contact?"
+                    },
+                    fontSize = 13.sp,
+                    color = onSurfaceVariant,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        sharedPrefs.edit().putBoolean("blocked_peer_$targetPeer", true).apply()
+                        chatListRevision++
+                        peerToHardBlock = null
+                        Toast.makeText(context, if (appLanguage == "Русский") "Пользователь заблокирован. Смена Tor-адреса..." else "User blocked. Rotating Tor address...", Toast.LENGTH_SHORT).show()
+                        heroScope.launch {
+                            TorManager.rotateOnionAddress(context)
+                        }
+                    }
+                ) {
+                    Text(
+                        if (appLanguage == "Русский") "Сменить Tor и заблокировать" else "Rotate & Block",
+                        color = primaryColor,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(
+                        onClick = {
+                            sharedPrefs.edit().putBoolean("blocked_peer_$targetPeer", true).apply()
+                            chatListRevision++
+                            peerToHardBlock = null
+                            Toast.makeText(context, if (appLanguage == "Русский") "Пользователь заблокирован" else "User blocked", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text(if (appLanguage == "Русский") "Только заблокировать" else "Block Only", color = Color.Red)
+                    }
+                    TextButton(
+                        onClick = { peerToHardBlock = null }
+                    ) {
+                        Text(if (appLanguage == "Русский") "Отмена" else "Cancel", color = onSurfaceVariant)
+                    }
+                }
+            },
+            containerColor = surfaceColor,
+        )
+    }
+
+    val menuGroup = activeMenuGroup
+    if (menuGroup != null) {
+        val groupSummary = menuGroup
         val isPinned = sharedPrefs.getBoolean("pinned_group_${groupSummary.groupId}", false)
         val isMuted = sharedPrefs.getBoolean("mute_group_${groupSummary.groupId}", false)
 

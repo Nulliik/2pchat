@@ -1,7 +1,7 @@
 package com.example.twopchat.group.runtime
 
 import com.example.twopchat.group.protocol.GroupEventKind
-import com.example.twopchat.resolvePeerEndpoint
+import com.example.twopchat.relay.resolvePeerEndpoint
 import com.example.twopchat.security.ImageSanitizer
 import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals

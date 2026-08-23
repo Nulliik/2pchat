@@ -6,10 +6,10 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
 import android.util.Log
-import com.example.twopchat.P2PMessageRelay
-import com.example.twopchat.P2PPreferences
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.bridge.P2PBridgeProvider
-import com.example.twopchat.StickerSupport
+import com.example.twopchat.media.*
 import com.example.twopchat.group.attachments.GroupAttachmentManifest
 import com.example.twopchat.group.attachments.GroupAttachmentStore
 import com.example.twopchat.group.attachments.MAX_ATTACHMENT_BYTES
@@ -2217,7 +2217,7 @@ object GroupChatCoordinator {
                 } else {
                     payload.optString("text")
                 }
-                val prefs = com.example.twopchat.P2PPreferences.prefs(context)
+                val prefs = com.example.twopchat.config.P2PPreferences.prefs(context)
                 val myDisplayName = prefs.getString("username_profile", "") ?: ""
                 val isMentioned = GroupNotificationService.isGroupMention(text, myDisplayName)
                 val isChatActive = group.groupId in activeGroupChats
@@ -4675,37 +4675,32 @@ object GroupChatCoordinator {
 
     private fun getKnownContacts(): List<GroupContactSummary> {
         val context = applicationContext ?: return emptyList()
-        return try {
-            val prefs = P2PPreferences.prefs(context)
-            val contactNames = mutableSetOf<String>()
-            prefs.getStringSet("active_chats", emptySet())?.let { contactNames.addAll(it) }
-            prefs.all.keys.forEach { key ->
-                if (key.startsWith("peer_fingerprint_")) {
-                    val peerName = key.removePrefix("peer_fingerprint_")
-                    if (peerName.isNotBlank() && peerName != "Saved Messages") {
-                        contactNames.add(peerName)
-                    }
+        val prefs = P2PPreferences.prefs(context)
+        val contactNames = mutableSetOf<String>()
+        prefs.getStringSet("active_chats", emptySet())?.let { contactNames.addAll(it) }
+        prefs.all.keys.forEach { key ->
+            if (key.startsWith("peer_fingerprint_")) {
+                val peerName = key.removePrefix("peer_fingerprint_")
+                if (peerName.isNotBlank() && peerName != "Saved Messages") {
+                    contactNames.add(peerName)
                 }
             }
-            contactNames.remove("Saved Messages")
-
-            contactNames
-                .asSequence()
-                .mapNotNull { peerName ->
-                    val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
-                    GroupContactSummary(
-                        contactId = peerName,
-                        displayName = peerName,
-                        secondaryText = if (fingerprint.isNotBlank()) fingerprint.take(16) else peerName,
-                        isOnline = P2PMessageRelay.peerSessionStates[peerName] == true,
-                    )
-                }
-                .sortedBy { it.displayName.lowercase(Locale.ROOT) }
-                .toList()
-        } catch (e: SecurityException) {
-            Log.e(TAG, "Encrypted preferences are unavailable; omitting persisted contacts", e)
-            emptyList()
         }
+        contactNames.remove("Saved Messages")
+
+        return contactNames
+            .asSequence()
+            .mapNotNull { peerName ->
+                val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
+                GroupContactSummary(
+                    contactId = peerName,
+                    displayName = peerName,
+                    secondaryText = if (fingerprint.isNotBlank()) fingerprint.take(16) else peerName,
+                    isOnline = P2PMessageRelay.peerSessionStates[peerName] == true,
+                )
+            }
+            .sortedBy { it.displayName.lowercase(Locale.ROOT) }
+            .toList()
     }
 
     private fun refreshCreateState() {

@@ -1,5 +1,12 @@
 package com.example.twopchat
 
+import com.example.twopchat.relay.*
+import com.example.twopchat.config.*
+import com.example.twopchat.security.*
+import com.example.twopchat.service.*
+import com.example.twopchat.media.*
+import com.example.twopchat.tor.*
+
 import com.example.twopchat.yggdrasil.CustomYggdrasilPeer
 import com.example.twopchat.yggdrasil.YggdrasilPeerPreferences
 import com.example.twopchat.yggdrasil.YggdrasilPeerSort

@@ -1,6 +1,10 @@
 package com.example.twopchat
 
 import androidx.compose.foundation.layout.fillMaxSize
+import com.example.twopchat.config.*
+import com.example.twopchat.relay.*
+import com.example.twopchat.security.*
+import com.example.twopchat.service.*
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
@@ -63,12 +67,16 @@ fun MainNavigation(
         isOnboardingCompleted = true
         // Account deletion stops the service completely. Recreate it only
         // after onboarding persisted the new name and generated a new key.
-        ContextCompat.startForegroundService(
-          context,
-          Intent(context, P2PRelayService::class.java).apply {
-            action = P2PRelayService.ACTION_RESTART
-          },
-        )
+        runCatching {
+          ContextCompat.startForegroundService(
+            context,
+            Intent(context, P2PRelayService::class.java).apply {
+              action = P2PRelayService.ACTION_RESTART
+            },
+          )
+        }.onFailure {
+          android.util.Log.w("MainNavigation", "Could not start P2PRelayService on onboarding complete", it)
+        }
       },
       modifier = Modifier.fillMaxSize()
     )

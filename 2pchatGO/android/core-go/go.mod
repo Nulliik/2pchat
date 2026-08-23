@@ -7,4 +7,7 @@ require (
 	golang.org/x/net v0.58.0
 )
 
-require golang.org/x/sys v0.47.0 // indirect
+require (
+	github.com/hashicorp/yamux v0.1.2 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+)

@@ -170,6 +170,15 @@ func (d *AdaptiveDialer) DialContext(ctx context.Context, network, address strin
 		resChan := make(chan dialResult, 1)
 
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					select {
+					case resChan <- dialResult{conn: nil, err: fmt.Errorf("tor dialer recovered from panic: %v", r)}:
+					default:
+					}
+				}
+			}()
+
 			conn, err := torDialer.Dial("tcp", address)
 			if ctx.Err() != nil {
 				if conn != nil {

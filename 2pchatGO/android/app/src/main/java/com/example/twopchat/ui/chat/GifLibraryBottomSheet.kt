@@ -1,5 +1,7 @@
 package com.example.twopchat.ui.chat
 
+import java.io.File
+import com.example.twopchat.media.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,8 +52,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalHapticFeedback
-import com.example.twopchat.StoredGif
-import com.example.twopchat.GifStorageManager
 import com.example.twopchat.R
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity

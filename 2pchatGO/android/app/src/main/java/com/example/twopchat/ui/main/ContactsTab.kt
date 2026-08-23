@@ -3,9 +3,10 @@ package com.example.twopchat.ui.main
 
 import android.widget.Toast
 import android.content.Intent
+import com.example.twopchat.config.*
 import android.net.VpnService
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
-import org.json.JSONArray
+import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.GroupConversation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -57,11 +58,8 @@ import android.content.pm.PackageManager
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.bridge.P2PBridgeProvider
 import com.example.twopchat.Chat
-import com.example.twopchat.P2PMessageRelay
-import com.example.twopchat.P2PPreferences
-import com.example.twopchat.TorManager
-import com.example.twopchat.canonicalNickname
-import com.example.twopchat.validatedSearchNickname
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.tor.*
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
@@ -371,7 +369,7 @@ fun ContactsTab(
         }
     }
     
-    val sharedPrefs = remember { com.example.twopchat.P2PPreferences.prefs(context) }
+    val sharedPrefs = remember { com.example.twopchat.config.P2PPreferences.prefs(context) }
     val rawUsername = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
     val username = remember(rawUsername) { canonicalNickname(rawUsername) }
     val discoveryCode = remember { P2PPreferences.getRendezvousCode(context) }
@@ -445,7 +443,7 @@ fun ContactsTab(
                             .mapNotNull(::formatInviteEndpoint)
                             .distinct()
                             .forEach { endpoint ->
-                            com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(
+                            com.example.twopchat.relay.P2PMessageRelay.injectLocalDiscoveryCandidate(
                                 request.expectedLiveName, request.expectedFingerprint.orEmpty(), endpoint,
                             )
                         }
@@ -489,9 +487,22 @@ fun ContactsTab(
                                             .apply()
                                     }
                                     if (endpointStr.isNotBlank() && endpointStr != request.expectedLiveName) {
-                                        com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(request.expectedLiveName, endpointStr, context)
+                                        sharedPrefs.edit().putString("last_endpoint_${request.expectedLiveName}", endpointStr).apply()
+                                        if (endpointStr.contains(".onion")) {
+                                            P2PPreferences.setPeerOnionAddress(context, request.expectedLiveName, endpointStr)
+                                            ChatDatabaseHelper.getInstance(context).savePeerOnionAddress(
+                                                peerName = request.expectedLiveName,
+                                                onionAddress = endpointStr,
+                                                fingerprint = request.expectedFingerprint?.takeIf { it.isNotBlank() },
+                                                endpoint = endpointStr,
+                                            )
+                                        }
+                                        if (!request.expectedFingerprint.isNullOrBlank()) {
+                                            P2PBridgeProvider.get(context).updatePeerNameMapping(request.expectedFingerprint, request.expectedLiveName)
+                                        }
+                                        com.example.twopchat.relay.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(request.expectedLiveName, endpointStr)
                                     }
-                                    com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(context)
+                                    com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(context)
                                     if (!requestedGroupId.isNullOrBlank() && !groupInviteToken.isNullOrBlank()) {
                                         com.example.twopchat.group.runtime.GroupChatCoordinator.requestJoinFromInvite(
                                             requestedGroupId,
@@ -542,7 +553,7 @@ fun ContactsTab(
 
                     isResolvingInvite = true
                     resolveInviteStatus = if (appLanguage == "Русский") "Подключение к скрытому сервису Tor..." else "Connecting to Tor hidden service..."
-                    com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(
+                    com.example.twopchat.relay.P2PMessageRelay.injectLocalDiscoveryCandidate(
                         effectiveName, "", directOnion.onionEndpoint,
                     )
                     val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
@@ -550,10 +561,20 @@ fun ContactsTab(
                         sharedPrefs.edit()
                             .putStringSet("active_chats", activeSet + effectiveName)
                             .putString("transport_${effectiveName}", "Tor Onion")
+                            .putString("last_endpoint_${effectiveName}", directOnion.onionEndpoint)
                             .apply()
+                    } else {
+                        sharedPrefs.edit().putString("last_endpoint_${effectiveName}", directOnion.onionEndpoint).apply()
                     }
-                    com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, directOnion.onionEndpoint, context)
-                    com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(context)
+                    P2PPreferences.setPeerOnionAddress(context, effectiveName, directOnion.onionEndpoint)
+                    ChatDatabaseHelper.getInstance(context).savePeerOnionAddress(
+                        peerName = effectiveName,
+                        onionAddress = directOnion.onionEndpoint,
+                        fingerprint = null,
+                        endpoint = directOnion.onionEndpoint,
+                    )
+                    com.example.twopchat.relay.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, directOnion.onionEndpoint)
+                    com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(context)
                     resolveInviteStatus = ""
                     isResolvingInvite = false
                     onItemClick(Chat(effectiveName))
@@ -573,7 +594,7 @@ fun ContactsTab(
 
                     isResolvingInvite = true
                     resolveInviteStatus = if (appLanguage == "Русский") "Подключение к прямому P2P адресу..." else "Connecting to direct P2P endpoint..."
-                    com.example.twopchat.P2PMessageRelay.injectLocalDiscoveryCandidate(
+                    com.example.twopchat.relay.P2PMessageRelay.injectLocalDiscoveryCandidate(
                         effectiveName, "", directIP.endpoint,
                     )
                     val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
@@ -581,10 +602,13 @@ fun ContactsTab(
                         sharedPrefs.edit()
                             .putStringSet("active_chats", activeSet + effectiveName)
                             .putString("transport_${effectiveName}", "DIRECT P2P")
+                            .putString("last_endpoint_${effectiveName}", directIP.endpoint)
                             .apply()
+                    } else {
+                        sharedPrefs.edit().putString("last_endpoint_${effectiveName}", directIP.endpoint).apply()
                     }
-                    com.example.twopchat.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, directIP.endpoint, context)
-                    com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(context)
+                    com.example.twopchat.relay.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, directIP.endpoint)
+                    com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(context)
                     resolveInviteStatus = ""
                     isResolvingInvite = false
                     onItemClick(Chat(effectiveName))
@@ -752,9 +776,6 @@ fun ContactsTab(
                         keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
                             context = context,
                             imeAction = androidx.compose.ui.text.input.ImeAction.Search,
-                        ),
-                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                            onSearch = { performSearch(searchQuery) }
                         ),
                         cursorBrush = SolidColor(primaryColor),
                         textStyle = TextStyle(
@@ -1144,19 +1165,12 @@ fun ContactsTab(
                                 val tokenBytes = ByteArray(16)
                                 java.security.SecureRandom().nextBytes(tokenBytes)
                                 val tokenVal = "2pchat_inv_" + tokenBytes.joinToString("") { "%02x".format(it) }
-                                val onion = com.example.twopchat.TorManager.getOnionAddress(context).orEmpty()
+                                val onion = TorManager.getOnionAddress(context).orEmpty()
                                 val onionQuery = if (onion.isNotEmpty()) "&onion=${android.net.Uri.encode(onion)}" else ""
-                                val ygg = P2PMessageRelay.getYggdrasilAddress()
-                                val yggQuery = formatInviteEndpoint(ygg, P2PMessageRelay.listenerPort(context))
-                                    ?.let { "&ygg=${android.net.Uri.encode(it)}" }
-                                    .orEmpty()
-                                inviteLinkState = "2pchat://connect?token=$tokenVal&name=$username&fp=$fingerprint$yggQuery$onionQuery"
+                                inviteLinkState = "2pchat://connect?token=$tokenVal&name=$username&fp=$fingerprint$onionQuery"
                                 coroutineScope.launch(Dispatchers.IO) {
                                     P2PBridgeProvider.get(context).announceSelf(
-                                        // The invite resolver uses the public profile name plus
-                                        // the token.  Publish under exactly the same rendezvous
-                                        // key; publishing token/token made every invite invisible.
-                                        username,
+                                        tokenVal,
                                         fingerprint,
                                         P2PMessageRelay.listenerPort(context),
                                         rendezvousCode = tokenVal,
@@ -1264,9 +1278,9 @@ fun ContactsTab(
             val localIp = remember { P2PMessageRelay.getLocalIpAddress(context) }
             val yggIp = remember { P2PMessageRelay.getYggdrasilAddress() }
             val onionHost: String? = remember {
-                com.example.twopchat.TorManager.getOnionAddress(context)
-                    ?: com.example.twopchat.P2PPreferences.getTorOnionHostname(context)
-                    ?: com.example.twopchat.TorManager.onionAddress.value
+                TorManager.getOnionAddress(context)
+                    ?: com.example.twopchat.config.P2PPreferences.getTorOnionHostname(context)
+                    ?: TorManager.onionAddress.value
             }
             val listenerPort = remember { P2PMessageRelay.listenerPort(context) }
             var selectedQrMode by remember { mutableStateOf(if (onionHost != null && P2PPreferences.isTorEnabled(context)) "tor" else "standard") }
@@ -1433,21 +1447,26 @@ fun ContactsTab(
                     showCameraScannerDialog = false
                     showQrPanel = false
                     val trimmed = scannedResult.trim()
-                    if (trimmed.startsWith("2pchat://group/invite") || trimmed.contains("group/invite") || trimmed.contains("group_id=")) {
-                        val uri = android.net.Uri.parse(trimmed)
-                        val groupId = uri.getQueryParameter("id") ?: uri.getQueryParameter("groupId") ?: trimmed.substringAfter("id=", "").substringBefore("&")
-                        val token = uri.getQueryParameter("token").orEmpty()
-                        val peer = uri.getQueryParameter("peer").orEmpty()
-                        if (groupId.isNotBlank()) {
-                            if (token.isNotBlank()) {
-                                com.example.twopchat.group.runtime.GroupChatCoordinator.requestJoinFromInvite(groupId, token, peer)
+                    try {
+                        if (trimmed.startsWith("2pchat://group/invite") || trimmed.contains("group/invite") || trimmed.contains("group_id=")) {
+                            val uri = android.net.Uri.parse(trimmed)
+                            val groupId = uri.getQueryParameter("id") ?: uri.getQueryParameter("groupId") ?: trimmed.substringAfter("id=", "").substringBefore("&")
+                            val token = uri.getQueryParameter("token").orEmpty()
+                            val peer = uri.getQueryParameter("peer").orEmpty()
+                            if (groupId.isNotBlank()) {
+                                if (token.isNotBlank()) {
+                                    com.example.twopchat.group.runtime.GroupChatCoordinator.requestJoinFromInvite(groupId, token, peer)
+                                }
+                                onItemClick(GroupConversation(groupId))
+                                Toast.makeText(context, if (appLanguage == "Русский") "Вход в группу..." else "Joining group...", Toast.LENGTH_SHORT).show()
                             }
-                            onItemClick(GroupConversation(groupId))
-                            Toast.makeText(context, if (appLanguage == "Русский") "Вход в группу..." else "Joining group...", Toast.LENGTH_SHORT).show()
+                        } else {
+                            searchQuery = trimmed
+                            performSearch(trimmed)
                         }
-                    } else {
-                        searchQuery = trimmed
-                        performSearch(trimmed)
+                    } catch (e: Throwable) {
+                        android.util.Log.e("ContactsTab", "Error handling scanned QR code", e)
+                        Toast.makeText(context, if (appLanguage == "Русский") "Ошибка обработки QR-кода" else "Error processing QR code", Toast.LENGTH_SHORT).show()
                     }
                 }
             )
@@ -1520,7 +1539,21 @@ fun ContactsTab(
                                     }
                                     // The live search already authenticated this fingerprint.
                                     if (contact.endpoints.isNotBlank() && contact.endpoints != "Unknown") {
+                                        sharedPrefs.edit().putString("last_endpoint_$peerKey", contact.endpoints).apply()
+                                        if (contact.endpoints.contains(".onion")) {
+                                            P2PPreferences.setPeerOnionAddress(context, peerKey, contact.endpoints)
+                                            ChatDatabaseHelper.getInstance(context).savePeerOnionAddress(
+                                                peerName = peerKey,
+                                                onionAddress = contact.endpoints,
+                                                fingerprint = contact.fingerprint.takeIf { it.isNotBlank() },
+                                                endpoint = contact.endpoints,
+                                            )
+                                        }
+                                        if (contact.fingerprint.isNotBlank()) {
+                                            P2PBridgeProvider.get(context).updatePeerNameMapping(contact.fingerprint, peerKey)
+                                        }
                                         P2PMessageRelay.rememberAuthenticatedPeerEndpoint(peerKey, contact.endpoints)
+                                        P2PMessageRelay.triggerImmediateReconnect(context)
                                     }
                                     onItemClick(Chat(peerKey))
                                 }
@@ -1729,9 +1762,11 @@ private fun CameraQrScannerOverlay(
     val context = LocalContext.current
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-    var hasScanned by remember { mutableStateOf(false) }
+    val isScanned = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     var isTorchEnabled by remember { mutableStateOf(false) }
     var cameraControl by remember { mutableStateOf<androidx.camera.core.CameraControl?>(null) }
+    var cameraProviderInstance by remember { mutableStateOf<androidx.camera.lifecycle.ProcessCameraProvider?>(null) }
+
     val liveScannerOptions = remember {
         com.google.mlkit.vision.barcode.BarcodeScannerOptions.Builder()
             .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
@@ -1744,33 +1779,41 @@ private fun CameraQrScannerOverlay(
 
     DisposableEffect(Unit) {
         onDispose {
-            liveBarcodeScanner.close()
-            analysisExecutor.shutdownNow()
+            isScanned.set(true)
+            try {
+                cameraProviderInstance?.unbindAll()
+            } catch (_: Throwable) {}
+            try {
+                analysisExecutor.shutdown()
+            } catch (_: Throwable) {}
+            try {
+                liveBarcodeScanner.close()
+            } catch (_: Throwable) {}
         }
     }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
-        if (uri != null && !hasScanned) {
+        if (uri != null && !isScanned.get()) {
             try {
                 val inputImage = com.google.mlkit.vision.common.InputImage.fromFilePath(context, uri)
-                val options = com.google.mlkit.vision.barcode.BarcodeScannerOptions.Builder()
-                    .setBarcodeFormats(com.google.mlkit.vision.barcode.common.Barcode.FORMAT_QR_CODE)
-                    .build()
-                val scanner = com.google.mlkit.vision.barcode.BarcodeScanning.getClient(options)
-                scanner.process(inputImage)
+                liveBarcodeScanner.process(inputImage)
                     .addOnSuccessListener { barcodes ->
                         val qrText = barcodes.firstOrNull { it.rawValue?.isNotBlank() == true }?.rawValue
-                        if (!qrText.isNullOrBlank() && !hasScanned) {
-                            hasScanned = true
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        if (!qrText.isNullOrBlank() && !isScanned.getAndSet(true)) {
+                            try {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                            } catch (_: Throwable) {}
                             onQrScanned(qrText)
                         } else {
                             var zxingSuccess = false
                             try {
                                 val bitmap = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                                    android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(context.contentResolver, uri))
+                                    val source = android.graphics.ImageDecoder.createSource(context.contentResolver, uri)
+                                    android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                                        decoder.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                                    }
                                 } else {
                                     @Suppress("DEPRECATION")
                                     android.provider.MediaStore.Images.Media.getBitmap(context.contentResolver, uri)
@@ -1780,13 +1823,14 @@ private fun CameraQrScannerOverlay(
                                 val source = com.google.zxing.RGBLuminanceSource(bitmap.width, bitmap.height, intArray)
                                 val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
                                 val result = com.google.zxing.MultiFormatReader().decode(binaryBitmap)
-                                if (result != null && result.text.isNotBlank() && !hasScanned) {
-                                    hasScanned = true
+                                if (result != null && result.text.isNotBlank() && !isScanned.getAndSet(true)) {
                                     zxingSuccess = true
-                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                    try {
+                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                    } catch (_: Throwable) {}
                                     onQrScanned(result.text)
                                 }
-                            } catch (_: Exception) {}
+                            } catch (_: Throwable) {}
                             if (!zxingSuccess) {
                                 Toast.makeText(
                                     context,
@@ -1799,7 +1843,6 @@ private fun CameraQrScannerOverlay(
                     .addOnFailureListener { e ->
                         Toast.makeText(context, e.message ?: "Failed to read image", Toast.LENGTH_SHORT).show()
                     }
-                    .addOnCompleteListener { scanner.close() }
             } catch (e: Exception) {
                 Toast.makeText(context, e.message ?: "Failed to load image", Toast.LENGTH_SHORT).show()
             }
@@ -1837,81 +1880,55 @@ private fun CameraQrScannerOverlay(
                     val mainExecutor = ContextCompat.getMainExecutor(ctx)
                     val cameraProviderFuture = androidx.camera.lifecycle.ProcessCameraProvider.getInstance(ctx)
                     cameraProviderFuture.addListener({
-                        val cameraProvider = cameraProviderFuture.get()
-                        val preview = androidx.camera.core.Preview.Builder().build().also {
-                            it.setSurfaceProvider(previewView.surfaceProvider)
-                        }
-                        val imageAnalysis = androidx.camera.core.ImageAnalysis.Builder()
-                            .setBackpressureStrategy(androidx.camera.core.ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                            .build()
-
-                        val zxingReader = com.google.zxing.MultiFormatReader().apply {
-                            setHints(
-                                mapOf(
-                                    com.google.zxing.DecodeHintType.POSSIBLE_FORMATS to listOf(com.google.zxing.BarcodeFormat.QR_CODE),
-                                    com.google.zxing.DecodeHintType.TRY_HARDER to true,
-                                )
-                            )
-                        }
-                        var isProcessingFrame = false
-
-                        imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                            if (hasScanned || isProcessingFrame) {
-                                imageProxy.close()
-                                return@setAnalyzer
-                            }
-                            @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
-                            val mediaImage = imageProxy.image
-                            if (mediaImage != null && !hasScanned) {
-                                isProcessingFrame = true
-                                val rotationDegrees = imageProxy.imageInfo.rotationDegrees
-                                val inputImage = com.google.mlkit.vision.common.InputImage.fromMediaImage(mediaImage, rotationDegrees)
-                                liveBarcodeScanner.process(inputImage)
-                                    .addOnSuccessListener { barcodes ->
-                                        var found = false
-                                        for (barcode in barcodes) {
-                                            val rawValue = barcode.rawValue ?: barcode.displayValue ?: continue
-                                            if (rawValue.isNotBlank() && !hasScanned) {
-                                                hasScanned = true
-                                                found = true
-                                                mainExecutor.execute {
-                                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                                    onQrScanned(rawValue)
-                                                }
-                                                break
-                                            }
-                                        }
-                                        if (!found && !hasScanned) {
-                                            runCatching {
-                                                val rawBitmap = imageProxy.toBitmap()
-                                                val matrix = android.graphics.Matrix().apply { postRotate(rotationDegrees.toFloat()) }
-                                                val rotatedBitmap = android.graphics.Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.width, rawBitmap.height, matrix, true)
-                                                val intArray = IntArray(rotatedBitmap.width * rotatedBitmap.height)
-                                                rotatedBitmap.getPixels(intArray, 0, rotatedBitmap.width, 0, 0, rotatedBitmap.width, rotatedBitmap.height)
-                                                val source = com.google.zxing.RGBLuminanceSource(rotatedBitmap.width, rotatedBitmap.height, intArray)
-                                                val binaryBitmap = com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))
-                                                val result = zxingReader.decode(binaryBitmap)
-                                                if (result != null && result.text.isNotBlank() && !hasScanned) {
-                                                    hasScanned = true
-                                                    mainExecutor.execute {
-                                                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                                        onQrScanned(result.text)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    .addOnCompleteListener {
-                                        imageProxy.close()
-                                        isProcessingFrame = false
-                                    }
-                            } else {
-                                imageProxy.close()
-                            }
-                        }
-
-                        val cameraSelector = androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA
                         try {
+                            val cameraProvider = cameraProviderFuture.get()
+                            cameraProviderInstance = cameraProvider
+                            val preview = androidx.camera.core.Preview.Builder().build().also {
+                                it.setSurfaceProvider(previewView.surfaceProvider)
+                            }
+                            val imageAnalysis = androidx.camera.core.ImageAnalysis.Builder()
+                                .setBackpressureStrategy(androidx.camera.core.ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                .build()
+
+                            imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
+                                if (isScanned.get()) {
+                                    try { imageProxy.close() } catch (_: Throwable) {}
+                                    return@setAnalyzer
+                                }
+                                @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
+                                val mediaImage = imageProxy.image
+                                if (mediaImage != null && !isScanned.get()) {
+                                    val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                                    val inputImage = com.google.mlkit.vision.common.InputImage.fromMediaImage(mediaImage, rotationDegrees)
+                                    liveBarcodeScanner.process(inputImage)
+                                        .addOnSuccessListener { barcodes ->
+                                            if (isScanned.get()) return@addOnSuccessListener
+                                            for (barcode in barcodes) {
+                                                val rawValue = barcode.rawValue ?: barcode.displayValue ?: continue
+                                                if (rawValue.isNotBlank() && !isScanned.getAndSet(true)) {
+                                                    mainExecutor.execute {
+                                                        try {
+                                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                                        } catch (_: Throwable) {}
+                                                        onQrScanned(rawValue)
+                                                    }
+                                                    break
+                                                }
+                                            }
+                                        }
+                                        .addOnCompleteListener {
+                                            try {
+                                                imageProxy.close()
+                                            } catch (_: Throwable) {}
+                                        }
+                                } else {
+                                    try {
+                                        imageProxy.close()
+                                    } catch (_: Throwable) {}
+                                }
+                            }
+
+                            val cameraSelector = androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA
                             cameraProvider.unbindAll()
                             val camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, imageAnalysis)
                             cameraControl = camera.cameraControl

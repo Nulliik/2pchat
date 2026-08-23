@@ -2,6 +2,7 @@ package com.example.twopchat.ui.main
 
 import android.content.Intent
 import android.widget.Toast
+import com.example.twopchat.media.*
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -83,10 +84,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import com.example.twopchat.BuiltinSticker
-import com.example.twopchat.BuiltinStickerPack
-import com.example.twopchat.P2PPreferences
-import com.example.twopchat.StickerSupport
+import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.ui.chat.AnimatedStickerImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

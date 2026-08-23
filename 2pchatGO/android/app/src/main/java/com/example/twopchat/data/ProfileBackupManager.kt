@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.example.twopchat.NativeBridge
-import com.example.twopchat.P2PPreferences
+import com.example.twopchat.config.P2PPreferences
 import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream

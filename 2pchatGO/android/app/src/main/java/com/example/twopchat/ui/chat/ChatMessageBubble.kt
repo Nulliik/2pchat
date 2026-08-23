@@ -1,6 +1,7 @@
 package com.example.twopchat.ui.chat
 
 import android.graphics.Bitmap
+import com.example.twopchat.media.*
 import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
@@ -176,11 +177,11 @@ internal fun ChatMessageBubble(
     }
 
     val context = androidx.compose.ui.platform.LocalContext.current
-    val sharedPrefs = remember(context) { com.example.twopchat.P2PPreferences.prefs(context) }
+    val sharedPrefs = remember(context) { com.example.twopchat.config.P2PPreferences.prefs(context) }
     val linkPreviewsEnabled = remember(sharedPrefs) { sharedPrefs.getBoolean("settings_link_previews", false) }
     val isText = msg.attachmentType == null
-    val isSticker = msg.attachmentType == com.example.twopchat.StickerSupport.ATTACHMENT_TYPE
-    val isGif = msg.attachmentType == com.example.twopchat.GifStorageManager.ATTACHMENT_TYPE
+    val isSticker = msg.attachmentType == StickerSupport.ATTACHMENT_TYPE
+    val isGif = msg.attachmentType == GifStorageManager.ATTACHMENT_TYPE
     val isOnlyEmoji = isText && isSingleEmoji(msg.text)
     val detectedUrl = remember(msg.text, isText) {
         if (!isText) null else {
@@ -320,13 +321,13 @@ internal fun ChatMessageBubble(
                                     titleColor = replyTitleColor,
                                     textColor = replyTextColor,
                                     backgroundColor = replyBg,
-                                    onClick = { msg.replyToId?.let(onScrollToReply) },
+                                    onClick = { msg.replyToId.let(onScrollToReply) },
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                             }
 
                             when (if (msg.albumMediaUris.isNotEmpty()) "ALBUM" else msg.attachmentType) {
-                                com.example.twopchat.StickerSupport.ATTACHMENT_TYPE -> {
+                                StickerSupport.ATTACHMENT_TYPE -> {
                                     StickerMessageContent(
                                         filePath = msg.attachmentUri,
                                         fallbackEmoji = msg.text,
@@ -342,7 +343,7 @@ internal fun ChatMessageBubble(
                                         },
                                     )
                                 }
-                                com.example.twopchat.GifStorageManager.ATTACHMENT_TYPE -> {
+                                GifStorageManager.ATTACHMENT_TYPE -> {
                                     GifMessageContent(
                                         filePath = msg.attachmentUri,
                                         fallbackText = msg.text,
@@ -360,7 +361,7 @@ internal fun ChatMessageBubble(
                                         },
                                     )
                                 }
-                                com.example.twopchat.StickerSupport.PACK_ATTACHMENT_TYPE -> {
+                                StickerSupport.PACK_ATTACHMENT_TYPE -> {
                                     Row(
                                         modifier = Modifier
                                             .background(
@@ -387,7 +388,7 @@ internal fun ChatMessageBubble(
                                                 fontWeight = FontWeight.SemiBold,
                                             )
                                             Text(
-                                                text = com.example.twopchat.StickerSupport
+                                                text = StickerSupport
                                                     .packIdFromArchiveFileName(msg.attachmentName.orEmpty())
                                                     .orEmpty(),
                                                 color = textColor.copy(alpha = 0.65f),
@@ -417,16 +418,16 @@ internal fun ChatMessageBubble(
                                 "IMAGE" -> {
                                     val bitmap = rememberSampledImage(msg.attachmentUri)
                                     val attachmentAvailable = remember(msg.attachmentUri) { isAttachmentAvailable(msg.attachmentUri) }
-                                    val progressInfo = com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:${msg.id}"]
-                                        ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[msg.id]
-                                        ?: msg.attachmentName?.let { com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[it] }
+                                    val progressInfo = com.example.twopchat.relay.P2PMessageRelay.fileProgressStates["$peerName:${msg.id}"]
+                                        ?: com.example.twopchat.relay.P2PMessageRelay.fileProgressStates[msg.id]
+                                        ?: msg.attachmentName?.let { com.example.twopchat.relay.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.relay.P2PMessageRelay.fileProgressStates[it] }
                                     val isTransferring = progressInfo?.state ==
-                                        com.example.twopchat.P2PMessageRelay.FileTransferState.TRANSFERRING
+                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING
                                     val isCancelled = progressInfo?.state ==
-                                        com.example.twopchat.P2PMessageRelay.FileTransferState.CANCELLED ||
+                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.CANCELLED ||
                                         msg.status.equals("CANCELLED", ignoreCase = true)
                                     val hasFailed = progressInfo?.state ==
-                                        com.example.twopchat.P2PMessageRelay.FileTransferState.FAILED ||
+                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.FAILED ||
                                         msg.status.equals("FAILED", ignoreCase = true)
                                     val isRemoved = !isTransferring && !isCancelled && !hasFailed &&
                                         !attachmentAvailable
@@ -503,14 +504,15 @@ internal fun ChatMessageBubble(
                                                     }
                                                 }
 
-                                                if (isTransferring && progressInfo != null) {
-                                                    val pct = if (progressInfo.totalBytes > 0L) {
-                                                        (progressInfo.bytesTransferred * 100 / progressInfo.totalBytes).toInt()
+                                                if (isTransferring) {
+                                                    val info = progressInfo
+                                                    val pct = if (info.totalBytes > 0L) {
+                                                        (info.bytesTransferred * 100 / info.totalBytes).toInt()
                                                     } else 0
-                                                    val speedStr = if (progressInfo.speedKbps >= 1024) {
-                                                        String.format(java.util.Locale.US, "%.1f MB/s", progressInfo.speedKbps / 1024.0)
+                                                    val speedStr = if (info.speedKbps >= 1024) {
+                                                        String.format(java.util.Locale.US, "%.1f MB/s", info.speedKbps / 1024.0)
                                                     } else {
-                                                        "${progressInfo.speedKbps.toInt()} KB/s"
+                                                        "${info.speedKbps.toInt()} KB/s"
                                                     }
                                                     Box(
                                                         modifier = Modifier
@@ -717,20 +719,20 @@ internal fun ChatMessageBubble(
                                 }
                                 "VIDEO" -> {
                                     val completedThumbnail = rememberVideoThumbnail(msg.attachmentUri)
-                                    val progressInfo = com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:${msg.id}"]
-                                        ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[msg.id]
-                                        ?: msg.attachmentName?.let { com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[it] }
-                                    val transferPreview = com.example.twopchat.P2PMessageRelay.fileTransferPreviews["$peerName:${msg.id}"]
-                                        ?: com.example.twopchat.P2PMessageRelay.fileTransferPreviews[msg.id]
+                                    val progressInfo = com.example.twopchat.relay.P2PMessageRelay.fileProgressStates["$peerName:${msg.id}"]
+                                        ?: com.example.twopchat.relay.P2PMessageRelay.fileProgressStates[msg.id]
+                                        ?: msg.attachmentName?.let { com.example.twopchat.relay.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.relay.P2PMessageRelay.fileProgressStates[it] }
+                                    val transferPreview = com.example.twopchat.relay.P2PMessageRelay.fileTransferPreviews["$peerName:${msg.id}"]
+                                        ?: com.example.twopchat.relay.P2PMessageRelay.fileTransferPreviews[msg.id]
                                     val thumbnail = completedThumbnail ?: transferPreview
                                     val attachmentAvailable = remember(msg.attachmentUri) { isAttachmentAvailable(msg.attachmentUri) }
                                     val isTransferring = progressInfo?.state ==
-                                        com.example.twopchat.P2PMessageRelay.FileTransferState.TRANSFERRING
+                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING
                                     val isCancelled = progressInfo?.state ==
-                                        com.example.twopchat.P2PMessageRelay.FileTransferState.CANCELLED ||
+                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.CANCELLED ||
                                         msg.status.equals("CANCELLED", ignoreCase = true)
                                     val hasFailed = progressInfo?.state ==
-                                        com.example.twopchat.P2PMessageRelay.FileTransferState.FAILED ||
+                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.FAILED ||
                                         msg.status.equals("FAILED", ignoreCase = true)
                                     val isRemoved = !isTransferring && !isCancelled && !hasFailed &&
                                         !attachmentAvailable
@@ -820,14 +822,15 @@ internal fun ChatMessageBubble(
                                                     )
                                                 }
                                             }
-                                            if (isTransferring && progressInfo != null) {
-                                                val pct = if (progressInfo.totalBytes > 0L) {
-                                                    (progressInfo.bytesTransferred * 100 / progressInfo.totalBytes).toInt()
+                                            if (isTransferring) {
+                                                val info = progressInfo
+                                                val pct = if (info.totalBytes > 0L) {
+                                                    (info.bytesTransferred * 100 / info.totalBytes).toInt()
                                                 } else 0
-                                                val speedStr = if (progressInfo.speedKbps >= 1024) {
-                                                    String.format(java.util.Locale.US, "%.1f MB/s", progressInfo.speedKbps / 1024.0)
+                                                val speedStr = if (info.speedKbps >= 1024) {
+                                                    String.format(java.util.Locale.US, "%.1f MB/s", info.speedKbps / 1024.0)
                                                 } else {
-                                                    "${progressInfo.speedKbps.toInt()} KB/s"
+                                                    "${info.speedKbps.toInt()} KB/s"
                                                 }
                                                 Box(
                                                     modifier = Modifier
@@ -1023,17 +1026,17 @@ internal fun ChatMessageBubble(
                                 }
                                 "FILE" -> {
                                     val attachmentAvailable = remember(msg.attachmentUri) { isAttachmentAvailable(msg.attachmentUri) }
-                                    val progressInfo = com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:${msg.id}"]
-                                        ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[msg.id]
-                                        ?: msg.attachmentName?.let { com.example.twopchat.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.P2PMessageRelay.fileProgressStates[it] }
+                                    val progressInfo = com.example.twopchat.relay.P2PMessageRelay.fileProgressStates["$peerName:${msg.id}"]
+                                        ?: com.example.twopchat.relay.P2PMessageRelay.fileProgressStates[msg.id]
+                                        ?: msg.attachmentName?.let { com.example.twopchat.relay.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.relay.P2PMessageRelay.fileProgressStates[it] }
                                     
                                     val isTransferring = progressInfo?.state ==
-                                        com.example.twopchat.P2PMessageRelay.FileTransferState.TRANSFERRING
+                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING
                                     val isCancelled = progressInfo?.state ==
-                                        com.example.twopchat.P2PMessageRelay.FileTransferState.CANCELLED ||
+                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.CANCELLED ||
                                         msg.status.equals("CANCELLED", ignoreCase = true)
                                     val hasFailed = progressInfo?.state ==
-                                        com.example.twopchat.P2PMessageRelay.FileTransferState.FAILED ||
+                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.FAILED ||
                                         msg.status.equals("FAILED", ignoreCase = true)
 
                                     Column {
@@ -1063,14 +1066,15 @@ internal fun ChatMessageBubble(
                                                     maxLines = 1,
                                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                                 )
-                                                val subtext = if (isTransferring && progressInfo != null) {
-                                                    val pct = if (progressInfo.totalBytes > 0L) {
-                                                        (progressInfo.bytesTransferred * 100 / progressInfo.totalBytes).toInt()
+                                                val subtext = if (isTransferring) {
+                                                    val info = progressInfo
+                                                    val pct = if (info.totalBytes > 0L) {
+                                                        (info.bytesTransferred * 100 / info.totalBytes).toInt()
                                                     } else 0
-                                                    val speedStr = if (progressInfo.speedKbps >= 1024) {
-                                                        String.format(java.util.Locale.US, "%.1f MB/s", progressInfo.speedKbps / 1024.0)
+                                                    val speedStr = if (info.speedKbps >= 1024) {
+                                                        String.format(java.util.Locale.US, "%.1f MB/s", info.speedKbps / 1024.0)
                                                     } else {
-                                                        "${progressInfo.speedKbps.toInt()} KB/s"
+                                                        "${info.speedKbps.toInt()} KB/s"
                                                     }
                                                     "$pct% • $speedStr"
                                                 } else if (isCancelled) {
@@ -1114,7 +1118,8 @@ internal fun ChatMessageBubble(
                                                 )
                                             }
                                         }
-                                        if (isTransferring && progressInfo != null) {
+                                        if (isTransferring) {
+                                            val info = progressInfo
                                             Spacer(modifier = Modifier.height(6.dp))
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
@@ -1400,7 +1405,7 @@ internal fun ChatMessageBubble(
                                                         val avatar = if (sender.equals("Me", ignoreCase = true)) {
                                                             myAvatarBitmap
                                                         } else {
-                                                            com.example.twopchat.P2PMessageRelay.peerAvatars[peerName]
+                                                            com.example.twopchat.relay.P2PMessageRelay.peerAvatars[peerName]
                                                         }
                                                         
                                                         if (avatar != null) {
@@ -1590,7 +1595,7 @@ fun LinkifiedText(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val myUsername = remember(context) {
-        com.example.twopchat.P2PPreferences.prefs(context).getString("username_profile", "") ?: ""
+        com.example.twopchat.config.P2PPreferences.prefs(context).getString("username_profile", "") ?: ""
     }
 
     val annotatedString = remember(text, textColor, linkColor, myUsername) {

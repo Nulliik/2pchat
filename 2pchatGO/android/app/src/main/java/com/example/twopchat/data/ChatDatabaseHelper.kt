@@ -4,8 +4,8 @@ import android.content.Context
 import net.zetetic.database.sqlcipher.SQLiteDatabase
 import net.zetetic.database.sqlcipher.SQLiteOpenHelper
 import android.content.ContentValues
+import com.example.twopchat.security.*
 import com.example.twopchat.ui.chat.Message
-import com.example.twopchat.SecureStorage
 import android.util.Log
 import com.example.twopchat.ui.chat.MessageDeliveryStatus
 
@@ -174,7 +174,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 DELETE FROM $TABLE_MESSAGES 
                 WHERE $KEY_MESSAGE_TEXT LIKE '{"id":%' 
                    OR $KEY_MESSAGE_TEXT LIKE '{"type":"heartbeat"%' 
-                   OR $KEY_MESSAGE_TEXT LIKE '{"type":"identity_info"%' 
+                   OR $KEY_MESSAGE_TEXT LIKE '%"type":"identity_info"%' 
+                   OR $KEY_MESSAGE_TEXT LIKE '%"type":"profile_avatar_share"%'
+                   OR $KEY_MESSAGE_TEXT LIKE '%"type":"onion_address_share"%'
+                   OR $KEY_MESSAGE_TEXT LIKE '%"type":"onion_address_update"%'
                    OR $KEY_MESSAGE_TEXT LIKE '{"about_me":%' 
                    OR $KEY_MESSAGE_TEXT LIKE '{"type":"status"%'
             """.trimIndent())
@@ -552,6 +555,17 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         )
     }
 
+    private fun isControlMessageText(text: String): Boolean {
+        val trimmed = text.trim()
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return false
+        return trimmed.contains("\"type\":\"identity_info\"") ||
+               trimmed.contains("\"type\":\"profile_avatar_share\"") ||
+               trimmed.contains("\"type\":\"onion_address_share\"") ||
+               trimmed.contains("\"type\":\"onion_address_update\"") ||
+               trimmed.contains("\"type\":\"heartbeat\"") ||
+               trimmed.contains("\"type\":\"status\"")
+    }
+
     fun getMessagesForPeer(peerName: String): List<Message> {
         val messages = mutableListOf<Message>()
         val db = this.safeReadableDatabase
@@ -568,7 +582,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             val stringCipher = SecureStorage.newStringCipher()
             if (it.moveToFirst()) {
                 do {
-                    messages.add(readMessageFromCursor(it, stringCipher))
+                    val msg = readMessageFromCursor(it, stringCipher)
+                    if (!isControlMessageText(msg.text)) {
+                        messages.add(msg)
+                    }
                 } while (it.moveToNext())
             }
         }
@@ -649,9 +666,6 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             arrayOf(peerName),
             null,
             null,
-            // The (peer_name, sent_at_ms) index can serve this ordering directly.
-            // Keep rowid as a deterministic fallback for legacy rows whose
-            // sent_at_ms value predates that column and is therefore zero.
             "$KEY_SENT_AT_MS DESC, rowid DESC",
             limitClause
         )
@@ -659,7 +673,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             val stringCipher = SecureStorage.newStringCipher()
             if (it.moveToFirst()) {
                 do {
-                    messages.add(readMessageFromCursor(it, stringCipher))
+                    val msg = readMessageFromCursor(it, stringCipher)
+                    if (!isControlMessageText(msg.text)) {
+                        messages.add(msg)
+                    }
                 } while (it.moveToNext())
             }
         }
@@ -1095,6 +1112,42 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         }
     }
 
+    fun getPeerFingerprint(peerName: String): String? {
+        val db = this.safeReadableDatabase
+        return db.query(
+            TABLE_PEERS,
+            arrayOf(KEY_FINGERPRINT),
+            "$KEY_PEER_NAME = ?",
+            arrayOf(peerName),
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndexOrThrow(KEY_FINGERPRINT)
+                if (!cursor.isNull(idx)) cursor.getString(idx) else null
+            } else null
+        }
+    }
+
+    fun getPeerNameByFingerprint(fingerprint: String): String? {
+        val db = this.safeReadableDatabase
+        return db.query(
+            TABLE_PEERS,
+            arrayOf(KEY_PEER_NAME),
+            "$KEY_FINGERPRINT = ?",
+            arrayOf(fingerprint),
+            null,
+            null,
+            null,
+        ).use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndexOrThrow(KEY_PEER_NAME)
+                if (!cursor.isNull(idx)) cursor.getString(idx) else null
+            } else null
+        }
+    }
+
     fun getAllPeersWithOnion(): Map<String, String> {
         val db = this.safeReadableDatabase
         val result = mutableMapOf<String, String>()
@@ -1198,7 +1251,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         } catch (e: Exception) {
             Log.e(TAG, "Failed to migrate plaintext database", e)
         } finally {
-            com.example.twopchat.SecurityUtils.zeroize(pass)
+            SecurityUtils.zeroize(pass)
             try {
                 source?.close()
             } catch (_: Exception) { }

@@ -56,7 +56,7 @@ fun CreateGroupScreen(
     modifier: Modifier = Modifier
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val appLanguage = remember(context) { com.example.twopchat.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
+    val appLanguage = remember(context) { com.example.twopchat.config.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
     var title by rememberSaveable { mutableStateOf("") }
     var description by rememberSaveable { mutableStateOf("") }
     var selectedContactIds by remember(state.knownContacts) {
@@ -233,7 +233,7 @@ fun CreateGroupScreen(
                                 enabled = !state.isCreating
                             )
                             Spacer(Modifier.width(8.dp))
-                            val contactAvatarBitmap = com.example.twopchat.P2PMessageRelay.peerAvatars[contact.displayName]
+                            val contactAvatarBitmap = com.example.twopchat.relay.P2PMessageRelay.peerAvatars[contact.displayName]
                             Box(
                                 modifier = Modifier
                                     .size(36.dp)

@@ -55,14 +55,12 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
 import com.example.twopchat.bridge.P2PBridgeProvider
 import com.example.twopchat.Chat
-import com.example.twopchat.P2PMessageRelay
-import com.example.twopchat.P2PPreferences
-import com.example.twopchat.TorManager
-import com.example.twopchat.P2PRelayService
-import com.example.twopchat.AttachmentCategory
-import com.example.twopchat.AttachmentCategoryUsage
-import com.example.twopchat.AttachmentStorageManager
-import com.example.twopchat.StickerSupport
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.tor.*
+import com.example.twopchat.service.P2PRelayService
+import com.example.twopchat.media.*
+import com.example.twopchat.security.*
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.ui.chat.AttachmentImageCache
@@ -141,7 +139,7 @@ fun SettingsTab(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
-    val sharedPrefs = remember { com.example.twopchat.P2PPreferences.prefs(context) }
+    val sharedPrefs = remember { com.example.twopchat.config.P2PPreferences.prefs(context) }
     
     // Profile photo states
     var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
@@ -167,6 +165,16 @@ fun SettingsTab(
     }
 
     // Dynamic settings states
+    var localFingerprint by remember { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            localFingerprint = P2PBridgeProvider.get(context).getLocalFingerprint()
+        }
+    }
+    val formattedLocalFingerprint = remember(localFingerprint) {
+        if (localFingerprint.isNotBlank()) localFingerprint.chunked(4).joinToString(" ") else ""
+    }
+
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
     var aboutMeText by remember { mutableStateOf(sharedPrefs.getString("about_me_profile", "") ?: "") }
     var showEditAboutMeDialog by remember { mutableStateOf(false) }
@@ -268,13 +276,14 @@ fun SettingsTab(
 
 
 
-    if (pendingCropUri != null) {
+    val cropUri = pendingCropUri
+    if (cropUri != null) {
         com.example.twopchat.ui.onboarding.ImageCropper(
-            imageUri = pendingCropUri!!,
+            imageUri = cropUri,
             onCropSuccess = { localPath ->
                 profilePhotoUri = localPath
                 sharedPrefs.edit().putString("profile_photo_uri", localPath).apply()
-                com.example.twopchat.P2PMessageRelay.shareAvatarWithConnectedPeers(context)
+                com.example.twopchat.relay.P2PMessageRelay.shareAvatarWithConnectedPeers(context)
                 Toast.makeText(context, "Profile photo updated", Toast.LENGTH_SHORT).show()
                 pendingCropUri = null
             },
@@ -434,6 +443,15 @@ fun SettingsTab(
                                 subtitle = if (isRu) "Создание, импорт из Telegram и управление наклейками" else "Create, import from Telegram & manage sticker packs",
                                 keywords = listOf("sticker", "stickers", "стикерпак", "стикеры", "паки", "наклейки", "telegram"),
                                 onClick = { activeSubPage = "sticker_packs" }
+                            ),
+                            DeepSettingItem(
+                                category = if (isRu) "Безопасность" else "Security",
+                                categoryColor = Color(0xFF66BB6A),
+                                title = if (isRu) "Личный ключ безопасности" else "Personal Security Key",
+                                subtitle = if (isRu) "Отпечаток (Fingerprint) для сверки личности и сессий" else "Cryptographic fingerprint to verify identity and sessions",
+                                valueBadge = if (localFingerprint.isNotBlank()) localFingerprint.take(8) + "…" else null,
+                                keywords = listOf("fingerprint", "key", "ключ", "отпечаток", "безопасность", "сверка", "mitm", "identity"),
+                                onClick = { activeSubPage = "security" }
                             ),
                             DeepSettingItem(
                                 category = if (isRu) "Безопасность" else "Security",
@@ -738,9 +756,10 @@ fun SettingsTab(
                                                 .background(primaryColor.copy(alpha = 0.15f), shape = CircleShape)
                                                 .border(1.5.dp, primaryColor, CircleShape)
                                         ) {
-                                            if (profileBitmap != null) {
+                                            val avatarBmp = profileBitmap
+                                            if (avatarBmp != null) {
                                                 Image(
-                                                    bitmap = profileBitmap!!.asImageBitmap(),
+                                                    bitmap = avatarBmp.asImageBitmap(),
                                                     contentDescription = "Profile Photo",
                                                     modifier = Modifier.fillMaxSize().clip(CircleShape)
                                                 )
@@ -917,6 +936,20 @@ fun SettingsTab(
                                 .border(0.75.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
                         ) {
                             Column {
+                                SettingsRow(
+                                    title = if (appLanguage == "Русский") "Ключ безопасности (Fingerprint)" else "Security Key (Fingerprint)",
+                                    subtitle = if (appLanguage == "Русский") "Сверка отпечатка для подтверждения личности" else "Verify key fingerprint with contacts",
+                                    value = if (localFingerprint.isNotBlank()) localFingerprint.take(8) + "…" else null,
+                                    iconRes = com.example.twopchat.R.drawable.ic_shield_status,
+                                    iconColor = Color(0xFF3B82F6),
+                                    onSurfaceColor = onSurfaceColor,
+                                    onSurfaceVariant = onSurfaceVariant,
+                                    primaryColor = primaryColor,
+                                    onClick = { activeSubPage = "security" }
+                                )
+
+                                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
                                 SettingsRow(
                                     title = if (appLanguage == "Русский") "Код-пароль и защита входа" else "Passcode Lock & Access",
                                     subtitle = if (appLanguage == "Русский") "4-значный PIN, экстренный Duress PIN, автоблокировка" else "4-digit PIN, emergency Duress PIN, auto-lock",
@@ -1629,6 +1662,91 @@ fun SettingsTab(
                         surfaceColor = surfaceColor,
                         onSurfaceColor = onSurfaceColor
                     ) {
+                        // Security Key / Fingerprint Card
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(
+                                        painter = painterResource(com.example.twopchat.R.drawable.ic_shield_status),
+                                        contentDescription = "Security Fingerprint",
+                                        tint = primaryColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = Localizations.tr(appLanguage, "Личный ключ безопасности", "Personal Security Key", "Persönlicher Sicherheitsschlüssel", "Huella de seguridad personal", "Empreinte de sécurité personnelle", "Impressão digital de segurança pessoal"),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = onSurfaceColor
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = Localizations.tr(appLanguage, "Сверьте эту строку с собеседником по доверенному каналу для защиты от подмены ключей (MITM) и подтверждения личности.", "Compare this string with your contact over a trusted channel to verify identity and protect against MITM.", "Gleichen Sie diese Zeichenkette mit Ihrem Kontakt über einen vertrauenswürdigen Kanal ab.", "Compare esta cadena con su contacto a través de un canal de confianza para verificar identidad.", "Comparez cette chaîne avec votre contact via un canal de confiance pour vérifier l'identité.", "Compare esta string com seu contato por um canal confiável."),
+                                    fontSize = 12.sp,
+                                    color = onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Surface(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = surfaceVariant.copy(alpha = 0.5f),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor.copy(alpha = 0.25f))
+                                ) {
+                                    SelectionContainer {
+                                        Text(
+                                            text = if (formattedLocalFingerprint.isNotBlank()) formattedLocalFingerprint else if (appLanguage == "Русский") "Инициализация ключа..." else "Initializing key...",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = onSurfaceColor,
+                                            modifier = Modifier.padding(12.dp),
+                                            lineHeight = 20.sp,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Button(
+                                    onClick = {
+                                        if (localFingerprint.isNotBlank()) {
+                                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                            val clip = android.content.ClipData.newPlainText("2PChat Security Key", localFingerprint)
+                                            clipboard.setPrimaryClip(clip)
+                                            Toast.makeText(
+                                                context,
+                                                Localizations.tr(appLanguage, "Личный ключ скопирован", "Security key copied", "Sicherheitsschlüssel kopiert", "Clave de seguridad copiada", "Clé de sécurité copiée", "Chave de segurança copiada"),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = Localizations.tr(appLanguage, "Скопировать ключ", "Copy Security Key", "Schlüssel kopieren", "Copiar clave", "Copier la clé", "Copiar chave"),
+                                        color = if (primaryColor == MintGreen) StealthBlack else Color.White,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
                         // Security & Access Settings Card
                         Card(
                             colors = CardDefaults.cardColors(containerColor = surfaceColor),
@@ -2052,7 +2170,7 @@ fun SettingsTab(
                                         onCheckedChange = { enabled ->
                                             ipv4Routing = enabled
                                             sharedPrefs.edit().putBoolean("settings_ipv4", enabled).apply()
-                                            com.example.twopchat.P2PMessageRelay.refreshAnnouncement(context)
+                                            com.example.twopchat.relay.P2PMessageRelay.refreshAnnouncement(context)
                                         },
                                         colors = SwitchDefaults.colors(
                                             checkedThumbColor = primaryColor,
@@ -2104,7 +2222,7 @@ fun SettingsTab(
                                                     Toast.LENGTH_SHORT
                                                 ).show()
                                             }
-                                            com.example.twopchat.P2PMessageRelay.refreshAnnouncement(context)
+                                            com.example.twopchat.relay.P2PMessageRelay.refreshAnnouncement(context)
                                         },
                                         colors = SwitchDefaults.colors(
                                             checkedThumbColor = primaryColor,
@@ -3129,7 +3247,7 @@ fun SettingsTab(
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }
-                            com.example.twopchat.P2PMessageRelay.shareAvatarWithConnectedPeers(context)
+                            com.example.twopchat.relay.P2PMessageRelay.shareAvatarWithConnectedPeers(context)
                             Toast.makeText(context, if (appLanguage == "Русский") "Фото профиля удалено" else "Profile photo removed", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -3300,7 +3418,7 @@ fun SettingsTab(
                 Button(
                     onClick = {
                         val correctPin = sharedPrefs.getString("passcode_value", "") ?: ""
-                        if (com.example.twopchat.SecurityUtils.verifyAndMigratePasscode(verifyPin, correctPin, sharedPrefs, "passcode_value")) {
+                        if (SecurityUtils.verifyAndMigratePasscode(verifyPin, correctPin, sharedPrefs, "passcode_value")) {
                             showPinForBackupDialog = false
                             verifyPin = ""
                             verifyPinError = false
@@ -3576,7 +3694,7 @@ fun SettingsTab(
                         } else {
                             if (pin1 == pin2) {
                                 sharedPrefs.edit()
-                                    .putString("passcode_value", com.example.twopchat.SecurityUtils.protectPasscode(pin1))
+                                    .putString("passcode_value", SecurityUtils.protectPasscode(pin1))
                                     .putBoolean("settings_passcode", true)
                                     .apply()
                                 passcodeLock = true
@@ -3668,7 +3786,7 @@ fun SettingsTab(
                 Button(
                     onClick = {
                         val correctPin = sharedPrefs.getString("passcode_value", "") ?: ""
-                        if (com.example.twopchat.SecurityUtils.verifyAndMigratePasscode(enteredPin, correctPin, sharedPrefs, "passcode_value")) {
+                        if (SecurityUtils.verifyAndMigratePasscode(enteredPin, correctPin, sharedPrefs, "passcode_value")) {
                             sharedPrefs.edit()
                                 .putBoolean("settings_passcode", false)
                                 .remove("passcode_value")
@@ -3884,7 +4002,7 @@ fun SettingsTab(
                     onClick = {
                         if (!isDuressConfirming) {
                             if (duressPin1.length == 4) {
-                                if (com.example.twopchat.SecurityUtils.verifyPasscode(duressPin1, mainPinVal)) {
+                                if (SecurityUtils.verifyPasscode(duressPin1, mainPinVal)) {
                                     duressMatchesMainError = true
                                     duressPin1 = ""
                                 } else {
@@ -3894,7 +4012,7 @@ fun SettingsTab(
                         } else {
                             if (duressPin1 == duressPin2) {
                                 sharedPrefs.edit()
-                                    .putString("passcode_duress_value", com.example.twopchat.SecurityUtils.protectPasscode(duressPin1))
+                                    .putString("passcode_duress_value", SecurityUtils.protectPasscode(duressPin1))
                                     .apply()
                                 showSetDuressDialog = false
 

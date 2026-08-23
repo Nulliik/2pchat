@@ -7,7 +7,8 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.zip.GZIPInputStream
-import com.example.twopchat.SecureStorage
+import com.example.twopchat.config.*
+import com.example.twopchat.security.*
 
 // БАГ 1 ИСПРАВЛЕН: Был object (singleton с race condition).
 // Теперь это обычный класс — каждый экземпляр владеет своим файлом/json и не конкурирует с другими.
@@ -38,7 +39,7 @@ class ConfigurationProxy(applicationContext: Context) {
     private var json: JSONObject
     private val file: File
     private val appContext = applicationContext.applicationContext
-    private val preferences = com.example.twopchat.P2PPreferences.prefs(appContext)
+    private val preferences = com.example.twopchat.config.P2PPreferences.prefs(appContext)
 
     init {
         file = File(applicationContext.filesDir, "yggdrasil.conf")
@@ -77,8 +78,29 @@ class ConfigurationProxy(applicationContext: Context) {
     }
 
     private fun readConfig(): String {
-        val stored = file.readText(Charsets.UTF_8)
-        return SecureStorage.decrypt(stored) ?: error("Empty Yggdrasil configuration")
+        return try {
+            if (!file.exists()) {
+                val fresh = String(Mobile.generateConfigJSON(), Charsets.UTF_8)
+                persist(fresh)
+                return fresh
+            }
+            val stored = file.readText(Charsets.UTF_8)
+            val decrypted = SecureStorage.decrypt(stored)
+            if (!decrypted.isNullOrBlank()) {
+                decrypted
+            } else if (stored.trim().startsWith("{")) {
+                persist(stored)
+                stored
+            } else {
+                val fresh = String(Mobile.generateConfigJSON(), Charsets.UTF_8)
+                persist(fresh)
+                fresh
+            }
+        } catch (e: Throwable) {
+            val fresh = String(Mobile.generateConfigJSON(), Charsets.UTF_8)
+            runCatching { persist(fresh) }
+            fresh
+        }
     }
 
     private fun persist(plainText: String) {

@@ -2,6 +2,8 @@ package com.example.twopchat
 
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.tor.TorBridgeCatalog
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

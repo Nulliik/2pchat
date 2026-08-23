@@ -23,7 +23,7 @@ import androidx.compose.ui.test.swipeUp
 import androidx.core.app.FrameMetricsAggregator
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.filters.LargeTest
-import com.example.twopchat.GifStorageManager
+import com.example.twopchat.media.GifStorageManager
 import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals

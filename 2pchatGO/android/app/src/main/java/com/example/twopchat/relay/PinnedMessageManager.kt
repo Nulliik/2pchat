@@ -1,12 +1,9 @@
 package com.example.twopchat.relay
 
 import android.content.Context
-import com.example.twopchat.P2PPreferences
-import com.example.twopchat.PinnedMessageStateVersion
-import com.example.twopchat.SecureStorage
+import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.security.*
 import com.example.twopchat.data.ChatDatabaseHelper
-import com.example.twopchat.nextPinnedMessageStateVersion
-import com.example.twopchat.shouldApplyPinnedMessageState
 
 internal class PinnedMessageManager {
     fun handlePinMessage(

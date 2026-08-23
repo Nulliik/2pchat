@@ -65,8 +65,8 @@ internal fun GroupMentionSuggestionBar(
             ) {
                 items(suggestions, key = { member -> member.memberId }) { member ->
                     val avatarBitmap = remember(member.displayName, member.memberId) {
-                        com.example.twopchat.P2PMessageRelay.peerAvatars[member.displayName]
-                            ?: com.example.twopchat.P2PMessageRelay.getOriginalAvatar(context, member.displayName)
+                        com.example.twopchat.relay.P2PMessageRelay.peerAvatars[member.displayName]
+                            ?: com.example.twopchat.relay.P2PMessageRelay.getOriginalAvatar(context, member.displayName)
                     }
 
                     Row(

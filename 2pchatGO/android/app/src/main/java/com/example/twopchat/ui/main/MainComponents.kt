@@ -5,9 +5,9 @@ import android.widget.Toast
 import android.content.Intent
 import android.net.VpnService
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
-import com.example.twopchat.P2PPreferences
-import com.example.twopchat.ConnectionTransportKind
-import com.example.twopchat.connectionTransportKind
+import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.relay.ConnectionTransportKind
+import com.example.twopchat.relay.connectionTransportKind
 import org.json.JSONArray
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -52,7 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation3.runtime.NavKey
 import com.example.twopchat.Chat
-import com.example.twopchat.P2PMessageRelay
+import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.theme.*
 import com.example.twopchat.data.Localizations
 import kotlinx.coroutines.Dispatchers
@@ -275,7 +275,7 @@ fun PeerRow(
                                 }.getOrNull()
                             }
                         }
-                        val avatarBitmap = customAvatar ?: com.example.twopchat.P2PMessageRelay.peerAvatars[peer.name]
+                        val avatarBitmap = customAvatar ?: com.example.twopchat.relay.P2PMessageRelay.peerAvatars[peer.name]
                         if (avatarBitmap != null) {
                             Image(
                                 bitmap = avatarBitmap.asImageBitmap(),
@@ -300,7 +300,7 @@ fun PeerRow(
                         }
                     }
                     if (peer.name != "Saved Messages") {
-                        val isOnline = com.example.twopchat.P2PMessageRelay.peerSessionStates[peer.name] == true
+                        val isOnline = com.example.twopchat.relay.P2PMessageRelay.peerSessionStates[peer.name] == true
                         if (isOnline) {
                             Box(
                                 modifier = Modifier

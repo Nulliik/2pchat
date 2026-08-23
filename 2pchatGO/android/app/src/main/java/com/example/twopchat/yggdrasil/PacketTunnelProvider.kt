@@ -10,6 +10,7 @@ import android.os.ParcelFileDescriptor
 import android.system.OsConstants
 import android.util.Log
 import androidx.core.app.ServiceCompat
+import com.example.twopchat.config.*
 import com.example.twopchat.yggdrasil.YggStateReceiver.Companion.YGG_STATE_INTENT
 import mobile.Yggdrasil
 import org.json.JSONArray
@@ -91,7 +92,7 @@ open class PacketTunnelProvider: VpnService() {
         // When another VPN starts, Android revokes our VPN slot.
         // We MUST update preferences to disabled so we don't aggressively fight the user's other VPN!
         yggdrasilPrefs(this).edit().putBoolean(PREF_KEY_ENABLED, false).apply()
-        com.example.twopchat.P2PPreferences.prefs(this).edit().putBoolean("settings_yggdrasil", false).apply()
+        com.example.twopchat.config.P2PPreferences.prefs(this).edit().putBoolean("settings_yggdrasil", false).apply()
         stop()
     }
 
@@ -418,7 +419,7 @@ open class PacketTunnelProvider: VpnService() {
                     // The first reconnect after an Android network change is
                     // intentionally early and may announce IPv4 only. Publish
                     // the Yggdrasil endpoint as soon as it is truly routable.
-                    com.example.twopchat.P2PMessageRelay.triggerImmediateReconnect(applicationContext)
+                    com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(applicationContext)
                 }
                 wasConnected = isConnected
                 lastStateUpdate = curTime
@@ -523,7 +524,7 @@ open class PacketTunnelProvider: VpnService() {
         peersJson: String = ""
     ) {
         try {
-            val sharedPrefs = com.example.twopchat.P2PPreferences.prefs(applicationContext)
+            val sharedPrefs = com.example.twopchat.config.P2PPreferences.prefs(applicationContext)
             val editor = sharedPrefs.edit()
                 .putString(PREF_YGG_RUNTIME_IP, address)
                 .putString(PREF_YGG_RUNTIME_STATE, state)

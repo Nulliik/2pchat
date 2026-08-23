@@ -25,7 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.example.twopchat.BuiltinSticker
+import com.example.twopchat.media.*
 
 @Composable
 internal fun StickerSuggestionBar(

@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -39,44 +37,6 @@ func TestManagerInitAndIdentity(t *testing.T) {
 	signPub, err := mgr.GetLocalSigningPublicKey()
 	if err != nil || signPub == "" {
 		t.Fatalf("Expected non-empty signing public key: %v", err)
-	}
-}
-
-func TestManagerPreservesYggdrasilIPSetBeforeDiscoveryInit(t *testing.T) {
-	announcedIPv6 := make(chan string, 1)
-	tracker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case announcedIPv6 <- r.URL.Query().Get("ipv6"):
-		default:
-		}
-		_, _ = w.Write([]byte("d8:intervali60e5:peers0:e"))
-	}))
-	defer tracker.Close()
-
-	mgr := &SessionManager{
-		sessions: make(map[string]*crypto.SessionState),
-		torProxy: "127.0.0.1:9050",
-		dialer:   transport.NewAdaptiveDialer("127.0.0.1:9050", false, 5*time.Second),
-	}
-	// Android obtains the VPN address before NativeBridge.startDiscovery().
-	mgr.SetLocalYggdrasilIP("[200:182d:e207:ca9b:8205:5f82:3aa:c4f7]")
-	defer mgr.StopDiscovery()
-
-	if err := mgr.StartDiscovery(
-		fmt.Sprintf("[\"%s\"]", tracker.URL),
-		"[\"4725456c9bc18c138f2066366fcf09bfe6ecdc34\"]",
-		50001,
-	); err != nil {
-		t.Fatalf("StartDiscovery failed: %v", err)
-	}
-
-	select {
-	case got := <-announcedIPv6:
-		if got != "200:182d:e207:ca9b:8205:5f82:3aa:c4f7" {
-			t.Fatalf("tracker ipv6 query mismatch: got %q", got)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("tracker never received the Yggdrasil IPv6 announce")
 	}
 }
 

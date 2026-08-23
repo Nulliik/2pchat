@@ -30,7 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.R
-import com.example.twopchat.VoiceMessageSupport
+import com.example.twopchat.media.*
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.theme.StealthBlack
 
@@ -56,8 +56,8 @@ internal fun ChatInputBar(
     surfaceVariant: Color,
     onSurfaceColor: Color,
     onSurfaceVariant: Color,
-    suggestedStickers: List<com.example.twopchat.BuiltinSticker> = emptyList(),
-    onSelectSuggestedSticker: (com.example.twopchat.BuiltinSticker) -> Unit = {},
+    suggestedStickers: List<BuiltinSticker> = emptyList(),
+    onSelectSuggestedSticker: (BuiltinSticker) -> Unit = {},
     onAttachmentClick: (String) -> Unit,
     onDismissReply: () -> Unit,
     onDismissEditing: () -> Unit,

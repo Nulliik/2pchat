@@ -8,7 +8,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
-import com.example.twopchat.StickerSupport
+import com.example.twopchat.media.StickerSupport
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import org.json.JSONArray

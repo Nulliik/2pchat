@@ -2,8 +2,8 @@ package com.example.twopchat.data.repository
 
 import android.content.Context
 import android.graphics.Bitmap
-import com.example.twopchat.P2PMessageRelay
-import com.example.twopchat.P2PPreferences
+import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.config.P2PPreferences
 
 class DefaultPeerRepository : PeerRepository {
 
@@ -15,7 +15,7 @@ class DefaultPeerRepository : PeerRepository {
         return P2PMessageRelay.peerConnectionTransports[peerName]
     }
 
-    override fun getPeerTransportType(peerName: String): com.example.twopchat.TransportType {
+    override fun getPeerTransportType(peerName: String): com.example.twopchat.relay.TransportType {
         return P2PMessageRelay.getPeerTransportType(peerName)
     }
 

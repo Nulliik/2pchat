@@ -1,5 +1,12 @@
 package com.example.twopchat
 
+import com.example.twopchat.relay.*
+import com.example.twopchat.config.*
+import com.example.twopchat.security.*
+import com.example.twopchat.service.*
+import com.example.twopchat.media.*
+import com.example.twopchat.tor.*
+
 import com.example.twopchat.security.ImageSanitizer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,6 +41,8 @@ class ImageSanitizerTest {
         assertFalse(ImageSanitizer.isSanitizableImage("archive.zip"))
         assertFalse(ImageSanitizer.isSanitizableImage(""))
         assertFalse(ImageSanitizer.isSanitizableImage("no_extension_file"))
+        assertFalse(ImageSanitizer.isSanitizableImage("2psticker_moods--hello.webp"))
+        assertFalse(ImageSanitizer.isSanitizableImage("2pstickerpack_pack1.2psticker"))
     }
 
     @Test
