@@ -158,6 +158,9 @@ class NativeBridgeImpl : IP2PBridge {
                             val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
                             val existingFP = P2PPreferences.prefs(appContext).getString(P2PPreferences.peerFingerprint(remoteNick), null)
                             if (existingFP.isNullOrBlank() || existingFP == peerFP) {
+                                val wasNameOnline = onlinePeers[remoteNick] == true
+                                val existingNameForFingerprint = peerNameMap[peerFP]
+                                val existingFingerprintForName = nameToFpMap[remoteNick]
                                 peerNameMap[peerFP] = remoteNick
                                 nameToFpMap[remoteNick] = peerFP
                                 onlinePeers[remoteNick] = true
@@ -166,7 +169,20 @@ class NativeBridgeImpl : IP2PBridge {
                                     .putString(P2PPreferences.peerFingerprint(remoteNick), peerFP)
                                     .apply()
                                 NativeBridge.updatePeerNameMapping(peerFP, remoteNick)
-                                sessionListener?.onSessionEstablished(remoteNick, peerFP, "", "direct", "")
+                                // Profile frames may be repeated. Treat them as metadata updates,
+                                // not fresh transport sessions; otherwise the session callback
+                                // clears the profile-share cooldown and both peers echo profile
+                                // frames forever until the process exhausts resources.
+                                if (shouldPublishIdentitySessionEstablished(
+                                        wasNameOnline = wasNameOnline,
+                                        existingNameForFingerprint = existingNameForFingerprint,
+                                        existingFingerprintForName = existingFingerprintForName,
+                                        remoteNick = remoteNick,
+                                        peerFP = peerFP,
+                                    )
+                                ) {
+                                    sessionListener?.onSessionEstablished(remoteNick, peerFP, "", "direct", "")
+                                }
                             } else {
                                 Log.w(TAG, "[Security] TOFU key change detected for $remoteNick: existing=$existingFP, incoming=$peerFP")
                                 P2PPreferences.recordPendingPeerIdentity(appContext, remoteNick, peerFP, "")
@@ -241,15 +257,15 @@ class NativeBridgeImpl : IP2PBridge {
 
         val hashes = mutableListOf<String>()
         if (fingerprint.isNotBlank()) {
-            hashes.add(fingerprint)
+            hashes.add(discoveryInfoHash(fingerprint))
         }
         if (!rendezvousCode.isNullOrBlank()) {
-            hashes.add(rendezvousCode)
+            hashes.add(discoveryInfoHash(rendezvousCode))
         }
 
         NativeBridge.startDiscovery(trackers, hashes, port)
-        if (fingerprint.isNotBlank()) {
-            NativeBridge.announceSelf(fingerprint, port)
+        if (hashes.isNotEmpty()) {
+            NativeBridge.announceSelf(hashes.first(), port)
         }
         return true
     }
@@ -520,11 +536,7 @@ class NativeBridgeImpl : IP2PBridge {
         val targetCode = sharedCode?.takeIf { it.isNotBlank() }
             ?: expectedFingerprint?.takeIf { it.isNotBlank() }
             ?: query
-        val infoHash = java.security.MessageDigest.getInstance("SHA-256")
-            .digest(targetCode.toByteArray(Charsets.UTF_8))
-            .take(20)
-            .toByteArray()
-            .joinToString("") { "%02x".format(it) }
+        val infoHash = discoveryInfoHash(targetCode)
 
         val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
         val trackers = com.example.twopchat.config.TrackerPreferences.getActiveTrackerUrls(appContext)
@@ -553,3 +565,19 @@ class NativeBridgeImpl : IP2PBridge {
     override fun restoreFromMnemonic(nickname: String, mnemonic: String, aboutMe: String): Boolean =
         NativeBridge.restoreFromMnemonic(nickname, mnemonic, aboutMe)
 }
+
+internal fun shouldPublishIdentitySessionEstablished(
+    wasNameOnline: Boolean,
+    existingNameForFingerprint: String?,
+    existingFingerprintForName: String?,
+    remoteNick: String,
+    peerFP: String,
+): Boolean = !wasNameOnline ||
+    existingNameForFingerprint != remoteNick ||
+    existingFingerprintForName != peerFP
+
+internal fun discoveryInfoHash(value: String): String =
+    java.security.MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8))
+        .take(20)
+        .joinToString("") { "%02x".format(it) }

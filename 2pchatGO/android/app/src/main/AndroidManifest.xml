@@ -123,6 +123,7 @@
         <service
             android:name=".yggdrasil.PacketTunnelProvider"
             android:label="2PChat Yggdrasil VPN"
+            android:process=":yggdrasil"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:foregroundServiceType="specialUse"
             android:exported="false">

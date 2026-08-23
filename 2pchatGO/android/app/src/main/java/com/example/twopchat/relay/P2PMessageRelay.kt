@@ -2055,6 +2055,15 @@ object P2PMessageRelay {
                 override fun onPeerDiscovered(infoHash: String, endpoint: String, source: String) {
                     if (endpoint.isBlank() || infoHash.isBlank()) return
                     val prefs = P2PPreferences.prefs(appContext)
+                    val localHosts = listOfNotNull(
+                        getLocalIpAddress(appContext).takeIf { it.isNotBlank() },
+                        getYggdrasilAddress().takeIf { it.isNotBlank() },
+                        P2PPreferences.getTorOnionHostname(appContext),
+                    )
+                    if (isSelfDiscoveryEndpoint(endpoint, localHosts)) {
+                        log(appContext, "Ignoring own endpoint $endpoint returned by $source discovery")
+                        return
+                    }
                     val activeChats = prefs.getStringSet("active_chats", emptySet()) ?: emptySet()
 
                     for (peerName in activeChats) {
@@ -2833,5 +2842,17 @@ object P2PMessageRelay {
         avatarCache.loadPersisted(context) { error ->
             Log.e(TAG, "Error loading persisted avatars", error)
         }
+    }
+}
+
+internal fun isSelfDiscoveryEndpoint(endpoint: String, localHosts: Collection<String>): Boolean {
+    val clean = endpoint.trim()
+    val host = if (clean.startsWith("[")) {
+        clean.substringAfter('[').substringBefore(']')
+    } else {
+        clean.substringBeforeLast(':', clean)
+    }.substringBefore('%').trim().lowercase()
+    return host.isNotEmpty() && localHosts.any {
+        it.substringBefore('%').trim().trim('[', ']').lowercase() == host
     }
 }

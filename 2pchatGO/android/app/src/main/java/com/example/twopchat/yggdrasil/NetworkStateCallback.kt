@@ -23,11 +23,11 @@ class NetworkStateCallback(val context: Context) : ConnectivityManager.NetworkCa
         com.example.twopchat.NativeBridge.onNetworkChanged()
 
         val preferences = yggdrasilPrefs(context)
-        if (preferences.getBoolean(PREF_KEY_ENABLED, false) && PacketTunnelProvider.isTunnelActive && VpnService.prepare(context) == null) {
+        if (preferences.getBoolean(PREF_KEY_ENABLED, false) && PacketTunnelProvider.isTunnelActive(context) && VpnService.prepare(context) == null) {
             scope.launch {
                 // The message often arrives before the connection is fully established
                 delay(1000)
-                if (!yggdrasilPrefs(context).getBoolean(PREF_KEY_ENABLED, false) || !PacketTunnelProvider.isTunnelActive) return@launch
+                if (!yggdrasilPrefs(context).getBoolean(PREF_KEY_ENABLED, false) || !PacketTunnelProvider.isTunnelActive(context)) return@launch
                 runCatching {
                     val intent = Intent(context, PacketTunnelProvider::class.java)
                     intent.action = PacketTunnelProvider.ACTION_CONNECT

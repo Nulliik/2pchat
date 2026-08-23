@@ -263,7 +263,7 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, error) {
 	timeout := 15 * time.Second
 	if strings.HasSuffix(strings.ToLower(endpoint), ".onion") || (m.dialer != nil && m.dialer.ClassifyEndpoint(endpoint) == transport.TransportTor) {
-		timeout = 45 * time.Second
+		timeout = transport.DefaultTorDialTimeout
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

@@ -83,7 +83,12 @@ func (m *SessionManager) Init() error {
 
 	effectiveDir := m.storageDir
 	if effectiveDir == "" {
-		for _, fallback := range []string{"/data/user/0/com.example.twopchat/files", "/data/data/com.example.twopchat/files"} {
+		for _, fallback := range []string{
+			"/data/user/0/com.example.twopchat.go/files",
+			"/data/data/com.example.twopchat.go/files",
+			"/data/user/0/com.example.twopchat/files",
+			"/data/data/com.example.twopchat/files",
+		} {
 			if info, err := os.Stat(fallback); err == nil && info.IsDir() {
 				effectiveDir = fallback
 				m.storageDir = fallback
@@ -323,7 +328,7 @@ func (m *SessionManager) ProbePeer(endpointsJSON, expectedFingerprint string) er
 		timeout := 15 * time.Second
 		for _, ep := range endpoints {
 			if strings.HasSuffix(strings.ToLower(ep), ".onion") {
-				timeout = 45 * time.Second
+				timeout = transport.DefaultTorDialTimeout
 				break
 			}
 		}

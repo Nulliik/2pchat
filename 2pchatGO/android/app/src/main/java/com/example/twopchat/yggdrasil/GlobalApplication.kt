@@ -53,6 +53,16 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
             // before it is granted makes Builder.establish() return null.
             prefs.edit().putBoolean(PREF_KEY_ENABLED, false).apply()
         }
+
+        // libgojni.so (Yggdrasil/gomobile) and lib2pcore.so each embed a Go
+        // runtime. Loading both runtimes in one Android process corrupts cgo
+        // callback unwinding and aborts with "fatal error: unknown caller pc".
+        // The VPN service has its own process, so keep all main-process P2P
+        // initialization out of that process.
+        if (isYggdrasilServiceProcess(Application.getProcessName())) {
+            return
+        }
+
         config = ConfigurationProxy(applicationContext)
         val callback = NetworkStateCallback(this)
         callback.register()
@@ -98,6 +108,9 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
         }
     }
 }
+
+internal fun isYggdrasilServiceProcess(processName: String?): Boolean =
+    processName?.endsWith(":yggdrasil") == true
 
 fun createServiceNotification(context: Context, state: State): Notification {
     createNotificationChannels(context)

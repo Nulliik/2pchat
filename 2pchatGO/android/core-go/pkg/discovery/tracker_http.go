@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 	"twopchat/core/pkg/transport"
 )
@@ -109,11 +111,15 @@ func (c *HTTPTrackerClient) Announce(
 		return nil, fmt.Errorf("failed to read tracker response body: %w", err)
 	}
 
-	return ParseHTTPAnnounceResponse(body)
+	return parseHTTPAnnounceResponse(body, isYggdrasilTrackerHost(u.Hostname()))
 }
 
 // ParseHTTPAnnounceResponse parses Bencoded tracker dictionary response.
 func ParseHTTPAnnounceResponse(data []byte) (*AnnounceResult, error) {
+	return parseHTTPAnnounceResponse(data, false)
+}
+
+func parseHTTPAnnounceResponse(data []byte, yggdrasilTracker bool) (*AnnounceResult, error) {
 	if len(data) == 0 {
 		return nil, errors.New("empty HTTP tracker response")
 	}
@@ -138,20 +144,50 @@ func ParseHTTPAnnounceResponse(data []byte) (*AnnounceResult, error) {
 		}
 	}
 
-	// Look for compact peers string (e.g. 5:peers<len>:<data>)
-	if peerIdx := bytes.Index(data, []byte("5:peers")); peerIdx != -1 {
-		start := peerIdx + 7
-		if colon := bytes.IndexByte(data[start:], ':'); colon != -1 {
-			lenStr := string(data[start : start+colon])
-			if peerLen, err := strconv.Atoi(lenStr); err == nil {
-				dataStart := start + colon + 1
-				if dataStart+peerLen <= len(data) {
-					peersBinary := data[dataStart : dataStart+peerLen]
-					res.Peers = ParseCompactIPv4Peers(peersBinary)
-				}
-			}
+	// Some Yggdrasil-only trackers return 18-byte IPv6 compact entries under
+	// the legacy `peers` key instead of BEP 7's `peers6` key. Decoding that
+	// payload in six-byte chunks creates three bogus IPv4 candidates per peer.
+	if peersBinary, ok := compactPeerValue(data, "peers"); ok {
+		if yggdrasilTracker {
+			res.Peers = append(res.Peers, ParseCompactIPv6Peers(peersBinary)...)
+		} else {
+			res.Peers = append(res.Peers, ParseCompactIPv4Peers(peersBinary)...)
 		}
+	}
+	if peers6Binary, ok := compactPeerValue(data, "peers6"); ok {
+		res.Peers = append(res.Peers, ParseCompactIPv6Peers(peers6Binary)...)
 	}
 
 	return res, nil
+}
+
+func compactPeerValue(data []byte, key string) ([]byte, bool) {
+	marker := []byte(strconv.Itoa(len(key)) + ":" + key)
+	idx := bytes.Index(data, marker)
+	if idx < 0 {
+		return nil, false
+	}
+	lengthStart := idx + len(marker)
+	colon := bytes.IndexByte(data[lengthStart:], ':')
+	if colon < 1 {
+		return nil, false
+	}
+	peerLen, err := strconv.Atoi(string(data[lengthStart : lengthStart+colon]))
+	if err != nil || peerLen < 0 {
+		return nil, false
+	}
+	valueStart := lengthStart + colon + 1
+	if valueStart+peerLen > len(data) {
+		return nil, false
+	}
+	return data[valueStart : valueStart+peerLen], true
+}
+
+func isYggdrasilTrackerHost(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil || !strings.Contains(host, ":") {
+		return false
+	}
+	bytes16 := ip.To16()
+	return len(bytes16) == net.IPv6len && bytes16[0]&0xfe == 0x02
 }

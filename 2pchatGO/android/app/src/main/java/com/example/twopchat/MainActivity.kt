@@ -152,7 +152,7 @@ class MainActivity : ComponentActivity() {
         }
         if (
             preferences.getBoolean("settings_yggdrasil", false) &&
-            com.example.twopchat.yggdrasil.PacketTunnelProvider.isTunnelActive &&
+            com.example.twopchat.yggdrasil.PacketTunnelProvider.isTunnelActive(appContext) &&
             android.net.VpnService.prepare(appContext) == null
         ) {
             runCatching {

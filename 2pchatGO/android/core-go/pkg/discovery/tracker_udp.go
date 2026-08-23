@@ -157,11 +157,15 @@ func (c *UDPTrackerClient) Announce(
 		return nil, fmt.Errorf("failed to read announce response: %w", err)
 	}
 
-	return ParseUDPAnnounceResponse(buf[:n], txID)
+	return parseUDPAnnounceResponse(buf[:n], txID, isYggdrasilTrackerHost(u.Hostname()))
 }
 
 // ParseUDPAnnounceResponse decodes a raw BEP 15 announce response buffer.
 func ParseUDPAnnounceResponse(data []byte, expectedTxID uint32) (*AnnounceResult, error) {
+	return parseUDPAnnounceResponse(data, expectedTxID, false)
+}
+
+func parseUDPAnnounceResponse(data []byte, expectedTxID uint32, ipv6Peers bool) (*AnnounceResult, error) {
 	if len(data) < 20 {
 		return nil, errors.New("announce response too short")
 	}
@@ -187,7 +191,12 @@ func ParseUDPAnnounceResponse(data []byte, expectedTxID uint32) (*AnnounceResult
 	seeders := int(binary.BigEndian.Uint32(data[16:20]))
 
 	peersData := data[20:]
-	peers := ParseCompactIPv4Peers(peersData)
+	var peers []PeerEndpoint
+	if ipv6Peers {
+		peers = ParseCompactIPv6Peers(peersData)
+	} else {
+		peers = ParseCompactIPv4Peers(peersData)
+	}
 
 	return &AnnounceResult{
 		Interval: interval,
@@ -211,6 +220,24 @@ func ParseCompactIPv4Peers(data []byte) []PeerEndpoint {
 			})
 		}
 		data = data[6:]
+	}
+	return peers
+}
+
+// ParseCompactIPv6Peers parses BEP 7 compact IPv6 peers (16-byte IP + port).
+func ParseCompactIPv6Peers(data []byte) []PeerEndpoint {
+	var peers []PeerEndpoint
+	for len(data) >= 18 {
+		ip := append(net.IP(nil), data[:16]...)
+		port := int(binary.BigEndian.Uint16(data[16:18]))
+		if port > 0 && !ip.IsUnspecified() {
+			peers = append(peers, PeerEndpoint{
+				IP:   ip,
+				Port: port,
+				Raw:  net.JoinHostPort(ip.String(), strconv.Itoa(port)),
+			})
+		}
+		data = data[18:]
 	}
 	return peers
 }

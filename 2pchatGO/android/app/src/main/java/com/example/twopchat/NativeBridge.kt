@@ -68,6 +68,11 @@ object NativeBridge {
     fun initialize(): Boolean {
         if (!isLoaded) return false
         return try {
+            // The Go manager must know the app-private directory before its
+            // first Init call. Otherwise it creates an in-memory identity and
+            // every process restart looks like a hostile peer-key change.
+            val context = com.example.twopchat.yggdrasil.GlobalApplication.getContext()
+            nativeSetStorageDir(context.filesDir.absolutePath)
             nativeInit()
         } catch (e: Throwable) {
             Log.e(TAG, "nativeInit failed", e)
@@ -590,4 +595,3 @@ object NativeBridge {
     private external fun nativeGetNatDiagnosticsJSON(): String?
     private external fun nativeOnNetworkChanged(): Boolean
 }
-

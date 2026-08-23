@@ -40,6 +40,24 @@ open class PacketTunnelProvider: VpnService() {
         @Volatile
         var isTunnelActive: Boolean = false
             internal set
+
+        /** Returns the cross-process tunnel state visible to the main app. */
+        fun isTunnelActive(context: Context): Boolean {
+            if (isTunnelActive) return true
+            return runCatching {
+                val connectivity = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+                connectivity.allNetworks.any { network ->
+                    val capabilities = connectivity.getNetworkCapabilities(network)
+                    val links = connectivity.getLinkProperties(network)
+                    capabilities?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true &&
+                        links?.linkAddresses.orEmpty().any { link ->
+                            val host = link.address.hostAddress.orEmpty().substringBefore('%').lowercase()
+                            host.startsWith("200:") || host.startsWith("300:") ||
+                                host.startsWith("0200:") || host.startsWith("0300:")
+                        }
+                }
+            }.getOrDefault(false)
+        }
     }
 
     private var yggdrasil = Yggdrasil()
@@ -372,7 +390,6 @@ open class PacketTunnelProvider: VpnService() {
         // fresh connection look failed on phones.
         var lastStateUpdate = 0L
         val probeStartedAt = System.currentTimeMillis()
-        var wasConnected = false
         updates@ while (started.get()) {
             if (readerThread?.isAlive != true || writerThread?.isAlive != true) {
                 Log.w(TAG, "Tunnel packet worker stopped unexpectedly; rebuilding it")
@@ -414,14 +431,11 @@ open class PacketTunnelProvider: VpnService() {
                 intent.putExtra("state", state)
                 intent.setPackage(packageName)
                 sendBroadcast(intent)
-                val isConnected = state == STATE_CONNECTED && routes > 0
-                if (isConnected && !wasConnected) {
-                    // The first reconnect after an Android network change is
-                    // intentionally early and may announce IPv4 only. Publish
-                    // the Yggdrasil endpoint as soon as it is truly routable.
-                    com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(applicationContext)
-                }
-                wasConnected = isConnected
+                // The package-scoped state broadcast above is handled by
+                // GlobalApplication in the main process. Do not call the P2P
+                // relay here: this VPN process owns libgojni, while the relay
+                // loads lib2pcore, and two Go runtimes in one process corrupt
+                // cgo callback unwinding.
                 lastStateUpdate = curTime
             }
 
