@@ -27,7 +27,7 @@ def test_binary_file_chunk_round_trip_has_fixed_21_byte_header():
 
     encoded = protocol.encode_file_chunk(file_id, 15, encrypted_chunk)
 
-    assert encoded[:1] == b"\x02"
+    assert encoded[:1] == b"\x03"
     assert encoded[1:13] == file_id
     assert struct.unpack(">I", encoded[13:17])[0] == 15
     assert struct.unpack(">I", encoded[17:21])[0] == len(encrypted_chunk)
@@ -38,7 +38,19 @@ def test_binary_file_chunk_round_trip_has_fixed_21_byte_header():
         "file_id": base64.b64encode(file_id).decode("ascii"),
         "chunk_index": 15,
         "payload": encrypted_chunk,
+        "chunk_format": "binary-v2",
     }
+
+
+def test_legacy_binary_v1_file_chunk_remains_receive_compatible():
+    encoded = bytearray(protocol.encode_file_chunk(b"abcdefghijkl", 2, b"legacy"))
+    encoded[0] = protocol.LEGACY_FILE_CHUNK_FRAME_TYPE
+
+    decoded = protocol.decode_message(bytes(encoded))
+
+    assert decoded["chunk_format"] == "binary-v1"
+    assert decoded["chunk_index"] == 2
+    assert decoded["payload"] == b"legacy"
 
 
 def test_binary_file_chunk_rejects_wrong_declared_size():
@@ -78,7 +90,7 @@ def test_structured_file_chunk_cannot_be_decoded():
 
 
 def test_binary_file_metadata_is_required():
-    with pytest.raises(ValueError, match="chunk_format=binary-v1"):
+    with pytest.raises(ValueError, match="chunk_format=binary-v2"):
         protocol.validate_file_metadata(
             {
                 "type": "file_meta",
@@ -86,7 +98,7 @@ def test_binary_file_metadata_is_required():
             }
         )
 
-    with pytest.raises(ValueError, match="chunk_format=binary-v1"):
+    with pytest.raises(ValueError, match="chunk_format=binary-v2"):
         protocol.decode_message(
             json.dumps(
                 {
@@ -100,7 +112,7 @@ def test_binary_file_metadata_is_required():
 def test_binary_file_chunk_rejects_payload_larger_than_256_kib():
     oversized = b"x" * (protocol.MAX_FILE_CHUNK_PAYLOAD_SIZE + 1)
 
-    with pytest.raises(ValueError, match="exceeds the binary-v1 maximum"):
+    with pytest.raises(ValueError, match="exceeds the binary-v2 maximum"):
         protocol.encode_file_chunk(b"x" * 12, 0, oversized)
 
 

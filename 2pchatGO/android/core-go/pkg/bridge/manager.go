@@ -61,9 +61,19 @@ func GetManager() *SessionManager {
 // SetCallbacks sets the event callback hooks for JNI dispatch.
 func (m *SessionManager) SetCallbacks(cb session.EventCallbacks, onPeerDisc discovery.DiscoveryCallback) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.callbacks = cb
 	m.onPeerDisc = onPeerDisc
+	netManager := m.netManager
+	m.mu.Unlock()
+	if netManager != nil {
+		netManager.SetCallbacks(cb)
+	}
+}
+
+func (m *SessionManager) callbackSnapshot() (session.EventCallbacks, discovery.DiscoveryCallback) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.callbacks, m.onPeerDisc
 }
 
 // SetStorageDir sets the persistent directory for cryptographic keys and downloads.
@@ -183,8 +193,9 @@ func (m *SessionManager) Init() error {
 			m.dialer,
 			m.torEnabled,
 			func(infoHashHex, endpoint, source string) {
-				if m.onPeerDisc != nil {
-					m.onPeerDisc(infoHashHex, endpoint, source)
+				_, onPeerDiscovered := m.callbackSnapshot()
+				if onPeerDiscovered != nil {
+					onPeerDiscovered(infoHashHex, endpoint, source)
 				}
 			},
 		)
@@ -339,8 +350,9 @@ func (m *SessionManager) ProbePeer(endpointsJSON, expectedFingerprint string) er
 			return dialer.DialContext(c, "tcp", ep)
 		})
 		if err != nil {
-			if m.callbacks.OnError != nil {
-				m.callbacks.OnError(3, fmt.Sprintf("ProbePeer failed for all endpoints: %v", err))
+			callbacks, _ := m.callbackSnapshot()
+			if callbacks.OnError != nil {
+				callbacks.OnError(3, fmt.Sprintf("ProbePeer failed for all endpoints: %v", err))
 			}
 			return
 		}
@@ -591,8 +603,9 @@ func (m *SessionManager) ConnectPeer(endpoint, expectedFingerprint string) error
 
 	go func() {
 		_, err := nm.ConnectPeer(endpoint, expectedFingerprint)
-		if err != nil && m.callbacks.OnError != nil {
-			m.callbacks.OnError(2, fmt.Sprintf("ConnectPeer to %s failed: %v", endpoint, err))
+		callbacks, _ := m.callbackSnapshot()
+		if err != nil && callbacks.OnError != nil {
+			callbacks.OnError(2, fmt.Sprintf("ConnectPeer to %s failed: %v", endpoint, err))
 		}
 	}()
 

@@ -2,6 +2,7 @@ package crypto
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
 	"os"
@@ -9,6 +10,62 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestPythonGroupSignatureInterop(t *testing.T) {
+	pythonRoot := os.Getenv("P2PCHAT_PYTHON_ROOT")
+	if pythonRoot == "" {
+		t.Skip("set P2PCHAT_PYTHON_ROOT to the Python core checkout to run cross-core interop")
+	}
+	const payload = "2pchat-group-event-signature-v1\n1\ngroup-interop\nmessage"
+	seed := bytes.Repeat([]byte{0x55}, ed25519.SeedSize)
+	privateKey := ed25519.NewKeyFromSeed(seed)
+	publicKey := privateKey.Public().(ed25519.PublicKey)
+
+	python := `
+import base64
+import sys
+from nacl.signing import SigningKey
+import messenger.discovery_bridge as bridge
+
+key = SigningKey(bytes.fromhex(sys.argv[2]))
+bridge.load_or_create_signing_identity = lambda: key
+mode, payload = sys.argv[1], sys.argv[3]
+if mode == "sign":
+    print(bridge.sign_group_payload(payload))
+else:
+    print("true" if bridge.verify_group_payload(
+        base64.b64encode(bytes(key.verify_key)).decode("ascii"),
+        payload,
+        sys.argv[4],
+    ) else "false")
+`
+	pythonCommand := func(args ...string) *exec.Cmd {
+		cmd := exec.Command("python", args...)
+		cmd.Env = append(os.Environ(), "PYTHONPATH="+pythonRoot)
+		return cmd
+	}
+
+	output, err := pythonCommand("-c", python, "sign", hex.EncodeToString(seed), payload).CombinedOutput()
+	if err != nil {
+		t.Fatalf("Python group signing failed: %v: %s", err, output)
+	}
+	pythonSignature := strings.TrimSpace(string(output))
+	if !VerifyGroupPayload(publicKey, payload, pythonSignature) {
+		t.Fatal("Go rejected Python v2 group signature")
+	}
+
+	goSignature, err := SignGroupPayload(privateKey, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err = pythonCommand("-c", python, "verify", hex.EncodeToString(seed), payload, goSignature).CombinedOutput()
+	if err != nil {
+		t.Fatalf("Python group verification failed: %v: %s", err, output)
+	}
+	if strings.TrimSpace(string(output)) != "true" {
+		t.Fatal("Python rejected Go v2 group signature")
+	}
+}
 
 func TestPythonRatchetPacketInterop(t *testing.T) {
 	// This is intentionally a live cross-language test: self-contained Go

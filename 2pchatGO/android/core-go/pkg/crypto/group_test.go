@@ -2,7 +2,9 @@ package crypto
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"testing"
 )
 
@@ -38,6 +40,25 @@ func TestGroupIdentitySignAndVerify(t *testing.T) {
 	_, otherPubKey, _ := GenerateEd25519Keypair()
 	if VerifyGroupPayload(otherPubKey, payload, sigB64) {
 		t.Fatal("VerifyGroupPayload succeeded with wrong public key")
+	}
+}
+
+func TestGroupSignatureAcceptsLegacyReceiveTranscripts(t *testing.T) {
+	pubKey, privKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const payload = "2pchat-group-event-signature-v1\n1\ngroup-1"
+	for name, transcript := range map[string][]byte{
+		"python-v1": append([]byte(legacyPythonGroupSignatureContextV1), []byte(payload)...),
+		"go-v1":     []byte(payload),
+	} {
+		t.Run(name, func(t *testing.T) {
+			sig := base64.StdEncoding.EncodeToString(ed25519.Sign(privKey, transcript))
+			if !VerifyGroupPayload(pubKey, payload, sig) {
+				t.Fatalf("rejected %s migration signature", name)
+			}
+		})
 	}
 }
 

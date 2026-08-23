@@ -13,10 +13,11 @@ class IdentitySessionNotificationGuardTest {
 
     @Test
     fun discoveryHashIsStableTrackerCompatibleTwentyByteHex() {
-        val hash = discoveryInfoHash("060fa7de")
+        val hash = discoveryInfoHash("Null", "36571c05")
         assertEquals(40, hash.length)
         assertTrue(hash.matches(Regex("[0-9a-f]{40}")))
-        assertEquals(hash, discoveryInfoHash("060fa7de"))
+        assertEquals("4725456c9bc18c138f2066366fcf09bfe6ecdc34", hash)
+        assertEquals(hash, discoveryInfoHash("  nuLL  ", "36571c05"))
     }
 
     @Test

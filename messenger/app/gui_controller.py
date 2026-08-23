@@ -1181,7 +1181,7 @@ class ChatController:
                 "file_size": file_size,
                 "num_chunks": num_chunks,
                 "chunk_size": DEFAULT_FILE_CHUNK_SIZE,
-                "chunk_format": "binary-v1",
+                "chunk_format": protocol.FILE_CHUNK_FORMAT,
                 "ack_window": DEFAULT_FILE_CHUNK_WINDOW,
                 "file_hash": base64.b64encode(file_hash).decode(),
                 "file_key": base64.b64encode(file_key).decode(),

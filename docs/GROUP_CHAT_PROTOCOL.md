@@ -196,6 +196,13 @@ AES-GCM AAD v1 связывает ciphertext с:
 
 Остальные открытые поля защищены Ed25519-подписью.
 
+Python и Go подписывают один и тот же transcript:
+`"2pchat-group-event-signature-v2\0" || canonical_payload`. Новые подписи всегда
+используют v2; проверка на время миграции также принимает прежний Python
+transcript `"2pchat-group-signature-api-v1\0" || canonical_payload` и прежнюю
+Go-подпись самого `canonical_payload`. Это меняет только domain separation
+native bridge, а JSON wire-версия `group_event_v1` остаётся прежней.
+
 Plaintext события ограничен 256 KiB. Он является JSON и расшифровывается
 только после проверки размера кадра, event ID, pinned identity, подписи,
 членства, времени и наличия ключа эпохи.

@@ -21,6 +21,14 @@ const (
 	FileIDSize = 12
 	// FileNoncePrefixSize is 16 bytes.
 	FileNoncePrefixSize = 16
+	// FileChunkFrameTypeV2 is intentionally distinct from the legacy Go
+	// reliable-binary marker (0x02).
+	FileChunkFrameTypeV2             = 0x03
+	LegacyPythonFileChunkFrameTypeV1 = 0x02
+	FileChunkHeaderSize              = 1 + FileIDSize + 4 + 4
+	FileChunkFormatV2                = "binary-v2"
+	LegacyFileChunkFormatV1          = "binary-v1"
+	DefaultFileChunkAckWindow        = 4
 )
 
 // chunkBufferPool provides reusable 256 KiB buffers to minimize GC allocations during file streaming.
@@ -52,6 +60,9 @@ func putChunkBuffer(bufPtr *[]byte, size int) {
 
 // FileMetadata contains the encryption and integrity parameters for a transferred file.
 type FileMetadata struct {
+	Type            string `json:"type,omitempty"`
+	ID              string `json:"id,omitempty"`
+	MessageID       string `json:"message_id,omitempty"`
 	FileID          []byte `json:"-"`
 	FileKey         []byte `json:"-"`
 	FileNoncePrefix []byte `json:"-"`
@@ -61,12 +72,69 @@ type FileMetadata struct {
 	FileName        string `json:"file_name,omitempty"`
 	Caption         string `json:"caption,omitempty"`
 	Emoji           string `json:"emoji,omitempty"`
+	ChunkSize       int    `json:"chunk_size,omitempty"`
+	ChunkFormat     string `json:"chunk_format,omitempty"`
+	AckWindow       int    `json:"ack_window,omitempty"`
+	Timestamp       int64  `json:"timestamp,omitempty"`
 
 	// Wire Base64 JSON fields
 	FileIDB64          string `json:"file_id"`
 	FileKeyB64         string `json:"file_key"`
 	FileNoncePrefixB64 string `json:"file_nonce_prefix"`
 	FileHashB64        string `json:"file_hash"`
+}
+
+type FileChunkFrame struct {
+	VersionType byte
+	FileID      []byte
+	ChunkIndex  uint32
+	Payload     []byte
+}
+
+// FileChunkAckID is byte-for-byte compatible with Python's
+// file_chunk_ack_id implementation.
+func FileChunkAckID(fileID []byte, chunkIndex uint32) (string, error) {
+	if len(fileID) != FileIDSize {
+		return "", fmt.Errorf("file ID must be %d bytes", FileIDSize)
+	}
+	return fmt.Sprintf("file:%s:%d", base64.RawURLEncoding.EncodeToString(fileID), chunkIndex), nil
+}
+
+func EncodeFileChunkFrame(fileID []byte, chunkIndex uint32, payload []byte) ([]byte, error) {
+	if len(fileID) != FileIDSize {
+		return nil, fmt.Errorf("file ID must be %d bytes", FileIDSize)
+	}
+	if uint64(len(payload)) > uint64(^uint32(0)) {
+		return nil, errors.New("file chunk payload is too large")
+	}
+	frame := make([]byte, FileChunkHeaderSize+len(payload))
+	frame[0] = FileChunkFrameTypeV2
+	copy(frame[1:1+FileIDSize], fileID)
+	binary.BigEndian.PutUint32(frame[1+FileIDSize:1+FileIDSize+4], chunkIndex)
+	binary.BigEndian.PutUint32(frame[1+FileIDSize+4:FileChunkHeaderSize], uint32(len(payload)))
+	copy(frame[FileChunkHeaderSize:], payload)
+	return frame, nil
+}
+
+func DecodeFileChunkFrame(frame []byte) (*FileChunkFrame, error) {
+	if len(frame) < FileChunkHeaderSize {
+		return nil, errors.New("file chunk frame is shorter than its header")
+	}
+	if frame[0] != FileChunkFrameTypeV2 && frame[0] != LegacyPythonFileChunkFrameTypeV1 {
+		return nil, fmt.Errorf("unsupported file chunk frame type: %d", frame[0])
+	}
+	payloadSize := int(binary.BigEndian.Uint32(frame[1+FileIDSize+4 : FileChunkHeaderSize]))
+	if payloadSize != len(frame)-FileChunkHeaderSize {
+		return nil, fmt.Errorf("file chunk length mismatch: declared %d, received %d", payloadSize, len(frame)-FileChunkHeaderSize)
+	}
+	fileID := append([]byte(nil), frame[1:1+FileIDSize]...)
+	payload := append([]byte(nil), frame[FileChunkHeaderSize:]...)
+	return &FileChunkFrame{
+		VersionType: frame[0],
+		FileID:      fileID,
+		ChunkIndex:  binary.BigEndian.Uint32(frame[1+FileIDSize : 1+FileIDSize+4]),
+		Payload:     payload,
+	}, nil
 }
 
 // EncodeMetadataB64 converts byte slice to base64 string.
@@ -76,6 +144,18 @@ func EncodeMetadataB64(data []byte) string {
 
 // EncodeMetadataJSON serializes FileMetadata to JSON matching Python _encode_metadata format.
 func (m *FileMetadata) EncodeMetadataJSON() ([]byte, error) {
+	if m.Type == "" {
+		m.Type = "file_meta"
+	}
+	if m.ChunkSize == 0 {
+		m.ChunkSize = DefaultChunkSize
+	}
+	if m.ChunkFormat == "" {
+		m.ChunkFormat = FileChunkFormatV2
+	}
+	if m.AckWindow == 0 {
+		m.AckWindow = DefaultFileChunkAckWindow
+	}
 	m.FileIDB64 = base64.StdEncoding.EncodeToString(m.FileID)
 	m.FileKeyB64 = base64.StdEncoding.EncodeToString(m.FileKey)
 	m.FileNoncePrefixB64 = base64.StdEncoding.EncodeToString(m.FileNoncePrefix)
@@ -102,6 +182,21 @@ func DecodeMetadataJSON(data []byte) (*FileMetadata, error) {
 	}
 	if m.FileHash, err = base64.StdEncoding.DecodeString(m.FileHashB64); err != nil {
 		return nil, errors.New("invalid file_hash base64")
+	}
+	if len(m.FileID) != FileIDSize {
+		return nil, errors.New("invalid file_id size")
+	}
+	if m.ChunkSize == 0 {
+		m.ChunkSize = DefaultChunkSize
+	}
+	if m.ChunkFormat == "" {
+		m.ChunkFormat = LegacyFileChunkFormatV1
+	}
+	if m.ChunkSize <= 0 || m.ChunkSize > DefaultChunkSize {
+		return nil, errors.New("invalid file chunk size")
+	}
+	if m.ChunkFormat != FileChunkFormatV2 && m.ChunkFormat != LegacyFileChunkFormatV1 {
+		return nil, errors.New("unsupported file chunk format")
 	}
 	return &m, nil
 }

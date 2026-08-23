@@ -76,12 +76,20 @@ object P2PMessageRelay {
     @Volatile private var storedAppContext: Context? = null
 
     internal fun getBridge(context: Context? = null): com.example.twopchat.bridge.IP2PBridge {
-        val ctx = context?.applicationContext ?: storedAppContext
-        return if (ctx != null) {
-            com.example.twopchat.bridge.P2PBridgeProvider.get(ctx)
-        } else {
-            com.example.twopchat.bridge.NativeBridgeImpl()
+        val ctx = context?.applicationContext
+            ?: storedAppContext
+            ?: runCatching {
+                com.example.twopchat.yggdrasil.GlobalApplication.appContext
+            }.getOrNull()
+        checkNotNull(ctx) {
+            "P2P bridge requested before the Android application context was initialized"
         }
+        // NativeBridge owns process-wide JNI callback slots. Constructing an
+        // unmanaged NativeBridgeImpl here replaces the provider instance's
+        // message/session callbacks and causes successfully decrypted frames to
+        // disappear before they reach the relay. Every caller must share the
+        // provider singleton, including context-free maintenance callbacks.
+        return com.example.twopchat.bridge.P2PBridgeProvider.get(ctx)
     }
 
     private val activeFileTransfers = ConcurrentHashMap.newKeySet<String>()
@@ -1056,6 +1064,9 @@ object P2PMessageRelay {
                                 return
                             }
                             when (json.optString("type")) {
+                                // Reliability/liveness control frames are consumed by the
+                                // session layer. They must never become visible chat rows.
+                                "heartbeat", "ping", "pong" -> return
                                 "identity_info" -> {
                                     val nickname = json.optString("nickname").trim().takeIf { it.isNotBlank() }
                                     val rawFp = json.optString("fingerprint").trim()

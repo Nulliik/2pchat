@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.lifecycle.Lifecycle
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.BeforeClass
 import org.junit.Test
@@ -83,6 +84,18 @@ class NativeBridgeCrashRegressionTest {
         assertTrue("native identity reload must succeed", NativeBridge.reloadIdentity())
         val after = requireNotNull(NativeBridge.getLocalIdentity()).fingerprint
         assertEquals("local fingerprint must be persistent", before, after)
+    }
+
+    @Test
+    fun contextFreeRelayAccessKeepsTheProviderBridgeAndItsCallbacks() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val providerBridge = com.example.twopchat.relay.P2PMessageRelay.getBridge(context)
+
+        assertSame(
+            "context-free maintenance must not replace process-wide JNI callbacks",
+            providerBridge,
+            com.example.twopchat.relay.P2PMessageRelay.getBridge(),
+        )
     }
 
     @Test

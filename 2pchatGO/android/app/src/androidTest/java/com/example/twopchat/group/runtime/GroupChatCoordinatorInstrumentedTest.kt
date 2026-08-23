@@ -1,6 +1,8 @@
 package com.example.twopchat.group.runtime
 
 import android.content.Context
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import android.util.Base64
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -42,6 +44,7 @@ import org.junit.runner.RunWith
 class GroupChatCoordinatorInstrumentedTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val ownerPeerName = "runtime-owner-${UUID.randomUUID()}"
+    private val ownerKeyAlias = "runtime-owner-key-${UUID.randomUUID()}"
     private lateinit var ownerKeyPair: KeyPair
     private lateinit var ownerSigningKey: String
     private lateinit var ownerFingerprint: String
@@ -56,7 +59,13 @@ class GroupChatCoordinatorInstrumentedTest {
         NativeBridge.initialize()
         check(NativeBridge.isLoaded) { "Native Go bridge was not initialized" }
 
-        val kpg = KeyPairGenerator.getInstance("Ed25519")
+        val kpg = KeyPairGenerator.getInstance("Ed25519", "AndroidKeyStore")
+        kpg.initialize(
+            KeyGenParameterSpec.Builder(
+                ownerKeyAlias,
+                KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
+            ).setDigests(KeyProperties.DIGEST_NONE).build(),
+        )
         ownerKeyPair = kpg.generateKeyPair()
         val rawOwnerPublicKey = ownerKeyPair.public.encoded.takeLast(32).toByteArray()
 
@@ -76,6 +85,10 @@ class GroupChatCoordinatorInstrumentedTest {
     @After
     fun tearDown() {
         GroupChatCoordinator.deleteAll(context)
+        java.security.KeyStore.getInstance("AndroidKeyStore").apply {
+            load(null)
+            deleteEntry(ownerKeyAlias)
+        }
         P2PPreferences.prefs(context)
             .edit()
             .remove(P2PPreferences.peerFingerprint(ownerPeerName))
@@ -876,7 +889,7 @@ class GroupChatCoordinatorInstrumentedTest {
 
     private fun signAsOwner(canonical: String): String {
         val payload =
-            "2pchat-group-signature-api-v1\u0000".toByteArray(Charsets.UTF_8) +
+            "2pchat-group-event-signature-v2\u0000".toByteArray(Charsets.UTF_8) +
                 canonical.toByteArray(Charsets.UTF_8)
         val signer = Signature.getInstance("Ed25519")
         signer.initSign(ownerKeyPair.private)

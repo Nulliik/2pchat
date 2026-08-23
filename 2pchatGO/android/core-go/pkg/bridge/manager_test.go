@@ -321,20 +321,24 @@ func TestConcurrentCallbacksNoDeadlock(t *testing.T) {
 			_ = mgr.IsPeerOnline(fp)
 			_ = mgr.GetLocalFingerprint()
 
-			if callbacks.OnPeerConnected != nil {
-				callbacks.OnPeerConnected(fp, ep)
+			// Exercise the real mutable JNI callback storage instead of only a
+			// goroutine-local callback variable.
+			mgr.SetCallbacks(callbacks, nil)
+			activeCallbacks, _ := mgr.callbackSnapshot()
+			if activeCallbacks.OnPeerConnected != nil {
+				activeCallbacks.OnPeerConnected(fp, ep)
 			}
-			if callbacks.OnMessageReceived != nil {
-				callbacks.OnMessageReceived(fp, []byte(fmt.Sprintf("hello from worker %d", workerID)), fmt.Sprintf("msg-%d", workerID))
+			if activeCallbacks.OnMessageReceived != nil {
+				activeCallbacks.OnMessageReceived(fp, []byte(fmt.Sprintf("hello from worker %d", workerID)), fmt.Sprintf("msg-%d", workerID))
 			}
-			if callbacks.OnFileProgress != nil {
-				callbacks.OnFileProgress(fp, fmt.Sprintf("msg-%d", workerID), 1024, 2048, 100.5)
+			if activeCallbacks.OnFileProgress != nil {
+				activeCallbacks.OnFileProgress(fp, fmt.Sprintf("msg-%d", workerID), 1024, 2048, 100.5)
 			}
-			if callbacks.OnError != nil {
-				callbacks.OnError(1, "simulated transient error")
+			if activeCallbacks.OnError != nil {
+				activeCallbacks.OnError(1, "simulated transient error")
 			}
-			if callbacks.OnPeerDisconnected != nil {
-				callbacks.OnPeerDisconnected(fp, "clean shutdown")
+			if activeCallbacks.OnPeerDisconnected != nil {
+				activeCallbacks.OnPeerDisconnected(fp, "clean shutdown")
 			}
 		}()
 	}

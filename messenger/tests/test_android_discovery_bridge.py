@@ -986,14 +986,23 @@ def test_group_signature_api_is_domain_separated_and_rejects_tampering(monkeypat
         signature,
     )
 
-    # A signature made without the group API context must not be accepted.
+    # Go-v1 raw signatures remain receive-compatible during migration.
     raw_signature = base64.b64encode(
         signing_key.sign(b"canonical group payload").signature
+    ).decode("ascii")
+    assert bridge.verify_group_payload(
+        verification_key,
+        "canonical group payload",
+        raw_signature,
+    )
+
+    unrelated_signature = base64.b64encode(
+        signing_key.sign(b"unrelated-protocol\x00canonical group payload").signature
     ).decode("ascii")
     assert not bridge.verify_group_payload(
         verification_key,
         "canonical group payload",
-        raw_signature,
+        unrelated_signature,
     )
 
 

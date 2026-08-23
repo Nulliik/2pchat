@@ -255,15 +255,21 @@ class NativeBridgeImpl : IP2PBridge {
         val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
         val trackers = com.example.twopchat.config.TrackerPreferences.getActiveTrackerUrls(context)
 
-        val hashes = mutableListOf<String>()
+        val hashes = linkedSetOf<String>()
+        if (!rendezvousCode.isNullOrBlank() && nickname.isNotBlank()) {
+            hashes.add(discoveryInfoHash(nickname, rendezvousCode))
+        }
         if (fingerprint.isNotBlank()) {
-            hashes.add(discoveryInfoHash(fingerprint))
+            hashes.add(discoveryInfoHash(fingerprint, fingerprint))
         }
+        // Receive-only migration compatibility for Go clients which still use
+        // the pre-unification SHA-256(code) namespace.
         if (!rendezvousCode.isNullOrBlank()) {
-            hashes.add(discoveryInfoHash(rendezvousCode))
+            hashes.add(legacyDiscoveryInfoHash(rendezvousCode))
         }
+        if (fingerprint.isNotBlank()) hashes.add(legacyDiscoveryInfoHash(fingerprint))
 
-        NativeBridge.startDiscovery(trackers, hashes, port)
+        NativeBridge.startDiscovery(trackers, hashes.toList(), port)
         if (hashes.isNotEmpty()) {
             NativeBridge.announceSelf(hashes.first(), port)
         }
@@ -533,14 +539,22 @@ class NativeBridgeImpl : IP2PBridge {
         sharedCode: String?,
     ): List<Map<String, Any>> {
         val resultName = expectedLiveName?.takeIf { it.isNotBlank() } ?: query
-        val targetCode = sharedCode?.takeIf { it.isNotBlank() }
-            ?: expectedFingerprint?.takeIf { it.isNotBlank() }
-            ?: query
-        val infoHash = discoveryInfoHash(targetCode)
+        val normalizedSharedCode = sharedCode?.takeIf { it.isNotBlank() }
+        val normalizedFingerprint = expectedFingerprint?.takeIf { it.isNotBlank() }
+        val lookupNickname = when {
+            normalizedSharedCode != null -> resultName
+            normalizedFingerprint != null -> normalizedFingerprint
+            else -> query
+        }
+        val lookupCode = normalizedSharedCode ?: normalizedFingerprint ?: query
+        val infoHashes = linkedSetOf(
+            discoveryInfoHash(lookupNickname, lookupCode),
+            legacyDiscoveryInfoHash(lookupCode),
+        )
 
         val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
         val trackers = com.example.twopchat.config.TrackerPreferences.getActiveTrackerUrls(appContext)
-        NativeBridge.startDiscovery(trackers = trackers, infoHashes = listOf(infoHash))
+        NativeBridge.startDiscovery(trackers = trackers, infoHashes = infoHashes.toList())
 
         val knownCandidates = mutableListOf<String>()
         knownCandidates.addAll(P2PMessageRelay.localDiscoveryEndpoints(resultName))
@@ -576,7 +590,20 @@ internal fun shouldPublishIdentitySessionEstablished(
     existingNameForFingerprint != remoteNick ||
     existingFingerprintForName != peerFP
 
-internal fun discoveryInfoHash(value: String): String =
+internal fun discoveryInfoHash(nickname: String, sharedCode: String): String {
+    val normalizedNickname = nickname.trim().lowercase(java.util.Locale.ROOT)
+        .split(Regex("\\s+"))
+        .filter { it.isNotEmpty() }
+        .joinToString(" ")
+    val normalizedCode = sharedCode.trim()
+    require(normalizedNickname.isNotEmpty() && normalizedCode.isNotEmpty())
+    val payload = "2pchat-rendezvous-v1:$normalizedNickname:$normalizedCode"
+    return java.security.MessageDigest.getInstance("SHA-1")
+        .digest(payload.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+}
+
+internal fun legacyDiscoveryInfoHash(value: String): String =
     java.security.MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8))
         .take(20)

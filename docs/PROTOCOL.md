@@ -13,7 +13,12 @@ The protocol has four layers:
 4. Encrypted message payloads: JSON or CBOR payloads wrapped in a versioned
    encrypted packet.
 
-Discovery is intentionally separate from the message/session protocol.
+Discovery is intentionally separate from the message/session protocol. Python,
+Go, and Android derive the same 20-byte tracker lookup key as
+`SHA-1("2pchat-rendezvous-v1:" + normalized_nickname + ":" + shared_code)`.
+Nickname normalization trims, lowercases, and collapses whitespace; the shared
+code is trimmed but remains case-sensitive. Go additionally queries its former
+nickname-only hash while peers migrate.
 
 ## Wire Versions
 
@@ -303,7 +308,7 @@ Contains file metadata plus encrypted file material references:
 - `file_size`
 - `num_chunks`
 - `chunk_size` (currently 262144 bytes)
-- `chunk_format` (`binary-v1`)
+- `chunk_format` (`binary-v2`)
 - `ack_window` (currently 4)
 - `file_hash`
 - `file_key`
@@ -312,9 +317,9 @@ Contains file metadata plus encrypted file material references:
 
 Binary values are Base64 strings.
 
-Both `chunk_format: binary-v1` and a positive `chunk_size` no greater than
-262144 are mandatory. Metadata without them is rejected before delivery to the
-application.
+`chunk_format: binary-v2` and a positive `chunk_size` no greater than 262144 are
+mandatory for new sends. Receivers also accept `binary-v1` metadata during the
+migration. Invalid metadata is rejected before delivery to the application.
 
 ### `file_chunk`
 
@@ -323,7 +328,7 @@ session encryption. Multi-byte integers are unsigned and big-endian:
 
 | Field | Size |
 | --- | ---: |
-| frame type (`0x02`) | 1 byte |
+| frame type (`0x03`) | 1 byte |
 | raw `file_id` | 12 bytes |
 | chunk index | 4 bytes |
 | encrypted payload length | 4 bytes |
@@ -334,9 +339,10 @@ Base64 or a JSON/CBOR wrapper. The default plaintext chunk size is 256 KiB;
 SecretBox adds its nonce and authentication overhead before this framing.
 
 For compatibility at the application boundary, decoded chunks are exposed as
-`file_chunk` message dictionaries with Base64 `file_id` and a byte-string
-`payload`. JSON/CBOR `file_chunk` messages and Base64 chunk payloads are rejected;
-all peers participating in file transfer must support `binary-v1`.
+`file_chunk` message dictionaries with Base64 `file_id`, a byte-string
+`payload`, and `chunk_format`. Receivers accept the former Python `0x02`
+`binary-v1` frame; new sends always use the unambiguous `0x03` `binary-v2`
+marker. JSON/CBOR `file_chunk` messages and Base64 chunk payloads are rejected.
 
 ## Reliability Rules
 

@@ -388,6 +388,53 @@ func (s *Session) readerLoop() {
 			continue
 		}
 
+		// File chunks have their own stable ID derived from file_id/index. Parse
+		// them before the legacy Go 0x02 reliable-binary wrapper.
+		if len(plaintext) > 0 && (plaintext[0] == transport.FileChunkFrameTypeV2 || plaintext[0] == transport.LegacyPythonFileChunkFrameTypeV1) {
+			fileChunk, decodeErr := transport.DecodeFileChunkFrame(plaintext)
+			if decodeErr == nil {
+				msgID, idErr := transport.FileChunkAckID(fileChunk.FileID, fileChunk.ChunkIndex)
+				if idErr != nil {
+					continue
+				}
+				_ = s.sendAck(msgID)
+
+				s.receivedIDsMu.Lock()
+				duplicate := s.receivedIDs[msgID]
+				if !duplicate {
+					s.receivedIDs[msgID] = true
+					s.receivedOrder = append(s.receivedOrder, msgID)
+					if len(s.receivedOrder) > MaxReceivedIDsHistory {
+						oldest := s.receivedOrder[0]
+						s.receivedOrder = s.receivedOrder[1:]
+						delete(s.receivedIDs, oldest)
+					}
+				}
+				s.receivedIDsMu.Unlock()
+				if duplicate {
+					continue
+				}
+
+				format := transport.FileChunkFormatV2
+				if fileChunk.VersionType == transport.LegacyPythonFileChunkFrameTypeV1 {
+					format = transport.LegacyFileChunkFormatV1
+				}
+				msgMap := map[string]any{
+					"type":         string(TypeFileChunk),
+					"id":           msgID,
+					"file_id":      base64.StdEncoding.EncodeToString(fileChunk.FileID),
+					"chunk_index":  int(fileChunk.ChunkIndex),
+					"chunk_format": format,
+					"payload":      fileChunk.Payload,
+				}
+				select {
+				case s.messageQueue <- msgMap:
+				default:
+				}
+				continue
+			}
+		}
+
 		if len(plaintext) > 0 && plaintext[0] == 0x02 {
 			if len(plaintext) >= 3 {
 				idLen := int(binary.BigEndian.Uint16(plaintext[1:3]))
@@ -514,6 +561,14 @@ func (s *Session) SendReliable(msg map[string]any) (string, error) {
 		msg["id"] = msgID
 	}
 
+	raw, err := EncodeMessage(msg)
+	if err != nil {
+		return "", err
+	}
+	return s.sendReliablePlaintext(msgID, raw)
+}
+
+func (s *Session) sendReliablePlaintext(msgID string, raw []byte) (string, error) {
 	ackChan := make(chan bool, 1)
 	s.pendingAcksMu.Lock()
 	s.pendingAcks[msgID] = ackChan
@@ -524,11 +579,6 @@ func (s *Session) SendReliable(msg map[string]any) (string, error) {
 		delete(s.pendingAcks, msgID)
 		s.pendingAcksMu.Unlock()
 	}()
-
-	raw, err := EncodeMessage(msg)
-	if err != nil {
-		return "", err
-	}
 
 	delay := s.AckTimeout()
 	if delay <= 0 {
@@ -552,6 +602,20 @@ func (s *Session) SendReliable(msg map[string]any) (string, error) {
 	}
 
 	return "", ErrAckTimeout
+}
+
+// SendReliableFileChunk sends the shared binary-v2 file envelope and waits for
+// the ACK ID derived from its file ID and chunk index.
+func (s *Session) SendReliableFileChunk(fileID []byte, chunkIndex uint32, payload []byte) (string, error) {
+	msgID, err := transport.FileChunkAckID(fileID, chunkIndex)
+	if err != nil {
+		return "", err
+	}
+	frame, err := transport.EncodeFileChunkFrame(fileID, chunkIndex, payload)
+	if err != nil {
+		return "", err
+	}
+	return s.sendReliablePlaintext(msgID, frame)
 }
 
 // SendReliableBinary sends an arbitrary binary wire message payload and waits for the peer's ACK.

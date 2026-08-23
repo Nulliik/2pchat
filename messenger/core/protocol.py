@@ -7,9 +7,11 @@ import cbor2
 
 
 DEFAULT_FORMAT = "json"  # could be "cbor" later
-FILE_CHUNK_FRAME_TYPE = 0x02
+FILE_CHUNK_FRAME_TYPE = 0x03
+LEGACY_FILE_CHUNK_FRAME_TYPE = 0x02
 FILE_ID_SIZE = 12
-FILE_CHUNK_FORMAT = "binary-v1"
+FILE_CHUNK_FORMAT = "binary-v2"
+LEGACY_FILE_CHUNK_FORMAT = "binary-v1"
 DEFAULT_FILE_CHUNK_SIZE = 256 * 1024
 FILE_CHUNK_SECRETBOX_OVERHEAD = 40
 MAX_FILE_CHUNK_PAYLOAD_SIZE = (
@@ -39,7 +41,7 @@ def encode_file_chunk(file_id: bytes, chunk_index: int, payload: bytes) -> bytes
         raise TypeError("file chunk payload must be bytes")
     if len(payload) > MAX_FILE_CHUNK_PAYLOAD_SIZE:
         raise ValueError(
-            "file chunk payload exceeds the binary-v1 maximum of "
+            "file chunk payload exceeds the binary-v2 maximum of "
             f"{MAX_FILE_CHUNK_PAYLOAD_SIZE} bytes"
         )
     return _FILE_CHUNK_HEADER.pack(
@@ -56,11 +58,11 @@ def decode_file_chunk(payload: bytes) -> Dict[str, Any]:
     if len(payload) < _FILE_CHUNK_HEADER.size:
         raise ValueError("binary file chunk is shorter than its header")
     frame_type, file_id, chunk_index, payload_size = _FILE_CHUNK_HEADER.unpack_from(payload)
-    if frame_type != FILE_CHUNK_FRAME_TYPE:
+    if frame_type not in {FILE_CHUNK_FRAME_TYPE, LEGACY_FILE_CHUNK_FRAME_TYPE}:
         raise ValueError(f"unsupported binary frame type: {frame_type}")
     if payload_size > MAX_FILE_CHUNK_PAYLOAD_SIZE:
         raise ValueError(
-            "file chunk payload exceeds the binary-v1 maximum of "
+            "file chunk payload exceeds the binary-v2 maximum of "
             f"{MAX_FILE_CHUNK_PAYLOAD_SIZE} bytes"
         )
     encrypted_chunk = payload[_FILE_CHUNK_HEADER.size :]
@@ -75,6 +77,11 @@ def decode_file_chunk(payload: bytes) -> Dict[str, Any]:
         "file_id": base64.b64encode(file_id).decode("ascii"),
         "chunk_index": chunk_index,
         "payload": encrypted_chunk,
+        "chunk_format": (
+            FILE_CHUNK_FORMAT
+            if frame_type == FILE_CHUNK_FRAME_TYPE
+            else LEGACY_FILE_CHUNK_FORMAT
+        ),
     }
 
 
@@ -83,8 +90,14 @@ def validate_file_metadata(message: Dict[str, Any]) -> None:
 
     if message.get("type") != "file_meta":
         raise ValueError("expected file_meta message")
-    if message.get("chunk_format") != FILE_CHUNK_FORMAT:
-        raise ValueError(f"file metadata must declare chunk_format={FILE_CHUNK_FORMAT}")
+    if message.get("chunk_format") not in {
+        FILE_CHUNK_FORMAT,
+        LEGACY_FILE_CHUNK_FORMAT,
+    }:
+        raise ValueError(
+            "file metadata must declare chunk_format="
+            f"{FILE_CHUNK_FORMAT} (or legacy {LEGACY_FILE_CHUNK_FORMAT})"
+        )
     chunk_size = message.get("chunk_size")
     if type(chunk_size) is not int or not 0 < chunk_size <= DEFAULT_FILE_CHUNK_SIZE:
         raise ValueError(
@@ -118,7 +131,10 @@ MAX_BINARY_CHUNK_FRAME_SIZE = _FILE_CHUNK_HEADER.size + MAX_FILE_CHUNK_PAYLOAD_S
 def decode_message(payload: bytes, encoding: str = DEFAULT_FORMAT) -> Dict[str, Any]:
     if not isinstance(payload, (bytes, bytearray)):
         raise TypeError("payload must be bytes")
-    if payload and payload[0] == FILE_CHUNK_FRAME_TYPE:
+    if payload and payload[0] in {
+        FILE_CHUNK_FRAME_TYPE,
+        LEGACY_FILE_CHUNK_FRAME_TYPE,
+    }:
         if len(payload) > MAX_BINARY_CHUNK_FRAME_SIZE:
             raise ValueError(
                 f"binary file chunk size ({len(payload)} bytes) exceeds maximum limit of {MAX_BINARY_CHUNK_FRAME_SIZE} bytes"

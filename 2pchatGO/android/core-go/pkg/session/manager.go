@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -86,6 +87,7 @@ type Manager struct {
 	sessions        map[string]*Session
 	peerEndp        map[string]string
 	peerNames       map[string]string
+	callbacksMu     sync.RWMutex
 	callbacks       EventCallbacks
 	fileTransferMgr *transport.FileTransferManager
 	storageDir      string
@@ -120,11 +122,26 @@ func NewManager(
 		rateLimiter:  newIPRateLimiter(),
 	}
 	m.fileTransferMgr = transport.NewFileTransferManager(func(peerFP, msgID string, transferred, total int64, speed float64) {
-		if m.callbacks.OnFileProgress != nil {
-			m.callbacks.OnFileProgress(peerFP, msgID, transferred, total, speed)
+		callbacks := m.callbacksSnapshot()
+		if callbacks.OnFileProgress != nil {
+			callbacks.OnFileProgress(peerFP, msgID, transferred, total, speed)
 		}
 	})
 	return m
+}
+
+func (m *Manager) callbacksSnapshot() EventCallbacks {
+	m.callbacksMu.RLock()
+	defer m.callbacksMu.RUnlock()
+	return m.callbacks
+}
+
+// SetCallbacks atomically replaces the immutable callback bundle. Callers may
+// update JNI hooks while networking is active without racing dispatch loops.
+func (m *Manager) SetCallbacks(callbacks EventCallbacks) {
+	m.callbacksMu.Lock()
+	m.callbacks = callbacks
+	m.callbacksMu.Unlock()
 }
 
 // StartListener starts the dual-stack TCP listener on the specified port.
@@ -209,8 +226,9 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 	}
 	if !m.rateLimiter.allow(host) {
 		_ = conn.Close()
-		if m.callbacks.OnError != nil {
-			m.callbacks.OnError(1, fmt.Sprintf("Incoming connection rejected: rate limit exceeded for %s", host))
+		callbacks := m.callbacksSnapshot()
+		if callbacks.OnError != nil {
+			callbacks.OnError(1, fmt.Sprintf("Incoming connection rejected: rate limit exceeded for %s", host))
 		}
 		return
 	}
@@ -221,8 +239,9 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 		defer func() { <-m.handshakeSem }()
 	default:
 		_ = conn.Close()
-		if m.callbacks.OnError != nil {
-			m.callbacks.OnError(1, "Incoming connection rejected: handshake concurrency limit reached")
+		callbacks := m.callbacksSnapshot()
+		if callbacks.OnError != nil {
+			callbacks.OnError(1, "Incoming connection rejected: handshake concurrency limit reached")
 		}
 		return
 	}
@@ -240,8 +259,9 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 		30*time.Second,
 	)
 	if err != nil {
-		if m.callbacks.OnError != nil {
-			m.callbacks.OnError(1, fmt.Sprintf("Incoming handshake failed: %v", err))
+		callbacks := m.callbacksSnapshot()
+		if callbacks.OnError != nil {
+			callbacks.OnError(1, fmt.Sprintf("Incoming handshake failed: %v", err))
 		}
 		return
 	}
@@ -319,7 +339,7 @@ func (m *Manager) RegisterSession(newSess *Session, peerFP, endpoint string, ini
 
 	m.sessions[peerFP] = newSess
 	m.peerEndp[peerFP] = endpoint
-	onConnCb := m.callbacks.OnPeerConnected
+	onConnCb := m.callbacksSnapshot().OnPeerConnected
 	nick := m.nickname
 	localFP := m.fingerprint
 	port := m.listener.Port()
@@ -356,8 +376,9 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 		}
 		m.mu.Unlock()
 
-		if wasActive && !disconnectedNotified && m.callbacks.OnPeerDisconnected != nil {
-			m.callbacks.OnPeerDisconnected(peerFP, "connection terminated")
+		callbacks := m.callbacksSnapshot()
+		if wasActive && !disconnectedNotified && callbacks.OnPeerDisconnected != nil {
+			callbacks.OnPeerDisconnected(peerFP, "connection terminated")
 		}
 	}()
 
@@ -376,9 +397,10 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 				m.UpdatePeerNameMapping(claimedFP, nick)
 			}
 			raw, err := EncodeMessage(msg)
-			if err == nil && m.callbacks.OnMessageReceived != nil {
+			callbacks := m.callbacksSnapshot()
+			if err == nil && callbacks.OnMessageReceived != nil {
 				msgID, _ := msg["id"].(string)
-				m.callbacks.OnMessageReceived(peerFP, raw, msgID)
+				callbacks.OnMessageReceived(peerFP, raw, msgID)
 			}
 			continue
 		}
@@ -396,8 +418,9 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 
 				if wasActive {
 					disconnectedNotified = true
-					if m.callbacks.OnPeerDisconnected != nil {
-						m.callbacks.OnPeerDisconnected(peerFP, reason)
+					callbacks := m.callbacksSnapshot()
+					if callbacks.OnPeerDisconnected != nil {
+						callbacks.OnPeerDisconnected(peerFP, reason)
 					}
 				}
 				return
@@ -409,12 +432,65 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 			continue
 		}
 
+		if msgType == string(TypeFileMeta) {
+			fileIDB64, _ := msg["file_id"].(string)
+			fileID, decodeErr := base64.StdEncoding.DecodeString(fileIDB64)
+			if decodeErr != nil || len(fileID) != transport.FileIDSize {
+				continue
+			}
+			transferKey := base64.RawURLEncoding.EncodeToString(fileID)
+			rawMeta, encodeErr := EncodeMessage(msg)
+			if encodeErr != nil {
+				continue
+			}
+			m.mu.RLock()
+			storageDir := m.storageDir
+			m.mu.RUnlock()
+			if storageDir == "" {
+				storageDir = os.TempDir()
+			}
+			downloadsDir := filepath.Join(storageDir, "config", "downloads")
+			if _, receiveErr := m.fileTransferMgr.ReceiveChunk(
+				peerFP,
+				transferKey,
+				base64.StdEncoding.EncodeToString(rawMeta),
+				downloadsDir,
+			); receiveErr != nil {
+				continue
+			}
+
+			offer := map[string]any{
+				"type":       "file_offer",
+				"message_id": firstNonEmptyString(msg["message_id"], msg["id"], fileIDB64),
+				"file_name":  msg["file_name"],
+				"size":       msg["file_size"],
+			}
+			rawOffer, err := json.Marshal(offer)
+			callbacks := m.callbacksSnapshot()
+			if err == nil && callbacks.OnMessageReceived != nil {
+				messageID, _ := offer["message_id"].(string)
+				callbacks.OnMessageReceived(peerFP, rawOffer, messageID)
+			}
+			continue
+		}
+
 		if msgType == string(TypeFileChunk) {
 			msgID, _ := msg["message_id"].(string)
 			if msgID == "" {
 				msgID, _ = msg["id"].(string)
 			}
-			payloadStr, _ := msg["payload"].(string)
+			payloadStr, legacyJSON := msg["payload"].(string)
+			if payloadBytes, ok := msg["payload"].([]byte); ok {
+				fileIDB64, _ := msg["file_id"].(string)
+				fileID, decodeErr := base64.StdEncoding.DecodeString(fileIDB64)
+				if decodeErr != nil || len(fileID) != transport.FileIDSize {
+					continue
+				}
+				msgID = base64.RawURLEncoding.EncodeToString(fileID)
+				payloadStr = base64.StdEncoding.EncodeToString(payloadBytes)
+			} else if !legacyJSON {
+				continue
+			}
 
 			m.mu.RLock()
 			storageDir := m.storageDir
@@ -440,8 +516,9 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 					"mime":       guessMimeType(assembled.FileName),
 				}
 				rawFileMsg, err := json.Marshal(fileMsg)
-				if err == nil && m.callbacks.OnMessageReceived != nil {
-					m.callbacks.OnMessageReceived(peerFP, rawFileMsg, assembled.MessageID)
+				callbacks := m.callbacksSnapshot()
+				if err == nil && callbacks.OnMessageReceived != nil {
+					callbacks.OnMessageReceived(peerFP, rawFileMsg, assembled.MessageID)
 				}
 			}
 			continue
@@ -450,17 +527,19 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 		if msgType == "binary" {
 			if payloadBytes, ok := msg["payload"].([]byte); ok {
 				msgID, _ := msg["id"].(string)
-				if m.callbacks.OnMessageReceived != nil {
-					m.callbacks.OnMessageReceived(peerFP, payloadBytes, msgID)
+				callbacks := m.callbacksSnapshot()
+				if callbacks.OnMessageReceived != nil {
+					callbacks.OnMessageReceived(peerFP, payloadBytes, msgID)
 				}
 				continue
 			}
 		}
 
 		raw, err := EncodeMessage(msg)
-		if err == nil && m.callbacks.OnMessageReceived != nil {
+		callbacks := m.callbacksSnapshot()
+		if err == nil && callbacks.OnMessageReceived != nil {
 			msgID, _ := msg["id"].(string)
-			m.callbacks.OnMessageReceived(peerFP, raw, msgID)
+			callbacks.OnMessageReceived(peerFP, raw, msgID)
 		}
 	}
 }
@@ -632,6 +711,8 @@ func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji
 	}
 
 	go func() {
+		var metadata *transport.FileMetadata
+		var nextChunkIndex uint32
 		_ = m.fileTransferMgr.SendFileStream(
 			context.Background(),
 			peerFP,
@@ -641,18 +722,47 @@ func (m *Manager) SendFile(peerFP, filePath, messageID, fileName, caption, emoji
 			caption,
 			emoji,
 			func(payload []byte) error {
-				chunkMsg := map[string]any{
-					"type":       string(TypeFileChunk),
-					"message_id": messageID,
-					"payload":    strings.TrimSpace(transport.EncodeMetadataB64(payload)),
+				if metadata == nil {
+					decoded, err := transport.DecodeMetadataJSON(payload)
+					if err != nil {
+						return err
+					}
+					metadata = decoded
+					metadata.Type = string(TypeFileMeta)
+					metadata.ID = messageID
+					metadata.MessageID = messageID
+					metadata.ChunkSize = transport.DefaultChunkSize
+					metadata.ChunkFormat = transport.FileChunkFormatV2
+					metadata.AckWindow = transport.DefaultFileChunkAckWindow
+					metadata.Timestamp = time.Now().Unix()
+					rawMeta, err := metadata.EncodeMetadataJSON()
+					if err != nil {
+						return err
+					}
+					var metaMessage map[string]any
+					if err := json.Unmarshal(rawMeta, &metaMessage); err != nil {
+						return err
+					}
+					_, err = s.SendReliable(metaMessage)
+					return err
 				}
-				_, err := s.SendReliable(chunkMsg)
+				_, err := s.SendReliableFileChunk(metadata.FileID, nextChunkIndex, payload)
+				nextChunkIndex++
 				return err
 			},
 		)
 	}()
 
 	return messageID, nil
+}
+
+func firstNonEmptyString(values ...any) string {
+	for _, value := range values {
+		if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+			return text
+		}
+	}
+	return ""
 }
 
 // CancelFile cancels an active file transfer by messageID.

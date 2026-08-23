@@ -347,7 +347,11 @@ func (m *FileTransferManager) ReceiveChunk(
 		}
 
 		if transfer.PartFile != nil {
-			offset := int64(chunkIdx) * int64(DefaultChunkSize)
+			chunkSize := transfer.Meta.ChunkSize
+			if chunkSize <= 0 {
+				chunkSize = DefaultChunkSize
+			}
+			offset := int64(chunkIdx) * int64(chunkSize)
 			if _, err := transfer.PartFile.WriteAt(plaintext, offset); err != nil {
 				crypto.Zeroize(plaintext)
 				m.mu.Unlock()
@@ -444,8 +448,15 @@ func (m *FileTransferManager) ReceiveChunk(
 		// Truncate to exact fileSize in case part file had padding
 		_ = os.Truncate(targetPath, meta.FileSize)
 
+		assembledMessageID := meta.MessageID
+		if assembledMessageID == "" {
+			assembledMessageID = meta.ID
+		}
+		if assembledMessageID == "" {
+			assembledMessageID = messageID
+		}
 		return &AssembledFile{
-			MessageID: messageID,
+			MessageID: assembledMessageID,
 			FilePath:  targetPath,
 			FileName:  filepath.Base(targetPath),
 			Caption:   meta.Caption,

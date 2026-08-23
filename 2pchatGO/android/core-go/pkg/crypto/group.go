@@ -12,10 +12,12 @@ import (
 )
 
 const (
-	GroupAEADKeySize     = 32
-	GroupAEADNonceSize   = 12
-	gcmTagSize           = 16
-	GroupSignatureDomain = "2pchat-group-event-signature-v1"
+	GroupAEADKeySize                    = 32
+	GroupAEADNonceSize                  = 12
+	gcmTagSize                          = 16
+	GroupSignatureDomain                = "2pchat-group-event-signature-v1"
+	GroupSignatureContextV2             = "2pchat-group-event-signature-v2\x00"
+	legacyPythonGroupSignatureContextV1 = "2pchat-group-signature-api-v1\x00"
 )
 
 // SignGroupPayload signs a canonical string using Ed25519 and returns Base64 signature.
@@ -27,7 +29,8 @@ func SignGroupPayload(privKey ed25519.PrivateKey, canonicalPayload string) (stri
 		return "", errors.New("empty canonical payload")
 	}
 
-	sig := ed25519.Sign(privKey, []byte(canonicalPayload))
+	transcript := append([]byte(GroupSignatureContextV2), []byte(canonicalPayload)...)
+	sig := ed25519.Sign(privKey, transcript)
 	return base64.StdEncoding.EncodeToString(sig), nil
 }
 
@@ -42,7 +45,18 @@ func VerifyGroupPayload(pubKey ed25519.PublicKey, canonicalPayload string, signa
 		return false
 	}
 
-	return ed25519.Verify(pubKey, []byte(canonicalPayload), sig)
+	payload := []byte(canonicalPayload)
+	transcripts := [][]byte{
+		append([]byte(GroupSignatureContextV2), payload...),
+		append([]byte(legacyPythonGroupSignatureContextV1), payload...),
+		payload, // receive-only compatibility with Go group signatures v1
+	}
+	for _, transcript := range transcripts {
+		if ed25519.Verify(pubKey, transcript, sig) {
+			return true
+		}
+	}
+	return false
 }
 
 // GroupEncrypt encrypts plaintext with AES-256-GCM using epochSecret and authenticatedData.

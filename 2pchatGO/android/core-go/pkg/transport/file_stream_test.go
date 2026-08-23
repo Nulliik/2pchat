@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
+	"fmt"
 	"testing"
 )
 
@@ -55,6 +56,34 @@ func TestFileStreamingRoundtrip(t *testing.T) {
 func TestDefaultChunkSizeIs256KiB(t *testing.T) {
 	if DefaultChunkSize != 256*1024 {
 		t.Fatalf("DefaultChunkSize = %d, want %d", DefaultChunkSize, 256*1024)
+	}
+}
+
+func TestBinaryV2FileChunkFrameMatchesPythonLayout(t *testing.T) {
+	fileID := []byte("abcdefghijkl")
+	payload := []byte{0xde, 0xad, 0xbe, 0xef}
+	encoded, err := EncodeFileChunkFrame(fileID, 15, payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const wantHex = "036162636465666768696a6b6c0000000f00000004deadbeef"
+	if got := fmt.Sprintf("%x", encoded); got != wantHex {
+		t.Fatalf("binary-v2 frame = %s, want %s", got, wantHex)
+	}
+
+	decoded, err := DecodeFileChunkFrame(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.ChunkIndex != 15 || !bytes.Equal(decoded.FileID, fileID) || !bytes.Equal(decoded.Payload, payload) {
+		t.Fatalf("decoded frame mismatch: %#v", decoded)
+	}
+	ackID, err := FileChunkAckID(fileID, 15)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ackID != "file:YWJjZGVmZ2hpamts:15" {
+		t.Fatalf("ack ID = %q", ackID)
 	}
 }
 

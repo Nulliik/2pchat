@@ -41,6 +41,7 @@ from messenger.core.session import DEFAULT_FILE_CHUNK_WINDOW, Session
 from messenger.core.crypto import DEFAULT_FILE_CHUNK_SIZE
 from messenger.core.protocol import (
     FILE_CHUNK_FORMAT,
+    LEGACY_FILE_CHUNK_FORMAT,
     MAX_FILE_CHUNK_PAYLOAD_SIZE,
 )
 from messenger.core.identity import (
@@ -965,7 +966,8 @@ def configure_local_identity(nickname: str, claimed_fingerprint: str = "", about
     return True
 
 
-_GROUP_SIGNATURE_CONTEXT = b"2pchat-group-signature-api-v1\x00"
+_GROUP_SIGNATURE_CONTEXT = b"2pchat-group-event-signature-v2\x00"
+_LEGACY_PYTHON_GROUP_SIGNATURE_CONTEXT = b"2pchat-group-signature-api-v1\x00"
 
 
 def get_local_signing_public_key() -> str:
@@ -1001,11 +1003,20 @@ def verify_group_payload(
             return False
         if not payload or len(payload) > 1024 * 1024:
             return False
-        VerifyKey(verification_key_raw).verify(
+        verify_key = VerifyKey(verification_key_raw)
+        # New signatures use the shared cross-core transcript. The remaining
+        # candidates are receive-only migration paths for Python-v1 and Go-v1.
+        for candidate in (
             _GROUP_SIGNATURE_CONTEXT + payload,
-            signature,
-        )
-        return True
+            _LEGACY_PYTHON_GROUP_SIGNATURE_CONTEXT + payload,
+            payload,
+        ):
+            try:
+                verify_key.verify(candidate, signature)
+                return True
+            except Exception:
+                pass
+        return False
     except Exception:
         return False
 
@@ -2194,7 +2205,10 @@ async def _read_loop(session, peer_name, fp):
                     num_chunks = int(msg.get("num_chunks", 0))
                     chunk_size = msg.get("chunk_size")
                     if (
-                        msg.get("chunk_format") != FILE_CHUNK_FORMAT
+                        msg.get("chunk_format") not in {
+                            FILE_CHUNK_FORMAT,
+                            LEGACY_FILE_CHUNK_FORMAT,
+                        }
                         or type(chunk_size) is not int
                         or not 0 < chunk_size <= DEFAULT_FILE_CHUNK_SIZE
                     ):
@@ -3095,7 +3109,7 @@ async def _send_file_unlocked(
             "file_size": file_size,
             "num_chunks": num_chunks,
             "chunk_size": DEFAULT_FILE_CHUNK_SIZE,
-            "chunk_format": "binary-v1",
+            "chunk_format": FILE_CHUNK_FORMAT,
             "ack_window": DEFAULT_FILE_CHUNK_WINDOW,
             "file_hash": base64.b64encode(file_hash).decode(),
             "file_key": base64.b64encode(file_key).decode(),
