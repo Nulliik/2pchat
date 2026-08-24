@@ -2396,10 +2396,12 @@ fun ChatScreen(
                                             if (!success) {
                                                 persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
                                                 coroutineScope.launch {
-                                                    val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                                                    if (idx != -1) {
-                                                        initialMessages[idx] = outMsg.copy(status = "PENDING")
-                                                    }
+                                                    try {
+                                                        val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                                                        if (idx in initialMessages.indices) {
+                                                            initialMessages[idx] = outMsg.copy(status = "PENDING")
+                                                        }
+                                                    } catch (_: Throwable) {}
                                                 }
                                             }
                                         }

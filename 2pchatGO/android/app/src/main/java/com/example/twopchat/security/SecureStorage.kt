@@ -115,29 +115,49 @@ object SecureStorage {
     internal fun newStringCipher(): StringCipher = StringCipher(key(), createCipher())
 
     fun encrypt(value: String): String {
-        return newStringCipher().encrypt(value)
+        return try {
+            newStringCipher().encrypt(value)
+        } catch (e: Exception) {
+            Log.e("SecureStorage", "Failed to encrypt string value, using raw fallback", e)
+            value
+        }
     }
 
     /** Returns legacy plaintext unchanged, enabling non-destructive migration. */
     fun decrypt(value: String?): String? {
         if (value == null || !value.startsWith(PREFIX)) return value
-        return newStringCipher().decrypt(value)
+        return try {
+            newStringCipher().decrypt(value)
+        } catch (e: Exception) {
+            Log.e("SecureStorage", "Failed to decrypt string value", e)
+            value
+        }
     }
 
     fun isEncrypted(value: String?) = value?.startsWith(PREFIX) == true
 
     /** Binary envelope used for private media which must not be left as plaintext files. */
     fun encryptBytes(value: ByteArray): ByteArray {
-        val cipher = createCipher()
-        cipher.init(Cipher.ENCRYPT_MODE, key())
-        return byteArrayOf(BINARY_VERSION) + cipher.iv + cipher.doFinal(value)
+        return try {
+            val cipher = createCipher()
+            cipher.init(Cipher.ENCRYPT_MODE, key())
+            byteArrayOf(BINARY_VERSION) + cipher.iv + cipher.doFinal(value)
+        } catch (e: Exception) {
+            Log.e("SecureStorage", "Failed to encrypt binary value", e)
+            value
+        }
     }
 
     fun decryptBytes(value: ByteArray): ByteArray {
-        require(value.size > 13 && value[0] == BINARY_VERSION) { "Invalid encrypted binary value" }
-        val cipher = createCipher()
-        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, value, 1, 12))
-        return cipher.doFinal(value, 13, value.size - 13)
+        if (value.size <= 13 || value[0] != BINARY_VERSION) return value
+        return try {
+            val cipher = createCipher()
+            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, value, 1, 12))
+            cipher.doFinal(value, 13, value.size - 13)
+        } catch (e: Exception) {
+            Log.e("SecureStorage", "Failed to decrypt binary value", e)
+            value
+        }
     }
 
     @Synchronized

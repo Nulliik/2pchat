@@ -51,7 +51,7 @@ internal class LocalPeerDiscovery(
                 // Privacy Invariant (§5): Plaintext nickname is omitted from mDNS TXT records.
                 setAttribute(ATTRIBUTE_FINGERPRINT, token)
             }
-            registrationListener = object : NsdManager.RegistrationListener {
+            val listener = object : NsdManager.RegistrationListener {
                 override fun onServiceRegistered(serviceInfo: NsdServiceInfo) = Unit
                 override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
                     Log.w(TAG, "NSD registration failed: $errorCode")
@@ -60,34 +60,49 @@ internal class LocalPeerDiscovery(
                 override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
                     Log.w(TAG, "NSD unregistration failed: $errorCode")
                 }
-            }.also { manager.registerService(service, NsdManager.PROTOCOL_DNS_SD, it) }
+            }
+            registrationListener = listener
+            try {
+                manager.registerService(service, NsdManager.PROTOCOL_DNS_SD, listener)
+            } catch (e: Throwable) {
+                Log.w(TAG, "Failed to register NSD service", e)
+            }
         }
 
-        discoveryListener = object : NsdManager.DiscoveryListener {
+        val dListener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(serviceType: String) = Unit
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                 if (serviceInfo.serviceType != SERVICE_TYPE ||
                     !resolving.add(serviceInfo.serviceName)
                 ) return
-                manager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                    override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                        resolving.remove(serviceInfo.serviceName)
-                    }
+                try {
+                    manager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+                        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                            resolving.remove(serviceInfo.serviceName)
+                        }
 
-                    override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                        resolving.remove(serviceInfo.serviceName)
-                        val discoveryToken = (serviceInfo.attributes[ATTRIBUTE_FINGERPRINT]
-                            ?: serviceInfo.attributes["fingerprint"])
-                            ?.toString(Charsets.UTF_8).orEmpty()
-                        if (discoveryToken.isBlank()) return
-                        if (LocalDiscoveryToken.matchesFingerprint(discoveryToken, localFingerprint)) return
-                        val host = serviceInfo.host?.hostAddress?.substringBefore('%').orEmpty()
-                        if (host.isBlank() || serviceInfo.port !in 1..65535) return
-                        val endpoint = if (host.contains(':')) "[$host]:${serviceInfo.port}" else "$host:${serviceInfo.port}"
-                        // Plaintext nickname is not broadcast in mDNS (Privacy Invariant); caller resolves contact or uses candidate ID.
-                        onPeerResolved("", discoveryToken, endpoint)
-                    }
-                })
+                        override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                            resolving.remove(serviceInfo.serviceName)
+                            try {
+                                val discoveryToken = (serviceInfo.attributes[ATTRIBUTE_FINGERPRINT]
+                                    ?: serviceInfo.attributes["fingerprint"])
+                                    ?.toString(Charsets.UTF_8).orEmpty()
+                                if (discoveryToken.isBlank()) return
+                                if (LocalDiscoveryToken.matchesFingerprint(discoveryToken, localFingerprint)) return
+                                val host = serviceInfo.host?.hostAddress?.substringBefore('%').orEmpty()
+                                if (host.isBlank() || serviceInfo.port !in 1..65535) return
+                                val endpoint = if (host.contains(':')) "[$host]:${serviceInfo.port}" else "$host:${serviceInfo.port}"
+                                // Plaintext nickname is not broadcast in mDNS (Privacy Invariant); caller resolves contact or uses candidate ID.
+                                onPeerResolved("", discoveryToken, endpoint)
+                            } catch (e: Throwable) {
+                                Log.w(TAG, "Error handling resolved NSD service", e)
+                            }
+                        }
+                    })
+                } catch (e: Throwable) {
+                    resolving.remove(serviceInfo.serviceName)
+                    Log.w(TAG, "Failed to initiate NSD service resolution", e)
+                }
             }
             override fun onServiceLost(serviceInfo: NsdServiceInfo) = Unit
             override fun onDiscoveryStopped(serviceType: String) = Unit
@@ -97,7 +112,13 @@ internal class LocalPeerDiscovery(
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
                 Log.w(TAG, "NSD discovery stop failed: $errorCode")
             }
-        }.also { manager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, it) }
+        }
+        discoveryListener = dListener
+        try {
+            manager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, dListener)
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to start NSD service discovery", e)
+        }
     }
 
     @Synchronized

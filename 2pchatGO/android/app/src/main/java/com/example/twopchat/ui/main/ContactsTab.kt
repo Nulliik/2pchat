@@ -1891,37 +1891,41 @@ private fun CameraQrScannerOverlay(
                                 .build()
 
                             imageAnalysis.setAnalyzer(analysisExecutor) { imageProxy ->
-                                if (isScanned.get()) {
-                                    try { imageProxy.close() } catch (_: Throwable) {}
-                                    return@setAnalyzer
-                                }
-                                @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
-                                val mediaImage = imageProxy.image
-                                if (mediaImage != null && !isScanned.get()) {
-                                    val rotationDegrees = imageProxy.imageInfo.rotationDegrees
-                                    val inputImage = com.google.mlkit.vision.common.InputImage.fromMediaImage(mediaImage, rotationDegrees)
-                                    liveBarcodeScanner.process(inputImage)
-                                        .addOnSuccessListener { barcodes ->
-                                            if (isScanned.get()) return@addOnSuccessListener
-                                            for (barcode in barcodes) {
-                                                val rawValue = barcode.rawValue ?: barcode.displayValue ?: continue
-                                                if (rawValue.isNotBlank() && !isScanned.getAndSet(true)) {
-                                                    mainExecutor.execute {
-                                                        try {
-                                                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                                                        } catch (_: Throwable) {}
-                                                        onQrScanned(rawValue)
+                                try {
+                                    if (isScanned.get()) {
+                                        imageProxy.close()
+                                        return@setAnalyzer
+                                    }
+                                    @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
+                                    val mediaImage = imageProxy.image
+                                    if (mediaImage != null && !isScanned.get()) {
+                                        val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                                        val inputImage = com.google.mlkit.vision.common.InputImage.fromMediaImage(mediaImage, rotationDegrees)
+                                        liveBarcodeScanner.process(inputImage)
+                                            .addOnSuccessListener { barcodes ->
+                                                if (isScanned.get()) return@addOnSuccessListener
+                                                for (barcode in barcodes) {
+                                                    val rawValue = barcode.rawValue ?: barcode.displayValue ?: continue
+                                                    if (rawValue.isNotBlank() && !isScanned.getAndSet(true)) {
+                                                        mainExecutor.execute {
+                                                            try {
+                                                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                                            } catch (_: Throwable) {}
+                                                            onQrScanned(rawValue)
+                                                        }
+                                                        break
                                                     }
-                                                    break
                                                 }
                                             }
-                                        }
-                                        .addOnCompleteListener {
-                                            try {
-                                                imageProxy.close()
-                                            } catch (_: Throwable) {}
-                                        }
-                                } else {
+                                            .addOnCompleteListener {
+                                                try {
+                                                    imageProxy.close()
+                                                } catch (_: Throwable) {}
+                                            }
+                                    } else {
+                                        imageProxy.close()
+                                    }
+                                } catch (_: Throwable) {
                                     try {
                                         imageProxy.close()
                                     } catch (_: Throwable) {}
