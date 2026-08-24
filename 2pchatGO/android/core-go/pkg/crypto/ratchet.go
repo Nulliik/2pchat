@@ -265,13 +265,19 @@ func RespondToPreKeyInit(
 		return nil, fmt.Errorf("deriveFourKeys failed: %w", err)
 	}
 
+	var dhSendKey *X25519PrivateKey
+	if signedPrekey != nil {
+		keyCopy := *signedPrekey
+		dhSendKey = &keyCopy
+	}
+
 	return &SessionState{
 		RootKey:            rootKey,
 		SendChainKey:       sendChainKey,
 		RecvChainKey:       recvChainKey,
 		HeaderKey:          headerKey,
 		ObfuscateHeader:    true,
-		DHSendKey:          signedPrekey,
+		DHSendKey:          dhSendKey,
 		DHRecvKeyPub:       initiatorEphemeralPub,
 		IdentityLocal:      localIdentity,
 		IdentityRemote:     initiatorIdentityPub,
