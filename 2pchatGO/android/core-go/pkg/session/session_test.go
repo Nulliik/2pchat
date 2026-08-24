@@ -511,3 +511,86 @@ func TestManagerNicknameMappingAndCallbackDeadlockFreedom(t *testing.T) {
 		t.Fatalf("Timed out waiting for reply at Alice")
 	}
 }
+
+func TestPeerFingerprintMismatchRejection(t *testing.T) {
+	aliceId, _ := crypto.GenerateIdentityKeyPair()
+	bobId, _ := crypto.GenerateIdentityKeyPair()
+	eveId, _ := crypto.GenerateIdentityKeyPair()
+
+	alicePrekeyPriv, alicePrekeyPub, _ := crypto.GenerateX25519Keypair()
+	bobPrekeyPriv, bobPrekeyPub, _ := crypto.GenerateX25519Keypair()
+
+	aliceFP := aliceId.Fingerprint()
+	bobFP := bobId.Fingerprint()
+	eveFP := eveId.Fingerprint()
+
+	bobMgr := NewManager(
+		bobId,
+		bobPrekeyPriv,
+		bobPrekeyPub,
+		"",
+		false,
+		EventCallbacks{},
+	)
+	defer bobMgr.Close()
+
+	if err := bobMgr.StartListener(0); err != nil {
+		t.Fatalf("Bob failed to start listener: %v", err)
+	}
+	defer bobMgr.StopListener()
+
+	bobPort := bobMgr.Port()
+	bobEndpoint := fmt.Sprintf("127.0.0.1:%d", bobPort)
+
+	aliceMgr := NewManager(
+		aliceId,
+		alicePrekeyPriv,
+		alicePrekeyPub,
+		"",
+		false,
+		EventCallbacks{},
+	)
+	defer aliceMgr.Close()
+
+	// Alice dials Bob expecting Eve's fingerprint (simulating a mismatched contact or MITM)
+	_, err := aliceMgr.ConnectPeer(bobEndpoint, eveFP)
+	if err == nil {
+		t.Fatalf("Expected ConnectPeer to fail due to fingerprint mismatch, but it succeeded")
+	}
+
+	expectedSub := "peer fingerprint mismatch"
+	if !containsSubstring(err.Error(), expectedSub) {
+		t.Fatalf("Expected error to contain %q, got: %v", expectedSub, err)
+	}
+
+	// Verify no session was retained in Alice's manager
+	if sess := aliceMgr.GetSession(bobFP); sess != nil {
+		t.Fatalf("Alice should not have an active session for Bob after mismatch")
+	}
+
+	// Now Alice dials Bob with the correct expected fingerprint
+	sess, err := aliceMgr.ConnectPeer(bobEndpoint, bobFP)
+	if err != nil {
+		t.Fatalf("Alice ConnectPeer with valid fingerprint failed: %v", err)
+	}
+	if sess == nil {
+		t.Fatalf("Expected non-nil session for valid connection")
+	}
+	if sess.PeerFingerprint() != bobFP {
+		t.Fatalf("Expected peer fingerprint %s, got: %s", bobFP, sess.PeerFingerprint())
+	}
+	_ = aliceFP
+}
+
+func containsSubstring(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || (len(s) > 0 && len(sub) > 0 && searchSub(s, sub)))
+}
+
+func searchSub(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
