@@ -2,6 +2,7 @@ NDK_DIR ?= /Users/kodzy/Library/Android/sdk/ndk/26.3.11579264
 TOOLCHAIN = $(NDK_DIR)/toolchains/llvm/prebuilt/darwin-x86_64/bin
 API_LEVEL = 24
 JNILIBS_DIR = ../app/src/main/jniLibs
+CGO_CFLAGS ?= -fno-omit-frame-pointer -O2
 
 .PHONY: all test clean android-arm64 android-x86_64 android-arm android-all
 
@@ -13,6 +14,7 @@ test:
 android-arm64:
 	mkdir -p $(JNILIBS_DIR)/arm64-v8a
 	CGO_ENABLED=1 \
+	CGO_CFLAGS="$(CGO_CFLAGS)" \
 	GOOS=android \
 	GOARCH=arm64 \
 	CC=$(TOOLCHAIN)/aarch64-linux-android$(API_LEVEL)-clang \
@@ -23,6 +25,7 @@ android-arm64:
 android-x86_64:
 	mkdir -p $(JNILIBS_DIR)/x86_64
 	CGO_ENABLED=1 \
+	CGO_CFLAGS="$(CGO_CFLAGS)" \
 	GOOS=android \
 	GOARCH=amd64 \
 	CC=$(TOOLCHAIN)/x86_64-linux-android$(API_LEVEL)-clang \
@@ -33,6 +36,7 @@ android-x86_64:
 android-arm:
 	mkdir -p $(JNILIBS_DIR)/armeabi-v7a
 	CGO_ENABLED=1 \
+	CGO_CFLAGS="$(CGO_CFLAGS)" \
 	GOOS=android \
 	GOARCH=arm \
 	GOARM=7 \
