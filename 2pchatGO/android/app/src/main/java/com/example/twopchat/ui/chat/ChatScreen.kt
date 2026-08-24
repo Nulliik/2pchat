@@ -1538,30 +1538,7 @@ fun ChatScreen(
     }
 
     if (isProcessingAlbum) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = {}) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(24.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    CircularProgressIndicator(
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(36.dp)
-                    )
-                    Text(
-                        text = if (appLanguage == "Русский") "Подготовка медиафайлов..." else "Preparing media files...",
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-        }
+        ChatProcessingAlbumDialog(appLanguage = appLanguage)
     }
 
 
@@ -2412,1397 +2389,143 @@ fun ChatScreen(
             )
             }
         }
-
-        if (showWallpaperModal) {
-            DirectChatWallpaperModal(
-                peerName = peerName,
-                currentWallpaperPath = wallpaperPath,
-                currentDimming = wallpaperDimming,
-                currentBlur = wallpaperBlur,
-                appLanguage = appLanguage,
-                primaryColor = primaryColor,
-                surfaceColor = surfaceColor,
-                onSurfaceColor = onSurfaceColor,
-                onSurfaceVariant = onSurfaceVariant,
-                onDismiss = { showWallpaperModal = false },
-                onApply = { bitmap, dimming, isBlur, isMotion, applyToPeer ->
-                    showWallpaperModal = false
-                    val dir = File(context.filesDir, "direct_wallpapers").also { it.mkdirs() }
-                    val targetFile = File(dir, "wallpaper_$peerName.jpg")
-                    if (bitmap != null) {
-                        try {
-                            FileOutputStream(targetFile).use { out ->
-                                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
-                            }
-                            sharedPrefs.edit {
-                                putString("direct_wallpaper_$peerName", targetFile.absolutePath)
-                                putInt("direct_wallpaper_dimming_$peerName", dimming)
-                                putBoolean("direct_wallpaper_blur_$peerName", isBlur)
-                            }
-                            wallpaperPath = targetFile.absolutePath
-                            wallpaperDimming = dimming
-                            wallpaperBlur = isBlur
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                        }
-                    } else {
-                        targetFile.delete()
-                        sharedPrefs.edit {
-                            remove("direct_wallpaper_$peerName")
-                            remove("direct_wallpaper_dimming_$peerName")
-                            remove("direct_wallpaper_blur_$peerName")
-                        }
-                        wallpaperPath = null
-                        wallpaperBlur = false
-                    }
-
-                    if (applyToPeer) {
-                        P2PMessageRelay.sendDirectWallpaperUpdate(context, peerName, bitmap, dimming, isBlur)
-                        val textRu = if (bitmap != null) "Вы установили новые обои для этого чата" else "Вы удалили обои для этого чата"
-                        val textEn = if (bitmap != null) "You set a new wallpaper for this chat" else "You removed the wallpaper for this chat"
-                        val sysMsg = Message(
-                            id = newMessageId(),
-                            text = if (appLanguage == "Русский") textRu else textEn,
-                            isMe = true,
-                            timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
-                            attachmentType = "SYSTEM"
-                        )
-                        persistDatabase { db.saveMessage(peerName, sysMsg) }
-                        initialMessages.add(sysMsg)
-                        Toast.makeText(context, if (appLanguage == "Русский") "Обои применены у вас и отправлены $peerName" else "Wallpaper set for you and $peerName", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, if (appLanguage == "Русский") "Обои применены у вас" else "Wallpaper applied", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            )
-        }
-
-        // Message Options Overlay Panel
         val optionsMsg = selectedMessageForOptions
         if (optionsMsg != null) {
             val msg = optionsMsg
-            AlertDialog(
-                onDismissRequest = { selectedMessageForOptions = null },
-                confirmButton = {},
-                dismissButton = {},
-                text = {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                            .padding(vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            text = if (appLanguage == "Русский") "Действия с сообщением" else "Message Actions",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = primaryColor,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                        )
-
-                        // Quick Emoji Reactions
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState())
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            listOf("👍", "❤️", "🔥", "😂", "😮", "😢", "👏", "💩", "🎉", "💯").forEach { emoji ->
-                                val senders = msg.reactions[emoji] ?: emptyList()
-                                val isSelected = senders.any { it.equals("Me", ignoreCase = true) }
-                                val bgColor = if (isSelected) primaryColor else primaryColor.copy(alpha = 0.12f)
-
-                                Surface(
-                                    shape = RoundedCornerShape(20.dp),
-                                    color = bgColor,
-                                    border = if (isSelected) BorderStroke(1.5.dp, primaryColor) else null,
-                                    modifier = Modifier
-                                        .height(40.dp)
-                                        .clickable {
-                                            triggerHaptic()
-                                            val idx = initialMessages.indexOfFirst { it.id == msg.id }
-                                            if (idx != -1) {
-                                                val current = initialMessages[idx]
-                                                val updatedMap = current.reactions.toMutableMap()
-                                                val currentSenders = (updatedMap[emoji] ?: emptyList()).toMutableList()
-                                                val hasReacted = currentSenders.any { it.equals("Me", ignoreCase = true) }
-
-                                                if (hasReacted) {
-                                                    currentSenders.removeAll { it.equals("Me", ignoreCase = true) }
-                                                    if (currentSenders.isEmpty()) {
-                                                        updatedMap.remove(emoji)
-                                                    } else {
-                                                        updatedMap[emoji] = currentSenders
-                                                    }
-                                                } else {
-                                                    currentSenders.add("Me")
-                                                    updatedMap[emoji] = currentSenders
-                                                }
-
-                                                initialMessages[idx] = current.copy(reactions = updatedMap)
-                                                db.updateMessageReactions(msg.id, updatedMap)
-                                            }
-                                            val endpoint = P2PMessageRelay.peerEndpoints[peerName]
-                                            if (endpoint != null && peerName != "Saved Messages") {
-                                                P2PMessageRelay.sendReaction(context, peerName, endpoint, msg.id, msg.text, emoji)
-                                            }
-                                            selectedMessageForOptions = null
-                                        }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        Text(text = emoji, fontSize = 20.sp)
-                                        if (senders.isNotEmpty()) {
-                                            Text(
-                                                text = "${senders.size}",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isSelected) Color.White else primaryColor
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        androidx.compose.material3.HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 4.dp),
-                            color = onSurfaceColor.copy(alpha = 0.08f)
-                        )
-                        
-                        // Reply
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    replyingToMessage = msg
-                                    selectedMessageForOptions = null
-                                }
-                                .padding(vertical = 12.dp, horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_reply),
-                                contentDescription = "Reply",
-                                tint = onSurfaceColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = if (appLanguage == "Русский") "Ответить" else "Reply",
-                                fontSize = 15.sp,
-                                color = onSurfaceColor
-                            )
-                        }
-
-                        // Pin
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    sharedPrefs.edit {
-                                        putString("pinned_msg_id_${peerName}", msg.id)
-                                        putString("pinned_msg_text_${peerName}", SecureStorage.encrypt(msg.text))
-                                        putString("pinned_msg_sender_${peerName}", if (msg.isMe) "You" else peerName)
-                                        putString("pinned_by_${peerName}", "You")
-                            }
-                                    pinnedMsgId = msg.id
-                                    pinnedMsgText = msg.text
-                                    pinnedMsgSender = if (msg.isMe) "You" else peerName
-                                    pinnedBy = "You"
-                                    P2PMessageRelay.sendPinMessage(context, peerName, msg.id, msg.text, msg.isMe)
-                                    selectedMessageForOptions = null
-                                }
-                                .padding(vertical = 12.dp, horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_pin),
-                                contentDescription = "Pin",
-                                tint = onSurfaceColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = if (appLanguage == "Русский") "Закрепить" else "Pin",
-                                fontSize = 15.sp,
-                                color = onSurfaceColor
-                            )
-                        }
-
-                        // Edit
-                        val isEditable = msg.isMe && 
-                                (System.currentTimeMillis() - msg.sentAtEpochMs <= 3600_000L) && 
-                                msg.attachmentType == null
-                        
-                        if (isEditable) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        editingMessage = msg
-                                        inputText = msg.text
-                                        selectedMessageForOptions = null
-                                    }
-                                    .padding(vertical = 12.dp, horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_edit),
-                                    contentDescription = "Edit",
-                                    tint = onSurfaceColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(14.dp))
-                                Text(
-                                    text = if (appLanguage == "Русский") "Редактировать" else "Edit",
-                                    fontSize = 15.sp,
-                                    color = onSurfaceColor
-                                )
-                            }
-                        }
-
-                        // Copy
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    copyTextToClipboard(context, "2PChat message", msg.text)
-                                    Toast.makeText(context, if (appLanguage == "Русский") "Текст скопирован" else "Text copied to clipboard", Toast.LENGTH_SHORT).show()
-                                    selectedMessageForOptions = null
-                                }
-                                .padding(vertical = 12.dp, horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_copy),
-                                contentDescription = "Copy",
-                                tint = onSurfaceColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = if (appLanguage == "Русский") "Копировать текст" else "Copy Text",
-                                fontSize = 15.sp,
-                                color = onSurfaceColor
-                            )
-                        }
-
-                        if (
-                            msg.attachmentType == GifStorageManager.ATTACHMENT_TYPE &&
-                            msg.attachmentUri != null
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        val source = File(msg.attachmentUri)
-                                        selectedMessageForOptions = null
-                                        coroutineScope.launch {
-                                            val stored = withContext(Dispatchers.IO) {
-                                                GifStorageManager.save(context, source)
-                                            }
-                                            Toast.makeText(
-                                                context,
-                                                if (stored != null) {
-                                                    if (appLanguage == "Русский") {
-                                                        "GIF сохранён в коллекцию"
-                                                    } else {
-                                                        "GIF saved to collection"
-                                                    }
-                                                } else {
-                                                    if (appLanguage == "Русский") {
-                                                        "Не удалось сохранить GIF"
-                                                    } else {
-                                                        "Could not save GIF"
-                                                    }
-                                                },
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
-                                        }
-                                    }
-                                    .padding(vertical = 12.dp, horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_add_photo_smiley),
-                                    contentDescription = "Save GIF",
-                                    tint = onSurfaceColor,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Spacer(Modifier.width(14.dp))
-                                Text(
-                                    text = if (appLanguage == "Русский") {
-                                        "Сохранить в Мои GIF"
-                                    } else {
-                                        "Save to My GIFs"
-                                    },
-                                    fontSize = 15.sp,
-                                    color = onSurfaceColor,
-                                )
-                            }
-                        }
-
-                        // Save Attachment (If attachmentUri != null, regardless of whether it is IMAGE, VIDEO, or FILE)
-                        if (msg.attachmentUri != null) {
-                            val isImage = msg.attachmentType == "IMAGE"
-                            val isVideo = msg.attachmentType == "VIDEO"
-                            val title = if (isImage) {
-                                if (appLanguage == "Русский") "Скачать изображение" else "Save Image"
-                            } else if (isVideo) {
-                                if (appLanguage == "Русский") "Скачать видео" else "Save Video"
-                            } else {
-                                if (appLanguage == "Русский") "Скачать файл" else "Save File"
-                            }
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
-                                            ContextCompat.checkSelfPermission(
-                                                context,
-                                                Manifest.permission.WRITE_EXTERNAL_STORAGE
-                                            ) == PackageManager.PERMISSION_GRANTED
-                                        ) {
-                                            coroutineScope.launch(Dispatchers.IO) {
-                                                val uri = if (isImage) {
-                                                    saveImageToPublicGallery(context, msg.attachmentUri)
-                                                } else {
-                                                    saveFileToPublicDownloads(context, msg.attachmentUri, msg.attachmentName ?: "file")
-                                                }
-                                                withContext(Dispatchers.Main) {
-                                                    if (uri != null) {
-                                                        val successText = if (isImage) {
-                                                            if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery"
-                                                        } else {
-                                                            if (appLanguage == "Русский") "Файл сохранен в Загрузки" else "File saved to Downloads"
-                                                        }
-                                                        Toast.makeText(context, successText, Toast.LENGTH_SHORT).show()
-                                                    } else {
-                                                        val failText = if (isImage) {
-                                                            if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image"
-                                                        } else {
-                                                            if (appLanguage == "Русский") "Не удалось сохранить файл" else "Failed to save file"
-                                                        }
-                                                        Toast.makeText(context, failText, Toast.LENGTH_SHORT).show()
-                                                    }
-                                                }
-                                            }
-                                        } else {
-                                            pendingDownloadMsg = msg
-                                            storageWritePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                                        }
-                                        selectedMessageForOptions = null
-                                    }
-                                    .padding(vertical = 12.dp, horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_download),
-                                    contentDescription = "Save Attachment",
-                                    tint = onSurfaceColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(14.dp))
-                                Text(
-                                    text = title,
-                                    fontSize = 15.sp,
-                                    color = onSurfaceColor
-                                )
-                            }
-                        }
-
-                        // Forward
-                        if (!isForwardingRestricted) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        messageToForward = msg
-                                        showForwardDialog = true
-                                        selectedMessageForOptions = null
-                                    }
-                                    .padding(vertical = 12.dp, horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_forward),
-                                    contentDescription = "Forward",
-                                    tint = onSurfaceColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(14.dp))
-                                Text(
-                                    text = if (appLanguage == "Русский") "Переслать" else "Forward",
-                                    fontSize = 15.sp,
-                                    color = onSurfaceColor
-                                )
-                            }
-                        }
-
-                        // Delete
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    persistDatabase { db.deleteMessage(msg.id) }
-                                    initialMessages.remove(msg)
-                                    P2PMessageRelay.sendDeleteMessage(context, peerName, msg.id)
-                                    if (msg.id == pinnedMsgId) {
-                                        sharedPrefs.edit {
-remove("pinned_msg_id_${peerName}")
-                                            remove("pinned_msg_text_${peerName}")
-                                            remove("pinned_msg_sender_${peerName}")
-                                            remove("pinned_by_${peerName}")
-                                        }
-                                        pinnedMsgId = null
-                                        pinnedMsgText = null
-                                        pinnedMsgSender = null
-                                        pinnedBy = null
-                                        P2PMessageRelay.sendUnpinMessage(context, peerName)
-                                    }
-                                    selectedMessageForOptions = null
-                                }
-                                .padding(vertical = 12.dp, horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_delete),
-                                contentDescription = "Delete",
-                                tint = Color.Red,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = if (appLanguage == "Русский") "Удалить" else "Delete",
-                                fontSize = 15.sp,
-                                color = Color.Red
-                            )
-                        }
-
-                        // Select
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    isSelectMode = true
-                                    selectedMessages.clear()
-                                    selectedMessages.add(msg)
-                                    selectedMessageForOptions = null
-                                }
-                                .padding(vertical = 12.dp, horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_select),
-                                contentDescription = "Select",
-                                tint = onSurfaceColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = if (appLanguage == "Русский") "Выделить" else "Select",
-                                fontSize = 15.sp,
-                                color = onSurfaceColor
-                            )
-                        }
-                    }
-                },
-                containerColor = surfaceColor,
-                shape = RoundedCornerShape(24.dp)
-            )
-        }
-
-        // Custom Themed Date Picker Dialog matching active app primaryColor theme
-        if (showDatePickerDialog) {
-            val datePickerState = rememberDatePickerState(
-                initialSelectedDateMillis = selectedDateFilterMs ?: System.currentTimeMillis()
-            )
-            DatePickerDialog(
-                onDismissRequest = { showDatePickerDialog = false },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            datePickerState.selectedDateMillis?.let { dateMs ->
-                                val utcCal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = dateMs }
-                                val localCal = java.util.Calendar.getInstance().apply {
-                                    set(java.util.Calendar.YEAR, utcCal.get(java.util.Calendar.YEAR))
-                                    set(java.util.Calendar.MONTH, utcCal.get(java.util.Calendar.MONTH))
-                                    set(java.util.Calendar.DAY_OF_MONTH, utcCal.get(java.util.Calendar.DAY_OF_MONTH))
-                                    set(java.util.Calendar.HOUR_OF_DAY, 0)
-                                    set(java.util.Calendar.MINUTE, 0)
-                                    set(java.util.Calendar.SECOND, 0)
-                                    set(java.util.Calendar.MILLISECOND, 0)
-                                }
-                                selectedDateFilterMs = localCal.timeInMillis
-                            }
-                            showDatePickerDialog = false
-                        },
-                        colors = ButtonDefaults.textButtonColors(contentColor = primaryColor)
-                    ) {
-                        Text(
-                            text = if (appLanguage == "Русский") "ОК" else "OK",
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                },
-                dismissButton = {
-                    TextButton(
-                        onClick = { showDatePickerDialog = false },
-                        colors = ButtonDefaults.textButtonColors(contentColor = primaryColor)
-                    ) {
-                        Text(
-                            text = if (appLanguage == "Русский") "ОТМЕНА" else "CANCEL",
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                },
-                colors = DatePickerDefaults.colors(
-                    containerColor = surfaceColor,
-                )
-            ) {
-                DatePicker(
-                    state = datePickerState,
-                    colors = DatePickerDefaults.colors(
-                        containerColor = surfaceColor,
-                        titleContentColor = primaryColor,
-                        headlineContentColor = primaryColor,
-                        weekdayContentColor = onSurfaceColor.copy(alpha = 0.6f),
-                        subheadContentColor = onSurfaceColor,
-                        yearContentColor = onSurfaceColor,
-                        selectedYearContainerColor = primaryColor,
-                        selectedYearContentColor = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White,
-                        selectedDayContainerColor = primaryColor,
-                        selectedDayContentColor = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White,
-                        todayDateBorderColor = primaryColor,
-                        todayContentColor = primaryColor,
-                        dayContentColor = onSurfaceColor,
-                    )
-                )
-            }
-        }
-
-        // Forward Dialog
-        if (showForwardDialog && messageToForward != null) {
-            val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-            val groups = com.example.twopchat.group.runtime.GroupChatCoordinator.visibleGroups()
-            
-            val groupItems = groups.map { group ->
-                com.example.twopchat.ui.common.RecipientItem(
-                    id = "group_${group.groupId}",
-                    title = group.title,
-                    subtitle = if (appLanguage == "Русский") "Группа" else "Group",
-                    isOnline = true,
-                    isGroup = true,
-                )
-            }
-
-            val peerItems = activeSet.filter { it != peerName }.map { name ->
-                val avatar = P2PMessageRelay.peerAvatars[name]
-                val isOnline = P2PMessageRelay.peerSessionStates[name] == true || name == "Saved Messages"
-                val subtitle = when {
-                    name == "Saved Messages" -> if (appLanguage == "Русский") "Личное хранилище" else "Personal storage"
-                    isOnline -> if (appLanguage == "Русский") "В сети" else "Online"
-                    else -> if (appLanguage == "Русский") "Был(а) недавно" else "Offline"
-                }
-                val initials = if (name == "Saved Messages") {
-                    "🔖"
-                } else if (name.contains(" ")) {
-                    name.split(" ").map { it.take(1) }.joinToString("")
-                } else {
-                    name.take(2).uppercase()
-                }
-                com.example.twopchat.ui.common.RecipientItem(
-                    id = "peer_$name",
-                    title = name,
-                    subtitle = subtitle,
-                    isOnline = isOnline,
-                    avatarBitmap = avatar,
-                    initials = initials,
-                    isGroup = false,
-                )
-            }
-
-            com.example.twopchat.ui.common.RecipientPickerDialog(
-                title = if (appLanguage == "Русский") "Переслать сообщение" else "Forward Message",
-                searchPlaceholder = if (appLanguage == "Русский") "Поиск получателя..." else "Search recipient...",
-                recipients = groupItems + peerItems,
+            ChatMessageOptionsMenu(
+                msg = msg,
+                appLanguage = appLanguage,
                 primaryColor = primaryColor,
-                onDismiss = {
-                    showForwardDialog = false
-                    messageToForward = null
-                },
-                onRecipientSelected = { item ->
-                    val currentMsg = messageToForward
-                    if (item.isGroup) {
-                        val targetGroupId = item.id.removePrefix("group_")
-                        val textToForward = currentMsg?.text.orEmpty()
-                        showForwardDialog = false
-                        messageToForward = null
-                        if (currentMsg?.attachmentUri != null && currentMsg.attachmentName != null) {
-                            com.example.twopchat.group.runtime.GroupChatCoordinator.sendAttachment(
-                                targetGroupId,
-                                currentMsg.attachmentName,
-                                ""
-                            )
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                isForwardingRestricted = isForwardingRestricted,
+                onDismiss = { selectedMessageForOptions = null },
+                onReactionClick = { emoji ->
+                    triggerHaptic()
+                    val idx = initialMessages.indexOfFirst { it.id == msg.id }
+                    if (idx != -1) {
+                        val current = initialMessages[idx]
+                        val updatedMap = current.reactions.toMutableMap()
+                        val currentSenders = (updatedMap[emoji] ?: emptyList()).toMutableList()
+                        val hasReacted = currentSenders.any { it.equals("Me", ignoreCase = true) }
+
+                        if (hasReacted) {
+                            currentSenders.removeAll { it.equals("Me", ignoreCase = true) }
+                            if (currentSenders.isEmpty()) {
+                                updatedMap.remove(emoji)
+                            } else {
+                                updatedMap[emoji] = currentSenders
+                            }
                         } else {
-                            com.example.twopchat.group.runtime.GroupChatCoordinator.sendMessage(targetGroupId, textToForward, null)
+                            currentSenders.add("Me")
+                            updatedMap[emoji] = currentSenders
                         }
-                        Toast.makeText(context, if (appLanguage == "Русский") "Переслано в ${item.title}" else "Forwarded to ${item.title}", Toast.LENGTH_SHORT).show()
-                    } else {
-                        val chatName = item.id.removePrefix("peer_")
-                        if (P2PPreferences.isPeerIdentityChangePending(context, chatName)) {
+
+                        initialMessages[idx] = current.copy(reactions = updatedMap)
+                        db.updateMessageReactions(msg.id, updatedMap)
+                    }
+                    val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+                    if (endpoint != null && peerName != "Saved Messages") {
+                        P2PMessageRelay.sendReaction(context, peerName, endpoint, msg.id, msg.text, emoji)
+                    }
+                    selectedMessageForOptions = null
+                },
+                onReply = {
+                    replyingToMessage = msg
+                    selectedMessageForOptions = null
+                },
+                onPin = {
+                    sharedPrefs.edit {
+                        putString("pinned_msg_id_${peerName}", msg.id)
+                        putString("pinned_msg_text_${peerName}", SecureStorage.encrypt(msg.text))
+                        putString("pinned_msg_sender_${peerName}", if (msg.isMe) "You" else peerName)
+                        putString("pinned_by_${peerName}", "You")
+                    }
+                    pinnedMsgId = msg.id
+                    pinnedMsgText = msg.text
+                    pinnedMsgSender = if (msg.isMe) "You" else peerName
+                    pinnedBy = "You"
+                    P2PMessageRelay.sendPinMessage(context, peerName, msg.id, msg.text, msg.isMe)
+                    selectedMessageForOptions = null
+                },
+                onEdit = {
+                    editingMessage = msg
+                    inputText = msg.text
+                    selectedMessageForOptions = null
+                },
+                onCopy = {
+                    copyTextToClipboard(context, "2PChat message", msg.text)
+                    Toast.makeText(context, if (appLanguage == "Русский") "Текст скопирован" else "Text copied to clipboard", Toast.LENGTH_SHORT).show()
+                    selectedMessageForOptions = null
+                },
+                onSaveGif = {
+                    val uri = msg.attachmentUri
+                    if (uri != null) {
+                        val source = File(uri)
+                        coroutineScope.launch {
+                            val stored = withContext(Dispatchers.IO) {
+                                GifStorageManager.save(context, source)
+                            }
                             Toast.makeText(
                                 context,
-                                if (appLanguage == "Русский") "В чате $chatName отправка приостановлена из-за смены ключа" else "Sending to $chatName is paused because its key changed",
-                                Toast.LENGTH_LONG,
+                                if (stored != null) {
+                                    if (appLanguage == "Русский") "GIF сохранён в коллекцию" else "GIF saved to collection"
+                                } else {
+                                    if (appLanguage == "Русский") "Не удалось сохранить GIF" else "Could not save GIF"
+                                },
+                                Toast.LENGTH_SHORT,
                             ).show()
-                            return@RecipientPickerDialog
                         }
-                        val textToForward = currentMsg?.text ?: ""
-                        val forwardTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                        val forwardEndpoint = P2PMessageRelay.peerEndpoints[chatName]
-                        val fwdInitialStatus = if (forwardEndpoint != null || chatName == "Saved Messages") "SENT" else "PENDING"
-                        val fwdMsg = Message(
-                            id = newMessageId(),
-                            text = textToForward,
-                            isMe = true,
-                            timestamp = forwardTime,
-                            attachmentType = currentMsg?.attachmentType,
-                            attachmentUri = currentMsg?.attachmentUri,
-                            attachmentName = currentMsg?.attachmentName,
-                            status = fwdInitialStatus
-                        )
-                        
-                        if (persistEnabled || fwdInitialStatus == "PENDING") {
-                            persistDatabase { db.saveMessage(chatName, fwdMsg) }
-                        }
-                        sharedPrefs.edit { putString("last_msg_$chatName", SecureStorage.encrypt("You: $textToForward")) }
-                        
-                        if (forwardEndpoint != null && chatName != "Saved Messages") {
-                            val attachUri = currentMsg?.attachmentUri
-                            if (currentMsg?.attachmentType != null && attachUri != null) {
-                                P2PMessageRelay.sendFile(context, chatName, forwardEndpoint, attachUri, fwdMsg.id) { success ->
-                                    if (!success) {
-                                        persistDatabase { db.updateMessageStatus(fwdMsg.id, "PENDING") }
-                                    }
-                                }
-                            } else {
-                                P2PMessageRelay.sendMessage(context, forwardEndpoint, username, textToForward) { success ->
-                                    if (!success) {
-                                        persistDatabase { db.updateMessageStatus(fwdMsg.id, "PENDING") }
-                                    }
-                                }
-                            }
-                        }
-                        
-                        Toast.makeText(context, if (appLanguage == "Русский") "Переслано в $chatName" else "Forwarded to $chatName", Toast.LENGTH_SHORT).show()
-                        showForwardDialog = false
-                        messageToForward = null
                     }
-                }
-            )
-        }
-
-
-
-        if (showVerifyDialog) {
-            val emojis = remember(localFingerprint, activeFingerprint) {
-                getVerificationEmojis(localFingerprint, activeFingerprint)
-            }
-
-            LaunchedEffect(isWaitingForVerifyResponse) {
-                if (isWaitingForVerifyResponse) {
-                    kotlinx.coroutines.delay(30000L)
-                    if (isWaitingForVerifyResponse) {
-                        isWaitingForVerifyResponse = false
-                        Toast.makeText(
-                            context,
-                            if (appLanguage == "Русский") "Собеседник не ответил на запрос верификации" else "Peer did not respond to verification request",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                }
-            }
-
-            AlertDialog(
-                onDismissRequest = { 
-                    showVerifyDialog = false 
-                    isWaitingForVerifyResponse = false
+                    selectedMessageForOptions = null
                 },
-                confirmButton = {},
-                dismissButton = {
-                    TextButton(
-                        onClick = { 
-                            showVerifyDialog = false 
-                            isWaitingForVerifyResponse = false
-                        }
-                    ) {
-                        Text(Localizations.getString("close", appLanguage), color = primaryColor)
-                    }
-                },
-                title = { 
-                    Text(
-                        text = Localizations.getString("verify_peer", appLanguage), 
-                        fontSize = 16.sp, 
-                        fontWeight = FontWeight.Bold, 
-                        color = onSurfaceColor
-                    ) 
-                },
-                text = {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = if (appLanguage == "Русский") {
-                                "Сравните эти эмодзи безопасности со своим собеседником по другому каналу или голосом:"
-                            } else {
-                                "Compare these security emojis with your peer over another channel or voice:"
-                            },
-                            fontSize = 13.sp,
-                            color = onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                        
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .padding(vertical = 12.dp)
-                                .fillMaxWidth()
+                onSaveAttachment = {
+                    val attachUri = msg.attachmentUri
+                    if (attachUri != null) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
                         ) {
-                            emojis.forEach { emoji ->
-                                Text(text = emoji, fontSize = 32.sp)
-                            }
-                        }
-
-                        if (isVerified) {
-                            val dangerRed = Color(0xFFE53935)
-                            Button(
-                                onClick = {
-                                    isVerified = false
-                                    P2PPreferences.setPeerVerified(context, peerName, false)
-                                },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = dangerRed,
-                                    contentColor = Color.White
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = Localizations.getString("unverify_btn", appLanguage),
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        } else {
-                            if (isWaitingForVerifyResponse) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    CircularProgressIndicator(
-                                        color = primaryColor,
-                                        modifier = Modifier.size(24.dp),
-                                        strokeWidth = 2.dp
-                                    )
-                                    Text(
-                                        text = if (appLanguage == "Русский") "Ожидание подтверждения от собеседника..." else "Waiting for confirmation from peer...",
-                                        fontSize = 11.sp,
-                                        color = onSurfaceVariant
-                                    )
-                                    OutlinedButton(
-                                        onClick = {
-                                            isWaitingForVerifyResponse = false
-                                        },
-                                        shape = RoundedCornerShape(12.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(
-                                            text = if (appLanguage == "Русский") "Отменить запрос" else "Cancel request",
-                                            fontSize = 12.sp
-                                        )
-                                    }
+                            coroutineScope.launch(Dispatchers.IO) {
+                                val uri = if (msg.attachmentType == "IMAGE") {
+                                    saveImageToPublicGallery(context, attachUri)
+                                } else {
+                                    saveFileToPublicDownloads(context, attachUri, msg.attachmentName ?: "file")
                                 }
-                            } else {
-                                Button(
-                                    onClick = {
-                                        isWaitingForVerifyResponse = true
-                                        P2PMessageRelay.sendVerificationRequest(context, peerName) { success ->
-                                            if (!success) {
-                                                isWaitingForVerifyResponse = false
-                                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось отправить запрос" else "Failed to send request", Toast.LENGTH_SHORT).show()
-                                            }
+                                withContext(Dispatchers.Main) {
+                                    if (uri != null) {
+                                        val successText = if (msg.attachmentType == "IMAGE") {
+                                            if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery"
+                                        } else {
+                                            if (appLanguage == "Русский") "Файл сохранен в Загрузки" else "File saved to Downloads"
                                         }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color(0xFF4CAF50),
-                                        contentColor = Color.White
-                                    ),
-                                    shape = RoundedCornerShape(14.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = if (appLanguage == "Русский") "Отправить запрос верификации" else "Send verification request"
-                                    )
-                                }
-                            }
-                        }
-                    }
-                },
-                containerColor = surfaceColor,
-                shape = RoundedCornerShape(20.dp)
-            )
-        }
-
-        if (showHardBlockDialog) {
-            AlertDialog(
-                onDismissRequest = { showHardBlockDialog = false },
-                title = {
-                    Text(
-                        if (appLanguage == "Русский") "Блокировка и приватность" else "Block & Privacy",
-                        fontWeight = FontWeight.Bold,
-                        color = onSurfaceColor,
-                    )
-                },
-                text = {
-                    Text(
-                        if (appLanguage == "Русский") {
-                            "Этот пользователь знает ваш текущий Tor Onion-адрес. Сменить Tor-адрес сейчас (Hard Block), чтобы навсегда исключить возможность контакта?"
-                        } else {
-                            "This user knows your current Tor .onion address. Rotate Onion address now (Hard Block) to permanently prevent further contact?"
-                        },
-                        fontSize = 13.sp,
-                        color = onSurfaceVariant,
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            sharedPrefs.edit().putBoolean("blocked_peer_$peerName", true).apply()
-                            isBlocked = true
-                            showHardBlockDialog = false
-                            Toast.makeText(context, if (appLanguage == "Русский") "Пользователь заблокирован. Смена Tor-адреса..." else "User blocked. Rotating Tor address...", Toast.LENGTH_SHORT).show()
-                            coroutineScope.launch {
-                                TorManager.rotateOnionAddress(context)
-                            }
-                        }
-                    ) {
-                        Text(
-                            if (appLanguage == "Русский") "Сменить Tor и заблокировать" else "Rotate & Block",
-                            color = primaryColor,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                },
-                dismissButton = {
-                    Row {
-                        TextButton(
-                            onClick = {
-                                sharedPrefs.edit().putBoolean("blocked_peer_$peerName", true).apply()
-                                isBlocked = true
-                                showHardBlockDialog = false
-                                Toast.makeText(context, if (appLanguage == "Русский") "Пользователь заблокирован" else "User blocked", Toast.LENGTH_SHORT).show()
-                            }
-                        ) {
-                            Text(if (appLanguage == "Русский") "Только заблокировать" else "Block Only", color = Color.Red)
-                        }
-                        TextButton(
-                            onClick = { showHardBlockDialog = false }
-                        ) {
-                            Text(if (appLanguage == "Русский") "Отмена" else "Cancel", color = onSurfaceVariant)
-                        }
-                    }
-                },
-                containerColor = surfaceColor,
-            )
-        }
-
-        if (showIncomingVerifyDialog) {
-            val peerFingerprint = sharedPrefs.getString("peer_fingerprint_$peerName", null).orEmpty()
-            val emojis = remember(localFingerprint, peerFingerprint) {
-                getVerificationEmojis(localFingerprint, peerFingerprint)
-            }
-
-            AlertDialog(
-                onDismissRequest = {
-                    showIncomingVerifyDialog = false
-                    P2PMessageRelay.sendVerificationResponse(context, peerName, false)
-                },
-                confirmButton = {},
-                dismissButton = {
-                    TextButton(
-                        onClick = {
-                            showIncomingVerifyDialog = false
-                            P2PMessageRelay.sendVerificationResponse(context, peerName, false)
-                        }
-                    ) {
-                        Text(if (appLanguage == "Русский") "Отклонить" else "Decline", color = MaterialTheme.colorScheme.error)
-                    }
-                },
-                title = {
-                    Text(
-                        text = if (appLanguage == "Русский") "Запрос верификации" else "Verification Request",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = onSurfaceColor
-                    )
-                },
-                text = {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = if (appLanguage == "Русский") {
-                                "$peerName предлагает подтвердить безопасность вашего подключения. Сверьте эти эмодзи:"
-                            } else {
-                                "$peerName wants to verify the security of your connection. Compare these emojis:"
-                            },
-                            fontSize = 13.sp,
-                            color = onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .padding(vertical = 12.dp)
-                                .fillMaxWidth()
-                        ) {
-                            emojis.forEach { emoji ->
-                                Text(text = emoji, fontSize = 32.sp)
-                            }
-                        }
-
-                        Button(
-                            onClick = {
-                                isVerified = true
-                                P2PPreferences.setPeerVerified(context, peerName, true)
-                                P2PMessageRelay.sendVerificationResponse(context, peerName, true)
-                                showIncomingVerifyDialog = false
-                                Toast.makeText(context, if (appLanguage == "Русский") "Личность подтверждена! Соединение защищено." else "Identity verified! Connection secured.", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF4CAF50),
-                                contentColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = if (appLanguage == "Русский") "Подтвердить совпадение" else "Confirm Match"
-                            )
-                        }
-                    }
-                },
-                containerColor = surfaceColor,
-                shape = RoundedCornerShape(20.dp)
-            )
-        }
-
-        if (showIdentityWarning && isIdentityPaused) {
-            AlertDialog(
-                onDismissRequest = { showIdentityWarning = false },
-                title = {
-                    Text(
-                        if (appLanguage == "Русский") "Ключ безопасности изменился" else "Security key changed",
-                        color = MaterialTheme.colorScheme.error,
-                        fontWeight = FontWeight.Bold,
-                    )
-                },
-                text = {
-                    Text(
-                        if (appLanguage == "Русский") {
-                            "У $peerName появился новый ключ. Это может быть переустановка приложения, новый аккаунт с тем же именем или попытка перехвата. До вашего решения соединение, сообщения, файлы и служебные подтверждения заблокированы."
-                        } else {
-                            "$peerName presented a new key. This may be an app reinstall, a new account with the same name, or an interception attempt. Connection, messages, files, and delivery controls are blocked until you decide."
-                        },
-                        color = onSurfaceColor,
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            showIdentityWarning = false
-                            showIdentityConfirmation = true
-                        },
-                        enabled = pendingFingerprint.isNotBlank(),
-                    ) {
-                        Text(if (appLanguage == "Русский") "Проверить новый ключ" else "Review new key")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showIdentityWarning = false }) {
-                        Text(if (appLanguage == "Русский") "Оставить заблокированным" else "Keep blocked")
-                    }
-                },
-                containerColor = surfaceColor,
-                shape = RoundedCornerShape(20.dp),
-            )
-        }
-
-        if (showIdentityConfirmation && isIdentityPaused) {
-            AlertDialog(
-                onDismissRequest = {
-                    if (!identityDecisionInProgress) {
-                        showIdentityConfirmation = false
-                        showIdentityWarning = true
-                    }
-                },
-                title = {
-                    Text(
-                        if (appLanguage == "Русский") "Подтвердить новый ключ?" else "Confirm the new key?",
-                        fontWeight = FontWeight.Bold,
-                        color = onSurfaceColor,
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(
-                            if (appLanguage == "Русский") {
-                                "Сверьте новый ключ с $peerName по другому доверенному каналу. После принятия прежняя верификация будет сброшена и создастся новая защищённая сессия."
-                            } else {
-                                "Compare the new key with $peerName over another trusted channel. Accepting it resets the previous verification and creates a new secure session."
-                            },
-                            color = onSurfaceColor,
-                        )
-                        Text(
-                            (if (appLanguage == "Русский") "Прежний: " else "Previous: ") +
-                                activeFingerprint.chunked(4).joinToString(" "),
-                            color = onSurfaceVariant,
-                            fontSize = 12.sp,
-                        )
-                        Text(
-                            (if (appLanguage == "Русский") "Новый: " else "New: ") +
-                                pendingFingerprint.chunked(4).joinToString(" "),
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        if (identityDecisionInProgress) {
-                            LinearProgressIndicator(Modifier.fillMaxWidth())
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        enabled = !identityDecisionInProgress && pendingFingerprint.isNotBlank(),
-                        onClick = {
-                            identityDecisionInProgress = true
-                            P2PMessageRelay.acceptPendingPeerIdentity(context, peerName) { connected ->
-                                identityDecisionInProgress = false
-                                val accepted = !P2PPreferences.isPeerIdentityChangePending(context, peerName)
-                                showIdentityConfirmation = !accepted
-                                val message = if (!accepted) {
-                                    if (appLanguage == "Русский") "Не удалось принять новый ключ" else "Could not accept the new key"
-                                } else if (appLanguage == "Русский") {
-                                    if (connected) "Новый ключ принят, создаётся новая сессия" else "Новый ключ принят; подключиться сейчас не удалось"
-                                } else {
-                                    if (connected) "New key accepted; creating a new session" else "New key accepted; could not reconnect now"
-                                }
-                                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-                            }
-                        },
-                    ) {
-                        Text(if (appLanguage == "Русский") "Я сверил(а), принять" else "I verified it, accept")
-                    }
-                },
-                dismissButton = {
-                    TextButton(
-                        enabled = !identityDecisionInProgress,
-                        onClick = {
-                            identityDecisionInProgress = true
-                            P2PMessageRelay.rejectPendingPeerIdentity(context, peerName) {
-                                identityDecisionInProgress = false
-                                showIdentityConfirmation = false
-                                Toast.makeText(
-                                    context,
-                                    if (appLanguage == "Русский") "Новый ключ отклонён; сохранён прежний ключ" else "New key rejected; previous key remains pinned",
-                                    Toast.LENGTH_LONG,
-                                ).show()
-                            }
-                        },
-                    ) {
-                        Text(if (appLanguage == "Русский") "Отклонить новый ключ" else "Reject new key")
-                    }
-                },
-                containerColor = surfaceColor,
-                shape = RoundedCornerShape(20.dp),
-            )
-        }
-
-        if (showConnectionErrorDialog && !isIdentityPaused) {
-            AlertDialog(
-                onDismissRequest = { showConnectionErrorDialog = false },
-                confirmButton = {},
-                dismissButton = {
-                    TextButton(onClick = { showConnectionErrorDialog = false }) {
-                        Text(Localizations.getString("close", appLanguage), color = primaryColor)
-                    }
-                },
-                title = {
-                    Text(
-                        text = if (appLanguage == "Русский") "Ошибка подключения" else "Connection Failed",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = onSurfaceColor
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Text(
-                            text = if (errorReasonYggdrasilDisabled) {
-                                if (appLanguage == "Русский") {
-                                    "Не удалось установить P2P-подключение к собеседнику. Скорее всего, вы или ваш собеседник находитесь за «серым» IP-адресом (NAT), что блокирует прямое соединение.\n\nРекомендуется включить Yggdrasil для обхода NAT и прямой связи."
-                                } else {
-                                    "Failed to establish P2P connection. Most likely, you or your peer are behind a NAT/firewall which blocks direct packets.\n\nIt is recommended to enable Yggdrasil routing to bypass NAT."
-                                }
-                            } else {
-                                if (appLanguage == "Русский") {
-                                    "Не удалось подключиться через сеть Yggdrasil. Убедитесь, что ваш собеседник также включил Yggdrasil в настройках и мессенджер запущен на обоих устройствах."
-                                } else {
-                                    "Failed to connect via Yggdrasil. Ensure your peer has also enabled Yggdrasil and the app is active on both devices."
-                                }
-                            },
-                            fontSize = 13.sp,
-                            color = onSurfaceVariant
-                        )
-
-                        if (errorReasonYggdrasilDisabled) {
-                            Button(
-                                onClick = {
-                                    showConnectionErrorDialog = false
-                                    val vpnIntent = VpnService.prepare(context)
-                                    if (vpnIntent != null) {
-                                        vpnLauncher.launch(vpnIntent)
+                                        Toast.makeText(context, successText, Toast.LENGTH_SHORT).show()
                                     } else {
-                                        val intent = Intent(context, PacketTunnelProvider::class.java).apply {
-                                            action = PacketTunnelProvider.ACTION_START
+                                        val failText = if (msg.attachmentType == "IMAGE") {
+                                            if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image"
+                                        } else {
+                                            if (appLanguage == "Русский") "Не удалось сохранить файл" else "Failed to save file"
                                         }
-                                        context.startService(intent)
-                                        sharedPrefs.edit { putBoolean("settings_yggdrasil", true) }
-                                        Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, failText, Toast.LENGTH_SHORT).show()
                                     }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Включить Yggdrasil" else "Enable Yggdrasil",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                }
                             }
+                        } else {
+                            pendingDownloadMsg = msg
+                            storageWritePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                         }
                     }
+                    selectedMessageForOptions = null
                 },
-                containerColor = surfaceColor,
-                shape = RoundedCornerShape(20.dp)
-            )
-        }
-
-        if (showProfileOverlay && peerName != "Saved Messages") {
-            SharedMediaScreen(
-                peerName = peerName,
-                messages = initialMessages.toList(),
-                primaryColor = primaryColor,
-                surfaceColor = surfaceColor,
-                onSurfaceColor = onSurfaceColor,
-                onSurfaceVariant = onSurfaceVariant,
-                appLanguage = appLanguage,
-                isVerified = isVerified,
-                isMuted = isMuted,
-                onToggleMute = { newMuted ->
-                    isMuted = newMuted
-                    sharedPrefs.edit().putBoolean("mute_notifications_$peerName", newMuted).apply()
+                onForward = {
+                    messageToForward = msg
+                    showForwardDialog = true
+                    selectedMessageForOptions = null
                 },
-                onAvatarClick = { avatarBitmap ->
-                    val highRes = P2PMessageRelay.getOriginalAvatar(context, peerName) ?: avatarBitmap
-                    val avatarKey = "avatar:$peerName"
-                    activeFullscreenBitmapOverrides = mapOf(avatarKey to highRes)
-                    activeFullscreenImages = listOf(avatarKey)
-                    activeFullscreenImageIndex = 0
-                },
-                onImageClick = { paths, index ->
-                    if (paths.isNotEmpty()) {
-                        activeFullscreenBitmapOverrides = emptyMap()
-                        activeFullscreenImages = paths
-                        activeFullscreenImageIndex = index
-                    }
-                },
-                onVideoClick = { activeFullscreenVideo = it },
-                onBack = { showProfileOverlay = false },
-                onNavigateToMessage = { messageId ->
-                    showProfileOverlay = false
-                    val idx = initialMessages.indexOfFirst { it.id == messageId }
-                    if (idx != -1) {
-                        coroutineScope.launch {
-                            listState.scrollToItem(idx)
-                            highlightedMessageId = messageId
-                        }
-                    }
-                }
-            )
-        }
-
-        if (showConnectionModeSheet && peerName != "Saved Messages") {
-            ConnectionModeBottomSheet(
-                peerName = peerName,
-                appLanguage = appLanguage,
-                primaryColor = primaryColor,
-                surfaceColor = surfaceColor,
-                onSurfaceColor = onSurfaceColor,
-                onSurfaceVariant = onSurfaceVariant,
-                onDismiss = { showConnectionModeSheet = false }
-            )
-        }
-
-        if (showStickerPicker) {
-            StickerPickerBottomSheet(
-                appLanguage = appLanguage,
-                primaryColor = primaryColor,
-                onDismiss = { showStickerPicker = false },
-                onStickerSelected = ::sendSticker,
-            )
-        }
-
-        viewedStickerMessage?.let { stickerMessage ->
-            val packId = StickerSupport.packIdFromStickerFileName(
-                stickerMessage.attachmentName.orEmpty(),
-            )
-            if (packId != null) {
-                LaunchedEffect(stickerPackRequestInProgress) {
-                    if (stickerPackRequestInProgress) {
-                        kotlinx.coroutines.delay(10_000L)
-                        if (stickerPackRequestInProgress) {
-                            stickerPackRequestInProgress = false
-                            if (stickerPackRequestError == StickerPackRequestError.NONE) {
-                                stickerPackRequestError = StickerPackRequestError.TIMEOUT
-                            }
-                        }
-                    }
-                }
-                StickerPackBottomSheet(
-                    packId = packId,
-                    fallbackEmoji = stickerMessage.text,
-                    canRequestFromPeer = !stickerMessage.isMe && peerName != "Saved Messages",
-                    requestInProgress = stickerPackRequestInProgress,
-                    previewRevision = stickerPackPreviewRevision,
-                    appLanguage = appLanguage,
-                    primaryColor = primaryColor,
-                    requestError = stickerPackRequestError,
-                    onDismiss = {
-                        viewedStickerMessage = null
-                        stickerPackRequestInProgress = false
-                        stickerPackRequestError = StickerPackRequestError.NONE
-                    },
-                    onRequestPack = {
-                        if (peerName !in P2PMessageRelay.peerEndpoints) {
-                            stickerPackRequestError = StickerPackRequestError.PEER_OFFLINE
-                            stickerPackRequestInProgress = false
-                            return@StickerPackBottomSheet
-                        }
-                        stickerPackRequestError = StickerPackRequestError.NONE
-                        stickerPackRequestInProgress = true
-                        P2PMessageRelay.requestStickerPack(context, peerName, packId) { sent ->
-                            if (!sent) {
-                                stickerPackRequestInProgress = false
-                                stickerPackRequestError = StickerPackRequestError.NETWORK_ERROR
-                            }
-                        }
-                    },
-                    onStickerSelected = ::sendSticker,
-                )
-            }
-        }
-
-        if (showGifLibrary) {
-            GifLibraryBottomSheet(
-                gifs = storedGifs,
-                isLoading = gifLibraryLoading,
-                appLanguage = appLanguage,
-                primaryColor = primaryColor,
-                onDismiss = { showGifLibrary = false },
-                onImport = {
-                    showGifLibrary = false
-                    gifImportLauncher.launch("image/gif")
-                },
-                onGifSelected = { sendGifFile(File(it.filePath)) },
-            )
-        }
-
-        ChatFullscreenMediaViewer(
-            activeFullscreenImages = activeFullscreenImages,
-            activeFullscreenImageIndex = activeFullscreenImageIndex,
-            activeFullscreenBitmapOverrides = activeFullscreenBitmapOverrides,
-            activeFullscreenVideo = activeFullscreenVideo,
-            appLanguage = appLanguage,
-            onCloseImages = {
-                activeFullscreenImages = emptyList()
-                activeFullscreenBitmapOverrides = emptyMap()
-            },
-            onCloseVideo = { activeFullscreenVideo = null },
-        )
-
-        if (showPinnedSheet) {
-            val pinnedItems = remember(pinnedMessagesList) {
-                pinnedMessagesList.map { msg ->
-                    PinnedItemModel(
-                        id = msg.id,
-                        senderName = if (msg.isMe) (if (appLanguage == "Русский") "Вы" else "You") else peerName,
-                        text = msg.text,
-                        timestamp = msg.timestamp,
-                        attachmentType = msg.attachmentType,
-                        attachmentName = msg.attachmentName,
-                    )
-                }
-            }
-            PinnedMessagesSheet(
-                pinnedItems = pinnedItems,
-                appLanguage = appLanguage,
-                primaryColor = primaryColor,
-                surfaceColor = surfaceColor,
-                onSurfaceColor = onSurfaceColor,
-                onSurfaceVariant = onSurfaceVariant,
-                onDismiss = { showPinnedSheet = false },
-                onSelectPinnedMessage = { item ->
-                    val idx = initialMessages.indexOfFirst { it.id == item.id }
-                    if (idx != -1) {
-                        val pinIdx = pinnedMessagesList.indexOfFirst { it.id == item.id }
-                        if (pinIdx != -1) activePinnedIndex = pinIdx
-                        coroutineScope.launch {
-                            listState.animateScrollToItem(idx)
-                            highlightedMessageId = item.id
-                        }
-                    }
-                },
-                onUnpinMessage = { item ->
-                    val msgIndex = initialMessages.indexOfFirst { it.id == item.id }
-                    if (msgIndex != -1) {
-                        initialMessages[msgIndex] = initialMessages[msgIndex].copy(isPinned = false)
-                    }
-                    ChatDatabaseHelper.getInstance(context).updateMessagePinned(item.id, false)
-                    if (pinnedItems.size <= 1) {
+                onDelete = {
+                    persistDatabase { db.deleteMessage(msg.id) }
+                    initialMessages.remove(msg)
+                    P2PMessageRelay.sendDeleteMessage(context, peerName, msg.id)
+                    if (msg.id == pinnedMsgId) {
                         sharedPrefs.edit {
                             remove("pinned_msg_id_${peerName}")
                             remove("pinned_msg_text_${peerName}")
@@ -3813,31 +2536,255 @@ remove("pinned_msg_id_${peerName}")
                         pinnedMsgText = null
                         pinnedMsgSender = null
                         pinnedBy = null
+                        P2PMessageRelay.sendUnpinMessage(context, peerName)
                     }
-                    P2PMessageRelay.sendUnpinMessage(context, peerName)
+                    selectedMessageForOptions = null
                 },
-                onUnpinAll = {
-                    pinnedItems.forEach { item ->
-                        val msgIndex = initialMessages.indexOfFirst { it.id == item.id }
-                        if (msgIndex != -1) {
-                            initialMessages[msgIndex] = initialMessages[msgIndex].copy(isPinned = false)
-                        }
-                        ChatDatabaseHelper.getInstance(context).updateMessagePinned(item.id, false)
-                    }
-                    sharedPrefs.edit {
-                        remove("pinned_msg_id_${peerName}")
-                        remove("pinned_msg_text_${peerName}")
-                        remove("pinned_msg_sender_${peerName}")
-                        remove("pinned_by_${peerName}")
-                    }
-                    pinnedMsgId = null
-                    pinnedMsgText = null
-                    pinnedMsgSender = null
-                    pinnedBy = null
-                    P2PMessageRelay.sendUnpinMessage(context, peerName)
+                onSelect = {
+                    isSelectMode = true
+                    selectedMessages.clear()
+                    selectedMessages.add(msg)
+                    selectedMessageForOptions = null
                 }
             )
         }
+
+        if (showDatePickerDialog) {
+            ChatDatePickerDialog(
+                selectedDateFilterMs = selectedDateFilterMs,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onDismiss = { showDatePickerDialog = false },
+                onDateSelected = { selectedDateFilterMs = it }
+            )
+        }
+
+        if (showForwardDialog && messageToForward != null) {
+            ChatForwardDialog(
+                context = context,
+                peerName = peerName,
+                username = username,
+                messageToForward = messageToForward,
+                persistEnabled = persistEnabled,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                onDismiss = {
+                    showForwardDialog = false
+                    messageToForward = null
+                },
+                onPersistDatabase = { persistDatabase(it) }
+            )
+        }
+
+        if (showVerifyDialog) {
+            ChatVerifyPeerDialog(
+                context = context,
+                peerName = peerName,
+                localFingerprint = localFingerprint,
+                activeFingerprint = activeFingerprint,
+                isVerified = isVerified,
+                isWaitingForVerifyResponse = isWaitingForVerifyResponse,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                onDismiss = {
+                    showVerifyDialog = false
+                    isWaitingForVerifyResponse = false
+                },
+                onSetVerified = { isVerified = it },
+                onSetWaitingResponse = { isWaitingForVerifyResponse = it }
+            )
+        }
+
+        if (showHardBlockDialog) {
+            ChatHardBlockDialog(
+                context = context,
+                peerName = peerName,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                coroutineScope = coroutineScope,
+                onDismiss = { showHardBlockDialog = false },
+                onBlocked = { isBlocked = true }
+            )
+        }
+
+        if (showIncomingVerifyDialog) {
+            ChatIncomingVerifyDialog(
+                context = context,
+                peerName = peerName,
+                localFingerprint = localFingerprint,
+                peerFingerprint = sharedPrefs.getString("peer_fingerprint_$peerName", null).orEmpty(),
+                appLanguage = appLanguage,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                onDismiss = { showIncomingVerifyDialog = false },
+                onVerified = { isVerified = true }
+            )
+        }
+
+        if (showIdentityWarning && isIdentityPaused) {
+            ChatIdentityWarningDialog(
+                peerName = peerName,
+                pendingFingerprint = pendingFingerprint,
+                appLanguage = appLanguage,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onDismiss = { showIdentityWarning = false },
+                onReviewNewKey = {
+                    showIdentityWarning = false
+                    showIdentityConfirmation = true
+                }
+            )
+        }
+
+        if (showIdentityConfirmation && isIdentityPaused) {
+            ChatIdentityConfirmationDialog(
+                context = context,
+                peerName = peerName,
+                activeFingerprint = activeFingerprint,
+                pendingFingerprint = pendingFingerprint,
+                identityDecisionInProgress = identityDecisionInProgress,
+                appLanguage = appLanguage,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                onDismiss = {
+                    showIdentityConfirmation = false
+                    showIdentityWarning = true
+                },
+                onSetDecisionInProgress = { identityDecisionInProgress = it },
+                onAcceptComplete = { showIdentityConfirmation = false },
+                onRejectComplete = { showIdentityConfirmation = false }
+            )
+        }
+
+        if (showConnectionErrorDialog && !isIdentityPaused) {
+            ChatConnectionErrorDialog(
+                context = context,
+                errorReasonYggdrasilDisabled = errorReasonYggdrasilDisabled,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                surfaceColor = surfaceColor,
+                onSurfaceColor = onSurfaceColor,
+                onSurfaceVariant = onSurfaceVariant,
+                vpnLauncher = vpnLauncher,
+                onDismiss = { showConnectionErrorDialog = false }
+            )
+        }
+
+        ChatModalsOverlay(
+            context = context,
+            peerName = peerName,
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onSurfaceVariant = onSurfaceVariant,
+            initialMessages = initialMessages,
+            listState = listState,
+            coroutineScope = coroutineScope,
+            showProfileOverlay = showProfileOverlay,
+            onDismissProfileOverlay = { showProfileOverlay = false },
+            isVerified = isVerified,
+            isMuted = isMuted,
+            onToggleMute = { newMuted ->
+                isMuted = newMuted
+                sharedPrefs.edit().putBoolean("mute_notifications_$peerName", newMuted).apply()
+            },
+            onNavigateToMessage = { messageId ->
+                showProfileOverlay = false
+                val idx = initialMessages.indexOfFirst { it.id == messageId }
+                if (idx != -1) {
+                    coroutineScope.launch {
+                        listState.scrollToItem(idx)
+                        highlightedMessageId = messageId
+                    }
+                }
+            },
+            activeFullscreenImages = activeFullscreenImages,
+            activeFullscreenImageIndex = activeFullscreenImageIndex,
+            activeFullscreenBitmapOverrides = activeFullscreenBitmapOverrides,
+            activeFullscreenVideo = activeFullscreenVideo,
+            onCloseFullscreenImages = {
+                activeFullscreenImages = emptyList()
+                activeFullscreenBitmapOverrides = emptyMap()
+            },
+            onCloseFullscreenVideo = { activeFullscreenVideo = null },
+            onOpenFullscreenAvatar = { avatarBitmap ->
+                val highRes = P2PMessageRelay.getOriginalAvatar(context, peerName) ?: avatarBitmap
+                if (highRes != null) {
+                    val avatarKey = "avatar:$peerName"
+                    activeFullscreenBitmapOverrides = mapOf(avatarKey to highRes)
+                    activeFullscreenImages = listOf(avatarKey)
+                    activeFullscreenImageIndex = 0
+                }
+            },
+            onOpenFullscreenImages = { paths, index ->
+                if (paths.isNotEmpty()) {
+                    activeFullscreenBitmapOverrides = emptyMap()
+                    activeFullscreenImages = paths
+                    activeFullscreenImageIndex = index
+                }
+            },
+            onOpenFullscreenVideo = { activeFullscreenVideo = it },
+            showConnectionModeSheet = showConnectionModeSheet,
+            onDismissConnectionModeSheet = { showConnectionModeSheet = false },
+            showStickerPicker = showStickerPicker,
+            onDismissStickerPicker = { showStickerPicker = false },
+            onSelectSticker = ::sendSticker,
+            viewedStickerMessage = viewedStickerMessage,
+            onDismissViewedSticker = {
+                viewedStickerMessage = null
+                stickerPackRequestInProgress = false
+                stickerPackRequestError = StickerPackRequestError.NONE
+            },
+            stickerPackRequestInProgress = stickerPackRequestInProgress,
+            onSetStickerPackRequestInProgress = { stickerPackRequestInProgress = it },
+            stickerPackRequestError = stickerPackRequestError,
+            onSetStickerPackRequestError = { stickerPackRequestError = it },
+            stickerPackPreviewRevision = stickerPackPreviewRevision,
+            showGifLibrary = showGifLibrary,
+            onDismissGifLibrary = { showGifLibrary = false },
+            storedGifs = storedGifs,
+            gifLibraryLoading = gifLibraryLoading,
+            gifImportLauncher = gifImportLauncher,
+            onSelectGif = { sendGifFile(it) },
+            showPinnedSheet = showPinnedSheet,
+            onDismissPinnedSheet = { showPinnedSheet = false },
+            pinnedMessagesList = pinnedMessagesList,
+            onActivePinnedIndexChanged = { activePinnedIndex = it },
+            onHighlightMessage = { highlightedMessageId = it },
+            onClearPinnedHeader = {
+                sharedPrefs.edit {
+                    remove("pinned_msg_id_${peerName}")
+                    remove("pinned_msg_text_${peerName}")
+                    remove("pinned_msg_sender_${peerName}")
+                    remove("pinned_by_${peerName}")
+                }
+                pinnedMsgId = null
+                pinnedMsgText = null
+                pinnedMsgSender = null
+                pinnedBy = null
+            },
+            showWallpaperModal = showWallpaperModal,
+            onDismissWallpaperModal = { showWallpaperModal = false },
+            wallpaperPath = wallpaperPath,
+            wallpaperDimming = wallpaperDimming,
+            wallpaperBlur = wallpaperBlur,
+            onWallpaperUpdated = { path, dimming, blur ->
+                wallpaperPath = path
+                wallpaperDimming = dimming
+                wallpaperBlur = blur
+            }
+        )
     }
 }
 
