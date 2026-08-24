@@ -4,6 +4,15 @@ import android.widget.Toast
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.group.ui.components.GroupMentionSuggestionBar
+import com.example.twopchat.group.ui.components.GroupChatMessageOptionsMenu
+import com.example.twopchat.group.ui.components.GroupEditMessageDialog
+import com.example.twopchat.group.ui.components.GroupDeleteMessageDialog
+import com.example.twopchat.group.ui.components.GroupProcessingAlbumDialog
+import com.example.twopchat.group.ui.components.GroupForwardDialog
+import com.example.twopchat.group.ui.components.CreatePollDialog
+import com.example.twopchat.group.ui.components.GroupSeenByDialog
+import com.example.twopchat.group.ui.components.GroupDatePickerDialog
+import com.example.twopchat.group.ui.components.GroupChatModalsOverlay
 import androidx.compose.ui.draw.shadow
 import com.example.twopchat.ui.chat.AlbumPreviewModal
 import androidx.compose.runtime.collectAsState
@@ -1421,1127 +1430,203 @@ fun GroupChatScreen(
         }
     }
 
-    // Full Screen Image Viewer (Direct Chat feature parity)
-    selectedFullImagePath?.let { path ->
-        val imageList = if (allGroupImages.contains(path)) allGroupImages else listOf(path)
-        val startIndex = imageList.indexOf(path).coerceAtLeast(0)
-        com.example.twopchat.ui.chat.FullscreenImageViewer(
-            imagePaths = imageList,
-            initialIndex = startIndex,
-            appLanguage = appLanguage,
-            onClose = { selectedFullImagePath = null }
-        )
-    }
-
-    activeFullscreenVideo?.let { path ->
-        com.example.twopchat.ui.chat.FullscreenVideoPlayer(
-            videoPath = path,
-            appLanguage = appLanguage,
-            onClose = { activeFullscreenVideo = null }
-        )
-    }
-
-    // Message Actions Options Dialog (matching Direct Chat Screenshot 1)
     selectedMessageForOptions?.let { message ->
-        AlertDialog(
-            onDismissRequest = { selectedMessageForOptions = null },
-            confirmButton = {},
-            dismissButton = {},
-            containerColor = surfaceColor,
-            shape = RoundedCornerShape(24.dp),
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .padding(vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Text(
-                        text = "Действия с сообщением",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = primaryColor,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                    )
-
-                    // Quick Emoji Reactions
-                    if (message.canReact) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState())
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            val quickEmojis = listOf("👍", "❤️", "🔥", "😂", "😮", "😢", "👏", "💩", "🎉", "💯")
-                            quickEmojis.forEach { emoji ->
-                                val userReaction = message.reactions.find { it.emoji == emoji }
-                                val isSelected = userReaction?.reactedByMe == true
-                                val bgColor = if (isSelected) primaryColor else primaryColor.copy(alpha = 0.12f)
-
-                                Surface(
-                                    shape = RoundedCornerShape(20.dp),
-                                    color = bgColor,
-                                    border = if (isSelected) BorderStroke(1.5.dp, primaryColor) else null,
-                                    modifier = Modifier
-                                        .height(40.dp)
-                                        .clickable {
-                                            controller.toggleReaction(state.groupId, message.messageId, emoji)
-                                            selectedMessageForOptions = null
-                                        }
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        Text(text = emoji, fontSize = 20.sp)
-                                        if (userReaction != null && userReaction.count > 0) {
-                                            Text(
-                                                text = "${userReaction.count}",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isSelected) Color.White else primaryColor
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 4.dp),
-                            color = onSurfaceColor.copy(alpha = 0.08f)
-                        )
-                    }
-
-                    // 1. Reply / Ответить
-                    if (message.canReply) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    controller.startReply(state.groupId, message.messageId)
-                                    selectedMessageForOptions = null
-                                }
-                                .padding(vertical = 12.dp, horizontal = 12.dp)
-                                .testTag("reply_${message.messageId}"),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_reply),
-                                contentDescription = "Reply",
-                                tint = onSurfaceColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = "Ответить",
-                                fontSize = 15.sp,
-                                color = onSurfaceColor
-                            )
-                        }
-                    }
-
-                    // 2. Pin / Закрепить or Открепить
-                    if (message.canPin) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    if (message.isPinned) controller.unpinMessage(state.groupId, message.messageId)
-                                    else controller.pinMessage(state.groupId, message.messageId)
-                                    selectedMessageForOptions = null
-                                }
-                                .padding(vertical = 12.dp, horizontal = 12.dp)
-                                .testTag("pin_${message.messageId}"),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_pin),
-                                contentDescription = "Pin",
-                                tint = onSurfaceColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = if (message.isPinned) "Открепить" else "Закрепить",
-                                fontSize = 15.sp,
-                                color = onSurfaceColor
-                            )
-                        }
-                    }
-
-                    // 3. Edit / Редактировать
-                    if (message.canEdit && message.isMine) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    editingMessage = message
-                                    selectedMessageForOptions = null
-                                }
-                                .padding(vertical = 12.dp, horizontal = 12.dp)
-                                .testTag("edit_${message.messageId}"),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_edit),
-                                contentDescription = "Edit",
-                                tint = onSurfaceColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = "Редактировать",
-                                fontSize = 15.sp,
-                                color = onSurfaceColor
-                            )
-                        }
-                    }
-
-                    // 4. Copy Text / Копировать текст
-                    if (message.text.isNotEmpty()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    com.example.twopchat.copyTextToClipboard(context, "Message Text", message.text)
-                                    Toast.makeText(context, "Текст скопирован", Toast.LENGTH_SHORT).show()
-                                    selectedMessageForOptions = null
-                                }
-                                .padding(vertical = 12.dp, horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_copy),
-                                contentDescription = "Copy",
-                                tint = onSurfaceColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = "Скопировать текст",
-                                fontSize = 15.sp,
-                                color = onSurfaceColor
-                            )
-                        }
-                    }
-
-                    // 5. Save GIF / Save File
-                    message.attachment?.let { att ->
-                        val filePath = att.localPath ?: att.fileName
-                        val isGif = att.mimeType.contains("gif", ignoreCase = true) || filePath.endsWith(".gif", ignoreCase = true)
-                        if (isGif && filePath.isNotBlank() && java.io.File(filePath).exists()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        GifStorageManager.save(context, java.io.File(filePath))
-                                        Toast.makeText(context, "Сохранено в Мои GIF", Toast.LENGTH_SHORT).show()
-                                        selectedMessageForOptions = null
-                                    }
-                                    .padding(vertical = 12.dp, horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_add_photo_smiley),
-                                    contentDescription = "Save GIF",
-                                    tint = onSurfaceColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(14.dp))
-                                Text(
-                                    text = "Сохранить в Мои GIF",
-                                    fontSize = 15.sp,
-                                    color = onSurfaceColor
-                                )
-                            }
-                        }
-                        if (filePath.isNotBlank() && java.io.File(filePath).exists()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        val savedUri = com.example.twopchat.ui.chat.saveFileToPublicDownloads(context, filePath, att.fileName)
-                                        if (savedUri != null) {
-                                            Toast.makeText(context, "Файл сохранён в Загрузки", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            Toast.makeText(context, "Ошибка сохранения", Toast.LENGTH_SHORT).show()
-                                        }
-                                        selectedMessageForOptions = null
-                                    }
-                                    .padding(vertical = 12.dp, horizontal = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_download),
-                                    contentDescription = "Download",
-                                    tint = onSurfaceColor,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(14.dp))
-                                Text(
-                                    text = "Скачать файл",
-                                    fontSize = 15.sp,
-                                    color = onSurfaceColor
-                                )
-                            }
-                        }
-                    }
-
-                    // 6. Forward / Переслать
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                messageToForward = message
-                                showForwardDialog = true
-                                selectedMessageForOptions = null
-                            }
-                            .padding(vertical = 12.dp, horizontal = 12.dp)
-                            .testTag("forward_${message.messageId}"),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_forward),
-                            contentDescription = "Forward",
-                            tint = onSurfaceColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = "Переслать",
-                            fontSize = 15.sp,
-                            color = onSurfaceColor
-                        )
-                    }
-
-                    // 7. Seen By / Просмотрено
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                showSeenByDialog = message
-                                selectedMessageForOptions = null
-                            }
-                            .padding(vertical = 12.dp, horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_msg_single_check),
-                            contentDescription = "Seen By",
-                            tint = onSurfaceColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = "Просмотрено (${message.readByMembers.size})",
-                            fontSize = 15.sp,
-                            color = onSurfaceColor
-                        )
-                    }
-
-                    // 8. Delete / Удалить (Red)
-                    if (message.canDelete) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    deletingMessage = message
-                                    selectedMessageForOptions = null
-                                }
-                                .padding(vertical = 12.dp, horizontal = 12.dp)
-                                .testTag("delete_${message.messageId}"),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_delete),
-                                contentDescription = "Delete",
-                                tint = Color.Red,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = "Удалить",
-                                fontSize = 15.sp,
-                                color = Color.Red,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    // 9. Select / Выделить
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                isSelectMode = true
-                                if (!selectedMessages.any { it.messageId == message.messageId }) {
-                                    selectedMessages.add(message)
-                                }
-                                selectedMessageForOptions = null
-                            }
-                            .padding(vertical = 12.dp, horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_select),
-                            contentDescription = "Select",
-                            tint = onSurfaceColor,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = "Выделить",
-                            fontSize = 15.sp,
-                            color = onSurfaceColor
-                        )
-                    }
+        GroupChatMessageOptionsMenu(
+            context = context,
+            message = message,
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onDismiss = { selectedMessageForOptions = null },
+            onReactionClick = { emoji ->
+                controller.toggleReaction(state.groupId, message.messageId, emoji)
+                selectedMessageForOptions = null
+            },
+            onReply = {
+                controller.startReply(state.groupId, message.messageId)
+                selectedMessageForOptions = null
+            },
+            onPin = {
+                if (message.isPinned) controller.unpinMessage(state.groupId, message.messageId)
+                else controller.pinMessage(state.groupId, message.messageId)
+                selectedMessageForOptions = null
+            },
+            onEdit = {
+                editingMessage = message
+                selectedMessageForOptions = null
+            },
+            onForward = {
+                messageToForward = message
+                showForwardDialog = true
+                selectedMessageForOptions = null
+            },
+            onSeenBy = {
+                showSeenByDialog = message
+                selectedMessageForOptions = null
+            },
+            onDelete = {
+                deletingMessage = message
+                selectedMessageForOptions = null
+            },
+            onSelect = {
+                isSelectMode = true
+                if (!selectedMessages.any { it.messageId == message.messageId }) {
+                    selectedMessages.add(message)
                 }
+                selectedMessageForOptions = null
             }
         )
     }
 
     editingMessage?.let { message ->
-        var editedText by remember(message.messageId) { mutableStateOf(message.text) }
-        AlertDialog(
-            onDismissRequest = { editingMessage = null },
-            title = { Text(if (appLanguage == "Русский") "Редактировать сообщение" else "Edit Message", fontWeight = FontWeight.Bold) },
-            text = {
-                OutlinedTextField(
-                    value = editedText,
-                    onValueChange = { editedText = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("edit_message_input"),
-                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
-                        context = context,
-                        capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    enabled = editedText.trim().isNotEmpty(),
-                    onClick = {
-                        controller.editMessage(state.groupId, message.messageId, editedText.trim())
-                        editingMessage = null
-                    }
-                ) {
-                    Text(if (appLanguage == "Русский") "Сохранить" else "Save", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingMessage = null }) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
-            },
-            containerColor = surfaceColor,
-            shape = RoundedCornerShape(20.dp)
+        GroupEditMessageDialog(
+            context = context,
+            message = message,
+            appLanguage = appLanguage,
+            surfaceColor = surfaceColor,
+            onDismiss = { editingMessage = null },
+            onSave = { newText ->
+                controller.editMessage(state.groupId, message.messageId, newText)
+            }
         )
     }
 
     deletingMessage?.let { message ->
-        AlertDialog(
-            onDismissRequest = { deletingMessage = null },
-            title = { Text(if (appLanguage == "Русский") "Удалить сообщение?" else "Delete Message?", fontWeight = FontWeight.Bold) },
-            text = { Text(if (appLanguage == "Русский") "Это действие зафиксируется в журнале событий группы." else "This action will be logged in the group audit event log.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        controller.deleteMessage(state.groupId, message.messageId)
-                        deletingMessage = null
-                    },
-                    modifier = Modifier.testTag("confirm_delete_message")
-                ) {
-                    Text(if (appLanguage == "Русский") "Удалить" else "Delete", color = Color.Red, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deletingMessage = null }) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
-            },
-            containerColor = surfaceColor,
-            shape = RoundedCornerShape(20.dp)
-        )
-    }
-
-    if (showStickerPicker) {
-        StickerPickerBottomSheet(
+        GroupDeleteMessageDialog(
             appLanguage = appLanguage,
-            primaryColor = primaryColor,
-            onDismiss = { showStickerPicker = false },
-            onStickerSelected = { sticker ->
-                showStickerPicker = false
-                coroutineScope.launch {
-                    val stickerFile = withContext(Dispatchers.IO) {
-                        runCatching { StickerSupport.prepareSticker(context, sticker) }.getOrNull()
-                    }
-                    if (stickerFile != null) {
-                        controller.sendAttachment(
-                            groupId = state.groupId,
-                            uri = Uri.fromFile(stickerFile).toString(),
-                            mimeType = "image/sticker",
-                            caption = sticker.emoji,
-                        )
-                    } else {
-                        controller.sendMessage(state.groupId, sticker.emoji, state.currentReply?.messageId)
-                    }
-                }
-            }
-        )
-    }
-
-    viewedStickerMessage?.let { stickerMessage ->
-        val att = stickerMessage.attachment
-        val packId = att?.let { StickerSupport.packIdFromStickerFileName(it.fileName) }
-        if (packId != null) {
-            val peerName = stickerMessage.authorName
-            val canRequest = !stickerMessage.isMine && peerName.isNotBlank() && peerName != "SYSTEM" && peerName != "System"
-
-            LaunchedEffect(stickerPackRequestInProgress) {
-                if (stickerPackRequestInProgress) {
-                    delay(10_000L)
-                    if (stickerPackRequestInProgress) {
-                        stickerPackRequestInProgress = false
-                        if (stickerPackRequestError == StickerPackRequestError.NONE) {
-                            stickerPackRequestError = StickerPackRequestError.TIMEOUT
-                        }
-                    }
-                }
-            }
-
-            StickerPackBottomSheet(
-                packId = packId,
-                fallbackEmoji = if (stickerMessage.text.startsWith("2psticker_") || stickerMessage.text.contains(".webp")) "🎭" else stickerMessage.text,
-                canRequestFromPeer = canRequest,
-                requestInProgress = stickerPackRequestInProgress,
-                previewRevision = stickerPackPreviewRevision,
-                appLanguage = appLanguage,
-                primaryColor = primaryColor,
-                requestError = stickerPackRequestError,
-                onDismiss = {
-                    viewedStickerMessage = null
-                    stickerPackRequestInProgress = false
-                    stickerPackRequestError = StickerPackRequestError.NONE
-                },
-                onRequestPack = {
-                    if (peerName.isBlank() || !P2PMessageRelay.peerEndpoints.containsKey(peerName)) {
-                        stickerPackRequestError = StickerPackRequestError.PEER_OFFLINE
-                        stickerPackRequestInProgress = false
-                        return@StickerPackBottomSheet
-                    }
-                    stickerPackRequestError = StickerPackRequestError.NONE
-                    stickerPackRequestInProgress = true
-                    P2PMessageRelay.requestStickerPack(context, peerName, packId) { sent ->
-                        if (!sent) {
-                            stickerPackRequestInProgress = false
-                            stickerPackRequestError = StickerPackRequestError.NETWORK_ERROR
-                        }
-                    }
-                },
-                onStickerSelected = { sticker ->
-                    viewedStickerMessage = null
-                    coroutineScope.launch {
-                        val stickerFile = withContext(Dispatchers.IO) {
-                            runCatching { StickerSupport.prepareSticker(context, sticker) }.getOrNull()
-                        }
-                        if (stickerFile != null) {
-                            controller.sendAttachment(
-                                groupId = state.groupId,
-                                uri = Uri.fromFile(stickerFile).toString(),
-                                mimeType = "image/sticker",
-                                caption = sticker.emoji,
-                            )
-                        } else {
-                            controller.sendMessage(state.groupId, sticker.emoji, state.currentReply?.messageId)
-                        }
-                    }
-                }
-            )
-        }
-    }
-
-    if (showGifLibrary) {
-        val gifList by produceState(initialValue = emptyList<StoredGif>(), context) {
-            value = withContext(Dispatchers.IO) { GifStorageManager.list(context) }
-        }
-        GifLibraryBottomSheet(
-            gifs = gifList,
-            isLoading = false,
-            appLanguage = appLanguage,
-            primaryColor = primaryColor,
-            onDismiss = { showGifLibrary = false },
-            onImport = {
-                showGifLibrary = false
-                gifImportLauncher.launch("image/gif")
-            },
-            onGifSelected = { gif ->
-                showGifLibrary = false
-                controller.sendAttachment(state.groupId, Uri.fromFile(File(gif.filePath)).toString(), "image/gif")
-            }
-        )
-    }
-
-    pendingPhotoUri?.let { uri ->
-        PhotoEditorModal(
-            imageUri = uri,
-            imagePath = null,
-            appLanguage = appLanguage,
-            primaryColor = primaryColor,
             surfaceColor = surfaceColor,
-            onSurfaceColor = onSurfaceColor,
-            onSurfaceVariant = onSurfaceColor.copy(alpha = 0.7f),
-            onDismiss = { pendingPhotoUri = null },
-            onSendPhoto = { editedFilePath, caption ->
-                pendingPhotoUri = null
-                controller.sendAttachment(
-                    state.groupId,
-                    Uri.fromFile(File(editedFilePath)).toString(),
-                    "image/png",
-                    caption.trim().takeIf { it.isNotBlank() }
-                )
-            }
-        )
-    }
-
-    pendingVideoPath?.let { path ->
-        VideoEditorModal(
-            videoPath = path,
-            appLanguage = appLanguage,
-            primaryColor = primaryColor,
-            surfaceColor = surfaceColor,
-            onSurfaceColor = onSurfaceColor,
-            onSurfaceVariant = onSurfaceColor.copy(alpha = 0.7f),
-            onDismiss = { pendingVideoPath = null },
-            onSendVideo = { editedPath, caption ->
-                pendingVideoPath = null
-                val targetUri = if (editedPath.startsWith("content://") || editedPath.startsWith("file://")) editedPath else Uri.fromFile(File(editedPath)).toString()
-                controller.sendAttachment(
-                    state.groupId,
-                    targetUri,
-                    "video/mp4",
-                    caption.trim().takeIf { it.isNotBlank() }
-                )
-            }
-        )
-    }
-
-    val albumFiles = pendingAlbumFiles
-    if (albumFiles != null) {
-        AlbumPreviewModal(
-            files = albumFiles,
-            appLanguage = appLanguage,
-            primaryColor = primaryColor,
-            surfaceColor = surfaceColor,
-            onSurfaceColor = onSurfaceColor,
-            onDismiss = {
-                pendingAlbumFiles = null
-                pendingAlbumTypes = null
-            },
-            onSendAlbum = { finalFiles, caption ->
-                val types = pendingAlbumTypes ?: emptyList()
-                pendingAlbumFiles = null
-                pendingAlbumTypes = null
-                coroutineScope.launch {
-                    val cleanCaption = caption.trim().takeIf { it.isNotBlank() }
-                    if (finalFiles.size == 1) {
-                        val file = finalFiles.first()
-                        val mime = types.firstOrNull() ?: "IMAGE"
-                        val fileMime = when (mime) {
-                            "VIDEO" -> "video/mp4"
-                            GifStorageManager.ATTACHMENT_TYPE -> "image/gif"
-                            else -> if (file.name.endsWith(".jpg", true) || file.name.endsWith(".jpeg", true)) "image/jpeg" else "image/png"
-                        }
-                        controller.sendAttachment(state.groupId, Uri.fromFile(file).toString(), fileMime, cleanCaption)
-                    } else if (finalFiles.size > 1) {
-                        val uris = finalFiles.map { Uri.fromFile(it).toString() }
-                        val mimes = finalFiles.mapIndexed { idx, file ->
-                            val mime = types.getOrNull(idx) ?: "IMAGE"
-                            when (mime) {
-                                "VIDEO" -> "video/mp4"
-                                GifStorageManager.ATTACHMENT_TYPE -> "image/gif"
-                                else -> if (file.name.endsWith(".jpg", true) || file.name.endsWith(".jpeg", true)) "image/jpeg" else "image/png"
-                            }
-                        }
-                        controller.sendMediaAlbum(state.groupId, uris, mimes, cleanCaption)
-                    }
-                }
+            onDismiss = { deletingMessage = null },
+            onConfirmDelete = {
+                controller.deleteMessage(state.groupId, message.messageId)
             }
         )
     }
 
     if (isProcessingAlbum) {
-        androidx.compose.ui.window.Dialog(onDismissRequest = {}) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = surfaceColor,
-                tonalElevation = 8.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(24.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    CircularProgressIndicator(
-                        color = primaryColor,
-                        modifier = Modifier.size(36.dp)
-                    )
-                    Text(
-                        text = "Подготовка медиафайлов...",
-                        color = onSurfaceColor,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-        }
+        GroupProcessingAlbumDialog(appLanguage = appLanguage)
     }
 
-    if (showForwardDialog && messageToForward != null) {
-        val activeSet = P2PPreferences.prefs(context).getStringSet("active_chats", emptySet()) ?: emptySet()
-        val groups = GroupChatCoordinator.visibleGroups()
-
-        val groupItems = groups.map { group ->
-            com.example.twopchat.ui.common.RecipientItem(
-                id = "group_${group.groupId}",
-                title = group.title,
-                subtitle = "Группа",
-                isOnline = true,
-                isGroup = true,
-            )
-        }
-
-        val peerItems = activeSet.filter { it != "Saved Messages" }.map { peer ->
-            val avatar = P2PMessageRelay.peerAvatars[peer]
-            val isOnline = P2PMessageRelay.peerSessionStates[peer] == true
-            com.example.twopchat.ui.common.RecipientItem(
-                id = "peer_$peer",
-                title = peer,
-                subtitle = if (isOnline) "В сети" else "Был(а) недавно",
-                isOnline = isOnline,
-                avatarBitmap = avatar,
-                initials = peer.take(2).uppercase(),
-                isGroup = false,
-            )
-        }
-
-        com.example.twopchat.ui.common.RecipientPickerDialog(
-            title = "Переслать сообщение",
-            searchPlaceholder = "Поиск получателя...",
-            recipients = groupItems + peerItems,
+    val msgToForward = messageToForward
+    if (showForwardDialog && msgToForward != null) {
+        GroupForwardDialog(
+            context = context,
+            state = state,
+            messageToForward = msgToForward,
+            appLanguage = appLanguage,
             primaryColor = primaryColor,
             onDismiss = {
                 showForwardDialog = false
                 messageToForward = null
-            },
-            onRecipientSelected = { item ->
-                val text = messageToForward?.text.orEmpty()
-                val att = messageToForward?.attachment
-                showForwardDialog = false
-                messageToForward = null
-
-                if (item.isGroup) {
-                    val targetGroupId = item.id.removePrefix("group_")
-                    if (att != null) {
-                        controller.sendAttachment(targetGroupId, att.fileName, att.mimeType)
-                    } else {
-                        controller.sendMessage(targetGroupId, text, null)
-                    }
-                    android.widget.Toast.makeText(context, "Сообщение переслано в ${item.title}", android.widget.Toast.LENGTH_SHORT).show()
-                } else {
-                    val targetPeer = item.id.removePrefix("peer_")
-                    if (att != null) {
-                        P2PMessageRelay.sendFile(context, targetPeer, "", att.fileName)
-                    } else {
-                        P2PMessageRelay.sendMessageToPeer(context, targetPeer, text)
-                    }
-                    android.widget.Toast.makeText(context, "Сообщение переслано $targetPeer", android.widget.Toast.LENGTH_SHORT).show()
-                }
             }
         )
     }
 
     if (showCreatePollDialog) {
         CreatePollDialog(
+            context = context,
+            appLanguage = appLanguage,
             onDismiss = { showCreatePollDialog = false },
             onCreatePoll = { question, options, isAnonymous ->
                 controller.createPoll(state.groupId, question, options, isAnonymous)
-                android.widget.Toast.makeText(context, "Опрос создан", android.widget.Toast.LENGTH_SHORT).show()
             }
         )
     }
 
     showSeenByDialog?.let { msg ->
-        val primaryColor = MaterialTheme.colorScheme.primary
-        val surfaceColor = MaterialTheme.colorScheme.surface
-        val onSurfaceColor = MaterialTheme.colorScheme.onSurface
-        Dialog(onDismissRequest = { showSeenByDialog = null }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = surfaceColor,
-                border = BorderStroke(1.dp, primaryColor.copy(alpha = 0.30f)),
-                shadowElevation = 24.dp,
-                modifier = Modifier.fillMaxWidth(0.92f)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    // Title Header
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_msg_double_check),
-                                contentDescription = "Просмотрено",
-                                tint = primaryColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = "Просмотрено",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = onSurfaceColor
-                            )
-                        }
-                        if (msg.readByMembers.isNotEmpty()) {
-                            Surface(
-                                color = primaryColor.copy(alpha = 0.15f),
-                                shape = CircleShape,
-                                border = BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.3f))
-                            ) {
-                                Text(
-                                    text = "${msg.readByMembers.size}",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = primaryColor,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    if (msg.readByMembers.isEmpty()) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 24.dp)
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_msg_single_check),
-                                    contentDescription = null,
-                                    tint = onSurfaceColor.copy(alpha = 0.35f),
-                                    modifier = Modifier.size(36.dp)
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    text = "Никто пока не просмотрел это сообщение",
-                                    color = onSurfaceColor.copy(alpha = 0.6f),
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
-                    } else {
-                        LazyColumn(
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 280.dp)
-                        ) {
-                            val receipts = if (msg.readReceipts.isNotEmpty()) {
-                                msg.readReceipts
-                            } else {
-                                msg.readByMembers.map { name ->
-                                    GroupReadReceipt(displayName = name, readTimeLabel = msg.timestampLabel)
-                                }
-                            }
-                            itemsIndexed(
-                                items = receipts,
-                                key = { index, receipt -> if (receipt.memberId.isNotBlank()) receipt.memberId else "${receipt.displayName}_$index" },
-                            ) { _, receipt ->
-                                val avatarBitmap = com.example.twopchat.relay.P2PMessageRelay.peerAvatars[receipt.avatarPeerName]
-                                val initials = receipt.displayName.take(2).uppercase().ifBlank { "M" }
-                                val avatarBgColor = remember(receipt.displayName) {
-                                    val colors = listOf(
-                                        Color(0xFF3949AB), Color(0xFF00897B), Color(0xFFD81B60),
-                                        Color(0xFFF4511E), Color(0xFF7CB342), Color(0xFF00ACC1)
-                                    )
-                                    colors[kotlin.math.abs(receipt.displayName.hashCode()) % colors.size]
-                                }
-
-                                Surface(
-                                    color = surfaceColor.copy(alpha = 0.4f),
-                                    shape = RoundedCornerShape(14.dp),
-                                    border = BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.15f)),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 10.dp)
-                                    ) {
-                                        // Avatar
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier
-                                                .size(38.dp)
-                                                .clip(CircleShape)
-                                                .background(avatarBgColor)
-                                        ) {
-                                            if (avatarBitmap != null) {
-                                                Image(
-                                                    bitmap = avatarBitmap.asImageBitmap(),
-                                                    contentDescription = receipt.displayName,
-                                                    contentScale = ContentScale.Crop,
-                                                    modifier = Modifier.fillMaxSize().clip(CircleShape)
-                                                )
-                                            } else {
-                                                Text(
-                                                    text = initials,
-                                                    color = Color.White,
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 14.sp
-                                                )
-                                            }
-                                        }
-
-                                        Spacer(Modifier.width(12.dp))
-
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = receipt.displayName,
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 14.sp,
-                                                color = onSurfaceColor
-                                            )
-                                        }
-
-                                        if (receipt.readTimeLabel.isNotBlank()) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = receipt.readTimeLabel,
-                                                    fontSize = 12.sp,
-                                                    color = primaryColor,
-                                                    fontWeight = FontWeight.Medium
-                                                )
-                                                Spacer(Modifier.width(4.dp))
-                                                Icon(
-                                                    painter = painterResource(id = R.drawable.ic_msg_double_check),
-                                                    contentDescription = "Read",
-                                                    tint = Color(0xFF64B5F6),
-                                                    modifier = Modifier.size(15.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-
-                    TextButton(
-                        onClick = { showSeenByDialog = null },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            "Закрыть",
-                            color = onSurfaceColor.copy(alpha = 0.7f),
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 15.sp
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    if (showPinnedSheet) {
-        val pinnedItems = remember(state.messages, state.pinnedMessage) {
-            val list = state.messages.filter { it.isPinned }
-            if (list.isNotEmpty()) {
-                list.map { msg ->
-                    PinnedItemModel(
-                        id = msg.messageId,
-                        senderName = msg.authorName.ifBlank { "Участник" },
-                        text = msg.text,
-                        timestamp = msg.timestampLabel,
-                        attachmentType = msg.attachment?.mimeType,
-                        attachmentName = msg.attachment?.fileName,
-                    )
-                }
-            } else {
-                state.pinnedMessage?.let { pinned ->
-                    val msg = state.messages.find { it.messageId == pinned.messageId }
-                    listOf(
-                        PinnedItemModel(
-                            id = pinned.messageId,
-                            senderName = msg?.authorName?.ifBlank { "Участник" } ?: "Участник",
-                            text = pinned.text,
-                            timestamp = msg?.timestampLabel ?: "",
-                            attachmentType = msg?.attachment?.mimeType,
-                            attachmentName = msg?.attachment?.fileName,
-                        )
-                    )
-                } ?: emptyList()
-            }
-        }
-        PinnedMessagesSheet(
-            pinnedItems = pinnedItems,
+        GroupSeenByDialog(
+            msg = msg,
+            state = state,
             appLanguage = appLanguage,
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
             onSurfaceColor = onSurfaceColor,
-            onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
-            onDismiss = { showPinnedSheet = false },
-            onSelectPinnedMessage = { item ->
-                val targetIdx = state.messages.indexOfFirst { it.messageId == item.id }
-                if (targetIdx != -1) {
-                    val pinIdx = pinnedGroupMessages.indexOfFirst { it.messageId == item.id }
-                    if (pinIdx != -1) activePinnedIndex = pinIdx
-                    coroutineScope.launch {
-                        listState.animateScrollToItem(targetIdx)
-                        highlightedMessageId = item.id
-                    }
-                }
-            },
-            onUnpinMessage = { item ->
-                controller.unpinMessage(state.groupId, item.id)
-            },
-            onUnpinAll = {
-                pinnedItems.forEach { item ->
-                    controller.unpinMessage(state.groupId, item.id)
-                }
-            }
-        )
-    }
-
-    if (showWallpaperModal) {
-        GroupWallpaperModal(
-            groupTitle = state.title,
-            currentWallpaperPath = wallpaperUriStr,
-            currentDimming = wallpaperDimming,
-            currentBlur = wallpaperBlur,
-            appLanguage = appLanguage,
-            primaryColor = primaryColor,
-            surfaceColor = surfaceColor,
-            onSurfaceColor = onSurfaceColor,
-            onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
-            onDismiss = { showWallpaperModal = false },
-            onApply = { selectedBitmap, dimming, isBlur ->
-                showWallpaperModal = false
-                val dir = java.io.File(context.filesDir, "group_wallpapers").also { it.mkdirs() }
-                val targetFile = java.io.File(dir, "wallpaper_${state.groupId}.jpg")
-                if (selectedBitmap != null) {
-                    try {
-                        java.io.FileOutputStream(targetFile).use { out ->
-                            selectedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
-                        }
-                        com.example.twopchat.config.P2PPreferences.prefs(context).edit().apply {
-                            putString("group_wallpaper_${state.groupId}", targetFile.absolutePath)
-                            putInt("group_wallpaper_dimming_${state.groupId}", dimming)
-                            putBoolean("group_wallpaper_blur_${state.groupId}", isBlur)
-                            apply()
-                        }
-                        controller.updateGroupWallpaper(state.groupId, targetFile.absolutePath)
-                        Toast.makeText(context, if (appLanguage == "Русский") "Обои установлены для всех участников" else "Wallpaper updated for all members", Toast.LENGTH_SHORT).show()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            }
+            onDismiss = { showSeenByDialog = null }
         )
     }
 
     if (showDatePickerDialog) {
-        val datePickerState = rememberDatePickerState(
-            initialSelectedDateMillis = selectedDateFilterMs ?: System.currentTimeMillis()
+        GroupDatePickerDialog(
+            selectedDateFilterMs = selectedDateFilterMs,
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            surfaceColor = surfaceColor,
+            onSurfaceColor = onSurfaceColor,
+            onDismiss = { showDatePickerDialog = false },
+            onDateSelected = { selectedDateFilterMs = it }
         )
-        DatePickerDialog(
-            onDismissRequest = { showDatePickerDialog = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        datePickerState.selectedDateMillis?.let { dateMs ->
-                            val utcCal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = dateMs }
-                            val localCal = Calendar.getInstance().apply {
-                                set(Calendar.YEAR, utcCal.get(Calendar.YEAR))
-                                set(Calendar.MONTH, utcCal.get(Calendar.MONTH))
-                                set(Calendar.DAY_OF_MONTH, utcCal.get(Calendar.DAY_OF_MONTH))
-                                set(Calendar.HOUR_OF_DAY, 0)
-                                set(Calendar.MINUTE, 0)
-                                set(Calendar.SECOND, 0)
-                                set(Calendar.MILLISECOND, 0)
-                            }
-                            selectedDateFilterMs = localCal.timeInMillis
-                        }
-                        showDatePickerDialog = false
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = primaryColor)
-                ) {
-                    Text(
-                        text = if (appLanguage == "Русский") "ОК" else "OK",
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showDatePickerDialog = false },
-                    colors = ButtonDefaults.textButtonColors(contentColor = primaryColor)
-                ) {
-                    Text(
-                        text = if (appLanguage == "Русский") "ОТМЕНА" else "CANCEL",
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            colors = DatePickerDefaults.colors(
-                containerColor = surfaceColor,
-            )
-        ) {
-            DatePicker(
-                state = datePickerState,
-                colors = DatePickerDefaults.colors(
-                    titleContentColor = onSurfaceColor,
-                    headlineContentColor = onSurfaceColor,
-                    weekdayContentColor = onSurfaceColor.copy(alpha = 0.6f),
-                    subheadContentColor = onSurfaceColor,
-                    yearContentColor = onSurfaceColor,
-                    currentYearContentColor = primaryColor,
-                    selectedYearContentColor = Color.White,
-                    selectedYearContainerColor = primaryColor,
-                    dayContentColor = onSurfaceColor,
-                    selectedDayContentColor = Color.White,
-                    selectedDayContainerColor = primaryColor,
-                    todayContentColor = primaryColor,
-                    todayDateBorderColor = primaryColor,
-                )
-            )
-        }
     }
+
+    val finalFullImages = remember(selectedFullImagePath, allGroupImages) {
+        val path = selectedFullImagePath
+        if (path != null) {
+            if (allGroupImages.contains(path)) allGroupImages else listOf(path)
+        } else emptyList()
+    }
+    val finalFullIndex = remember(selectedFullImagePath, finalFullImages) {
+        val path = selectedFullImagePath
+        if (path != null) finalFullImages.indexOf(path).coerceAtLeast(0) else 0
+    }
+
+    GroupChatModalsOverlay(
+        context = context,
+        state = state,
+        controller = controller,
+        coroutineScope = coroutineScope,
+        appLanguage = appLanguage,
+        primaryColor = primaryColor,
+        surfaceColor = surfaceColor,
+        onSurfaceColor = onSurfaceColor,
+        showStickerPicker = showStickerPicker,
+        onDismissStickerPicker = { showStickerPicker = false },
+        viewedStickerMessage = viewedStickerMessage,
+        onDismissViewedSticker = {
+            viewedStickerMessage = null
+            stickerPackRequestInProgress = false
+            stickerPackRequestError = StickerPackRequestError.NONE
+        },
+        stickerPackRequestInProgress = stickerPackRequestInProgress,
+        onSetStickerPackRequestInProgress = { stickerPackRequestInProgress = it },
+        stickerPackRequestError = stickerPackRequestError,
+        onSetStickerPackRequestError = { stickerPackRequestError = it },
+        stickerPackPreviewRevision = stickerPackPreviewRevision,
+        showGifLibrary = showGifLibrary,
+        onDismissGifLibrary = { showGifLibrary = false },
+        gifImportLauncher = gifImportLauncher,
+        pendingPhotoUri = pendingPhotoUri,
+        onDismissPhotoEditor = { pendingPhotoUri = null },
+        pendingVideoPath = pendingVideoPath,
+        onDismissVideoEditor = { pendingVideoPath = null },
+        pendingAlbumFiles = pendingAlbumFiles,
+        pendingAlbumTypes = pendingAlbumTypes,
+        onDismissAlbumPreview = {
+            pendingAlbumFiles = null
+            pendingAlbumTypes = null
+        },
+        activeFullscreenImages = finalFullImages,
+        activeFullscreenImageIndex = finalFullIndex,
+        activeFullscreenBitmapOverrides = emptyMap(),
+        activeFullscreenVideo = activeFullscreenVideo,
+        onCloseFullscreenImages = { selectedFullImagePath = null },
+        onCloseFullscreenVideo = { activeFullscreenVideo = null },
+        showPinnedSheet = showPinnedSheet,
+        onDismissPinnedSheet = { showPinnedSheet = false },
+        onNavigateToMessage = { msgId ->
+            val targetIdx = state.messages.indexOfFirst { it.messageId == msgId }
+            if (targetIdx != -1) {
+                val pinIdx = pinnedGroupMessages.indexOfFirst { it.messageId == msgId }
+                if (pinIdx != -1) activePinnedIndex = pinIdx
+                coroutineScope.launch {
+                    listState.animateScrollToItem(targetIdx)
+                    highlightedMessageId = msgId
+                }
+            }
+        },
+        showWallpaperModal = showWallpaperModal,
+        onDismissWallpaperModal = { showWallpaperModal = false },
+        wallpaperUriStr = wallpaperUriStr,
+        wallpaperDimming = wallpaperDimming,
+        wallpaperBlur = wallpaperBlur,
+    )
 }
 
 @Composable
@@ -4224,74 +3309,6 @@ private fun GroupPollCard(
     }
 }
 
-@Composable
-private fun CreatePollDialog(
-    onDismiss: () -> Unit,
-    onCreatePoll: (question: String, options: List<String>, isAnonymous: Boolean) -> Unit
-) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val appLanguage = remember(context) { com.example.twopchat.config.P2PPreferences.prefs(context).getString("app_language", "Русский") ?: "Русский" }
-    var question by remember { mutableStateOf("") }
-    var options by remember { mutableStateOf(listOf("", "")) }
-    var isAnonymous by remember { mutableStateOf(false) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (appLanguage == "Русский") "Создать опрос" else "Create Poll", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = question,
-                    onValueChange = { question = it },
-                    placeholder = { Text(if (appLanguage == "Русский") "Задайте вопрос..." else "Ask a question...") },
-                    keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
-                        context = context,
-                        capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(if (appLanguage == "Русский") "Варианты ответов:" else "Options:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                options.forEachIndexed { index, opt ->
-                    OutlinedTextField(
-                        value = opt,
-                        onValueChange = { newText ->
-                            options = options.toMutableList().also { it[index] = newText }
-                        },
-                        placeholder = { Text(if (appLanguage == "Русский") "Вариант ${index + 1}" else "Option ${index + 1}") },
-                        keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
-                            context = context,
-                            capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                if (options.size < 6) {
-                    TextButton(onClick = { options = options + "" }) {
-                        Text(if (appLanguage == "Русский") "+ Добавить вариант" else "+ Add option")
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = isAnonymous, onCheckedChange = { isAnonymous = it })
-                    Text(if (appLanguage == "Русский") "Анонимный опрос" else "Anonymous poll", fontSize = 13.sp)
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val validOpts = options.map { it.trim() }.filter { it.isNotEmpty() }
-                    if (question.isNotBlank() && validOpts.size >= 2) {
-                        onCreatePoll(question.trim(), validOpts, isAnonymous)
-                        onDismiss()
-                    }
-                }
-            ) { Text(if (appLanguage == "Русский") "Создать" else "Create") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
-        }
-    )
-}
 
 @Composable
 private fun GroupMediaAlbumBubble(
