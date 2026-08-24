@@ -272,8 +272,17 @@ internal class P2POutboundMessenger(
     fun isFileTransferActive(messageId: String): Boolean =
         messageId.isNotBlank() && messageId in activeFileTransfers
 
+    private val lastReconnectAttempt = ConcurrentHashMap<String, Long>()
+
     fun reconnect(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
         if (isPaused(context, peerName)) return postResult(onResult, false)
+        val peerKey = normalizePeerKey(peerName)
+        val now = System.currentTimeMillis()
+        val lastAttempt = lastReconnectAttempt[peerKey] ?: 0L
+        if (now - lastAttempt < 3000L) {
+            return postResult(onResult, false)
+        }
+        lastReconnectAttempt[peerKey] = now
         scope.launch {
             try {
                 if (isPaused(context, peerName)) return@launch postResult(onResult, false)
