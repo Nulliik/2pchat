@@ -60,7 +60,7 @@ open class PacketTunnelProvider: VpnService() {
         }
     }
 
-    private var yggdrasil = Yggdrasil()
+    private var yggdrasil: Yggdrasil? = null
     private var started = AtomicBoolean()
     private var publicPeerPoolPruned = AtomicBoolean()
 
@@ -250,9 +250,10 @@ open class PacketTunnelProvider: VpnService() {
             acquire()
         }
 
-        yggdrasil.startJSON(config.getJSONByteArray())
+        val ygg = yggdrasil ?: Yggdrasil().also { yggdrasil = it }
+        ygg.startJSON(config.getJSONByteArray())
 
-        val address = yggdrasil.addressString
+        val address = ygg.addressString
         updateRuntimeState(address, STATE_ENABLED)
         val builder = Builder()
             .addAddress(address, 7)
@@ -262,7 +263,7 @@ open class PacketTunnelProvider: VpnService() {
             .allowFamily(OsConstants.AF_INET6)
             .allowBypass()
             .setBlocking(true)
-            .setMtu(yggdrasil.mtu.toInt().coerceIn(1280, 1420))
+            .setMtu(ygg.mtu.toInt().coerceIn(1280, 1420))
             .setSession("Yggdrasil")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -317,8 +318,10 @@ open class PacketTunnelProvider: VpnService() {
         isTunnelActive = false
         val wasStarted = started.getAndSet(false)
         if (wasStarted) {
-            runCatching { yggdrasil.stop() }
-                .onFailure { Log.w(TAG, "Unable to stop native Yggdrasil cleanly", it) }
+            yggdrasil?.let { ygg ->
+                runCatching { ygg.stop() }
+                    .onFailure { Log.w(TAG, "Unable to stop native Yggdrasil cleanly", it) }
+            }
         }
 
         // БАГ 2 ИСПРАВЛЕН: Сначала прерываем потоки, потом закрываем стримы.
@@ -370,7 +373,7 @@ open class PacketTunnelProvider: VpnService() {
         if (!started.get()) {
             return
         }
-        yggdrasil.retryPeersNow()
+        yggdrasil?.retryPeersNow()
     }
 
     private fun isTunnelHealthy(): Boolean =
@@ -400,23 +403,24 @@ open class PacketTunnelProvider: VpnService() {
                 }
                 return
             }
-            val treeJSON = yggdrasil.treeJSON
+            val ygg = yggdrasil ?: break@updates
+            val treeJSON = ygg.treeJSON
             if ((application as GlobalApplication).needUiUpdates()) {
                 val intent = Intent(STATE_INTENT)
                 intent.putExtra("type", "state")
                 intent.putExtra("started", true)
-                intent.putExtra("ip", yggdrasil.addressString)
-                intent.putExtra("subnet", yggdrasil.subnetString)
-                intent.putExtra("pubkey", yggdrasil.publicKeyString)
-                intent.putExtra("peers", yggdrasil.peersJSON)
+                intent.putExtra("ip", ygg.addressString)
+                intent.putExtra("subnet", ygg.subnetString)
+                intent.putExtra("pubkey", ygg.publicKeyString)
+                intent.putExtra("peers", ygg.peersJSON)
                 intent.setPackage(packageName)
                 sendBroadcast(intent)
             }
             val curTime = System.currentTimeMillis()
             if (lastStateUpdate + 10000 < curTime) {
                 val intent = Intent(YGG_STATE_INTENT)
-                val routes = yggdrasil.routingEntries.toInt()
-                val peerCount = jsonArrayLength(yggdrasil.peersJSON)
+                val routes = ygg.routingEntries.toInt()
+                val peerCount = jsonArrayLength(ygg.peersJSON)
                 var treeNodes = 0
                 var state = STATE_ENABLED
                 if (routes > 0) {
@@ -427,7 +431,7 @@ open class PacketTunnelProvider: VpnService() {
                     if (treeNodes > 1)
                         state = STATE_CONNECTED
                 }
-                updateRuntimeState(yggdrasil.addressString, state, peerCount, routes, treeNodes, yggdrasil.peersJSON)
+                updateRuntimeState(ygg.addressString, state, peerCount, routes, treeNodes, ygg.peersJSON)
                 intent.putExtra("state", state)
                 intent.setPackage(packageName)
                 sendBroadcast(intent)
@@ -446,7 +450,7 @@ open class PacketTunnelProvider: VpnService() {
                 !publicPeerPoolPruned.get() &&
                 curTime - probeStartedAt >= 25_000
             ) {
-                config.retainBestLivePeers(yggdrasil.peersJSON)
+                config.retainBestLivePeers(ygg.peersJSON)
                 publicPeerPoolPruned.set(true)
             }
 
@@ -480,8 +484,9 @@ open class PacketTunnelProvider: VpnService() {
                 Log.i(TAG, "Write thread interrupted or file descriptor is invalid")
                 break@writes
             }
+            val ygg = yggdrasil ?: break@writes
             try {
-                val len = yggdrasil.recvBuffer(buf)
+                val len = ygg.recvBuffer(buf)
                 if (len > 0) {
                     writerStream.write(buf, 0, len.toInt())
                 }
@@ -510,10 +515,11 @@ open class PacketTunnelProvider: VpnService() {
                 Log.i(TAG, "Read thread interrupted or file descriptor is invalid")
                 break@reads
             }
+            val ygg = yggdrasil ?: break@reads
             try {
                 val n = readerStream.read(b)
                 if (n <= 0) break@reads
-                yggdrasil.sendBuffer(b, n.toLong())
+                ygg.sendBuffer(b, n.toLong())
             } catch (e: Exception) {
                 Log.i(TAG, "Error in sendBuffer: $e")
                 break@reads

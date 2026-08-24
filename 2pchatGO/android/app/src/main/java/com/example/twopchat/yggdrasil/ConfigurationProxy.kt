@@ -20,16 +20,7 @@ class ConfigurationProxy(applicationContext: Context) {
         // Bootstrap peers taken from the official public-peers repository on
         // 2026-07-09.  They are intentionally nearby (Russia/Finland) and use
         // TCP/TLS, which are supported by the bundled Android library.
-        val DEFAULT_PUBLIC_PEERS = listOf(
-            "tls://45.95.202.21:443",
-            "tls://ygg-msk-1.averyan.ru:8362",
-            "tls://95.217.35.92:1337",
-            "tcp://89.44.86.85:65535",
-            "tls://yggno.de:18227",
-            "tcp://51.15.204.214:18227",
-            "tls://ygg.mikaela.info:443",
-            "tcp://ygg.in.tula.ru:65535"
-        )
+        val DEFAULT_PUBLIC_PEERS = YggdrasilPeerPreferences.DEFAULT_PUBLIC_PEERS
 
         // Offline snapshot of every TCP/TLS endpoint marked online by the
         // official public-peer monitor on 2026-07-09. It is compressed to keep

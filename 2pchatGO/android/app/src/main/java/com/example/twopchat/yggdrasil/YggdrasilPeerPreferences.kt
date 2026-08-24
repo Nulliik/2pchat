@@ -56,13 +56,24 @@ object YggdrasilPeerPreferences {
         P2PPreferences.prefs(context).edit().putBoolean(PUBLIC_PEERS_ENABLED, enabled).apply()
     }
 
+    val DEFAULT_PUBLIC_PEERS = listOf(
+        "tls://45.95.202.21:443",
+        "tls://ygg-msk-1.averyan.ru:8362",
+        "tls://95.217.35.92:1337",
+        "tcp://89.44.86.85:65535",
+        "tls://yggno.de:18227",
+        "tcp://51.15.204.214:18227",
+        "tls://ygg.mikaela.info:443",
+        "tcp://ygg.in.tula.ru:65535",
+    )
+
     fun publicPeers(context: Context): List<String> {
         val stored = P2PPreferences.prefs(context)
             .getStringSet(KNOWN_PUBLIC_PEERS, emptySet())
             .orEmpty()
             .mapNotNull(::normalizedPeerUri)
             .distinctBy(String::lowercase)
-        return (stored.ifEmpty { ConfigurationProxy.DEFAULT_PUBLIC_PEERS })
+        return (stored.ifEmpty { DEFAULT_PUBLIC_PEERS })
             .take(MAX_PUBLIC_PEERS)
     }
 

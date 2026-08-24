@@ -52,7 +52,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.twopchat.data.Localizations
-import com.example.twopchat.yggdrasil.ConfigurationProxy
 import com.example.twopchat.yggdrasil.CustomYggdrasilPeer
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
 import com.example.twopchat.yggdrasil.YggdrasilPeerPreferences
@@ -154,10 +153,6 @@ fun YggdrasilPeerSettingsPage(
                             action = PacketTunnelProvider.ACTION_RELOAD_PEERS
                         },
                     )
-                } else {
-                    withContext(Dispatchers.IO) {
-                        ConfigurationProxy(context).applyPeerPreferences()
-                    }
                 }
             } catch (_: Exception) {
                 applyError = if (isRussian) {
