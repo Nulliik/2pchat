@@ -10,6 +10,7 @@ object DatabaseTuning {
     private const val TAG = "DatabaseTuning"
 
     val PRAGMA_STATEMENTS = listOf(
+        "PRAGMA cipher_memory_security = OFF",
         "PRAGMA synchronous = NORMAL",
         "PRAGMA foreign_keys = ON",
         "PRAGMA temp_store = MEMORY",

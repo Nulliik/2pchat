@@ -36,7 +36,10 @@ class DatabaseTuningTest {
         assertTrue("Must configure mmap_size for fast memory-mapped page access",
             statements.any { it.contains("mmap_size", ignoreCase = true) })
 
-        assertEquals(6, statements.size)
+        assertTrue("Must configure cipher_memory_security = OFF for Android RLIMIT_MEMLOCK compatibility",
+            statements.any { it.contains("cipher_memory_security = OFF", ignoreCase = true) })
+
+        assertEquals(7, statements.size)
     }
 
     @Test
