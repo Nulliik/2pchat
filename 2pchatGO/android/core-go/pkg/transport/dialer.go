@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	DefaultDialTimeout = 30 * time.Second
+	DefaultDialTimeout    = 30 * time.Second
 	DefaultTorDialTimeout = 90 * time.Second
-	DefaultTorProxy    = "127.0.0.1:9050"
+	DefaultTorProxy       = "127.0.0.1:9050"
 )
 
 var (
