@@ -274,6 +274,17 @@ internal class P2POutboundMessenger(
 
     private val lastReconnectAttempt = ConcurrentHashMap<String, Long>()
 
+    internal fun canAttemptReconnectForTest(peerName: String, now: Long = System.currentTimeMillis()): Boolean {
+        val peerKey = normalizePeerKey(peerName)
+        val lastAttempt = lastReconnectAttempt[peerKey] ?: 0L
+        return now - lastAttempt >= 3000L
+    }
+
+    internal fun recordReconnectAttemptForTest(peerName: String, now: Long = System.currentTimeMillis()) {
+        val peerKey = normalizePeerKey(peerName)
+        lastReconnectAttempt[peerKey] = now
+    }
+
     fun reconnect(context: Context, peerName: String, onResult: (Boolean) -> Unit = {}) {
         if (isPaused(context, peerName)) return postResult(onResult, false)
         val peerKey = normalizePeerKey(peerName)

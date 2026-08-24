@@ -114,4 +114,25 @@ class P2POutboundMessengerTest {
         assertFalse(messenger.isPeerInBackoff("Bob", now))
         assertFalse(messenger.isPeerInBackoff("Gremlin", now))
     }
+
+    @Test
+    fun testReconnectDebounceThrottlesRapidConcurrentCalls() {
+        val now = System.currentTimeMillis()
+        assertTrue(messenger.canAttemptReconnectForTest("Alice", now))
+
+        // Record first attempt
+        messenger.recordReconnectAttemptForTest("Alice", now)
+
+        // Immediate subsequent calls within 3000ms must be throttled
+        assertFalse(messenger.canAttemptReconnectForTest("Alice", now + 500L))
+        assertFalse(messenger.canAttemptReconnectForTest(" ALICE ", now + 1500L))
+        assertFalse(messenger.canAttemptReconnectForTest("alice", now + 2999L))
+
+        // Different peer must not be throttled
+        assertTrue(messenger.canAttemptReconnectForTest("Bob", now + 500L))
+
+        // After 3000ms window expires, reconnect becomes available again
+        assertTrue(messenger.canAttemptReconnectForTest("Alice", now + 3000L))
+        assertTrue(messenger.canAttemptReconnectForTest("Alice", now + 5000L))
+    }
 }
