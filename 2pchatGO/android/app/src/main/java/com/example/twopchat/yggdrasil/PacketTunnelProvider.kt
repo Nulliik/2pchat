@@ -232,33 +232,59 @@ open class PacketTunnelProvider: VpnService() {
         }
 
         val notification = createServiceNotification(this, State.Enabled)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            ServiceCompat.startForeground(
-                this,
-                SERVICE_NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-            )
-        } else {
-            startForeground(SERVICE_NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                ServiceCompat.startForeground(
+                    this,
+                    SERVICE_NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+                )
+            } else {
+                startForeground(SERVICE_NOTIFICATION_ID, notification)
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Failed to startForeground in startTunnel with specialUse, falling back", e)
+            try {
+                startForeground(SERVICE_NOTIFICATION_ID, notification)
+            } catch (_: Throwable) {}
         }
 
         // Acquire multicast lock
-        val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
-        multicastLock = wifi.createMulticastLock("Yggdrasil").apply {
-            setReferenceCounted(false)
-            acquire()
+        multicastLock = try {
+            val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            wifi.createMulticastLock("Yggdrasil").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Could not acquire MulticastLock", e)
+            null
         }
 
         val ygg = yggdrasil ?: Yggdrasil().also { yggdrasil = it }
-        ygg.startJSON(config.getJSONByteArray())
+        try {
+            ygg.startJSON(config.getJSONByteArray())
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to execute startJSON on native Yggdrasil", e)
+            updateRuntimeState("", STATE_DISABLED)
+            stop(stopService = true)
+            return
+        }
 
         val address = ygg.addressString
+        if (address.isNullOrBlank()) {
+            Log.e(TAG, "Yggdrasil returned empty/null address after startJSON")
+            updateRuntimeState("", STATE_DISABLED)
+            stop(stopService = true)
+            return
+        }
+
         updateRuntimeState(address, STATE_ENABLED)
         val builder = Builder()
             .addAddress(address, 7)
             .addRoute("200::", 7)
-            .addRoute("2000::", 128)
+            .addRoute("300::", 7)
             .allowFamily(OsConstants.AF_INET)
             .allowFamily(OsConstants.AF_INET6)
             .allowBypass()
@@ -270,17 +296,18 @@ open class PacketTunnelProvider: VpnService() {
             builder.setMetered(false)
         }
 
-        // This is a split tunnel which only owns 200::/7. Advertising public
-        // DNS servers on this VPN makes Android bind resolver traffic to tun1,
-        // even though those addresses cannot be carried by Yggdrasil. Keep DNS
-        // on the underlying Wi-Fi/mobile network instead. Device logs showed
-        // the previous setup breaking every tracker lookup after tun1 started.
+        // This is a split tunnel which only owns 200::/7 and 300::/7. Keep DNS
+        // on the underlying Wi-Fi/mobile network instead.
 
         var establishedParcel: ParcelFileDescriptor? = null
         for (attempt in 1..3) {
-            establishedParcel = builder.establish()
-            if (establishedParcel != null && establishedParcel.fileDescriptor.valid()) {
-                break
+            try {
+                establishedParcel = builder.establish()
+                if (establishedParcel != null && establishedParcel.fileDescriptor.valid()) {
+                    break
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "builder.establish() threw on attempt $attempt/3", e)
             }
             Log.w(TAG, "VPN establish returned null on attempt $attempt/3, waiting for kernel FD release...")
             try { Thread.sleep(350L) } catch (_: InterruptedException) {}
@@ -297,13 +324,25 @@ open class PacketTunnelProvider: VpnService() {
         writerStream = FileOutputStream(parcel.fileDescriptor)
 
         readerThread = thread(name = "Yggdrasil-Reader") {
-            reader()
+            try {
+                reader()
+            } catch (e: Throwable) {
+                Log.e(TAG, "Yggdrasil-Reader thread terminated with error", e)
+            }
         }
         writerThread = thread(name = "Yggdrasil-Writer") {
-            writer()
+            try {
+                writer()
+            } catch (e: Throwable) {
+                Log.e(TAG, "Yggdrasil-Writer thread terminated with error", e)
+            }
         }
         updateThread = thread(name = "Yggdrasil-Updater") {
-            updater()
+            try {
+                updater()
+            } catch (e: Throwable) {
+                Log.e(TAG, "Yggdrasil-Updater thread terminated with error", e)
+            }
         }
 
         isTunnelActive = true
@@ -404,15 +443,15 @@ open class PacketTunnelProvider: VpnService() {
                 return
             }
             val ygg = yggdrasil ?: break@updates
-            val treeJSON = ygg.treeJSON
-            if ((application as GlobalApplication).needUiUpdates()) {
+            val treeJSON = runCatching { ygg.treeJSON }.getOrNull()
+            if ((application as? GlobalApplication)?.needUiUpdates() == true) {
                 val intent = Intent(STATE_INTENT)
                 intent.putExtra("type", "state")
                 intent.putExtra("started", true)
-                intent.putExtra("ip", ygg.addressString)
-                intent.putExtra("subnet", ygg.subnetString)
-                intent.putExtra("pubkey", ygg.publicKeyString)
-                intent.putExtra("peers", ygg.peersJSON)
+                intent.putExtra("ip", runCatching { ygg.addressString }.getOrDefault(""))
+                intent.putExtra("subnet", runCatching { ygg.subnetString }.getOrDefault(""))
+                intent.putExtra("pubkey", runCatching { ygg.publicKeyString }.getOrDefault(""))
+                intent.putExtra("peers", runCatching { ygg.peersJSON }.getOrDefault(""))
                 intent.setPackage(packageName)
                 sendBroadcast(intent)
             }

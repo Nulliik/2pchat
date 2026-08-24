@@ -261,14 +261,16 @@ internal fun isContactInviteLink(value: String): Boolean {
     val trimmed = value.trim()
     return trimmed.startsWith("2pchat://connect", ignoreCase = true) ||
            trimmed.startsWith("2pchat:connect", ignoreCase = true) ||
+           trimmed.startsWith("https://2pchat.", ignoreCase = true) ||
            trimmed.startsWith("connect?", ignoreCase = true) ||
            (trimmed.startsWith("?") && (trimmed.contains("name=") || trimmed.contains("code=") || trimmed.contains("token=") || trimmed.contains("onion=") || trimmed.contains("ip="))) ||
-           (trimmed.contains("name=") && (trimmed.contains("code=") || trimmed.contains("token=") || trimmed.contains("onion=") || trimmed.contains("ip=")))
+           (trimmed.contains("://") && trimmed.contains("name=") && (trimmed.contains("code=") || trimmed.contains("token=") || trimmed.contains("onion=") || trimmed.contains("ip=")))
 }
 
 internal fun contactFromPeerSearchResult(
     peer: Map<String, Any>,
     appLanguage: String,
+    isInviteLookup: Boolean = false,
 ): ContactItem {
     val name = peer["nickname"]?.toString()?.trim().orEmpty().ifEmpty { "Unknown" }
     val fingerprint = peer["fingerprint"]?.toString().orEmpty()
@@ -286,9 +288,8 @@ internal fun contactFromPeerSearchResult(
         name
     }
 
-    return ContactItem(
-        name = displayName,
-        status = if (verified && ownershipVerified) {
+    val statusText = if (verified && ownershipVerified) {
+        if (isInviteLookup) {
             Localizations.tr(
                 appLanguage,
                 "Подтверждён ссылкой приглашения",
@@ -298,27 +299,42 @@ internal fun contactFromPeerSearchResult(
                 "Vérifié par lien d'invitation",
                 "Verificado por link de convite"
             )
-        } else if (verified) {
-            Localizations.tr(
-                appLanguage,
-                "Узел и ключ активны · владелец ника не подтверждён",
-                "Live node and key · nickname ownership unverified",
-                "Aktiver Knoten & Schlüssel · Nickname-Eigentum nicht verifiziert",
-                "Nodo y clave activos · propiedad de apodo no verificada",
-                "Nœud et clé actifs · propriété du pseudo non vérifiée",
-                "Nó e chave ativos · propriedade do apelido não verificada"
-            )
         } else {
             Localizations.tr(
                 appLanguage,
-                "Найден в сети · Нажмите для подключения",
-                "Found on network · Tap to connect",
-                "Im Netzwerk gefunden · Tippen zum Verbinden",
-                "Encontrado en red · Tocar para conectar",
-                "Trouvé sur le réseau · Appuyez pour vous connecter",
-                "Encontrado na rede · Toque para conectar"
+                "В сети · Идентичность подтверждена",
+                "Online · Identity verified",
+                "Online · Identität verifiziert",
+                "En línea · Identidad verificada",
+                "En ligne · Identité vérifiée",
+                "Online · Identidade verificada"
             )
-        },
+        }
+    } else if (verified) {
+        Localizations.tr(
+            appLanguage,
+            "Узел и ключ активны · владелец ника не подтверждён",
+            "Live node and key · nickname ownership unverified",
+            "Aktiver Knoten & Schlüssel · Nickname-Eigentum nicht verifiziert",
+            "Nodo y clave activos · propiedad de apodo no verificada",
+            "Nœud et clé actifs · propriété du pseudo non vérifiée",
+            "Nó e chave ativos · propriedade do apelido não verificada"
+        )
+    } else {
+        Localizations.tr(
+            appLanguage,
+            "Найден в сети · Нажмите для подключения",
+            "Found on network · Tap to connect",
+            "Im Netzwerk gefunden · Tippen zum Verbinden",
+            "Encontrado en red · Tocar para conectar",
+            "Trouvé sur le réseau · Appuyez pour vous connecter",
+            "Encontrado na rede · Toque para conectar"
+        )
+    }
+
+    return ContactItem(
+        name = displayName,
+        status = statusText,
         initials = displayName.take(2).uppercase(),
         verified = verified,
         endpoints = endpoints,

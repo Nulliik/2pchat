@@ -58,7 +58,7 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
         // callback unwinding and aborts with "fatal error: unknown caller pc".
         // The VPN service has its own process (:yggdrasil), so keep all main-process
         // P2P/UI initialization strictly isolated from the Yggdrasil process.
-        if (isYggdrasilServiceProcess(Application.getProcessName())) {
+        if (isYggdrasilServiceProcess(currentProcessName(this))) {
             return
         }
 
@@ -105,6 +105,17 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
             currentState = state
         }
     }
+}
+
+internal fun currentProcessName(context: Context): String? {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        return runCatching { Application.getProcessName() }.getOrNull()
+    }
+    return runCatching {
+        val pid = android.os.Process.myPid()
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        am?.runningAppProcesses?.firstOrNull { it.pid == pid }?.processName
+    }.getOrNull()
 }
 
 internal fun isYggdrasilServiceProcess(processName: String?): Boolean =

@@ -480,9 +480,16 @@ fun YggdrasilPeerSettingsPage(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
-                        action = PacketTunnelProvider.ACTION_REGENERATE_KEYS
-                    })
+                    runCatching {
+                        val intent = Intent(context, PacketTunnelProvider::class.java).apply {
+                            action = PacketTunnelProvider.ACTION_REGENERATE_KEYS
+                        }
+                        if (yggdrasilRouting) {
+                            androidx.core.content.ContextCompat.startForegroundService(context, intent)
+                        } else {
+                            context.startService(intent)
+                        }
+                    }
                     showRegenerateYggdrasilKeysDialog = false
                     Toast.makeText(
                         context,
