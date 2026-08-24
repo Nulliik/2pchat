@@ -1,9 +1,7 @@
 package com.example.twopchat.yggdrasil
 
 import android.content.Context
-import android.content.Intent
 import android.net.*
-import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,21 +21,15 @@ class NetworkStateCallback(val context: Context) : ConnectivityManager.NetworkCa
         com.example.twopchat.NativeBridge.onNetworkChanged()
 
         val preferences = yggdrasilPrefs(context)
-        if (preferences.getBoolean(PREF_KEY_ENABLED, false) && PacketTunnelProvider.isTunnelActive(context) && VpnService.prepare(context) == null) {
+        if (preferences.getBoolean(PREF_KEY_ENABLED, false) && YggdrasilCoordinator.isRunning(context)) {
             scope.launch {
                 // The message often arrives before the connection is fully established
                 delay(1000)
-                if (!yggdrasilPrefs(context).getBoolean(PREF_KEY_ENABLED, false) || !PacketTunnelProvider.isTunnelActive(context)) return@launch
+                if (!yggdrasilPrefs(context).getBoolean(PREF_KEY_ENABLED, false) || !YggdrasilCoordinator.isRunning(context)) return@launch
                 runCatching {
-                    val intent = Intent(context, PacketTunnelProvider::class.java)
-                    intent.action = PacketTunnelProvider.ACTION_CONNECT
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        context.startForegroundService(intent)
-                    } else {
-                        context.startService(intent)
-                    }
+                    YggdrasilCoordinator.connect(context)
                 }.onFailure {
-                    Log.w(TAG, "Could not reconnect PacketTunnelProvider on network available", it)
+                    Log.w(TAG, "Could not reconnect Yggdrasil on network available", it)
                 }
                 com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(context)
             }

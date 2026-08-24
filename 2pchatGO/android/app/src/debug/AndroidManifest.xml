@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug builds only: controlled by the local emulator harness. -->
+        <receiver
+            android:name=".debug.E2EControlReceiver"
+            android:exported="true" />
+    </application>
+</manifest>

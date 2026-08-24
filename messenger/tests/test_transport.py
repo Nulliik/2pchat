@@ -49,6 +49,30 @@ def test_yggdrasil_validates_ipv6_addresses():
     with pytest.raises(ValueError):
         transport._validate_ipv6("not-an-ipv6")
 
+    with pytest.raises(ValueError, match="200::/7"):
+        transport._validate_ipv6("2001:db8::1")
+
+
+@pytest.mark.asyncio
+async def test_yggdrasil_proxy_mode_never_falls_back_to_direct(monkeypatch):
+    transport = YggdrasilTransport(mode="proxy")
+    direct_called = False
+
+    async def unavailable_proxy(*_args, **_kwargs):
+        raise ConnectionRefusedError("proxy unavailable")
+
+    async def direct_connect(*_args, **_kwargs):
+        nonlocal direct_called
+        direct_called = True
+        raise AssertionError("direct fallback must not be used in proxy mode")
+
+    monkeypatch.setattr(transport, "_socks5_connect", unavailable_proxy)
+    monkeypatch.setattr(transport._direct, "connect", direct_connect)
+
+    with pytest.raises(ConnectionRefusedError):
+        await transport.connect("200:abcd:1234::5", 50001)
+    assert not direct_called
+
 
 def test_transport_manager_instances_are_new():
     first = get_transport("direct")

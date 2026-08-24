@@ -283,8 +283,10 @@ open class PacketTunnelProvider: VpnService() {
         updateRuntimeState(address, STATE_ENABLED)
         val builder = Builder()
             .addAddress(address, 7)
+            // 200::/7 covers the complete Yggdrasil allocation (200:: through
+            // 3ff::).  "300::" is not a valid canonical network address for
+            // a /7 prefix; Android rejects it with IllegalArgumentException.
             .addRoute("200::", 7)
-            .addRoute("300::", 7)
             .allowFamily(OsConstants.AF_INET)
             .allowFamily(OsConstants.AF_INET6)
             .allowBypass()

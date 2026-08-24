@@ -41,6 +41,58 @@ object P2PPreferences {
     const val INCOGNITO_KEYBOARD = "settings_incognito_keyboard"
     const val USE_NATIVE_GO_CORE = "settings_use_native_go_core"
 
+    enum class YggdrasilMode(val id: String) {
+        PROXY("proxy"),
+        VPN("vpn")
+    }
+
+    const val YGGDRASIL_MODE = "settings_yggdrasil_operation_mode"
+    const val PREF_YGGDRASIL_PROXY_PORT = "settings_yggdrasil_proxy_port"
+    const val DEFAULT_YGGDRASIL_PROXY_PORT = 9053
+    const val DEFAULT_YGGDRASIL_PROXY_HOST = "127.0.0.1"
+
+    fun findAvailablePort(preferredPort: Int = DEFAULT_YGGDRASIL_PROXY_PORT, host: String = DEFAULT_YGGDRASIL_PROXY_HOST): Int {
+        if (preferredPort > 0) {
+            try {
+                java.net.ServerSocket().use { socket ->
+                    socket.reuseAddress = true
+                    socket.bind(java.net.InetSocketAddress(java.net.InetAddress.getByName(host), preferredPort))
+                    return socket.localPort
+                }
+            } catch (_: Throwable) {}
+        }
+        // Ask operating system for an available ephemeral port
+        try {
+            java.net.ServerSocket().use { socket ->
+                socket.reuseAddress = true
+                socket.bind(java.net.InetSocketAddress(java.net.InetAddress.getByName(host), 0))
+                return socket.localPort
+            }
+        } catch (_: Throwable) {}
+        return if (preferredPort > 0) preferredPort else DEFAULT_YGGDRASIL_PROXY_PORT
+    }
+
+    fun getYggdrasilProxyPort(context: Context): Int =
+        prefs(context).getInt(PREF_YGGDRASIL_PROXY_PORT, DEFAULT_YGGDRASIL_PROXY_PORT)
+
+    fun setYggdrasilProxyPort(context: Context, port: Int) {
+        prefs(context).edit().putInt(PREF_YGGDRASIL_PROXY_PORT, port).apply()
+    }
+
+    fun getYggdrasilProxyAddr(context: Context): String {
+        val port = getYggdrasilProxyPort(context)
+        return "$DEFAULT_YGGDRASIL_PROXY_HOST:$port"
+    }
+
+    fun getYggdrasilMode(context: Context): YggdrasilMode {
+        val raw = prefs(context).getString(YGGDRASIL_MODE, YggdrasilMode.PROXY.id)
+        return YggdrasilMode.entries.find { it.id == raw } ?: YggdrasilMode.PROXY
+    }
+
+    fun setYggdrasilMode(context: Context, mode: YggdrasilMode) {
+        prefs(context).edit().putString(YGGDRASIL_MODE, mode.id).apply()
+    }
+
     fun isUseNativeGoCore(context: Context): Boolean = true
 
     fun setUseNativeGoCore(context: Context, enabled: Boolean) {

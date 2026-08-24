@@ -62,9 +62,15 @@ internal class ChatsViewModel(
                                 activePeers = P2PMessageRelay.getActivePeerNames().size,
                                 upnpOk = true,
                                 trackersOk = true,
-                                yggOk = P2PMessageRelay.getYggdrasilAddress().let { address ->
-                                    address.isNotBlank() && address != "N/A" && address != "unavailable"
-                                },
+                                // Both VPN and user-space Proxy publish their
+                                // address/state here. The relay owns neither
+                                // service in Proxy mode, so querying only the
+                                // relay made a live SOCKS Yggdrasil stack look
+                                // falsely disabled in the dashboard.
+                                yggOk = sharedPrefs.getString("yggdrasil_runtime_state", "")
+                                    .equals("ENABLED", ignoreCase = true) ||
+                                    sharedPrefs.getString("yggdrasil_runtime_state", "")
+                                        .equals("CONNECTED", ignoreCase = true),
                             )
                         }
                     }.getOrNull()

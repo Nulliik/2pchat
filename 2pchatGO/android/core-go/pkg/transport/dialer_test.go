@@ -51,6 +51,24 @@ func TestAdaptiveDialerClassification(t *testing.T) {
 	}
 }
 
+func TestAdaptiveDialerYggdrasilModeSwitching(t *testing.T) {
+	dialer := NewAdaptiveDialer("127.0.0.1:9050", false, 5*time.Second)
+
+	if dialer.GetYggdrasilMode() != YggdrasilModeProxy {
+		t.Fatalf("Expected default Yggdrasil mode to be Proxy, got %v", dialer.GetYggdrasilMode())
+	}
+
+	dialer.SetYggdrasilConfig(YggdrasilModeVPN, "")
+	if dialer.GetYggdrasilMode() != YggdrasilModeVPN {
+		t.Fatalf("Expected Yggdrasil mode to be VPN, got %v", dialer.GetYggdrasilMode())
+	}
+
+	dialer.SetYggdrasilConfig(YggdrasilModeProxy, "127.0.0.1:9055")
+	if dialer.GetYggdrasilMode() != YggdrasilModeProxy {
+		t.Fatalf("Expected Yggdrasil mode to be Proxy, got %v", dialer.GetYggdrasilMode())
+	}
+}
+
 func TestListenerAndDirectDial(t *testing.T) {
 	listener := NewAsyncListener()
 
@@ -95,5 +113,32 @@ func TestListenerAndDirectDial(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("Timeout waiting for accepted connection")
+	}
+}
+
+func TestFindAvailablePort(t *testing.T) {
+	// Request OS free port with port 0
+	port, err := FindAvailablePort("127.0.0.1", 0)
+	if err != nil {
+		t.Fatalf("FindAvailablePort failed: %v", err)
+	}
+	if port <= 0 || port > 65535 {
+		t.Fatalf("Invalid port returned: %d", port)
+	}
+
+	// Occupy a port, then verify FindAvailablePort returns an OS-assigned free port instead of failing
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen failed: %v", err)
+	}
+	defer l.Close()
+	occupiedPort := l.Addr().(*net.TCPAddr).Port
+
+	freePort, err := FindAvailablePort("127.0.0.1", occupiedPort)
+	if err != nil {
+		t.Fatalf("FindAvailablePort fallback failed: %v", err)
+	}
+	if freePort == occupiedPort {
+		t.Fatalf("Expected different free port from occupied %d, got %d", occupiedPort, freePort)
 	}
 }

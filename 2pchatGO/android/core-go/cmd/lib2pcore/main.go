@@ -550,6 +550,27 @@ func Java_com_example_twopchat_NativeBridge_nativeSetTorProxy(
 	bridge.GetManager().SetTorProxy(enabled, proxyAddr)
 }
 
+//export Java_com_example_twopchat_NativeBridge_nativeSetYggdrasilConfig
+func Java_com_example_twopchat_NativeBridge_nativeSetYggdrasilConfig(
+	env *C.JNIEnv,
+	clazz C.jclass,
+	jMode C.jstring,
+	jProxyAddr C.jstring,
+) {
+	var mode, proxyAddr string
+	cMode := C.getJStringUTFChars(env, jMode)
+	if cMode != nil {
+		mode = C.GoString(cMode)
+		C.releaseJStringUTFChars(env, jMode, cMode)
+	}
+	cAddr := C.getJStringUTFChars(env, jProxyAddr)
+	if cAddr != nil {
+		proxyAddr = C.GoString(cAddr)
+		C.releaseJStringUTFChars(env, jProxyAddr, cAddr)
+	}
+	bridge.GetManager().SetYggdrasilConfig(mode, proxyAddr)
+}
+
 //export Java_com_example_twopchat_NativeBridge_nativeSetOnionAddress
 func Java_com_example_twopchat_NativeBridge_nativeSetOnionAddress(
 	env *C.JNIEnv,

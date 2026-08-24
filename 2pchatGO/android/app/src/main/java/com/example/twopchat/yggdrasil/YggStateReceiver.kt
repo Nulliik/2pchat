@@ -27,6 +27,16 @@ class YggStateReceiver(var receiver: StateReceiver): BroadcastReceiver() {
             STATE_RECONNECTING -> State.Reconnecting
             else -> State.Unknown
         }
+        val proxyPort = intent?.getIntExtra("proxy_port", -1) ?: -1
+        val proxyAddr = intent?.getStringExtra("proxy_addr")
+        if (proxyPort > 0) {
+            com.example.twopchat.config.P2PPreferences.setYggdrasilProxyPort(context, proxyPort)
+        }
+        if (!proxyAddr.isNullOrBlank()) {
+            val mode = com.example.twopchat.config.P2PPreferences.getYggdrasilMode(context)
+            com.example.twopchat.NativeBridge.setYggdrasilConfig(mode.id, proxyAddr)
+        }
+
         receiver.onStateChange(state)
     }
 

@@ -39,6 +39,9 @@ class NativeBridgeImpl : IP2PBridge {
 
     init {
         NativeBridge.initialize()
+        val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        val yggMode = P2PPreferences.getYggdrasilMode(appContext)
+        NativeBridge.setYggdrasilConfig(yggMode.id, "127.0.0.1:${P2PPreferences.DEFAULT_YGGDRASIL_PROXY_PORT}")
         setupNativeCallbacks()
         loadPersistedPeerMappings()
     }

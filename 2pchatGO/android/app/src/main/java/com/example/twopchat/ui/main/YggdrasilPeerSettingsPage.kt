@@ -2,6 +2,7 @@ package com.example.twopchat.ui.main
 
 import android.content.Intent
 import com.example.twopchat.config.*
+import com.example.twopchat.yggdrasil.YggdrasilCoordinator
 import android.net.VpnService
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -82,6 +83,7 @@ fun YggdrasilPeerSettingsPage(
     var applying by remember { mutableStateOf(false) }
     var applyError by remember { mutableStateOf<String?>(null) }
     val sharedPrefs = remember(context) { P2PPreferences.prefs(context) }
+    var currentMode by remember { mutableStateOf(P2PPreferences.getYggdrasilMode(context)) }
     var yggdrasilRouting by remember {
         mutableStateOf(sharedPrefs.getBoolean("settings_yggdrasil", false))
     }
@@ -90,12 +92,9 @@ fun YggdrasilPeerSettingsPage(
         contract = ActivityResultContracts.StartActivityForResult(),
         onResult = { result ->
             if (result.resultCode == android.app.Activity.RESULT_OK) {
-                val intent = Intent(context, PacketTunnelProvider::class.java).apply {
-                    action = PacketTunnelProvider.ACTION_START
-                }
-                runCatching {
-                    androidx.core.content.ContextCompat.startForegroundService(context, intent)
-                }
+                currentMode = P2PPreferences.YggdrasilMode.VPN
+                P2PPreferences.setYggdrasilMode(context, P2PPreferences.YggdrasilMode.VPN)
+                YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.VPN)
                 yggdrasilRouting = true
                 sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
             } else {
@@ -110,6 +109,9 @@ fun YggdrasilPeerSettingsPage(
             if (key?.startsWith("yggdrasil_") == true) revision++
             if (key == "settings_yggdrasil") {
                 yggdrasilRouting = sharedPrefs.getBoolean("settings_yggdrasil", false)
+            }
+            if (key == P2PPreferences.YGGDRASIL_MODE) {
+                currentMode = P2PPreferences.getYggdrasilMode(context)
             }
         }
         sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
@@ -146,13 +148,8 @@ fun YggdrasilPeerSettingsPage(
             applying = true
             try {
                 val yggdrasilEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
-                if (yggdrasilEnabled && VpnService.prepare(context) == null) {
-                    ContextCompat.startForegroundService(
-                        context,
-                        Intent(context, PacketTunnelProvider::class.java).apply {
-                            action = PacketTunnelProvider.ACTION_RELOAD_PEERS
-                        },
-                    )
+                if (yggdrasilEnabled) {
+                    YggdrasilCoordinator.reloadPeers(context)
                 }
             } catch (_: Exception) {
                 applyError = if (isRussian) {
@@ -207,26 +204,22 @@ fun YggdrasilPeerSettingsPage(
                                     checked = yggdrasilRouting,
                                     onCheckedChange = { isChecked ->
                                         if (isChecked) {
-                                            val vpnIntent = VpnService.prepare(context)
-                                            if (vpnIntent != null) {
-                                                vpnLauncher.launch(vpnIntent)
+                                            if (currentMode == P2PPreferences.YggdrasilMode.VPN) {
+                                                val vpnIntent = VpnService.prepare(context)
+                                                if (vpnIntent != null) {
+                                                    vpnLauncher.launch(vpnIntent)
+                                                } else {
+                                                    YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.VPN)
+                                                    yggdrasilRouting = true
+                                                    sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
+                                                }
                                             } else {
-                                                val intent = Intent(context, PacketTunnelProvider::class.java).apply {
-                                                    action = PacketTunnelProvider.ACTION_START
-                                                }
-                                                runCatching {
-                                                    androidx.core.content.ContextCompat.startForegroundService(context, intent)
-                                                }
+                                                YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.PROXY)
                                                 yggdrasilRouting = true
                                                 sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
                                             }
                                         } else {
-                                            val intent = Intent(context, PacketTunnelProvider::class.java).apply {
-                                                action = PacketTunnelProvider.ACTION_STOP
-                                            }
-                                            runCatching {
-                                                context.startService(intent)
-                                            }
+                                            YggdrasilCoordinator.stop(context)
                                             yggdrasilRouting = false
                                             sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
                                         }
@@ -237,6 +230,76 @@ fun YggdrasilPeerSettingsPage(
                                     )
                                 )
                             }
+
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 10.dp),
+                                color = onSurfaceColor.copy(alpha = 0.05f)
+                            )
+
+                            // Mode Selector
+                            Text(
+                                text = if (isRussian) "Режим работы" else "Operation Mode",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                color = onSurfaceColor
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilterChip(
+                                    selected = currentMode == P2PPreferences.YggdrasilMode.PROXY,
+                                    onClick = {
+                                        if (currentMode != P2PPreferences.YggdrasilMode.PROXY) {
+                                            currentMode = P2PPreferences.YggdrasilMode.PROXY
+                                            P2PPreferences.setYggdrasilMode(context, P2PPreferences.YggdrasilMode.PROXY)
+                                            if (yggdrasilRouting) {
+                                                YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.PROXY)
+                                            }
+                                        }
+                                    },
+                                    label = {
+                                        Text(if (isRussian) "Proxy (Рекомендуется)" else "Proxy (Recommended)")
+                                    }
+                                )
+                                FilterChip(
+                                    selected = currentMode == P2PPreferences.YggdrasilMode.VPN,
+                                    onClick = {
+                                        if (currentMode != P2PPreferences.YggdrasilMode.VPN) {
+                                            if (yggdrasilRouting) {
+                                                val vpnIntent = VpnService.prepare(context)
+                                                if (vpnIntent != null) {
+                                                    vpnLauncher.launch(vpnIntent)
+                                                } else {
+                                                    currentMode = P2PPreferences.YggdrasilMode.VPN
+                                                    P2PPreferences.setYggdrasilMode(context, P2PPreferences.YggdrasilMode.VPN)
+                                                    YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.VPN)
+                                                }
+                                            } else {
+                                                currentMode = P2PPreferences.YggdrasilMode.VPN
+                                                P2PPreferences.setYggdrasilMode(context, P2PPreferences.YggdrasilMode.VPN)
+                                            }
+                                        }
+                                    },
+                                    label = {
+                                        Text(if (isRussian) "Системный VPN" else "System VPN")
+                                    }
+                                )
+                            }
+                            val currentProxyAddr = P2PPreferences.getYggdrasilProxyAddr(context)
+                            Text(
+                                text = if (currentMode == P2PPreferences.YggdrasilMode.PROXY) {
+                                    if (isRussian) "Фоновый SOCKS5 proxy ($currentProxyAddr). Не требует разрешений VPN и работает параллельно с любым VPN."
+                                    else "Background SOCKS5 proxy ($currentProxyAddr). Requires no VPN permissions and coexists with other VPNs."
+                                } else {
+                                    if (isRussian) "Создает L3 TUN интерфейс через VpnService Android. Занимает системный VPN слот."
+                                    else "Creates L3 TUN interface via Android VpnService. Occupies the system VPN slot."
+                                },
+                                fontSize = 11.sp,
+                                color = onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
 
                             HorizontalDivider(
                                 modifier = Modifier.padding(vertical = 10.dp),
@@ -481,14 +544,7 @@ fun YggdrasilPeerSettingsPage(
             confirmButton = {
                 TextButton(onClick = {
                     runCatching {
-                        val intent = Intent(context, PacketTunnelProvider::class.java).apply {
-                            action = PacketTunnelProvider.ACTION_REGENERATE_KEYS
-                        }
-                        if (yggdrasilRouting) {
-                            androidx.core.content.ContextCompat.startForegroundService(context, intent)
-                        } else {
-                            context.startService(intent)
-                        }
+                        YggdrasilCoordinator.regenerateKeys(context)
                     }
                     showRegenerateYggdrasilKeysDialog = false
                     Toast.makeText(

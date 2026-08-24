@@ -161,6 +161,11 @@ func (m *Manager) SetTorProxy(enabled bool, addr string) {
 	m.dialer.SetTorProxy(enabled, addr)
 }
 
+// SetYggdrasilConfig updates the Yggdrasil routing mode and SOCKS5 proxy configuration.
+func (m *Manager) SetYggdrasilConfig(mode string, proxyAddr string) {
+	m.dialer.SetYggdrasilConfig(transport.YggdrasilMode(mode), proxyAddr)
+}
+
 // SetOnionAddress sets the local Tor v3 .onion hidden service hostname and purges obsolete routes.
 func (m *Manager) SetOnionAddress(addr string) {
 	m.mu.Lock()

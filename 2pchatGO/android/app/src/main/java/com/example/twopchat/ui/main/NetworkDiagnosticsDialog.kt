@@ -1227,9 +1227,9 @@ private fun NodeDetailContent(
             val treeNodes = yggDiagnostics["tree_nodes"] ?: "0"
             val address = P2PMessageRelay.getYggdrasilAddress()
 
-            DetailRow(if (appLanguage == "Русский") "Статус Go-демона:" else "Daemon Status:", state.uppercase(), if (state == "connected") Color(0xFF4CAF50) else Color(0xFFFF5252))
+            val yggMode = P2PPreferences.getYggdrasilMode(context)
+            DetailRow(if (appLanguage == "Русский") "Режим работы:" else "Operation Mode:", if (yggMode == P2PPreferences.YggdrasilMode.PROXY) "PROXY (127.0.0.1:9053)" else "SYSTEM VPN (TUN)", primaryColor)
             DetailRow(if (appLanguage == "Русский") "Адрес IPv6 Yggdrasil:" else "Yggdrasil IPv6:", if (address.isNotEmpty()) address else "n/a", primaryColor)
-            DetailRow(if (appLanguage == "Русский") "Количество пиров (mesh):" else "Mesh Peers Count:", peers, primaryColor)
             DetailRow(if (appLanguage == "Русский") "Количество маршрутов:" else "Routing table size:", routes, primaryColor)
             DetailRow(if (appLanguage == "Русский") "Узлов в дереве (DHT):" else "DHT tree nodes count:", treeNodes, primaryColor)
 

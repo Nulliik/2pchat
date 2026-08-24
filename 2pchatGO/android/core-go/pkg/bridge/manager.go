@@ -565,6 +565,18 @@ func (m *SessionManager) SetTorProxy(enabled bool, addr string) {
 	}
 }
 
+// SetYggdrasilConfig updates Yggdrasil proxy vs VPN mode settings across bridge services.
+func (m *SessionManager) SetYggdrasilConfig(mode string, proxyAddr string) {
+	m.mu.Lock()
+	m.dialer.SetYggdrasilConfig(transport.YggdrasilMode(mode), proxyAddr)
+	nm := m.netManager
+	m.mu.Unlock()
+
+	if nm != nil {
+		nm.SetYggdrasilConfig(mode, proxyAddr)
+	}
+}
+
 // SetOnionAddress updates the local Tor v3 hidden service hostname across services.
 func (m *SessionManager) SetOnionAddress(addr string) {
 	m.mu.Lock()

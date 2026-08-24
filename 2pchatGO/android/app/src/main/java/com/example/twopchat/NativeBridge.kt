@@ -239,6 +239,16 @@ object NativeBridge {
         }
     }
 
+    fun setYggdrasilConfig(mode: String, proxyAddr: String = "127.0.0.1:9053") {
+        if (!isLoaded) return
+        try {
+            nativeSetYggdrasilConfig(mode, proxyAddr)
+            Log.i(TAG, "Updated Go core Yggdrasil mode=$mode proxy=$proxyAddr")
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeSetYggdrasilConfig failed", e)
+        }
+    }
+
     fun setOnionAddress(address: String) {
         if (!isLoaded) return
         try {
@@ -578,6 +588,7 @@ object NativeBridge {
     private external fun nativeSendFile(peerFingerprint: String, filePath: String, messageId: String, fileName: String, caption: String, emoji: String): String?
     private external fun nativeCancelFile(messageId: String): Boolean
     private external fun nativeSetTorProxy(enabled: Boolean, proxyAddr: String)
+    private external fun nativeSetYggdrasilConfig(mode: String, proxyAddr: String)
     private external fun nativeSetOnionAddress(address: String)
     private external fun nativeGetOnionAddress(): String?
     private external fun nativeStartDiscovery(trackersJSON: String, infoHashesJSON: String, port: Int): Boolean

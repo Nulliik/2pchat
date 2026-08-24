@@ -261,9 +261,9 @@ func TestYggdrasilIPv6Dialing(t *testing.T) {
 		t.Fatal("Expected dial error for unreachable Yggdrasil address")
 	}
 
-	// Verify the error did NOT originate from SOCKS5 proxy
+	// Verify the error did NOT originate from Tor SOCKS5 proxy
 	errStr := err.Error()
-	if strings.Contains(errStr, "socks") || strings.Contains(errStr, "127.0.0.1:9050") {
+	if strings.Contains(errStr, "127.0.0.1:9050") || strings.Contains(strings.ToLower(errStr), "tor socks") {
 		t.Error("Yggdrasil dialer incorrectly routed through Tor SOCKS5 proxy! Split-tunneling failed.")
 	}
 
