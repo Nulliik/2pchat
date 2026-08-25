@@ -193,6 +193,7 @@ internal fun ChatHeader(
                         appLanguage = appLanguage,
                         primaryColor = primaryColor,
                         onSurfaceVariant = onSurfaceVariant,
+                        modifier = Modifier.clickable { onOpenConnectionMode() },
                     )
                 }
             }
@@ -394,6 +395,7 @@ internal fun ConnectionTypeBadge(
     onSurfaceVariant: Color,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     val (badgeBg, contentColor, iconRes, label) = when (transportType) {
         TransportType.ONION -> {
             val text = "Tor Onion"
@@ -409,7 +411,7 @@ internal fun ConnectionTypeBadge(
         TransportType.DIRECT -> {
             val text = "Direct P2P"
             val rttText = rttMs?.let { " • ${it}ms" }.orEmpty()
-            val green = Color(0xFF10B981)
+            val green = Color(0xFF22C55E)
             BadgeData(
                 green.copy(alpha = 0.15f),
                 green,
@@ -418,12 +420,14 @@ internal fun ConnectionTypeBadge(
             )
         }
         TransportType.YGGDRASIL -> {
-            val text = "Yggdrasil"
+            val yggMode = com.example.twopchat.config.P2PPreferences.getYggdrasilMode(context)
+            val modeSuffix = if (yggMode == com.example.twopchat.config.P2PPreferences.YggdrasilMode.PROXY) " (Proxy)" else " (VPN)"
+            val text = "Yggdrasil$modeSuffix"
             val rttText = rttMs?.let { " • ${it}ms" }.orEmpty()
-            val green = Color(0xFF10B981)
+            val teal = if (yggMode == com.example.twopchat.config.P2PPreferences.YggdrasilMode.PROXY) Color(0xFF06B6D4) else Color(0xFF10B981)
             BadgeData(
-                green.copy(alpha = 0.15f),
-                green,
+                teal.copy(alpha = 0.16f),
+                teal,
                 null,
                 "$text$rttText",
             )
