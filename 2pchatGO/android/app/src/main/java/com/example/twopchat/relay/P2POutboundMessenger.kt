@@ -3,8 +3,6 @@ package com.example.twopchat.relay
 import android.content.Context
 import com.example.twopchat.config.*
 import com.example.twopchat.media.*
-import android.os.Handler
-import android.os.Looper
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.data.PendingControl
 import com.example.twopchat.security.ImageSanitizer
@@ -484,7 +482,7 @@ internal class P2POutboundMessenger(
                     if (missingAttachment != null) {
                         log(context, "Pending attachment file missing for ${message.id}, marking FAILED and skipping.", "ERROR", null)
                         db.updateMessageStatus(message.id, "FAILED")
-                        Handler(Looper.getMainLooper()).post {
+                        P2PMessageRelay.runOnMain {
                             onMessageStatusChanged(peerName, message.id, "FAILED")
                         }
                         continue
@@ -597,7 +595,7 @@ internal class P2POutboundMessenger(
                         )
                     }
                     db.updateMessageStatus(message.id, "SENT")
-                    Handler(Looper.getMainLooper()).post {
+                    P2PMessageRelay.runOnMain {
                         onMessageStatusChanged(peerName, message.id, "SENT")
                     }
 
@@ -738,7 +736,7 @@ internal class P2POutboundMessenger(
     }
 
     private fun postResult(callback: (Boolean) -> Unit, result: Boolean) {
-        Handler(Looper.getMainLooper()).post { callback(result) }
+        P2PMessageRelay.runOnMain { callback(result) }
     }
 
     private fun attachmentCaption(message: Message): String {

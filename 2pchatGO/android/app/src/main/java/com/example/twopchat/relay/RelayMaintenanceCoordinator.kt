@@ -3,8 +3,6 @@ package com.example.twopchat.relay
 import android.content.Context
 import com.example.twopchat.config.*
 import com.example.twopchat.service.*
-import android.os.Handler
-import android.os.Looper
 import android.os.PowerManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -86,7 +84,7 @@ internal class RelayMaintenanceCoordinator(
                     val presenceVersions = chats.associateWith(presenceVersion)
                     val bridge = com.example.twopchat.bridge.P2PBridgeProvider.get(appContext)
 
-                    Handler(Looper.getMainLooper()).post {
+                    P2PMessageRelay.runOnMain {
                         for (peerName in chats) {
                             val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
                             val isOnline = bridge.isPeerOnline(peerName, fingerprint)

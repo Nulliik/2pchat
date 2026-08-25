@@ -1,8 +1,6 @@
 package com.example.twopchat.relay
 
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import androidx.compose.runtime.mutableStateMapOf
 import com.example.twopchat.relay.PeerPresenceVersionTracker
 import java.util.concurrent.ConcurrentHashMap
@@ -25,8 +23,8 @@ internal class PeerPresenceManager {
         rememberEndpoint: (String) -> Unit
     ) {
         val version = peerPresenceVersions.advance(peerName)
-        Handler(Looper.getMainLooper()).post {
-            if (peerPresenceVersions.current(peerName) != version) return@post
+        P2PMessageRelay.runOnMain {
+            if (peerPresenceVersions.current(peerName) != version) return@runOnMain
             peerSessionStates[peerName] = true
             if (transport != null) peerConnectionTransports[peerName] = transport
             rememberEndpoint(peerName)
@@ -41,8 +39,8 @@ internal class PeerPresenceManager {
         sendHeartbeat: (Context, String) -> Unit
     ) {
         val version = peerPresenceVersions.advanceIfCurrent(peerName, expectedVersion) ?: return
-        Handler(Looper.getMainLooper()).post {
-            if (peerPresenceVersions.current(peerName) != version) return@post
+        P2PMessageRelay.runOnMain {
+            if (peerPresenceVersions.current(peerName) != version) return@runOnMain
             peerSessionStates[peerName] = true
             if (transport != null) peerConnectionTransports[peerName] = transport
             sendHeartbeat(context, peerName)
@@ -51,8 +49,8 @@ internal class PeerPresenceManager {
 
     fun clearPeerPresenceImmediately(peerName: String) {
         val version = peerPresenceVersions.advance(peerName)
-        Handler(Looper.getMainLooper()).post {
-            if (peerPresenceVersions.current(peerName) != version) return@post
+        P2PMessageRelay.runOnMain {
+            if (peerPresenceVersions.current(peerName) != version) return@runOnMain
             peerConnectionTransports.remove(peerName)
             peerSessionStates.remove(peerName)
             peerRttMs.remove(peerName)
@@ -61,22 +59,22 @@ internal class PeerPresenceManager {
 
     fun schedulePeerOfflineIfCurrent(peerName: String, expectedVersion: Long) {
         val version = peerPresenceVersions.advanceIfCurrent(peerName, expectedVersion) ?: return
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (peerPresenceVersions.current(peerName) != version) return@postDelayed
+        P2PMessageRelay.runDelayedOnMain(OFFLINE_UI_GRACE_MS) {
+            if (peerPresenceVersions.current(peerName) != version) return@runDelayedOnMain
             peerConnectionTransports.remove(peerName)
             peerSessionStates.remove(peerName)
             peerRttMs.remove(peerName)
-        }, OFFLINE_UI_GRACE_MS)
+        }
     }
 
     fun updateRtt(sender: String, rttMs: Long) {
-        Handler(Looper.getMainLooper()).post {
+        P2PMessageRelay.runOnMain {
             peerRttMs[sender] = rttMs
         }
     }
 
     fun updateTypingState(sender: String, isTyping: Boolean) {
-        Handler(Looper.getMainLooper()).post {
+        P2PMessageRelay.runOnMain {
             peerTypingStates[sender] = isTyping
         }
     }

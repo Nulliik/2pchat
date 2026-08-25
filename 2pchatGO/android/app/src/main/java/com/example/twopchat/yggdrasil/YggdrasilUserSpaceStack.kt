@@ -435,7 +435,7 @@ class YggdrasilUserSpaceStack(
 
             // Pipe data from local 2PChat listener back to the Yggdrasil peer
             val buf = ByteArray(16384)
-            val input = session.clientIn!!
+            val input = session.clientIn ?: return
             while (running.get() && !session.isClosed.get()) {
                 val read = input.read(buf)
                 if (read <= 0) break

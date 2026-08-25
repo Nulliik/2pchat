@@ -185,37 +185,47 @@ object P2PPreferences {
             .filter(String::isNotEmpty)
             .toList()
 
-    fun setTorBridgeLines(context: Context, bridges: List<String>): Boolean =
+    fun setTorBridgeLines(context: Context, bridges: List<String>): Boolean {
         prefs(context).edit()
             .putString(TOR_BRIDGES, bridges.joinToString("\n") { it.trim() })
-            .commit()
+            .apply()
+        return true
+    }
 
     fun publicTorBridgesEnabled(context: Context): Boolean =
         prefs(context).getBoolean(TOR_PUBLIC_BRIDGES_ENABLED, true)
 
-    fun setPublicTorBridgesEnabled(context: Context, enabled: Boolean): Boolean =
-        prefs(context).edit().putBoolean(TOR_PUBLIC_BRIDGES_ENABLED, enabled).commit()
+    fun setPublicTorBridgesEnabled(context: Context, enabled: Boolean): Boolean {
+        prefs(context).edit().putBoolean(TOR_PUBLIC_BRIDGES_ENABLED, enabled).apply()
+        return true
+    }
 
     fun torTransport(context: Context): TorTransport = TorTransport.fromStored(
         prefs(context).getString(TOR_TRANSPORT, null),
     )
 
-    fun setTorTransport(context: Context, transport: TorTransport): Boolean =
-        prefs(context).edit().putString(TOR_TRANSPORT, transport.storedValue).commit()
+    fun setTorTransport(context: Context, transport: TorTransport): Boolean {
+        prefs(context).edit().putString(TOR_TRANSPORT, transport.storedValue).apply()
+        return true
+    }
 
     fun getTorOnionHostname(context: Context): String? =
         prefs(context).getString(TOR_ONION_HOSTNAME, null)?.takeIf { it.isNotBlank() }
 
-    fun setTorOnionHostname(context: Context, hostname: String?): Boolean =
-        prefs(context).edit().putString(TOR_ONION_HOSTNAME, hostname).commit()
+    fun setTorOnionHostname(context: Context, hostname: String?): Boolean {
+        prefs(context).edit().putString(TOR_ONION_HOSTNAME, hostname).apply()
+        return true
+    }
 
     private const val KEY_TOR_HIDDEN_SERVICE_ENABLED = "tor_hidden_service_enabled"
 
     fun isTorHiddenServiceEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_TOR_HIDDEN_SERVICE_ENABLED, true)
 
-    fun setTorHiddenServiceEnabled(context: Context, enabled: Boolean): Boolean =
-        prefs(context).edit().putBoolean(KEY_TOR_HIDDEN_SERVICE_ENABLED, enabled).commit()
+    fun setTorHiddenServiceEnabled(context: Context, enabled: Boolean): Boolean {
+        prefs(context).edit().putBoolean(KEY_TOR_HIDDEN_SERVICE_ENABLED, enabled).apply()
+        return true
+    }
 
     fun getEffectiveTorBridgeLines(context: Context): List<String> =
         TorBridgeCatalog.select(
@@ -645,12 +655,14 @@ object P2PPreferences {
         return SecureStorage.decrypt(stored) ?: stored
     }
 
-    fun rejectPendingPeerIdentity(context: Context, peerName: String): Boolean =
+    fun rejectPendingPeerIdentity(context: Context, peerName: String): Boolean {
         prefs(context).edit()
             .putBoolean(fingerprintMismatch(peerName), false)
             .remove(pendingPeerFingerprint(peerName))
             .remove(pendingPeerEndpoint(peerName))
-            .commit()
+            .apply()
+        return true
+    }
 }
 
 internal data class AcceptedPeerIdentity(

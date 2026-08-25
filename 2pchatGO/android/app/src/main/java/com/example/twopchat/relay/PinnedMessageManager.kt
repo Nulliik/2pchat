@@ -39,7 +39,7 @@ internal class PinnedMessageManager {
                 ?.text
                 ?: text
             ChatDatabaseHelper.getInstance(context).updateMessagePinned(msgId, true)
-            stateHandled = prefs.edit()
+            prefs.edit()
                 .putString(P2PPreferences.pinnedMessageId(sender), msgId)
                 .putString(
                     P2PPreferences.pinnedMessageText(sender),
@@ -58,10 +58,8 @@ internal class PinnedMessageManager {
                     P2PPreferences.pinnedStateActor(sender),
                     incomingVersion.actor,
                 )
-                .commit()
-            if (stateHandled) {
-                onPinned(sender, msgId, storedText, isFromSender)
-            }
+                .apply()
+            onPinned(sender, msgId, storedText, isFromSender)
         }
         if (stateHandled && controlId.isNotBlank()) {
             sendAck(context, sender, controlId)
@@ -92,7 +90,7 @@ internal class PinnedMessageManager {
         }
         var stateHandled = true
         if (shouldApplyPinnedMessageState(currentVersion, incomingVersion)) {
-            stateHandled = prefs.edit()
+            prefs.edit()
                 .remove(P2PPreferences.pinnedMessageId(sender))
                 .remove(P2PPreferences.pinnedMessageText(sender))
                 .remove(P2PPreferences.pinnedMessageSender(sender))
@@ -105,10 +103,8 @@ internal class PinnedMessageManager {
                     P2PPreferences.pinnedStateActor(sender),
                     incomingVersion.actor,
                 )
-                .commit()
-            if (stateHandled) {
-                onUnpinned(sender)
-            }
+                .apply()
+            onUnpinned(sender)
         }
         if (stateHandled && controlId.isNotBlank()) {
             sendAck(context, sender, controlId)

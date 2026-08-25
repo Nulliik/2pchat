@@ -129,11 +129,12 @@ internal object NetworkTrafficStats {
     }
 
     @Synchronized
-    fun clear(context: Context): Boolean =
+    fun clear(context: Context) {
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .clear()
-            .commit()
+            .apply()
+    }
 
     fun protocol(
         context: Context,

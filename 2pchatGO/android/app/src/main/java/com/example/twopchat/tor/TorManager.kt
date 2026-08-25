@@ -637,7 +637,7 @@ object TorManager {
         bootstrapRetryCount = 0
         P2PPreferences.prefs(context).edit()
             .putBoolean(P2PPreferences.TOR_ENABLED, false)
-            .commit()
+            .apply()
         ProxyConfig.updateNetworkProxy(context)
         P2PMessageRelay.refreshAnnouncement(context)
         P2PMessageRelay.triggerImmediateReconnect(context)
@@ -1061,13 +1061,9 @@ object TorManager {
 
     private fun enableTorProxy(context: Context, runId: Long): Boolean {
         if (!runGate.isCurrent(runId)) return false
-        val saved = P2PPreferences.prefs(context).edit()
+        P2PPreferences.prefs(context).edit()
             .putBoolean(P2PPreferences.TOR_ENABLED, true)
-            .commit()
-        if (!saved) {
-            recordFailure(runId, "PREFERENCES_WRITE_FAILED")
-            return false
-        }
+            .apply()
         if (!runGate.isCurrent(runId)) return false
         if (!applyEffectiveProxy(context)) {
             recordFailure(runId, "PROXY_CONFIGURATION_FAILED")
@@ -1081,7 +1077,7 @@ object TorManager {
         if (!runGate.isCurrent(runId)) return
         P2PPreferences.prefs(context).edit()
             .putBoolean(P2PPreferences.TOR_ENABLED, false)
-            .commit()
+            .apply()
         if (runGate.isCurrent(runId)) {
             ProxyConfig.updateNetworkProxy(context)
             P2PMessageRelay.refreshAnnouncement(context)

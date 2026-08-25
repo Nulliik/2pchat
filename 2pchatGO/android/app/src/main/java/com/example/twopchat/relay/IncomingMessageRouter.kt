@@ -1,8 +1,6 @@
 package com.example.twopchat.relay
 
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.config.*
 import com.example.twopchat.security.*
@@ -111,14 +109,14 @@ internal class IncomingMessageRouter(
                         return
                     }
                     "verification_request" -> {
-                        Handler(Looper.getMainLooper()).post {
+                        P2PMessageRelay.runOnMain {
                             listeners.forEach { it.onVerificationRequest(sender) }
                         }
                         return
                     }
                     "verification_response" -> {
                         val success = json.optBoolean("success", false)
-                        Handler(Looper.getMainLooper()).post {
+                        P2PMessageRelay.runOnMain {
                             if (success) {
                                 P2PPreferences.setPeerVerified(context, sender, true)
                             }
@@ -224,7 +222,7 @@ internal class IncomingMessageRouter(
                             pinActor = json.optString("pin_actor"),
                             controlId = json.optString("control_id"),
                             onPinned = { s, id, t, isFrom ->
-                                Handler(Looper.getMainLooper()).post {
+                                P2PMessageRelay.runOnMain {
                                     listeners.forEach { it.onMessagePinned(s, id, t, isFrom) }
                                 }
                             },
@@ -245,7 +243,7 @@ internal class IncomingMessageRouter(
                             pinActor = json.optString("pin_actor"),
                             controlId = json.optString("control_id"),
                             onUnpinned = { s ->
-                                Handler(Looper.getMainLooper()).post {
+                                P2PMessageRelay.runOnMain {
                                     listeners.forEach { it.onMessageUnpinned(s) }
                                 }
                             },
@@ -266,7 +264,7 @@ internal class IncomingMessageRouter(
                         val msgId = json.optString("message_id")
                         if (msgId.isNotEmpty()) {
                             ChatDatabaseHelper.getInstance(context).updateMessageStatus(msgId, "READ")
-                            Handler(Looper.getMainLooper()).post {
+                            P2PMessageRelay.runOnMain {
                                 listeners.forEach { it.onMessageStatusChanged(sender, msgId, "READ") }
                             }
                         }
@@ -382,7 +380,7 @@ internal class IncomingMessageRouter(
         fileTransferCoordinator.incomingFileOffers.remove(key)
         ChatDatabaseHelper.getInstance(context).updateMessageStatus(messageId, "CANCELLED")
         fileTransferCoordinator.updateTransferState(key, messageId, FileTransferCoordinator.FileTransferState.CANCELLED)
-        Handler(Looper.getMainLooper()).post {
+        P2PMessageRelay.runOnMain {
             listeners.forEach { it.onMessageStatusChanged(sender, messageId, "CANCELLED") }
         }
     }
@@ -399,7 +397,7 @@ internal class IncomingMessageRouter(
         fileTransferCoordinator.incomingFileOffers.remove(key)
         ChatDatabaseHelper.getInstance(context).updateMessageStatus(messageId, "FAILED")
         fileTransferCoordinator.updateTransferState(key, messageId, FileTransferCoordinator.FileTransferState.FAILED)
-        Handler(Looper.getMainLooper()).post {
+        P2PMessageRelay.runOnMain {
             listeners.forEach { it.onMessageStatusChanged(sender, messageId, "FAILED") }
         }
     }
@@ -416,7 +414,7 @@ internal class IncomingMessageRouter(
         if (messageId.isNotBlank()) {
             val key = "$sender:$messageId"
             fileTransferCoordinator.updateProgress(key, messageId, bytesTransferred, totalBytes, speedKbps)
-            Handler(Looper.getMainLooper()).post {
+            P2PMessageRelay.runOnMain {
                 listeners.forEach { it.onFileProgress(sender, messageId, bytesTransferred, totalBytes, speedKbps) }
             }
         }
@@ -441,7 +439,7 @@ internal class IncomingMessageRouter(
             if (prefs.getString(P2PPreferences.pinnedMessageId(sender), null) == msgId) {
                 prefs.edit().putString(P2PPreferences.pinnedMessageText(sender), SecureStorage.encrypt(text)).apply()
             }
-            Handler(Looper.getMainLooper()).post {
+            P2PMessageRelay.runOnMain {
                 listeners.forEach { it.onMessageEdited(sender, msgId, text) }
             }
             val controlId = json.optString("control_id")
@@ -477,7 +475,7 @@ internal class IncomingMessageRouter(
                     .remove(P2PPreferences.pinnedBy(sender))
                     .apply()
             }
-            Handler(Looper.getMainLooper()).post {
+            P2PMessageRelay.runOnMain {
                 listeners.forEach { it.onMessageDeleted(sender, msgId) }
             }
         }

@@ -197,7 +197,7 @@ internal class MessageNotificationService {
         @Synchronized
         fun clearAllHistory(context: Context) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            prefs.edit().clear().commit()
+            prefs.edit().clear().apply()
         }
 
         fun getPeerAvatarIcon(context: Context, sender: String): androidx.core.graphics.drawable.IconCompat {

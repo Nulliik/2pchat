@@ -1,7 +1,6 @@
 package com.example.twopchat.group.runtime
 
-import android.os.Handler
-import android.os.Looper
+import com.example.twopchat.relay.P2PMessageRelay
 import com.example.twopchat.group.model.GroupRole as DomainGroupRole
 import com.example.twopchat.group.ui.GroupMemberPermissions
 import com.example.twopchat.group.ui.GroupRole
@@ -30,7 +29,7 @@ class AndroidGroupUiController(
 
     override fun createGroup(title: String, description: String, contactIds: Set<String>) {
         GroupChatCoordinator.createGroup(title, description, contactIds) { groupId ->
-            Handler(Looper.getMainLooper()).post { onOpenGroupNavigation(groupId) }
+            P2PMessageRelay.runOnMain { onOpenGroupNavigation(groupId) }
         }
     }
 

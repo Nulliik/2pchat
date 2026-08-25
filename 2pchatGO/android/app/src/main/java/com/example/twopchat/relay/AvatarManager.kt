@@ -3,8 +3,6 @@ package com.example.twopchat.relay
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.os.Handler
-import android.os.Looper
 import android.util.Base64
 import com.example.twopchat.relay.PeerAvatarCache
 import java.io.ByteArrayOutputStream
@@ -23,7 +21,7 @@ internal class AvatarManager(
     fun putAlias(fromKey: String, toKey: String, context: Context? = null) {
         if (fromKey.isBlank() || toKey.isBlank() || fromKey == toKey) return
         val bitmap = peerAvatars[fromKey] ?: return
-        Handler(Looper.getMainLooper()).post {
+        P2PMessageRelay.runOnMain {
             sharedAvatarCache.put(toKey, bitmap)
         }
         if (context != null) {
@@ -63,7 +61,7 @@ internal class AvatarManager(
                     effectiveName?.takeIf { it.isNotBlank() },
                     fingerprint?.takeIf { it.isNotBlank() }
                 ).distinct()
-                Handler(Looper.getMainLooper()).post {
+                P2PMessageRelay.runOnMain {
                     for (k in keys) {
                         sharedAvatarCache.put(k, bitmap)
                     }

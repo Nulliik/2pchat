@@ -2,8 +2,6 @@ package com.example.twopchat.relay
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.os.Handler
-import android.os.Looper
 import android.util.Base64
 import androidx.compose.runtime.mutableStateMapOf
 import java.util.concurrent.ConcurrentHashMap
@@ -56,7 +54,7 @@ internal class FileTransferCoordinator {
         speedKbps: Double,
         state: FileTransferState = FileTransferState.TRANSFERRING
     ) {
-        Handler(Looper.getMainLooper()).post {
+        P2PMessageRelay.runOnMain {
             val info = FileProgressInfo(bytesTransferred, totalBytes, speedKbps, state)
             fileProgressStates[key] = info
             if (messageId.isNotBlank()) {
@@ -70,7 +68,7 @@ internal class FileTransferCoordinator {
         messageId: String,
         state: FileTransferState
     ) {
-        Handler(Looper.getMainLooper()).post {
+        P2PMessageRelay.runOnMain {
             val current = fileProgressStates[key] ?: fileProgressStates[messageId] ?: FileProgressInfo(0L, 0L, 0.0)
             val updated = current.copy(state = state, speedKbps = 0.0)
             fileProgressStates[key] = updated

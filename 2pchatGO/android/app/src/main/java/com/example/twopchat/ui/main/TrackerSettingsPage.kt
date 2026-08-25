@@ -201,7 +201,7 @@ fun TrackerSettingsPage(
                     onSurfaceColor = onSurfaceColor,
                     onSurfaceVariant = onSurfaceVariant,
                     onCheckedChange = { enabled ->
-                        P2PPreferences.prefs(context).edit().putBoolean(P2PPreferences.SOCKS5_ENABLED, enabled).commit()
+                        P2PPreferences.prefs(context).edit().putBoolean(P2PPreferences.SOCKS5_ENABLED, enabled).apply()
                         settingsChanged()
                     },
                 )
@@ -218,7 +218,7 @@ fun TrackerSettingsPage(
                             onValueChange = { newHost ->
                                 currentHost = newHost
                                 if (ProxyConfig.isValidHost(newHost)) {
-                                    P2PPreferences.prefs(context).edit().putString(P2PPreferences.SOCKS5_HOST, newHost.trim()).commit()
+                                    P2PPreferences.prefs(context).edit().putString(P2PPreferences.SOCKS5_HOST, newHost.trim()).apply()
                                     settingsChanged()
                                 }
                             },
@@ -236,7 +236,7 @@ fun TrackerSettingsPage(
                                 currentPortText = newPort
                                 val portInt = newPort.toIntOrNull()
                                 if (portInt != null && ProxyConfig.isValidPort(portInt)) {
-                                    P2PPreferences.prefs(context).edit().putInt(P2PPreferences.SOCKS5_PORT, portInt).commit()
+                                    P2PPreferences.prefs(context).edit().putInt(P2PPreferences.SOCKS5_PORT, portInt).apply()
                                     settingsChanged()
                                 }
                             },

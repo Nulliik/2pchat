@@ -5,8 +5,6 @@ import com.example.twopchat.config.*
 import com.example.twopchat.security.*
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.os.Handler
-import android.os.Looper
 import androidx.compose.runtime.mutableStateMapOf
 import java.io.File
 import java.io.ByteArrayInputStream
@@ -17,6 +15,7 @@ import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal class PeerAvatarCache(
     private val maxBytes: Long = 6L * 1024L * 1024L,
@@ -67,7 +66,7 @@ internal class PeerAvatarCache(
                     if (!file.isFile) continue
                     if (file.name.endsWith(ENCRYPTED_EXTENSION)) {
                         loadEncrypted(file)?.let { (peerName, bitmap) ->
-                            Handler(Looper.getMainLooper()).post {
+                            P2PMessageRelay.runOnMain {
                                 put(peerName, bitmap)
                                 val resolvedNick = P2PPreferences.findPeerNameByFingerprint(appContext, peerName)
                                 if (!resolvedNick.isNullOrBlank() && resolvedNick != peerName) {
@@ -88,7 +87,7 @@ internal class PeerAvatarCache(
                         val peerName = file.name.removeSuffix(LEGACY_EXTENSION)
                         savePersisted(appContext, peerName, bitmap)
                         if (!file.delete()) onError(IllegalStateException("Could not remove legacy avatar"))
-                        Handler(Looper.getMainLooper()).post {
+                        P2PMessageRelay.runOnMain {
                             put(peerName, bitmap)
                             val resolvedNick = P2PPreferences.findPeerNameByFingerprint(appContext, peerName)
                             if (!resolvedNick.isNullOrBlank() && resolvedNick != peerName) {

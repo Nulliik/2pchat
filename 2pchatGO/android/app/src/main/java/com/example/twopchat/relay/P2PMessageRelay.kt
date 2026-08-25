@@ -59,6 +59,20 @@ object P2PMessageRelay {
     private val identityLock = Any()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val relayScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(4))
+    private val mainDispatcher get() = runCatching { Dispatchers.Main.immediate }.getOrElse { Dispatchers.Default }
+    private val mainScope by lazy { CoroutineScope(SupervisorJob() + mainDispatcher) }
+
+    internal fun runOnMain(block: () -> Unit) {
+        mainScope.launch { block() }
+    }
+
+    internal fun runDelayedOnMain(delayMs: Long, block: () -> Unit) {
+        mainScope.launch {
+            delay(delayMs)
+            block()
+        }
+    }
+
     @Volatile private var isRunning = false
     private val avatarCache = PeerAvatarCache()
     private val notificationService = MessageNotificationService()
@@ -1456,7 +1470,7 @@ object P2PMessageRelay {
                                                 .findMessageForReaction(sender, msgId, "")
                                                 ?.text
                                                 ?: text
-                                            stateHandled = prefs.edit()
+                                            prefs.edit()
                                                 .putString(P2PPreferences.pinnedMessageId(sender), msgId)
                                                 .putString(
                                                     P2PPreferences.pinnedMessageText(sender),
@@ -1475,12 +1489,10 @@ object P2PMessageRelay {
                                                     P2PPreferences.pinnedStateActor(sender),
                                                     incomingVersion.actor,
                                                 )
-                                                .commit()
-                                            if (stateHandled) {
-                                                serviceScope.launch(Dispatchers.Main) {
-                                                    messageListeners.forEach {
-                                                        it.onMessagePinned(sender, msgId, storedText, isFromSender)
-                                                    }
+                                                .apply()
+                                            runOnMain {
+                                                messageListeners.forEach {
+                                                    it.onMessagePinned(sender, msgId, storedText, isFromSender)
                                                 }
                                             }
                                         }
@@ -1506,7 +1518,7 @@ object P2PMessageRelay {
                                     }
                                     var stateHandled = true
                                     if (shouldApplyPinnedMessageState(currentVersion, incomingVersion)) {
-                                        stateHandled = prefs.edit()
+                                        prefs.edit()
                                             .remove(P2PPreferences.pinnedMessageId(sender))
                                             .remove(P2PPreferences.pinnedMessageText(sender))
                                             .remove(P2PPreferences.pinnedMessageSender(sender))
@@ -1519,11 +1531,9 @@ object P2PMessageRelay {
                                                 P2PPreferences.pinnedStateActor(sender),
                                                 incomingVersion.actor,
                                             )
-                                            .commit()
-                                        if (stateHandled) {
-                                            serviceScope.launch(Dispatchers.Main) {
-                                                messageListeners.forEach { it.onMessageUnpinned(sender) }
-                                            }
+                                            .apply()
+                                        runOnMain {
+                                            messageListeners.forEach { it.onMessageUnpinned(sender) }
                                         }
                                     }
                                     if (stateHandled) {
