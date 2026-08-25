@@ -33,7 +33,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
 
     companion object {
         private const val DATABASE_NAME = "twopchat.db"
-        private const val DATABASE_VERSION = 12
+        private const val DATABASE_VERSION = 13
         private const val TABLE_MESSAGES = "messages"
         private const val TABLE_PENDING_CONTROLS = "pending_controls"
         private const val TABLE_PEERS = "peers"
@@ -311,6 +311,11 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         }
         if (oldVersion < 12) {
             createCompositeIndices(db)
+        }
+        if (oldVersion < 13) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_PEERS ADD COLUMN $KEY_ABOUT_ME TEXT")
+            } catch (_: Exception) {}
         }
     }
 
