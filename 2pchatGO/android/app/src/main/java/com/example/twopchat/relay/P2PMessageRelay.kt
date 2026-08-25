@@ -2060,7 +2060,10 @@ object P2PMessageRelay {
                         return
                     }
                     log(appContext, "Secure Double Ratchet session closed")
-                    schedulePeerOffline(resolvedPeerName)
+                    clearPeerPresenceImmediately(resolvedPeerName)
+                    if (fingerprint.isNotBlank() && fingerprint != resolvedPeerName) {
+                        clearPeerPresenceImmediately(fingerprint)
+                    }
                 }
 
                 override fun onPeerDiscovered(infoHash: String, endpoint: String, source: String) {

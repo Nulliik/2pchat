@@ -20,7 +20,7 @@ class AdaptiveMaintenancePolicyTest {
             isPowerSaveMode = false,
             screenOffDurationMs = 0L,
         )
-        assertEquals(10_000L, interval)
+        assertEquals(4_000L, interval)
     }
 
     @Test

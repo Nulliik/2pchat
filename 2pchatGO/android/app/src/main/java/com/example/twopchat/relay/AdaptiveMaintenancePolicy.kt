@@ -5,7 +5,7 @@ package com.example.twopchat.relay
  * based on device screen state, Android Doze mode, and power save state.
  */
 object AdaptiveMaintenancePolicy {
-    const val ACTIVE_SESSION_POLL_INTERVAL_MS = 10_000L
+    const val ACTIVE_SESSION_POLL_INTERVAL_MS = 4_000L
     const val SCREEN_OFF_STEP1_INTERVAL_MS = 30_000L      // 0 - 2 mins screen off
     const val SCREEN_OFF_STEP2_INTERVAL_MS = 60_000L      // 2 - 5 mins screen off
     const val DEEP_DOZE_INTERVAL_MS = 120_000L            // > 5 mins screen off or Doze mode

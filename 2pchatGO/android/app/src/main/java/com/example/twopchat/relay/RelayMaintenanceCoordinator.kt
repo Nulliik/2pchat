@@ -96,7 +96,7 @@ internal class RelayMaintenanceCoordinator(
                                 }
                                 reconnectDelayMs.remove(peerName)
                                 val lastPing = lastHeartbeatSentAt[peerName] ?: 0L
-                                if (now - lastPing >= 25_000L) {
+                                if (now - lastPing >= 10_000L) {
                                     lastHeartbeatSentAt[peerName] = now
                                     P2PMessageRelay.sendConnectedPeerHeartbeat(appContext, peerName)
                                 }
