@@ -1068,16 +1068,35 @@ object GroupChatCoordinator {
         }
     }
 
+    @Volatile
+    private var cachedActiveMemberPeerNames: Set<String>? = null
+    @Volatile
+    private var lastActiveMemberCacheTimeMs: Long = 0L
+    private const val ACTIVE_MEMBER_CACHE_TTL_MS = 15_000L
+
+    fun invalidateActiveMemberCache() {
+        cachedActiveMemberPeerNames = null
+        lastActiveMemberCacheTimeMs = 0L
+    }
+
     fun listActiveGroupMemberPeerNames(context: Context): Set<String> {
+        val now = System.currentTimeMillis()
+        val cached = cachedActiveMemberPeerNames
+        if (cached != null && (now - lastActiveMemberCacheTimeMs) < ACTIVE_MEMBER_CACHE_TTL_MS) {
+            return cached
+        }
         return runCatching {
             initialize(context)
             val groups = db().listGroups()
-            groups.flatMap { group ->
+            val result = groups.flatMap { group ->
                 db().listMembers(group.groupId)
                     .filter { it.isParticipating() && it.deviceId != group.localDeviceId }
                     .map { it.peerName }
             }.filter { it.isNotBlank() }.toSet()
-        }.getOrDefault(emptySet())
+            cachedActiveMemberPeerNames = result
+            lastActiveMemberCacheTimeMs = now
+            result
+        }.getOrDefault(cached ?: emptySet())
     }
 
     suspend fun runAntiEntropy(): Int {
@@ -4146,6 +4165,7 @@ object GroupChatCoordinator {
     }
 
     private suspend fun refreshAllGroups() {
+        invalidateActiveMemberCache()
         finalizeConfirmedDepartures()
         val groups = visibleGroups()
         groups.forEach { refreshGroup(it.groupId) }

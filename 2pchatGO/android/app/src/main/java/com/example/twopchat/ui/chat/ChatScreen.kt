@@ -729,6 +729,7 @@ fun ChatScreen(
         if (!isActive) return@LaunchedEffect
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
         if (peerName != "Saved Messages") {
+            P2PMessageRelay.sendConnectedPeerHeartbeat(context, peerName)
             if (endpoint != null) {
                 P2PMessageRelay.shareAvatar(context, peerName, endpoint)
                 P2PMessageRelay.processOfflineQueue(context, peerName, endpoint)
