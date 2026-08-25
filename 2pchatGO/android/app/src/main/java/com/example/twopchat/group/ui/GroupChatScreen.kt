@@ -263,6 +263,23 @@ fun GroupChatScreen(
         mutableStateOf(sharedPrefs.getString(draftKey, "") ?: "")
     }
 
+    var myTypingState by remember { mutableStateOf(false) }
+
+    LaunchedEffect(draft) {
+        val isCurrentlyTyping = draft.isNotEmpty()
+        if (isCurrentlyTyping != myTypingState) {
+            myTypingState = isCurrentlyTyping
+            controller.sendTyping(state.groupId, isCurrentlyTyping)
+        }
+        if (isCurrentlyTyping) {
+            kotlinx.coroutines.delay(3000)
+            if (draft.isNotEmpty() && myTypingState) {
+                myTypingState = false
+                controller.sendTyping(state.groupId, false)
+            }
+        }
+    }
+
     LaunchedEffect(draft) {
         if (draft.isNotEmpty()) {
             kotlinx.coroutines.delay(300)
@@ -325,7 +342,12 @@ fun GroupChatScreen(
     DisposableEffect(state.groupId, controller) {
         controller.setGroupChatActive(state.groupId, true)
         com.example.twopchat.group.runtime.GroupNotificationService.cancelNotificationForGroup(context, state.groupId)
-        onDispose { controller.setGroupChatActive(state.groupId, false) }
+        onDispose {
+            if (myTypingState) {
+                controller.sendTyping(state.groupId, false)
+            }
+            controller.setGroupChatActive(state.groupId, false)
+        }
     }
 
     var prefsWallpaperVersion by remember { mutableStateOf(0) }
@@ -1364,6 +1386,10 @@ fun GroupChatScreen(
                 onSend = {
                     val text = draft.trim()
                     if (text.isNotEmpty()) {
+                        if (myTypingState) {
+                            myTypingState = false
+                            controller.sendTyping(state.groupId, false)
+                        }
                         val replyToId = state.currentReply?.messageId
                         if (state.currentReply != null) controller.cancelReply(state.groupId)
                         controller.sendMessage(state.groupId, text, replyToId)
@@ -1776,8 +1802,17 @@ private fun GroupChatHeader(
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (state.typingStatus.isNotBlank()) {
+                            val displayTyping = if (appLanguage != "Русский") {
+                                state.typingStatus
+                                    .replace(" печатает...", " is typing...")
+                                    .replace(" печатают...", " are typing...")
+                                    .replace(" и ", " and ")
+                                    .replace("Несколько участников", "Several members")
+                            } else {
+                                state.typingStatus
+                            }
                             Text(
-                                state.typingStatus,
+                                displayTyping,
                                 fontSize = 13.sp,
                                 color = Color(0xFF43A047),
                                 fontWeight = FontWeight.SemiBold

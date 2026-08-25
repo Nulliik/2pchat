@@ -160,6 +160,7 @@ object GroupChatCoordinator {
     private val attachmentBlockStores = ConcurrentHashMap<String, GroupAttachmentStore>()
     private val attachmentServeBudgets = ConcurrentHashMap<String, AttachmentServeBudget>()
     private val controlAncestorCache = ConcurrentHashMap<String, ControlAncestorCache>()
+    private val typingMembersByGroup = ConcurrentHashMap<String, ConcurrentHashMap<String, Long>>()
 
     private val _summaries = MutableStateFlow<List<GroupSummary>>(emptyList())
     val summaries: StateFlow<List<GroupSummary>> = _summaries.asStateFlow()
@@ -276,6 +277,34 @@ object GroupChatCoordinator {
             }
         } else {
             activeGroupChats -= groupId
+            typingMembersByGroup[groupId]?.clear()
+        }
+    }
+
+    fun sendTyping(groupId: String, isTyping: Boolean) {
+        val context = applicationContext ?: return
+        scope.launch {
+            val group = db().getGroup(groupId) ?: return@launch
+            val localMember = db().getMember(groupId, group.localDeviceId) ?: return@launch
+            if (!localMember.isParticipating()) return@launch
+            val members = db().listMembers(groupId).filter {
+                it.isParticipating() && it.deviceId != group.localDeviceId
+            }
+            val typingJson = JSONObject().apply {
+                put("type", GroupWireProtocol.TYPE_TYPING)
+                put("version", GroupWireProtocol.VERSION)
+                put("group_id", groupId)
+                put("device_id", group.localDeviceId)
+                put("display_name", localMember.displayName)
+                put("is_typing", isTyping)
+                put("timestamp", System.currentTimeMillis())
+            }
+
+            for (member in members) {
+                if (P2PMessageRelay.peerSessionStates[member.peerName] == true) {
+                    P2PMessageRelay.sendGroupFrame(context, member.peerName, typingJson)
+                }
+            }
         }
     }
 
@@ -1434,7 +1463,29 @@ object GroupChatCoordinator {
                 receiveAttachmentBlock(senderPeerName, json)
             GroupWireProtocol.TYPE_JOIN_REQUEST ->
                 receiveJoinRequest(senderPeerName, json)
+            GroupWireProtocol.TYPE_TYPING ->
+                receiveGroupTyping(senderPeerName, json)
         }
+    }
+
+    private suspend fun receiveGroupTyping(senderPeerName: String, json: JSONObject) {
+        val groupId = json.optString("group_id").take(128)
+        val deviceId = json.optString("device_id").take(128)
+        val displayName = json.optString("display_name").take(160)
+        val isTyping = json.optBoolean("is_typing", false)
+        val group = db().getGroup(groupId) ?: return
+        requireTransportMember(groupId, senderPeerName)
+        val member = db().getMember(groupId, deviceId) ?: return
+        if (!member.isParticipating() || deviceId == group.localDeviceId) return
+
+        val memberName = member.displayName.ifBlank { displayName.ifBlank { senderPeerName } }
+        val groupTyping = typingMembersByGroup.computeIfAbsent(groupId) { ConcurrentHashMap() }
+        if (isTyping) {
+            groupTyping[memberName] = System.currentTimeMillis()
+        } else {
+            groupTyping.remove(memberName)
+        }
+        refreshGroup(groupId)
     }
 
     private suspend fun receiveJoinRequest(senderPeerName: String, json: JSONObject) {
@@ -4421,15 +4472,31 @@ object GroupChatCoordinator {
                 isCurrentUser = member.deviceId == group.localDeviceId
             )
         }
+        val groupTypingMap = typingMembersByGroup[groupId]
+        val now = System.currentTimeMillis()
+        val activeTypers = if (groupTypingMap != null) {
+            groupTypingMap.entries.removeIf { now - it.value > 4_500L }
+            groupTypingMap.keys.toList()
+        } else {
+            emptyList()
+        }
+        val typingStatusText = when (activeTypers.size) {
+            0 -> ""
+            1 -> "${activeTypers[0]} печатает..."
+            2 -> "${activeTypers[0]} и ${activeTypers[1]} печатают..."
+            else -> "Несколько участников печатают..."
+        }
+
         chatFlows.computeIfAbsent(groupId) {
             MutableStateFlow(
-                GroupChatUiState(groupId, group.title, activeMembers, members = uiMembers),
+                GroupChatUiState(groupId, group.title, activeMembers, members = uiMembers, typingStatus = typingStatusText),
             )
         }.value = GroupChatUiState(
             groupId = groupId,
             title = group.title,
             memberCount = activeMembers,
             members = uiMembers,
+            typingStatus = typingStatusText,
             syncStatus = when {
                 localMember?.status == "JOINING" -> GroupSyncStatus.SYNCING
                 localParticipates && !hasCurrentEpochKey -> GroupSyncStatus.SYNCING
@@ -4836,6 +4903,7 @@ object GroupChatCoordinator {
         controlAncestorCache.remove(groupId)
         chatFlows.remove(groupId)
         infoFlows.remove(groupId)
+        typingMembersByGroup.remove(groupId)
         attachmentBlockStores.remove(groupId)
         attachmentManifests.keys.removeAll { it.startsWith("$groupId\u0000") }
         attachmentRequests.entries.removeAll { it.value.groupId == groupId }

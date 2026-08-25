@@ -22,6 +22,7 @@ object GroupWireProtocol {
     const val TYPE_ATTACHMENT_REQUEST = "group_attachment_request_v1"
     const val TYPE_ATTACHMENT_BLOCK = "group_attachment_block_v1"
     const val TYPE_JOIN_REQUEST = "group_join_request_v1"
+    const val TYPE_TYPING = "group_typing_v1"
 
     const val MAX_WIRE_BYTES = 1536 * 1024
     const val MAX_EVENT_CIPHERTEXT_CHARS = 1024 * 1024
@@ -47,6 +48,7 @@ object GroupWireProtocol {
             TYPE_ATTACHMENT_REQUEST,
             TYPE_ATTACHMENT_BLOCK,
             TYPE_JOIN_REQUEST,
+            TYPE_TYPING,
         )
 
     fun parseEvent(json: JSONObject): GroupWireEvent {

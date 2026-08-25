@@ -136,4 +136,7 @@ class AndroidGroupUiController(
     override fun acceptInvite(inviteId: String) = GroupChatCoordinator.acceptInvite(inviteId)
 
     override fun declineInvite(inviteId: String) = GroupChatCoordinator.declineInvite(inviteId)
+
+    override fun sendTyping(groupId: String, isTyping: Boolean) =
+        GroupChatCoordinator.sendTyping(groupId, isTyping)
 }

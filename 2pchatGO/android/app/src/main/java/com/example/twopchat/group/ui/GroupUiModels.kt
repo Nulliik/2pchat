@@ -52,6 +52,7 @@ interface GroupUiController {
   fun declineInvite(inviteId: String) = Unit
   fun createPoll(groupId: String, question: String, options: List<String>, isAnonymous: Boolean) = Unit
   fun votePoll(groupId: String, pollId: String, optionId: Int) = Unit
+  fun sendTyping(groupId: String, isTyping: Boolean) = Unit
 }
 
 enum class GroupRole(val label: String) {
