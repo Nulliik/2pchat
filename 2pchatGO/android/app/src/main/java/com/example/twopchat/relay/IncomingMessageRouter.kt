@@ -162,10 +162,15 @@ internal class IncomingMessageRouter(
                         }
                         if (aboutMe != null) {
                             ChatDatabaseHelper.getInstance(context).savePeerAboutMe(effectiveName, aboutMe)
-                            if (effectiveName != sender) {
-                                ChatDatabaseHelper.getInstance(context).savePeerAboutMe(sender, aboutMe)
-                            }
                             P2PPreferences.prefs(context).edit().putString("peer_about_me_$effectiveName", aboutMe).apply()
+                            if (effectiveName != sender && sender.isNotBlank()) {
+                                ChatDatabaseHelper.getInstance(context).savePeerAboutMe(sender, aboutMe)
+                                P2PPreferences.prefs(context).edit().putString("peer_about_me_$sender", aboutMe).apply()
+                            }
+                            if (fingerprint != null) {
+                                ChatDatabaseHelper.getInstance(context).savePeerAboutMe(fingerprint, aboutMe)
+                                P2PPreferences.prefs(context).edit().putString("peer_about_me_$fingerprint", aboutMe).apply()
+                            }
                         }
                         P2PMessageRelay.handlePeerNicknameReceived(context, sender, nickname, aboutMe)
                         val sharedPrefs = P2PPreferences.prefs(context)

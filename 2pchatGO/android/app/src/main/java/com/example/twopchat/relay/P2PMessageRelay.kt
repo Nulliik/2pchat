@@ -681,6 +681,12 @@ object P2PMessageRelay {
                 sharedPrefs.edit().putString("peer_about_me_$cleanNickname", cleanAboutMe).apply()
                 ChatDatabaseHelper.getInstance(context).savePeerAboutMe(cleanNickname, cleanAboutMe)
             }
+            val currentFp = sharedPrefs.getString("peer_fingerprint_$targetKey", null)
+                ?: if (isRawFingerprint(targetKey)) targetKey else null
+            if (currentFp != null) {
+                sharedPrefs.edit().putString("peer_about_me_$currentFp", cleanAboutMe).apply()
+                ChatDatabaseHelper.getInstance(context).savePeerAboutMe(currentFp, cleanAboutMe)
+            }
         }
 
         if (cleanNickname != null && cleanNickname != targetKey) {
@@ -802,6 +808,14 @@ object P2PMessageRelay {
                     // ones which triggered this migration.
                     sharedPrefs.getString("$prefix$fromName", null)?.let {
                         editor.putString("$prefix$toName", it)
+                    }
+                }
+                "peer_about_me_" -> {
+                    val value = sharedPrefs.getString("$prefix$fromName", null)?.trim()?.takeIf { it.isNotBlank() }
+                    val existing = sharedPrefs.getString("$prefix$toName", null)?.trim()?.takeIf { it.isNotBlank() }
+                    if (value != null && (existing.isNullOrBlank() || !sharedPrefs.contains("$prefix$toName"))) {
+                        editor.putString("$prefix$toName", value)
+                        ChatDatabaseHelper.getInstance(context).savePeerAboutMe(toName, value)
                     }
                 }
                 else -> {
@@ -1014,7 +1028,7 @@ object P2PMessageRelay {
                 .getBoolean("settings_ipv4", true)
             bridge.setIpv4Enabled(ipv4Enabled)
             val localName = persistedPrefs.getString("username_profile", "").orEmpty()
-            val aboutMe = persistedPrefs.getString("about_me_profile", "").orEmpty()
+            val aboutMe = P2PPreferences.aboutMe(appContext)
             val localFingerprint = bridge.getLocalFingerprint()
             check(bridge.configureLocalIdentity(localName, localFingerprint, aboutMe)) {
                 "Local P2P identity is not configured"
@@ -2073,6 +2087,9 @@ object P2PMessageRelay {
                             putString("peer_fingerprint_$resolvedPeerName", fingerprint)
                             if (aboutMe.isNotBlank()) {
                                 putString("peer_about_me_$resolvedPeerName", aboutMe)
+                                putString("peer_about_me_$fingerprint", aboutMe)
+                                ChatDatabaseHelper.getInstance(appContext).savePeerAboutMe(resolvedPeerName, aboutMe)
+                                ChatDatabaseHelper.getInstance(appContext).savePeerAboutMe(fingerprint, aboutMe)
                             }
                             if (endpoint.isNotEmpty()) {
                                 putString("last_endpoint_$resolvedPeerName", endpoint)
@@ -2284,13 +2301,13 @@ object P2PMessageRelay {
         }
     }
 
-    fun shareAvatar(context: Context, peerName: String, endpoint: String = "") {
+    fun shareAvatar(context: Context, peerName: String, endpoint: String = "", force: Boolean = false) {
         val prefs = P2PPreferences.prefs(context)
         val fingerprint = prefs.getString("peer_fingerprint_$peerName", null)
         val shareKey = fingerprint ?: peerName
         val now = System.currentTimeMillis()
         if (!avatarSharesInFlight.add(shareKey)) return
-        if (now - (lastAvatarShareAt[shareKey] ?: 0L) < 30_000L) {
+        if (!force && now - (lastAvatarShareAt[shareKey] ?: 0L) < 30_000L) {
             avatarSharesInFlight.remove(shareKey)
             return
         }
@@ -2385,9 +2402,16 @@ object P2PMessageRelay {
         }
     }
 
-    fun shareAvatarWithConnectedPeers(context: Context) {
-        peerEndpoints.toMap().forEach { (peerName, endpoint) ->
-            shareAvatar(context.applicationContext, peerName, endpoint)
+    fun shareAvatarWithConnectedPeers(context: Context, force: Boolean = false) {
+        val appContext = context.applicationContext
+        val sharedPrefs = P2PPreferences.prefs(appContext)
+        val activeChats: Set<String> = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+        val allPeers: List<String> = (activeChats + _peerEndpoints.keys)
+            .filter { it.isNotBlank() && !isPlaceholderPeerName(it) && !sharedPrefs.getBoolean("blocked_peer_$it", false) }
+            .distinct()
+        for (peerName in allPeers) {
+            val endpoint = _peerEndpoints[peerName].orEmpty()
+            shareAvatar(appContext, peerName, endpoint, force = force)
         }
     }
 

@@ -102,8 +102,45 @@ object P2PPreferences {
     fun username(context: Context): String =
         prefs(context).getString("username_profile", "")?.takeIf { it != "User Identity" }.orEmpty()
 
-    fun aboutMe(context: Context): String =
-        prefs(context).getString("about_me_profile", "").orEmpty()
+    fun aboutMe(context: Context): String {
+        val fromPrefs = prefs(context).getString("about_me_profile", null)?.trim()?.takeIf { it.isNotBlank() }
+        if (fromPrefs != null) return fromPrefs
+
+        val fromFile = runCatching {
+            val file = java.io.File(context.filesDir, "profile_about_me.txt")
+            if (file.exists()) file.readText().trim().takeIf { it.isNotBlank() } else null
+        }.getOrNull()
+        if (fromFile != null) {
+            prefs(context).edit().putString("about_me_profile", fromFile).apply()
+            return fromFile
+        }
+
+        val fromDb = runCatching {
+            com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerAboutMe("my_profile_about_me")?.trim()?.takeIf { it.isNotBlank() }
+        }.getOrNull()
+        if (fromDb != null) {
+            prefs(context).edit().putString("about_me_profile", fromDb).apply()
+            return fromDb
+        }
+
+        return ""
+    }
+
+    fun setAboutMe(context: Context, text: String) {
+        val clean = text.trim()
+        prefs(context).edit().putString("about_me_profile", clean).apply()
+        runCatching {
+            val file = java.io.File(context.filesDir, "profile_about_me.txt")
+            file.writeText(clean)
+        }
+        runCatching {
+            com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).savePeerAboutMe("my_profile_about_me", clean)
+            val username = username(context)
+            if (username.isNotBlank()) {
+                com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).savePeerAboutMe(username, clean)
+            }
+        }
+    }
 
     fun getRendezvousCode(context: Context): String {
         val sp = prefs(context)

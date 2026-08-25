@@ -104,7 +104,7 @@ fun SettingsTab(
     }
 
     val username = remember { sharedPrefs.getString("username_profile", "User Identity") ?: "User Identity" }
-    var aboutMeText by remember { mutableStateOf(sharedPrefs.getString("about_me_profile", "") ?: "") }
+    var aboutMeText by remember { mutableStateOf(P2PPreferences.aboutMe(context)) }
     var showEditAboutMeDialog by remember { mutableStateOf(false) }
     
     var showDisguiseInstructionDialog by remember { mutableStateOf(false) }

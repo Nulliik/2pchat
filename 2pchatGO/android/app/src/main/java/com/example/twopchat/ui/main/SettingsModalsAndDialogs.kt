@@ -994,7 +994,7 @@ fun SettingsModalsAndDialogs(
                 TextButton(
                     onClick = {
                         val newText = tempText.trim()
-                        sharedPrefs.edit().putString("about_me_profile", newText).apply()
+                        com.example.twopchat.config.P2PPreferences.setAboutMe(context, newText)
                         onAboutMeSaved(newText)
                         onDismissEditAboutMeDialog()
                         
@@ -1003,7 +1003,7 @@ fun SettingsModalsAndDialogs(
                         val localFingerprint = bridge.getLocalFingerprint()
                         bridge.configureLocalIdentity(username, localFingerprint, newText)
                         P2PMessageRelay.refreshAnnouncement(context)
-                        P2PMessageRelay.shareAvatarWithConnectedPeers(context)
+                        P2PMessageRelay.shareAvatarWithConnectedPeers(context, force = true)
                     }
                 ) {
                     Text(if (appLanguage == "Русский") "Сохранить" else "Save")
