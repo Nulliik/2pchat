@@ -312,8 +312,10 @@ internal class IncomingMessageRouter(
                         }
                     }
                 }
-            } catch (e: Exception) {
-                log(context, "Failed to parse JSON control message", "ERROR", e)
+            } catch (e: org.json.JSONException) {
+                log(context, "Failed to parse JSON control message: ${e.message}", "DEBUG", null)
+            } catch (e: IllegalArgumentException) {
+                log(context, "Invalid control payload: ${e.message}", "WARNING", null)
             }
         }
 

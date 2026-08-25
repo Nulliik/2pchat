@@ -211,7 +211,7 @@ class GroupAttachmentStore(
         val digest = MessageDigest.getInstance("SHA-256")
         var total = 0L
         try {
-            FileOutputStream(temporary).use { output ->
+            java.io.BufferedOutputStream(FileOutputStream(temporary), 64 * 1024).use { output ->
                 manifest.blocks.forEach { block ->
                     val ciphertext = readBlock(block.ciphertextCid)
                         ?: run {
@@ -239,6 +239,7 @@ class GroupAttachmentStore(
                     digest.update(plaintext)
                     total += plaintext.size
                 }
+                output.flush()
             }
             require(total == manifest.plaintextSize) { "attachment size mismatch" }
             require(digest.digest().hex() == manifest.plaintextSha256) {
@@ -292,7 +293,10 @@ class GroupAttachmentStore(
             error("failed to replace corrupt attachment block")
         }
         val temporary = File(rootDirectory, ".$normalized.${UUID.randomUUID()}.tmp")
-        FileOutputStream(temporary).use { it.write(ciphertext) }
+        java.io.BufferedOutputStream(FileOutputStream(temporary), 64 * 1024).use {
+            it.write(ciphertext)
+            it.flush()
+        }
         if (!temporary.renameTo(destination)) {
             temporary.delete()
             check(destination.exists()) { "failed to commit replicated attachment block" }

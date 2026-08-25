@@ -5,6 +5,7 @@ import com.example.twopchat.config.*
 import com.example.twopchat.service.*
 import android.os.PowerManager
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -148,6 +149,7 @@ internal class RelayMaintenanceCoordinator(
                         bridge.reconnectPeerSession(peerName, endpoint, fingerprint)
                     }
                 } catch (error: Exception) {
+                    if (error is CancellationException) throw error
                     log(appContext, "Error maintaining saved peer sessions", "ERROR", error)
                 }
 
@@ -217,6 +219,7 @@ internal class RelayMaintenanceCoordinator(
                         }
                     }
                 } catch (error: Exception) {
+                    if (error is CancellationException) throw error
                     log(appContext, "Error in periodic announce", "ERROR", error)
                 }
 

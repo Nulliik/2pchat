@@ -12,6 +12,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -157,6 +158,7 @@ internal class P2POutboundMessenger(
                     log(context, "Secure message send: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
                     postResult(onResult, success)
                 } catch (error: Exception) {
+                    if (error is CancellationException) throw error
                     log(context, "Failed to send secure message", "ERROR", error)
                     postResult(onResult, false)
                 }
@@ -206,7 +208,7 @@ internal class P2POutboundMessenger(
                 tempSanitizedFile = ImageSanitizer.sanitizeImageExif(context, filePath)
                 val effectiveFilePath = tempSanitizedFile?.absolutePath ?: filePath
 
-                val previewBase64 = FileTransferPreview.createVideoPreviewBase64(effectiveFilePath)
+                val previewBase64 = FileTransferPreview.createMediaPreviewBase64(effectiveFilePath)
                 val success = getBridge(context).sendFile(
                     peerName,
                     endpoint,
@@ -238,6 +240,7 @@ internal class P2POutboundMessenger(
                 log(context, "Sending file status to $peerName: ${if (success) "SUCCESS" else "FAILED"}", "INFO", null)
                 postResult(onResult, success)
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 activeFileTransfers.remove(messageId)
                 val cancelled = messageId.isNotBlank() && cancelledFileTransfers.remove(messageId)
                 if (cancelled) {
@@ -311,6 +314,7 @@ internal class P2POutboundMessenger(
                 // The offline queue is flushed from onSessionEstablished once the session is live.
                 postResult(onResult, success)
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 log(context, "Failed to initiate reconnection for $peerName", "ERROR", error)
                 postResult(onResult, false)
             }
@@ -604,6 +608,7 @@ internal class P2POutboundMessenger(
                     processPendingControls(context, db, peerName, endpoint, fingerprint)
                 }
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 log(context, "Error in processOfflineQueue: ${error.message}", "ERROR", error)
             } finally {
                 processingOfflineQueues.remove(peerKey)
@@ -629,6 +634,7 @@ internal class P2POutboundMessenger(
                     )
                 }
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 log(context, "Failed to send ephemeral ${payload.optString("type")} control", "ERROR", error)
             }
         }
@@ -640,6 +646,7 @@ internal class P2POutboundMessenger(
             try {
                 ChatDatabaseHelper.getInstance(context).deletePendingControl(controlId)
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 log(context, "Failed to acknowledge control $controlId", "ERROR", error)
             }
         }

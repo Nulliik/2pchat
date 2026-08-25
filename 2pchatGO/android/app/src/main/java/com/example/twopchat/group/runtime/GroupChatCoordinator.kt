@@ -718,6 +718,7 @@ object GroupChatCoordinator {
                 refreshAllSummariesWithoutRecursion()
                 refreshGroup(groupId)
             } catch (error: Throwable) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
                 Log.e(TAG, "Failed to clear group history for $groupId", error)
             }
         }

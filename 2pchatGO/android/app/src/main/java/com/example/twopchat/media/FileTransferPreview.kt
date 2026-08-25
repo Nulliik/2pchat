@@ -1,6 +1,7 @@
 package com.example.twopchat.media
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.util.Base64
 import java.io.ByteArrayOutputStream
@@ -11,6 +12,65 @@ internal object FileTransferPreview {
     private const val MAX_HEIGHT = 160
     private const val JPEG_QUALITY = 42
     private const val MAX_ENCODED_CHARS = 96 * 1024
+
+    fun createMediaPreviewBase64(filePath: String): String {
+        val file = File(filePath)
+        if (!file.isFile) return ""
+        val type = VoiceMessageSupport.attachmentType(file.name, "")
+        return when (type) {
+            "VIDEO" -> createVideoPreviewBase64(filePath)
+            "IMAGE" -> createImagePreviewBase64(filePath)
+            else -> ""
+        }
+    }
+
+    fun createImagePreviewBase64(filePath: String): String {
+        val file = File(filePath)
+        if (!file.isFile) return ""
+        var decoded: Bitmap? = null
+        var scaled: Bitmap? = null
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return ""
+
+            var sampleSize = 1
+            while (bounds.outWidth / (sampleSize * 2) >= MAX_WIDTH &&
+                bounds.outHeight / (sampleSize * 2) >= MAX_HEIGHT
+            ) {
+                sampleSize *= 2
+            }
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            decoded = BitmapFactory.decodeFile(file.absolutePath, decodeOptions) ?: return ""
+            val scale = minOf(
+                1f,
+                MAX_WIDTH.toFloat() / decoded.width.coerceAtLeast(1),
+                MAX_HEIGHT.toFloat() / decoded.height.coerceAtLeast(1),
+            )
+            val width = (decoded.width * scale).toInt().coerceAtLeast(1)
+            val height = (decoded.height * scale).toInt().coerceAtLeast(1)
+            scaled = if (width == decoded.width && height == decoded.height) {
+                decoded
+            } else {
+                Bitmap.createScaledBitmap(decoded, width, height, true)
+            }
+            val bytes = ByteArrayOutputStream().use { output ->
+                checkNotNull(scaled).compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, output)
+                output.toByteArray()
+            }
+            Base64.encodeToString(bytes, Base64.NO_WRAP)
+                .takeIf { it.length <= MAX_ENCODED_CHARS }
+                .orEmpty()
+        } catch (_: Exception) {
+            ""
+        } finally {
+            scaled?.takeIf { it !== decoded && !it.isRecycled }?.recycle()
+            decoded?.takeIf { !it.isRecycled }?.recycle()
+        }
+    }
 
     fun createVideoPreviewBase64(filePath: String): String {
         val file = File(filePath)
