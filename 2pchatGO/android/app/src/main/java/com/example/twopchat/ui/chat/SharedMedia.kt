@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
@@ -74,7 +75,7 @@ private fun formatDate(epochMs: Long, language: String): String {
     return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(epochMs))
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun SharedMediaScreen(
     peerName: String,
@@ -153,12 +154,38 @@ fun SharedMediaScreen(
 
     var showConnectionModeSheet by remember { mutableStateOf(false) }
 
+    var highResAvatarBitmap by remember(currentPeerName) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(currentPeerName) {
+        withContext(Dispatchers.IO) {
+            highResAvatarBitmap = P2PMessageRelay.getOriginalAvatar(context, currentPeerName)
+        }
+    }
+    val avatarBitmap = highResAvatarBitmap ?: P2PMessageRelay.peerAvatars[currentPeerName]
+
+    val isRawKey = remember(currentPeerName) {
+        P2PMessageRelay.isRawFingerprint(currentPeerName) ||
+            (currentPeerName.length == 44 && currentPeerName.endsWith("="))
+    }
+    val displayText = when {
+        currentPeerName == "Saved Messages" -> Localizations.getString("saved_messages_title", appLanguage)
+        isRawKey -> "${currentPeerName.take(8)}...${currentPeerName.takeLast(6)}"
+        else -> currentPeerName
+    }
+
+    val scrollState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val collapseFraction by remember {
+        derivedStateOf {
+            if (scrollState.firstVisibleItemIndex > 0) 1f
+            else (scrollState.firstVisibleItemScrollOffset / 280f).coerceIn(0f, 1f)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(mainBg)
     ) {
-        // Custom Top Bar
+        // Custom Top Bar with Collapsing Header Animation
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -220,17 +247,114 @@ fun SharedMediaScreen(
                         modifier = Modifier.size(20.dp)
                     )
                 }
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = Localizations.tr(appLanguage, "Профиль", "Profile", "Profil", "Perfil", "Profil", "Perfil"),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = onSurfaceColor
-                )
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    // Title "Профиль" (visible when top is expanded)
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = collapseFraction < 0.35f,
+                        enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(150)),
+                        exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(150))
+                    ) {
+                        Text(
+                            text = Localizations.tr(appLanguage, "Профиль", "Profile", "Profil", "Perfil", "Profil", "Perfil"),
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = onSurfaceColor
+                        )
+                    }
+
+                    // Mini avatar + Contact name (fades in as user scrolls down)
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = collapseFraction >= 0.35f,
+                        enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(180)) + slideInVertically(
+                            initialOffsetY = { it / 2 },
+                            animationSpec = androidx.compose.animation.core.tween(180)
+                        ),
+                        exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(150)) + slideOutVertically(
+                            targetOffsetY = { it / 2 },
+                            animationSpec = androidx.compose.animation.core.tween(150)
+                        )
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .background(primaryColor.copy(alpha = 0.12f), shape = CircleShape)
+                                    .border(1.dp, primaryColor.copy(alpha = 0.35f), CircleShape)
+                                    .clip(CircleShape)
+                            ) {
+                                if (avatarBitmap != null) {
+                                    Image(
+                                        bitmap = avatarBitmap.asImageBitmap(),
+                                        contentDescription = "Mini Avatar",
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else if (initials == "🔖") {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_saved_messages),
+                                        contentDescription = "Saved Messages",
+                                        tint = primaryColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                } else {
+                                    Text(
+                                        text = initials,
+                                        color = primaryColor,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = displayText,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = onSurfaceColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (isVerified) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_check_bold),
+                                            contentDescription = "Verified",
+                                            tint = Color(0xFF4CAF50),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = if (isVerified) {
+                                        Localizations.tr(appLanguage, "Подтвержденный контакт", "Verified Contact", "Verifizierter Kontakt", "Contacto verificado", "Contact vérifié", "Contato verificado")
+                                    } else {
+                                        Localizations.tr(appLanguage, "Медиа и файлы", "Media & files", "Medien & Dateien", "Archivos y medios", "Médias & fichiers", "Mídias e arquivos")
+                                    },
+                                    fontSize = 11.sp,
+                                    color = if (isVerified) Color(0xFF4CAF50) else onSurfaceVariant,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
         LazyColumn(
+            state = scrollState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 24.dp)
         ) {
@@ -261,19 +385,16 @@ fun SharedMediaScreen(
                             .padding(vertical = 20.dp, horizontal = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                            // Large Avatar Box
-                            val context = androidx.compose.ui.platform.LocalContext.current
-                            var highResAvatarBitmap by remember(currentPeerName) { mutableStateOf<Bitmap?>(null) }
-                            LaunchedEffect(currentPeerName) {
-                                withContext(Dispatchers.IO) {
-                                    highResAvatarBitmap = P2PMessageRelay.getOriginalAvatar(context, currentPeerName)
-                                }
-                            }
-                            val avatarBitmap = highResAvatarBitmap ?: P2PMessageRelay.peerAvatars[currentPeerName]
+                            // Large Avatar Box with smooth scale & alpha transition
+                            val avatarScale = (1f - (collapseFraction * 0.15f)).coerceIn(0.85f, 1f)
                             Box(
                                 contentAlignment = Alignment.Center,
                                 modifier = Modifier
                                     .size(96.dp)
+                                    .graphicsLayer {
+                                        scaleX = avatarScale
+                                        scaleY = avatarScale
+                                    }
                                     .background(primaryColor.copy(alpha = 0.1f), shape = CircleShape)
                                     .then(
                                         if (avatarBitmap != null) {
@@ -633,44 +754,49 @@ fun SharedMediaScreen(
                 }
             }
 
-            // Category Tab selector
-            item {
-                Spacer(modifier = Modifier.height(12.dp))
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = cardBg),
-                    shape = RoundedCornerShape(16.dp),
+            // Sticky Category Tab selector
+            stickyHeader(key = "sticky_tabs") {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
-                        .clip(RoundedCornerShape(16.dp))
+                        .background(mainBg)
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
                 ) {
-                    PrimaryScrollableTabRow(
-                        selectedTabIndex = selectedTab,
-                        containerColor = Color.Transparent,
-                        contentColor = primaryColor,
-                        edgePadding = 8.dp,
-                        indicator = {
-                            TabRowDefaults.PrimaryIndicator(
-                                modifier = Modifier.tabIndicatorOffset(selectedTab),
-                                color = primaryColor
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth()
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = cardBg),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(16.dp))
                     ) {
-                        tabs.forEachIndexed { index, label ->
-                            Tab(
-                                selected = selectedTab == index,
-                                onClick = { selectedTab = index },
-                                text = {
-                                    Text(
-                                        text = label,
-                                        fontSize = 13.sp,
-                                        fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (selectedTab == index) primaryColor else onSurfaceVariant
-                                    )
-                                }
-                            )
+                        PrimaryScrollableTabRow(
+                            selectedTabIndex = selectedTab,
+                            containerColor = Color.Transparent,
+                            contentColor = primaryColor,
+                            edgePadding = 8.dp,
+                            indicator = {
+                                TabRowDefaults.PrimaryIndicator(
+                                    modifier = Modifier.tabIndicatorOffset(selectedTab),
+                                    color = primaryColor
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            tabs.forEachIndexed { index, label ->
+                                Tab(
+                                    selected = selectedTab == index,
+                                    onClick = { selectedTab = index },
+                                    text = {
+                                        Text(
+                                            text = label,
+                                            fontSize = 13.sp,
+                                            fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (selectedTab == index) primaryColor else onSurfaceVariant
+                                        )
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -682,8 +808,12 @@ fun SharedMediaScreen(
                     // Media Tab (Grid of images)
                     if (mediaList.isEmpty()) {
                         item {
-                            EmptyStateView(
-                                text = Localizations.tr(appLanguage, "Медиафайлов нет", "No media shared", "Keine Medien vorhanden", "Sin archivos multimedia", "Aucun média partagé", "Nenhuma mídia compartilhada"),
+                            SharedMediaEmptyState(
+                                iconRes = R.drawable.ic_attach_gallery,
+                                title = Localizations.tr(appLanguage, "Медиафайлов пока нет", "No media shared yet", "Noch keine Medien", "Sin archivos multimedia", "Aucun média partagé", "Nenhuma mídia compartilhada"),
+                                description = Localizations.tr(appLanguage, "Фотографии и видео из этого диалога будут отображаться здесь", "Photos and videos shared in this chat will appear here", "Fotos und Videos aus diesem Chat werden hier angezeigt", "Las fotos y videos compartidos aparecerán aquí", "Les photos et vidéos apparaîtront ici", "Fotos e vídeos compartilhados aparecerão aqui"),
+                                primaryColor = primaryColor,
+                                onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant
                             )
                         }
@@ -826,8 +956,12 @@ fun SharedMediaScreen(
                     // Files Tab
                     if (filesList.isEmpty()) {
                         item {
-                            EmptyStateView(
-                                text = Localizations.tr(appLanguage, "Файлов нет", "No files shared", "Keine Dateien vorhanden", "Sin archivos compartidos", "Aucun fichier partagé", "Nenhum arquivo compartilhado"),
+                            SharedMediaEmptyState(
+                                iconRes = R.drawable.ic_attach_file,
+                                title = Localizations.tr(appLanguage, "Файлов пока нет", "No files shared yet", "Noch keine Dateien", "Sin archivos compartidos", "Aucun fichier partagé", "Nenhum arquivo compartilhado"),
+                                description = Localizations.tr(appLanguage, "Документы, архивы и файлы из этого диалога будут доступны здесь", "Documents, archives, and files shared in this chat will be available here", "Dokumente und Dateien aus diesem Chat werden hier gespeichert", "Los documentos y archivos compartidos aparecerán aquí", "Les documents et fichiers apparaîtront ici", "Documentos e arquivos compartilhados aparecerão aqui"),
+                                primaryColor = primaryColor,
+                                onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant
                             )
                         }
@@ -953,8 +1087,12 @@ fun SharedMediaScreen(
                     // Links Tab
                     if (linksList.isEmpty()) {
                         item {
-                            EmptyStateView(
-                                text = Localizations.tr(appLanguage, "Ссылок нет", "No links shared", "Keine Links vorhanden", "Sin enlaces compartidos", "Aucun lien partagé", "Nenhum link compartilhado"),
+                            SharedMediaEmptyState(
+                                iconRes = R.drawable.ic_quick_link,
+                                title = Localizations.tr(appLanguage, "Ссылок пока нет", "No links shared yet", "Noch keine Links", "Sin enlaces compartidos", "Aucun lien partagé", "Nenhum link compartilhado"),
+                                description = Localizations.tr(appLanguage, "Все веб-ссылки, упомянутые в сообщениях, автоматически собираются здесь", "Web links mentioned in messages will automatically be collected here", "Web-Links aus Nachrichten werden hier gesammelt", "Los enlaces web compartidos se recopilarán aquí", "Les liens web seront regroupés ici", "Links compartilhados serão reunidos aqui"),
+                                primaryColor = primaryColor,
+                                onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant
                             )
                         }
@@ -1065,8 +1203,12 @@ fun SharedMediaScreen(
                     // Voice Tab
                     if (voiceList.isEmpty()) {
                         item {
-                            EmptyStateView(
-                                text = Localizations.tr(appLanguage, "Голосовых сообщений нет", "No voice messages shared", "Keine Sprachnachrichten", "Sin mensajes de voz", "Aucun message vocal", "Nenhum áudio compartilhado"),
+                            SharedMediaEmptyState(
+                                iconRes = R.drawable.ic_voice_mic,
+                                title = Localizations.tr(appLanguage, "Голосовых сообщений нет", "No voice messages yet", "Keine Sprachnachrichten", "Sin mensajes de voz", "Aucun message vocal", "Nenhuma mensagem de voz"),
+                                description = Localizations.tr(appLanguage, "Голосовые сообщения и аудиозаписи будут сохраняться в этом разделе", "Voice messages and audio recordings will be saved in this section", "Sprachnachrichten und Audio werden hier gespeichert", "Los mensajes de voz y audios se guardarán aquí", "Les messages vocaux seront enregistrés ici", "Mensagens de voz serão salvas aqui"),
+                                primaryColor = primaryColor,
+                                onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant
                             )
                         }
@@ -1333,6 +1475,73 @@ fun InfoDetailRow(
                 modifier = Modifier
                     .size(20.dp)
                     .padding(start = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun SharedMediaEmptyState(
+    iconRes: Int,
+    title: String,
+    description: String,
+    primaryColor: Color,
+    onSurfaceColor: Color,
+    onSurfaceVariant: Color
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 36.dp)
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Glowing dual-halo icon box
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(68.dp)
+                    .background(primaryColor.copy(alpha = 0.08f), shape = CircleShape)
+                    .border(1.5.dp, primaryColor.copy(alpha = 0.25f), CircleShape)
+                    .padding(5.dp)
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(primaryColor.copy(alpha = 0.14f), shape = CircleShape)
+                ) {
+                    Icon(
+                        painter = painterResource(id = iconRes),
+                        contentDescription = title,
+                        tint = primaryColor,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = onSurfaceColor,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = description,
+                fontSize = 12.sp,
+                color = onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                lineHeight = 17.sp,
+                modifier = Modifier.padding(horizontal = 16.dp)
             )
         }
     }
