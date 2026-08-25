@@ -98,8 +98,12 @@ fun YggdrasilPeerSettingsPage(
                 yggdrasilRouting = true
                 sharedPrefs.edit().putBoolean("settings_yggdrasil", true).apply()
             } else {
-                yggdrasilRouting = false
-                sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
+                // User declined system VPN permission dialog - revert to Proxy mode
+                currentMode = P2PPreferences.YggdrasilMode.PROXY
+                P2PPreferences.setYggdrasilMode(context, P2PPreferences.YggdrasilMode.PROXY)
+                if (yggdrasilRouting) {
+                    YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.PROXY)
+                }
             }
         }
     )
