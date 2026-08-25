@@ -63,14 +63,9 @@ fun OnboardingScreen(
         sharedPrefs.edit().putBoolean("settings_yggdrasil", enableYggdrasil).apply()
         if (enableYggdrasil) {
             try {
-                ContextCompat.startForegroundService(
-                    context,
-                    Intent(context, PacketTunnelProvider::class.java).apply {
-                        action = PacketTunnelProvider.ACTION_START
-                    },
-                )
+                com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context)
             } catch (error: Exception) {
-                android.util.Log.e("OnboardingScreen", "Unable to start Yggdrasil VPN service", error)
+                android.util.Log.e("OnboardingScreen", "Unable to start Yggdrasil service", error)
                 sharedPrefs.edit().putBoolean("settings_yggdrasil", false).apply()
             }
         }

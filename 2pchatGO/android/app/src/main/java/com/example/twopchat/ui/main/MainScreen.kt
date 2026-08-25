@@ -2,6 +2,8 @@
 package com.example.twopchat.ui.main
 
 import com.example.twopchat.group.runtime.GroupChatCoordinator
+import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.yggdrasil.YggdrasilCoordinator
 
 import android.widget.Toast
 import android.content.Intent
@@ -128,35 +130,20 @@ fun MainScreen(
         val yggdrasilEnabled = sharedPrefs.getBoolean("settings_yggdrasil", false)
         if (!promptAlreadyShown && yggdrasilEnabled) {
             sharedPrefs.edit().putBoolean("yggdrasil_prompt_shown", true).apply()
-            
-            // Re-toggle service to force Android system VPN connection request dialog
-            try {
-                val stopIntent = Intent(context, PacketTunnelProvider::class.java).apply {
-                    action = PacketTunnelProvider.ACTION_STOP
-                }
-                context.stopService(stopIntent)
-            } catch (_: Exception) {}
-
-            val vpnPrepareIntent = try { VpnService.prepare(context) } catch (_: Exception) { null }
-            if (vpnPrepareIntent != null) {
-                try {
-                    vpnPrepareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(vpnPrepareIntent)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+            val mode = P2PPreferences.getYggdrasilMode(context)
+            if (mode == P2PPreferences.YggdrasilMode.PROXY) {
+                com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.PROXY)
             } else {
-                val startIntent = Intent(context, PacketTunnelProvider::class.java).apply {
-                    action = PacketTunnelProvider.ACTION_START
-                }
-                try {
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                        context.startForegroundService(startIntent)
-                    } else {
-                        context.startService(startIntent)
+                val vpnPrepareIntent = try { VpnService.prepare(context) } catch (_: Exception) { null }
+                if (vpnPrepareIntent != null) {
+                    try {
+                        vpnPrepareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(vpnPrepareIntent)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                } else {
+                    com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context, P2PPreferences.YggdrasilMode.VPN)
                 }
             }
         }

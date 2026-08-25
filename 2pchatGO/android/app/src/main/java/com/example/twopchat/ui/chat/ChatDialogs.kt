@@ -691,18 +691,24 @@ fun ChatConnectionErrorDialog(
                     Button(
                         onClick = {
                             onDismiss()
-                            val vpnIntent = VpnService.prepare(context)
-                            if (vpnIntent != null) {
-                                vpnLauncher.launch(vpnIntent)
-                            } else {
-                                val intent = Intent(context, PacketTunnelProvider::class.java).apply {
-                                    action = PacketTunnelProvider.ACTION_START
-                                }
-                                context.startService(intent)
+                            val mode = com.example.twopchat.config.P2PPreferences.getYggdrasilMode(context)
+                            if (mode == com.example.twopchat.config.P2PPreferences.YggdrasilMode.PROXY) {
+                                com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context, com.example.twopchat.config.P2PPreferences.YggdrasilMode.PROXY)
                                 context.getSharedPreferences("twopchat_prefs", Context.MODE_PRIVATE).edit {
                                     putBoolean("settings_yggdrasil", true)
                                 }
                                 Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
+                            } else {
+                                val vpnIntent = VpnService.prepare(context)
+                                if (vpnIntent != null) {
+                                    vpnLauncher.launch(vpnIntent)
+                                } else {
+                                    com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context, com.example.twopchat.config.P2PPreferences.YggdrasilMode.VPN)
+                                    context.getSharedPreferences("twopchat_prefs", Context.MODE_PRIVATE).edit {
+                                        putBoolean("settings_yggdrasil", true)
+                                    }
+                                    Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = primaryColor),

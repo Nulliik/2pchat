@@ -225,18 +225,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Start Yggdrasil VPN service automatically if enabled and prepared
+        // Start Yggdrasil service automatically if enabled
         val yggPrefs = P2PPreferences.prefs(this)
         if (yggPrefs.getBoolean("settings_yggdrasil", false)) {
-            if (android.net.VpnService.prepare(applicationContext) == null) {
-                val yggIntent = Intent(applicationContext, com.example.twopchat.yggdrasil.PacketTunnelProvider::class.java).apply {
-                    action = com.example.twopchat.yggdrasil.PacketTunnelProvider.ACTION_START
-                }
-                try {
-                    startService(yggIntent)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+            val mode = P2PPreferences.getYggdrasilMode(applicationContext)
+            if (mode == P2PPreferences.YggdrasilMode.PROXY || android.net.VpnService.prepare(applicationContext) == null) {
+                com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(applicationContext)
             }
         }
 

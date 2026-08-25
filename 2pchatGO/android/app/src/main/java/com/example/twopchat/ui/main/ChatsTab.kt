@@ -419,14 +419,10 @@ fun ChatsTab(
                                             try {
                                                 val prefs = com.example.twopchat.config.P2PPreferences.prefs(context)
                                                 val yggEnabled = prefs.getBoolean("settings_yggdrasil", false)
-                                                if (yggEnabled && VpnService.prepare(context) == null) {
-                                                    context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
-                                                        action = PacketTunnelProvider.ACTION_STOP
-                                                    })
+                                                if (yggEnabled) {
+                                                    com.example.twopchat.yggdrasil.YggdrasilCoordinator.stop(context)
                                                     delay(500)
-                                                    context.startService(Intent(context, PacketTunnelProvider::class.java).apply {
-                                                        action = PacketTunnelProvider.ACTION_START
-                                                    })
+                                                    com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context)
                                                     var yggReady = false
                                                     var attempts = 0
                                                     while (!yggReady && attempts < 24) {

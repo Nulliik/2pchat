@@ -19,22 +19,25 @@ object YggdrasilCoordinator {
         val mode = requestedMode ?: P2PPreferences.getYggdrasilMode(context)
         when (mode) {
             YggdrasilMode.PROXY -> {
-                // Ensure VPN service is stopped
-                stopVpn(context)
+                val wasTunnelActive = PacketTunnelProvider.isTunnelActive(context) || PacketTunnelProvider.isTunnelActive
+                if (wasTunnelActive) {
+                    stopVpn(context)
+                }
                 NativeBridge.setYggdrasilConfig("proxy", "127.0.0.1:${P2PPreferences.DEFAULT_YGGDRASIL_PROXY_PORT}")
-                // VpnService teardown closes its TUN readers asynchronously.
-                // Starting Proxy immediately let its ENABLED state be overwritten
-                // by the old VPN's final DISABLED update.
+                val delayMs = if (wasTunnelActive) STOP_SETTLE_MS else 0L
                 mainHandler.postDelayed({
                     if (P2PPreferences.getYggdrasilMode(context) != YggdrasilMode.PROXY) return@postDelayed
                     val intent = Intent(context, YggdrasilProxyService::class.java).apply {
                         action = YggdrasilProxyService.ACTION_START
                     }
-                    ContextCompat.startForegroundService(context, intent)
-                }, STOP_SETTLE_MS)
+                    try {
+                        ContextCompat.startForegroundService(context, intent)
+                    } catch (e: Exception) {
+                        try { context.startService(intent) } catch (_: Exception) {}
+                    }
+                }, delayMs)
             }
             YggdrasilMode.VPN -> {
-                // Ensure Proxy service is stopped
                 stopProxy(context)
                 NativeBridge.setYggdrasilConfig("vpn", "")
                 mainHandler.postDelayed({
@@ -42,7 +45,11 @@ object YggdrasilCoordinator {
                     val intent = Intent(context, PacketTunnelProvider::class.java).apply {
                         action = PacketTunnelProvider.ACTION_START
                     }
-                    ContextCompat.startForegroundService(context, intent)
+                    try {
+                        ContextCompat.startForegroundService(context, intent)
+                    } catch (e: Exception) {
+                        try { context.startService(intent) } catch (_: Exception) {}
+                    }
                 }, STOP_SETTLE_MS)
             }
         }
@@ -57,17 +64,22 @@ object YggdrasilCoordinator {
         // Sending START_SERVICE(ACTION_STOP) from a broadcast receiver is
         // rejected by modern Android while the app is in the background.
         // stopService is explicitly allowed and invokes the service teardown.
-        context.stopService(Intent(context, YggdrasilProxyService::class.java))
+        try {
+            context.stopService(Intent(context, YggdrasilProxyService::class.java))
+        } catch (_: Exception) {}
     }
 
     fun stopVpn(context: Context) {
-        // VpnService is also bound by Android. stopService() alone only drops
-        // our start request and can leave tun0 alive under that system binding.
-        // Its ACTION_STOP closes the ParcelFileDescriptor before stopping.
-        val intent = Intent(context, PacketTunnelProvider::class.java).apply {
-            action = PacketTunnelProvider.ACTION_STOP
+        if (PacketTunnelProvider.isTunnelActive(context) || PacketTunnelProvider.isTunnelActive) {
+            val intent = Intent(context, PacketTunnelProvider::class.java).apply {
+                action = PacketTunnelProvider.ACTION_STOP
+            }
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (_: Exception) {
+                try { context.stopService(intent) } catch (_: Exception) {}
+            }
         }
-        ContextCompat.startForegroundService(context, intent)
     }
 
     fun connect(context: Context) {

@@ -345,10 +345,7 @@ fun ChatScreen(
         contract = ActivityResultContracts.StartActivityForResult(),
         onResult = { result ->
             if (result.resultCode == android.app.Activity.RESULT_OK) {
-                val intent = Intent(context, PacketTunnelProvider::class.java).apply {
-                    action = PacketTunnelProvider.ACTION_START
-                }
-                context.startService(intent)
+                com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context)
                 sharedPrefs.edit { putBoolean("settings_yggdrasil", true) }
                 Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
             }
