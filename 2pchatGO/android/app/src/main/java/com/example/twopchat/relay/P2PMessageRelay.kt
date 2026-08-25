@@ -2030,7 +2030,9 @@ object P2PMessageRelay {
                     P2PPreferences.prefs(appContext)
                         .edit().apply {
                             putString("peer_fingerprint_$resolvedPeerName", fingerprint)
-                            putString("peer_about_me_$resolvedPeerName", aboutMe)
+                            if (aboutMe.isNotBlank()) {
+                                putString("peer_about_me_$resolvedPeerName", aboutMe)
+                            }
                             if (endpoint.isNotEmpty()) {
                                 putString("last_endpoint_$resolvedPeerName", endpoint)
                             }
