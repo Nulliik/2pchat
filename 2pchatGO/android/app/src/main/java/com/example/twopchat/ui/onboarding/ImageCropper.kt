@@ -50,8 +50,9 @@ fun ImageCropper(
 
     val sourceBitmap = remember(imageUri) {
         try {
-            val inputStream = context.contentResolver.openInputStream(imageUri)
-            BitmapFactory.decodeStream(inputStream)
+            context.contentResolver.openInputStream(imageUri)?.use { inputStream ->
+                BitmapFactory.decodeStream(inputStream)
+            }
         } catch (e: Exception) {
             null
         }

@@ -830,8 +830,8 @@ fun SharedMediaScreen(
                         items(filesList) { item ->
                             val filePath = item.attachmentUri
                             val file = filePath?.let(::File)
-                            val exists = file?.exists() == true
-                            val fileSize = if (exists && file != null) formatFileSize(file.length()) else "n/a"
+                            val validFile = file?.takeIf { it.exists() }
+                            val fileSize = validFile?.let { formatFileSize(it.length()) } ?: "n/a"
                             val fileDate = formatDate(item.sentAtEpochMs, appLanguage)
 
                             val isSelected = selectedItems.contains(item)
@@ -857,12 +857,12 @@ fun SharedMediaScreen(
                                                     selectedItems.add(item)
                                                 }
                                             } else {
-                                                if (exists) {
+                                                if (validFile != null) {
                                                     try {
                                                         val contentUri = androidx.core.content.FileProvider.getUriForFile(
                                                             context,
                                                             "${context.packageName}.fileprovider",
-                                                            file,
+                                                            validFile,
                                                         )
                                                         val intent = Intent(Intent.ACTION_VIEW).apply {
                                                             setDataAndType(contentUri, "*/*")

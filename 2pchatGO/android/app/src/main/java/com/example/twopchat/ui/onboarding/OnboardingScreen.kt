@@ -1045,15 +1045,16 @@ fun saveImageToInternalStorage(context: android.content.Context, uri: Uri): Stri
     return try {
         val inputStream = context.contentResolver.openInputStream(uri) ?: return null
         val file = java.io.File(context.filesDir, "profile_avatar.jpg")
-        val outputStream = java.io.FileOutputStream(file)
-        val buffer = ByteArray(4 * 1024)
-        var read: Int
-        while (inputStream.read(buffer).also { read = it } != -1) {
-            outputStream.write(buffer, 0, read)
+        inputStream.use { input ->
+            java.io.FileOutputStream(file).use { output ->
+                val buffer = ByteArray(4 * 1024)
+                var read: Int
+                while (input.read(buffer).also { read = it } != -1) {
+                    output.write(buffer, 0, read)
+                }
+                output.flush()
+            }
         }
-        outputStream.flush()
-        outputStream.close()
-        inputStream.close()
         file.absolutePath
     } catch (e: Exception) {
         null
