@@ -62,6 +62,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         private const val KEY_ONION_ADDRESS = "onion_address"
         private const val KEY_LAST_ENDPOINT = "last_endpoint"
         private const val KEY_FINGERPRINT = "fingerprint"
+        private const val KEY_ABOUT_ME = "about_me"
         private const val KEY_UPDATED_AT_MS = "updated_at_ms"
         private const val TAG = "ChatDatabaseHelper"
         private val instanceLock = Any()
@@ -1140,11 +1141,52 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             null,
             null,
             null,
+            null,
         ).use { cursor ->
             if (cursor.moveToFirst()) {
                 val idx = cursor.getColumnIndexOrThrow(KEY_PEER_NAME)
                 if (!cursor.isNull(idx)) cursor.getString(idx) else null
             } else null
+        }
+    }
+
+    fun savePeerAboutMe(peerName: String, aboutMe: String) {
+        val db = this.safeWritableDatabase
+        try {
+            db.execSQL("ALTER TABLE $TABLE_PEERS ADD COLUMN $KEY_ABOUT_ME TEXT")
+        } catch (_: Exception) {}
+        val values = ContentValues().apply {
+            put(KEY_PEER_NAME, peerName)
+            put(KEY_ABOUT_ME, aboutMe)
+            put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
+        }
+        db.insertWithOnConflict(TABLE_PEERS, null, values, SQLiteDatabase.CONFLICT_IGNORE)
+        val updateValues = ContentValues().apply {
+            put(KEY_ABOUT_ME, aboutMe)
+            put(KEY_UPDATED_AT_MS, System.currentTimeMillis())
+        }
+        db.update(TABLE_PEERS, updateValues, "$KEY_PEER_NAME = ?", arrayOf(peerName))
+    }
+
+    fun getPeerAboutMe(peerName: String): String? {
+        val db = this.safeReadableDatabase
+        return try {
+            db.query(
+                TABLE_PEERS,
+                arrayOf(KEY_ABOUT_ME),
+                "$KEY_PEER_NAME = ?",
+                arrayOf(peerName),
+                null,
+                null,
+                null,
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val idx = cursor.getColumnIndex(KEY_ABOUT_ME)
+                    if (idx != -1 && !cursor.isNull(idx)) cursor.getString(idx) else null
+                } else null
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -1206,6 +1248,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 "$KEY_FINGERPRINT TEXT," +
                 "$KEY_ONION_ADDRESS TEXT," +
                 "$KEY_LAST_ENDPOINT TEXT," +
+                "$KEY_ABOUT_ME TEXT," +
                 "$KEY_UPDATED_AT_MS INTEGER NOT NULL DEFAULT 0)"
         )
     }

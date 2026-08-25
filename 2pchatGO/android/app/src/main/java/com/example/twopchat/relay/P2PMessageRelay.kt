@@ -676,6 +676,11 @@ object P2PMessageRelay {
         val sharedPrefs = P2PPreferences.prefs(context)
         if (cleanAboutMe != null) {
             sharedPrefs.edit().putString("peer_about_me_$targetKey", cleanAboutMe).apply()
+            ChatDatabaseHelper.getInstance(context).savePeerAboutMe(targetKey, cleanAboutMe)
+            if (cleanNickname != null && cleanNickname != targetKey) {
+                sharedPrefs.edit().putString("peer_about_me_$cleanNickname", cleanAboutMe).apply()
+                ChatDatabaseHelper.getInstance(context).savePeerAboutMe(cleanNickname, cleanAboutMe)
+            }
         }
 
         if (cleanNickname != null && cleanNickname != targetKey) {

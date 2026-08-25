@@ -97,6 +97,9 @@ fun SharedMediaScreen(
     var currentPeerName by remember(peerName) { mutableStateOf(peerName) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var newNicknameInput by remember { mutableStateOf("") }
+    var showEditAboutMeDialog by remember { mutableStateOf(false) }
+    var editAboutMeInput by remember { mutableStateOf("") }
+    var aboutMeRefreshTrigger by remember { mutableIntStateOf(0) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var isSelectMode by remember { mutableStateOf(false) }
     val selectedItems = remember { mutableStateListOf<Message>() }
@@ -501,15 +504,20 @@ fun SharedMediaScreen(
                             }
                         )
 
-                        val peerAboutMe = remember(currentPeerName, fingerprint) {
+                        val peerAboutMe = remember(currentPeerName, fingerprint, aboutMeRefreshTrigger) {
                             val sp = com.example.twopchat.config.P2PPreferences.prefs(context)
+                            val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
                             val byName = sp.getString("peer_about_me_$currentPeerName", null)?.trim()
                             val byFp = if (fingerprint.isNotBlank()) sp.getString("peer_about_me_$fingerprint", null)?.trim() else null
+                            val byDb = db.getPeerAboutMe(currentPeerName)?.trim()
+                            val byDbFp = if (fingerprint.isNotBlank()) db.getPeerAboutMe(fingerprint)?.trim() else null
                             val localProfile = if (currentPeerName == "Saved Messages" || currentPeerName == sp.getString("username_profile", "")) {
                                 sp.getString("about_me_profile", null)?.trim()
                             } else null
                             byName?.takeIf { it.isNotEmpty() }
                                 ?: byFp?.takeIf { it.isNotEmpty() }
+                                ?: byDb?.takeIf { it.isNotEmpty() }
+                                ?: byDbFp?.takeIf { it.isNotEmpty() }
                                 ?: localProfile?.takeIf { it.isNotEmpty() }
                                 ?: ""
                         }
@@ -520,20 +528,14 @@ fun SharedMediaScreen(
                             value = if (peerAboutMe.isNotEmpty()) {
                                 peerAboutMe
                             } else {
-                                Localizations.tr(appLanguage, "Не указано", "Not specified", "Nicht angegeben", "No especificado", "Non spécifié", "Não especificado")
+                                Localizations.tr(appLanguage, "Не указано (нажмите, чтобы изменить)", "Not specified (tap to edit)", "Nicht angegeben (tippen zum Bearbeiten)", "No especificado (tocar para editar)", "Non spécifié (toucher pour modifier)", "Não especificado (toque para editar)")
                             },
                             onSurfaceColor = if (peerAboutMe.isNotEmpty()) onSurfaceColor else onSurfaceVariant.copy(alpha = 0.55f),
                             onSurfaceVariant = onSurfaceVariant,
-                            onClick = if (peerAboutMe.isNotEmpty()) {
-                                {
-                                    copyTextToClipboard(context, "About me", peerAboutMe)
-                                    Toast.makeText(
-                                        context,
-                                        if (appLanguage == "Русский") "Текст скопирован" else "Copied",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            } else null
+                            onClick = {
+                                editAboutMeInput = peerAboutMe
+                                showEditAboutMeDialog = true
+                            }
                         )
 
                         if (currentPeerName != "Saved Messages") {
@@ -1240,6 +1242,97 @@ fun SharedMediaScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showRenameDialog = false }) {
+                    Text(
+                        text = Localizations.tr(appLanguage, "Отмена", "Cancel", "Abbrechen", "Cancelar", "Annuler", "Cancelar"),
+                        color = onSurfaceVariant
+                    )
+                }
+            },
+            containerColor = surfaceColor,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    if (showEditAboutMeDialog) {
+        AlertDialog(
+            onDismissRequest = { showEditAboutMeDialog = false },
+            title = {
+                Text(
+                    text = Localizations.tr(appLanguage, "О себе / Заметка", "About me / Note", "Über mich / Notiz", "Sobre mí / Nota", "À propos / Note", "Sobre mim / Nota"),
+                    fontWeight = FontWeight.Bold,
+                    color = onSurfaceColor
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = Localizations.tr(
+                            appLanguage,
+                            "Описание или личная заметка для этого собеседника:",
+                            "Description or personal note for this contact:",
+                            "Beschreibung oder persönliche Notiz für diesen Kontakt:",
+                            "Descripción o nota personal para este contacto:",
+                            "Description ou note personnelle pour ce contact :",
+                            "Descrição ou nota pessoal para este contato:"
+                        ),
+                        fontSize = 14.sp,
+                        color = onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    OutlinedTextField(
+                        value = editAboutMeInput,
+                        onValueChange = { editAboutMeInput = it },
+                        placeholder = {
+                            Text(Localizations.tr(appLanguage, "Введите текст...", "Enter text...", "Text eingeben...", "Introduce texto...", "Entrez du texte...", "Insira o texto..."))
+                        },
+                        maxLines = 4,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = primaryColor,
+                            unfocusedBorderColor = onSurfaceVariant.copy(alpha = 0.3f),
+                            focusedTextColor = onSurfaceColor,
+                            unfocusedTextColor = onSurfaceColor
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmed = editAboutMeInput.trim()
+                        val sp = com.example.twopchat.config.P2PPreferences.prefs(context)
+                        val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
+                        sp.edit().putString("peer_about_me_$currentPeerName", trimmed).apply()
+                        val fp = sp.getString("peer_fingerprint_$currentPeerName", "") ?: ""
+                        if (fp.isNotBlank()) {
+                            sp.edit().putString("peer_about_me_$fp", trimmed).apply()
+                        }
+                        if (currentPeerName == "Saved Messages" || currentPeerName == sp.getString("username_profile", "")) {
+                            sp.edit().putString("about_me_profile", trimmed).apply()
+                        }
+                        db.savePeerAboutMe(currentPeerName, trimmed)
+                        if (fp.isNotBlank()) {
+                            db.savePeerAboutMe(fp, trimmed)
+                        }
+                        aboutMeRefreshTrigger++
+                        Toast.makeText(
+                            context,
+                            Localizations.tr(appLanguage, "Сохранено", "Saved", "Gespeichert", "Guardado", "Enregistré", "Salvo"),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        showEditAboutMeDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+                ) {
+                    Text(
+                        text = Localizations.tr(appLanguage, "Сохранить", "Save", "Speichern", "Guardar", "Enregistrer", "Salvar"),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditAboutMeDialog = false }) {
                     Text(
                         text = Localizations.tr(appLanguage, "Отмена", "Cancel", "Abbrechen", "Cancelar", "Annuler", "Cancelar"),
                         color = onSurfaceVariant

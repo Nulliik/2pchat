@@ -160,6 +160,13 @@ internal class IncomingMessageRouter(
                             P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, formatted)
                             log(context, "Saved Tor .onion endpoint from profile share for $effectiveName: $formatted", "INFO", null)
                         }
+                        if (aboutMe != null) {
+                            ChatDatabaseHelper.getInstance(context).savePeerAboutMe(effectiveName, aboutMe)
+                            if (effectiveName != sender) {
+                                ChatDatabaseHelper.getInstance(context).savePeerAboutMe(sender, aboutMe)
+                            }
+                            P2PPreferences.prefs(context).edit().putString("peer_about_me_$effectiveName", aboutMe).apply()
+                        }
                         P2PMessageRelay.handlePeerNicknameReceived(context, sender, nickname, aboutMe)
                         val sharedPrefs = P2PPreferences.prefs(context)
                         val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
