@@ -115,8 +115,8 @@ internal class BridgeEventDispatcher(
                     )
                 }
 
-                if (sharedPrefs.getBoolean("blocked_peer_$resolvedSender", false) ||
-                    sharedPrefs.getBoolean("blocked_peer_$sender", false)
+                if (P2PPreferences.isPeerBlocked(context, resolvedSender) ||
+                    P2PPreferences.isPeerBlocked(context, sender)
                 ) {
                     Log.i(TAG, "Ignored message from blocked peer: $resolvedSender")
                     return@launch

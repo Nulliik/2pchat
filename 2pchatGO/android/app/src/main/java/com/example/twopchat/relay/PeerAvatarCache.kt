@@ -148,7 +148,7 @@ internal class PeerAvatarCache(
         val directory = File(context.filesDir, AVATAR_DIRECTORY)
         var file = avatarFile(directory, peerName)
         if (!file.isFile) {
-            val fp = P2PPreferences.prefs(context).getString("peer_fingerprint_$peerName", null)
+            val fp = P2PPreferences.getPeerFingerprint(context, peerName)
             if (!fp.isNullOrBlank() && fp != peerName) {
                 file = avatarFile(directory, fp)
             }

@@ -32,10 +32,10 @@ class DefaultPeerRepository : PeerRepository {
     }
 
     override fun isPeerBlocked(context: Context, peerName: String): Boolean {
-        return P2PPreferences.prefs(context).getBoolean("blocked_peer_$peerName", false)
+        return P2PPreferences.isPeerBlocked(context, peerName)
     }
 
     override fun setPeerBlocked(context: Context, peerName: String, blocked: Boolean) {
-        P2PPreferences.prefs(context).edit().putBoolean("blocked_peer_$peerName", blocked).apply()
+        P2PPreferences.setPeerBlocked(context, peerName, blocked)
     }
 }

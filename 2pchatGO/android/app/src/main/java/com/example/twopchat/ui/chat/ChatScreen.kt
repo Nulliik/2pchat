@@ -238,8 +238,8 @@ fun ChatScreen(
     var pinnedBy by remember(peerName, isActive) { mutableStateOf(sharedPrefs.getString("pinned_by_${peerName}", null)) }
     var activePinnedIndex by remember(peerName) { mutableIntStateOf(0) }
     var showPinnedSheet by remember { mutableStateOf(false) }
-    var isMuted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("mute_notifications_${peerName}", false)) }
-    var isBlocked by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("blocked_peer_${peerName}", false)) }
+    var isMuted by remember(peerName) { mutableStateOf(com.example.twopchat.config.P2PPreferences.isPeerMuted(context, peerName)) }
+    var isBlocked by remember(peerName) { mutableStateOf(com.example.twopchat.config.P2PPreferences.isPeerBlocked(context, peerName)) }
     var showHardBlockDialog by remember { mutableStateOf(false) }
     var isForwardingRestricted by remember(peerName) { mutableStateOf(sharedPrefs.getBoolean("restrict_forwarding_${peerName}", false)) }
     var forwardingNotificationPill by remember(peerName) { mutableStateOf<String?>(null) }
@@ -2278,7 +2278,7 @@ fun ChatScreen(
                                 isSelectMode = false
                 },
                 onUnblock = {
-                    sharedPrefs.edit { putBoolean("blocked_peer_${peerName}", false) }
+                    com.example.twopchat.config.P2PPreferences.setPeerBlocked(context, peerName, false)
                     isBlocked = false
                 },
                 onReviewIdentity = { showIdentityWarning = true },

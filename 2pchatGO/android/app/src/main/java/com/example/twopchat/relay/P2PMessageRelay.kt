@@ -781,7 +781,8 @@ object P2PMessageRelay {
             "unread_count_", "verified_peer_", "fingerprint_mismatch_",
             "pending_peer_fingerprint_", "pending_peer_endpoint_",
             "peer_about_me_", "discovery_code_", "pinned_chat_",
-            "blocked_peer_", "mute_notifications_", "draft_",
+            "blocked_peer_", "mute_notifications_", "draft_", "draft_msg_",
+            "peer_transport_pref_", "peer_onion_", "peer_onion_address_",
             "direct_wallpaper_", "direct_wallpaper_dimming_", "direct_wallpaper_blur_"
         )
         for (prefix in keysToMove) {
@@ -789,7 +790,7 @@ object P2PMessageRelay {
                 continue
             }
             when (prefix) {
-                "verified_peer_", "fingerprint_mismatch_", "direct_wallpaper_blur_" -> {
+                "verified_peer_", "fingerprint_mismatch_", "direct_wallpaper_blur_", "blocked_peer_", "mute_notifications_", "pinned_chat_" -> {
                     val value = sharedPrefs.getBoolean("$prefix$fromName", false)
                     val existing = sharedPrefs.getBoolean("$prefix$toName", false)
                     editor.putBoolean("$prefix$toName", existing || value)

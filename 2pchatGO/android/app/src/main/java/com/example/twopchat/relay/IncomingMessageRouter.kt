@@ -29,8 +29,7 @@ internal class IncomingMessageRouter(
         sendControlMessage: (Context, String, JSONObject) -> Unit,
         acknowledgeControl: (Context, String) -> Unit,
     ) {
-        val sharedPrefs = P2PPreferences.prefs(context)
-        if (sharedPrefs.getBoolean("blocked_peer_$sender", false)) {
+        if (P2PPreferences.isPeerBlocked(context, sender)) {
             log(context, "Ignored message from a blocked peer", "INFO", null)
             return
         }

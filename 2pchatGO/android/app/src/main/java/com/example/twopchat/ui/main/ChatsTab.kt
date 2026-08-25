@@ -156,7 +156,7 @@ fun ChatsTab(
                     ?: sharedPrefs.getString("last_endpoint_$name", null),
             ) ?: "UNKNOWN"
             val isPinned = sharedPrefs.getBoolean("pinned_chat_$name", false)
-            val isBlocked = sharedPrefs.getBoolean("blocked_peer_$name", false)
+            val isBlocked = com.example.twopchat.config.P2PPreferences.isPeerBlocked(context, name)
             PeerItem(
                 name = name,
                 lastMsg = lastMsg,
@@ -1530,8 +1530,8 @@ fun ChatsTab(
     if (menuPeer != null) {
             val peer = menuPeer
             val isPinned = peer.isPinned
-            val isMuted = sharedPrefs.getBoolean("mute_notifications_${peer.name}", false)
-            val isBlocked = sharedPrefs.getBoolean("blocked_peer_${peer.name}", false)
+            val isMuted = com.example.twopchat.config.P2PPreferences.isPeerMuted(context, peer.name)
+            val isBlocked = com.example.twopchat.config.P2PPreferences.isPeerBlocked(context, peer.name)
 
             Dialog(
                 onDismissRequest = { activeMenuPeer = null },
@@ -1727,7 +1727,7 @@ fun ChatsTab(
                                 iconRes = com.example.twopchat.R.drawable.ic_block,
                                 onClick = {
                                     if (isBlocked) {
-                                        sharedPrefs.edit().putBoolean("blocked_peer_${peer.name}", false).apply()
+                                        com.example.twopchat.config.P2PPreferences.setPeerBlocked(context, peer.name, false)
                                         chatListRevision++
                                         activeMenuPeer = null
                                         Toast.makeText(context, if (appLanguage == "Русский") "Пользователь разблокирован" else "User unblocked", Toast.LENGTH_SHORT).show()
@@ -1784,7 +1784,7 @@ fun ChatsTab(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        sharedPrefs.edit().putBoolean("blocked_peer_$targetPeer", true).apply()
+                        com.example.twopchat.config.P2PPreferences.setPeerBlocked(context, targetPeer, true)
                         chatListRevision++
                         peerToHardBlock = null
                         Toast.makeText(context, if (appLanguage == "Русский") "Пользователь заблокирован. Смена Tor-адреса..." else "User blocked. Rotating Tor address...", Toast.LENGTH_SHORT).show()
@@ -1804,7 +1804,7 @@ fun ChatsTab(
                 Row {
                     TextButton(
                         onClick = {
-                            sharedPrefs.edit().putBoolean("blocked_peer_$targetPeer", true).apply()
+                            com.example.twopchat.config.P2PPreferences.setPeerBlocked(context, targetPeer, true)
                             chatListRevision++
                             peerToHardBlock = null
                             Toast.makeText(context, if (appLanguage == "Русский") "Пользователь заблокирован" else "User blocked", Toast.LENGTH_SHORT).show()

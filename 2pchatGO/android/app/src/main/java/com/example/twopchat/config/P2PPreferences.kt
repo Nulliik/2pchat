@@ -484,12 +484,25 @@ object P2PPreferences {
     fun transport(peerName: String) = "transport_$peerName"
     fun peerTransportPref(peerName: String) = "peer_transport_pref_$peerName"
     fun verifiedPeer(peerName: String) = "verified_peer_$peerName"
+    fun blockedPeer(peerName: String) = "blocked_peer_$peerName"
+    fun muteNotifications(peerName: String) = "mute_notifications_$peerName"
     fun pinnedMessageId(peerName: String) = "pinned_msg_id_$peerName"
     fun pinnedMessageText(peerName: String) = "pinned_msg_text_$peerName"
     fun pinnedMessageSender(peerName: String) = "pinned_msg_sender_$peerName"
     fun pinnedBy(peerName: String) = "pinned_by_$peerName"
     fun pinnedStateVersion(peerName: String) = "pinned_state_version_$peerName"
     fun pinnedStateActor(peerName: String) = "pinned_state_actor_$peerName"
+
+    fun getPeerFingerprint(context: Context, peerName: String): String? {
+        val clean = peerName.trim()
+        if (clean.isBlank()) return null
+        val fromPrefs = prefs(context).getString(peerFingerprint(clean), null)?.takeIf { it.isNotBlank() }
+        if (fromPrefs != null) return fromPrefs
+        if (com.example.twopchat.relay.P2PMessageRelay.isRawFingerprint(clean)) return clean
+        return runCatching {
+            com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerFingerprint(clean)
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
 
     enum class PeerTransportPreference(val key: String) {
         AUTO("auto"),
@@ -505,12 +518,24 @@ object P2PPreferences {
     }
 
     fun getPeerTransportPreference(context: Context, peerName: String): PeerTransportPreference {
-        val raw = prefs(context).getString(peerTransportPref(peerName), null)
-        return PeerTransportPreference.fromKey(raw)
+        val sp = prefs(context)
+        val raw = sp.getString(peerTransportPref(peerName), null)
+        if (raw != null) return PeerTransportPreference.fromKey(raw)
+        val fp = getPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank() && fp != peerName) {
+            val fpRaw = sp.getString(peerTransportPref(fp), null)
+            if (fpRaw != null) return PeerTransportPreference.fromKey(fpRaw)
+        }
+        return PeerTransportPreference.AUTO
     }
 
     fun setPeerTransportPreference(context: Context, peerName: String, pref: PeerTransportPreference) {
-        prefs(context).edit().putString(peerTransportPref(peerName), pref.key).apply()
+        val editor = prefs(context).edit().putString(peerTransportPref(peerName), pref.key)
+        val fp = getPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank() && fp != peerName) {
+            editor.putString(peerTransportPref(fp), pref.key)
+        }
+        editor.apply()
     }
 
     fun getEffectiveEndpointsForPeer(context: Context, peerName: String, rawEndpoints: String? = null): String {
@@ -560,14 +585,27 @@ object P2PPreferences {
     }
 
     fun setPeerOnionAddress(context: Context, peerName: String, onionAddress: String) {
-        prefs(context).edit().putString(peerOnionAddress(peerName), onionAddress).apply()
+        val editor = prefs(context).edit().putString(peerOnionAddress(peerName), onionAddress)
+        val fp = getPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank() && fp != peerName) {
+            editor.putString(peerOnionAddress(fp), onionAddress)
+        }
+        editor.apply()
     }
 
     fun getPeerOnionAddress(context: Context, peerName: String): String? {
-        val prefVal = prefs(context).getString(peerOnionAddress(peerName), null)?.takeIf { it.isNotBlank() }
+        val sp = prefs(context)
+        val prefVal = sp.getString(peerOnionAddress(peerName), null)?.takeIf { it.isNotBlank() }
         if (prefVal != null) return prefVal
+        val fp = getPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank() && fp != peerName) {
+            val fpVal = sp.getString(peerOnionAddress(fp), null)?.takeIf { it.isNotBlank() }
+            if (fpVal != null) return fpVal
+        }
         return runCatching {
-            com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerOnionAddress(peerName)
+            val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
+            db.getPeerOnionAddress(peerName)
+                ?: (if (!fp.isNullOrBlank()) db.getPeerOnionAddress(fp) else null)
         }.getOrNull()?.takeIf { it.isNotBlank() }
     }
 
@@ -602,11 +640,91 @@ object P2PPreferences {
         actor = prefs.getString(pinnedStateActor(peerName), "").orEmpty(),
     )
 
-    fun isPeerVerified(context: Context, peerName: String): Boolean =
-        prefs(context).getBoolean(verifiedPeer(peerName), false)
+    fun isPeerVerified(context: Context, peerName: String): Boolean {
+        val sp = prefs(context)
+        if (sp.getBoolean(verifiedPeer(peerName), false)) return true
+        val fp = getPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank() && fp != peerName) {
+            if (sp.getBoolean(verifiedPeer(fp), false)) return true
+        }
+        return false
+    }
 
     fun setPeerVerified(context: Context, peerName: String, verified: Boolean) {
-        prefs(context).edit().putBoolean(verifiedPeer(peerName), verified).apply()
+        val editor = prefs(context).edit().putBoolean(verifiedPeer(peerName), verified)
+        val fp = getPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank() && fp != peerName) {
+            editor.putBoolean(verifiedPeer(fp), verified)
+        }
+        editor.apply()
+    }
+
+    fun isPeerBlocked(context: Context, peerName: String): Boolean {
+        val sp = prefs(context)
+        if (sp.getBoolean(blockedPeer(peerName), false)) return true
+        val fp = getPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank() && fp != peerName) {
+            if (sp.getBoolean(blockedPeer(fp), false)) return true
+        }
+        return false
+    }
+
+    fun setPeerBlocked(context: Context, peerName: String, blocked: Boolean) {
+        val editor = prefs(context).edit().putBoolean(blockedPeer(peerName), blocked)
+        val fp = getPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank() && fp != peerName) {
+            editor.putBoolean(blockedPeer(fp), blocked)
+        }
+        editor.apply()
+    }
+
+    fun isPeerMuted(context: Context, peerName: String): Boolean {
+        val sp = prefs(context)
+        if (sp.getBoolean(muteNotifications(peerName), false)) return true
+        val fp = getPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank() && fp != peerName) {
+            if (sp.getBoolean(muteNotifications(fp), false)) return true
+        }
+        return false
+    }
+
+    fun setPeerMuted(context: Context, peerName: String, muted: Boolean) {
+        val editor = prefs(context).edit().putBoolean(muteNotifications(peerName), muted)
+        val fp = getPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank() && fp != peerName) {
+            editor.putBoolean(muteNotifications(fp), muted)
+        }
+        editor.apply()
+    }
+
+    fun getDraftMessage(context: Context, peerName: String): String {
+        val sp = prefs(context)
+        val raw = sp.getString(draftMessage(peerName), null)?.takeIf { it.isNotBlank() }
+        if (raw != null) return raw
+        val fp = getPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank() && fp != peerName) {
+            val fpRaw = sp.getString(draftMessage(fp), null)?.takeIf { it.isNotBlank() }
+            if (fpRaw != null) return fpRaw
+        }
+        return ""
+    }
+
+    fun setDraftMessage(context: Context, peerName: String, draft: String) {
+        val editor = prefs(context).edit()
+        val clean = draft.trim()
+        val fp = getPeerFingerprint(context, peerName)
+        if (clean.isNotBlank()) {
+            editor.putString(draftMessage(peerName), clean)
+            if (!fp.isNullOrBlank() && fp != peerName) {
+                editor.putString(draftMessage(fp), clean)
+            }
+        } else {
+            editor.remove(draftMessage(peerName))
+            if (!fp.isNullOrBlank() && fp != peerName) {
+                editor.remove(draftMessage(fp))
+            }
+        }
+        editor.apply()
     }
 
     fun isPeerIdentityChangePending(context: Context, peerName: String): Boolean {

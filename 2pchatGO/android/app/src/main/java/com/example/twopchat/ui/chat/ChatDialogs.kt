@@ -346,8 +346,7 @@ fun ChatHardBlockDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    context.getSharedPreferences("twopchat_prefs", Context.MODE_PRIVATE)
-                        .edit().putBoolean("blocked_peer_$peerName", true).apply()
+                    com.example.twopchat.config.P2PPreferences.setPeerBlocked(context, peerName, true)
                     onBlocked()
                     onDismiss()
                     Toast.makeText(context, if (appLanguage == "Русский") "Пользователь заблокирован. Смена Tor-адреса..." else "User blocked. Rotating Tor address...", Toast.LENGTH_SHORT).show()
@@ -367,8 +366,7 @@ fun ChatHardBlockDialog(
             Row {
                 TextButton(
                     onClick = {
-                        context.getSharedPreferences("twopchat_prefs", Context.MODE_PRIVATE)
-                            .edit().putBoolean("blocked_peer_$peerName", true).apply()
+                        com.example.twopchat.config.P2PPreferences.setPeerBlocked(context, peerName, true)
                         onBlocked()
                         onDismiss()
                         Toast.makeText(context, if (appLanguage == "Русский") "Пользователь заблокирован" else "User blocked", Toast.LENGTH_SHORT).show()
