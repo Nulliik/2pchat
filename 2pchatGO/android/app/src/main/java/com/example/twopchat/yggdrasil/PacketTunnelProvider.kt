@@ -105,13 +105,15 @@ open class PacketTunnelProvider: VpnService() {
     }
 
     override fun onRevoke() {
-        Log.i(TAG, "VPN permission revoked by system or another VPN connected -> stopping Yggdrasil and marking disabled")
+        Log.i(TAG, "VPN permission revoked by system or another VPN connected -> transitioning Yggdrasil to Proxy mode so it coexists with the user's VPN")
         isTunnelActive = false
-        // When another VPN starts, Android revokes our VPN slot.
-        // We MUST update preferences to disabled so we don't aggressively fight the user's other VPN!
-        yggdrasilPrefs(this).edit().putBoolean(PREF_KEY_ENABLED, false).apply()
-        com.example.twopchat.config.P2PPreferences.prefs(this).edit().putBoolean("settings_yggdrasil", false).apply()
-        stop()
+        stop(stopService = true)
+        // Automatically switch to Proxy mode so the user does not lose Yggdrasil mesh connectivity when their external VPN connects
+        P2PPreferences.setYggdrasilMode(this, P2PPreferences.YggdrasilMode.PROXY)
+        val enabled = yggdrasilPrefs(this).getBoolean(PREF_KEY_ENABLED, false)
+        if (enabled) {
+            YggdrasilCoordinator.start(this, P2PPreferences.YggdrasilMode.PROXY)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
