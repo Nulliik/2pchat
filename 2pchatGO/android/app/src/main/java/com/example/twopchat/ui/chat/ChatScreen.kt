@@ -392,22 +392,53 @@ fun ChatScreen(
     var showDatePickerDialog by remember { mutableStateOf(false) }
 
     var showWallpaperModal by remember { mutableStateOf(false) }
-    var wallpaperPath by remember(peerName) {
-        mutableStateOf(sharedPrefs.getString("direct_wallpaper_$peerName", null))
+
+    val peerFp = remember(peerName) {
+        sharedPrefs.getString("peer_fingerprint_$peerName", "") ?: ""
     }
-    var wallpaperDimming by remember(peerName) {
-        mutableIntStateOf(sharedPrefs.getInt("direct_wallpaper_dimming_$peerName", 30))
+
+    var prefsWallpaperVersion by remember { mutableIntStateOf(0) }
+    DisposableEffect(peerName, peerFp) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key != null && (key.startsWith("direct_wallpaper_") || key.startsWith("peer_fingerprint_"))) {
+                prefsWallpaperVersion++
+            }
+        }
+        sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener)
+        }
     }
-    var wallpaperBlur by remember(peerName) {
-        mutableStateOf(sharedPrefs.getBoolean("direct_wallpaper_blur_$peerName", false))
+
+    var wallpaperPath by remember(peerName, peerFp, prefsWallpaperVersion) {
+        val pathByName = sharedPrefs.getString("direct_wallpaper_$peerName", null)
+        val pathByFp = if (peerFp.isNotBlank()) sharedPrefs.getString("direct_wallpaper_$peerFp", null) else null
+        val directFileByName = File(context.filesDir, "direct_wallpapers/wallpaper_$peerName.jpg").takeIf { it.exists() }?.absolutePath
+        val directFileByFp = if (peerFp.isNotBlank()) File(context.filesDir, "direct_wallpapers/wallpaper_$peerFp.jpg").takeIf { it.exists() }?.absolutePath else null
+        mutableStateOf(pathByName ?: pathByFp ?: directFileByName ?: directFileByFp)
+    }
+    var wallpaperDimming by remember(peerName, peerFp, prefsWallpaperVersion) {
+        val dimByName = sharedPrefs.getInt("direct_wallpaper_dimming_$peerName", -1)
+        val dimByFp = if (peerFp.isNotBlank()) sharedPrefs.getInt("direct_wallpaper_dimming_$peerFp", -1) else -1
+        val dim = if (dimByName != -1) dimByName else if (dimByFp != -1) dimByFp else 30
+        mutableIntStateOf(dim)
+    }
+    var wallpaperBlur by remember(peerName, peerFp, prefsWallpaperVersion) {
+        val blurByName = if (sharedPrefs.contains("direct_wallpaper_blur_$peerName")) sharedPrefs.getBoolean("direct_wallpaper_blur_$peerName", false) else null
+        val blurByFp = if (peerFp.isNotBlank() && sharedPrefs.contains("direct_wallpaper_blur_$peerFp")) sharedPrefs.getBoolean("direct_wallpaper_blur_$peerFp", false) else null
+        val blur = blurByName ?: blurByFp ?: false
+        mutableStateOf(blur)
     }
     var wallpaperBitmap by remember(wallpaperPath) {
         mutableStateOf<Bitmap?>(null)
     }
 
-    LaunchedEffect(wallpaperPath) {
+    LaunchedEffect(wallpaperPath, peerName, peerFp, prefsWallpaperVersion) {
         wallpaperBitmap = withContext(Dispatchers.IO) {
-            wallpaperPath?.let { path ->
+            val resolvedPath = wallpaperPath
+                ?: File(context.filesDir, "direct_wallpapers/wallpaper_$peerName.jpg").takeIf { it.exists() }?.absolutePath
+                ?: if (peerFp.isNotBlank()) File(context.filesDir, "direct_wallpapers/wallpaper_$peerFp.jpg").takeIf { it.exists() }?.absolutePath else null
+            resolvedPath?.let { path ->
                 try {
                     BitmapFactory.decodeFile(path)
                 } catch (e: Exception) {

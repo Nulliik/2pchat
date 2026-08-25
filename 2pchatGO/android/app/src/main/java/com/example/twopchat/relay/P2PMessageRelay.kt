@@ -775,22 +775,27 @@ object P2PMessageRelay {
             "unread_count_", "verified_peer_", "fingerprint_mismatch_",
             "pending_peer_fingerprint_", "pending_peer_endpoint_",
             "peer_about_me_", "discovery_code_", "pinned_chat_",
-            "blocked_peer_", "mute_notifications_", "draft_"
+            "blocked_peer_", "mute_notifications_", "draft_",
+            "direct_wallpaper_", "direct_wallpaper_dimming_", "direct_wallpaper_blur_"
         )
         for (prefix in keysToMove) {
             if (!sharedPrefs.contains("$prefix$fromName")) {
                 continue
             }
             when (prefix) {
-                "verified_peer_", "fingerprint_mismatch_" -> {
+                "verified_peer_", "fingerprint_mismatch_", "direct_wallpaper_blur_" -> {
                     val value = sharedPrefs.getBoolean("$prefix$fromName", false)
                     val existing = sharedPrefs.getBoolean("$prefix$toName", false)
                     editor.putBoolean("$prefix$toName", existing || value)
                 }
-                "unread_count_" -> {
+                "unread_count_", "direct_wallpaper_dimming_" -> {
                     val value = sharedPrefs.getInt("$prefix$fromName", 0)
                     val existing = sharedPrefs.getInt("$prefix$toName", 0)
-                    editor.putInt("$prefix$toName", existing + value)
+                    if (prefix == "unread_count_") {
+                        editor.putInt("$prefix$toName", existing + value)
+                    } else {
+                        editor.putInt("$prefix$toName", if (value != 0) value else existing)
+                    }
                 }
                 "last_msg_" -> {
                     // Placeholder messages are the most recently received
@@ -809,6 +814,15 @@ object P2PMessageRelay {
             editor.remove("$prefix$fromName")
         }
         editor.apply()
+
+        try {
+            val wpDir = File(context.filesDir, "direct_wallpapers")
+            val oldWpFile = File(wpDir, "wallpaper_$fromName.jpg")
+            val newWpFile = File(wpDir, "wallpaper_$toName.jpg")
+            if (oldWpFile.exists() && !newWpFile.exists()) {
+                oldWpFile.renameTo(newWpFile)
+            }
+        } catch (_: Exception) {}
 
         try {
             val db = ChatDatabaseHelper.getInstance(context)
@@ -1376,14 +1390,25 @@ object P2PMessageRelay {
                                         try {
                                             val bytes = Base64.decode(b64, Base64.DEFAULT)
                                             val dir = File(appContext.filesDir, "direct_wallpapers").also { it.mkdirs() }
-                                            val destFile = File(dir, "wallpaper_$sender.jpg")
+                                            val destFile = File(dir, "wallpaper_$resolvedSender.jpg")
                                             destFile.writeBytes(bytes)
+                                            if (resolvedSender != sender) {
+                                                try {
+                                                    File(dir, "wallpaper_$sender.jpg").writeBytes(bytes)
+                                                } catch (_: Exception) {}
+                                            }
 
-                                            P2PPreferences.prefs(appContext).edit()
-                                                .putString("direct_wallpaper_$sender", destFile.absolutePath)
-                                                .putInt("direct_wallpaper_dimming_$sender", dimming)
-                                                .putBoolean("direct_wallpaper_blur_$sender", isBlur)
-                                                .apply()
+                                            P2PPreferences.prefs(appContext).edit().apply {
+                                                putString("direct_wallpaper_$resolvedSender", destFile.absolutePath)
+                                                putInt("direct_wallpaper_dimming_$resolvedSender", dimming)
+                                                putBoolean("direct_wallpaper_blur_$resolvedSender", isBlur)
+                                                if (resolvedSender != sender) {
+                                                    putString("direct_wallpaper_$sender", destFile.absolutePath)
+                                                    putInt("direct_wallpaper_dimming_$sender", dimming)
+                                                    putBoolean("direct_wallpaper_blur_$sender", isBlur)
+                                                }
+                                                apply()
+                                            }
 
                                             val defaultLang = if (Locale.getDefault().language == "ru") "Русский" else "English"
                                             val lang = P2PPreferences.prefs(appContext).getString("settings_language", defaultLang)
@@ -1398,20 +1423,33 @@ object P2PMessageRelay {
                                                 timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
                                                 attachmentType = "SYSTEM"
                                             )
-                                            persistAndDispatchIncoming(appContext, sender, sysMsg, notificationText = if (lang == "Русский") textRu else textEn, countAsNew = false)
+                                            persistAndDispatchIncoming(appContext, resolvedSender, sysMsg, notificationText = if (lang == "Русский") textRu else textEn, countAsNew = false)
+                                            if (resolvedSender != sender) {
+                                                persistAndDispatchIncoming(appContext, sender, sysMsg, notificationText = if (lang == "Русский") textRu else textEn, countAsNew = false)
+                                            }
                                         } catch (e: Exception) {
                                             log(appContext, "Failed to apply incoming wallpaper: ${e.message}", "ERROR", e)
                                         }
                                     } else if (b64.isBlank()) {
                                         try {
                                             val dir = File(appContext.filesDir, "direct_wallpapers")
-                                            val destFile = File(dir, "wallpaper_$sender.jpg")
+                                            val destFile = File(dir, "wallpaper_$resolvedSender.jpg")
                                             if (destFile.exists()) destFile.delete()
-                                            P2PPreferences.prefs(appContext).edit()
-                                                .remove("direct_wallpaper_$sender")
-                                                .remove("direct_wallpaper_dimming_$sender")
-                                                .remove("direct_wallpaper_blur_$sender")
-                                                .apply()
+                                            if (resolvedSender != sender) {
+                                                val altFile = File(dir, "wallpaper_$sender.jpg")
+                                                if (altFile.exists()) altFile.delete()
+                                            }
+                                            P2PPreferences.prefs(appContext).edit().apply {
+                                                remove("direct_wallpaper_$resolvedSender")
+                                                remove("direct_wallpaper_dimming_$resolvedSender")
+                                                remove("direct_wallpaper_blur_$resolvedSender")
+                                                if (resolvedSender != sender) {
+                                                    remove("direct_wallpaper_$sender")
+                                                    remove("direct_wallpaper_dimming_$sender")
+                                                    remove("direct_wallpaper_blur_$sender")
+                                                }
+                                                apply()
+                                            }
 
                                             val defaultLang = if (Locale.getDefault().language == "ru") "Русский" else "English"
                                             val lang = P2PPreferences.prefs(appContext).getString("settings_language", defaultLang)
@@ -1426,7 +1464,10 @@ object P2PMessageRelay {
                                                 timestamp = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()),
                                                 attachmentType = "SYSTEM"
                                             )
-                                            persistAndDispatchIncoming(appContext, sender, sysMsg, notificationText = if (lang == "Русский") textRu else textEn, countAsNew = false)
+                                            persistAndDispatchIncoming(appContext, resolvedSender, sysMsg, notificationText = if (lang == "Русский") textRu else textEn, countAsNew = false)
+                                            if (resolvedSender != sender) {
+                                                persistAndDispatchIncoming(appContext, sender, sysMsg, notificationText = if (lang == "Русский") textRu else textEn, countAsNew = false)
+                                            }
                                         } catch (e: Exception) {
                                             log(appContext, "Failed to clear wallpaper: ${e.message}", "ERROR", e)
                                         }
