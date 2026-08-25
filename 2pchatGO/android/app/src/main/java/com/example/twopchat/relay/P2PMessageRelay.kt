@@ -901,10 +901,6 @@ object P2PMessageRelay {
         val prefs = P2PPreferences.prefs(context)
         val allActive = prefs.getStringSet("active_chats", emptySet()).orEmpty()
         val placeholders = allActive.filter(::isPlaceholderPeerName)
-        if (placeholders.isNotEmpty()) {
-            val validChats = allActive.filterNot(::isPlaceholderPeerName).toSet()
-            prefs.edit().putStringSet("active_chats", validChats).apply()
-        }
 
         val canonicalIdentities = prefs.all.entries.mapNotNull { (key, value) ->
             if (!key.startsWith("peer_fingerprint_") || value !is String) return@mapNotNull null
@@ -952,9 +948,15 @@ object P2PMessageRelay {
         loadPersistedAvatars(appContext)
         migratePersistedPlaceholderChats(appContext)
         val persistedPrefs = P2PPreferences.prefs(appContext)
-        val persistedChats = persistedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+        val db = ChatDatabaseHelper.getInstance(appContext)
+        val dbChats = try { db.getAllChatPeerNames() } catch (_: Exception) { emptySet() }
+        val prefChats = persistedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
+        val combinedChats = (prefChats + dbChats).filter { it.isNotBlank() && it != "null" }.toSet()
+        if (combinedChats != prefChats) {
+            persistedPrefs.edit().putStringSet("active_chats", combinedChats).apply()
+        }
+        val persistedChats = combinedChats
         if (persistedPrefs.getBoolean("persist_chat_history", true)) {
-            val db = ChatDatabaseHelper.getInstance(appContext)
             for (peerName in persistedChats) {
                 refreshLastMessageFromHistory(appContext, db, peerName)
             }

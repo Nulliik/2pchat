@@ -17,13 +17,26 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 internal class ChatsViewModel(
+    context: Context,
     private val sharedPrefs: SharedPreferences,
 ) : ViewModel() {
+    private val appContext = context.applicationContext
     val activeChatsSet = mutableStateOf(
-        sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty().toSet(),
+        run {
+            val dbChats = try {
+                com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getAllChatPeerNames()
+            } catch (_: Exception) {
+                emptySet()
+            }
+            val prefChats = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
+            (prefChats + dbChats).filter { it.isNotBlank() && it != "null" }.toSet()
+        }
     )
     val chatListRevision = mutableIntStateOf(0)
-    val profilePhotoUri = mutableStateOf(sharedPrefs.getString("profile_photo_uri", null))
+    val profilePhotoUri = mutableStateOf(
+        sharedPrefs.getString("profile_photo_uri", null)
+            ?: appContext.filesDir.resolve("profile_avatar.jpg").takeIf { it.exists() }?.absolutePath
+    )
     val currentUsername = mutableStateOf(
         sharedPrefs.getString("username_profile", "Anonymous") ?: "Anonymous",
     )
@@ -36,7 +49,13 @@ internal class ChatsViewModel(
     private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         when {
             key == "active_chats" -> {
-                activeChatsSet.value = prefs.getStringSet("active_chats", emptySet()).orEmpty().toSet()
+                val dbChats = try {
+                    com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getAllChatPeerNames()
+                } catch (_: Exception) {
+                    emptySet()
+                }
+                val prefChats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
+                activeChatsSet.value = (prefChats + dbChats).filter { it.isNotBlank() && it != "null" }.toSet()
                 chatListRevision.intValue++
             }
             key?.startsWith("last_msg_") == true ||
@@ -44,7 +63,10 @@ internal class ChatsViewModel(
                 key?.startsWith("transport_") == true ||
                 key?.startsWith("last_endpoint_") == true ||
                 key?.startsWith("unread_count_") == true -> chatListRevision.intValue++
-            key == "profile_photo_uri" -> profilePhotoUri.value = prefs.getString(key, null)
+            key == "profile_photo_uri" -> {
+                profilePhotoUri.value = prefs.getString(key, null)
+                    ?: appContext.filesDir.resolve("profile_avatar.jpg").takeIf { it.exists() }?.absolutePath
+            }
             key == "username_profile" -> {
                 currentUsername.value = prefs.getString(key, "Anonymous") ?: "Anonymous"
             }
@@ -99,12 +121,13 @@ internal class ChatsViewModel(
 
     companion object {
         fun factory(context: Context): ViewModelProvider.Factory {
-            val preferences = P2PPreferences.prefs(context.applicationContext)
+            val appContext = context.applicationContext
+            val preferences = P2PPreferences.prefs(appContext)
             return object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     require(modelClass.isAssignableFrom(ChatsViewModel::class.java))
-                    return ChatsViewModel(preferences) as T
+                    return ChatsViewModel(appContext, preferences) as T
                 }
             }
         }

@@ -1173,6 +1173,32 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         return result
     }
 
+    fun getAllChatPeerNames(): Set<String> {
+        val db = this.safeReadableDatabase
+        val result = mutableSetOf<String>()
+        try {
+            db.rawQuery("SELECT DISTINCT $KEY_PEER_NAME FROM $TABLE_MESSAGES WHERE $KEY_PEER_NAME IS NOT NULL AND $KEY_PEER_NAME != ''", null)?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(0)?.trim()
+                    if (!name.isNullOrBlank()) {
+                        result.add(name)
+                    }
+                }
+            }
+            db.rawQuery("SELECT DISTINCT $KEY_PEER_NAME FROM $TABLE_PEERS WHERE $KEY_PEER_NAME IS NOT NULL AND $KEY_PEER_NAME != ''", null)?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(0)?.trim()
+                    if (!name.isNullOrBlank()) {
+                        result.add(name)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to query chat peer names from database", e)
+        }
+        return result
+    }
+
     private fun createPeersTable(db: SQLiteDatabase) {
         db.execSQL(
             "CREATE TABLE IF NOT EXISTS $TABLE_PEERS(" +

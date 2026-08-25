@@ -998,8 +998,11 @@ fun loadBitmapFromUri(
     uriString: String?,
     maxDimension: Int = 512,
 ): Bitmap? {
-    if (uriString.isNullOrEmpty()) return null
-    val uri = Uri.parse(uriString)
+    val defaultAvatar = java.io.File(context.filesDir, "profile_avatar.jpg")
+    val effectiveUri = uriString?.takeIf { it.isNotBlank() }
+        ?: defaultAvatar.takeIf { it.exists() }?.absolutePath
+        ?: return null
+
     val targetDimension = maxDimension.coerceAtLeast(1)
 
     fun calculateSampleSize(width: Int, height: Int): Int {
@@ -1012,6 +1015,26 @@ fun loadBitmapFromUri(
         return sample
     }
 
+    // 1. Direct file path check
+    val rawPath = if (effectiveUri.startsWith("file://")) effectiveUri.removePrefix("file://") else effectiveUri
+    val directFile = java.io.File(rawPath)
+    if (directFile.exists()) {
+        val fileBitmap = runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(directFile.absolutePath, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+            BitmapFactory.decodeFile(
+                directFile.absolutePath,
+                BitmapFactory.Options().apply {
+                    inSampleSize = calculateSampleSize(bounds.outWidth, bounds.outHeight)
+                },
+            )
+        }.getOrNull()
+        if (fileBitmap != null) return fileBitmap
+    }
+
+    // 2. ContentResolver check
+    val uri = Uri.parse(effectiveUri)
     val contentBitmap = runCatching {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         context.contentResolver.openInputStream(uri)?.use {
@@ -1027,18 +1050,22 @@ fun loadBitmapFromUri(
     }.getOrNull()
     if (contentBitmap != null) return contentBitmap
 
-    return runCatching {
-        val filePath = uri.path.takeUnless { uri.scheme.isNullOrBlank() } ?: uriString
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(filePath, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
-        BitmapFactory.decodeFile(
-            filePath,
-            BitmapFactory.Options().apply {
-                inSampleSize = calculateSampleSize(bounds.outWidth, bounds.outHeight)
-            },
-        )
-    }.getOrNull()
+    // 3. Fallback to default avatar if not already tried
+    if (defaultAvatar.exists() && directFile.absolutePath != defaultAvatar.absolutePath) {
+        return runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(defaultAvatar.absolutePath, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+            BitmapFactory.decodeFile(
+                defaultAvatar.absolutePath,
+                BitmapFactory.Options().apply {
+                    inSampleSize = calculateSampleSize(bounds.outWidth, bounds.outHeight)
+                },
+            )
+        }.getOrNull()
+    }
+
+    return null
 }
 
 fun saveImageToInternalStorage(context: android.content.Context, uri: Uri): String? {
