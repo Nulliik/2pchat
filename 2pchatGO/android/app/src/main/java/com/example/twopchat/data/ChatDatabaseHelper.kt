@@ -1177,18 +1177,18 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val db = this.safeReadableDatabase
         val result = mutableSetOf<String>()
         try {
-            db.rawQuery("SELECT DISTINCT $KEY_PEER_NAME FROM $TABLE_MESSAGES WHERE $KEY_PEER_NAME IS NOT NULL AND $KEY_PEER_NAME != ''", null)?.use { cursor ->
+            db.rawQuery("SELECT DISTINCT $KEY_PEER_NAME FROM $TABLE_MESSAGES WHERE $KEY_PEER_NAME IS NOT NULL AND $KEY_PEER_NAME != '' AND $KEY_PEER_NAME != 'Saved Messages'", null)?.use { cursor ->
                 while (cursor.moveToNext()) {
                     val name = cursor.getString(0)?.trim()
-                    if (!name.isNullOrBlank()) {
+                    if (!name.isNullOrBlank() && name != "Saved Messages") {
                         result.add(name)
                     }
                 }
             }
-            db.rawQuery("SELECT DISTINCT $KEY_PEER_NAME FROM $TABLE_PEERS WHERE $KEY_PEER_NAME IS NOT NULL AND $KEY_PEER_NAME != ''", null)?.use { cursor ->
+            db.rawQuery("SELECT DISTINCT $KEY_PEER_NAME FROM $TABLE_PEERS WHERE $KEY_PEER_NAME IS NOT NULL AND $KEY_PEER_NAME != '' AND $KEY_PEER_NAME != 'Saved Messages'", null)?.use { cursor ->
                 while (cursor.moveToNext()) {
                     val name = cursor.getString(0)?.trim()
-                    if (!name.isNullOrBlank()) {
+                    if (!name.isNullOrBlank() && name != "Saved Messages") {
                         result.add(name)
                     }
                 }

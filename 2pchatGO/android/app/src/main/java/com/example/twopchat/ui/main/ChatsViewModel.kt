@@ -29,7 +29,7 @@ internal class ChatsViewModel(
                 emptySet()
             }
             val prefChats = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
-            (prefChats + dbChats).filter { it.isNotBlank() && it != "null" }.toSet()
+            (prefChats + dbChats).filter { it.isNotBlank() && it != "null" && it != "Saved Messages" }.toSet()
         }
     )
     val chatListRevision = mutableIntStateOf(0)
@@ -55,7 +55,7 @@ internal class ChatsViewModel(
                     emptySet()
                 }
                 val prefChats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
-                activeChatsSet.value = (prefChats + dbChats).filter { it.isNotBlank() && it != "null" }.toSet()
+                activeChatsSet.value = (prefChats + dbChats).filter { it.isNotBlank() && it != "null" && it != "Saved Messages" }.toSet()
                 chatListRevision.intValue++
             }
             key?.startsWith("last_msg_") == true ||

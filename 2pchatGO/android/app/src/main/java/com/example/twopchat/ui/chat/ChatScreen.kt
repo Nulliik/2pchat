@@ -669,9 +669,11 @@ fun ChatScreen(
         if (persistEnabled || initialStatus == "PENDING") {
             persistDatabase { db.saveMessage(peerName, outMsg) }
         }
-        val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-        if (!activeSet.contains(peerName)) {
-            sharedPrefs.edit { putStringSet("active_chats", activeSet.toMutableSet().apply { add(peerName) }) }
+        if (peerName != "Saved Messages") {
+            val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+            if (!activeSet.contains(peerName)) {
+                sharedPrefs.edit { putStringSet("active_chats", activeSet.toMutableSet().apply { add(peerName) }) }
+            }
         }
         sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt("You: Voice message")) }
 
@@ -1042,10 +1044,12 @@ fun ChatScreen(
             if (persistEnabled || initialStatus == "PENDING") {
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
-            val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-            if (peerName !in activeSet) {
-                sharedPrefs.edit {
-                    putStringSet("active_chats", activeSet.toMutableSet().apply { add(peerName) })
+            if (peerName != "Saved Messages") {
+                val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+                if (peerName !in activeSet) {
+                    sharedPrefs.edit {
+                        putStringSet("active_chats", activeSet.toMutableSet().apply { add(peerName) })
+                    }
                 }
             }
 
@@ -1124,10 +1128,12 @@ fun ChatScreen(
             if (persistEnabled || initialStatus == "PENDING") {
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
-            val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
-            if (peerName !in activeSet) {
-                sharedPrefs.edit {
-                    putStringSet("active_chats", activeSet + peerName)
+            if (peerName != "Saved Messages") {
+                val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
+                if (peerName !in activeSet) {
+                    sharedPrefs.edit {
+                        putStringSet("active_chats", activeSet + peerName)
+                    }
                 }
             }
             sharedPrefs.edit {
@@ -2335,11 +2341,13 @@ fun ChatScreen(
                                     }
 
                                     // Persist in shared preferences last message list
-                                    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-                                    if (!activeSet.contains(peerName)) {
-                                        val newSet = activeSet.toMutableSet()
-                                        newSet.add(peerName)
-                                        sharedPrefs.edit { putStringSet("active_chats", newSet) }
+                                    if (peerName != "Saved Messages") {
+                                        val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+                                        if (!activeSet.contains(peerName)) {
+                                            val newSet = activeSet.toMutableSet()
+                                            newSet.add(peerName)
+                                            sharedPrefs.edit { putStringSet("active_chats", newSet) }
+                                        }
                                     }
                                     sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt("You: $userText")) }
 

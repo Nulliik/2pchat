@@ -951,7 +951,7 @@ object P2PMessageRelay {
         val db = ChatDatabaseHelper.getInstance(appContext)
         val dbChats = try { db.getAllChatPeerNames() } catch (_: Exception) { emptySet() }
         val prefChats = persistedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
-        val combinedChats = (prefChats + dbChats).filter { it.isNotBlank() && it != "null" }.toSet()
+        val combinedChats = (prefChats + dbChats).filter { it.isNotBlank() && it != "null" && it != "Saved Messages" }.toSet()
         if (combinedChats != prefChats) {
             persistedPrefs.edit().putStringSet("active_chats", combinedChats).apply()
         }

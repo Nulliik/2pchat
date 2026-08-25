@@ -128,7 +128,14 @@ fun ChatsTab(
     // Read relay SnapshotState maps during composition so route changes are
     // visible immediately even when SharedPreferences hasn't changed.
     val peerNames = remember(activeChatsSet, chatListRevision) {
-        activeChatsSet.filter { !com.example.twopchat.relay.P2PMessageRelay.isPlaceholderPeerName(it) && it != "null" && it.isNotBlank() }.toList()
+        activeChatsSet.filter {
+            it != "Saved Messages" &&
+            !it.equals(Localizations.getString("saved_messages_title", "Русский"), ignoreCase = true) &&
+            !it.equals(Localizations.getString("saved_messages_title", "English"), ignoreCase = true) &&
+            !com.example.twopchat.relay.P2PMessageRelay.isPlaceholderPeerName(it) &&
+            it != "null" &&
+            it.isNotBlank()
+        }.toList()
     }
     val peers = remember(peerNames, chatListRevision, appLanguage) {
         peerNames.map { name ->
