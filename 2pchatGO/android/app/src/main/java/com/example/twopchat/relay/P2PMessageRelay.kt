@@ -1413,16 +1413,9 @@ object P2PMessageRelay {
                                                 } catch (_: Exception) {}
                                             }
 
-                                            P2PPreferences.prefs(appContext).edit().apply {
-                                                putString("direct_wallpaper_$resolvedSender", destFile.absolutePath)
-                                                putInt("direct_wallpaper_dimming_$resolvedSender", dimming)
-                                                putBoolean("direct_wallpaper_blur_$resolvedSender", isBlur)
-                                                if (resolvedSender != sender) {
-                                                    putString("direct_wallpaper_$sender", destFile.absolutePath)
-                                                    putInt("direct_wallpaper_dimming_$sender", dimming)
-                                                    putBoolean("direct_wallpaper_blur_$sender", isBlur)
-                                                }
-                                                apply()
+                                            P2PPreferences.setDirectWallpaper(appContext, resolvedSender, destFile.absolutePath, dimming, isBlur)
+                                            if (resolvedSender != sender) {
+                                                P2PPreferences.setDirectWallpaper(appContext, sender, destFile.absolutePath, dimming, isBlur)
                                             }
 
                                             val defaultLang = if (Locale.getDefault().language == "ru") "Русский" else "English"
@@ -1454,16 +1447,9 @@ object P2PMessageRelay {
                                                 val altFile = File(dir, "wallpaper_$sender.jpg")
                                                 if (altFile.exists()) altFile.delete()
                                             }
-                                            P2PPreferences.prefs(appContext).edit().apply {
-                                                remove("direct_wallpaper_$resolvedSender")
-                                                remove("direct_wallpaper_dimming_$resolvedSender")
-                                                remove("direct_wallpaper_blur_$resolvedSender")
-                                                if (resolvedSender != sender) {
-                                                    remove("direct_wallpaper_$sender")
-                                                    remove("direct_wallpaper_dimming_$sender")
-                                                    remove("direct_wallpaper_blur_$sender")
-                                                }
-                                                apply()
+                                            P2PPreferences.setDirectWallpaper(appContext, resolvedSender, null, 0, false)
+                                            if (resolvedSender != sender) {
+                                                P2PPreferences.setDirectWallpaper(appContext, sender, null, 0, false)
                                             }
 
                                             val defaultLang = if (Locale.getDefault().language == "ru") "Русский" else "English"

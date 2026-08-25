@@ -492,6 +492,83 @@ object P2PPreferences {
     fun pinnedBy(peerName: String) = "pinned_by_$peerName"
     fun pinnedStateVersion(peerName: String) = "pinned_state_version_$peerName"
     fun pinnedStateActor(peerName: String) = "pinned_state_actor_$peerName"
+    fun directWallpaperPath(peerName: String) = "direct_wallpaper_$peerName"
+    fun directWallpaperDimming(peerName: String) = "direct_wallpaper_dimming_$peerName"
+    fun directWallpaperBlur(peerName: String) = "direct_wallpaper_blur_$peerName"
+
+    fun getDirectWallpaperPath(context: Context, peerName: String): String? {
+        val clean = peerName.trim()
+        if (clean.isBlank()) return null
+        val sp = prefs(context)
+        val pathByName = sp.getString(directWallpaperPath(clean), null)?.takeIf { it.isNotBlank() }
+        if (pathByName != null && java.io.File(pathByName).exists()) return pathByName
+        val directFileByName = java.io.File(context.filesDir, "direct_wallpapers/wallpaper_$clean.jpg").takeIf { it.exists() }?.absolutePath
+        if (directFileByName != null) return directFileByName
+
+        val fp = getPeerFingerprint(context, clean)
+        if (!fp.isNullOrBlank() && fp != clean) {
+            val pathByFp = sp.getString(directWallpaperPath(fp), null)?.takeIf { it.isNotBlank() }
+            if (pathByFp != null && java.io.File(pathByFp).exists()) return pathByFp
+            val directFileByFp = java.io.File(context.filesDir, "direct_wallpapers/wallpaper_$fp.jpg").takeIf { it.exists() }?.absolutePath
+            if (directFileByFp != null) return directFileByFp
+        }
+        return pathByName ?: directFileByName
+    }
+
+    fun getDirectWallpaperDimming(context: Context, peerName: String): Int {
+        val clean = peerName.trim()
+        if (clean.isBlank()) return 30
+        val sp = prefs(context)
+        val dimByName = sp.getInt(directWallpaperDimming(clean), -1)
+        if (dimByName != -1) return dimByName
+        val fp = getPeerFingerprint(context, clean)
+        if (!fp.isNullOrBlank() && fp != clean) {
+            val dimByFp = sp.getInt(directWallpaperDimming(fp), -1)
+            if (dimByFp != -1) return dimByFp
+        }
+        return 30
+    }
+
+    fun getDirectWallpaperBlur(context: Context, peerName: String): Boolean {
+        val clean = peerName.trim()
+        if (clean.isBlank()) return false
+        val sp = prefs(context)
+        if (sp.contains(directWallpaperBlur(clean))) {
+            return sp.getBoolean(directWallpaperBlur(clean), false)
+        }
+        val fp = getPeerFingerprint(context, clean)
+        if (!fp.isNullOrBlank() && fp != clean && sp.contains(directWallpaperBlur(fp))) {
+            return sp.getBoolean(directWallpaperBlur(fp), false)
+        }
+        return false
+    }
+
+    fun setDirectWallpaper(context: Context, peerName: String, path: String?, dimming: Int, blur: Boolean) {
+        val clean = peerName.trim()
+        if (clean.isBlank()) return
+        val editor = prefs(context).edit()
+        val fp = getPeerFingerprint(context, clean)
+        if (path != null) {
+            editor.putString(directWallpaperPath(clean), path)
+            editor.putInt(directWallpaperDimming(clean), dimming)
+            editor.putBoolean(directWallpaperBlur(clean), blur)
+            if (!fp.isNullOrBlank() && fp != clean) {
+                editor.putString(directWallpaperPath(fp), path)
+                editor.putInt(directWallpaperDimming(fp), dimming)
+                editor.putBoolean(directWallpaperBlur(fp), blur)
+            }
+        } else {
+            editor.remove(directWallpaperPath(clean))
+            editor.remove(directWallpaperDimming(clean))
+            editor.remove(directWallpaperBlur(clean))
+            if (!fp.isNullOrBlank() && fp != clean) {
+                editor.remove(directWallpaperPath(fp))
+                editor.remove(directWallpaperDimming(fp))
+                editor.remove(directWallpaperBlur(fp))
+            }
+        }
+        editor.apply()
+    }
 
     fun getPeerFingerprint(context: Context, peerName: String): String? {
         val clean = peerName.trim()

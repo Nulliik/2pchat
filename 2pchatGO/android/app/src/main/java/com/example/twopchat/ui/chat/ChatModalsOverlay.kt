@@ -278,27 +278,31 @@ internal fun ChatModalsOverlay(
                 onDismissWallpaperModal()
                 val dir = File(context.filesDir, "direct_wallpapers").also { it.mkdirs() }
                 val targetFile = File(dir, "wallpaper_$peerName.jpg")
+                val fp = com.example.twopchat.config.P2PPreferences.getPeerFingerprint(context, peerName)
                 if (bitmap != null) {
                     try {
                         FileOutputStream(targetFile).use { out ->
                             bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
                         }
-                        sharedPrefs.edit {
-                            putString("direct_wallpaper_$peerName", targetFile.absolutePath)
-                            putInt("direct_wallpaper_dimming_$peerName", dimming)
-                            putBoolean("direct_wallpaper_blur_$peerName", isBlur)
+                        if (!fp.isNullOrBlank() && fp != peerName) {
+                            try {
+                                val fpFile = File(dir, "wallpaper_$fp.jpg")
+                                FileOutputStream(fpFile).use { out ->
+                                    bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                                }
+                            } catch (_: Exception) {}
                         }
+                        com.example.twopchat.config.P2PPreferences.setDirectWallpaper(context, peerName, targetFile.absolutePath, dimming, isBlur)
                         onWallpaperUpdated(targetFile.absolutePath, dimming, isBlur)
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
                 } else {
                     targetFile.delete()
-                    sharedPrefs.edit {
-                        remove("direct_wallpaper_$peerName")
-                        remove("direct_wallpaper_dimming_$peerName")
-                        remove("direct_wallpaper_blur_$peerName")
+                    if (!fp.isNullOrBlank() && fp != peerName) {
+                        File(dir, "wallpaper_$fp.jpg").delete()
                     }
+                    com.example.twopchat.config.P2PPreferences.setDirectWallpaper(context, peerName, null, 0, false)
                     onWallpaperUpdated(null, 0, false)
                 }
 

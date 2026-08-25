@@ -410,34 +410,22 @@ fun ChatScreen(
         }
     }
 
-    var wallpaperPath by remember(peerName, peerFp, prefsWallpaperVersion) {
-        val pathByName = sharedPrefs.getString("direct_wallpaper_$peerName", null)
-        val pathByFp = if (peerFp.isNotBlank()) sharedPrefs.getString("direct_wallpaper_$peerFp", null) else null
-        val directFileByName = File(context.filesDir, "direct_wallpapers/wallpaper_$peerName.jpg").takeIf { it.exists() }?.absolutePath
-        val directFileByFp = if (peerFp.isNotBlank()) File(context.filesDir, "direct_wallpapers/wallpaper_$peerFp.jpg").takeIf { it.exists() }?.absolutePath else null
-        mutableStateOf(pathByName ?: pathByFp ?: directFileByName ?: directFileByFp)
+    var wallpaperPath by remember(peerName, prefsWallpaperVersion) {
+        mutableStateOf(com.example.twopchat.config.P2PPreferences.getDirectWallpaperPath(context, peerName))
     }
-    var wallpaperDimming by remember(peerName, peerFp, prefsWallpaperVersion) {
-        val dimByName = sharedPrefs.getInt("direct_wallpaper_dimming_$peerName", -1)
-        val dimByFp = if (peerFp.isNotBlank()) sharedPrefs.getInt("direct_wallpaper_dimming_$peerFp", -1) else -1
-        val dim = if (dimByName != -1) dimByName else if (dimByFp != -1) dimByFp else 30
-        mutableIntStateOf(dim)
+    var wallpaperDimming by remember(peerName, prefsWallpaperVersion) {
+        mutableIntStateOf(com.example.twopchat.config.P2PPreferences.getDirectWallpaperDimming(context, peerName))
     }
-    var wallpaperBlur by remember(peerName, peerFp, prefsWallpaperVersion) {
-        val blurByName = if (sharedPrefs.contains("direct_wallpaper_blur_$peerName")) sharedPrefs.getBoolean("direct_wallpaper_blur_$peerName", false) else null
-        val blurByFp = if (peerFp.isNotBlank() && sharedPrefs.contains("direct_wallpaper_blur_$peerFp")) sharedPrefs.getBoolean("direct_wallpaper_blur_$peerFp", false) else null
-        val blur = blurByName ?: blurByFp ?: false
-        mutableStateOf(blur)
+    var wallpaperBlur by remember(peerName, prefsWallpaperVersion) {
+        mutableStateOf(com.example.twopchat.config.P2PPreferences.getDirectWallpaperBlur(context, peerName))
     }
     var wallpaperBitmap by remember(wallpaperPath) {
         mutableStateOf<Bitmap?>(null)
     }
 
-    LaunchedEffect(wallpaperPath, peerName, peerFp, prefsWallpaperVersion) {
+    LaunchedEffect(wallpaperPath, peerName, prefsWallpaperVersion) {
         wallpaperBitmap = withContext(Dispatchers.IO) {
-            val resolvedPath = wallpaperPath
-                ?: File(context.filesDir, "direct_wallpapers/wallpaper_$peerName.jpg").takeIf { it.exists() }?.absolutePath
-                ?: if (peerFp.isNotBlank()) File(context.filesDir, "direct_wallpapers/wallpaper_$peerFp.jpg").takeIf { it.exists() }?.absolutePath else null
+            val resolvedPath = wallpaperPath ?: com.example.twopchat.config.P2PPreferences.getDirectWallpaperPath(context, peerName)
             resolvedPath?.let { path ->
                 try {
                     BitmapFactory.decodeFile(path)
