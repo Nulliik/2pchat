@@ -511,7 +511,7 @@ class NativeBridgeImpl : IP2PBridge {
         }
         val isOnline = NativeBridge.isPeerOnline(peerName)
         onlinePeers[peerName] = isOnline
-        return isOnline || (onlinePeers[peerName] == true)
+        return isOnline
     }
 
     override fun shutdownAllSessions(): Boolean {

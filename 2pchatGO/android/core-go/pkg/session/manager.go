@@ -650,15 +650,6 @@ func (m *Manager) resolveSessionLocked(peerFP string) (*Session, bool) {
 		}
 	}
 
-	// 5. 1-on-1 fallback: If there is exactly one active session, route all messages to it (parity with Python discovery_bridge.py)
-	if len(m.sessions) == 1 {
-		for _, sess := range m.sessions {
-			if sess.IsOnline() {
-				return sess, true
-			}
-		}
-	}
-
 	return nil, false
 }
 

@@ -210,10 +210,16 @@ func (m *FileTransferManager) SendFileStreamWithResume(
 	lastReportBytes := transferredBytes
 
 	for {
+		if transferCtx.Err() != nil {
+			return errors.New("file transfer cancelled by user")
+		}
 		select {
 		case <-transferCtx.Done():
 			return errors.New("file transfer cancelled by user")
 		case chunk, ok := <-chunkChan:
+			if transferCtx.Err() != nil {
+				return errors.New("file transfer cancelled by user")
+			}
 			if !ok {
 				// All chunks sent successfully
 				if m.onProgress != nil {

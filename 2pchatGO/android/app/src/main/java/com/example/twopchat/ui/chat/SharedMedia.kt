@@ -501,19 +501,40 @@ fun SharedMediaScreen(
                             }
                         )
 
-                        val peerAboutMe = remember(currentPeerName) {
+                        val peerAboutMe = remember(currentPeerName, fingerprint) {
                             val sp = com.example.twopchat.config.P2PPreferences.prefs(context)
-                            sp.getString("peer_about_me_$currentPeerName", "") ?: ""
+                            val byName = sp.getString("peer_about_me_$currentPeerName", null)?.trim()
+                            val byFp = if (fingerprint.isNotBlank()) sp.getString("peer_about_me_$fingerprint", null)?.trim() else null
+                            val localProfile = if (currentPeerName == "Saved Messages" || currentPeerName == sp.getString("username_profile", "")) {
+                                sp.getString("about_me_profile", null)?.trim()
+                            } else null
+                            byName?.takeIf { it.isNotEmpty() }
+                                ?: byFp?.takeIf { it.isNotEmpty() }
+                                ?: localProfile?.takeIf { it.isNotEmpty() }
+                                ?: ""
                         }
-                        if (peerAboutMe.isNotEmpty()) {
-                            HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
-                            InfoDetailRow(
-                                label = Localizations.tr(appLanguage, "О себе", "About me", "Über mich", "Sobre mí", "À propos", "Sobre mim"),
-                                value = peerAboutMe,
-                                onSurfaceColor = onSurfaceColor,
-                                onSurfaceVariant = onSurfaceVariant
-                            )
-                        }
+
+                        HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
+                        InfoDetailRow(
+                            label = Localizations.tr(appLanguage, "О себе", "About me", "Über mich", "Sobre mí", "À propos", "Sobre mim"),
+                            value = if (peerAboutMe.isNotEmpty()) {
+                                peerAboutMe
+                            } else {
+                                Localizations.tr(appLanguage, "Не указано", "Not specified", "Nicht angegeben", "No especificado", "Non spécifié", "Não especificado")
+                            },
+                            onSurfaceColor = if (peerAboutMe.isNotEmpty()) onSurfaceColor else onSurfaceVariant.copy(alpha = 0.55f),
+                            onSurfaceVariant = onSurfaceVariant,
+                            onClick = if (peerAboutMe.isNotEmpty()) {
+                                {
+                                    copyTextToClipboard(context, "About me", peerAboutMe)
+                                    Toast.makeText(
+                                        context,
+                                        if (appLanguage == "Русский") "Текст скопирован" else "Copied",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            } else null
+                        )
 
                         if (currentPeerName != "Saved Messages") {
                             HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
