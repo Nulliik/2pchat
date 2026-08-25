@@ -26,8 +26,11 @@ class NotificationActionReceiver : BroadcastReceiver() {
     companion object {
         const val ACTION_REPLY = "com.example.twopchat.ACTION_NOTIFICATION_REPLY"
         const val ACTION_MARK_READ = "com.example.twopchat.ACTION_NOTIFICATION_MARK_READ"
+        const val ACTION_GROUP_REPLY = "com.example.twopchat.ACTION_GROUP_NOTIFICATION_REPLY"
+        const val ACTION_GROUP_MARK_READ = "com.example.twopchat.ACTION_GROUP_NOTIFICATION_MARK_READ"
         const val KEY_TEXT_REPLY = "key_text_reply"
         const val EXTRA_SENDER = "extra_sender"
+        const val EXTRA_GROUP_ID = "extra_group_id"
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
         const val EXTRA_MESSAGE_IDS = "extra_message_ids"
         private const val TAG = "NotificationAction"
@@ -47,11 +50,45 @@ class NotificationActionReceiver : BroadcastReceiver() {
             return
         }
         val action = intent.action ?: return
-        val sender = intent.getStringExtra(EXTRA_SENDER) ?: return
         val notifId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0)
-        val messageIds = intent.getStringArrayListExtra(EXTRA_MESSAGE_IDS).orEmpty()
         val pendingResult = goAsync()
         val appContext = context.applicationContext
+
+        val groupId = intent.getStringExtra(EXTRA_GROUP_ID)
+        if (!groupId.isNullOrBlank()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    ensureRelayRunning(appContext)
+                    when (action) {
+                        ACTION_GROUP_REPLY -> {
+                            val results = RemoteInput.getResultsFromIntent(intent)
+                            val replyText = results?.getCharSequence(KEY_TEXT_REPLY)?.toString()?.trim()
+                            if (!replyText.isNullOrBlank()) {
+                                com.example.twopchat.group.runtime.GroupChatCoordinator.sendMessage(groupId, replyText)
+                                com.example.twopchat.group.runtime.GroupChatCoordinator.markRead(groupId)
+                                cancelNotification(appContext, notifId)
+                            }
+                        }
+                        ACTION_GROUP_MARK_READ -> {
+                            com.example.twopchat.group.runtime.GroupChatCoordinator.markRead(groupId)
+                            cancelNotification(appContext, notifId)
+                        }
+                    }
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    Log.e(TAG, "Group notification action failed for $groupId", error)
+                } finally {
+                    pendingResult.finish()
+                }
+            }
+            return
+        }
+
+        val sender = intent.getStringExtra(EXTRA_SENDER) ?: run {
+            pendingResult.finish()
+            return
+        }
+        val messageIds = intent.getStringArrayListExtra(EXTRA_MESSAGE_IDS).orEmpty()
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -83,6 +120,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     }
                 }
             } catch (error: Exception) {
+                if (error is kotlinx.coroutines.CancellationException) throw error
                 Log.e(TAG, "Notification action failed for $sender", error)
             } finally {
                 pendingResult.finish()

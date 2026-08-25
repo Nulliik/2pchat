@@ -278,7 +278,17 @@ class MainActivity : ComponentActivity() {
             }
 
             var isDarkTheme by remember { mutableStateOf(sharedPrefs.getString("theme_mode", "dark") == "dark") }
-            LaunchedEffect(isDarkTheme) {
+            var accentScheme by remember {
+                val saved = sharedPrefs.getString("accent_scheme", null)
+                val legacyCerulean = sharedPrefs.getBoolean("use_cerulean", false)
+                mutableStateOf(saved ?: if (legacyCerulean) "cerulean" else "mint")
+            }
+            var useCerulean by remember(accentScheme) { mutableStateOf(accentScheme == "cerulean") }
+            var useAmoled by remember { mutableStateOf(sharedPrefs.getBoolean("use_amoled", false)) }
+            val systemDefaultLanguage = if (java.util.Locale.getDefault().language == "ru") "Русский" else "English"
+            var appLanguage by remember { mutableStateOf(sharedPrefs.getString("settings_language", systemDefaultLanguage) ?: systemDefaultLanguage) }
+
+            LaunchedEffect(isDarkTheme, useAmoled) {
                 enableEdgeToEdge(
                     statusBarStyle = if (isDarkTheme) {
                         androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -298,15 +308,6 @@ class MainActivity : ComponentActivity() {
                     }
                 )
             }
-            var accentScheme by remember {
-                val saved = sharedPrefs.getString("accent_scheme", null)
-                val legacyCerulean = sharedPrefs.getBoolean("use_cerulean", false)
-                mutableStateOf(saved ?: if (legacyCerulean) "cerulean" else "mint")
-            }
-            var useCerulean by remember(accentScheme) { mutableStateOf(accentScheme == "cerulean") }
-            var useAmoled by remember { mutableStateOf(sharedPrefs.getBoolean("use_amoled", false)) }
-            val systemDefaultLanguage = if (java.util.Locale.getDefault().language == "ru") "Русский" else "English"
-            var appLanguage by remember { mutableStateOf(sharedPrefs.getString("settings_language", systemDefaultLanguage) ?: systemDefaultLanguage) }
             
             var isAppLocked by isAppLockedState
             var isStealthDisguiseLocked by isStealthDisguiseLockedState
@@ -348,8 +349,25 @@ class MainActivity : ComponentActivity() {
 
             DisposableEffect(sharedPrefs) {
                 val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-                    if (key == P2PPreferences.INCOGNITO_KEYBOARD || key == null) {
-                        incognitoKeyboardEnabled = P2PPreferences.isIncognitoKeyboardEnabled(this@MainActivity)
+                    when (key) {
+                        P2PPreferences.INCOGNITO_KEYBOARD, null -> {
+                            incognitoKeyboardEnabled = P2PPreferences.isIncognitoKeyboardEnabled(this@MainActivity)
+                        }
+                        "theme_mode" -> {
+                            isDarkTheme = sharedPrefs.getString("theme_mode", "dark") == "dark"
+                        }
+                        "accent_scheme", "use_cerulean" -> {
+                            val saved = sharedPrefs.getString("accent_scheme", null)
+                            val legacyCerulean = sharedPrefs.getBoolean("use_cerulean", false)
+                            accentScheme = saved ?: if (legacyCerulean) "cerulean" else "mint"
+                            useCerulean = accentScheme == "cerulean"
+                        }
+                        "use_amoled" -> {
+                            useAmoled = sharedPrefs.getBoolean("use_amoled", false)
+                        }
+                        "settings_language" -> {
+                            appLanguage = sharedPrefs.getString("settings_language", systemDefaultLanguage) ?: systemDefaultLanguage
+                        }
                     }
                 }
                 sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
@@ -381,7 +399,8 @@ class MainActivity : ComponentActivity() {
                     AnimatedContent(
                         targetState = currentScreen,
                         transitionSpec = {
-                            fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+                            fadeIn(animationSpec = tween(com.example.twopchat.theme.MotionTokens.DurationNormalMs, easing = com.example.twopchat.theme.MotionTokens.EmphasizedEasing)) togetherWith
+                                fadeOut(animationSpec = tween(com.example.twopchat.theme.MotionTokens.DurationNormalMs, easing = com.example.twopchat.theme.MotionTokens.EmphasizedEasing))
                         },
                         label = "screen_transition",
                         modifier = Modifier.fillMaxSize()

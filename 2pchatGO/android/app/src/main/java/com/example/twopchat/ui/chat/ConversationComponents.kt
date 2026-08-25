@@ -1,10 +1,17 @@
 package com.example.twopchat.ui.chat
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import com.example.twopchat.theme.MotionTokens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -119,8 +126,8 @@ fun ConversationMessagePreviewBar(
 ) {
     AnimatedVisibility(
         visible = visible,
-        enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+        enter = expandVertically(expandFrom = Alignment.Bottom, animationSpec = MotionTokens.ResponsiveIntSizeSpring) + fadeIn(animationSpec = MotionTokens.FastTween),
+        exit = shrinkVertically(shrinkTowards = Alignment.Bottom, animationSpec = MotionTokens.FastIntSizeTween) + fadeOut(animationSpec = MotionTokens.FastTween),
         modifier = modifier,
     ) {
         Row(
@@ -342,19 +349,27 @@ fun ConversationComposerRow(
             if (actionLoading) {
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
             } else {
-                Icon(
-                    painterResource(
-                        when {
-                            isRecordingVoice -> R.drawable.ic_voice_stop
-                            isEditing -> R.drawable.ic_check
-                            inputText.isBlank() -> R.drawable.ic_voice_mic
-                            else -> R.drawable.ic_send_airplane
-                        },
-                    ),
-                    contentDescription = "Send message",
-                    tint = if (primaryColor == MintGreen) StealthBlack else Color.White,
-                    modifier = Modifier.size(17.dp),
-                )
+                val actionIconRes = when {
+                    isRecordingVoice -> R.drawable.ic_voice_stop
+                    isEditing -> R.drawable.ic_check
+                    inputText.isBlank() -> R.drawable.ic_voice_mic
+                    else -> R.drawable.ic_send_airplane
+                }
+                AnimatedContent(
+                    targetState = actionIconRes,
+                    transitionSpec = {
+                        (scaleIn(initialScale = 0.75f, animationSpec = MotionTokens.ResponsiveSpring) + fadeIn(animationSpec = MotionTokens.FastTween))
+                            .togetherWith(scaleOut(targetScale = 0.75f, animationSpec = MotionTokens.FastTween) + fadeOut(animationSpec = MotionTokens.FastTween))
+                    },
+                    label = "composer_action_icon"
+                ) { iconRes ->
+                    Icon(
+                        painterResource(iconRes),
+                        contentDescription = "Send message",
+                        tint = if (primaryColor == MintGreen) StealthBlack else Color.White,
+                        modifier = Modifier.size(17.dp),
+                    )
+                }
             }
         }
     }

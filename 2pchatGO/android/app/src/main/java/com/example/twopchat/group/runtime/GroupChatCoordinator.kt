@@ -281,6 +281,14 @@ object GroupChatCoordinator {
         }
     }
 
+    fun markRead(groupId: String) {
+        scope.launch {
+            markReadAndSendReceipt(groupId)
+            refreshGroup(groupId)
+            refreshAllSummariesWithoutRecursion()
+        }
+    }
+
     fun sendTyping(groupId: String, isTyping: Boolean) {
         val context = applicationContext ?: return
         scope.launch {

@@ -168,34 +168,44 @@ fun SettingsTab(
                         .verticalScroll(scrollState)
                 ) {
                     // Top Bar Header (Title + Search Action / Expandable Search Field)
-                    Row(
+                    AnimatedContent(
+                        targetState = isSearchingSettings,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = com.example.twopchat.theme.MotionTokens.FastTween) + expandVertically(expandFrom = Alignment.Top, animationSpec = com.example.twopchat.theme.MotionTokens.ResponsiveIntSizeSpring))
+                                .togetherWith(fadeOut(animationSpec = com.example.twopchat.theme.MotionTokens.FastTween) + shrinkVertically(shrinkTowards = Alignment.Top, animationSpec = com.example.twopchat.theme.MotionTokens.FastIntSizeTween))
+                        },
+                        label = "settings_search_bar_transition",
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 10.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (!isSearchingSettings) {
-                            Text(
-                                text = Localizations.tr(appLanguage, "Настройки", "Settings", "Einstellungen", "Ajustes", "Paramètres", "Configurações"),
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = onSurfaceColor,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Surface(
-                                color = primaryColor.copy(alpha = 0.12f),
-                                shape = CircleShape,
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .clickable { isSearchingSettings = true }
+                            .padding(top = 10.dp, bottom = 4.dp)
+                    ) { isSearching ->
+                        if (!isSearching) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                    Icon(
-                                        painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_search),
-                                        contentDescription = "Search settings",
-                                        tint = primaryColor,
-                                        modifier = Modifier.size(19.dp)
-                                    )
+                                Text(
+                                    text = Localizations.tr(appLanguage, "Настройки", "Settings", "Einstellungen", "Ajustes", "Paramètres", "Configurações"),
+                                    fontSize = 24.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = onSurfaceColor,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Surface(
+                                    color = primaryColor.copy(alpha = 0.12f),
+                                    shape = CircleShape,
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clickable { isSearchingSettings = true }
+                                ) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                        Icon(
+                                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_menu_search),
+                                            contentDescription = "Search settings",
+                                            tint = primaryColor,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                    }
                                 }
                             }
                         } else {

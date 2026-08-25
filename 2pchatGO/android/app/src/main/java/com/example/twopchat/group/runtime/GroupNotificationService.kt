@@ -7,11 +7,15 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.Person
+import androidx.core.app.RemoteInput
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.R
+import com.example.twopchat.service.NotificationActionReceiver
 
 internal object GroupNotificationService {
     private const val CHANNEL_ID = "p2p_group_messages"
+    private const val NOTIFICATION_GROUP_KEY = "com.example.twopchat.CHAT_NOTIFICATIONS"
 
     fun show(
         context: Context,
@@ -51,21 +55,88 @@ internal object GroupNotificationService {
         val title = if (isMentioned) "🔔 Вас упомянули в $groupTitle" else groupTitle
         val showPreview = prefs.getBoolean("settings_previews", true)
         val cleanText = formatGroupNotificationText(text)
-        val body = if (showPreview) "$authorName: $cleanText" else "Новое сообщение в группе"
-        manager.notify(
-            notificationId,
-            NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_logo_default_fg)
-                .setContentTitle(title)
-                .setContentText(body)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-                .setContentIntent(pendingIntent)
-                .setAutoCancel(true)
-                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-                .setGroup("group:$groupId")
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .build(),
+        val body = if (showPreview) cleanText else "Новое сообщение в группе"
+
+        // Direct Reply Action
+        val remoteInput = RemoteInput.Builder(NotificationActionReceiver.KEY_TEXT_REPLY)
+            .setLabel("Ответить...")
+            .build()
+        val replyIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = NotificationActionReceiver.ACTION_GROUP_REPLY
+            putExtra(NotificationActionReceiver.EXTRA_GROUP_ID, groupId)
+            putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+            `package` = context.packageName
+        }
+        val replyPendingIntent = PendingIntent.getBroadcast(
+            context,
+            notificationId + 100_000,
+            replyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
         )
+        val replyAction = NotificationCompat.Action.Builder(
+            R.drawable.ic_logo_default_fg,
+            "Ответить",
+            replyPendingIntent
+        ).addRemoteInput(remoteInput)
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+            .setShowsUserInterface(false)
+            .build()
+
+        // Mark as Read Action
+        val markReadIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = NotificationActionReceiver.ACTION_GROUP_MARK_READ
+            putExtra(NotificationActionReceiver.EXTRA_GROUP_ID, groupId)
+            putExtra(NotificationActionReceiver.EXTRA_NOTIFICATION_ID, notificationId)
+            `package` = context.packageName
+        }
+        val markReadPendingIntent = PendingIntent.getBroadcast(
+            context,
+            notificationId + 200_000,
+            markReadIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val markReadAction = NotificationCompat.Action.Builder(
+            R.drawable.ic_logo_default_fg,
+            "Прочитано",
+            markReadPendingIntent
+        ).setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+            .setShowsUserInterface(false)
+            .build()
+
+        // Rich MessagingStyle
+        val userPerson = Person.Builder()
+            .setName(myDisplayName.ifBlank { "You" })
+            .build()
+        val authorPerson = Person.Builder()
+            .setName(authorName.ifBlank { "User" })
+            .build()
+
+        val messagingStyle = NotificationCompat.MessagingStyle(userPerson)
+            .setConversationTitle(title)
+            .setGroupConversation(true)
+            .addMessage(
+                NotificationCompat.MessagingStyle.Message(
+                    body,
+                    System.currentTimeMillis(),
+                    authorPerson
+                )
+            )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_logo_default_fg)
+            .setStyle(messagingStyle)
+            .setContentTitle(title)
+            .setContentText(if (showPreview) "$authorName: $cleanText" else body)
+            .setContentIntent(pendingIntent)
+            .addAction(replyAction)
+            .addAction(markReadAction)
+            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setGroup(NOTIFICATION_GROUP_KEY)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
+        manager.notify(notificationId, notification)
     }
 
     internal fun isGroupMention(text: String, displayName: String): Boolean {
