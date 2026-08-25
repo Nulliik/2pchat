@@ -203,10 +203,7 @@ func (d *AdaptiveDialer) ClassifyEndpoint(address string) TransportType {
 		if IsYggdrasilIP(ip) {
 			return TransportYggdrasil
 		}
-		// Direct public IPv4 or direct global mobile IPv6
-		if d.proxyEnabled {
-			return TransportTor
-		}
+		// Direct public IPv4 or direct global mobile IPv6 per RULES.md §11
 		return TransportDirect
 	}
 

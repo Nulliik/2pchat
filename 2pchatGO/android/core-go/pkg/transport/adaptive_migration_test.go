@@ -20,7 +20,8 @@ func TestAdaptiveTransportClassification(t *testing.T) {
 		{"192.168.1.50:50001", TransportDirect},
 		{"127.0.0.1:50001", TransportDirect},
 		{"10.0.0.2:50001", TransportDirect},
-		{"8.8.8.8:50001", TransportTor}, // Public clearnet routed via Tor when proxyEnabled=true
+		{"8.8.8.8:50001", TransportDirect}, // Public IP uses approved Direct transport per RULES.md §11
+		{"peer.example.com:50001", TransportTor}, // Domain names route via Tor when proxyEnabled=true
 		{"[200:abcd:1234::1]:50001", TransportYggdrasil},
 		{"[0200:1111:2222::1]:50001", TransportYggdrasil},
 		{"[300:abcd::1]:50001", TransportYggdrasil},

@@ -208,13 +208,17 @@ func TestGoCoreE2EConnectivityAndDiscovery(t *testing.T) {
 	}
 	logf("[LIB2PCORE] AdaptiveDialer verified: LAN endpoint routed to Direct transport (%s)", localEp)
 
-	// When Tor proxy is enabled, public internet addresses classify as TransportTor
+	// When Tor proxy is enabled, public IP addresses use Direct transport per RULES.md §11, domain names use Tor
 	dialer.SetTorProxy(true, "127.0.0.1:9050")
 	publicEp := "93.184.216.34:50001"
-	if dialer.ClassifyEndpoint(publicEp) != transport.TransportTor {
-		t.Fatalf("Expected public IP to classify as TransportTor when proxy is enabled")
+	if dialer.ClassifyEndpoint(publicEp) != transport.TransportDirect {
+		t.Fatalf("Expected public IP to classify as TransportDirect per RULES.md §11")
 	}
-	logf("[LIB2PCORE] AdaptiveDialer verified: Public endpoint routed to Tor SOCKS5 when enabled (%s)", publicEp)
+	domainEp := "tracker.customdomain.org:50001"
+	if dialer.ClassifyEndpoint(domainEp) != transport.TransportTor {
+		t.Fatalf("Expected domain name to classify as TransportTor when proxy is enabled")
+	}
+	logf("[LIB2PCORE] AdaptiveDialer verified: Public endpoint routed to Direct and domain routed to Tor SOCKS5")
 
 	logf("[LIB2PCORE] ALL E2E CONNECTIVITY & PEER DISCOVERY TESTS PASSED!")
 }

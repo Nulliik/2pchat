@@ -34,13 +34,16 @@ func TestAdaptiveDialerClassification(t *testing.T) {
 		t.Fatal("Expected TransportDirect for IPv4 address")
 	}
 
-	// When proxy is forced enabled, public WAN hosts route to Tor, but private LAN IPs stay Direct
+	// Public IPs route to TransportDirect per RULES.md §11, domain names route to Tor
 	dialer.SetTorProxy(true, "127.0.0.1:9050")
 	if dialer.ClassifyEndpoint("192.168.1.100:50001") != TransportDirect {
 		t.Fatal("Expected TransportDirect for private LAN IP even when proxy is enabled")
 	}
-	if dialer.ClassifyEndpoint("8.8.8.8:50001") != TransportTor {
-		t.Fatal("Expected TransportTor for public WAN endpoint when proxy is enabled")
+	if dialer.ClassifyEndpoint("8.8.8.8:50001") != TransportDirect {
+		t.Fatal("Expected TransportDirect for public WAN IP per RULES.md §11")
+	}
+	if dialer.ClassifyEndpoint("tracker.example.com:50001") != TransportTor {
+		t.Fatal("Expected TransportTor for domain names when proxy is enabled")
 	}
 
 	// UDP over Tor must return error
