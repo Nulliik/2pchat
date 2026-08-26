@@ -13,6 +13,9 @@ import com.example.twopchat.config.*
 import com.example.twopchat.yggdrasil.YggStateReceiver.Companion.YGG_STATE_INTENT
 import mobile.Yggdrasil
 import org.json.JSONArray
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
@@ -39,6 +42,23 @@ class YggdrasilProxyService : Service() {
         @Volatile
         var isProxyActive: Boolean = false
             internal set
+
+        private fun yggLog(context: Context?, message: String, level: String = "INFO", error: Throwable? = null) {
+            val fullMsg = if (error != null) "$message: ${Log.getStackTraceString(error)}" else message
+            if (error != null || level == "ERROR") {
+                Log.e(TAG, fullMsg)
+            } else if (level == "WARN") {
+                Log.w(TAG, fullMsg)
+            } else {
+                Log.i(TAG, fullMsg)
+            }
+            if (context != null) {
+                try {
+                    val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS", Locale.getDefault()).format(Date())
+                    com.example.twopchat.AppLog.append(context, "$timestamp [KOTLIN_$level] $TAG: $fullMsg\n")
+                } catch (_: Exception) {}
+            }
+        }
 
         fun isProxyActive(context: Context): Boolean {
             if (isProxyActive) return true
@@ -229,28 +249,29 @@ class YggdrasilProxyService : Service() {
             address = ygg.addressString
         }
         if (address.isNullOrBlank()) {
-            Log.e(TAG, "Yggdrasil returned empty/null address after startJSON")
+            yggLog(applicationContext, "Yggdrasil returned empty/null address after startJSON", "ERROR")
             updateRuntimeState("", STATE_DISABLED)
             stop(stopService = true)
             return
         }
 
-        Log.i(TAG, "Yggdrasil address obtained: $address, starting userStack on port 9053...")
+        yggLog(applicationContext, "Yggdrasil started in PROXY mode (127.0.0.1:9053) with IPv6: $address")
         updateRuntimeState(address, STATE_ENABLED)
 
         try {
             userStack = YggdrasilUserSpaceStack(ygg, socksPort = 9053, localTargetPort = 50001).apply {
                 start()
             }
+            yggLog(applicationContext, "Yggdrasil UserSpace SOCKS5 stack listening on 127.0.0.1:9053 -> target: 50001")
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to initialize YggdrasilUserSpaceStack", e)
+            yggLog(applicationContext, "Failed to initialize YggdrasilUserSpaceStack", "ERROR", e)
         }
 
         updateThread = thread(name = "Yggdrasil-Proxy-Updater") {
             try {
                 updater()
             } catch (e: Throwable) {
-                Log.e(TAG, "Yggdrasil-Proxy-Updater thread terminated with error", e)
+                yggLog(applicationContext, "Yggdrasil-Proxy-Updater thread terminated with error", "ERROR", e)
             }
         }
 
@@ -263,6 +284,7 @@ class YggdrasilProxyService : Service() {
     }
 
     private fun stop(stopService: Boolean = true) {
+        yggLog(applicationContext, "Stopping Yggdrasil PROXY service...")
         isProxyActive = false
         userStack?.stop()
         userStack = null

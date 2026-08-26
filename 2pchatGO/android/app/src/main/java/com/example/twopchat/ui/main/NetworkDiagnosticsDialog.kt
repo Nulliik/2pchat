@@ -349,7 +349,7 @@ private fun formatLogs(
                 val matchesLevel = when (levelFilter) {
                     "ERRORS" -> (line.contains("[ERROR]", ignoreCase = true) || line.contains("[PYTHON_ERR]", ignoreCase = true) || line.contains("FAILED", ignoreCase = true) || line.contains("timed out", ignoreCase = true) || line.contains("Exception", ignoreCase = true) || line.contains("Error", ignoreCase = true)) && !line.contains("[INFO]", ignoreCase = true) && !line.contains("accepted", ignoreCase = true) && !line.contains("Announce self status", ignoreCase = true)
                     "P2P" -> line.contains("P2PMessageRelay", ignoreCase = true) || line.contains("p2p", ignoreCase = true) || line.contains("NativeBridge", ignoreCase = true) || line.contains("OutboundMessenger", ignoreCase = true)
-                    "YGG" -> line.contains("PacketTunnelProvider", ignoreCase = true) || line.contains("Yggdrasil", ignoreCase = true) || line.contains("ygg", ignoreCase = true) || line.contains("TUN", ignoreCase = true) || line.contains("200:", ignoreCase = true) || line.contains("0200:", ignoreCase = true)
+                    "YGG" -> line.contains("PacketTunnelProvider", ignoreCase = true) || line.contains("Yggdrasil", ignoreCase = true) || line.contains("ygg", ignoreCase = true) || line.contains("TUN", ignoreCase = true) || line.contains("200:", ignoreCase = true) || line.contains("0200:", ignoreCase = true) || line.contains("YggdrasilProxyService", ignoreCase = true) || line.contains("UserSpaceStack", ignoreCase = true)
                     "TRACKERS" -> line.contains("Tracker", ignoreCase = true) || line.contains("announce", ignoreCase = true) || line.contains("discovery", ignoreCase = true)
                     "TOR" -> line.contains("TorManager", ignoreCase = true) || line.contains("[PROXY]", ignoreCase = true) || line.contains("SOCKS5", ignoreCase = true) || line.contains("socks", ignoreCase = true) || line.contains("torrc", ignoreCase = true) || line.contains("Tor", ignoreCase = true)
                     else -> true
@@ -654,6 +654,8 @@ fun NetworkDiagnosticsDialog(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
+                        val yggMode = P2PPreferences.getYggdrasilMode(context)
+
                         // Expandable Network Diagnostics Summary Accordion Header
                         Card(
                             colors = CardDefaults.cardColors(containerColor = surfaceVariant.copy(alpha = 0.4f)),
@@ -669,10 +671,7 @@ fun NetworkDiagnosticsDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = if (appLanguage == "Русский") "📊 Сводка состояния сети" else "📊 Network Diagnostics Summary",
                                         fontSize = 12.sp,
@@ -680,11 +679,13 @@ fun NetworkDiagnosticsDialog(
                                         color = primaryColor
                                     )
                                     val yggState = yggDiagnostics["state"] ?: "disabled"
+                                    val yggModeLabel = if (yggMode == P2PPreferences.YggdrasilMode.PROXY) "proxy" else "vpn"
+                                    val yggSummaryText = if (yggState in setOf("connected", "enabled")) "YGG: $yggState ($yggModeLabel)" else "YGG: $yggState"
                                     val activePeersCount = activePeers.size
                                     val isTorRunning = TorManager.isTorRunning.collectAsState().value
                                     val torSummary = if (isTorRunning) "Tor: active" else "Tor: off"
                                     Text(
-                                        text = "YGG: $yggState · $torSummary · Peers: $activePeersCount",
+                                        text = "$yggSummaryText · $torSummary · Peers: $activePeersCount",
                                         fontSize = 10.sp,
                                         fontFamily = FontFamily.Monospace,
                                         color = onSurfaceVariant
@@ -724,6 +725,7 @@ fun NetworkDiagnosticsDialog(
                                 } else {
                                     "DISABLED"
                                 }
+                                val yggModeDetailed = if (yggMode == P2PPreferences.YggdrasilMode.PROXY) "PROXY (127.0.0.1:9053)" else "SYSTEM VPN (TUN)"
 
                                 Text(
                                     text = "• P2P Server Port: $listenerPort (Listening) · Local IPv4: $localIpv4",
@@ -738,7 +740,7 @@ fun NetworkDiagnosticsDialog(
                                     color = if (effectiveProxy.enabled) Color(0xFF4CAF50) else onSurfaceVariant
                                 )
                                 Text(
-                                    text = "• Yggdrasil IPv6: ${if (yggAddress.isNotEmpty()) yggAddress else "Off"} · State: ${yggDiagnostics["state"] ?: "disabled"}",
+                                    text = "• Yggdrasil IPv6: ${if (yggAddress.isNotEmpty()) yggAddress else "Off"} · Mode: $yggModeDetailed · State: ${yggDiagnostics["state"] ?: "disabled"}",
                                     fontSize = 11.sp,
                                     fontFamily = FontFamily.Monospace,
                                     color = if (yggAddress.isNotEmpty()) primaryColor else onSurfaceVariant

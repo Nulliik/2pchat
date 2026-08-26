@@ -252,7 +252,10 @@ internal fun ChatMessageList(
             val animateOnAppearance = remember(msg.id) {
                 arrivalAnimationTracker.consume(msg.id)
             }
-            val isRead = msg.isMe && (
+            val isPendingOrSending = msg.status?.startsWith("PENDING") == true ||
+                msg.status?.startsWith("SENDING") == true ||
+                msg.status?.startsWith("FAILED") == true
+            val isRead = msg.isMe && !isPendingOrSending && (
                 incomingAfter.getOrElse(index) { false } ||
                     msg.status?.startsWith("READ") == true ||
                     isTyping ||

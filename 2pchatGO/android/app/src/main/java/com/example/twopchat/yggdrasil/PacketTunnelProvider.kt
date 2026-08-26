@@ -16,6 +16,9 @@ import mobile.Yggdrasil
 import org.json.JSONArray
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
@@ -40,6 +43,23 @@ open class PacketTunnelProvider: VpnService() {
         @Volatile
         var isTunnelActive: Boolean = false
             internal set
+
+        private fun yggLog(context: Context?, message: String, level: String = "INFO", error: Throwable? = null) {
+            val fullMsg = if (error != null) "$message: ${Log.getStackTraceString(error)}" else message
+            if (error != null || level == "ERROR") {
+                Log.e(TAG, fullMsg)
+            } else if (level == "WARN") {
+                Log.w(TAG, fullMsg)
+            } else {
+                Log.i(TAG, fullMsg)
+            }
+            if (context != null) {
+                try {
+                    val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS", Locale.getDefault()).format(Date())
+                    com.example.twopchat.AppLog.append(context, "$timestamp [KOTLIN_$level] $TAG: $fullMsg\n")
+                } catch (_: Exception) {}
+            }
+        }
 
         /** Returns the cross-process tunnel state visible to the main app. */
         fun isTunnelActive(context: Context): Boolean {
@@ -276,13 +296,14 @@ open class PacketTunnelProvider: VpnService() {
 
         val address = ygg.addressString
         if (address.isNullOrBlank()) {
-            Log.e(TAG, "Yggdrasil returned empty/null address after startJSON")
+            yggLog(applicationContext, "Yggdrasil returned empty/null address after startJSON", "ERROR")
             updateRuntimeState("", STATE_DISABLED)
             stop(stopService = true)
             return
         }
 
         updateRuntimeState(address, STATE_ENABLED)
+        yggLog(applicationContext, "Yggdrasil started in SYSTEM VPN (TUN) mode with IPv6: $address")
         val builder = Builder()
             .addAddress(address, 7)
             // 200::/7 covers the complete Yggdrasil allocation (200:: through
@@ -311,15 +332,15 @@ open class PacketTunnelProvider: VpnService() {
                     break
                 }
             } catch (e: Throwable) {
-                Log.w(TAG, "builder.establish() threw on attempt $attempt/3", e)
+                yggLog(applicationContext, "builder.establish() threw on attempt $attempt/3", "WARN", e)
             }
-            Log.w(TAG, "VPN establish returned null on attempt $attempt/3, waiting for kernel FD release...")
+            yggLog(applicationContext, "VPN establish returned null on attempt $attempt/3, waiting for kernel FD release...", "WARN")
             try { Thread.sleep(350L) } catch (_: InterruptedException) {}
         }
         parcel = establishedParcel
         val parcel = parcel
         if (parcel == null || !parcel.fileDescriptor.valid()) {
-            Log.e(TAG, "VPN establishment failed after 3 attempts")
+            yggLog(applicationContext, "VPN establishment failed after 3 attempts", "ERROR")
             stop(stopService = true)
             return
         }
@@ -331,25 +352,26 @@ open class PacketTunnelProvider: VpnService() {
             try {
                 reader()
             } catch (e: Throwable) {
-                Log.e(TAG, "Yggdrasil-Reader thread terminated with error", e)
+                yggLog(applicationContext, "Yggdrasil-Reader thread terminated with error", "ERROR", e)
             }
         }
         writerThread = thread(name = "Yggdrasil-Writer") {
             try {
                 writer()
             } catch (e: Throwable) {
-                Log.e(TAG, "Yggdrasil-Writer thread terminated with error", e)
+                yggLog(applicationContext, "Yggdrasil-Writer thread terminated with error", "ERROR", e)
             }
         }
         updateThread = thread(name = "Yggdrasil-Updater") {
             try {
                 updater()
             } catch (e: Throwable) {
-                Log.e(TAG, "Yggdrasil-Updater thread terminated with error", e)
+                yggLog(applicationContext, "Yggdrasil-Updater thread terminated with error", "ERROR", e)
             }
         }
 
         isTunnelActive = true
+        yggLog(applicationContext, "Yggdrasil SYSTEM VPN (TUN) tunnel active. MTU=${ygg.mtu}")
 
         val intent = Intent(YGG_STATE_INTENT)
         intent.putExtra("state", STATE_ENABLED)
@@ -358,6 +380,7 @@ open class PacketTunnelProvider: VpnService() {
     }
 
     private fun stop(stopService: Boolean = true) {
+        yggLog(applicationContext, "Stopping Yggdrasil SYSTEM VPN (TUN)...")
         isTunnelActive = false
         val wasStarted = started.getAndSet(false)
         if (wasStarted) {

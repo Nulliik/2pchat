@@ -619,7 +619,7 @@ internal fun ChatMessageBubble(
 
                                                 // If NO caption, floating timestamp pill in bottom-right corner over the photo
                                                 if (!hasCaption) {
-                                                    val isPending = msg.status?.startsWith("PENDING") == true
+                                                    val isPending = msg.status?.startsWith("PENDING") == true || msg.status?.startsWith("SENDING") == true
 
                                                     Row(
                                                         modifier = Modifier
@@ -658,7 +658,7 @@ internal fun ChatMessageBubble(
 
                                             // If HAS caption, render clean caption container at bottom of card
                                             if (hasCaption) {
-                                                val isPending = msg.status?.startsWith("PENDING") == true
+                                                val isPending = msg.status?.startsWith("PENDING") == true || msg.status?.startsWith("SENDING") == true
 
                                                 Column(
                                                     modifier = Modifier
@@ -936,7 +936,7 @@ internal fun ChatMessageBubble(
 
                                             // If NO caption, floating timestamp pill in bottom-right corner over the video
                                             if (!hasCaption) {
-                                                val isPending = msg.status?.startsWith("PENDING") == true
+                                                val isPending = msg.status?.startsWith("PENDING") == true || msg.status?.startsWith("SENDING") == true
 
                                                 Row(
                                                     modifier = Modifier
@@ -975,7 +975,7 @@ internal fun ChatMessageBubble(
 
                                         // If HAS caption, render clean caption container at bottom of card
                                         if (hasCaption) {
-                                            val isPending = msg.status?.startsWith("PENDING") == true
+                                            val isPending = msg.status?.startsWith("PENDING") == true || msg.status?.startsWith("SENDING") == true
 
                                             Column(
                                                 modifier = Modifier
@@ -1306,7 +1306,7 @@ internal fun ChatMessageBubble(
                                         )
                                         if (msg.isMe) {
                                             Spacer(modifier = Modifier.width(4.dp))
-                                            val isPending = msg.status?.startsWith("PENDING") == true
+                                            val isPending = msg.status?.startsWith("PENDING") == true || msg.status?.startsWith("SENDING") == true
 
                                             val statusColor = if (isTransparentBubble) {
                                                 Color.White.copy(alpha = 0.95f)
@@ -2157,7 +2157,7 @@ private fun MediaAlbumGridBubble(
             }
 
             if (!hasCaption) {
-                val isPending = msg.status?.startsWith("PENDING") == true
+                val isPending = msg.status?.startsWith("PENDING") == true || msg.status?.startsWith("SENDING") == true
 
                 Row(
                     modifier = Modifier
@@ -2195,7 +2195,7 @@ private fun MediaAlbumGridBubble(
         }
 
         if (hasCaption) {
-            val isPending = msg.status?.startsWith("PENDING") == true
+            val isPending = msg.status?.startsWith("PENDING") == true || msg.status?.startsWith("SENDING") == true
 
             Column(
                 modifier = Modifier

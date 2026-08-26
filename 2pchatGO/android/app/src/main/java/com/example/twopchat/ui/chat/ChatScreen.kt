@@ -672,7 +672,7 @@ fun ChatScreen(
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
             ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
         val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
-        val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
+        val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
         val outMsg = Message(
             id = newMessageId(),
             text = "Voice message",
@@ -685,7 +685,7 @@ fun ChatScreen(
         )
         arrivalAnimationTracker.mark(outMsg.id)
         initialMessages.add(outMsg)
-        if (persistEnabled || initialStatus == "PENDING") {
+        if (persistEnabled || initialStatus == "PENDING" || initialStatus == "SENDING") {
             persistDatabase { db.saveMessage(peerName, outMsg) }
         }
         if (peerName != "Saved Messages") {
@@ -698,12 +698,11 @@ fun ChatScreen(
 
         if (peerName != "Saved Messages") {
             P2PMessageRelay.sendFile(context, peerName, endpoint, recording.file.absolutePath, outMsg.id) { success ->
-                if (!success) {
-                    persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                    coroutineScope.launch {
-                        val index = initialMessages.indexOfFirst { it.id == outMsg.id }
-                        if (index != -1) initialMessages[index] = outMsg.copy(status = "PENDING")
-                    }
+                val finalStatus = if (success) "SENT" else "PENDING"
+                persistDatabase { db.updateMessageStatus(outMsg.id, finalStatus) }
+                coroutineScope.launch {
+                    val index = initialMessages.indexOfFirst { it.id == outMsg.id }
+                    if (index != -1) initialMessages[index] = outMsg.copy(status = finalStatus)
                 }
             }
         }
@@ -1046,7 +1045,7 @@ fun ChatScreen(
             val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                 ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
             val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
-            val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
+            val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
             val outMsg = Message(
                 id = newMessageId(),
                 text = sticker.emoji,
@@ -1060,7 +1059,7 @@ fun ChatScreen(
             arrivalAnimationTracker.mark(outMsg.id)
             initialMessages.add(outMsg)
             triggerHaptic()
-            if (persistEnabled || initialStatus == "PENDING") {
+            if (persistEnabled || initialStatus == "PENDING" || initialStatus == "SENDING") {
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (peerName != "Saved Messages") {
@@ -1084,12 +1083,11 @@ fun ChatScreen(
                     messageId = outMsg.id,
                     caption = sticker.emoji,
                 ) { success ->
-                    if (!success) {
-                        persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                        coroutineScope.launch {
-                            val index = initialMessages.indexOfFirst { it.id == outMsg.id }
-                            if (index != -1) initialMessages[index] = outMsg.copy(status = "PENDING")
-                        }
+                    val finalStatus = if (success) "SENT" else "PENDING"
+                    persistDatabase { db.updateMessageStatus(outMsg.id, finalStatus) }
+                    coroutineScope.launch {
+                        val index = initialMessages.indexOfFirst { it.id == outMsg.id }
+                        if (index != -1) initialMessages[index] = outMsg.copy(status = finalStatus)
                     }
                 }
             }
@@ -1130,7 +1128,7 @@ fun ChatScreen(
             val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                 ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
             val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
-            val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
+            val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
             val outMsg = Message(
                 id = newMessageId(),
                 text = "GIF",
@@ -1144,7 +1142,7 @@ fun ChatScreen(
             arrivalAnimationTracker.mark(outMsg.id)
             initialMessages.add(outMsg)
             triggerHaptic()
-            if (persistEnabled || initialStatus == "PENDING") {
+            if (persistEnabled || initialStatus == "PENDING" || initialStatus == "SENDING") {
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (peerName != "Saved Messages") {
@@ -1169,12 +1167,11 @@ fun ChatScreen(
                     file.absolutePath,
                     outMsg.id,
                 ) { success ->
-                    if (!success) {
-                        persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                        coroutineScope.launch {
-                            val index = initialMessages.indexOfFirst { it.id == outMsg.id }
-                            if (index != -1) initialMessages[index] = outMsg.copy(status = "PENDING")
-                        }
+                    val finalStatus = if (success) "SENT" else "PENDING"
+                    persistDatabase { db.updateMessageStatus(outMsg.id, finalStatus) }
+                    coroutineScope.launch {
+                        val index = initialMessages.indexOfFirst { it.id == outMsg.id }
+                        if (index != -1) initialMessages[index] = outMsg.copy(status = finalStatus)
                     }
                 }
             }
@@ -1276,7 +1273,7 @@ fun ChatScreen(
         val endpoint = P2PMessageRelay.peerEndpoints[peerName]
             ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
         val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
-        val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
+        val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
 
         if (tempFiles.size == 1) {
             val file = tempFiles.first()
@@ -1299,17 +1296,16 @@ fun ChatScreen(
             )
             arrivalAnimationTracker.mark(outMsg.id)
             initialMessages.add(outMsg)
-            if (persistEnabled || initialStatus == "PENDING") {
+            if (persistEnabled || initialStatus == "PENDING" || initialStatus == "SENDING") {
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (peerName != "Saved Messages") {
                 P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, customCaption) { success ->
-                    if (!success) {
-                        persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                        coroutineScope.launch {
-                            val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                            if (idx != -1) initialMessages[idx] = outMsg.copy(status = "PENDING")
-                        }
+                    val finalStatus = if (success) "SENT" else "PENDING"
+                    persistDatabase { db.updateMessageStatus(outMsg.id, finalStatus) }
+                    coroutineScope.launch {
+                        val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                        if (idx != -1) initialMessages[idx] = outMsg.copy(status = finalStatus)
                     }
                 }
             }
@@ -1331,7 +1327,7 @@ fun ChatScreen(
             )
             arrivalAnimationTracker.mark(outMsg.id)
             initialMessages.add(outMsg)
-            if (persistEnabled || initialStatus == "PENDING") {
+            if (persistEnabled || initialStatus == "PENDING" || initialStatus == "SENDING") {
                 persistDatabase { db.saveMessage(peerName, outMsg) }
             }
             if (peerName != "Saved Messages") {
@@ -1362,7 +1358,6 @@ fun ChatScreen(
                                 val messageIdx = initialMessages.indexOfFirst { it.id == outMsg.id }
                                 if (messageIdx != -1) initialMessages[messageIdx] = outMsg.copy(status = "PENDING")
                             }
-                            break
                         }
                     }
                 }
@@ -1504,7 +1499,7 @@ fun ChatScreen(
                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                         ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
                     val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
-                    val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
+                    val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
                     val msgText = caption.ifBlank { if (appLanguage == "Русский") "Фотография" else "Sent an image" }
                     val outMsg = Message(
                         id = newMessageId(),
@@ -1518,18 +1513,17 @@ fun ChatScreen(
                     )
                     arrivalAnimationTracker.mark(outMsg.id)
                     initialMessages.add(outMsg)
-                    if (persistEnabled || initialStatus == "PENDING") {
+                    if (persistEnabled || initialStatus == "PENDING" || initialStatus == "SENDING") {
                         persistDatabase { db.saveMessage(peerName, outMsg) }
                     }
                     if (peerName != "Saved Messages") {
                         P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, caption.trim()) { success ->
-                            if (!success) {
-                                persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                                coroutineScope.launch {
-                                    val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                                    if (idx != -1) {
-                                        initialMessages[idx] = outMsg.copy(status = "PENDING")
-                                    }
+                            val finalStatus = if (success) "SENT" else "PENDING"
+                            persistDatabase { db.updateMessageStatus(outMsg.id, finalStatus) }
+                            coroutineScope.launch {
+                                val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                                if (idx != -1) {
+                                    initialMessages[idx] = outMsg.copy(status = finalStatus)
                                 }
                             }
                         }
@@ -1596,7 +1590,7 @@ fun ChatScreen(
                 val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                     ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
                 val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
-                val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
+                val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
                 // Some document providers return extensionless generated names
                 // for photos and stickers. Preserve their MIME type instead of
                 // rendering them forever as generic sent_file_* attachments.
@@ -1614,18 +1608,17 @@ fun ChatScreen(
                 )
                 arrivalAnimationTracker.mark(outMsg.id)
                 initialMessages.add(outMsg)
-                if (persistEnabled || initialStatus == "PENDING") {
+                if (persistEnabled || initialStatus == "PENDING" || initialStatus == "SENDING") {
                     persistDatabase { db.saveMessage(peerName, outMsg) }
                 }
                 if (peerName != "Saved Messages") {
                     P2PMessageRelay.sendFile(context, peerName, endpoint, tempFile.absolutePath, outMsg.id) { success ->
-                        if (!success) {
-                            persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                            coroutineScope.launch {
-                                val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                                if (idx != -1) {
-                                    initialMessages[idx] = outMsg.copy(status = "PENDING")
-                                }
+                        val finalStatus = if (success) "SENT" else "PENDING"
+                        persistDatabase { db.updateMessageStatus(outMsg.id, finalStatus) }
+                        coroutineScope.launch {
+                            val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                            if (idx != -1) {
+                                initialMessages[idx] = outMsg.copy(status = finalStatus)
                             }
                         }
                     }
@@ -1662,7 +1655,7 @@ fun ChatScreen(
                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                         ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
                     val isLive = P2PMessageRelay.peerSessionStates[peerName] == true || endpoint.isNotBlank()
-                    val initialStatus = if (isLive || peerName == "Saved Messages") "SENT" else "PENDING"
+                    val initialStatus = if (peerName == "Saved Messages") "SENT" else if (isLive) "SENDING" else "PENDING"
                     val msgText = caption.ifBlank { if (appLanguage == "Русский") "Видеозапись" else "Sent a video" }
                     val outMsg = Message(
                         id = newMessageId(),
@@ -1676,18 +1669,17 @@ fun ChatScreen(
                     )
                     arrivalAnimationTracker.mark(outMsg.id)
                     initialMessages.add(outMsg)
-                    if (persistEnabled || initialStatus == "PENDING") {
+                    if (persistEnabled || initialStatus == "PENDING" || initialStatus == "SENDING") {
                         persistDatabase { db.saveMessage(peerName, outMsg) }
                     }
                     if (peerName != "Saved Messages") {
                         P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, outMsg.id, caption.trim()) { success ->
-                            if (!success) {
-                                persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
-                                coroutineScope.launch {
-                                    val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
-                                    if (idx != -1) {
-                                        initialMessages[idx] = outMsg.copy(status = "PENDING")
-                                    }
+                            val finalStatus = if (success) "SENT" else "PENDING"
+                            persistDatabase { db.updateMessageStatus(outMsg.id, finalStatus) }
+                            coroutineScope.launch {
+                                val idx = initialMessages.indexOfFirst { it.id == outMsg.id }
+                                if (idx != -1) {
+                                    initialMessages[idx] = outMsg.copy(status = finalStatus)
                                 }
                             }
                         }
