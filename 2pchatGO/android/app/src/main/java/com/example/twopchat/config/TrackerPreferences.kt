@@ -34,15 +34,16 @@ object TrackerPreferences {
     val supportedProtocols = setOf("http", "https", "udp")
 
     val builtInTrackers = listOf(
-        BuiltInTracker("Torrent.eu.org UDP", "udp://tracker.torrent.eu.org:451/announce", "udp"),
-        BuiltInTracker("Open Stealth UDP", "udp://open.stealth.si:80/announce", "udp"),
-        BuiltInTracker("Exodus UDP", "udp://exodus.desync.com:6969/announce", "udp"),
+        BuiltInTracker("OpenBitTorrent UDP", "udp://tracker.openbittorrent.com:6969/announce", "udp"),
         BuiltInTracker("OpenTrackr UDP", "udp://tracker.opentrackr.org:1337/announce", "udp"),
+        BuiltInTracker("Open Stealth UDP", "udp://open.stealth.si:80/announce", "udp"),
+        BuiltInTracker("Tiny-VPS UDP", "udp://tracker.tiny-vps.com:6969/announce", "udp"),
+        BuiltInTracker("Exodus UDP", "udp://exodus.desync.com:6969/announce", "udp"),
         BuiltInTracker("Dler UDP", "udp://tracker2.dler.org:80/announce", "udp"),
         BuiltInTracker("BitSearch UDP", "udp://tracker.bitsearch.to:6969/announce", "udp"),
         BuiltInTracker("Qu.Ax UDP", "udp://tracker.qu.ax:6969/announce", "udp"),
         BuiltInTracker("OpenTrackr HTTPS", "https://tracker.opentrackr.org:443/announce", "https"),
-        BuiltInTracker("Yemekyedim HTTPS", "https://tracker.yemekyedim.com:443/announce", "https"),
+        BuiltInTracker("OpenBitTorrent HTTPS", "https://tracker.openbittorrent.com:443/announce", "https"),
         BuiltInTracker("Nyacat HTTPS", "https://tr.nyacat.pw:443/announce", "https"),
         BuiltInTracker(
             "Yggdrasil-only HTTP",

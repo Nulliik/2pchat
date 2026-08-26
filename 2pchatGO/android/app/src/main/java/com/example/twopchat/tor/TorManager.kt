@@ -403,6 +403,9 @@ object TorManager {
         sb.appendLine("CookieAuthentication 1")
         sb.appendLine("SafeSocks 0")
         sb.appendLine("SafeLogging 1")
+        sb.appendLine("ClientOnly 1")
+        sb.appendLine("AvoidDiskWrites 1")
+        sb.appendLine("DisableDebuggerAttachment 0")
         if (!hiddenServiceDir.isNullOrBlank()) {
             sb.appendLine("HiddenServiceDir $hiddenServiceDir")
             sb.appendLine("HiddenServicePort $hiddenServicePort 127.0.0.1:$hiddenServiceTargetPort")

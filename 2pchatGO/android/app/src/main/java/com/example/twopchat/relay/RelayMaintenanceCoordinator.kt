@@ -145,7 +145,7 @@ internal class RelayMaintenanceCoordinator(
                         lastReconnectAttemptAt[peerName] = now
                         reconnectDelayMs[peerName] = (currentDelay * 2).coerceAtMost(20_000L)
                         val anonymizedPeer = (peerName ?: "").take(2) + "***"
-                        log(appContext, "Background reconnection for $anonymizedPeer", "INFO", null)
+                        log(appContext, "Background reconnection for $anonymizedPeer", "DEBUG", null)
                         bridge.reconnectPeerSession(peerName, endpoint, fingerprint)
                     }
                 } catch (error: Exception) {

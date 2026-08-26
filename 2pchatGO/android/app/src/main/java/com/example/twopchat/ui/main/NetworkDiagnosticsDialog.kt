@@ -63,17 +63,18 @@ import org.json.JSONArray
 import java.io.File
 
 private val defaultTrackerUrls = mapOf(
-    "Torrent.eu.org UDP" to "udp://tracker.torrent.eu.org:451/announce",
-    "Open Stealth UDP" to "udp://open.stealth.si:80/announce",
-    "Exodus UDP" to "udp://exodus.desync.com:6969/announce",
+    "OpenBitTorrent UDP" to "udp://tracker.openbittorrent.com:6969/announce",
     "OpenTrackr UDP" to "udp://tracker.opentrackr.org:1337/announce",
+    "Open Stealth UDP" to "udp://open.stealth.si:80/announce",
+    "Tiny-VPS UDP" to "udp://tracker.tiny-vps.com:6969/announce",
+    "Exodus UDP" to "udp://exodus.desync.com:6969/announce",
     "Dler UDP" to "udp://tracker2.dler.org:80/announce",
     "BitSearch UDP" to "udp://tracker.bitsearch.to:6969/announce",
     "OpenTrackr HTTP" to "http://tracker.opentrackr.org:1337/announce",
     "Dler HTTP" to "http://tracker2.dler.org:80/announce",
     "Qu.Ax HTTP" to "http://tracker.qu.ax:6969/announce",
     "OpenTrackr HTTPS" to "https://tracker.opentrackr.org:443/announce",
-    "Yemekyedim HTTPS" to "https://tracker.yemekyedim.com:443/announce",
+    "OpenBitTorrent HTTPS" to "https://tracker.openbittorrent.com:443/announce",
     "Nyacat HTTPS" to "https://tr.nyacat.pw:443/announce",
     "Yggdrasil-only HTTP" to "http://[200:1e2f:e608:eb3a:2bf:1e62:87ba:e2f7]/announce",
     "Yggdrasil-only UDP" to "udp://[202:68d0:f0d5:b88d:1d1a:555e:2f6b:3148]:6969/announce"
