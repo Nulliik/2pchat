@@ -1103,54 +1103,36 @@ fun ChatsTab(
                     if (peers.isEmpty()) {
                         item(key = "empty_chats") {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.55f)),
-                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.25f)),
+                                shape = RoundedCornerShape(20.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 12.dp, bottom = 16.dp)
-                                    .background(
-                                        brush = Brush.verticalGradient(
-                                            colors = listOf(
-                                                primaryColor.copy(alpha = 0.08f),
-                                                surfaceColor.copy(alpha = 0.65f),
-                                                primaryColor.copy(alpha = 0.02f)
-                                            )
-                                        ),
-                                        shape = RoundedCornerShape(24.dp)
-                                    )
-                                    .border(1.dp, primaryColor.copy(alpha = 0.22f), RoundedCornerShape(24.dp))
+                                    .padding(top = 10.dp, bottom = 14.dp)
+                                    .border(1.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
                             ) {
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(24.dp),
+                                        .padding(horizontal = 16.dp, vertical = 20.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    // Glowing dual-halo icon
+                                    // Subtle soft icon halo
                                     Box(
                                         contentAlignment = Alignment.Center,
                                         modifier = Modifier
-                                            .size(72.dp)
-                                            .background(primaryColor.copy(alpha = 0.10f), shape = CircleShape)
-                                            .border(1.5.dp, primaryColor.copy(alpha = 0.35f), CircleShape)
-                                            .padding(6.dp)
+                                            .size(54.dp)
+                                            .background(primaryColor.copy(alpha = 0.08f), shape = CircleShape)
+                                            .border(1.dp, primaryColor.copy(alpha = 0.18f), CircleShape)
                                     ) {
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .background(primaryColor.copy(alpha = 0.18f), shape = CircleShape)
-                                        ) {
-                                            Icon(
-                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_saved_messages),
-                                                contentDescription = "Chats Empty",
-                                                tint = primaryColor,
-                                                modifier = Modifier.size(30.dp)
-                                            )
-                                        }
+                                        Icon(
+                                            painter = painterResource(id = com.example.twopchat.R.drawable.ic_saved_messages),
+                                            contentDescription = "Chats Empty",
+                                            tint = primaryColor.copy(alpha = 0.85f),
+                                            modifier = Modifier.size(24.dp)
+                                        )
                                     }
 
-                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Spacer(modifier = Modifier.height(12.dp))
 
                                     Text(
                                         text = com.example.twopchat.data.Localizations.tr(
@@ -1162,13 +1144,13 @@ fun ChatsTab(
                                             fr = "Pas encore de discussion active",
                                             pt = "Nenhum chat ativo ainda"
                                         ),
-                                        fontSize = 17.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = onSurfaceColor,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = onSurfaceColor.copy(alpha = 0.90f),
                                         textAlign = TextAlign.Center
                                     )
 
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Spacer(modifier = Modifier.height(4.dp))
 
                                     Text(
                                         text = com.example.twopchat.data.Localizations.tr(
@@ -1180,18 +1162,18 @@ fun ChatsTab(
                                             fr = "Invitez des amis ou partagez votre adresse pour communiquer directement sans serveur",
                                             pt = "Convide amigos ou compartilhe seu endereço para conversas diretas e privadas"
                                         ),
-                                        fontSize = 13.sp,
-                                        color = onSurfaceVariant,
+                                        fontSize = 12.5.sp,
+                                        color = onSurfaceVariant.copy(alpha = 0.75f),
                                         textAlign = TextAlign.Center,
-                                        lineHeight = 18.sp,
-                                        modifier = Modifier.padding(horizontal = 8.dp)
+                                        lineHeight = 16.sp,
+                                        modifier = Modifier.padding(horizontal = 6.dp)
                                     )
 
-                                    Spacer(modifier = Modifier.height(20.dp))
+                                    Spacer(modifier = Modifier.height(16.dp))
 
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Button(
                                             onClick = {
@@ -1215,17 +1197,18 @@ fun ChatsTab(
                                             },
                                             modifier = Modifier
                                                 .weight(1f)
-                                                .height(44.dp),
-                                            shape = RoundedCornerShape(14.dp),
+                                                .height(40.dp),
+                                            shape = RoundedCornerShape(12.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                                             colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
                                         ) {
                                             Icon(
                                                 painter = painterResource(id = com.example.twopchat.R.drawable.ic_quick_link),
                                                 contentDescription = null,
                                                 tint = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White,
-                                                modifier = Modifier.size(16.dp)
+                                                modifier = Modifier.size(15.dp)
                                             )
-                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
                                             Text(
                                                 text = com.example.twopchat.data.Localizations.tr(
                                                     appLanguage,
@@ -1237,7 +1220,9 @@ fun ChatsTab(
                                                     pt = "Compartilhar"
                                                 ),
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp,
+                                                fontSize = 12.sp,
+                                                maxLines = 1,
+                                                softWrap = false,
                                                 color = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White
                                             )
                                         }
@@ -1259,17 +1244,18 @@ fun ChatsTab(
                                             },
                                             modifier = Modifier
                                                 .weight(1f)
-                                                .height(44.dp),
-                                            shape = RoundedCornerShape(14.dp),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor.copy(alpha = 0.40f))
+                                                .height(40.dp),
+                                            shape = RoundedCornerShape(12.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor.copy(alpha = 0.35f))
                                         ) {
                                             Icon(
                                                 painter = painterResource(id = com.example.twopchat.R.drawable.ic_copy_key),
                                                 contentDescription = null,
                                                 tint = primaryColor,
-                                                modifier = Modifier.size(16.dp)
+                                                modifier = Modifier.size(15.dp)
                                             )
-                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
                                             Text(
                                                 text = com.example.twopchat.data.Localizations.tr(
                                                     appLanguage,
@@ -1281,7 +1267,9 @@ fun ChatsTab(
                                                     pt = "Copiar"
                                                 ),
                                                 fontWeight = FontWeight.SemiBold,
-                                                fontSize = 13.sp,
+                                                fontSize = 12.sp,
+                                                maxLines = 1,
+                                                softWrap = false,
                                                 color = primaryColor
                                             )
                                         }

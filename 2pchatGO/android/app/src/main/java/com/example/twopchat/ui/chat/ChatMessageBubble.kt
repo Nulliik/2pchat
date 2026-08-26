@@ -422,7 +422,8 @@ internal fun ChatMessageBubble(
                                         ?: com.example.twopchat.relay.P2PMessageRelay.fileProgressStates[msg.id]
                                         ?: msg.attachmentName?.let { com.example.twopchat.relay.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.relay.P2PMessageRelay.fileProgressStates[it] }
                                     val isTransferring = progressInfo?.state ==
-                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING
+                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING ||
+                                        (msg.isMe && msg.status?.startsWith("SENDING") == true)
                                     val isCancelled = progressInfo?.state ==
                                         com.example.twopchat.relay.P2PMessageRelay.FileTransferState.CANCELLED ||
                                         msg.status.equals("CANCELLED", ignoreCase = true)
@@ -505,15 +506,8 @@ internal fun ChatMessageBubble(
                                                 }
 
                                                 if (isTransferring) {
-                                                    val info = progressInfo
-                                                    val pct = if (info.totalBytes > 0L) {
-                                                        (info.bytesTransferred * 100 / info.totalBytes).toInt()
-                                                    } else 0
-                                                    val speedStr = if (info.speedKbps >= 1024) {
-                                                        String.format(java.util.Locale.US, "%.1f MB/s", info.speedKbps / 1024.0)
-                                                    } else {
-                                                        "${info.speedKbps.toInt()} KB/s"
-                                                    }
+                                                    val info = progressInfo ?: com.example.twopchat.relay.P2PMessageRelay.FileProgressInfo(0L, 0L, 0.0)
+                                                    val progressText = formatFileTransferProgress(info)
                                                     Box(
                                                         modifier = Modifier
                                                             .fillMaxSize()
@@ -523,16 +517,16 @@ internal fun ChatMessageBubble(
                                                     ) {
                                                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                             Text(
-                                                                text = "$pct% • $speedStr",
+                                                                text = progressText,
                                                                 color = Color.White,
-                                                                fontSize = 12.sp,
+                                                                fontSize = 11.sp,
                                                                 fontWeight = FontWeight.Bold
                                                             )
                                                             Spacer(modifier = Modifier.height(6.dp))
                                                             androidx.compose.material3.LinearProgressIndicator(
                                                                 progress = {
-                                                                    if (progressInfo.totalBytes > 0L) {
-                                                                        (progressInfo.bytesTransferred.toFloat() / progressInfo.totalBytes.toFloat()).coerceIn(0f, 1f)
+                                                                    if (info.totalBytes > 0L) {
+                                                                        (info.bytesTransferred.toFloat() / info.totalBytes.toFloat()).coerceIn(0f, 1f)
                                                                     } else 0f
                                                                 },
                                                                 modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
@@ -727,7 +721,8 @@ internal fun ChatMessageBubble(
                                     val thumbnail = completedThumbnail ?: transferPreview
                                     val attachmentAvailable = remember(msg.attachmentUri) { isAttachmentAvailable(msg.attachmentUri) }
                                     val isTransferring = progressInfo?.state ==
-                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING
+                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING ||
+                                        (msg.isMe && msg.status?.startsWith("SENDING") == true)
                                     val isCancelled = progressInfo?.state ==
                                         com.example.twopchat.relay.P2PMessageRelay.FileTransferState.CANCELLED ||
                                         msg.status.equals("CANCELLED", ignoreCase = true)
@@ -823,15 +818,8 @@ internal fun ChatMessageBubble(
                                                 }
                                             }
                                             if (isTransferring) {
-                                                val info = progressInfo
-                                                val pct = if (info.totalBytes > 0L) {
-                                                    (info.bytesTransferred * 100 / info.totalBytes).toInt()
-                                                } else 0
-                                                val speedStr = if (info.speedKbps >= 1024) {
-                                                    String.format(java.util.Locale.US, "%.1f MB/s", info.speedKbps / 1024.0)
-                                                } else {
-                                                    "${info.speedKbps.toInt()} KB/s"
-                                                }
+                                                val info = progressInfo ?: com.example.twopchat.relay.P2PMessageRelay.FileProgressInfo(0L, 0L, 0.0)
+                                                val progressText = formatFileTransferProgress(info)
                                                 Box(
                                                     modifier = Modifier
                                                         .fillMaxSize()
@@ -841,16 +829,16 @@ internal fun ChatMessageBubble(
                                                 ) {
                                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                                         Text(
-                                                            text = "$pct% • $speedStr",
+                                                            text = progressText,
                                                             color = Color.White,
-                                                            fontSize = 12.sp,
+                                                            fontSize = 11.sp,
                                                             fontWeight = FontWeight.Bold
                                                         )
                                                         Spacer(modifier = Modifier.height(6.dp))
                                                         androidx.compose.material3.LinearProgressIndicator(
                                                             progress = {
-                                                                if (progressInfo.totalBytes > 0L) {
-                                                                    (progressInfo.bytesTransferred.toFloat() / progressInfo.totalBytes.toFloat()).coerceIn(0f, 1f)
+                                                                if (info.totalBytes > 0L) {
+                                                                    (info.bytesTransferred.toFloat() / info.totalBytes.toFloat()).coerceIn(0f, 1f)
                                                                 } else 0f
                                                             },
                                                             modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
@@ -1031,7 +1019,8 @@ internal fun ChatMessageBubble(
                                         ?: msg.attachmentName?.let { com.example.twopchat.relay.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.relay.P2PMessageRelay.fileProgressStates[it] }
                                     
                                     val isTransferring = progressInfo?.state ==
-                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING
+                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING ||
+                                        (msg.isMe && msg.status?.startsWith("SENDING") == true)
                                     val isCancelled = progressInfo?.state ==
                                         com.example.twopchat.relay.P2PMessageRelay.FileTransferState.CANCELLED ||
                                         msg.status.equals("CANCELLED", ignoreCase = true)
@@ -1067,16 +1056,8 @@ internal fun ChatMessageBubble(
                                                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                                 )
                                                 val subtext = if (isTransferring) {
-                                                    val info = progressInfo
-                                                    val pct = if (info.totalBytes > 0L) {
-                                                        (info.bytesTransferred * 100 / info.totalBytes).toInt()
-                                                    } else 0
-                                                    val speedStr = if (info.speedKbps >= 1024) {
-                                                        String.format(java.util.Locale.US, "%.1f MB/s", info.speedKbps / 1024.0)
-                                                    } else {
-                                                        "${info.speedKbps.toInt()} KB/s"
-                                                    }
-                                                    "$pct% • $speedStr"
+                                                    val info = progressInfo ?: com.example.twopchat.relay.P2PMessageRelay.FileProgressInfo(0L, 0L, 0.0)
+                                                    formatFileTransferProgress(info)
                                                 } else if (isCancelled) {
                                                     Localizations.tr(
                                                         appLanguage,
@@ -1119,15 +1100,15 @@ internal fun ChatMessageBubble(
                                             }
                                         }
                                         if (isTransferring) {
-                                            val info = progressInfo
+                                            val info = progressInfo ?: com.example.twopchat.relay.P2PMessageRelay.FileProgressInfo(0L, 0L, 0.0)
                                             Spacer(modifier = Modifier.height(6.dp))
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
                                             ) {
                                                 androidx.compose.material3.LinearProgressIndicator(
                                                     progress = {
-                                                        if (progressInfo.totalBytes > 0L) {
-                                                            (progressInfo.bytesTransferred.toFloat() / progressInfo.totalBytes.toFloat()).coerceIn(0f, 1f)
+                                                        if (info.totalBytes > 0L) {
+                                                            (info.bytesTransferred.toFloat() / info.totalBytes.toFloat()).coerceIn(0f, 1f)
                                                         } else 0f
                                                     },
                                                     modifier = Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)),
@@ -2312,6 +2293,31 @@ private fun AlbumItemCell(
                 )
             }
         }
+    }
+}
+
+private fun formatFileTransferProgress(progressInfo: com.example.twopchat.relay.P2PMessageRelay.FileProgressInfo?): String {
+    if (progressInfo == null) return "0%"
+    val pct = if (progressInfo.totalBytes > 0L) {
+        (progressInfo.bytesTransferred * 100 / progressInfo.totalBytes).toInt().coerceIn(0, 100)
+    } else 0
+    val speedStr = if (progressInfo.speedKbps >= 1024) {
+        String.format(java.util.Locale.US, "%.1f MB/s", progressInfo.speedKbps / 1024.0)
+    } else if (progressInfo.speedKbps > 0) {
+        "${progressInfo.speedKbps.toInt()} KB/s"
+    } else {
+        ""
+    }
+    val sizeStr = if (progressInfo.totalBytes > 0L) {
+        val transferredMb = progressInfo.bytesTransferred / (1024.0 * 1024.0)
+        val totalMb = progressInfo.totalBytes / (1024.0 * 1024.0)
+        String.format(java.util.Locale.US, "%.1f / %.1f MB", transferredMb, totalMb)
+    } else ""
+
+    return buildString {
+        append("$pct%")
+        if (sizeStr.isNotEmpty()) append(" • $sizeStr")
+        if (speedStr.isNotEmpty()) append(" • $speedStr")
     }
 }
 

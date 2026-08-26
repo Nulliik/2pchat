@@ -22,6 +22,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -96,6 +99,7 @@ fun ConnectionModeBottomSheet(
     val isRotatingCircuit by TorManager.isRotatingCircuit.collectAsState()
 
     var isReconnecting by remember { mutableStateOf(false) }
+    var isEndpointsExpanded by remember(peerName) { mutableStateOf(false) }
 
     fun selectMode(mode: PeerTransportPreference) {
         currentPreference = mode
@@ -331,24 +335,68 @@ fun ConnectionModeBottomSheet(
                     val rawEndpoints = activeEndpoint.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                     val allEndpoints = mutableListOf<String>()
                     for (ep in rawEndpoints) {
-                        if (ep !in allEndpoints) allEndpoints.add(ep)
+                        if (isValidPeerEndpoint(ep) && ep !in allEndpoints) allEndpoints.add(ep)
                     }
                     val savedOnion = P2PPreferences.getPeerOnionAddress(context, peerName)
-                    if (!savedOnion.isNullOrBlank() && savedOnion !in allEndpoints) {
+                    if (!savedOnion.isNullOrBlank() && isValidPeerEndpoint(savedOnion) && savedOnion !in allEndpoints) {
                         allEndpoints.add(savedOnion)
                     }
 
+                    // Sort: Tor Onion & Yggdrasil IPv6 first, then Direct IPv4
+                    allEndpoints.sortWith(compareBy { ep ->
+                        when {
+                            ep.contains(".onion", ignoreCase = true) -> 0
+                            ep.startsWith("[") || ep.count { it == ':' } > 1 -> 1
+                            else -> 2
+                        }
+                    })
+
                     if (allEndpoints.isNotEmpty()) {
                         Spacer(Modifier.height(10.dp))
-                        Text(
-                            text = if (isRussian) "СЕТЕВЫЕ АДРЕСА СОБЕСЕДНИКА" else "PEER NETWORK ENDPOINTS",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = onSurfaceVariant.copy(alpha = 0.70f),
-                            letterSpacing = 0.6.sp,
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = if (isRussian) "СЕТЕВЫЕ АДРЕСА СОБЕСЕДНИКА (${allEndpoints.size})" else "PEER NETWORK ENDPOINTS (${allEndpoints.size})",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = onSurfaceVariant.copy(alpha = 0.70f),
+                                letterSpacing = 0.6.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (allEndpoints.size > 3) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable { isEndpointsExpanded = !isEndpointsExpanded }
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = if (isEndpointsExpanded) {
+                                            if (isRussian) "Свернуть" else "Collapse"
+                                        } else {
+                                            if (isRussian) "Все (${allEndpoints.size})" else "All (${allEndpoints.size})"
+                                        },
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = primaryColor
+                                    )
+                                    Spacer(Modifier.width(2.dp))
+                                    Icon(
+                                        imageVector = if (isEndpointsExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                        contentDescription = null,
+                                        tint = primaryColor,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
                         Spacer(Modifier.height(4.dp))
-                        allEndpoints.forEach { ep ->
+
+                        val displayedEndpoints = if (isEndpointsExpanded) allEndpoints else allEndpoints.take(3)
+                        displayedEndpoints.forEach { ep ->
                             val isEpOnion = ep.contains(".onion", ignoreCase = true)
                             val isEpYgg = ep.startsWith("[") || (ep.contains(":") && ep.count { it == ':' } > 1)
                             val epTypeLabel = when {
@@ -403,6 +451,32 @@ fun ConnectionModeBottomSheet(
                                     text = if (isRussian) "копировать" else "copy",
                                     fontSize = 10.sp,
                                     color = primaryColor
+                                )
+                            }
+                        }
+
+                        if (!isEndpointsExpanded && allEndpoints.size > 3) {
+                            Spacer(Modifier.height(2.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { isEndpointsExpanded = true }
+                                    .padding(vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = if (isRussian) "Показать ещё ${allEndpoints.size - 3} адреса..." else "Show ${allEndpoints.size - 3} more endpoints...",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = primaryColor
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = primaryColor,
+                                    modifier = Modifier.size(16.dp).padding(start = 2.dp)
                                 )
                             }
                         }
@@ -693,3 +767,22 @@ private fun TransportOptionCard(
         }
     }
 }
+
+private fun isValidPeerEndpoint(ep: String): Boolean {
+    val trimmed = ep.trim()
+    if (trimmed.isEmpty()) return false
+    if (trimmed.contains(".onion", ignoreCase = true)) {
+        return trimmed.matches(Regex("^[a-z2-7]{56}\\.onion(:\\d{1,5})?$", RegexOption.IGNORE_CASE))
+    }
+    if (trimmed.startsWith("[") || (trimmed.contains(":") && trimmed.count { it == ':' } > 1)) {
+        return true
+    }
+    val host = if (trimmed.contains(':')) trimmed.substringBeforeLast(':') else trimmed
+    val portStr = if (trimmed.contains(':')) trimmed.substringAfterLast(':') else ""
+    val octets = host.split('.')
+    if (octets.size != 4) return false
+    val validOctets = octets.all { it.toIntOrNull() in 0..255 }
+    val validPort = portStr.isEmpty() || (portStr.toIntOrNull() in 1..65535)
+    return validOctets && validPort
+}
+

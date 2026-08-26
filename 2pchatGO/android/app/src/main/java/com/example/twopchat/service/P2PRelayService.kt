@@ -92,9 +92,13 @@ class P2PRelayService : Service() {
             .setSmallIcon(R.drawable.ic_logo_default_fg)
             .setContentTitle("2PChat")
             .setContentText("P2P listener is active")
+            .setShowWhen(false)
             .setOngoing(true)
             .setContentIntent(pendingIntent)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setGroup("2pchat_background_daemon")
+            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY)
             .build()
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -299,7 +303,7 @@ class P2PRelayService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "P2P connectivity", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL_ID, "P2P connectivity", NotificationManager.IMPORTANCE_MIN)
             )
         }
     }

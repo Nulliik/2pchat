@@ -93,7 +93,14 @@ class GlobalApplication: Application(), YggStateReceiver.StateReceiver {
                     val notification = createServiceNotification(this, state)
                     val notificationManager: NotificationManager =
                         this.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    notificationManager.notify(SERVICE_NOTIFICATION_ID, notification)
+                    val mode = com.example.twopchat.config.P2PPreferences.getYggdrasilMode(this)
+                    val notifId = if (mode == com.example.twopchat.config.P2PPreferences.YggdrasilMode.PROXY) 2002 else SERVICE_NOTIFICATION_ID
+                    if (mode == com.example.twopchat.config.P2PPreferences.YggdrasilMode.PROXY) {
+                        notificationManager.cancel(SERVICE_NOTIFICATION_ID)
+                    } else {
+                        notificationManager.cancel(2002)
+                    }
+                    notificationManager.notify(notifId, notification)
                 }.onFailure {
                     android.util.Log.w("GlobalApplication", "Could not post Yggdrasil service notification", it)
                 }
@@ -134,20 +141,27 @@ fun createServiceNotification(context: Context, state: State): Notification {
     }
     val pendingIntent: PendingIntent = PendingIntent.getActivity(context, 0, intent, flags)
 
+    val mode = com.example.twopchat.config.P2PPreferences.getYggdrasilMode(context)
+    val isProxy = mode == com.example.twopchat.config.P2PPreferences.YggdrasilMode.PROXY
+
+    val title = if (isProxy) "2PChat Mesh" else "2PChat VPN"
     val text = when (state) {
-        State.Disabled -> "Yggdrasil Disabled"
-        State.Enabled -> "Yggdrasil Enabled"
+        State.Disabled -> if (isProxy) "Mesh Proxy Disabled" else "Yggdrasil Disabled"
+        State.Enabled -> if (isProxy) "Mesh Proxy Active" else "Yggdrasil Enabled"
         State.Connected -> "Yggdrasil Connected"
-        else -> "Yggdrasil Service Running"
+        else -> if (isProxy) "Mesh Proxy Running" else "Yggdrasil Service Running"
     }
 
     return NotificationCompat.Builder(context, MAIN_CHANNEL_ID)
         .setShowWhen(false)
-        .setContentTitle("2PChat VPN")
+        .setContentTitle(title)
         .setContentText(text)
         .setSmallIcon(com.example.twopchat.R.drawable.ic_logo_default_fg)
         .setContentIntent(pendingIntent)
+        .setCategory(NotificationCompat.CATEGORY_SERVICE)
         .setPriority(NotificationCompat.PRIORITY_MIN)
+        .setGroup("2pchat_background_daemon")
+        .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_SUMMARY)
         .build()
 }
 

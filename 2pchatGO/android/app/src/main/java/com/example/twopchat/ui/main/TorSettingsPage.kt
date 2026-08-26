@@ -832,9 +832,9 @@ private fun TorBridgePanel(
                 if (bridges.isEmpty()) {
                     Text(
                         text = if (isRussian) {
-                            "Нажмите «+» чтобы добавить obfs4 или snowflake мост"
+                            "Нажмите «+» чтобы добавить obfs4 или WebTunnel мост"
                         } else {
-                            "Tap «+» to add an obfs4 or snowflake bridge"
+                            "Tap «+» to add an obfs4 or WebTunnel bridge"
                         },
                         color = onSurfaceVariant,
                         fontSize = 12.sp,
@@ -917,9 +917,9 @@ private fun AddBridgeDialog(
             Column {
                 Text(
                     text = if (isRussian) {
-                        "Вставьте строку obfs4 или snowflake моста, полученную с bridges.torproject.org"
+                        "Вставьте строку obfs4 или WebTunnel моста (с bridges.torproject.org или из Telegram-бота @GetBridgesBot)"
                     } else {
-                        "Paste an obfs4 or snowflake bridge line obtained from bridges.torproject.org"
+                        "Paste an obfs4 or WebTunnel bridge line obtained from bridges.torproject.org or @GetBridgesBot"
                     },
                     color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp,
@@ -931,7 +931,7 @@ private fun AddBridgeDialog(
                     keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
                         context = dialogContext,
                     ),
-                    placeholder = { Text("obfs4 1.2.3.4:1234 FINGERPRINT cert=… iat-mode=0", fontSize = 11.sp) },
+                    placeholder = { Text("obfs4 1.2.3.4:1234 ... / webtunnel 1.2.3.4:443 ... url=https://...", fontSize = 11.sp) },
                     minLines = 3,
                     maxLines = 6,
                     isError = error != null,

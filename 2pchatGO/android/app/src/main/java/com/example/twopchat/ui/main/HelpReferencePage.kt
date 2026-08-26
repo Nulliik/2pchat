@@ -72,6 +72,13 @@ fun HelpReferencePage(
                     )
 
                     HelpAccordionItem(
+                        title = Localizations.getString("help_tor_transports_title", appLanguage),
+                        description = Localizations.getString("help_tor_transports_desc", appLanguage),
+                        primaryColor = primaryColor,
+                        onSurfaceColor = onSurfaceColor
+                    )
+
+                    HelpAccordionItem(
                         title = Localizations.getString("help_socks5_title", appLanguage),
                         description = Localizations.getString("help_socks5_desc", appLanguage),
                         primaryColor = primaryColor,
