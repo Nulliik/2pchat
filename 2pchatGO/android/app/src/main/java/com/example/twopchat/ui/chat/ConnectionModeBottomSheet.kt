@@ -358,7 +358,15 @@ fun ConnectionModeBottomSheet(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = if (isRussian) "СЕТЕВЫЕ АДРЕСА СОБЕСЕДНИКА (${allEndpoints.size})" else "PEER NETWORK ENDPOINTS (${allEndpoints.size})",
+                                text = Localizations.tr(
+                                    language = appLanguage,
+                                    ru = "СЕТЕВЫЕ АДРЕСА СОБЕСЕДНИКА (${allEndpoints.size})",
+                                    en = "PEER NETWORK ENDPOINTS (${allEndpoints.size})",
+                                    de = "PEER-NETZWERKADRESSEN (${allEndpoints.size})",
+                                    es = "PUNTOS DE CONEXIÓN DEL PAR (${allEndpoints.size})",
+                                    fr = "ADRESSES RÉSEAU DU PAIR (${allEndpoints.size})",
+                                    pt = "ENDEREÇOS DE REDE DO PAR (${allEndpoints.size})"
+                                ),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = onSurfaceVariant.copy(alpha = 0.70f),
@@ -375,9 +383,9 @@ fun ConnectionModeBottomSheet(
                                 ) {
                                     Text(
                                         text = if (isEndpointsExpanded) {
-                                            if (isRussian) "Свернуть" else "Collapse"
+                                            Localizations.tr(appLanguage, ru = "Свернуть", en = "Collapse", de = "Einklappen", es = "Colapsar", fr = "Réduire", pt = "Recolher")
                                         } else {
-                                            if (isRussian) "Все (${allEndpoints.size})" else "All (${allEndpoints.size})"
+                                            Localizations.tr(appLanguage, ru = "Все (${allEndpoints.size})", en = "All (${allEndpoints.size})", de = "Alle (${allEndpoints.size})", es = "Todos (${allEndpoints.size})", fr = "Tous (${allEndpoints.size})", pt = "Todos (${allEndpoints.size})")
                                         },
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
@@ -417,7 +425,15 @@ fun ConnectionModeBottomSheet(
                                         clipboardManager.setText(AnnotatedString(ep))
                                         Toast.makeText(
                                             context,
-                                            if (isRussian) "Адрес скопирован ($epTypeLabel)" else "Copied ($epTypeLabel)",
+                                            Localizations.tr(
+                                                language = appLanguage,
+                                                ru = "Адрес скопирован ($epTypeLabel)",
+                                                en = "Copied ($epTypeLabel)",
+                                                de = "Kopiert ($epTypeLabel)",
+                                                es = "Copiado ($epTypeLabel)",
+                                                fr = "Copié ($epTypeLabel)",
+                                                pt = "Copiado ($epTypeLabel)"
+                                            ),
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     }
@@ -448,7 +464,7 @@ fun ConnectionModeBottomSheet(
                                 )
                                 Spacer(Modifier.width(6.dp))
                                 Text(
-                                    text = if (isRussian) "копировать" else "copy",
+                                    text = Localizations.tr(appLanguage, ru = "копировать", en = "copy", de = "kopieren", es = "copiar", fr = "copier", pt = "copiar"),
                                     fontSize = 10.sp,
                                     color = primaryColor
                                 )
@@ -467,7 +483,15 @@ fun ConnectionModeBottomSheet(
                                     .padding(vertical = 6.dp)
                             ) {
                                 Text(
-                                    text = if (isRussian) "Показать ещё ${allEndpoints.size - 3} адреса..." else "Show ${allEndpoints.size - 3} more endpoints...",
+                                    text = Localizations.tr(
+                                        language = appLanguage,
+                                        ru = "Показать ещё ${allEndpoints.size - 3} адреса...",
+                                        en = "Show ${allEndpoints.size - 3} more endpoints...",
+                                        de = "Noch ${allEndpoints.size - 3} Adressen anzeigen...",
+                                        es = "Mostrar ${allEndpoints.size - 3} direcciones más...",
+                                        fr = "Afficher ${allEndpoints.size - 3} adresses de plus...",
+                                        pt = "Mostrar mais ${allEndpoints.size - 3} endereços..."
+                                    ),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = primaryColor
