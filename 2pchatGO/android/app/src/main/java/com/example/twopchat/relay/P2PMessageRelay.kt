@@ -2642,45 +2642,28 @@ object P2PMessageRelay {
     fun deleteChat(context: Context, peerName: String) {
         val sharedPrefs = P2PPreferences.prefs(context)
         val expectedFingerprint = sharedPrefs.getString("peer_fingerprint_$peerName", null)
-        val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-        val newSet = activeSet.toMutableSet()
-        if (newSet.remove(peerName)) {
-            sharedPrefs.edit {
-                putStringSet("active_chats", newSet)
-                remove("last_msg_$peerName")
-                remove("unread_count_$peerName")
-                remove("transport_$peerName")
-                remove("peer_fingerprint_$peerName")
-                remove("last_endpoint_$peerName")
-                remove("verified_peer_$peerName")
-                remove("fingerprint_mismatch_$peerName")
-                remove("pending_peer_fingerprint_$peerName")
-                remove("pending_peer_endpoint_$peerName")
-                remove(P2PPreferences.pinnedMessageId(peerName))
-                remove(P2PPreferences.pinnedMessageText(peerName))
-                remove(P2PPreferences.pinnedMessageSender(peerName))
-                remove(P2PPreferences.pinnedBy(peerName))
-                remove(P2PPreferences.pinnedStateVersion(peerName))
-                remove(P2PPreferences.pinnedStateActor(peerName))
-            }
-        } else {
-            sharedPrefs.edit {
-                remove("last_msg_$peerName")
-                remove("unread_count_$peerName")
-                remove("transport_$peerName")
-                remove("peer_fingerprint_$peerName")
-                remove("last_endpoint_$peerName")
-                remove("verified_peer_$peerName")
-                remove("fingerprint_mismatch_$peerName")
-                remove("pending_peer_fingerprint_$peerName")
-                remove("pending_peer_endpoint_$peerName")
-                remove(P2PPreferences.pinnedMessageId(peerName))
-                remove(P2PPreferences.pinnedMessageText(peerName))
-                remove(P2PPreferences.pinnedMessageSender(peerName))
-                remove(P2PPreferences.pinnedBy(peerName))
-                remove(P2PPreferences.pinnedStateVersion(peerName))
-                remove(P2PPreferences.pinnedStateActor(peerName))
-            }
+        val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
+        val newSet = activeSet.toMutableSet().apply { remove(peerName) }
+        
+        sharedPrefs.edit {
+            putStringSet("active_chats", newSet)
+            remove("last_msg_$peerName")
+            remove("unread_count_$peerName")
+            remove("transport_$peerName")
+            remove("peer_fingerprint_$peerName")
+            remove("last_endpoint_$peerName")
+            remove("verified_peer_$peerName")
+            remove("fingerprint_mismatch_$peerName")
+            remove("pending_peer_fingerprint_$peerName")
+            remove("pending_peer_endpoint_$peerName")
+            remove("draft_msg_$peerName")
+            remove("pinned_chat_$peerName")
+            remove(P2PPreferences.pinnedMessageId(peerName))
+            remove(P2PPreferences.pinnedMessageText(peerName))
+            remove(P2PPreferences.pinnedMessageSender(peerName))
+            remove(P2PPreferences.pinnedBy(peerName))
+            remove(P2PPreferences.pinnedStateVersion(peerName))
+            remove(P2PPreferences.pinnedStateActor(peerName))
         }
         
         // Close session asynchronously
@@ -2697,6 +2680,7 @@ object P2PMessageRelay {
         peerSessionStates.remove(peerName)
         peerPresenceVersions.remove(peerName)
         peerTypingStates.remove(peerName)
+        peerConnectionTransports.remove(peerName)
         avatarCache.remove(peerName)
         
         try {
@@ -2705,10 +2689,14 @@ object P2PMessageRelay {
             log(context, "Failed to delete persisted peer avatar", "ERROR", e)
         }
 
-        // Clear messages database
+        // Clear messages database and peer entry
         val db = ChatDatabaseHelper.getInstance(context)
         db.clearMessagesForPeer(peerName)
         db.deletePendingControlsForPeer(peerName)
+        db.deletePeer(peerName)
+
+        // Clear notification history
+        MessageNotificationService.clearHistory(context, peerName)
     }
 
     /**
