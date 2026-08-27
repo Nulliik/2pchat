@@ -6,6 +6,8 @@ import android.graphics.Color as AndroidColor
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
@@ -51,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +64,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
@@ -80,9 +84,9 @@ import java.io.File
 import kotlin.math.roundToInt
 
 private enum class CutoutTool {
+    MAGIC_WAND,
     ERASER,
     RESTORE,
-    MAGIC_WAND,
     LASSO,
 }
 
@@ -107,17 +111,18 @@ fun StickerCutoutDialog(
     var processing by remember { mutableStateOf(false) }
 
     var selectedTool by remember { mutableStateOf(CutoutTool.MAGIC_WAND) }
-    var brushRadius by remember { mutableFloatStateOf(24f) }
-    var wandTolerance by remember { mutableFloatStateOf(35f) }
+    var brushRadius by remember { mutableFloatStateOf(26f) }
+    var wandTolerance by remember { mutableFloatStateOf(28f) }
     var hasWhiteOutline by remember { mutableStateOf(false) }
     var stickerEmoji by remember { mutableStateOf(initialEmoji.ifBlank { "✨" }) }
 
     val lassoPoints = remember { mutableStateListOf<Offset>() }
+    var activeTouchPoint by remember { mutableStateOf<Offset?>(null) }
     var canvasSize by remember { mutableStateOf(IntSize(1, 1)) }
-    var canvasBitmapVersion by remember { mutableStateOf(0) }
+    var renderTick by remember { mutableIntStateOf(0) }
 
     // Recompute live outline preview whenever bitmap changes or outline toggle changes
-    LaunchedEffect(currentBitmap, canvasBitmapVersion, hasWhiteOutline) {
+    LaunchedEffect(currentBitmap, renderTick, hasWhiteOutline) {
         val bmp = currentBitmap
         if (bmp != null && hasWhiteOutline) {
             withContext(Dispatchers.Default) {
@@ -177,34 +182,27 @@ fun StickerCutoutDialog(
 
         val scaleX = bmp.width.toFloat() / canvasSize.width.toFloat()
         val scaleY = bmp.height.toFloat() / canvasSize.height.toFloat()
-        val bmpX = (touchX * scaleX).roundToInt()
-        val bmpY = (touchY * scaleY).roundToInt()
-        val bmpRadius = (brushRadius * maxOf(scaleX, scaleY)).roundToInt().coerceAtLeast(1)
+        val bmpX = touchX * scaleX
+        val bmpY = touchY * scaleY
+        val bmpRadius = brushRadius * maxOf(scaleX, scaleY)
 
-        val minX = (bmpX - bmpRadius).coerceIn(0, bmp.width - 1)
-        val maxX = (bmpX + bmpRadius).coerceIn(0, bmp.width - 1)
-        val minY = (bmpY - bmpRadius).coerceIn(0, bmp.height - 1)
-        val maxY = (bmpY + bmpRadius).coerceIn(0, bmp.height - 1)
-
-        val rSq = bmpRadius * bmpRadius
-        var modified = false
-        for (y in minY..maxY) {
-            val dy = y - bmpY
-            val dySq = dy * dy
-            for (x in minX..maxX) {
-                val dx = x - bmpX
-                if (dx * dx + dySq <= rSq) {
-                    val newColor = if (isErase) AndroidColor.TRANSPARENT else orig.getPixel(x, y)
-                    if (bmp.getPixel(x, y) != newColor) {
-                        bmp.setPixel(x, y, newColor)
-                        modified = true
-                    }
-                }
+        val canvas = Canvas(bmp)
+        if (isErase) {
+            val erasePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
+                style = Paint.Style.FILL
             }
+            canvas.drawCircle(bmpX, bmpY, bmpRadius, erasePaint)
+        } else {
+            val saveCount = canvas.save()
+            val clipPath = Path().apply {
+                addCircle(bmpX, bmpY, bmpRadius, Path.Direction.CW)
+            }
+            canvas.clipPath(clipPath)
+            canvas.drawBitmap(orig, 0f, 0f, null)
+            canvas.restoreToCount(saveCount)
         }
-        if (modified) {
-            canvasBitmapVersion++
-        }
+        renderTick++
     }
 
     fun applyMagicWandAt(touchX: Float, touchY: Float) {
@@ -221,7 +219,7 @@ fun StickerCutoutDialog(
                 StickerSupport.removeBackgroundAtPoint(bmp, bmpX, bmpY, wandTolerance.toInt())
             }
             currentBitmap = cut
-            canvasBitmapVersion++
+            renderTick++
             processing = false
         }
     }
@@ -234,7 +232,7 @@ fun StickerCutoutDialog(
                 StickerSupport.removeBackgroundAuto(bmp, tolerance = wandTolerance.toInt())
             }
             currentBitmap = cut
-            canvasBitmapVersion++
+            renderTick++
             processing = false
             Toast.makeText(
                 context,
@@ -260,7 +258,7 @@ fun StickerCutoutDialog(
             }
             currentBitmap = cut
             lassoPoints.clear()
-            canvasBitmapVersion++
+            renderTick++
             processing = false
         }
     }
@@ -269,7 +267,7 @@ fun StickerCutoutDialog(
         val orig = originalBitmap ?: return
         currentBitmap = orig.copy(Bitmap.Config.ARGB_8888, true)
         lassoPoints.clear()
-        canvasBitmapVersion++
+        renderTick++
     }
 
     fun finalizeAndSave() {
@@ -399,6 +397,7 @@ fun StickerCutoutDialog(
                                         if (selectedTool != CutoutTool.MAGIC_WAND) {
                                             detectDragGestures(
                                                 onDragStart = { offset ->
+                                                    activeTouchPoint = offset
                                                     when (selectedTool) {
                                                         CutoutTool.ERASER -> applyEraserOrRestoreAt(
                                                             offset.x,
@@ -419,6 +418,7 @@ fun StickerCutoutDialog(
                                                 },
                                                 onDrag = { change, _ ->
                                                     change.consume()
+                                                    activeTouchPoint = change.position
                                                     when (selectedTool) {
                                                         CutoutTool.ERASER -> applyEraserOrRestoreAt(
                                                             change.position.x,
@@ -435,14 +435,21 @@ fun StickerCutoutDialog(
                                                     }
                                                 },
                                                 onDragEnd = {
+                                                    activeTouchPoint = null
                                                     if (selectedTool == CutoutTool.LASSO) {
                                                         applyLassoCut()
                                                     }
+                                                },
+                                                onDragCancel = {
+                                                    activeTouchPoint = null
                                                 },
                                             )
                                         }
                                     },
                             ) {
+                                // Observe state for real-time live repaint
+                                val _tick = renderTick
+
                                 // Draw Checkerboard Transparency Pattern
                                 val checkerSize = 20f
                                 val cols = (size.width / checkerSize).toInt() + 1
@@ -469,6 +476,23 @@ fun StickerCutoutDialog(
                                     }
                                 }
 
+                                // Draw live brush cursor indicator circle under finger
+                                val touchPos = activeTouchPoint
+                                if (touchPos != null && (selectedTool == CutoutTool.ERASER || selectedTool == CutoutTool.RESTORE)) {
+                                    val brushColor = if (selectedTool == CutoutTool.ERASER) Color.Red else Color.Cyan
+                                    drawCircle(
+                                        color = brushColor.copy(alpha = 0.25f),
+                                        radius = brushRadius,
+                                        center = touchPos,
+                                    )
+                                    drawCircle(
+                                        color = Color.White.copy(alpha = 0.85f),
+                                        radius = brushRadius,
+                                        center = touchPos,
+                                        style = Stroke(width = 1.5.dp.toPx()),
+                                    )
+                                }
+
                                 // Draw Lasso Points path if in Lasso mode
                                 if (selectedTool == CutoutTool.LASSO && lassoPoints.size >= 2) {
                                     val path = androidx.compose.ui.graphics.Path().apply {
@@ -480,7 +504,7 @@ fun StickerCutoutDialog(
                                     drawPath(
                                         path = path,
                                         color = primaryColor,
-                                        style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                        style = Stroke(
                                             width = 3.dp.toPx(),
                                             cap = androidx.compose.ui.graphics.StrokeCap.Round,
                                         ),
@@ -493,7 +517,7 @@ fun StickerCutoutDialog(
 
                 Spacer(Modifier.height(10.dp))
 
-                // Action Toolbar: Magic Wand, Outline Toggle, Emoji
+                // Action Toolbar: Auto-Cutout, Outline Toggle, Emoji
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -605,7 +629,7 @@ fun StickerCutoutDialog(
                         Slider(
                             value = wandTolerance,
                             onValueChange = { wandTolerance = it },
-                            valueRange = 10f..80f,
+                            valueRange = 5f..60f,
                             modifier = Modifier.weight(1f),
                             colors = SliderDefaults.colors(
                                 thumbColor = Color(0xFF8B5CF6),

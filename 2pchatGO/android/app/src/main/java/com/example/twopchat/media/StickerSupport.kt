@@ -1029,7 +1029,7 @@ object StickerSupport {
         bitmap: Bitmap,
         startX: Int,
         startY: Int,
-        tolerance: Int = 35,
+        tolerance: Int = 30,
     ): Bitmap {
         val width = bitmap.width
         val height = bitmap.height
@@ -1047,12 +1047,15 @@ object StickerSupport {
         queue.add(startIdx)
         visited[startIdx] = true
 
-        fun colorDist(c1: Int, c2: Int): Int {
-            val rDiff = Color.red(c1) - Color.red(c2)
-            val gDiff = Color.green(c1) - Color.green(c2)
-            val bDiff = Color.blue(c1) - Color.blue(c2)
-            return kotlin.math.sqrt((rDiff * rDiff + gDiff * gDiff + bDiff * bDiff).toDouble()).toInt()
+        fun colorDist(c1: Int, c2: Int): Double {
+            val rDiff = (Color.red(c1) - Color.red(c2)).toDouble()
+            val gDiff = (Color.green(c1) - Color.green(c2)).toDouble()
+            val bDiff = (Color.blue(c1) - Color.blue(c2)).toDouble()
+            val rMean = (Color.red(c1) + Color.red(c2)) / 2.0
+            return kotlin.math.sqrt((2.0 + rMean / 256.0) * rDiff * rDiff + 4.0 * gDiff * gDiff + (2.0 + (255.0 - rMean) / 256.0) * bDiff * bDiff)
         }
+
+        val effectiveTol = tolerance.toDouble() * 1.6
 
         while (!queue.isEmpty()) {
             val idx = queue.poll() ?: break
@@ -1069,7 +1072,7 @@ object StickerSupport {
             for (nIdx in intArrayOf(n1, n2, n3, n4)) {
                 if (nIdx in pixels.indices && !visited[nIdx]) {
                     val nColor = pixels[nIdx]
-                    if (Color.alpha(nColor) < 20 || colorDist(targetColor, nColor) <= tolerance) {
+                    if (Color.alpha(nColor) < 20 || colorDist(targetColor, nColor) <= effectiveTol) {
                         visited[nIdx] = true
                         queue.add(nIdx)
                     }
@@ -1081,7 +1084,7 @@ object StickerSupport {
         return result
     }
 
-    fun removeBackgroundAuto(bitmap: Bitmap, tolerance: Int = 40): Bitmap {
+    fun removeBackgroundAuto(bitmap: Bitmap, tolerance: Int = 28): Bitmap {
         val width = bitmap.width
         val height = bitmap.height
         val result = bitmap.copy(Bitmap.Config.ARGB_8888, true)
@@ -1091,32 +1094,38 @@ object StickerSupport {
         val visited = BooleanArray(width * height)
         val queue = ArrayDeque<Int>()
 
-        fun colorDist(c1: Int, c2: Int): Int {
-            val rDiff = Color.red(c1) - Color.red(c2)
-            val gDiff = Color.green(c1) - Color.green(c2)
-            val bDiff = Color.blue(c1) - Color.blue(c2)
-            return kotlin.math.sqrt((rDiff * rDiff + gDiff * gDiff + bDiff * bDiff).toDouble()).toInt()
+        fun colorDist(c1: Int, c2: Int): Double {
+            val rDiff = (Color.red(c1) - Color.red(c2)).toDouble()
+            val gDiff = (Color.green(c1) - Color.green(c2)).toDouble()
+            val bDiff = (Color.blue(c1) - Color.blue(c2)).toDouble()
+            val rMean = (Color.red(c1) + Color.red(c2)) / 2.0
+            return kotlin.math.sqrt((2.0 + rMean / 256.0) * rDiff * rDiff + 4.0 * gDiff * gDiff + (2.0 + (255.0 - rMean) / 256.0) * bDiff * bDiff)
         }
 
-        // Sample seeds all along the outer boundary (every 6 pixels)
+        val effectiveTol = tolerance.toDouble() * 1.5
+
         val seedIndices = mutableListOf<Int>()
-        val step = 6
-        for (x in 0 until width step step) {
-            seedIndices.add(x) // top edge
-            seedIndices.add((height - 1) * width + x) // bottom edge
-        }
-        for (y in 0 until height step step) {
-            seedIndices.add(y * width) // left edge
-            seedIndices.add(y * width + (width - 1)) // right edge
-        }
+        // 4 corners
+        seedIndices.add(0)
+        seedIndices.add(width - 1)
+        seedIndices.add((height - 1) * width)
+        seedIndices.add((height - 1) * width + (width - 1))
 
-        // Collect seed colors
-        val seedColors = seedIndices.map { pixels[it] }.filter { Color.alpha(it) >= 15 }.distinct()
+        // Top edge
+        for (x in 0 until width step 12) {
+            seedIndices.add(x)
+        }
+        // Top half of left & right sides
+        for (y in 0 until (height / 2) step 12) {
+            seedIndices.add(y * width)
+            seedIndices.add(y * width + (width - 1))
+        }
 
         for (seedIdx in seedIndices) {
-            if (visited[seedIdx]) continue
+            if (seedIdx !in pixels.indices || visited[seedIdx]) continue
             val seedColor = pixels[seedIdx]
-            if (Color.alpha(seedColor) < 15) continue
+            if (Color.alpha(seedColor) < 20) continue
+
             queue.add(seedIdx)
             visited[seedIdx] = true
 
@@ -1135,8 +1144,7 @@ object StickerSupport {
                 for (nIdx in intArrayOf(n1, n2, n3, n4)) {
                     if (nIdx in pixels.indices && !visited[nIdx]) {
                         val nColor = pixels[nIdx]
-                        val isSeedMatch = seedColors.any { sc -> colorDist(sc, nColor) <= tolerance }
-                        if (Color.alpha(nColor) < 20 || isSeedMatch) {
+                        if (Color.alpha(nColor) < 20 || colorDist(seedColor, nColor) <= effectiveTol) {
                             visited[nIdx] = true
                             queue.add(nIdx)
                         }
