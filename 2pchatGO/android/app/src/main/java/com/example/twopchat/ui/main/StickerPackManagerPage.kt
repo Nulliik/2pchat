@@ -1,8 +1,10 @@
 package com.example.twopchat.ui.main
 
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import com.example.twopchat.media.*
+import com.example.twopchat.ui.chat.StickerCutoutDialog
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -210,6 +212,12 @@ internal fun StickerPackManagerPage(
     }
 
     var packToExport by remember { mutableStateOf<BuiltinStickerPack?>(null) }
+    var cutoutSourceUri by remember { mutableStateOf<Uri?>(null) }
+    val cutoutPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        cutoutSourceUri = uri
+    }
     val exportFileLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream"),
     ) { uri ->
@@ -332,6 +340,7 @@ internal fun StickerPackManagerPage(
                 },
                 onSelectSticker = { selectedStickerId = it.stickerId },
                 onAdd = { sourcePicker.launch(arrayOf("image/*")) },
+                onAddCutout = { cutoutPicker.launch(arrayOf("image/*")) },
                 onRename = { showRenameDialog = true },
                 onCopy = { showCopyDialog = true },
                 onShare = { sharePack(selectedPack) },
@@ -519,6 +528,46 @@ internal fun StickerPackManagerPage(
                     }
                     operationRunning = false
                     if (updated != null) refreshKey += 1
+                }
+            },
+        )
+    }
+
+    if (cutoutSourceUri != null) {
+        val targetPackId = selectedPackId ?: pendingCreate?.first
+        StickerCutoutDialog(
+            sourceUri = cutoutSourceUri,
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            onDismiss = { cutoutSourceUri = null },
+            onSave = { processedBitmap, emoji ->
+                cutoutSourceUri = null
+                if (targetPackId != null) {
+                    operationRunning = true
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            StickerSupport.addBitmapToPack(
+                                context = context,
+                                packId = targetPackId,
+                                bitmap = processedBitmap,
+                                emoji = emoji,
+                            )
+                        }
+                        operationRunning = false
+                        if (result.pack != null) {
+                            selectedPackId = result.pack.id
+                            refreshKey += 1
+                            notify(
+                                "Стикер добавлен в стикерпак",
+                                "Sticker added to sticker pack",
+                            )
+                        } else {
+                            notify(
+                                "Не удалось сохранить стикер",
+                                "Failed to save sticker",
+                            )
+                        }
+                    }
                 }
             },
         )
@@ -860,6 +909,7 @@ private fun PackEditor(
     onBackClick: () -> Unit,
     onSelectSticker: (BuiltinSticker) -> Unit,
     onAdd: () -> Unit,
+    onAddCutout: () -> Unit,
     onRename: () -> Unit,
     onCopy: () -> Unit,
     onShare: () -> Unit,
@@ -910,11 +960,21 @@ private fun PackEditor(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(if (appLanguage == "Русский") "Стикеры" else "Stickers", maxLines = 1, fontSize = 13.sp)
+                            Spacer(Modifier.width(2.dp))
+                            Text(if (appLanguage == "Русский") "Файлы" else "Files", maxLines = 1, fontSize = 12.sp)
+                        }
+
+                        Button(
+                            onClick = onAddCutout,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6)),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                        ) {
+                            Text(if (appLanguage == "Русский") "✂️ Вырезка" else "✂️ Cutout", maxLines = 1, fontSize = 12.sp, color = Color.White)
                         }
 
                         Box(

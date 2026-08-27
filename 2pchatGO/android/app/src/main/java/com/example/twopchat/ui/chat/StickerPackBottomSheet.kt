@@ -187,15 +187,20 @@ internal fun StickerPackBottomSheet(
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                        shape = RoundedCornerShape(12.dp),
                     ) {
-                        Text(if (appLanguage == "Русский") "Добавить" else "Add")
+                        Text(
+                            text = if (appLanguage == "Русский") "✨ Добавить стикерпак" else "✨ Add Sticker Pack",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                        )
                     }
                 } else if (pack != null) {
                     Text(
-                        text = if (appLanguage == "Русский") "В коллекции" else "In collection",
+                        text = if (appLanguage == "Русский") "✓ В коллекции" else "✓ In collection",
                         color = primaryColor,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
                     )
                 }
             }

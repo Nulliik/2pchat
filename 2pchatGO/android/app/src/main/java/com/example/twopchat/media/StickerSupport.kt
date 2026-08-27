@@ -4,10 +4,13 @@ import android.content.Context
 import com.example.twopchat.config.P2PPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ImageDecoder
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.RectF
 import android.net.Uri
 import android.os.Build
@@ -963,7 +966,7 @@ object StickerSupport {
             } finally {
                 bitmap.recycle()
             }
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             false
         } finally {
             source.delete()
@@ -971,7 +974,175 @@ object StickerSupport {
         }
     }
 
-    private fun decodeStickerBitmap(source: File): Bitmap? {
+    fun isGif(source: File): Boolean {
+        if (!source.exists() || source.length() < 6) return false
+        val header = ByteArray(6)
+        try {
+            source.inputStream().use { input ->
+                if (input.read(header) != 6) return false
+            }
+            val signature = String(header, Charsets.US_ASCII)
+            return signature.startsWith("GIF87a") || signature.startsWith("GIF89a")
+        } catch (_: Throwable) {
+            return false
+        }
+    }
+
+    fun removeBackgroundAuto(bitmap: Bitmap, tolerance: Int = 32): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        val result = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+        val pixels = IntArray(width * height)
+        result.getPixels(pixels, 0, width, 0, 0, width, height)
+
+        val visited = BooleanArray(width * height)
+        val queue = ArrayDeque<Int>()
+
+        fun colorDist(c1: Int, c2: Int): Int {
+            val rDiff = Color.red(c1) - Color.red(c2)
+            val gDiff = Color.green(c1) - Color.green(c2)
+            val bDiff = Color.blue(c1) - Color.blue(c2)
+            return kotlin.math.sqrt((rDiff * rDiff + gDiff * gDiff + bDiff * bDiff).toDouble()).toInt()
+        }
+
+        val corners = intArrayOf(
+            0,
+            width - 1,
+            (height - 1) * width,
+            (height - 1) * width + (width - 1),
+            width / 2,
+            (height - 1) * width + width / 2,
+            (height / 2) * width,
+            (height / 2) * width + (width - 1),
+        )
+
+        for (corner in corners) {
+            if (corner !in pixels.indices || visited[corner]) continue
+            val cornerColor = pixels[corner]
+            if (Color.alpha(cornerColor) < 20) continue
+            queue.add(corner)
+            visited[corner] = true
+
+            while (!queue.isEmpty()) {
+                val idx = queue.poll() ?: break
+                pixels[idx] = Color.TRANSPARENT
+
+                val x = idx % width
+                val y = idx / width
+
+                val n1 = if (x > 0) idx - 1 else -1
+                val n2 = if (x < width - 1) idx + 1 else -1
+                val n3 = if (y > 0) idx - width else -1
+                val n4 = if (y < height - 1) idx + width else -1
+
+                for (nIdx in intArrayOf(n1, n2, n3, n4)) {
+                    if (nIdx in pixels.indices && !visited[nIdx]) {
+                        val nColor = pixels[nIdx]
+                        if (Color.alpha(nColor) < 20 || colorDist(cornerColor, nColor) <= tolerance) {
+                            visited[nIdx] = true
+                            queue.add(nIdx)
+                        }
+                    }
+                }
+            }
+        }
+
+        result.setPixels(pixels, 0, width, 0, 0, width, height)
+        return result
+    }
+
+    fun applyStickerOutline(
+        src: Bitmap,
+        strokeWidth: Float = 12f,
+        strokeColor: Int = Color.WHITE,
+    ): Bitmap {
+        val padding = (strokeWidth * 2.5f).toInt()
+        val outWidth = src.width + padding * 2
+        val outHeight = src.height + padding * 2
+        val result = Bitmap.createBitmap(outWidth, outHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(result)
+
+        val alphaMask = src.extractAlpha()
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = strokeColor
+            style = Paint.Style.FILL_AND_STROKE
+            maskFilter = BlurMaskFilter((strokeWidth * 0.4f).coerceAtLeast(1f), BlurMaskFilter.Blur.SOLID)
+        }
+
+        val steps = 24
+        for (i in 0 until steps) {
+            val angle = (2 * Math.PI * i / steps)
+            val dx = (strokeWidth * Math.cos(angle)).toFloat() + padding
+            val dy = (strokeWidth * Math.sin(angle)).toFloat() + padding
+            canvas.drawBitmap(alphaMask, dx, dy, strokePaint)
+        }
+        alphaMask.recycle()
+
+        canvas.drawBitmap(src, padding.toFloat(), padding.toFloat(), null)
+        return result
+    }
+
+    fun applyLassoCut(src: Bitmap, points: List<PointF>): Bitmap {
+        if (points.size < 3) return src
+        val result = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(result)
+        val path = Path().apply {
+            moveTo(points[0].x, points[0].y)
+            for (i in 1 until points.size) {
+                lineTo(points[i].x, points[i].y)
+            }
+            close()
+        }
+        canvas.clipPath(path)
+        canvas.drawBitmap(src, 0f, 0f, null)
+        return result
+    }
+
+    fun addBitmapToPack(
+        context: Context,
+        packId: String,
+        bitmap: Bitmap,
+        emoji: String = "✨",
+    ): PackMutationResult = synchronized(installedPacksLock) {
+        val pack = readInstalledPack(File(installedPacksDirectory(context), safeId(packId)))
+            ?: return@synchronized PackMutationResult(null, rejectedCount = 1)
+        if (!pack.isOwned || pack.stickers.size >= MAX_PACK_STICKERS) {
+            return@synchronized PackMutationResult(pack, rejectedCount = 1)
+        }
+        val directory = File(installedPacksDirectory(context), pack.id)
+        val stickerId = uniqueStickerId(pack.stickers, pack.stickers.size)
+        val target = File(directory, fileName(BuiltinSticker(pack.id, stickerId, "", 0L)))
+        if (!encodeStickerBitmap(bitmap, target)) {
+            target.delete()
+            return@synchronized PackMutationResult(pack, rejectedCount = 1)
+        }
+        val newSticker = BuiltinSticker(
+            packId = pack.id,
+            stickerId = stickerId,
+            emoji = emoji.trim().ifBlank { "✨" },
+            backgroundColor = 0L,
+            localFilePath = target.absolutePath,
+        )
+        if (!writePackManifest(
+                directory,
+                pack.id,
+                pack.title,
+                pack.author,
+                pack.stickers + newSticker,
+            )
+        ) {
+            target.delete()
+            return@synchronized PackMutationResult(pack, rejectedCount = 1)
+        }
+        invalidatePackCaches(context, pack.id)
+        PackMutationResult(
+            readInstalledPack(directory),
+            addedCount = 1,
+            rejectedCount = 0,
+        )
+    }
+
+    fun decodeStickerBitmap(source: File): Bitmap? {
         val decoded = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             ImageDecoder.decodeBitmap(ImageDecoder.createSource(source)) { decoder, info, _ ->
                 val width = info.size.width.coerceAtLeast(1)
@@ -995,7 +1166,7 @@ object StickerSupport {
                 source.absolutePath,
                 BitmapFactory.Options().apply {
                     inSampleSize = sampleSize
-                    inPreferredConfig = Bitmap.Config.RGB_565
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
                 },
             )
         } ?: return null
@@ -1012,7 +1183,7 @@ object StickerSupport {
         return scaled
     }
 
-    private fun encodeStickerBitmap(bitmap: Bitmap, target: File): Boolean {
+    fun encodeStickerBitmap(bitmap: Bitmap, target: File): Boolean {
         val formats = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             listOf(
                 Bitmap.CompressFormat.WEBP_LOSSLESS to 100,
