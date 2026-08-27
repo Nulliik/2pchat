@@ -172,11 +172,6 @@ internal class IncomingMessageRouter(
                             }
                         }
                         P2PMessageRelay.handlePeerNicknameReceived(context, sender, nickname, aboutMe)
-                        val sharedPrefs = P2PPreferences.prefs(context)
-                        val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-                        if (!activeSet.contains(effectiveName) && !P2PMessageRelay.isPlaceholderPeerName(effectiveName)) {
-                            sharedPrefs.edit().putStringSet("active_chats", activeSet + effectiveName).apply()
-                        }
                         P2PMessageRelay.shareAvatar(context, effectiveName, "")
                         return
                     }
