@@ -13,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,7 +61,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
@@ -82,13 +82,16 @@ import kotlin.math.roundToInt
 private enum class CutoutTool {
     ERASER,
     RESTORE,
+    MAGIC_WAND,
     LASSO,
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StickerCutoutDialog(
-    sourceUri: Uri?,
+    sourceUri: Uri? = null,
+    initialFilePath: String? = null,
+    initialEmoji: String = "✨",
     appLanguage: String,
     primaryColor: Color,
     onDismiss: () -> Unit,
@@ -99,41 +102,69 @@ fun StickerCutoutDialog(
 
     var originalBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var currentBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var outlinedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var loading by remember { mutableStateOf(true) }
     var processing by remember { mutableStateOf(false) }
 
-    var selectedTool by remember { mutableStateOf(CutoutTool.ERASER) }
+    var selectedTool by remember { mutableStateOf(CutoutTool.MAGIC_WAND) }
     var brushRadius by remember { mutableFloatStateOf(24f) }
+    var wandTolerance by remember { mutableFloatStateOf(35f) }
     var hasWhiteOutline by remember { mutableStateOf(false) }
-    var stickerEmoji by remember { mutableStateOf("✨") }
+    var stickerEmoji by remember { mutableStateOf(initialEmoji.ifBlank { "✨" }) }
 
     val lassoPoints = remember { mutableStateListOf<Offset>() }
     var canvasSize by remember { mutableStateOf(IntSize(1, 1)) }
     var canvasBitmapVersion by remember { mutableStateOf(0) }
 
-    // Load and normalize initial source image
-    LaunchedEffect(sourceUri) {
-        if (sourceUri == null) {
+    // Recompute live outline preview whenever bitmap changes or outline toggle changes
+    LaunchedEffect(currentBitmap, canvasBitmapVersion, hasWhiteOutline) {
+        val bmp = currentBitmap
+        if (bmp != null && hasWhiteOutline) {
+            withContext(Dispatchers.Default) {
+                outlinedBitmap = StickerSupport.applyStickerOutline(bmp, strokeWidth = 14f)
+            }
+        } else {
+            outlinedBitmap = null
+        }
+    }
+
+    // Load and normalize initial source image (either from Uri or from existing local file)
+    LaunchedEffect(sourceUri, initialFilePath) {
+        if (sourceUri == null && initialFilePath.isNullOrBlank()) {
             onDismiss()
             return@LaunchedEffect
         }
         loading = true
         withContext(Dispatchers.IO) {
-            val tempFile = File(context.cacheDir, "cutout_source_${System.nanoTime()}.tmp")
-            try {
-                context.contentResolver.openInputStream(sourceUri)?.use { input ->
-                    tempFile.outputStream().use { output -> input.copyTo(output) }
+            val fileToDecode: File? = if (sourceUri != null) {
+                val tempFile = File(context.cacheDir, "cutout_source_${System.nanoTime()}.tmp")
+                try {
+                    context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                        tempFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    tempFile
+                } catch (_: Throwable) {
+                    null
                 }
-                val decoded = StickerSupport.decodeStickerBitmap(tempFile)
-                if (decoded != null) {
-                    val argb = decoded.copy(Bitmap.Config.ARGB_8888, true)
-                    if (argb !== decoded) decoded.recycle()
-                    originalBitmap = argb.copy(Bitmap.Config.ARGB_8888, false)
-                    currentBitmap = argb
+            } else if (!initialFilePath.isNullOrBlank()) {
+                File(initialFilePath).takeIf { it.exists() }
+            } else {
+                null
+            }
+
+            if (fileToDecode != null) {
+                try {
+                    val decoded = StickerSupport.decodeStickerBitmap(fileToDecode)
+                    if (decoded != null) {
+                        val argb = decoded.copy(Bitmap.Config.ARGB_8888, true)
+                        if (argb !== decoded) decoded.recycle()
+                        originalBitmap = argb.copy(Bitmap.Config.ARGB_8888, false)
+                        currentBitmap = argb
+                    }
+                } catch (_: Throwable) {
+                } finally {
+                    if (sourceUri != null) fileToDecode.delete()
                 }
-            } catch (_: Throwable) {
-            } finally {
-                tempFile.delete()
             }
         }
         loading = false
@@ -176,12 +207,31 @@ fun StickerCutoutDialog(
         }
     }
 
+    fun applyMagicWandAt(touchX: Float, touchY: Float) {
+        val bmp = currentBitmap ?: return
+        if (canvasSize.width <= 0 || canvasSize.height <= 0) return
+        val scaleX = bmp.width.toFloat() / canvasSize.width.toFloat()
+        val scaleY = bmp.height.toFloat() / canvasSize.height.toFloat()
+        val bmpX = (touchX * scaleX).roundToInt().coerceIn(0, bmp.width - 1)
+        val bmpY = (touchY * scaleY).roundToInt().coerceIn(0, bmp.height - 1)
+
+        processing = true
+        scope.launch {
+            val cut = withContext(Dispatchers.Default) {
+                StickerSupport.removeBackgroundAtPoint(bmp, bmpX, bmpY, wandTolerance.toInt())
+            }
+            currentBitmap = cut
+            canvasBitmapVersion++
+            processing = false
+        }
+    }
+
     fun autoRemoveBackground() {
         val bmp = currentBitmap ?: return
         processing = true
         scope.launch {
             val cut = withContext(Dispatchers.Default) {
-                StickerSupport.removeBackgroundAuto(bmp, tolerance = 35)
+                StickerSupport.removeBackgroundAuto(bmp, tolerance = wandTolerance.toInt())
             }
             currentBitmap = cut
             canvasBitmapVersion++
@@ -228,7 +278,7 @@ fun StickerCutoutDialog(
         scope.launch {
             val result = withContext(Dispatchers.Default) {
                 if (hasWhiteOutline) {
-                    StickerSupport.applyStickerOutline(bmp, strokeWidth = 12f)
+                    StickerSupport.applyStickerOutline(bmp, strokeWidth = 14f)
                 } else {
                     bmp
                 }
@@ -250,7 +300,7 @@ fun StickerCutoutDialog(
                     .fillMaxSize()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
-                // Header Bar
+                // Top Header Bar
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -330,56 +380,67 @@ fun StickerCutoutDialog(
                     if (loading || processing) {
                         CircularProgressIndicator(color = primaryColor)
                     } else {
-                        val bmp = currentBitmap
-                        if (bmp != null) {
+                        val bmpToDisplay = if (hasWhiteOutline) (outlinedBitmap ?: currentBitmap) else currentBitmap
+                        if (bmpToDisplay != null) {
                             Canvas(
                                 modifier = Modifier
                                     .fillMaxWidth(0.92f)
                                     .aspectRatio(1f)
                                     .clip(RoundedCornerShape(8.dp))
                                     .onSizeChanged { canvasSize = it }
+                                    .pointerInput(selectedTool, wandTolerance) {
+                                        if (selectedTool == CutoutTool.MAGIC_WAND) {
+                                            detectTapGestures { offset ->
+                                                applyMagicWandAt(offset.x, offset.y)
+                                            }
+                                        }
+                                    }
                                     .pointerInput(selectedTool, brushRadius) {
-                                        detectDragGestures(
-                                            onDragStart = { offset ->
-                                                when (selectedTool) {
-                                                    CutoutTool.ERASER -> applyEraserOrRestoreAt(
-                                                        offset.x,
-                                                        offset.y,
-                                                        isErase = true,
-                                                    )
-                                                    CutoutTool.RESTORE -> applyEraserOrRestoreAt(
-                                                        offset.x,
-                                                        offset.y,
-                                                        isErase = false,
-                                                    )
-                                                    CutoutTool.LASSO -> {
-                                                        lassoPoints.clear()
-                                                        lassoPoints.add(offset)
+                                        if (selectedTool != CutoutTool.MAGIC_WAND) {
+                                            detectDragGestures(
+                                                onDragStart = { offset ->
+                                                    when (selectedTool) {
+                                                        CutoutTool.ERASER -> applyEraserOrRestoreAt(
+                                                            offset.x,
+                                                            offset.y,
+                                                            isErase = true,
+                                                        )
+                                                        CutoutTool.RESTORE -> applyEraserOrRestoreAt(
+                                                            offset.x,
+                                                            offset.y,
+                                                            isErase = false,
+                                                        )
+                                                        CutoutTool.LASSO -> {
+                                                            lassoPoints.clear()
+                                                            lassoPoints.add(offset)
+                                                        }
+                                                        else -> {}
                                                     }
-                                                }
-                                            },
-                                            onDrag = { change, _ ->
-                                                change.consume()
-                                                when (selectedTool) {
-                                                    CutoutTool.ERASER -> applyEraserOrRestoreAt(
-                                                        change.position.x,
-                                                        change.position.y,
-                                                        isErase = true,
-                                                    )
-                                                    CutoutTool.RESTORE -> applyEraserOrRestoreAt(
-                                                        change.position.x,
-                                                        change.position.y,
-                                                        isErase = false,
-                                                    )
-                                                    CutoutTool.LASSO -> lassoPoints.add(change.position)
-                                                }
-                                            },
-                                            onDragEnd = {
-                                                if (selectedTool == CutoutTool.LASSO) {
-                                                    applyLassoCut()
-                                                }
-                                            },
-                                        )
+                                                },
+                                                onDrag = { change, _ ->
+                                                    change.consume()
+                                                    when (selectedTool) {
+                                                        CutoutTool.ERASER -> applyEraserOrRestoreAt(
+                                                            change.position.x,
+                                                            change.position.y,
+                                                            isErase = true,
+                                                        )
+                                                        CutoutTool.RESTORE -> applyEraserOrRestoreAt(
+                                                            change.position.x,
+                                                            change.position.y,
+                                                            isErase = false,
+                                                        )
+                                                        CutoutTool.LASSO -> lassoPoints.add(change.position)
+                                                        else -> {}
+                                                    }
+                                                },
+                                                onDragEnd = {
+                                                    if (selectedTool == CutoutTool.LASSO) {
+                                                        applyLassoCut()
+                                                    }
+                                                },
+                                            )
+                                        }
                                     },
                             ) {
                                 // Draw Checkerboard Transparency Pattern
@@ -399,7 +460,7 @@ fun StickerCutoutDialog(
 
                                 // Draw Bitmap
                                 drawIntoCanvas { canvas ->
-                                    val nativeBmp = bmp
+                                    val nativeBmp = bmpToDisplay
                                     if (!nativeBmp.isRecycled) {
                                         val srcRect = android.graphics.Rect(0, 0, nativeBmp.width, nativeBmp.height)
                                         val dstRect = android.graphics.Rect(0, 0, size.width.toInt(), size.height.toInt())
@@ -448,7 +509,7 @@ fun StickerCutoutDialog(
                         modifier = Modifier.weight(1f),
                     ) {
                         Text(
-                            text = if (appLanguage == "Русский") "🪄 Удалить фон" else "🪄 Magic Cutout",
+                            text = if (appLanguage == "Русский") "🪄 Авто-удаление" else "🪄 Auto Cutout",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                         )
@@ -494,42 +555,64 @@ fun StickerCutoutDialog(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     FilterChip(
+                        selected = selectedTool == CutoutTool.MAGIC_WAND,
+                        onClick = { selectedTool = CutoutTool.MAGIC_WAND },
+                        label = { Text(if (appLanguage == "Русский") "🪄 Палочка" else "🪄 Wand", fontSize = 11.sp) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                    )
+                    FilterChip(
                         selected = selectedTool == CutoutTool.ERASER,
                         onClick = { selectedTool = CutoutTool.ERASER },
-                        label = { Text(if (appLanguage == "Русский") "🧽 Ластик" else "🧽 Eraser") },
+                        label = { Text(if (appLanguage == "Русский") "🧽 Ластик" else "🧽 Eraser", fontSize = 11.sp) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp),
                     )
                     FilterChip(
                         selected = selectedTool == CutoutTool.RESTORE,
                         onClick = { selectedTool = CutoutTool.RESTORE },
-                        label = { Text(if (appLanguage == "Русский") "🖌️ Восстановить" else "🖌️ Restore") },
+                        label = { Text(if (appLanguage == "Русский") "🖌️ Вернуть" else "🖌️ Restore", fontSize = 11.sp) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp),
                     )
                     FilterChip(
                         selected = selectedTool == CutoutTool.LASSO,
                         onClick = { selectedTool = CutoutTool.LASSO },
-                        label = { Text(if (appLanguage == "Русский") "✂️ Лассо" else "✂️ Lasso") },
+                        label = { Text(if (appLanguage == "Русский") "✂️ Лассо" else "✂️ Lasso", fontSize = 11.sp) },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp),
                     )
                 }
 
-                // Brush Radius Slider (when using Eraser / Restore)
-                if (selectedTool == CutoutTool.ERASER || selectedTool == CutoutTool.RESTORE) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = if (appLanguage == "Русский") "Размер:" else "Size:",
-                            color = Color.White.copy(alpha = 0.7f),
-                            fontSize = 12.sp,
+                // Radius / Tolerance Slider
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (selectedTool == CutoutTool.MAGIC_WAND) {
+                            if (appLanguage == "Русский") "Порог: ${wandTolerance.toInt()}" else "Tolerance: ${wandTolerance.toInt()}"
+                        } else {
+                            if (appLanguage == "Русский") "Размер: ${brushRadius.toInt()}" else "Size: ${brushRadius.toInt()}"
+                        },
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    if (selectedTool == CutoutTool.MAGIC_WAND) {
+                        Slider(
+                            value = wandTolerance,
+                            onValueChange = { wandTolerance = it },
+                            valueRange = 10f..80f,
+                            modifier = Modifier.weight(1f),
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color(0xFF8B5CF6),
+                                activeTrackColor = Color(0xFF8B5CF6),
+                            ),
                         )
-                        Spacer(Modifier.width(8.dp))
+                    } else {
                         Slider(
                             value = brushRadius,
                             onValueChange = { brushRadius = it },

@@ -213,6 +213,7 @@ internal fun StickerPackManagerPage(
 
     var packToExport by remember { mutableStateOf<BuiltinStickerPack?>(null) }
     var cutoutSourceUri by remember { mutableStateOf<Uri?>(null) }
+    var editingSticker by remember { mutableStateOf<BuiltinSticker?>(null) }
     val cutoutPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
@@ -370,6 +371,9 @@ internal fun StickerPackManagerPage(
                             refreshKey += 1
                         }
                     }
+                },
+                onEditCutout = {
+                    editingSticker = selectedPack.stickers.firstOrNull { it.stickerId == selectedStickerId }
                 },
                 onEditEmoji = { showEmojiDialog = true },
             )
@@ -566,6 +570,42 @@ internal fun StickerPackManagerPage(
                                 "Не удалось сохранить стикер",
                                 "Failed to save sticker",
                             )
+                        }
+                    }
+                }
+            },
+        )
+    }
+
+    if (editingSticker != null) {
+        val targetPackId = selectedPackId
+        StickerCutoutDialog(
+            initialFilePath = editingSticker?.localFilePath,
+            initialEmoji = editingSticker?.emoji ?: "✨",
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            onDismiss = { editingSticker = null },
+            onSave = { processedBitmap, emoji ->
+                val sticker = editingSticker
+                editingSticker = null
+                if (sticker != null && targetPackId != null) {
+                    operationRunning = true
+                    scope.launch {
+                        val updated = withContext(Dispatchers.IO) {
+                            StickerSupport.replaceStickerBitmap(
+                                context = context,
+                                packId = targetPackId,
+                                stickerId = sticker.stickerId,
+                                bitmap = processedBitmap,
+                                emoji = emoji,
+                            )
+                        }
+                        operationRunning = false
+                        if (updated != null) {
+                            refreshKey += 1
+                            notify("Стикер обновлен", "Sticker updated")
+                        } else {
+                            notify("Не удалось сохранить стикер", "Failed to save sticker")
                         }
                     }
                 }
@@ -917,6 +957,7 @@ private fun PackEditor(
     onDelete: () -> Unit,
     onMoveSticker: (Int) -> Unit,
     onRemoveSticker: () -> Unit,
+    onEditCutout: () -> Unit,
     onEditEmoji: () -> Unit,
 ) {
     Column(
@@ -949,32 +990,134 @@ private fun PackEditor(
                     )
                 }
                 Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (pack.isOwned) {
+                if (pack.isOwned) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Button(
                             onClick = onAdd,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(2.dp))
-                            Text(if (appLanguage == "Русский") "Файлы" else "Files", maxLines = 1, fontSize = 12.sp)
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = if (appLanguage == "Русский") "Файлы" else "Files",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                            )
                         }
 
                         Button(
                             onClick = onAddCutout,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1.2f),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6)),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                         ) {
-                            Text(if (appLanguage == "Русский") "✂️ Вырезка" else "✂️ Cutout", maxLines = 1, fontSize = 12.sp, color = Color.White)
+                            Text(
+                                text = if (appLanguage == "Русский") "✂️ Студия вырезки" else "✂️ Cutout Studio",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Color.White,
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(onSurfaceColor.copy(alpha = 0.08f))
+                                .clickable { onRename() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = if (appLanguage == "Русский") "Переименовать" else "Rename",
+                                tint = primaryColor,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+
+                        Spacer(Modifier.width(8.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(onSurfaceColor.copy(alpha = 0.08f))
+                                .clickable { onExport() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CustomExportIcon(tint = primaryColor, modifier = Modifier.size(16.dp))
+                        }
+
+                        Spacer(Modifier.width(8.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(onSurfaceColor.copy(alpha = 0.08f))
+                                .clickable { onShare() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = if (appLanguage == "Русский") "Поделиться" else "Share",
+                                tint = primaryColor,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+
+                        Spacer(Modifier.width(8.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.error.copy(alpha = 0.14f))
+                                .clickable { onDelete() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = if (appLanguage == "Русский") "Удалить пак" else "Delete pack",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Button(
+                            onClick = onCopy,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                        ) {
+                            Text(
+                                text = if (appLanguage == "Русский") "Создать копию" else "Make a copy",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                            )
                         }
 
                         Box(
@@ -982,72 +1125,27 @@ private fun PackEditor(
                                 .size(36.dp)
                                 .clip(CircleShape)
                                 .background(onSurfaceColor.copy(alpha = 0.08f))
-                                .clickable { onRename() },
-                            contentAlignment = Alignment.Center
+                                .clickable { onExport() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CustomExportIcon(tint = primaryColor, modifier = Modifier.size(16.dp))
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(onSurfaceColor.copy(alpha = 0.08f))
+                                .clickable { onShare() },
+                            contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = if (appLanguage == "Русский") "Переименовать" else "Rename",
+                                imageVector = Icons.Default.Share,
+                                contentDescription = if (appLanguage == "Русский") "Поделиться" else "Share",
                                 tint = primaryColor,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(16.dp),
                             )
                         }
-                    } else {
-                        Button(
-                            onClick = onCopy,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(if (appLanguage == "Русский") "Создать копию" else "Make a copy", maxLines = 1, fontSize = 13.sp)
-                        }
-                    }
-
-                    // Export
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(onSurfaceColor.copy(alpha = 0.08f))
-                            .clickable { onExport() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CustomExportIcon(tint = primaryColor, modifier = Modifier.size(16.dp))
-                    }
-
-                    // Share
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(onSurfaceColor.copy(alpha = 0.08f))
-                            .clickable { onShare() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = if (appLanguage == "Русский") "Поделиться" else "Share",
-                            tint = primaryColor,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    // Delete
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.14f))
-                            .clickable { onDelete() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = if (appLanguage == "Русский") "Удалить пак" else "Delete pack",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
                     }
                 }
             }
@@ -1109,31 +1207,52 @@ private fun PackEditor(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = { onMoveSticker(-1) }) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Move Left",
-                        tint = primaryColor
+                        tint = primaryColor,
                     )
                 }
                 IconButton(onClick = { onMoveSticker(1) }) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = "Move Right",
-                        tint = primaryColor
+                        tint = primaryColor,
                     )
                 }
-                OutlinedButton(onClick = onEditEmoji) { Text("Emoji") }
+                Button(
+                    onClick = onEditCutout,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6)),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        text = if (appLanguage == "Русский") "✂️ Вырезать" else "✂️ Cutout",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    )
+                }
+                OutlinedButton(
+                    onClick = onEditEmoji,
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                ) {
+                    Text("Emoji", fontSize = 12.sp)
+                }
                 TextButton(
                     onClick = onRemoveSticker,
                     enabled = pack.stickers.size > 1,
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                 ) {
                     Text(
-                        if (appLanguage == "Русский") "Удалить стикер" else "Remove sticker",
+                        if (appLanguage == "Русский") "Удалить" else "Remove",
                         color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp,
                     )
                 }
             }

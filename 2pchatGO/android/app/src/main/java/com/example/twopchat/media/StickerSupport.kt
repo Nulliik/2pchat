@@ -988,7 +988,100 @@ object StickerSupport {
         }
     }
 
-    fun removeBackgroundAuto(bitmap: Bitmap, tolerance: Int = 32): Bitmap {
+    fun replaceStickerBitmap(
+        context: Context,
+        packId: String,
+        stickerId: String,
+        bitmap: Bitmap,
+        emoji: String? = null,
+    ): BuiltinStickerPack? = synchronized(installedPacksLock) {
+        val directory = File(installedPacksDirectory(context), safeId(packId))
+        val pack = readInstalledPack(directory) ?: return@synchronized null
+        if (!pack.isOwned) return@synchronized null
+        val index = pack.stickers.indexOfFirst { it.stickerId == stickerId }
+        if (index < 0) return@synchronized null
+        val target = File(directory, fileName(BuiltinSticker(pack.id, stickerId, "", 0L)))
+        if (!encodeStickerBitmap(bitmap, target)) {
+            return@synchronized null
+        }
+        val effectiveEmoji = emoji?.trim()?.ifBlank { null } ?: pack.stickers[index].emoji
+        val updatedStickers = pack.stickers.toMutableList().apply {
+            this[index] = this[index].copy(
+                emoji = effectiveEmoji,
+                localFilePath = target.absolutePath,
+            )
+        }
+        if (!writePackManifest(
+                directory,
+                pack.id,
+                pack.title,
+                pack.author,
+                updatedStickers,
+            )
+        ) {
+            return@synchronized null
+        }
+        invalidatePackCaches(context, pack.id)
+        readInstalledPack(directory)
+    }
+
+    fun removeBackgroundAtPoint(
+        bitmap: Bitmap,
+        startX: Int,
+        startY: Int,
+        tolerance: Int = 35,
+    ): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        if (startX !in 0 until width || startY !in 0 until height) return bitmap
+        val result = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+        val pixels = IntArray(width * height)
+        result.getPixels(pixels, 0, width, 0, 0, width, height)
+
+        val targetColor = pixels[startY * width + startX]
+        if (Color.alpha(targetColor) < 15) return bitmap
+
+        val visited = BooleanArray(width * height)
+        val queue = ArrayDeque<Int>()
+        val startIdx = startY * width + startX
+        queue.add(startIdx)
+        visited[startIdx] = true
+
+        fun colorDist(c1: Int, c2: Int): Int {
+            val rDiff = Color.red(c1) - Color.red(c2)
+            val gDiff = Color.green(c1) - Color.green(c2)
+            val bDiff = Color.blue(c1) - Color.blue(c2)
+            return kotlin.math.sqrt((rDiff * rDiff + gDiff * gDiff + bDiff * bDiff).toDouble()).toInt()
+        }
+
+        while (!queue.isEmpty()) {
+            val idx = queue.poll() ?: break
+            pixels[idx] = Color.TRANSPARENT
+
+            val x = idx % width
+            val y = idx / width
+
+            val n1 = if (x > 0) idx - 1 else -1
+            val n2 = if (x < width - 1) idx + 1 else -1
+            val n3 = if (y > 0) idx - width else -1
+            val n4 = if (y < height - 1) idx + width else -1
+
+            for (nIdx in intArrayOf(n1, n2, n3, n4)) {
+                if (nIdx in pixels.indices && !visited[nIdx]) {
+                    val nColor = pixels[nIdx]
+                    if (Color.alpha(nColor) < 20 || colorDist(targetColor, nColor) <= tolerance) {
+                        visited[nIdx] = true
+                        queue.add(nIdx)
+                    }
+                }
+            }
+        }
+
+        result.setPixels(pixels, 0, width, 0, 0, width, height)
+        return result
+    }
+
+    fun removeBackgroundAuto(bitmap: Bitmap, tolerance: Int = 40): Bitmap {
         val width = bitmap.width
         val height = bitmap.height
         val result = bitmap.copy(Bitmap.Config.ARGB_8888, true)
@@ -1005,23 +1098,27 @@ object StickerSupport {
             return kotlin.math.sqrt((rDiff * rDiff + gDiff * gDiff + bDiff * bDiff).toDouble()).toInt()
         }
 
-        val corners = intArrayOf(
-            0,
-            width - 1,
-            (height - 1) * width,
-            (height - 1) * width + (width - 1),
-            width / 2,
-            (height - 1) * width + width / 2,
-            (height / 2) * width,
-            (height / 2) * width + (width - 1),
-        )
+        // Sample seeds all along the outer boundary (every 6 pixels)
+        val seedIndices = mutableListOf<Int>()
+        val step = 6
+        for (x in 0 until width step step) {
+            seedIndices.add(x) // top edge
+            seedIndices.add((height - 1) * width + x) // bottom edge
+        }
+        for (y in 0 until height step step) {
+            seedIndices.add(y * width) // left edge
+            seedIndices.add(y * width + (width - 1)) // right edge
+        }
 
-        for (corner in corners) {
-            if (corner !in pixels.indices || visited[corner]) continue
-            val cornerColor = pixels[corner]
-            if (Color.alpha(cornerColor) < 20) continue
-            queue.add(corner)
-            visited[corner] = true
+        // Collect seed colors
+        val seedColors = seedIndices.map { pixels[it] }.filter { Color.alpha(it) >= 15 }.distinct()
+
+        for (seedIdx in seedIndices) {
+            if (visited[seedIdx]) continue
+            val seedColor = pixels[seedIdx]
+            if (Color.alpha(seedColor) < 15) continue
+            queue.add(seedIdx)
+            visited[seedIdx] = true
 
             while (!queue.isEmpty()) {
                 val idx = queue.poll() ?: break
@@ -1038,7 +1135,8 @@ object StickerSupport {
                 for (nIdx in intArrayOf(n1, n2, n3, n4)) {
                     if (nIdx in pixels.indices && !visited[nIdx]) {
                         val nColor = pixels[nIdx]
-                        if (Color.alpha(nColor) < 20 || colorDist(cornerColor, nColor) <= tolerance) {
+                        val isSeedMatch = seedColors.any { sc -> colorDist(sc, nColor) <= tolerance }
+                        if (Color.alpha(nColor) < 20 || isSeedMatch) {
                             visited[nIdx] = true
                             queue.add(nIdx)
                         }
