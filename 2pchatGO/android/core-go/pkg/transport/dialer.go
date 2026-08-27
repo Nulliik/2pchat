@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,28 @@ var (
 	ErrUDPOverTorNotSupported = errors.New("UDP transport is strictly prohibited when Tor proxy is active")
 	ErrInvalidEndpoint        = errors.New("invalid network endpoint format")
 )
+
+// NormalizeEndpoint ensures the endpoint has a valid host and port, appending defaultPort if missing.
+func NormalizeEndpoint(address string, defaultPort int) string {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return ""
+	}
+	if defaultPort <= 0 {
+		defaultPort = 50001
+	}
+	// If already valid host:port
+	if host, port, err := net.SplitHostPort(address); err == nil && host != "" && port != "" {
+		return net.JoinHostPort(host, port)
+	}
+	// If IPv6 literal with brackets [::1] or without brackets ::1
+	clean := strings.Trim(address, "[]")
+	if ip := net.ParseIP(clean); ip != nil && ip.To4() == nil {
+		return net.JoinHostPort(clean, strconv.Itoa(defaultPort))
+	}
+	// Hostname (.onion or domain) or IPv4
+	return net.JoinHostPort(clean, strconv.Itoa(defaultPort))
+}
 
 // FindAvailablePort checks if preferredPort on host is available. If not, it requests an ephemeral free port from the OS.
 func FindAvailablePort(host string, preferredPort int) (int, error) {
@@ -216,6 +239,7 @@ func (d *AdaptiveDialer) ClassifyEndpoint(address string) TransportType {
 
 // DialContext establishes a connection to the target address choosing the optimal transport.
 func (d *AdaptiveDialer) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	address = NormalizeEndpoint(address, 50001)
 	transportType := d.ClassifyEndpoint(address)
 
 	if transportType == TransportTor {

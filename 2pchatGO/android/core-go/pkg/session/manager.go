@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 	"twopchat/core/pkg/crypto"
+	"twopchat/core/pkg/discovery"
 	"twopchat/core/pkg/transport"
 )
 
@@ -285,17 +286,50 @@ func (m *Manager) handleIncomingConnection(conn net.Conn) {
 }
 
 // ConnectPeer dials a remote peer endpoint and establishes an encrypted X3DH session.
+// Handles single endpoints as well as comma-separated candidate lists (e.g. LAN, IPv6, and .onion).
 func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, error) {
+	rawEndpoints := strings.Split(endpoint, ",")
+	var candidates []string
+	hasTor := false
+	for _, raw := range rawEndpoints {
+		ep := strings.TrimSpace(raw)
+		if ep == "" {
+			continue
+		}
+		ep = transport.NormalizeEndpoint(ep, 50001)
+		if ep != "" {
+			candidates = append(candidates, ep)
+			if strings.HasSuffix(strings.ToLower(ep), ".onion") || (m.dialer != nil && m.dialer.ClassifyEndpoint(ep) == transport.TransportTor) {
+				hasTor = true
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, errors.New("no valid endpoints provided")
+	}
+
 	timeout := 15 * time.Second
-	if strings.HasSuffix(strings.ToLower(endpoint), ".onion") || (m.dialer != nil && m.dialer.ClassifyEndpoint(endpoint) == transport.TransportTor) {
+	if hasTor {
 		timeout = transport.DefaultTorDialTimeout
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	conn, err := m.dialer.DialContext(ctx, "tcp", endpoint)
+	var conn net.Conn
+	var winEndpoint string
+	var err error
+
+	if len(candidates) == 1 {
+		winEndpoint = candidates[0]
+		conn, err = m.dialer.DialContext(ctx, "tcp", winEndpoint)
+	} else {
+		prober := discovery.NewFastTieredProber()
+		conn, winEndpoint, err = prober.ProbeFast(ctx, candidates, func(c context.Context, ep string) (net.Conn, error) {
+			return m.dialer.DialContext(c, "tcp", ep)
+		})
+	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial endpoint %s: %w", endpoint, err)
+		return nil, fmt.Errorf("failed to dial endpoints %v: %w", candidates, err)
 	}
 
 	sess, err := NewSession(
@@ -308,15 +342,16 @@ func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, e
 		30*time.Second,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("initiator handshake failed with %s: %w", endpoint, err)
+		_ = conn.Close()
+		return nil, fmt.Errorf("initiator handshake failed with %s: %w", winEndpoint, err)
 	}
 
-	if strings.HasSuffix(strings.ToLower(endpoint), ".onion") || m.dialer.ClassifyEndpoint(endpoint) == transport.TransportTor {
+	if strings.HasSuffix(strings.ToLower(winEndpoint), ".onion") || m.dialer.ClassifyEndpoint(winEndpoint) == transport.TransportTor {
 		sess.SetTorTransport(true)
 	}
 
 	peerFP := sess.PeerFingerprint()
-	m.RegisterSession(sess, peerFP, endpoint, true)
+	m.RegisterSession(sess, peerFP, winEndpoint, true)
 	return sess, nil
 }
 
