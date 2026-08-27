@@ -654,26 +654,13 @@ fun GroupChatScreen(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
-        if (uris.size > 1 && uris.all { uri ->
-            val type = context.contentResolver.getType(uri).orEmpty()
-            type.startsWith("image/") || type.startsWith("video/")
-        }) {
-            handleMultipleUrisSelected(uris)
-            return@rememberLauncherForActivityResult
-        }
         for (uri in uris) {
             val type = context.contentResolver.getType(uri).orEmpty()
-            if (type.startsWith("image/") && !type.contains("gif") && !type.contains("sticker")) {
-                pendingPhotoUri = uri
-            } else if (type.startsWith("video/")) {
-                pendingVideoPath = uri.toString()
-            } else {
-                controller.sendAttachment(
-                    state.groupId,
-                    uri.toString(),
-                    type
-                )
-            }
+            controller.sendAttachment(
+                state.groupId,
+                uri.toString(),
+                type
+            )
         }
     }
 
