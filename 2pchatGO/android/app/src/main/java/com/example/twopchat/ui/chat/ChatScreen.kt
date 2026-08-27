@@ -419,16 +419,23 @@ fun ChatScreen(
     var wallpaperBlur by remember(peerName, prefsWallpaperVersion) {
         mutableStateOf(com.example.twopchat.config.P2PPreferences.getDirectWallpaperBlur(context, peerName))
     }
-    var wallpaperBitmap by remember(wallpaperPath) {
+    var wallpaperBitmap by remember(wallpaperPath, wallpaperBlur) {
         mutableStateOf<Bitmap?>(null)
     }
 
-    LaunchedEffect(wallpaperPath, peerName, prefsWallpaperVersion) {
+    LaunchedEffect(wallpaperPath, peerName, prefsWallpaperVersion, wallpaperBlur) {
         wallpaperBitmap = withContext(Dispatchers.IO) {
             val resolvedPath = wallpaperPath ?: com.example.twopchat.config.P2PPreferences.getDirectWallpaperPath(context, peerName)
             resolvedPath?.let { path ->
                 try {
-                    BitmapFactory.decodeFile(path)
+                    val rawBmp = BitmapFactory.decodeFile(path)
+                    if (rawBmp != null && wallpaperBlur) {
+                        val blurred = com.example.twopchat.security.ImageSanitizer.fastBlur(rawBmp, 20)
+                        if (blurred != rawBmp) rawBmp.recycle()
+                        blurred
+                    } else {
+                        rawBmp
+                    }
                 } catch (e: Exception) {
                     null
                 }

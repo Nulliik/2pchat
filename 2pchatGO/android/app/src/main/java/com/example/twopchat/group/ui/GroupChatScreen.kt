@@ -206,13 +206,15 @@ private fun rememberGroupBitmap(
     cacheKey: String?,
     uri: String?,
     fallbackFile: File? = null,
+    isBlurred: Boolean = false,
 ): Bitmap? {
     val context = LocalContext.current
     return produceState<Bitmap?>(
         initialValue = cacheKey?.let(GroupImageCache::get),
-        key1 = cacheKey,
-        key2 = uri,
-        key3 = fallbackFile?.absolutePath,
+        cacheKey,
+        uri,
+        fallbackFile?.absolutePath,
+        isBlurred,
     ) {
         if (cacheKey == null || value != null) return@produceState
         value = withContext(Dispatchers.IO) {
@@ -230,7 +232,14 @@ private fun rememberGroupBitmap(
                     }
                 }
             }.getOrNull()
-            decoded?.also { GroupImageCache.put(cacheKey, it) }
+            val effective = if (decoded != null && isBlurred) {
+                val blurred = com.example.twopchat.security.ImageSanitizer.fastBlur(decoded, 20)
+                if (blurred != decoded) decoded.recycle()
+                blurred
+            } else {
+                decoded
+            }
+            effective?.also { GroupImageCache.put(cacheKey, it) }
         }
     }.value
 }
@@ -374,15 +383,16 @@ fun GroupChatScreen(
             if (fallbackFile.exists()) fallbackFile.absolutePath else null
         }
     }
-    val wallpaperDimming = remember(state.groupId, wallpaperUriStr) {
+    val wallpaperDimming = remember(state.groupId, wallpaperUriStr, prefsWallpaperVersion) {
         P2PPreferences.prefs(context).getInt("group_wallpaper_dimming_${state.groupId}", 45)
     }
-    val wallpaperBlur = remember(state.groupId, wallpaperUriStr) {
+    val wallpaperBlur = remember(state.groupId, wallpaperUriStr, prefsWallpaperVersion) {
         P2PPreferences.prefs(context).getBoolean("group_wallpaper_blur_${state.groupId}", false)
     }
     val wallpaperBitmap = rememberGroupBitmap(
-        cacheKey = wallpaperUriStr?.let { "wallpaper:${state.groupId}:$it" },
+        cacheKey = wallpaperUriStr?.let { "wallpaper:${state.groupId}:$it:blur=$wallpaperBlur:v=$prefsWallpaperVersion" },
         uri = wallpaperUriStr,
+        isBlurred = wallpaperBlur,
     )
 
     BackHandler {

@@ -217,4 +217,217 @@ object ImageSanitizer {
             decodedBitmap?.recycle()
         }
     }
+
+    /**
+     * Applies a fast software StackBlur to a Bitmap.
+     * Guaranteed to work across all Android versions (API 26..35+), emulators,
+     * and OEM builds without relying on RenderEffect or GPU shader support.
+     */
+    fun fastBlur(sentBitmap: Bitmap, radius: Int = 20): Bitmap {
+        if (radius < 1) return sentBitmap
+        val w = sentBitmap.width
+        val h = sentBitmap.height
+        if (w <= 0 || h <= 0) return sentBitmap
+
+        val scale = 0.5f
+        val scaledW = (w * scale).toInt().coerceAtLeast(1)
+        val scaledH = (h * scale).toInt().coerceAtLeast(1)
+        val bitmap = Bitmap.createScaledBitmap(sentBitmap, scaledW, scaledH, true)
+        val pix = IntArray(scaledW * scaledH)
+        bitmap.getPixels(pix, 0, scaledW, 0, 0, scaledW, scaledH)
+
+        val r = (radius * scale).toInt().coerceAtLeast(1)
+        val wm = scaledW - 1
+        val hm = scaledH - 1
+        val wh = scaledW * scaledH
+        val div = r + r + 1
+
+        val rAcc = IntArray(wh)
+        val gAcc = IntArray(wh)
+        val bAcc = IntArray(wh)
+        var rsum: Int
+        var gsum: Int
+        var bsum: Int
+        var p: Int
+        var yp: Int
+        var yi: Int
+        var yw: Int
+        val vmin = IntArray(maxOf(scaledW, scaledH))
+
+        var divsum = (div + 1) shr 1
+        divsum *= divsum
+        val dv = IntArray(256 * divsum)
+        for (idx in 0 until 256 * divsum) {
+            dv[idx] = idx / divsum
+        }
+
+        yw = 0
+        yi = 0
+
+        val stack = Array(div) { IntArray(3) }
+        var stackpointer: Int
+        var stackstart: Int
+        var sir: IntArray
+        var rbs: Int
+        val routsum = IntArray(3)
+        val rinsum = IntArray(3)
+
+        for (yIdx in 0 until scaledH) {
+            rinsum[0] = 0; rinsum[1] = 0; rinsum[2] = 0
+            routsum[0] = 0; routsum[1] = 0; routsum[2] = 0
+            rsum = 0; gsum = 0; bsum = 0
+            for (iIdx in -r..r) {
+                p = pix[yi + minOf(wm, maxOf(iIdx, 0))]
+                sir = stack[iIdx + r]
+                sir[0] = (p and 0xff0000) shr 16
+                sir[1] = (p and 0x00ff00) shr 8
+                sir[2] = (p and 0x0000ff)
+                rbs = r + 1 - kotlin.math.abs(iIdx)
+                rsum += sir[0] * rbs
+                gsum += sir[1] * rbs
+                bsum += sir[2] * rbs
+                if (iIdx > 0) {
+                    rinsum[0] += sir[0]
+                    rinsum[1] += sir[1]
+                    rinsum[2] += sir[2]
+                } else {
+                    routsum[0] += sir[0]
+                    routsum[1] += sir[1]
+                    routsum[2] += sir[2]
+                }
+            }
+            stackpointer = r
+
+            for (xIdx in 0 until scaledW) {
+                rAcc[yi] = dv[rsum]
+                gAcc[yi] = dv[gsum]
+                bAcc[yi] = dv[bsum]
+
+                rsum -= routsum[0]
+                gsum -= routsum[1]
+                bsum -= routsum[2]
+
+                stackstart = stackpointer - r + div
+                sir = stack[stackstart % div]
+
+                routsum[0] -= sir[0]
+                routsum[1] -= sir[1]
+                routsum[2] -= sir[2]
+
+                if (yIdx == 0) {
+                    vmin[xIdx] = minOf(xIdx + r + 1, wm)
+                }
+                p = pix[yw + vmin[xIdx]]
+
+                sir[0] = (p and 0xff0000) shr 16
+                sir[1] = (p and 0x00ff00) shr 8
+                sir[2] = (p and 0x0000ff)
+
+                rinsum[0] += sir[0]
+                rinsum[1] += sir[1]
+                rinsum[2] += sir[2]
+
+                rsum += rinsum[0]
+                gsum += rinsum[1]
+                bsum += rinsum[2]
+
+                stackpointer = (stackpointer + 1) % div
+                sir = stack[stackpointer % div]
+
+                routsum[0] += sir[0]
+                routsum[1] += sir[1]
+                routsum[2] += sir[2]
+
+                rinsum[0] -= sir[0]
+                rinsum[1] -= sir[1]
+                rinsum[2] -= sir[2]
+
+                yi++
+            }
+            yw += scaledW
+        }
+
+        for (xIdx in 0 until scaledW) {
+            rinsum[0] = 0; rinsum[1] = 0; rinsum[2] = 0
+            routsum[0] = 0; routsum[1] = 0; routsum[2] = 0
+            rsum = 0; gsum = 0; bsum = 0
+            yp = -r * scaledW
+            for (iIdx in -r..r) {
+                yi = maxOf(0, yp) + xIdx
+                sir = stack[iIdx + r]
+                sir[0] = rAcc[yi]
+                sir[1] = gAcc[yi]
+                sir[2] = bAcc[yi]
+                rbs = r + 1 - kotlin.math.abs(iIdx)
+                rsum += rAcc[yi] * rbs
+                gsum += gAcc[yi] * rbs
+                bsum += bAcc[yi] * rbs
+                if (iIdx > 0) {
+                    rinsum[0] += sir[0]
+                    rinsum[1] += sir[1]
+                    rinsum[2] += sir[2]
+                } else {
+                    routsum[0] += sir[0]
+                    routsum[1] += sir[1]
+                    routsum[2] += sir[2]
+                }
+                if (iIdx < hm) {
+                    yp += scaledW
+                }
+            }
+            yi = xIdx
+            stackpointer = r
+            for (yIdx in 0 until scaledH) {
+                pix[yi] = (0xff000000.toInt()) or (dv[rsum] shl 16) or (dv[gsum] shl 8) or dv[bsum]
+
+                rsum -= routsum[0]
+                gsum -= routsum[1]
+                bsum -= routsum[2]
+
+                stackstart = stackpointer - r + div
+                sir = stack[stackstart % div]
+
+                routsum[0] -= sir[0]
+                routsum[1] -= sir[1]
+                routsum[2] -= sir[2]
+
+                if (xIdx == 0) {
+                    vmin[yIdx] = minOf(yIdx + r + 1, hm) * scaledW
+                }
+                p = xIdx + vmin[yIdx]
+
+                sir[0] = rAcc[p]
+                sir[1] = gAcc[p]
+                sir[2] = bAcc[p]
+
+                rinsum[0] += sir[0]
+                rinsum[1] += sir[1]
+                rinsum[2] += sir[2]
+
+                rsum += rinsum[0]
+                gsum += rinsum[1]
+                bsum += rinsum[2]
+
+                stackpointer = (stackpointer + 1) % div
+                sir = stack[stackpointer]
+
+                routsum[0] += sir[0]
+                routsum[1] += sir[1]
+                routsum[2] += sir[2]
+
+                rinsum[0] -= sir[0]
+                rinsum[1] -= sir[1]
+                rinsum[2] -= sir[2]
+
+                yi += scaledW
+            }
+        }
+
+        bitmap.setPixels(pix, 0, scaledW, 0, 0, scaledW, scaledH)
+        val result = Bitmap.createScaledBitmap(bitmap, w, h, true)
+        if (result != bitmap) {
+            bitmap.recycle()
+        }
+        return result
+    }
 }
