@@ -75,4 +75,33 @@ class ImageSanitizerTest {
 
         tempDir.deleteRecursively()
     }
+
+    @Test
+    fun testImageSanitizerConstants() {
+        assertEquals(2048, ImageSanitizer.MAX_IMAGE_DIMENSION)
+        assertEquals(82, ImageSanitizer.DEFAULT_JPEG_QUALITY)
+    }
+
+    @Test
+    fun testCalculateInSampleSize() {
+        val smallOptions = android.graphics.BitmapFactory.Options().apply {
+            outWidth = 1920
+            outHeight = 1080
+        }
+        assertEquals(1, ImageSanitizer.calculateInSampleSize(smallOptions, 2048))
+
+        val largeOptions = android.graphics.BitmapFactory.Options().apply {
+            outWidth = 4032
+            outHeight = 3024
+        }
+        // 4032 / 2 = 2016 (<= 2048), so inSampleSize is 1 (subsampled during scaling)
+        assertEquals(1, ImageSanitizer.calculateInSampleSize(largeOptions, 2048))
+
+        val hugeOptions = android.graphics.BitmapFactory.Options().apply {
+            outWidth = 8160
+            outHeight = 6120
+        }
+        // 8160 / 2 = 4080 (>= 2048), so inSampleSize becomes 2
+        assertEquals(2, ImageSanitizer.calculateInSampleSize(hugeOptions, 2048))
+    }
 }

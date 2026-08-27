@@ -19,7 +19,8 @@ import com.example.twopchat.media.*
  */
 object ImageSanitizer {
     private const val TAG = "ImageSanitizer"
-    const val DEFAULT_JPEG_QUALITY = 95
+    const val DEFAULT_JPEG_QUALITY = 82
+    const val MAX_IMAGE_DIMENSION = 2048
 
     private val SANITIZABLE_EXTENSIONS = setOf(
         "jpg", "jpeg", "png", "webp", "heic", "heif"
@@ -60,43 +61,108 @@ object ImageSanitizer {
     }
 
     /**
-     * Re-encodes a Bitmap to an output stream as JPEG with EXIF metadata stripped.
+     * Scales a bitmap down proportionally if either width or height exceeds maxDimension.
+     * Returns the scaled bitmap (or the original if already within bounds).
+     */
+    fun scaleBitmapToMaxDimension(bitmap: Bitmap, maxDim: Int = MAX_IMAGE_DIMENSION): Bitmap {
+        if (maxDim <= 0) return bitmap
+        val width = bitmap.width
+        val height = bitmap.height
+        if (width <= maxDim && height <= maxDim) {
+            return bitmap
+        }
+
+        val ratio = width.toFloat() / height.toFloat()
+        val targetWidth: Int
+        val targetHeight: Int
+        if (width >= height) {
+            targetWidth = maxDim
+            targetHeight = (maxDim / ratio).toInt().coerceAtLeast(1)
+        } else {
+            targetHeight = maxDim
+            targetWidth = (maxDim * ratio).toInt().coerceAtLeast(1)
+        }
+
+        return Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+    }
+
+    /**
+     * Re-encodes a Bitmap to an output stream as JPEG with EXIF metadata stripped,
+     * downscaled to maxDimension, and compressed with optimal quality.
      */
     fun sanitizeBitmap(
         bitmap: Bitmap,
         rotationDegrees: Int = 0,
         quality: Int = DEFAULT_JPEG_QUALITY,
+        maxDimension: Int = MAX_IMAGE_DIMENSION,
         outStream: OutputStream
     ): Boolean {
-        var toRecycle: Bitmap? = null
-        val processedBitmap = if (rotationDegrees != 0) {
+        var rotatedBitmap: Bitmap? = null
+        var scaledBitmap: Bitmap? = null
+
+        val currentBitmap = if (rotationDegrees != 0) {
             val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
             val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
             if (rotated != bitmap) {
-                toRecycle = rotated
+                rotatedBitmap = rotated
             }
             rotated
         } else {
             bitmap
         }
 
+        val finalBitmap = if (maxDimension > 0 && (currentBitmap.width > maxDimension || currentBitmap.height > maxDimension)) {
+            val scaled = scaleBitmapToMaxDimension(currentBitmap, maxDimension)
+            if (scaled != currentBitmap && scaled != bitmap) {
+                scaledBitmap = scaled
+            }
+            scaled
+        } else {
+            currentBitmap
+        }
+
         return try {
-            processedBitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(1, 100), outStream)
+            finalBitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(1, 100), outStream)
         } finally {
-            toRecycle?.recycle()
+            rotatedBitmap?.recycle()
+            scaledBitmap?.recycle()
         }
     }
 
     /**
-     * Sanitizes an outbound image by decoding pixel data and writing a clean,
-     * EXIF-free JPEG to a temporary file in the application's cache directory.
+     * Calculates an inSampleSize for BitmapFactory to safely decode high-resolution
+     * images without exhausting device heap memory.
+     */
+    fun calculateInSampleSize(options: BitmapFactory.Options, maxDim: Int = MAX_IMAGE_DIMENSION): Int {
+        val height = options.outHeight
+        val width = options.outWidth
+        var inSampleSize = 1
+
+        if (maxDim > 0 && (height > maxDim || width > maxDim)) {
+            val halfHeight = height / 2
+            val halfWidth = width / 2
+            while ((halfHeight / inSampleSize) >= maxDim && (halfWidth / inSampleSize) >= maxDim) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
+    }
+
+    /**
+     * Sanitizes an outbound image by decoding pixel data safely, downscaling to HD messenger
+     * resolution, and writing a clean, EXIF-free JPEG to a temporary file in the application's cache.
      *
      * The original file remains completely unmodified. The returned temporary file
      * MUST be shredded/deleted by the caller once transmission finishes or fails.
      *
      * Returns the temporary sanitized File, or null if the file cannot or should not be sanitized.
      */
-    fun sanitizeImageExif(context: Context, sourcePath: String): File? {
+    fun sanitizeImageExif(
+        context: Context,
+        sourcePath: String,
+        maxDimension: Int = MAX_IMAGE_DIMENSION,
+        quality: Int = DEFAULT_JPEG_QUALITY
+    ): File? {
         val sourceFile = File(sourcePath)
         if (!sourceFile.exists() || !sourceFile.isFile || sourceFile.length() == 0L) {
             return null
@@ -109,7 +175,18 @@ object ImageSanitizer {
         var decodedBitmap: Bitmap? = null
         return try {
             val rotationDegrees = extractExifRotationDegrees(sourceFile.absolutePath)
-            decodedBitmap = BitmapFactory.decodeFile(sourceFile.absolutePath) ?: return null
+
+            // Step 1: Read image bounds safely to prevent OOM
+            val boundsOptions = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(sourceFile.absolutePath, boundsOptions)
+
+            // Step 2: Decode bitmap with computed subsampling
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = calculateInSampleSize(boundsOptions, maxDimension)
+            }
+            decodedBitmap = BitmapFactory.decodeFile(sourceFile.absolutePath, decodeOptions) ?: return null
 
             val cacheDir = context.applicationContext.cacheDir ?: return null
             tempFile = File.createTempFile("temp_media_sanitized_", ".jpg", cacheDir)
@@ -118,7 +195,8 @@ object ImageSanitizer {
                 val success = sanitizeBitmap(
                     bitmap = decodedBitmap,
                     rotationDegrees = rotationDegrees,
-                    quality = DEFAULT_JPEG_QUALITY,
+                    quality = quality,
+                    maxDimension = maxDimension,
                     outStream = fos
                 )
                 fos.flush()

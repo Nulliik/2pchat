@@ -772,7 +772,7 @@ fun PhotoEditorModal(
                                     val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                                     val editedFile = File(attachmentsDir, "sent_photo_${timeStamp}_${java.util.UUID.randomUUID().toString().take(8)}.jpg")
                                     FileOutputStream(editedFile).use { out ->
-                                        finalBmp.compress(Bitmap.CompressFormat.JPEG, 92, out)
+                                        finalBmp.compress(Bitmap.CompressFormat.JPEG, 85, out)
                                     }
 
                                     onSendPhoto(editedFile.absolutePath, captionText.trim())
