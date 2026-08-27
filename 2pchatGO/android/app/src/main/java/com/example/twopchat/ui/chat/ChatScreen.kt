@@ -1870,17 +1870,14 @@ fun ChatScreen(
                 onReconnect = {
                     Toast.makeText(
                         context,
-                        if (appLanguage == "Русский") "Проверка и переподключение к $peerName..." else "Checking connection with $peerName...",
+                        if (appLanguage == "Русский") "Попытка подключения к $peerName..." else "Attempting to connect to $peerName...",
                         Toast.LENGTH_SHORT
                     ).show()
-                    P2PMessageRelay.reconnectSession(context, peerName) { success ->
-                        val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
-                        val text = if (success || isOnline) {
-                            if (appLanguage == "Русский") "Связь с $peerName восстановлена (Онлайн)" else "Connection restored with $peerName (Online)"
-                        } else {
-                            if (appLanguage == "Русский") "Собеседник $peerName недоступен (Офлайн)" else "Peer $peerName is unreachable (Offline)"
+                    P2PMessageRelay.reconnectSession(context, peerName) { initiated ->
+                        if (!initiated) {
+                            val text = if (appLanguage == "Русский") "Нет доступных адресов для $peerName (Офлайн)" else "No available endpoints for $peerName (Offline)"
+                            Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
                         }
-                        Toast.makeText(context, text, Toast.LENGTH_LONG).show()
                     }
                 },
                 onToggleMuted = { muted ->
