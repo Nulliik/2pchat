@@ -186,6 +186,7 @@ internal class P2POutboundMessenger(
         albumId: String = "",
         albumIndex: Int = -1,
         albumCount: Int = 0,
+        asDocument: Boolean = false,
         onResult: (Boolean) -> Unit = {},
     ) {
         if (isPaused(context, peerName)) {
@@ -202,10 +203,10 @@ internal class P2POutboundMessenger(
                 }
                 val fingerprint = P2PPreferences.prefs(context)
                     .getString(P2PPreferences.peerFingerprint(peerName), null)
-                log(context, "Sending secure file via Native Go transport to $peerName", "INFO", null)
+                log(context, "Sending secure file via Native Go transport to $peerName (asDocument=$asDocument)", "INFO", null)
 
-                // Transparently strip EXIF metadata from outbound images
-                tempSanitizedFile = ImageSanitizer.sanitizeImageExif(context, filePath)
+                // Transparently strip EXIF metadata from outbound images unless explicitly sent as uncompressed document
+                tempSanitizedFile = if (asDocument) null else ImageSanitizer.sanitizeImageExif(context, filePath)
                 val effectiveFilePath = tempSanitizedFile?.absolutePath ?: filePath
 
                 val previewBase64 = FileTransferPreview.createMediaPreviewBase64(effectiveFilePath)

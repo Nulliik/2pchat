@@ -2724,6 +2724,7 @@ object P2PMessageRelay {
         albumId: String = "",
         albumIndex: Int = -1,
         albumCount: Int = 0,
+        asDocument: Boolean = false,
         onResult: (Boolean) -> Unit = {},
     ) {
         if (messageId.isNotBlank()) {
@@ -2744,6 +2745,7 @@ object P2PMessageRelay {
             albumId,
             albumIndex,
             albumCount,
+            asDocument,
         ) { success ->
             if (messageId.isNotBlank()) {
                 serviceScope.launch(Dispatchers.Main) {
