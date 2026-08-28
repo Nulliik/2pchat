@@ -59,12 +59,21 @@ internal class DiscoveryCandidateRegistry {
         }
         if (!peerEndpoints.containsKey(normalizedName) && peerEndpoints.size >= MAX_TRACKED_PEER_ENDPOINTS) return false
         val existingParts = peerEndpoints[normalizedName]?.split(',')?.map(String::trim)?.filter(String::isNotEmpty).orEmpty()
-        val combined = (existingParts + endpointParts).distinct()
-        val joined = combined.joinToString(",")
+        val prioritized = (existingParts + endpointParts).distinct().sortedWith(
+            compareBy { ep ->
+                when {
+                    ep.contains(".onion", ignoreCase = true) -> 0
+                    ep.contains(":") && !ep.startsWith("127.") -> 1
+                    ep.startsWith("192.168.") || ep.startsWith("10.") || ep.startsWith("172.") -> 2
+                    else -> 3
+                }
+            }
+        ).take(8)
+        val joined = prioritized.joinToString(",")
         peerEndpoints[normalizedName] = joined
         if (context != null) {
             P2PPreferences.prefs(context).edit().putString("last_endpoint_$normalizedName", joined).apply()
-            val onionPart = combined.firstOrNull { it.contains(".onion", ignoreCase = true) }
+            val onionPart = prioritized.firstOrNull { it.contains(".onion", ignoreCase = true) }
             if (onionPart != null) {
                 com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).savePeerOnionAddress(
                     normalizedName,

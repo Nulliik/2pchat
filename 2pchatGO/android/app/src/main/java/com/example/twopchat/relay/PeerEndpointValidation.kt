@@ -4,8 +4,8 @@ package com.example.twopchat.relay
 internal fun isValidPeerEndpointList(value: String): Boolean {
     if (value.isBlank() || value.length > 4_096) return false
     val endpoints = value.split(',').map(String::trim).filter(String::isNotEmpty)
-    if (endpoints.isEmpty() || endpoints.size > 12) return false
-    return endpoints.all(::isValidPeerEndpoint)
+    if (endpoints.isEmpty()) return false
+    return endpoints.take(16).all(::isValidPeerEndpoint)
 }
 
 private fun isValidPeerEndpoint(endpoint: String): Boolean {
@@ -34,11 +34,16 @@ internal fun resolvePeerEndpoint(
         .mapNotNull { it?.trim() }
         .flatMap { it.split(',').asSequence().map(String::trim).filter(String::isNotEmpty) }
         .map { ep ->
+            val clean = ep.trim()
+            val isIpv4WithoutPort = !clean.contains(':') && clean.split('.').let { parts ->
+                parts.size == 4 && parts.all { p -> p.toIntOrNull() in 0..255 }
+            }
             when {
-                ep.startsWith("[") && ep.endsWith("]") -> "$ep:50001"
-                ep.count { it == ':' } > 1 && !ep.startsWith("[") -> "[$ep]:50001"
-                !ep.contains(':') -> "$ep:50001"
-                else -> ep
+                clean.endsWith(".onion", ignoreCase = true) && !clean.contains(':') -> "$clean:50001"
+                clean.startsWith("[") && clean.endsWith("]") -> "$clean:50001"
+                clean.count { it == ':' } > 1 && !clean.startsWith("[") -> "[$clean]:50001"
+                isIpv4WithoutPort -> "$clean:50001"
+                else -> clean
             }
         }
         .filter(::isValidPeerEndpoint)

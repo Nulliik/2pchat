@@ -138,19 +138,52 @@ func (e *LANEngine) sendBeacon() {
 		return
 	}
 
-	// Send to 255.255.255.255:udpPort
+	// 1. Send to 255.255.255.255:udpPort
 	bAddr := &net.UDPAddr{
 		IP:   net.IPv4bcast,
 		Port: e.udpPort,
 	}
 
-	conn, err := net.DialUDP("udp4", nil, bAddr)
+	if conn, err := net.DialUDP("udp4", nil, bAddr); err == nil {
+		_, _ = conn.Write(data)
+		_ = conn.Close()
+	}
+
+	// 2. Send to directed broadcast on all active non-loopback network interfaces
+	ifaces, err := net.Interfaces()
 	if err != nil {
 		return
 	}
-	defer conn.Close()
-
-	_, _ = conn.Write(data)
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipnet, ok := addr.(*net.IPNet)
+			if !ok || ipnet.IP.To4() == nil {
+				continue
+			}
+			ip := ipnet.IP.To4()
+			mask := ipnet.Mask
+			if len(mask) == 4 {
+				bcast := net.IPv4(
+					ip[0]|^mask[0],
+					ip[1]|^mask[1],
+					ip[2]|^mask[2],
+					ip[3]|^mask[3],
+				)
+				dest := &net.UDPAddr{IP: bcast, Port: e.udpPort}
+				if conn, err := net.DialUDP("udp4", nil, dest); err == nil {
+					_, _ = conn.Write(data)
+					_ = conn.Close()
+				}
+			}
+		}
+	}
 }
 
 // Stop halts the LAN broadcaster and closes the UDP socket.

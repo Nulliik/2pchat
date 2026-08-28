@@ -81,6 +81,10 @@ class YggdrasilProxyService : Service() {
     override fun onCreate() {
         super.onCreate()
         config = ConfigurationProxy(applicationContext)
+        promoteToForeground()
+    }
+
+    private fun promoteToForeground() {
         val notification = createServiceNotification(this, State.Disabled)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -94,7 +98,10 @@ class YggdrasilProxyService : Service() {
                 startForeground(PROXY_NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to startForeground in onCreate", e)
+            Log.w(TAG, "Failed to startForeground with specialUse, fallback to regular startForeground", e)
+            try {
+                startForeground(PROXY_NOTIFICATION_ID, notification)
+            } catch (_: Exception) {}
         }
     }
 
@@ -105,6 +112,7 @@ class YggdrasilProxyService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        promoteToForeground()
         if (intent == null) {
             Log.d(TAG, "Intent is null")
             return START_NOT_STICKY
