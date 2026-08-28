@@ -613,20 +613,31 @@ object P2PMessageRelay {
         notificationText: String = message.text,
         countAsNew: Boolean = true,
     ) {
-        val prefs = P2PPreferences.prefs(context)
-        val activeSet = prefs.getStringSet(P2PPreferences.ACTIVE_CHATS, emptySet()).orEmpty()
-        if (sender !in activeSet) {
-            prefs.edit { putStringSet(P2PPreferences.ACTIVE_CHATS, activeSet + sender) }
+        // 1. Immediately deliver to active in-app chat listeners so message appears instantly
+        runOnMain {
+            messageListeners.forEach { it.onMessageReceived(sender, message) }
         }
-        if (!P2PPreferences.isAppLocked()) {
-            if (prefs.getBoolean("persist_chat_history", true)) {
-                ChatDatabaseHelper.getInstance(context).saveMessage(sender, message)
+
+        // 2. Perform DB persistence, encryption, and notification asynchronously on IO dispatcher
+        serviceScope.launch(Dispatchers.IO) {
+            val prefs = P2PPreferences.prefs(context)
+            val activeSet = prefs.getStringSet(P2PPreferences.ACTIVE_CHATS, emptySet()).orEmpty()
+            if (sender !in activeSet) {
+                prefs.edit { putStringSet(P2PPreferences.ACTIVE_CHATS, activeSet + sender) }
             }
-            prefs.edit {
-                putString(P2PPreferences.lastMessage(sender), SecureStorage.encrypt(notificationText))
+            if (!P2PPreferences.isAppLocked()) {
+                if (prefs.getBoolean("persist_chat_history", true)) {
+                    try {
+                        ChatDatabaseHelper.getInstance(context).saveMessage(sender, message)
+                    } catch (e: Exception) {
+                        log(context, "Failed to persist incoming message: ${e.message}", "ERROR", e)
+                    }
+                }
+                prefs.edit {
+                    putString(P2PPreferences.lastMessage(sender), SecureStorage.encrypt(notificationText))
+                }
             }
-        }
-        serviceScope.launch(Dispatchers.Default) {
+
             val currentActivePeer = activeChatPeer.get()
             val isChatOpenWithSender = currentActivePeer != null && currentActivePeer.equals(sender, ignoreCase = true)
             if (countAsNew && !isChatOpenWithSender) {
@@ -635,9 +646,6 @@ object P2PMessageRelay {
                 showNotification(context, sender, message, notificationText)
             } else {
                 MessageNotificationService.cancelNotificationForPeer(context, sender)
-            }
-            kotlinx.coroutines.withContext(Dispatchers.Main) {
-                messageListeners.forEach { it.onMessageReceived(sender, message) }
             }
         }
     }

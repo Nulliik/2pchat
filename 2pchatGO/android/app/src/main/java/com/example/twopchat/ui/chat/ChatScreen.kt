@@ -518,10 +518,12 @@ fun ChatScreen(
                         ).map { message ->
                             repairMisclassifiedLocalImage(message).also { repaired ->
                                 if (repaired !== message) {
-                                    try {
-                                        db.saveMessage(peerName, repaired)
-                                    } catch (e: Exception) {
-                                        android.util.Log.e("ChatScreen", "Failed to update repaired message", e)
+                                    persistDatabase {
+                                        try {
+                                            db.saveMessage(peerName, repaired)
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("ChatScreen", "Failed to update repaired message", e)
+                                        }
                                     }
                                 }
                             }
@@ -592,7 +594,9 @@ fun ChatScreen(
                     offset = loadedPersistedMessageCount,
                 ).map { message ->
                     repairMisclassifiedLocalImage(message).also { repaired ->
-                        if (repaired !== message) db.saveMessage(peerName, repaired)
+                        if (repaired !== message) {
+                            persistDatabase { db.saveMessage(peerName, repaired) }
+                        }
                     }
                 }
             }

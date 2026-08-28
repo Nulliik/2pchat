@@ -112,6 +112,15 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         }
     }
 
+    /** Pre-warms the SQLCipher database connection and schema on a background thread. */
+    fun warmup() {
+        try {
+            safeReadableDatabase
+        } catch (e: Exception) {
+            Log.w(TAG, "Database warmup failed", e)
+        }
+    }
+
     private val safeWritableDatabase: SQLiteDatabase
         get() {
             if (!isMigrationChecked) {

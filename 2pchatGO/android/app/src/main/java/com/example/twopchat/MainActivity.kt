@@ -202,11 +202,13 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Initialize Native Go Core asynchronously to avoid UI main thread ANR
+        // Initialize Native Go Core, Keystore, and Database asynchronously to avoid UI main thread ANR/lag
         val appContext = applicationContext
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 NativeBridge.initialize()
+                SecureStorage.prewarm(appContext)
+                com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).warmup()
                 if (P2PPreferences.isTorEnabled(appContext)) {
                     TorManager.startTor(appContext)
                 }
@@ -221,7 +223,7 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             } catch (e: Exception) {
-                android.util.Log.e("MainActivity", "Error initializing Go native core in background", e)
+                android.util.Log.e("MainActivity", "Error initializing Go native core or database in background", e)
             }
         }
 

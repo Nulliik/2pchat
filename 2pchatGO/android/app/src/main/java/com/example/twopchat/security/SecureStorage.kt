@@ -5,6 +5,7 @@ import android.security.keystore.KeyProperties
 import com.example.twopchat.config.P2PPreferences
 import android.util.Base64
 import android.util.Log
+import android.util.LruCache
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -15,9 +16,20 @@ import javax.crypto.spec.GCMParameterSpec
 object SecureStorage {
     private const val KEY_ALIAS = "2pchat_local_storage_v1"
     private const val PREFIX = "enc:v1:"
+    private val stringDecryptionCache = LruCache<String, String>(1024)
 
     @Volatile
     private var cachedKey: SecretKey? = null
+
+    /** Asynchronously pre-warms the Keystore key and DB passphrase on background thread. */
+    fun prewarm(context: android.content.Context) {
+        try {
+            key()
+            getOrGenerateDbPassphrase(context)
+        } catch (e: Exception) {
+            Log.w("SecureStorage", "Failed to prewarm keystore", e)
+        }
+    }
 
     private fun createCipher(): Cipher {
         return Cipher.getInstance("AES/GCM/NoPadding")
@@ -87,11 +99,14 @@ object SecureStorage {
             SecurityUtils.zeroize(valueBytes)
             SecurityUtils.zeroize(cipherBytes)
             SecurityUtils.zeroize(packed)
+            stringDecryptionCache.put(result, value)
             return result
         }
 
         fun decrypt(value: String?): String? {
             if (value == null || !value.startsWith(PREFIX)) return value
+            val cached = stringDecryptionCache.get(value)
+            if (cached != null) return cached
             return try {
                 val packed = Base64.decode(value.removePrefix(PREFIX), Base64.NO_WRAP)
                 if (packed.size <= 12) return value
@@ -104,6 +119,7 @@ object SecureStorage {
                 val result = String(plainBytes, Charsets.UTF_8)
                 SecurityUtils.zeroize(packed)
                 SecurityUtils.zeroize(plainBytes)
+                stringDecryptionCache.put(value, result)
                 result
             } catch (e: Exception) {
                 Log.w("SecureStorage", "Failed to decrypt string: ${e.message}")
@@ -126,6 +142,8 @@ object SecureStorage {
     /** Returns legacy plaintext unchanged, enabling non-destructive migration. */
     fun decrypt(value: String?): String? {
         if (value == null || !value.startsWith(PREFIX)) return value
+        val cached = stringDecryptionCache.get(value)
+        if (cached != null) return cached
         return try {
             newStringCipher().decrypt(value)
         } catch (e: Exception) {
@@ -235,6 +253,7 @@ object SecureStorage {
         synchronized(this) {
             cachedKey = null
         }
+        stringDecryptionCache.evictAll()
         com.example.twopchat.data.ChatDatabaseHelper.closeAllConnections()
     }
 
@@ -243,6 +262,7 @@ object SecureStorage {
         synchronized(this) {
             cachedKey = null
         }
+        stringDecryptionCache.evictAll()
         KeyStore.getInstance("AndroidKeyStore").apply {
             load(null)
             if (containsAlias(KEY_ALIAS)) deleteEntry(KEY_ALIAS)

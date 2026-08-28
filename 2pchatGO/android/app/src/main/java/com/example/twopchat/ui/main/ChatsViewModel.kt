@@ -22,15 +22,8 @@ internal class ChatsViewModel(
 ) : ViewModel() {
     private val appContext = context.applicationContext
     val activeChatsSet = mutableStateOf(
-        run {
-            val dbChats = try {
-                com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getAllChatPeerNames()
-            } catch (_: Exception) {
-                emptySet()
-            }
-            val prefChats = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
-            (prefChats + dbChats).filter { it.isNotBlank() && it != "null" && it != "Saved Messages" }.toSet()
-        }
+        sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
+            .filter { it.isNotBlank() && it != "null" && it != "Saved Messages" }.toSet()
     )
     val chatListRevision = mutableIntStateOf(0)
     val profilePhotoUri = mutableStateOf(
@@ -46,17 +39,26 @@ internal class ChatsViewModel(
     val heroYggOk = mutableStateOf<Boolean?>(null)
     val isRefreshingAll = mutableStateOf(false)
 
+    private fun refreshActiveChats() {
+        val prefChats = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
+        val dbChats = try {
+            com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getAllChatPeerNames()
+        } catch (_: Exception) {
+            emptySet()
+        }
+        val combined = (prefChats + dbChats).filter { it.isNotBlank() && it != "null" && it != "Saved Messages" }.toSet()
+        if (activeChatsSet.value != combined) {
+            activeChatsSet.value = combined
+            chatListRevision.intValue++
+        }
+    }
+
     private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
         when {
             key == "active_chats" -> {
-                val dbChats = try {
-                    com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getAllChatPeerNames()
-                } catch (_: Exception) {
-                    emptySet()
+                viewModelScope.launch(Dispatchers.IO) {
+                    refreshActiveChats()
                 }
-                val prefChats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
-                activeChatsSet.value = (prefChats + dbChats).filter { it.isNotBlank() && it != "null" && it != "Saved Messages" }.toSet()
-                chatListRevision.intValue++
             }
             key?.startsWith("last_msg_") == true ||
                 key?.startsWith("draft_msg_") == true ||
@@ -75,6 +77,9 @@ internal class ChatsViewModel(
 
     init {
         sharedPrefs.registerOnSharedPreferenceChangeListener(preferenceListener)
+        viewModelScope.launch(Dispatchers.IO) {
+            refreshActiveChats()
+        }
         viewModelScope.launch {
             while (isActive) {
                 if (NativeBridge.isLoaded) {

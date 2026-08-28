@@ -36,4 +36,20 @@ class SecureStorageSafetyTest {
         val result = SecureStorage.decrypt(emptyText)
         assertEquals("", result)
     }
+
+    @Test
+    fun testDecryptNullReturnsNull() {
+        val result = SecureStorage.decrypt(null)
+        org.junit.Assert.assertNull(result)
+    }
+
+    @Test
+    fun testDecryptRepeatedDecryptionsAreCached() {
+        val plain = "Hello world cached string"
+        val encrypted = SecureStorage.encrypt(plain)
+        val decryptedFirst = SecureStorage.decrypt(encrypted)
+        val decryptedSecond = SecureStorage.decrypt(encrypted)
+        assertEquals(plain, decryptedFirst)
+        assertEquals(plain, decryptedSecond)
+    }
 }

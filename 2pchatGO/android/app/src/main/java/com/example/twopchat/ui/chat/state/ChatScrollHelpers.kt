@@ -75,11 +75,42 @@ internal fun shouldLoadOlderHistory(
     !isSearchMode &&
     !showProfileOverlay
 
+private val verifiedImageFileCache = android.util.LruCache<String, Boolean>(256)
+
+private fun hasImageMagicHeader(file: File): Boolean {
+    if (!file.isFile || file.length() < 12) return false
+    val cached = verifiedImageFileCache.get(file.absolutePath)
+    if (cached != null) return cached
+    val isImg = try {
+        java.io.FileInputStream(file).use { stream ->
+            val header = ByteArray(12)
+            val read = stream.read(header)
+            if (read < 12) return@use false
+            // PNG: 89 50 4E 47
+            if (header[0] == 0x89.toByte() && header[1] == 0x50.toByte() && header[2] == 0x4E.toByte() && header[3] == 0x47.toByte()) true
+            // JPEG: FF D8 FF
+            else if (header[0] == 0xFF.toByte() && header[1] == 0xD8.toByte() && header[2] == 0xFF.toByte()) true
+            // GIF: GIF87a / GIF89a
+            else if (header[0] == 'G'.code.toByte() && header[1] == 'I'.code.toByte() && header[2] == 'F'.code.toByte() && header[3] == '8'.code.toByte()) true
+            // WebP: RIFF....WEBP
+            else if (header[0] == 'R'.code.toByte() && header[1] == 'I'.code.toByte() && header[2] == 'F'.code.toByte() && header[3] == 'F'.code.toByte() &&
+                header[8] == 'W'.code.toByte() && header[9] == 'E'.code.toByte() && header[10] == 'B'.code.toByte() && header[11] == 'P'.code.toByte()) true
+            // BMP: BM
+            else if (header[0] == 0x42.toByte() && header[1] == 0x4D.toByte()) true
+            else false
+        }
+    } catch (_: Exception) {
+        false
+    }
+    verifiedImageFileCache.put(file.absolutePath, isImg)
+    return isImg
+}
+
 internal fun repairMisclassifiedLocalImage(message: Message): Message {
     if (message.attachmentType != "FILE") return message
     val path = message.attachmentUri?.takeIf { it.isNotBlank() && "://" !in it } ?: return message
     val file = File(path)
-    if (!file.isFile) return message
+    if (!hasImageMagicHeader(file)) return message
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(file.absolutePath, bounds)
     return if (bounds.outWidth > 0 && bounds.outHeight > 0) {
