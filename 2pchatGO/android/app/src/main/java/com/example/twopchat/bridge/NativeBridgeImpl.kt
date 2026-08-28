@@ -131,7 +131,8 @@ class NativeBridgeImpl : IP2PBridge {
             if (resolvedName != peerFP) {
                 P2PMessageRelay.clearAvatarShareCooldown(resolvedName)
             }
-            sessionListener?.onSessionEstablished(resolvedName, peerFP, endpoint, "direct", "")
+            val transportHint = if (endpoint.contains(".onion", ignoreCase = true)) "onion" else if (endpoint.contains(":")) "yggdrasil" else "direct"
+            sessionListener?.onSessionEstablished(resolvedName, peerFP, endpoint, transportHint, "")
             flushPendingMessages(peerFP)
             if (resolvedName != peerFP) {
                 flushPendingMessages(resolvedName)

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -341,54 +340,21 @@ func (m *SessionManager) ProbePeer(endpointsJSON, expectedFingerprint string) er
 	}
 
 	m.mu.RLock()
-	svc := m.discoverySvc
 	nm := m.netManager
-	dialer := m.dialer
 	m.mu.RUnlock()
 
-	go func() {
-		timeout := 15 * time.Second
-		for _, ep := range endpoints {
-			if strings.Contains(strings.ToLower(ep), ".onion") {
-				timeout = transport.DefaultTorDialTimeout
-				break
-			}
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		defer cancel()
+	if nm == nil {
+		return errors.New("network manager not initialized")
+	}
 
-		conn, winEndpoint, err := svc.ProbeFast(ctx, endpoints, func(c context.Context, ep string) (net.Conn, error) {
-			return dialer.DialContext(c, "tcp", ep)
-		})
+	go func() {
+		endpointStr := strings.Join(endpoints, ",")
+		_, err := nm.ConnectPeer(endpointStr, expectedFingerprint)
 		if err != nil {
 			callbacks, _ := m.callbackSnapshot()
 			if callbacks.OnError != nil {
 				callbacks.OnError(3, fmt.Sprintf("ProbePeer failed for all endpoints: %v", err))
 			}
-			return
-		}
-
-		sess, err := session.NewSession(
-			conn,
-			true,
-			m.identity,
-			m.prekeyPriv,
-			m.prekeyPub,
-			expectedFingerprint,
-			10*time.Second,
-		)
-		if err != nil {
-			_ = conn.Close()
-			return
-		}
-
-		if strings.Contains(strings.ToLower(winEndpoint), ".onion") || dialer.ClassifyEndpoint(winEndpoint) == transport.TransportTor {
-			sess.SetTorTransport(true)
-		}
-
-		peerFP := sess.PeerFingerprint()
-		if nm != nil {
-			nm.RegisterSession(sess, peerFP, winEndpoint, true)
 		}
 	}()
 
@@ -1008,6 +974,7 @@ func (m *SessionManager) GetPublicEndpoint() string {
 
 // OnNetworkChanged handles network connectivity transitions (e.g. Wi-Fi reconnect) by re-announcing discovery.
 func (m *SessionManager) OnNetworkChanged() error {
+	m.ResetCooldowns()
 	m.mu.RLock()
 	svc := m.discoverySvc
 	m.mu.RUnlock()
