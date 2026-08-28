@@ -89,17 +89,18 @@ const (
 	YggdrasilModeVPN   YggdrasilMode = "vpn"
 )
 
-// AdaptiveDialer automatically routes outbound connections through Direct TCP, Yggdrasil, or Tor SOCKS5.
+// AdaptiveDialer automatically routes outbound connections through Direct TCP, Yggdrasil, Tor SOCKS5, or Blind Relay.
 type AdaptiveDialer struct {
-	mu            sync.RWMutex
-	torProxyAddr  string
-	proxyEnabled  bool
-	yggProxyAddr  string
-	yggdrasilMode YggdrasilMode
-	directDialer  *net.Dialer
-	torDialer     proxy.Dialer
-	yggDialer     proxy.Dialer
-	timeout       time.Duration
+	mu             sync.RWMutex
+	torProxyAddr   string
+	proxyEnabled   bool
+	yggProxyAddr   string
+	yggdrasilMode  YggdrasilMode
+	relayEndpoints []string
+	directDialer   *net.Dialer
+	torDialer      proxy.Dialer
+	yggDialer      proxy.Dialer
+	timeout        time.Duration
 }
 
 // NewAdaptiveDialer creates a new AdaptiveDialer.
@@ -112,11 +113,12 @@ func NewAdaptiveDialer(torProxyAddr string, proxyEnabled bool, timeout time.Dura
 	}
 
 	d := &AdaptiveDialer{
-		torProxyAddr:  torProxyAddr,
-		proxyEnabled:  proxyEnabled,
-		yggProxyAddr:  DefaultYggdrasilProxy,
-		yggdrasilMode: YggdrasilModeProxy,
-		timeout:       timeout,
+		torProxyAddr:   torProxyAddr,
+		proxyEnabled:   proxyEnabled,
+		yggProxyAddr:   DefaultYggdrasilProxy,
+		yggdrasilMode:  YggdrasilModeProxy,
+		relayEndpoints: make([]string, 0),
+		timeout:        timeout,
 		directDialer: &net.Dialer{
 			Timeout:   timeout,
 			KeepAlive: 30 * time.Second,
@@ -352,4 +354,114 @@ func (d *AdaptiveDialer) Dial(network, address string) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return d.DialContext(ctx, network, address)
+}
+
+// AddRelayEndpoint registers a known Blind Relay server address.
+func (d *AdaptiveDialer) AddRelayEndpoint(addr string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return
+	}
+	for _, existing := range d.relayEndpoints {
+		if existing == addr {
+			return
+		}
+	}
+	d.relayEndpoints = append(d.relayEndpoints, addr)
+}
+
+// SetRelayEndpoints updates the full list of known Blind Relay server addresses.
+func (d *AdaptiveDialer) SetRelayEndpoints(endpoints []string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.relayEndpoints = append([]string(nil), endpoints...)
+}
+
+// GetRelayEndpoints returns a copy of registered Blind Relay server addresses.
+func (d *AdaptiveDialer) GetRelayEndpoints() []string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return append([]string(nil), d.relayEndpoints...)
+}
+
+// DialWithRelayFallback attempts direct connections to candidate endpoints first.
+// If direct P2P fails within directTimeout, it transparently establishes an E2EE tunnel via Blind Relays.
+func (d *AdaptiveDialer) DialWithRelayFallback(
+	ctx context.Context,
+	directEndpoints []string,
+	targetFP string,
+	sessionID [16]byte,
+	directTimeout time.Duration,
+) (net.Conn, string, error) {
+	if directTimeout <= 0 {
+		directTimeout = 4 * time.Second
+	}
+
+	// 1. Try direct endpoints first with a bounded timeout
+	if len(directEndpoints) > 0 {
+		directCtx, directCancel := context.WithTimeout(ctx, directTimeout)
+		defer directCancel()
+
+		type dialRes struct {
+			conn net.Conn
+			ep   string
+			err  error
+		}
+		resChan := make(chan dialRes, len(directEndpoints))
+
+		for _, ep := range directEndpoints {
+			go func(endpoint string) {
+				conn, err := d.DialContext(directCtx, "tcp", endpoint)
+				resChan <- dialRes{conn: conn, ep: endpoint, err: err}
+			}(ep)
+		}
+
+	DirectLoop:
+		for i := 0; i < len(directEndpoints); i++ {
+			select {
+			case <-directCtx.Done():
+				break DirectLoop
+			case res := <-resChan:
+				if res.err == nil && res.conn != nil {
+					return res.conn, res.ep, nil
+				}
+			}
+		}
+	}
+
+	// 2. Direct connection failed or timed out — fallback to Blind Relay
+	relays := d.GetRelayEndpoints()
+	if len(relays) == 0 {
+		return nil, "", errors.New("direct P2P connection failed and no blind relay endpoints available")
+	}
+
+	for _, relayAddr := range relays {
+		if ctx.Err() != nil {
+			return nil, "", ctx.Err()
+		}
+
+		rawConn, err := d.DialContext(ctx, "tcp", relayAddr)
+		if err != nil {
+			continue
+		}
+
+		// Send connect frame to relay
+		connectFrame, err := EncodeRelayFrame(RelayFrameTypeConnect, sessionID, []byte(targetFP))
+		if err != nil {
+			_ = rawConn.Close()
+			continue
+		}
+
+		if _, err := rawConn.Write(connectFrame); err != nil {
+			_ = rawConn.Close()
+			continue
+		}
+
+		tunnelConn := NewRelayTunnelConn(rawConn, sessionID, rawConn.LocalAddr(), rawConn.RemoteAddr())
+		return tunnelConn, fmt.Sprintf("relay://%s#%s", relayAddr, targetFP), nil
+	}
+
+	return nil, "", errors.New("all direct and relay connection attempts failed")
 }
