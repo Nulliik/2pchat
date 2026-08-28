@@ -15,6 +15,7 @@ import androidx.core.content.edit
 import com.example.twopchat.data.ChatDatabaseHelper
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.relay.resolvePeerEndpoint
 import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.tor.*
 import com.example.twopchat.bridge.P2PBridgeProvider
@@ -755,12 +756,22 @@ fun ChatScreen(
 
     LaunchedEffect(peerName, isActive) {
         if (!isActive) return@LaunchedEffect
-        val endpoint = P2PMessageRelay.peerEndpoints[peerName]
         if (peerName != "Saved Messages") {
-            P2PMessageRelay.sendConnectedPeerHeartbeat(context, peerName)
-            if (endpoint != null) {
-                P2PMessageRelay.shareAvatar(context, peerName, endpoint)
-                P2PMessageRelay.processOfflineQueue(context, peerName, endpoint)
+            val isOnline = P2PMessageRelay.isPeerOnline(context, peerName)
+            val resolvedEp = resolvePeerEndpoint(
+                peerName = peerName,
+                liveEndpoint = P2PMessageRelay.peerEndpoints[peerName],
+                persistedEndpoint = sharedPrefs.getString(P2PPreferences.lastEndpoint(peerName), null),
+                onionEndpoint = P2PPreferences.getPeerOnionAddress(context, peerName),
+            ).orEmpty()
+            if (!isOnline && resolvedEp.isNotBlank()) {
+                P2PMessageRelay.reconnectSession(context, peerName)
+            } else {
+                P2PMessageRelay.sendConnectedPeerHeartbeat(context, peerName)
+            }
+            if (resolvedEp.isNotBlank()) {
+                P2PMessageRelay.shareAvatar(context, peerName, resolvedEp)
+                P2PMessageRelay.processOfflineQueue(context, peerName, resolvedEp)
             }
         }
     }

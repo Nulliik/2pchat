@@ -299,7 +299,7 @@ func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, e
 		ep = transport.NormalizeEndpoint(ep, 50001)
 		if ep != "" {
 			candidates = append(candidates, ep)
-			if strings.HasSuffix(strings.ToLower(ep), ".onion") || (m.dialer != nil && m.dialer.ClassifyEndpoint(ep) == transport.TransportTor) {
+			if strings.Contains(strings.ToLower(ep), ".onion") || (m.dialer != nil && m.dialer.ClassifyEndpoint(ep) == transport.TransportTor) {
 				hasTor = true
 			}
 		}
@@ -346,7 +346,7 @@ func (m *Manager) ConnectPeer(endpoint, expectedFingerprint string) (*Session, e
 		return nil, fmt.Errorf("initiator handshake failed with %s: %w", winEndpoint, err)
 	}
 
-	if strings.HasSuffix(strings.ToLower(winEndpoint), ".onion") || m.dialer.ClassifyEndpoint(winEndpoint) == transport.TransportTor {
+	if strings.Contains(strings.ToLower(winEndpoint), ".onion") || (m.dialer != nil && m.dialer.ClassifyEndpoint(winEndpoint) == transport.TransportTor) {
 		sess.SetTorTransport(true)
 	}
 

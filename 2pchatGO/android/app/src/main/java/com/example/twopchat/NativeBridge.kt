@@ -297,6 +297,16 @@ object NativeBridge {
         }
     }
 
+    fun resetStaleEndpointCooldowns(): Boolean {
+        if (!isLoaded) return false
+        return try {
+            nativeResetStaleEndpointCooldowns()
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeResetStaleEndpointCooldowns failed", e)
+            false
+        }
+    }
+
     fun updateTrackers(trackers: List<String>): Boolean {
         if (!isLoaded) return false
         return try {
@@ -597,6 +607,7 @@ object NativeBridge {
     private external fun nativeReloadIdentity(): Boolean
     private external fun nativeAnnounceSelf(infoHashHex: String, port: Int): Boolean
     private external fun nativeProbePeer(endpointsJSON: String, expectedFingerprint: String): Boolean
+    private external fun nativeResetStaleEndpointCooldowns(): Boolean
     private external fun nativeGetLocalSigningPublicKey(): String?
     private external fun nativeSignGroupPayload(canonicalPayload: String): String?
     private external fun nativeVerifyGroupPayload(verificationKey: String, canonicalPayload: String, signature: String): Boolean

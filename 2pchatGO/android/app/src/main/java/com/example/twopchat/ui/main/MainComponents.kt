@@ -300,7 +300,8 @@ fun PeerRow(
                         }
                     }
                     if (peer.name != "Saved Messages") {
-                        val isOnline = com.example.twopchat.relay.P2PMessageRelay.peerSessionStates[peer.name] == true
+                        val isOnline = com.example.twopchat.relay.P2PMessageRelay.isPeerOnline(context, peer.name) ||
+                            com.example.twopchat.relay.P2PMessageRelay.peerSessionStates[peer.name] == true
                         if (isOnline) {
                             Box(
                                 modifier = Modifier

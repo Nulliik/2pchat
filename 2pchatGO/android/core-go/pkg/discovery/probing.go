@@ -129,7 +129,8 @@ func (p *FastTieredProber) ProbeFast(
 	p.mu.Unlock()
 
 	if len(candidates) == 0 {
-		return nil, "", ErrNoViableEndpoints
+		// If all candidates are in cooldown, don't stall user messaging; probe all candidates anyway.
+		candidates = endpoints
 	}
 
 	// Group candidates by tier

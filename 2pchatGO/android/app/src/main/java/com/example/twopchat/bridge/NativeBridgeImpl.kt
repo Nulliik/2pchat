@@ -523,8 +523,7 @@ class NativeBridgeImpl : IP2PBridge {
     }
 
     override fun resetStaleEndpointCooldowns(): Boolean {
-        // Go discovery prober handles network interface changes
-        return true
+        return NativeBridge.resetStaleEndpointCooldowns()
     }
 
     override fun registerMessageListener(listener: BridgeMessageListener) {

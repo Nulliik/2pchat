@@ -185,7 +185,7 @@ internal fun ChatHeader(
                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 } else {
-                    val transportType = P2PMessageRelay.getPeerTransportType(peerName)
+                    val transportType = P2PMessageRelay.getPeerTransportType(context, peerName)
                     val rttMs = P2PMessageRelay.peerRttMs[peerName]
                     ConnectionTypeBadge(
                         transportType = transportType,

@@ -322,10 +322,28 @@ object P2PMessageRelay {
     private val onionSharesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val lastOnionShareAt = ConcurrentHashMap<String, Long>()
 
-    fun getPeerTransportType(peerName: String): TransportType {
-        val isOnline = peerSessionStates[peerName] == true
+    fun getPeerTransportType(context: Context, peerName: String): TransportType {
+        val isOnline = isPeerOnline(context, peerName) || peerSessionStates[peerName] == true
+        val fp = P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null)
         val raw = peerConnectionTransports[peerName]
+            ?: (if (!fp.isNullOrBlank()) peerConnectionTransports[fp] else null)
+            ?: (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerConnectionTransports[it] })
+            ?: P2PPreferences.prefs(context).getString(P2PPreferences.transport(peerName), null)
         val ep = peerEndpoints[peerName]
+            ?: (if (!fp.isNullOrBlank()) peerEndpoints[fp] else null)
+            ?: (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerEndpoints[it] })
+            ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null)
+            ?: P2PPreferences.getPeerOnionAddress(context, peerName)
+        return resolveTransportType(raw, ep, isOnline)
+    }
+
+    fun getPeerTransportType(peerName: String): TransportType {
+        val isOnline = peerSessionStates[peerName] == true ||
+            (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerSessionStates[it] == true } == true)
+        val raw = peerConnectionTransports[peerName]
+            ?: (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerConnectionTransports[it] })
+        val ep = peerEndpoints[peerName]
+            ?: (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerEndpoints[it] })
         return resolveTransportType(raw, ep, isOnline)
     }
 

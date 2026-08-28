@@ -8,7 +8,8 @@ import com.example.twopchat.config.P2PPreferences
 class DefaultPeerRepository : PeerRepository {
 
     override fun isPeerOnline(peerName: String): Boolean {
-        return P2PMessageRelay.peerSessionStates[peerName] == true
+        val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        return P2PMessageRelay.isPeerOnline(context, peerName) || P2PMessageRelay.peerSessionStates[peerName] == true
     }
 
     override fun getPeerTransport(peerName: String): String? {
@@ -16,7 +17,8 @@ class DefaultPeerRepository : PeerRepository {
     }
 
     override fun getPeerTransportType(peerName: String): com.example.twopchat.relay.TransportType {
-        return P2PMessageRelay.getPeerTransportType(peerName)
+        val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        return P2PMessageRelay.getPeerTransportType(context, peerName)
     }
 
     override fun getPeerAvatar(peerName: String): Bitmap? {

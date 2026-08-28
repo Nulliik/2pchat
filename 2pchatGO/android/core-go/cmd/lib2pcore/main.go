@@ -722,6 +722,15 @@ func Java_com_example_twopchat_NativeBridge_nativeProbePeer(
 	return C.JNI_TRUE
 }
 
+//export Java_com_example_twopchat_NativeBridge_nativeResetStaleEndpointCooldowns
+func Java_com_example_twopchat_NativeBridge_nativeResetStaleEndpointCooldowns(
+	env *C.JNIEnv,
+	clazz C.jclass,
+) C.jboolean {
+	bridge.GetManager().ResetCooldowns()
+	return C.JNI_TRUE
+}
+
 //export Java_com_example_twopchat_NativeBridge_nativeGetLocalSigningPublicKey
 func Java_com_example_twopchat_NativeBridge_nativeGetLocalSigningPublicKey(
 	env *C.JNIEnv,

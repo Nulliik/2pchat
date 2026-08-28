@@ -248,6 +248,17 @@ func (m *SessionManager) StopDiscovery() error {
 	return nil
 }
 
+// ResetCooldowns clears failure backoff on all candidate endpoints.
+func (m *SessionManager) ResetCooldowns() {
+	m.mu.RLock()
+	svc := m.discoverySvc
+	m.mu.RUnlock()
+
+	if svc != nil {
+		svc.ResetCooldowns()
+	}
+}
+
 // UpdateTrackers updates the list of active BitTorrent trackers on the fly.
 func (m *SessionManager) UpdateTrackers(trackersJSON string) error {
 	m.mu.RLock()
@@ -338,7 +349,7 @@ func (m *SessionManager) ProbePeer(endpointsJSON, expectedFingerprint string) er
 	go func() {
 		timeout := 15 * time.Second
 		for _, ep := range endpoints {
-			if strings.HasSuffix(strings.ToLower(ep), ".onion") {
+			if strings.Contains(strings.ToLower(ep), ".onion") {
 				timeout = transport.DefaultTorDialTimeout
 				break
 			}
@@ -371,7 +382,7 @@ func (m *SessionManager) ProbePeer(endpointsJSON, expectedFingerprint string) er
 			return
 		}
 
-		if strings.HasSuffix(strings.ToLower(winEndpoint), ".onion") || dialer.ClassifyEndpoint(winEndpoint) == transport.TransportTor {
+		if strings.Contains(strings.ToLower(winEndpoint), ".onion") || dialer.ClassifyEndpoint(winEndpoint) == transport.TransportTor {
 			sess.SetTorTransport(true)
 		}
 

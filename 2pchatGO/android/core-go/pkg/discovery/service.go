@@ -283,6 +283,13 @@ func (s *DiscoveryService) ProbeFast(
 	return s.prober.ProbeFast(ctx, endpoints, dialer)
 }
 
+// ResetCooldowns clears failure backoff on all candidate endpoints.
+func (s *DiscoveryService) ResetCooldowns() {
+	if s != nil && s.prober != nil {
+		s.prober.ResetCooldowns()
+	}
+}
+
 // RefreshAnnouncement triggers an immediate LAN beacon re-announcement and tracker announce.
 func (s *DiscoveryService) RefreshAnnouncement() error {
 	s.mu.RLock()
