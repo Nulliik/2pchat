@@ -32,10 +32,23 @@ val unpackBridgeTransportBinaries by tasks.registering(Sync::class) {
     }
 }
 
+val buildGoCoreBinaries by tasks.registering(Exec::class) {
+    val ndkDir = file("/Users/kodzy/Library/Android/sdk/ndk/26.3.11579264")
+    workingDir = file("../core-go")
+    commandLine("make", "NDK_DIR=${ndkDir.absolutePath}", "android-all")
+    onlyIf {
+        file("../core-go/Makefile").exists() && ndkDir.exists()
+    }
+}
+
+tasks.matching { it.name.startsWith("preBuild") }.configureEach {
+    dependsOn(buildGoCoreBinaries)
+}
+
 android {
     namespace = "com.example.twopchat"
     compileSdk = 37
-    ndkVersion = "26.1.10909125"
+    ndkVersion = "26.3.11579264"
     defaultConfig {
         applicationId = "com.example.twopchat.go"
         minSdk = 24

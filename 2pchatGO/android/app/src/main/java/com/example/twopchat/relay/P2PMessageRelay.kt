@@ -350,7 +350,13 @@ object P2PMessageRelay {
     fun isPeerOnline(context: Context, peerName: String): Boolean {
         if (peerSessionStates[peerName] == true) return true
         val fp = P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null)
-        return getBridge(context).isPeerOnline(peerName, fp)
+        val online = getBridge(context).isPeerOnline(peerName, fp)
+        if (online) {
+            runOnMain {
+                peerSessionStates[peerName] = true
+            }
+        }
+        return online
     }
 
     // Maps peer name to their profile avatar bitmap in RAM

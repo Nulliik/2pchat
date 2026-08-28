@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -95,24 +96,25 @@ func (s *DiscoveryService) SetTrackers(trackers []string) {
 	copy(s.trackers, trackers)
 }
 
-// RegisterInfoHash adds an info hash (20 bytes hex or raw) to announce/discover.
-func (s *DiscoveryService) RegisterInfoHash(hashHex string) error {
+// RegisterInfoHash adds an info hash (20 bytes hex, raw 20-byte string, or arbitrary key to SHA-1) to announce/discover.
+func (s *DiscoveryService) RegisterInfoHash(hashStr string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var h [20]byte
-	b, err := hex.DecodeString(hashHex)
+	b, err := hex.DecodeString(hashStr)
 	if err == nil && len(b) == 20 {
 		copy(h[:], b)
-	} else if len(hashHex) == 20 {
-		copy(h[:], []byte(hashHex))
+	} else if len(hashStr) == 20 {
+		copy(h[:], []byte(hashStr))
 	} else {
-		return fmt.Errorf("invalid info hash format: %s", hashHex)
+		sha := sha1.Sum([]byte(hashStr))
+		copy(h[:], sha[:])
 	}
 
-	s.infoHashes[hashHex] = h
+	s.infoHashes[hashStr] = h
 	if atomic.LoadInt32(&s.running) == 1 {
-		go s.AnnounceHash(hashHex, h)
+		go s.AnnounceHash(hashStr, h)
 	}
 	return nil
 }

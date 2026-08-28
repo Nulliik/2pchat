@@ -32,9 +32,16 @@ internal fun resolvePeerEndpoint(
     if (peerName.isBlank()) return null
     val validEndpoints = sequenceOf(onionEndpoint, liveEndpoint, persistedEndpoint)
         .mapNotNull { it?.trim() }
-        .map { ep -> if (ep.endsWith(".onion", ignoreCase = true) && !ep.contains(':')) "$ep:50001" else ep }
-        .filter(::isValidPeerEndpointList)
         .flatMap { it.split(',').asSequence().map(String::trim).filter(String::isNotEmpty) }
+        .map { ep ->
+            when {
+                ep.startsWith("[") && ep.endsWith("]") -> "$ep:50001"
+                ep.count { it == ':' } > 1 && !ep.startsWith("[") -> "[$ep]:50001"
+                !ep.contains(':') -> "$ep:50001"
+                else -> ep
+            }
+        }
+        .filter(::isValidPeerEndpoint)
         .distinct()
         .toList()
     return if (validEndpoints.isNotEmpty()) validEndpoints.joinToString(",") else null
