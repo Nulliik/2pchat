@@ -137,4 +137,39 @@ class MediaTransferStatusStateMachineTest {
 
         assertEquals("SENT", albumStatus)
     }
+
+    @Test
+    fun mediaTransferOverlay_completesWhenSentOr100Percent() {
+        val completedInfo = com.example.twopchat.relay.P2PMessageRelay.FileProgressInfo(
+            bytesTransferred = 100_000L,
+            totalBytes = 100_000L,
+            speedKbps = 356.0,
+        )
+        // Default state when 100% reached must be COMPLETED
+        assertEquals(com.example.twopchat.relay.P2PMessageRelay.FileTransferState.COMPLETED, completedInfo.state)
+
+        val sentMsg = Message(
+            id = "photo-1",
+            text = "Sent an image",
+            isMe = true,
+            timestamp = "01:25",
+            attachmentType = "IMAGE",
+            status = "SENT"
+        )
+
+        val isCancelled = completedInfo.state ==
+            com.example.twopchat.relay.P2PMessageRelay.FileTransferState.CANCELLED ||
+            sentMsg.status.equals("CANCELLED", ignoreCase = true)
+        val hasFailed = completedInfo.state ==
+            com.example.twopchat.relay.P2PMessageRelay.FileTransferState.FAILED ||
+            sentMsg.status.equals("FAILED", ignoreCase = true)
+        val isProgressActive = completedInfo.state == com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING &&
+            (completedInfo.totalBytes <= 0L || completedInfo.bytesTransferred < completedInfo.totalBytes)
+        val isTransferring = !isCancelled && !hasFailed && (
+            isProgressActive || (sentMsg.isMe && sentMsg.status?.startsWith("SENDING") == true) || (!sentMsg.isMe && sentMsg.status == "RECEIVING")
+        )
+
+        assertFalse("100% completed media with SENT status must not display transfer overlay", isTransferring)
+    }
 }
+

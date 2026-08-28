@@ -837,10 +837,16 @@ fun ChatScreen(
             override fun onFileProgress(sender: String, msgId: String, bytesTransferred: Long, totalBytes: Long, speedKbps: Double) {
                 if (sender == peerName || msgId.isNotEmpty()) {
                     val key = if (sender.isNotEmpty()) "$sender:$msgId" else msgId
+                    val state = if (totalBytes > 0L && bytesTransferred >= totalBytes) {
+                        P2PMessageRelay.FileTransferState.COMPLETED
+                    } else {
+                        P2PMessageRelay.FileTransferState.TRANSFERRING
+                    }
                     P2PMessageRelay.fileProgressStates[key] = P2PMessageRelay.FileProgressInfo(
                         bytesTransferred = bytesTransferred,
                         totalBytes = totalBytes,
-                        speedKbps = speedKbps
+                        speedKbps = speedKbps,
+                        state = state,
                     )
                 }
             }

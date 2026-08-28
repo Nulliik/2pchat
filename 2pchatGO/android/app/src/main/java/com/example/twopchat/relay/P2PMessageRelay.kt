@@ -494,7 +494,11 @@ object P2PMessageRelay {
         val bytesTransferred: Long,
         val totalBytes: Long,
         val speedKbps: Double,
-        val state: FileTransferState = FileTransferState.TRANSFERRING,
+        val state: FileTransferState = if (totalBytes > 0L && bytesTransferred >= totalBytes) {
+            FileTransferState.COMPLETED
+        } else {
+            FileTransferState.TRANSFERRING
+        },
     )
 
     val fileProgressStates = mutableStateMapOf<String, FileProgressInfo>()

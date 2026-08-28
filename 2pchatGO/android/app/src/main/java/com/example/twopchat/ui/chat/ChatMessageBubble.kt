@@ -421,15 +421,17 @@ internal fun ChatMessageBubble(
                                     val progressInfo = com.example.twopchat.relay.P2PMessageRelay.fileProgressStates["$peerName:${msg.id}"]
                                         ?: com.example.twopchat.relay.P2PMessageRelay.fileProgressStates[msg.id]
                                         ?: msg.attachmentName?.let { com.example.twopchat.relay.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.relay.P2PMessageRelay.fileProgressStates[it] }
-                                    val isTransferring = progressInfo?.state ==
-                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING ||
-                                        (msg.isMe && msg.status?.startsWith("SENDING") == true)
                                     val isCancelled = progressInfo?.state ==
                                         com.example.twopchat.relay.P2PMessageRelay.FileTransferState.CANCELLED ||
                                         msg.status.equals("CANCELLED", ignoreCase = true)
                                     val hasFailed = progressInfo?.state ==
                                         com.example.twopchat.relay.P2PMessageRelay.FileTransferState.FAILED ||
                                         msg.status.equals("FAILED", ignoreCase = true)
+                                    val isProgressActive = progressInfo?.state == com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING &&
+                                        (progressInfo.totalBytes <= 0L || progressInfo.bytesTransferred < progressInfo.totalBytes)
+                                    val isTransferring = !isCancelled && !hasFailed && (
+                                        isProgressActive || (msg.isMe && msg.status?.startsWith("SENDING") == true) || (!msg.isMe && msg.status == "RECEIVING")
+                                    )
                                     val isRemoved = !isTransferring && !isCancelled && !hasFailed &&
                                         !attachmentAvailable
 
@@ -720,15 +722,17 @@ internal fun ChatMessageBubble(
                                         ?: com.example.twopchat.relay.P2PMessageRelay.fileTransferPreviews[msg.id]
                                     val thumbnail = completedThumbnail ?: transferPreview
                                     val attachmentAvailable = remember(msg.attachmentUri) { isAttachmentAvailable(msg.attachmentUri) }
-                                    val isTransferring = progressInfo?.state ==
-                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING ||
-                                        (msg.isMe && msg.status?.startsWith("SENDING") == true)
                                     val isCancelled = progressInfo?.state ==
                                         com.example.twopchat.relay.P2PMessageRelay.FileTransferState.CANCELLED ||
                                         msg.status.equals("CANCELLED", ignoreCase = true)
                                     val hasFailed = progressInfo?.state ==
                                         com.example.twopchat.relay.P2PMessageRelay.FileTransferState.FAILED ||
                                         msg.status.equals("FAILED", ignoreCase = true)
+                                    val isProgressActive = progressInfo?.state == com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING &&
+                                        (progressInfo.totalBytes <= 0L || progressInfo.bytesTransferred < progressInfo.totalBytes)
+                                    val isTransferring = !isCancelled && !hasFailed && (
+                                        isProgressActive || (msg.isMe && msg.status?.startsWith("SENDING") == true) || (!msg.isMe && msg.status == "RECEIVING")
+                                    )
                                     val isRemoved = !isTransferring && !isCancelled && !hasFailed &&
                                         !attachmentAvailable
 
@@ -1018,15 +1022,17 @@ internal fun ChatMessageBubble(
                                         ?: com.example.twopchat.relay.P2PMessageRelay.fileProgressStates[msg.id]
                                         ?: msg.attachmentName?.let { com.example.twopchat.relay.P2PMessageRelay.fileProgressStates["$peerName:$it"] ?: com.example.twopchat.relay.P2PMessageRelay.fileProgressStates[it] }
                                     
-                                    val isTransferring = progressInfo?.state ==
-                                        com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING ||
-                                        (msg.isMe && msg.status?.startsWith("SENDING") == true)
                                     val isCancelled = progressInfo?.state ==
                                         com.example.twopchat.relay.P2PMessageRelay.FileTransferState.CANCELLED ||
                                         msg.status.equals("CANCELLED", ignoreCase = true)
                                     val hasFailed = progressInfo?.state ==
                                         com.example.twopchat.relay.P2PMessageRelay.FileTransferState.FAILED ||
                                         msg.status.equals("FAILED", ignoreCase = true)
+                                    val isProgressActive = progressInfo?.state == com.example.twopchat.relay.P2PMessageRelay.FileTransferState.TRANSFERRING &&
+                                        (progressInfo.totalBytes <= 0L || progressInfo.bytesTransferred < progressInfo.totalBytes)
+                                    val isTransferring = !isCancelled && !hasFailed && (
+                                        isProgressActive || (msg.isMe && msg.status?.startsWith("SENDING") == true) || (!msg.isMe && msg.status == "RECEIVING")
+                                    )
 
                                     Column {
                                         Row(verticalAlignment = Alignment.CenterVertically) {

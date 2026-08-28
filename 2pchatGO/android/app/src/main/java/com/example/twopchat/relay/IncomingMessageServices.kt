@@ -155,12 +155,17 @@ internal class MessageNotificationService {
             val historyKey = "history_${senderDigest.take(32)}"
             val messageIdsKey = "message_ids_${senderDigest.take(32)}"
             val rawExisting = prefs.getString(historyKey, "") ?: ""
-            val existingStr = if (rawExisting.startsWith("2PCHAT_ENC:")) {
-                SecureStorage.decrypt(rawExisting).orEmpty()
+            val existingStr = if (rawExisting.isNotBlank()) {
+                val decrypted = SecureStorage.decrypt(rawExisting).orEmpty()
+                if (SecureStorage.isEncrypted(decrypted)) "" else decrypted
             } else {
-                rawExisting
+                ""
             }
-            val list = if (existingStr.isNotBlank()) existingStr.split("|||").toMutableList() else mutableListOf()
+            val list = if (existingStr.isNotBlank()) {
+                existingStr.split("|||").filter { it.isNotBlank() && !SecureStorage.isEncrypted(it) }.toMutableList()
+            } else {
+                mutableListOf()
+            }
             list.add(text)
             if (list.size > 10) list.removeAt(0)
 
