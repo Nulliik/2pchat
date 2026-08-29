@@ -547,20 +547,9 @@ object StickerSupport {
 
     fun importPackArchive(context: Context, uri: Uri): BuiltinStickerPack? {
         return try {
-            val displayName = context.contentResolver.query(
-                uri,
-                arrayOf(OpenableColumns.DISPLAY_NAME),
-                null,
-                null,
-                null,
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0) else null
-            } ?: return null
-            val safeName = File(displayName).name
-            if (!isStickerPackFileName(safeName)) return null
             val temporaryDirectory =
                 File(context.cacheDir, "sticker_pack_uri_${System.nanoTime()}").apply { mkdirs() }
-            val temporary = File(temporaryDirectory, safeName)
+            val temporary = File(temporaryDirectory, "pack.2psticker")
             try {
                 if (!copyUriWithLimit(context, uri, temporary, MAX_PACK_BYTES)) return null
                 importPackArchive(context, temporary)
@@ -754,10 +743,7 @@ object StickerSupport {
         archive: File,
         install: Boolean,
     ): BuiltinStickerPack? {
-        if (!isStickerPackFileName(archive.name) ||
-            !archive.isFile ||
-            archive.length() !in 1..MAX_PACK_BYTES
-        ) {
+        if (!archive.isFile || archive.length() !in 1..MAX_PACK_BYTES) {
             return null
         }
         val stagingRoot = File(context.cacheDir, "sticker_pack_imports").apply { mkdirs() }
@@ -772,7 +758,7 @@ object StickerSupport {
                     if (entryCount > MAX_PACK_STICKERS + 1 || entry.isDirectory) return null
                     val name = File(entry.name).name
                     if (name != entry.name ||
-                        (name != "pack.json" && !isStickerFileName(name))
+                        (name != "pack.json" && !name.endsWith(".webp", ignoreCase = true) && !isStickerFileName(name))
                     ) {
                         return null
                     }
@@ -794,9 +780,7 @@ object StickerSupport {
             if (!manifestFile.isFile || manifestFile.length() > 128 * 1024L) return null
             val json = JSONObject(manifestFile.readText(Charsets.UTF_8))
             if (json.optInt("format") != 1) return null
-            val packId = safeId(json.optString("pack_id"))
-            if (packId != packIdFromArchiveFileName(archive.name)) return null
-            if (builtinPacks.any { it.id == packId }) return null
+            val rawPackId = safeId(json.optString("pack_id")).ifBlank { "pack" }
             val title = json.optString("title").trim().take(80)
             val author = json.optString("author").trim().take(80)
             val stickersJson = json.optJSONArray("stickers") ?: return null
@@ -805,28 +789,52 @@ object StickerSupport {
             ) {
                 return null
             }
-            val seenIds = mutableSetOf<String>()
-            for (index in 0 until stickersJson.length()) {
-                val item = stickersJson.optJSONObject(index) ?: return null
-                val stickerId = safeId(item.optString("sticker_id"))
-                if (!seenIds.add(stickerId)) return null
-                val fileName = File(item.optString("file")).name
-                if (fileName != item.optString("file") || !isStickerFileName(fileName)) return null
-                val file = File(staging, fileName)
-                if (validateWebP(file) == null ||
-                    !sha256(file).equals(item.optString("sha256"), ignoreCase = true)
-                ) {
-                    return null
-                }
-            }
             val destinationRoot = if (install) {
                 installedPacksDirectory(context)
             } else {
                 peerPackPreviewDirectory(context)
             }
-            val packDirectory = File(destinationRoot, packId)
-            if (install && File(packDirectory, OWNED_MARKER).isFile) return null
-            val replacement = File(destinationRoot, "${packId}_new_${System.nanoTime()}")
+            val effectivePackId = if (builtinPacks.any { it.id == rawPackId } || (install && File(destinationRoot, rawPackId).exists())) {
+                uniquePackId(destinationRoot, title)
+            } else {
+                rawPackId
+            }
+            val seenIds = mutableSetOf<String>()
+            val parsedStickers = mutableListOf<BuiltinSticker>()
+            for (index in 0 until stickersJson.length()) {
+                val item = stickersJson.optJSONObject(index) ?: return null
+                val stickerId = safeId(item.optString("sticker_id")).ifBlank { "s_${index + 1}" }
+                if (!seenIds.add(stickerId)) return null
+                val rawFileName = File(item.optString("file")).name
+                val sourceFile = File(staging, rawFileName)
+                if (!sourceFile.isFile || validateWebP(sourceFile) == null) {
+                    return null
+                }
+                val expectedSha = item.optString("sha256")
+                if (expectedSha.isNotBlank() && !sha256(sourceFile).equals(expectedSha, ignoreCase = true)) {
+                    return null
+                }
+                val targetFileName = fileName(BuiltinSticker(effectivePackId, stickerId, "", 0L))
+                if (targetFileName != rawFileName) {
+                    val targetFile = File(staging, targetFileName)
+                    if (!sourceFile.renameTo(targetFile)) return null
+                }
+                parsedStickers += BuiltinSticker(
+                    packId = effectivePackId,
+                    stickerId = stickerId,
+                    emoji = item.optString("emoji").take(16),
+                    backgroundColor = 0L,
+                    localFilePath = File(staging, targetFileName).absolutePath,
+                )
+            }
+            if (!writePackManifest(staging, effectivePackId, title, author, parsedStickers)) {
+                return null
+            }
+            if (install) {
+                File(staging, OWNED_MARKER).writeText("local", Charsets.UTF_8)
+            }
+            val packDirectory = File(destinationRoot, effectivePackId)
+            val replacement = File(destinationRoot, "${effectivePackId}_new_${System.nanoTime()}")
             if (replacement.exists()) replacement.deleteRecursively()
             if (!staging.renameTo(replacement)) return null
             if (packDirectory.exists()) packDirectory.deleteRecursively()
@@ -834,13 +842,13 @@ object StickerSupport {
             if (install) {
                 File(
                     File(context.cacheDir, "sticker_pack_exports"),
-                    "$PACK_FILE_PREFIX$packId$PACK_FILE_EXTENSION",
+                    "$PACK_FILE_PREFIX$effectivePackId$PACK_FILE_EXTENSION",
                 ).delete()
-                appendPackOrder(context, packId)
+                appendPackOrder(context, effectivePackId)
                 installedPacksSnapshot = null
             } else {
                 packDirectory.setLastModified(System.currentTimeMillis())
-                trimPeerPackPreviews(destinationRoot, keepPackId = packId)
+                trimPeerPackPreviews(destinationRoot, keepPackId = effectivePackId)
             }
             return readInstalledPack(packDirectory)
         } catch (_: Exception) {

@@ -247,20 +247,6 @@ fun GroupWallpaperModal(
                                 modifier = Modifier.size(18.dp)
                             )
                         }
-                        Spacer(Modifier.width(8.dp))
-                    }
-                    IconButton(
-                        onClick = { imagePickerLauncher.launch("image/*") },
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), shape = CircleShape)
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_attach_gallery),
-                            contentDescription = "Gallery",
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
                     }
                 }
 
