@@ -816,11 +816,20 @@ fun GroupInfoScreen(
                             putBoolean("group_wallpaper_blur_${state.metadata.groupId}", isBlur)
                             apply()
                         }
-                        controller.updateGroupWallpaper(state.metadata.groupId, targetFile.absolutePath)
+                        controller.updateGroupWallpaper(state.metadata.groupId, targetFile.absolutePath, dimming, isBlur)
                         android.widget.Toast.makeText(context, if (appLanguage == "Русский") "Обои установлены для всех участников" else "Wallpaper updated for all members", android.widget.Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
+                } else {
+                    P2PPreferences.prefs(context).edit().apply {
+                        remove("group_wallpaper_${state.metadata.groupId}")
+                        remove("group_wallpaper_dimming_${state.metadata.groupId}")
+                        remove("group_wallpaper_blur_${state.metadata.groupId}")
+                        apply()
+                    }
+                    controller.updateGroupWallpaper(state.metadata.groupId, null, 45, false)
+                    android.widget.Toast.makeText(context, if (appLanguage == "Русский") "Обои сброшены для всех участников" else "Wallpaper removed for all members", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
         )

@@ -428,7 +428,7 @@ object GroupChatCoordinator {
         }
     }
 
-    fun updateGroupWallpaper(groupId: String, wallpaperUri: String?) {
+    fun updateGroupWallpaper(groupId: String, wallpaperUri: String?, dimming: Int = 45, isBlur: Boolean = false) {
         scope.launch {
             val context = applicationContext ?: return@launch
             val group = db().getGroup(groupId) ?: return@launch
@@ -470,9 +470,19 @@ object GroupChatCoordinator {
             } else null to null
 
             if (persistedPath != null) {
-                P2PPreferences.prefs(context).edit().putString("group_wallpaper_$groupId", persistedPath).apply()
+                P2PPreferences.prefs(context).edit().apply {
+                    putString("group_wallpaper_$groupId", persistedPath)
+                    putInt("group_wallpaper_dimming_$groupId", dimming)
+                    putBoolean("group_wallpaper_blur_$groupId", isBlur)
+                    apply()
+                }
             } else if (wallpaperUri == null) {
-                P2PPreferences.prefs(context).edit().remove("group_wallpaper_$groupId").apply()
+                P2PPreferences.prefs(context).edit().apply {
+                    remove("group_wallpaper_$groupId")
+                    remove("group_wallpaper_dimming_$groupId")
+                    remove("group_wallpaper_blur_$groupId")
+                    apply()
+                }
             }
 
             val g = db().getGroup(groupId) ?: return@launch
@@ -487,6 +497,8 @@ object GroupChatCoordinator {
                         if (!wallpaperData.isNullOrBlank()) {
                             put("wallpaper_data", wallpaperData)
                         }
+                        put("wallpaper_dimming", dimming)
+                        put("wallpaper_blur", isBlur)
                     } else {
                         put("wallpaper_uri", "")
                     }
@@ -3467,6 +3479,8 @@ object GroupChatCoordinator {
                 if (payload.has("wallpaper_uri") || payload.has("wallpaper_data")) {
                     val wallpaperDataB64 = payload.optString("wallpaper_data", "")
                     val wallpaperUriInPayload = payload.optString("wallpaper_uri", "")
+                    val wallpaperDimming = payload.optInt("wallpaper_dimming", 45)
+                    val wallpaperBlur = payload.optBoolean("wallpaper_blur", false)
                     val ctx = applicationContext
                     if (wallpaperDataB64.isNotBlank() && ctx != null) {
                         // Inline base64 blob — save to local file and register the path.
@@ -3475,15 +3489,22 @@ object GroupChatCoordinator {
                             val dir = File(ctx.filesDir, "group_wallpapers").also { it.mkdirs() }
                             val destFile = File(dir, "${current.groupId}.jpg")
                             destFile.writeBytes(bytes)
-                            P2PPreferences.prefs(ctx).edit().putString("group_wallpaper_${current.groupId}", destFile.absolutePath).apply()
+                            P2PPreferences.prefs(ctx).edit().apply {
+                                putString("group_wallpaper_${current.groupId}", destFile.absolutePath)
+                                putInt("group_wallpaper_dimming_${current.groupId}", wallpaperDimming)
+                                putBoolean("group_wallpaper_blur_${current.groupId}", wallpaperBlur)
+                                apply()
+                            }
                         }
                     } else if (wallpaperUriInPayload.isBlank() && ctx != null) {
                         // Explicit clear — remove wallpaper.
-                        P2PPreferences.prefs(ctx).edit().remove("group_wallpaper_${current.groupId}").apply()
+                        P2PPreferences.prefs(ctx).edit().apply {
+                            remove("group_wallpaper_${current.groupId}")
+                            remove("group_wallpaper_dimming_${current.groupId}")
+                            remove("group_wallpaper_blur_${current.groupId}")
+                            apply()
+                        }
                     } else if (wallpaperUriInPayload.isNotBlank() && ctx != null) {
-                        // wallpaper_uri points to the sender's local path which won't
-                        // exist on this device. Check for a fallback file that may have
-                        // been saved by a previous inline blob delivery, and register it.
                         val fallbackFile = File(ctx.filesDir, "group_wallpapers/${current.groupId}.jpg")
                         val localPath = when {
                             File(wallpaperUriInPayload).exists() -> wallpaperUriInPayload
@@ -3491,7 +3512,12 @@ object GroupChatCoordinator {
                             else -> null
                         }
                         if (localPath != null) {
-                            P2PPreferences.prefs(ctx).edit().putString("group_wallpaper_${current.groupId}", localPath).apply()
+                            P2PPreferences.prefs(ctx).edit().apply {
+                                putString("group_wallpaper_${current.groupId}", localPath)
+                                putInt("group_wallpaper_dimming_${current.groupId}", wallpaperDimming)
+                                putBoolean("group_wallpaper_blur_${current.groupId}", wallpaperBlur)
+                                apply()
+                            }
                         }
                     }
                 }

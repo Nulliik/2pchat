@@ -39,8 +39,8 @@ class AndroidGroupUiController(
     override fun updateGroupInfo(groupId: String, title: String, description: String, avatarUri: String?) =
         GroupChatCoordinator.updateGroupInfo(groupId, title, description, avatarUri)
 
-    override fun updateGroupWallpaper(groupId: String, wallpaperUri: String?) =
-        GroupChatCoordinator.updateGroupWallpaper(groupId, wallpaperUri)
+    override fun updateGroupWallpaper(groupId: String, wallpaperUri: String?, dimming: Int, isBlur: Boolean) =
+        GroupChatCoordinator.updateGroupWallpaper(groupId, wallpaperUri, dimming, isBlur)
 
     override fun setAdminOnlyPosting(groupId: String, enabled: Boolean) =
         GroupChatCoordinator.setAdminOnlyPosting(groupId, enabled)

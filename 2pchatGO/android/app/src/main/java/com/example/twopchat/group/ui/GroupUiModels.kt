@@ -17,10 +17,11 @@ interface GroupUiController {
   fun openGroupInfo(groupId: String) = Unit
   fun openDirectChat(peerName: String) = Unit
   fun setGroupChatActive(groupId: String, active: Boolean) = Unit
-  fun createGroup(title: String, description: String, contactIds: Set<String>) = Unit
-  fun updateGroupInfo(groupId: String, title: String, description: String) = updateGroupInfo(groupId, title, description, null)
-  fun updateGroupInfo(groupId: String, title: String, description: String, avatarUri: String?) = Unit
-  fun updateGroupWallpaper(groupId: String, wallpaperUri: String?) = Unit
+  fun createGroup(title: String, description: String, contactIds: Set<String>): Unit = Unit
+  fun updateGroupInfo(groupId: String, title: String, description: String): Unit = updateGroupInfo(groupId, title, description, null)
+  fun updateGroupInfo(groupId: String, title: String, description: String, avatarUri: String?): Unit = Unit
+  fun updateGroupWallpaper(groupId: String, wallpaperUri: String?, dimming: Int = 45, isBlur: Boolean = false): Unit = Unit
+  fun updateGroupWallpaper(groupId: String, wallpaperUri: String?): Unit = updateGroupWallpaper(groupId, wallpaperUri, 45, false)
   fun setAdminOnlyPosting(groupId: String, enabled: Boolean) = Unit
   fun inviteMembers(groupId: String, contactIds: Set<String>) = Unit
   fun loadOlderMessages(groupId: String, beforeMessageId: String?) = Unit

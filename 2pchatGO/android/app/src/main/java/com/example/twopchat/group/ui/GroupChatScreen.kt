@@ -2332,17 +2332,17 @@ private fun GroupMessageCard(
                         else onOptionsClick()
                     }
                 )
-                .then(if (!message.isMine && !isSticker && !isMediaOnly && !hasMediaContent) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), bubbleShape) else Modifier)
+                .then(if (!message.isMine && !isSticker && !isMediaOnly && !hasMediaContent && !isOnlyEmoji) Modifier.border(0.5.dp, onSurfaceColor.copy(alpha = 0.08f), bubbleShape) else Modifier)
         ) {
             Column(
                 modifier = if (isMediaOnly || hasMediaContent || isSticker || isOnlyEmoji) Modifier.padding(0.dp) else Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
                 horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start
             ) {
-                // Header line: Author Name & Role (if not mine and not sticker/media-only)
-                if ((!message.isMine || message.replyTo != null || message.isPinned) && !isSticker) {
+                // Header line: Author Name & Role (if not mine and not sticker/media-only/single-emoji)
+                if ((!message.isMine || message.replyTo != null || message.isPinned) && !isSticker && !isOnlyEmoji) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = if (isMediaOnly || hasMediaContent) Modifier.padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 4.dp) else Modifier
+                        modifier = if (isMediaOnly || hasMediaContent) Modifier.padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 4.dp) else Modifier.padding(bottom = 2.dp)
                     ) {
                         Text(
                             message.authorName,
@@ -2360,8 +2360,8 @@ private fun GroupMessageCard(
                             Spacer(Modifier.width(6.dp))
                             RoleBadge(message.authorRole)
                         }
-                        Spacer(Modifier.weight(1f))
                         if (message.isPinned) {
+                            Spacer(Modifier.width(6.dp))
                             Text(
                                 "📌",
                                 fontSize = 11.sp
@@ -2381,7 +2381,6 @@ private fun GroupMessageCard(
                         backgroundColor = if (isLight && !message.isMine) onSurfaceColor.copy(alpha = 0.08f) else surfaceColor.copy(alpha = 0.6f),
                         onClick = { onReplyQuoteClick(reply.messageId) },
                         modifier = Modifier
-                            .fillMaxWidth()
                             .padding(vertical = 4.dp),
                     )
                 }
@@ -2750,22 +2749,39 @@ private fun GroupMessageCard(
                                 .padding(4.dp)
                                 .align(if (message.isMine) Alignment.End else Alignment.Start)
                         ) {
-                            Text(
-                                text = message.text.trim(),
-                                fontSize = 64.sp,
-                                lineHeight = 72.sp,
-                                modifier = Modifier.padding(bottom = 6.dp, end = 4.dp)
-                            )
-                            MessageTimestampBadge(
-                                timestampLabel = message.timestampLabel,
-                                isEdited = message.isEdited,
-                                deliveryStatus = message.deliveryStatus,
-                                messageId = message.messageId,
-                                isOverlayOnImage = true,
-                                isMine = message.isMine,
-                                modifier = Modifier.align(Alignment.BottomEnd),
-                                onClick = { onShowSeenBy(message) }
-                            )
+                            Column(horizontalAlignment = if (message.isMine) Alignment.End else Alignment.Start) {
+                                Text(
+                                    text = message.text.trim(),
+                                    fontSize = 72.sp,
+                                    lineHeight = 80.sp,
+                                    modifier = Modifier.padding(bottom = 2.dp)
+                                )
+                                Surface(
+                                    color = Color.Black.copy(alpha = 0.42f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.align(Alignment.End).padding(top = 2.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = message.timestampLabel,
+                                            color = Color.White.copy(alpha = 0.95f),
+                                            fontSize = 9.sp
+                                        )
+                                        if (message.isMine) {
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Icon(
+                                                painter = painterResource(id = if (message.deliveryStatus == GroupDeliveryStatus.READ) R.drawable.ic_msg_double_check else R.drawable.ic_msg_single_check),
+                                                contentDescription = null,
+                                                tint = Color.White.copy(alpha = 0.95f),
+                                                modifier = Modifier.size(10.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     } else {
                         com.example.twopchat.ui.chat.LinkifiedText(
@@ -2814,7 +2830,7 @@ private fun GroupMessageCard(
                 if (!hasMediaContent && !isSticker && !isOnlyEmoji) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .align(Alignment.End)
                             .padding(top = 2.dp),
                         contentAlignment = Alignment.BottomEnd
                     ) {

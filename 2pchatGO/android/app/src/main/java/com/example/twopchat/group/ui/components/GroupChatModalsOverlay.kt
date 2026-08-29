@@ -377,11 +377,20 @@ internal fun GroupChatModalsOverlay(
                             putBoolean("group_wallpaper_blur_${state.groupId}", isBlur)
                             apply()
                         }
-                        controller.updateGroupWallpaper(state.groupId, targetFile.absolutePath)
+                        controller.updateGroupWallpaper(state.groupId, targetFile.absolutePath, dimming, isBlur)
                         Toast.makeText(context, if (appLanguage == "Русский") "Обои установлены для всех участников" else "Wallpaper updated for all members", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
+                } else {
+                    P2PPreferences.prefs(context).edit().apply {
+                        remove("group_wallpaper_${state.groupId}")
+                        remove("group_wallpaper_dimming_${state.groupId}")
+                        remove("group_wallpaper_blur_${state.groupId}")
+                        apply()
+                    }
+                    controller.updateGroupWallpaper(state.groupId, null, 45, false)
+                    Toast.makeText(context, if (appLanguage == "Русский") "Обои сброшены для всех участников" else "Wallpaper removed for all members", Toast.LENGTH_SHORT).show()
                 }
             }
         )
