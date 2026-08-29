@@ -336,12 +336,24 @@ fun OnboardingScreen(
         )
     }
 
+    val contentScrollState = rememberScrollState()
+
+    LaunchedEffect(currentStep) {
+        contentScrollState.scrollTo(0)
+    }
+
+    LaunchedEffect(nickname) {
+        if (currentStep == 4) {
+            contentScrollState.animateScrollTo(contentScrollState.maxValue)
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(backgroundColor)
             .safeDrawingPadding()
-            .padding(24.dp),
+            .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
@@ -349,7 +361,7 @@ fun OnboardingScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 12.dp, bottom = 24.dp),
+                .padding(top = 8.dp, bottom = 16.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -380,7 +392,7 @@ fun OnboardingScreen(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(contentScrollState),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -423,11 +435,13 @@ fun OnboardingScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(10.dp))
+
         // Action Buttons Row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 12.dp),
+                .padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -593,15 +607,18 @@ fun WelcomeStep(
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = primaryColor),
             border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor.copy(alpha = 0.4f)),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp)
-                .height(48.dp)
+                .defaultMinSize(minHeight = 48.dp)
         ) {
             Text(
                 text = "🔑 " + Localizations.getString("restore_account_btn", appLanguage),
                 fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                lineHeight = 17.sp
             )
         }
     }
@@ -619,34 +636,35 @@ fun RegisterStep(
     onSurfaceColor: Color
 ) {
     Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
             text = Localizations.getString("create_profile", appLanguage),
-            fontSize = 24.sp,
+            fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             color = onSurfaceColor,
             textAlign = TextAlign.Center
         )
         
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         Text(
             text = Localizations.getString("profile_desc", appLanguage),
-            fontSize = 14.sp,
+            fontSize = 13.sp,
             color = onSurfaceColor.copy(alpha = 0.6f),
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 24.dp)
+            modifier = Modifier.padding(horizontal = 16.dp)
         )
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
         // Profile Photo Upload Circle
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(96.dp)
+                .size(88.dp)
                 .clip(CircleShape)
                 .background(primaryColor.copy(alpha = 0.1f))
                 .border(1.5.dp, primaryColor, CircleShape)
@@ -666,7 +684,7 @@ fun RegisterStep(
                     contentDescription = "Add Photo",
                     tint = primaryColor,
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(44.dp)
                         .align(Alignment.Center)
                 )
                 Text(
@@ -676,12 +694,12 @@ fun RegisterStep(
                     color = primaryColor,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 10.dp)
+                        .padding(bottom = 8.dp)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(18.dp))
 
         TextField(
             value = nickname,
@@ -699,9 +717,11 @@ fun RegisterStep(
             singleLine = true,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 8.dp)
                 .border(1.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
         )
+
+        Spacer(modifier = Modifier.height(20.dp))
     }
 }
 
