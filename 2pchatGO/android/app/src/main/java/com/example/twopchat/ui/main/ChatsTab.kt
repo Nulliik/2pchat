@@ -880,15 +880,16 @@ fun ChatsTab(
                                             .padding(vertical = 7.dp, horizontal = 4.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
+                                        val totalTrackers = com.example.twopchat.config.TrackerPreferences.getActiveTrackerUrls(context).size
                                         Text(
                                             text = com.example.twopchat.data.Localizations.tr(
                                                 appLanguage,
-                                                ru = "📡 Трек: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
-                                                en = "📡 Track: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
-                                                de = "📡 Track: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
-                                                es = "📡 Rast: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
-                                                fr = "📡 Traq: ${if (heroTrackersOk == true) "9/9" else "0/9"}",
-                                                pt = "📡 Rast: ${if (heroTrackersOk == true) "9/9" else "0/9"}"
+                                                ru = "📡 Трек: ${if (heroTrackersOk == true) "$totalTrackers/$totalTrackers" else "0/$totalTrackers"}",
+                                                en = "📡 Track: ${if (heroTrackersOk == true) "$totalTrackers/$totalTrackers" else "0/$totalTrackers"}",
+                                                de = "📡 Track: ${if (heroTrackersOk == true) "$totalTrackers/$totalTrackers" else "0/$totalTrackers"}",
+                                                es = "📡 Rast: ${if (heroTrackersOk == true) "$totalTrackers/$totalTrackers" else "0/$totalTrackers"}",
+                                                fr = "📡 Traq: ${if (heroTrackersOk == true) "$totalTrackers/$totalTrackers" else "0/$totalTrackers"}",
+                                                pt = "📡 Rast: ${if (heroTrackersOk == true) "$totalTrackers/$totalTrackers" else "0/$totalTrackers"}"
                                             ),
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
