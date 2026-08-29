@@ -82,7 +82,7 @@ func TestParseYggdrasilUDPAnnounceResponseUsesIPv6Peers(t *testing.T) {
 func TestUDPTrackerTorDisabled(t *testing.T) {
 	client := NewUDPTrackerClient(true, 2*time.Second) // Tor enabled
 	var infoHash, peerID [20]byte
-	_, err := client.Announce(context.Background(), "udp://tracker.openbittorrent.com:6969", infoHash, peerID, 50001)
+	_, err := client.Announce(context.Background(), "udp://tracker.opentrackr.org:1337/announce", infoHash, peerID, 50001)
 	if err != ErrUDPDisabledUnderTor {
 		t.Fatalf("Expected ErrUDPDisabledUnderTor, got: %v", err)
 	}

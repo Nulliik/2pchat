@@ -34,16 +34,15 @@ object TrackerPreferences {
     val supportedProtocols = setOf("http", "https", "udp")
 
     val builtInTrackers = listOf(
-        BuiltInTracker("OpenBitTorrent UDP", "udp://tracker.openbittorrent.com:6969/announce", "udp"),
         BuiltInTracker("OpenTrackr UDP", "udp://tracker.opentrackr.org:1337/announce", "udp"),
-        BuiltInTracker("Open Stealth UDP", "udp://open.stealth.si:80/announce", "udp"),
-        BuiltInTracker("Tiny-VPS UDP", "udp://tracker.tiny-vps.com:6969/announce", "udp"),
-        BuiltInTracker("Exodus UDP", "udp://exodus.desync.com:6969/announce", "udp"),
-        BuiltInTracker("Dler UDP", "udp://tracker2.dler.org:80/announce", "udp"),
-        BuiltInTracker("BitSearch UDP", "udp://tracker.bitsearch.to:6969/announce", "udp"),
-        BuiltInTracker("Qu.Ax UDP", "udp://tracker.qu.ax:6969/announce", "udp"),
         BuiltInTracker("OpenTrackr HTTPS", "https://tracker.opentrackr.org:443/announce", "https"),
-        BuiltInTracker("OpenBitTorrent HTTPS", "https://tracker.openbittorrent.com:443/announce", "https"),
+        BuiltInTracker("Open Stealth UDP", "udp://open.stealth.si:80/announce", "udp"),
+        BuiltInTracker("Cyberia UDP", "udp://tracker.cyberia.is:6969/announce", "udp"),
+        BuiltInTracker("Qu.Ax UDP", "udp://tracker.qu.ax:6969/announce", "udp"),
+        BuiltInTracker("Exodus UDP", "udp://exodus.desync.com:6969/announce", "udp"),
+        BuiltInTracker("Explodie UDP", "udp://explodie.org:6969/announce", "udp"),
+        BuiltInTracker("Demonii UDP", "udp://open.demonii.com:1337/announce", "udp"),
+        BuiltInTracker("Dler UDP", "udp://tracker2.dler.org:80/announce", "udp"),
         BuiltInTracker("Nyacat HTTPS", "https://tr.nyacat.pw:443/announce", "https"),
         BuiltInTracker(
             "Yggdrasil-only HTTP",
@@ -53,6 +52,11 @@ object TrackerPreferences {
         BuiltInTracker(
             "Yggdrasil-only UDP",
             "udp://[202:68d0:f0d5:b88d:1d1a:555e:2f6b:3148]:6969/announce",
+            "udp",
+        ),
+        BuiltInTracker(
+            "Yggdrasil-only Opentracker",
+            "udp://[201:23a4:4941:da9e:b18a:eb2a:c22c:c4a6]:6969/announce",
             "udp",
         ),
     )
@@ -78,9 +82,10 @@ object TrackerPreferences {
 
         val all = (builtins + customs).distinct()
         return if (all.isNotEmpty()) all else listOf(
-            "udp://tracker.openbittorrent.com:6969",
             "udp://tracker.opentrackr.org:1337/announce",
-            "https://tracker.tamersunion.org:443/announce",
+            "udp://tracker.cyberia.is:6969/announce",
+            "udp://open.stealth.si:80/announce",
+            "https://tracker.opentrackr.org:443/announce",
         )
     }
 
