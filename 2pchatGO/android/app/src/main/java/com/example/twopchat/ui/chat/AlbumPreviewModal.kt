@@ -26,6 +26,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.twopchat.R
 import com.example.twopchat.data.Localizations
+import coil.compose.AsyncImage
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,18 +51,6 @@ fun AlbumPreviewModal(
         } else if (selectedPreviewIndex >= currentFiles.size) {
             selectedPreviewIndex = currentFiles.lastIndex.coerceAtLeast(0)
         }
-    }
-
-    val mainPreviewBitmap = remember(currentFiles.toList(), selectedPreviewIndex) {
-        val targetFile = currentFiles.getOrNull(selectedPreviewIndex) ?: currentFiles.firstOrNull()
-        if (targetFile != null && targetFile.exists()) {
-            try {
-                val options = BitmapFactory.Options().apply { inSampleSize = 2 }
-                BitmapFactory.decodeFile(targetFile.absolutePath, options)
-            } catch (_: Exception) {
-                null
-            }
-        } else null
     }
 
 
@@ -140,9 +129,10 @@ fun AlbumPreviewModal(
                         .padding(12.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (mainPreviewBitmap != null) {
-                        Image(
-                            bitmap = mainPreviewBitmap.asImageBitmap(),
+                    val targetFile = currentFiles.getOrNull(selectedPreviewIndex) ?: currentFiles.firstOrNull()
+                    if (targetFile != null && targetFile.exists()) {
+                        AsyncImage(
+                            model = targetFile,
                             contentDescription = "Album preview",
                             contentScale = ContentScale.Fit,
                             modifier = Modifier
@@ -229,16 +219,6 @@ fun AlbumPreviewModal(
                 ) {
                     itemsIndexed(currentFiles.toList()) { idx, file ->
                         val isSelected = idx == selectedPreviewIndex
-                        val thumbBitmap = remember(file) {
-                            if (file.exists()) {
-                                try {
-                                    val options = BitmapFactory.Options().apply { inSampleSize = 4 }
-                                    BitmapFactory.decodeFile(file.absolutePath, options)
-                                } catch (_: Exception) {
-                                    null
-                                }
-                            } else null
-                        }
 
                         Box(
                             modifier = Modifier
@@ -251,9 +231,9 @@ fun AlbumPreviewModal(
                                 )
                                 .clickable { selectedPreviewIndex = idx }
                         ) {
-                            if (thumbBitmap != null) {
-                                Image(
-                                    bitmap = thumbBitmap.asImageBitmap(),
+                            if (file.exists()) {
+                                AsyncImage(
+                                    model = file,
                                     contentDescription = "Thumb $idx",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()

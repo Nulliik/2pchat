@@ -87,6 +87,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 synchronized(activeHelpers) {
                     for (helper in activeHelpers) {
                         try {
+                            helper.safeWritableDatabase.let { DatabaseTuning.optimizeDatabase(it) }
+                        } catch (_: Exception) {}
+                        try {
                             helper.close()
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to close database connection", e)
@@ -385,8 +388,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         )
         cursor.use {
             val stringCipher = SecureStorage.newStringCipher()
+            val indices = MessageColumnIndices(it)
             while (it.moveToNext()) {
-                messages.add(readMessageFromCursor(it, stringCipher))
+                messages.add(readMessageFromCursor(it, stringCipher, indices))
             }
         }
         return messages
@@ -498,10 +502,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         }
     }
 
-    private fun readMessageFromCursor(
-        cursor: android.database.Cursor,
-        stringCipher: SecureStorage.StringCipher,
-    ): Message {
+    private class MessageColumnIndices(cursor: android.database.Cursor) {
         val indexText = cursor.getColumnIndex(KEY_MESSAGE_TEXT)
         val indexIsMe = cursor.getColumnIndex(KEY_IS_ME)
         val indexTimestamp = cursor.getColumnIndex(KEY_TIMESTAMP)
@@ -518,36 +519,42 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val indexIsPinned = cursor.getColumnIndex(KEY_IS_PINNED)
         val indexAlbumUris = cursor.getColumnIndex(KEY_ALBUM_URIS)
         val indexAlbumTypes = cursor.getColumnIndex(KEY_ALBUM_TYPES)
+    }
 
-        val text = if (indexText != -1) {
-            safeDec(stringCipher, cursor.getString(indexText)).orEmpty()
+    private fun readMessageFromCursor(
+        cursor: android.database.Cursor,
+        stringCipher: SecureStorage.StringCipher,
+        indices: MessageColumnIndices = MessageColumnIndices(cursor),
+    ): Message {
+        val text = if (indices.indexText != -1) {
+            safeDec(stringCipher, cursor.getString(indices.indexText)).orEmpty()
         } else {
             ""
         }
-        val isMe = if (indexIsMe != -1) cursor.getInt(indexIsMe) == 1 else false
-        val timestamp = if (indexTimestamp != -1) cursor.getString(indexTimestamp) else ""
-        val attachType = if (indexAttachType != -1) cursor.getString(indexAttachType) else null
-        val attachUri = if (indexAttachUri != -1) safeDec(stringCipher, cursor.getString(indexAttachUri)) else null
-        val attachName = if (indexAttachName != -1) safeDec(stringCipher, cursor.getString(indexAttachName)) else null
-        val replyToId = if (indexReplyToId != -1) cursor.getString(indexReplyToId) else null
-        val replyToText = if (indexReplyToText != -1) safeDec(stringCipher, cursor.getString(indexReplyToText)) else null
-        val replyToName = if (indexReplyToName != -1) safeDec(stringCipher, cursor.getString(indexReplyToName)) else null
-        val status = if (indexStatus != -1) cursor.getString(indexStatus) else null
-        val reactions = if (indexReactions != -1) {
+        val isMe = if (indices.indexIsMe != -1) cursor.getInt(indices.indexIsMe) == 1 else false
+        val timestamp = if (indices.indexTimestamp != -1) cursor.getString(indices.indexTimestamp) else ""
+        val attachType = if (indices.indexAttachType != -1) cursor.getString(indices.indexAttachType) else null
+        val attachUri = if (indices.indexAttachUri != -1) safeDec(stringCipher, cursor.getString(indices.indexAttachUri)) else null
+        val attachName = if (indices.indexAttachName != -1) safeDec(stringCipher, cursor.getString(indices.indexAttachName)) else null
+        val replyToId = if (indices.indexReplyToId != -1) cursor.getString(indices.indexReplyToId) else null
+        val replyToText = if (indices.indexReplyToText != -1) safeDec(stringCipher, cursor.getString(indices.indexReplyToText)) else null
+        val replyToName = if (indices.indexReplyToName != -1) safeDec(stringCipher, cursor.getString(indices.indexReplyToName)) else null
+        val status = if (indices.indexStatus != -1) cursor.getString(indices.indexStatus) else null
+        val reactions = if (indices.indexReactions != -1) {
             try {
-                deserializeReactions(safeDec(stringCipher, cursor.getString(indexReactions)))
+                deserializeReactions(safeDec(stringCipher, cursor.getString(indices.indexReactions)))
             } catch (_: Exception) {
                 emptyMap()
             }
         } else {
             emptyMap()
         }
-        val id = if (indexId != -1) cursor.getString(indexId) else java.util.UUID.randomUUID().toString()
-        val sentAtEpochMs = if (indexSentAtMs != -1) cursor.getLong(indexSentAtMs) else 0L
-        val isPinned = if (indexIsPinned != -1) cursor.getInt(indexIsPinned) == 1 else false
-        val rawAlbumUris = if (indexAlbumUris != -1) safeDec(stringCipher, cursor.getString(indexAlbumUris)) else null
+        val id = if (indices.indexId != -1) cursor.getString(indices.indexId) else java.util.UUID.randomUUID().toString()
+        val sentAtEpochMs = if (indices.indexSentAtMs != -1) cursor.getLong(indices.indexSentAtMs) else 0L
+        val isPinned = if (indices.indexIsPinned != -1) cursor.getInt(indices.indexIsPinned) == 1 else false
+        val rawAlbumUris = if (indices.indexAlbumUris != -1) safeDec(stringCipher, cursor.getString(indices.indexAlbumUris)) else null
         val albumMediaUris = rawAlbumUris?.split("|||") ?: emptyList()
-        val rawAlbumTypes = if (indexAlbumTypes != -1) cursor.getString(indexAlbumTypes) else null
+        val rawAlbumTypes = if (indices.indexAlbumTypes != -1) cursor.getString(indices.indexAlbumTypes) else null
         val albumMediaTypes = rawAlbumTypes?.split("|||") ?: emptyList()
 
         return Message(
@@ -595,13 +602,12 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         )
         cursor.use {
             val stringCipher = SecureStorage.newStringCipher()
-            if (it.moveToFirst()) {
-                do {
-                    val msg = readMessageFromCursor(it, stringCipher)
-                    if (!isControlMessageText(msg.text)) {
-                        messages.add(msg)
-                    }
-                } while (it.moveToNext())
+            val indices = MessageColumnIndices(it)
+            while (it.moveToNext()) {
+                val msg = readMessageFromCursor(it, stringCipher, indices)
+                if (!isControlMessageText(msg.text)) {
+                    messages.add(msg)
+                }
             }
         }
         return messages
@@ -686,13 +692,12 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         )
         cursor.use {
             val stringCipher = SecureStorage.newStringCipher()
-            if (it.moveToFirst()) {
-                do {
-                    val msg = readMessageFromCursor(it, stringCipher)
-                    if (!isControlMessageText(msg.text)) {
-                        messages.add(msg)
-                    }
-                } while (it.moveToNext())
+            val indices = MessageColumnIndices(it)
+            while (it.moveToNext()) {
+                val msg = readMessageFromCursor(it, stringCipher, indices)
+                if (!isControlMessageText(msg.text)) {
+                    messages.add(msg)
+                }
             }
         }
         messages.reverse()
@@ -838,17 +843,26 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val db = this.safeWritableDatabase
         db.beginTransactionNonExclusive()
         try {
-            for ((id, status) in updates) {
-                var mergedStatus = status
+            val existingStatuses = mutableMapOf<String, String?>()
+            val idList = updates.keys.toList()
+            for (chunk in idList.chunked(400)) {
+                val placeholders = chunk.joinToString(",") { "?" }
                 db.rawQuery(
-                    "SELECT $KEY_STATUS FROM $TABLE_MESSAGES WHERE $KEY_ID = ?",
-                    arrayOf(id),
+                    "SELECT $KEY_ID, $KEY_STATUS FROM $TABLE_MESSAGES WHERE $KEY_ID IN ($placeholders)",
+                    chunk.toTypedArray(),
                 ).use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        mergedStatus = MessageDeliveryStatus.merge(cursor.getString(0), status)
+                    while (cursor.moveToNext()) {
+                        val id = cursor.getString(0)
+                        val status = if (cursor.isNull(1)) null else cursor.getString(1)
+                        existingStatuses[id] = status
                     }
                 }
-                val values = ContentValues().apply {
+            }
+
+            for ((id, status) in updates) {
+                val existing = existingStatuses[id]
+                val mergedStatus = MessageDeliveryStatus.merge(existing, status)
+                val values = ContentValues(1).apply {
                     put(KEY_STATUS, mergedStatus)
                 }
                 db.update(TABLE_MESSAGES, values, "$KEY_ID = ?", arrayOf(id))
@@ -985,8 +999,9 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         // without requiring updates in multiple places (WARN-06).
         cursor.use {
             val stringCipher = SecureStorage.newStringCipher()
+            val indices = MessageColumnIndices(it)
             while (it.moveToNext()) {
-                messages.add(readMessageFromCursor(it, stringCipher))
+                messages.add(readMessageFromCursor(it, stringCipher, indices))
             }
         }
         return messages

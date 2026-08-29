@@ -121,6 +121,18 @@ object AttachmentImageCache {
 internal fun sampledImageCacheKey(filePath: String, targetWidth: Int, targetHeight: Int): String =
     "sample:$filePath:${targetWidth}x$targetHeight"
 
+fun resolveAttachmentFile(context: android.content.Context, filePath: String?): java.io.File? {
+    if (filePath.isNullOrBlank()) return null
+    val cleanPath = filePath.removePrefix("file://")
+    val candidateFiles = listOfNotNull(
+        java.io.File(cleanPath),
+        java.io.File(java.io.File(context.filesDir, "attachments"), cleanPath),
+        java.io.File(context.filesDir, cleanPath),
+        java.io.File(context.filesDir, java.io.File(cleanPath).name)
+    )
+    return candidateFiles.firstOrNull { it.exists() && it.length() > 0L }
+}
+
 @Composable
 fun rememberSampledImage(filePath: String?, targetWidth: Int = 400, targetHeight: Int = 400): Bitmap? {
     if (filePath.isNullOrBlank()) return null
@@ -132,15 +144,8 @@ fun rememberSampledImage(filePath: String?, targetWidth: Int = 400, targetHeight
         if (bitmapState != null) return@LaunchedEffect
         bitmapState = withContext(Dispatchers.IO) {
             try {
+                val targetFile = resolveAttachmentFile(context, filePath)
                 val cleanPath = filePath.removePrefix("file://")
-                val candidateFiles = listOfNotNull(
-                    java.io.File(cleanPath),
-                    java.io.File(java.io.File(context.filesDir, "attachments"), cleanPath),
-                    java.io.File(context.filesDir, cleanPath),
-                    java.io.File(context.filesDir, java.io.File(cleanPath).name)
-                )
-
-                val targetFile = candidateFiles.firstOrNull { it.exists() && it.length() > 0L }
 
                 if (targetFile != null) {
                     AttachmentImageCache.getOrLoad(cacheKey) {

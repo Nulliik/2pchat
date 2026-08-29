@@ -40,4 +40,12 @@ object DatabaseTuning {
             }
         }
     }
+
+    fun optimizeDatabase(db: SQLiteDatabase) {
+        try {
+            db.execSQL("PRAGMA optimize")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to execute PRAGMA optimize", e)
+        }
+    }
 }

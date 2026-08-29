@@ -128,7 +128,16 @@ object SecureStorage {
         }
     }
 
-    internal fun newStringCipher(): StringCipher = StringCipher(key(), createCipher())
+    private val threadLocalCipher = ThreadLocal<StringCipher>()
+
+    internal fun newStringCipher(): StringCipher {
+        var cipher = threadLocalCipher.get()
+        if (cipher == null) {
+            cipher = StringCipher(key(), createCipher())
+            threadLocalCipher.set(cipher)
+        }
+        return cipher
+    }
 
     fun encrypt(value: String): String {
         return try {

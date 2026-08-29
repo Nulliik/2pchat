@@ -204,10 +204,14 @@ internal class PeerAvatarCache(
         }
     }
 
+    private val peerHashCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     private fun avatarFile(directory: File, peerName: String): File {
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(peerName.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
+        val digest = peerHashCache.computeIfAbsent(peerName) { name ->
+            MessageDigest.getInstance("SHA-256")
+                .digest(name.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+        }
         return File(directory, "$digest$ENCRYPTED_EXTENSION")
     }
 
