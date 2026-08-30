@@ -1588,6 +1588,7 @@ fun ChatsTab(
                                 onClick = {
                                     com.example.twopchat.relay.P2PMessageRelay.deleteChat(context, peer.name)
                                     activeChatsSet = (activeChatsSet - peer.name)
+                                    chatsViewModel.activeChatsSet.value = (chatsViewModel.activeChatsSet.value - peer.name)
                                     chatListRevision++
                                     activeMenuPeer = null
                                     Toast.makeText(context, if (appLanguage == "Русский") "Чат удален" else "Chat deleted", Toast.LENGTH_SHORT).show()

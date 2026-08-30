@@ -1265,11 +1265,14 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         return result
     }
 
-    fun deletePeer(peerName: String) {
+    fun deletePeer(peerName: String, aliases: Collection<String> = emptyList()) {
+        val names = (listOf(peerName) + aliases).filter { it.isNotBlank() }.distinct()
+        if (names.isEmpty()) return
         val db = this.safeWritableDatabase
         try {
-            db.delete(TABLE_PEERS, "$KEY_PEER_NAME = ?", arrayOf(peerName))
-            com.example.twopchat.ui.chat.state.ChatHistoryCache.remove(peerName)
+            val where = names.joinToString(" OR ") { "LOWER($KEY_PEER_NAME) = LOWER(?)" }
+            db.delete(TABLE_PEERS, where, names.toTypedArray())
+            names.forEach { com.example.twopchat.ui.chat.state.ChatHistoryCache.remove(it) }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to delete peer from database", e)
         }

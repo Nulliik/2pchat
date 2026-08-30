@@ -94,7 +94,7 @@ object AttachmentImageCache {
             return value.byteCount / 1024
         }
     }
-    private val decodeSlots = Semaphore(2)
+    private val decodeSlots = Semaphore(6)
     private val decodeLocks = ConcurrentHashMap<String, Mutex>()
 
     fun get(key: String): Bitmap? = cache.get(key)
@@ -118,8 +118,10 @@ object AttachmentImageCache {
     }
 }
 
-internal fun sampledImageCacheKey(filePath: String, targetWidth: Int, targetHeight: Int): String =
-    "sample:$filePath:${targetWidth}x$targetHeight"
+internal fun sampledImageCacheKey(filePath: String, targetWidth: Int, targetHeight: Int): String {
+    val clean = filePath.removePrefix("file://")
+    return "sample:$clean:${targetWidth}x$targetHeight"
+}
 
 fun resolveAttachmentFile(context: android.content.Context, filePath: String?): java.io.File? {
     if (filePath.isNullOrBlank()) return null
@@ -180,26 +182,45 @@ fun rememberSampledImage(filePath: String?, targetWidth: Int = 400, targetHeight
 
 @Composable
 fun rememberVideoThumbnail(filePath: String?): Bitmap? {
-    if (filePath == null) return null
-    val cacheKey = "thumb_$filePath"
+    if (filePath.isNullOrBlank()) return null
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val cleanPath = filePath.removePrefix("file://")
+    val cacheKey = "thumb_$cleanPath"
     val cached = AttachmentImageCache.get(cacheKey)
-    var bitmapState by remember(filePath) { mutableStateOf<Bitmap?>(cached) }
-    LaunchedEffect(filePath) {
+    var bitmapState by remember(cacheKey) { mutableStateOf<Bitmap?>(cached) }
+    LaunchedEffect(cacheKey) {
         if (bitmapState != null) return@LaunchedEffect
         bitmapState = withContext(Dispatchers.IO) {
             try {
-                val file = java.io.File(filePath)
-                if (file.exists()) {
+                val targetFile = resolveAttachmentFile(context, filePath)
+                if (targetFile != null && targetFile.exists()) {
                     AttachmentImageCache.getOrLoad(cacheKey) {
                         val retriever = android.media.MediaMetadataRetriever()
                         try {
-                            retriever.setDataSource(filePath)
+                            retriever.setDataSource(targetFile.absolutePath)
                             retriever.getFrameAtTime(
-                                1_000_000,
+                                0,
                                 android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
                             )
+                        } catch (_: Exception) {
+                            null
                         } finally {
-                            retriever.release()
+                            try { retriever.release() } catch (_: Exception) {}
+                        }
+                    }
+                } else if (cleanPath.startsWith("content://")) {
+                    AttachmentImageCache.getOrLoad(cacheKey) {
+                        val retriever = android.media.MediaMetadataRetriever()
+                        try {
+                            retriever.setDataSource(context, android.net.Uri.parse(cleanPath))
+                            retriever.getFrameAtTime(
+                                0,
+                                android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                            )
+                        } catch (_: Exception) {
+                            null
+                        } finally {
+                            try { retriever.release() } catch (_: Exception) {}
                         }
                     }
                 } else {

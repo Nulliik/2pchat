@@ -2684,34 +2684,58 @@ object P2PMessageRelay {
     }
 
     fun deleteChat(context: Context, peerName: String) {
+        val clean = peerName.trim()
+        if (clean.isBlank()) return
+        val lower = clean.lowercase()
+        val fp = P2PPreferences.getPeerFingerprint(context, clean)
+        val resolvedName = if (!fp.isNullOrBlank()) P2PPreferences.findPeerNameByFingerprint(context, fp) else P2PPreferences.findPeerNameByFingerprint(context, clean)
+        val aliases = listOfNotNull(clean, lower, fp, resolvedName).filter { it.isNotBlank() }.distinct()
+
         val sharedPrefs = P2PPreferences.prefs(context)
         val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
-        val newSet = activeSet.toMutableSet().apply { remove(peerName) }
+        val newSet = activeSet.filterNot { item -> aliases.any { alias -> item.equals(alias, ignoreCase = true) } }.toSet()
         
         sharedPrefs.edit {
             putStringSet("active_chats", newSet)
-            remove("last_msg_$peerName")
-            remove("unread_count_$peerName")
-            remove("draft_msg_$peerName")
-            remove("pinned_chat_$peerName")
-            remove(P2PPreferences.pinnedMessageId(peerName))
-            remove(P2PPreferences.pinnedMessageText(peerName))
-            remove(P2PPreferences.pinnedMessageSender(peerName))
-            remove(P2PPreferences.pinnedBy(peerName))
-            remove(P2PPreferences.pinnedStateVersion(peerName))
-            remove(P2PPreferences.pinnedStateActor(peerName))
+            aliases.forEach { alias ->
+                remove("last_msg_$alias")
+                remove("unread_count_$alias")
+                remove("draft_msg_$alias")
+                remove("pinned_chat_$alias")
+                remove("transport_$alias")
+                remove("last_endpoint_$alias")
+                remove("verified_peer_$alias")
+                remove("fingerprint_mismatch_$alias")
+                remove(P2PPreferences.pinnedMessageId(alias))
+                remove(P2PPreferences.pinnedMessageText(alias))
+                remove(P2PPreferences.pinnedMessageSender(alias))
+                remove(P2PPreferences.pinnedBy(alias))
+                remove(P2PPreferences.pinnedStateVersion(alias))
+                remove(P2PPreferences.pinnedStateActor(alias))
+                remove(P2PPreferences.directWallpaperPath(alias))
+                remove(P2PPreferences.directWallpaperDimming(alias))
+                remove(P2PPreferences.directWallpaperBlur(alias))
+            }
         }
         
-        // Remove typing state
-        peerTypingStates.remove(peerName)
+        // Remove typing, connection, and memory cache states
+        aliases.forEach { alias ->
+            peerTypingStates.remove(alias)
+            peerConnectionTransports.remove(alias)
+            _peerEndpoints.remove(alias)
+            com.example.twopchat.ui.chat.state.ChatHistoryCache.remove(alias)
+        }
 
-        // Clear messages database and pending controls for this peer
+        // Clear messages database, pending controls, and peer table for this peer and all aliases
         val db = ChatDatabaseHelper.getInstance(context)
-        db.clearMessagesForPeer(peerName)
+        db.clearMessagesForPeer(peerName, aliases)
         db.deletePendingControlsForPeer(peerName)
+        db.deletePeer(peerName, aliases)
 
         // Clear notification history
-        MessageNotificationService.clearHistory(context, peerName)
+        aliases.forEach { alias ->
+            MessageNotificationService.clearHistory(context, alias)
+        }
     }
 
     /**
