@@ -426,15 +426,12 @@ fun ChatScreen(
         }
     }
 
-    var wallpaperPath by remember(peerName, prefsWallpaperVersion) {
-        mutableStateOf(com.example.twopchat.config.P2PPreferences.getDirectWallpaperPath(context, peerName))
+    val persistedWallpaper = remember(peerName, prefsWallpaperVersion) {
+        com.example.twopchat.config.P2PPreferences.getDirectWallpaper(context, peerName)
     }
-    var wallpaperDimming by remember(peerName, prefsWallpaperVersion) {
-        mutableIntStateOf(com.example.twopchat.config.P2PPreferences.getDirectWallpaperDimming(context, peerName))
-    }
-    var wallpaperBlur by remember(peerName, prefsWallpaperVersion) {
-        mutableStateOf(com.example.twopchat.config.P2PPreferences.getDirectWallpaperBlur(context, peerName))
-    }
+    var wallpaperPath by remember(persistedWallpaper.path) { mutableStateOf(persistedWallpaper.path) }
+    var wallpaperDimming by remember(persistedWallpaper.dimming) { mutableIntStateOf(persistedWallpaper.dimming) }
+    var wallpaperBlur by remember(persistedWallpaper.blur) { mutableStateOf(persistedWallpaper.blur) }
     var wallpaperBitmap by remember(wallpaperPath, wallpaperBlur) {
         mutableStateOf<Bitmap?>(null)
     }
