@@ -52,7 +52,7 @@ fun OnboardingScreen(
     
     var currentStep by remember { mutableStateOf(1) }
     var nickname by remember { mutableStateOf("") }
-    var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
+    var profilePhotoUri by remember { mutableStateOf<String?>(null) }
     var profileBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var pendingCropUri by remember { mutableStateOf<Uri?>(null) }
     var showYggdrasilDialog by remember { mutableStateOf(false) }
@@ -73,8 +73,12 @@ fun OnboardingScreen(
     }
 
     LaunchedEffect(profilePhotoUri) {
-        profileBitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            loadBitmapFromUri(context, profilePhotoUri)
+        profileBitmap = if (profilePhotoUri != null) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                loadBitmapFromUri(context, profilePhotoUri)
+            }
+        } else {
+            null
         }
     }
 
@@ -1018,10 +1022,8 @@ fun loadBitmapFromUri(
     uriString: String?,
     maxDimension: Int = 512,
 ): Bitmap? {
-    val defaultAvatar = java.io.File(context.filesDir, "profile_avatar.jpg")
-    val effectiveUri = uriString?.takeIf { it.isNotBlank() }
-        ?: defaultAvatar.takeIf { it.exists() }?.absolutePath
-        ?: return null
+    if (uriString.isNullOrBlank()) return null
+    val effectiveUri = uriString
 
     val targetDimension = maxDimension.coerceAtLeast(1)
 
@@ -1069,21 +1071,6 @@ fun loadBitmapFromUri(
         }
     }.getOrNull()
     if (contentBitmap != null) return contentBitmap
-
-    // 3. Fallback to default avatar if not already tried
-    if (defaultAvatar.exists() && directFile.absolutePath != defaultAvatar.absolutePath) {
-        return runCatching {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(defaultAvatar.absolutePath, bounds)
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
-            BitmapFactory.decodeFile(
-                defaultAvatar.absolutePath,
-                BitmapFactory.Options().apply {
-                    inSampleSize = calculateSampleSize(bounds.outWidth, bounds.outHeight)
-                },
-            )
-        }.getOrNull()
-    }
 
     return null
 }

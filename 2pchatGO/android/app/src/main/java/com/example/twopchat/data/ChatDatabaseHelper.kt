@@ -26,7 +26,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         null, 
         DATABASE_VERSION, 
         0, 
-        null, 
+        net.zetetic.database.DefaultDatabaseErrorHandler(), 
         null, 
         false
     ) {
@@ -137,7 +137,17 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                     }
                 }
             }
-            return writableDatabase
+            return try {
+                writableDatabase
+            } catch (e: android.database.sqlite.SQLiteException) {
+                if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true) {
+                    Log.e(TAG, "Chat database unreadable (key mismatch or corrupted). Recreating.", e)
+                    context.deleteDatabase(DATABASE_NAME)
+                    writableDatabase
+                } else {
+                    throw e
+                }
+            }
         }
 
     private val safeReadableDatabase: SQLiteDatabase
@@ -152,7 +162,17 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                     }
                 }
             }
-            return readableDatabase
+            return try {
+                readableDatabase
+            } catch (e: android.database.sqlite.SQLiteException) {
+                if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true) {
+                    Log.e(TAG, "Chat database unreadable (key mismatch or corrupted). Recreating.", e)
+                    context.deleteDatabase(DATABASE_NAME)
+                    readableDatabase
+                } else {
+                    throw e
+                }
+            }
         }
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -1319,7 +1339,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             )
             db.execSQL(
                 "CREATE INDEX IF NOT EXISTS idx_messages_peer_sent_desc " +
-                    "ON $TABLE_MESSAGES($KEY_PEER_NAME, $KEY_SENT_AT_MS DESC, rowid DESC)"
+                    "ON $TABLE_MESSAGES($KEY_PEER_NAME, $KEY_SENT_AT_MS DESC, $KEY_ID DESC)"
             )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to create composite message indices", e)

@@ -57,8 +57,11 @@ object P2PMessageRelay {
     }
     private val startStopLock = Any()
     private val identityLock = Any()
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val relayScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(4))
+    private val relayExceptionHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
+        Log.e("P2PMessageRelay", "Uncaught exception in relay scope", throwable)
+    }
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + relayExceptionHandler)
+    private val relayScope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(4) + relayExceptionHandler)
     private val mainDispatcher get() = runCatching { Dispatchers.Main.immediate }.getOrElse { Dispatchers.Default }
     private val mainScope by lazy { CoroutineScope(SupervisorJob() + mainDispatcher) }
 
@@ -2338,8 +2341,9 @@ object P2PMessageRelay {
             var sourceBitmap: Bitmap? = null
             var scaledBitmap: Bitmap? = null
             try {
-                val file = File(context.filesDir, "profile_avatar.jpg")
-                val b64: String? = if (file.exists()) {
+                val profileUri = P2PPreferences.prefs(context).getString("profile_photo_uri", null)
+                val file = if (!profileUri.isNullOrBlank()) File(profileUri) else null
+                val b64: String? = if (file != null && file.exists()) {
                     val lastMod = file.lastModified()
                     synchronized(identityLock) {
                         if (cachedAvatarLastModified == lastMod && !cachedAvatarBase64.isNullOrEmpty()) {

@@ -194,17 +194,25 @@ object SecureStorage {
         if (enc != null) {
             if (enc.startsWith(PREFIX)) {
                 val b64Ciphertext = enc.removePrefix(PREFIX)
-                val packed = Base64.decode(b64Ciphertext, Base64.NO_WRAP)
-                if (packed.size > 12) {
-                    val cipher = createCipher()
-                    cipher.init(
-                        Cipher.DECRYPT_MODE,
-                        key(),
-                        GCMParameterSpec(128, packed, 0, 12)
-                    )
-                    val plainBytes = cipher.doFinal(packed, 12, packed.size - 12)
-                    SecurityUtils.zeroize(packed)
-                    return plainBytes
+                val packed = try {
+                    Base64.decode(b64Ciphertext, Base64.NO_WRAP)
+                } catch (_: Exception) {
+                    null
+                }
+                if (packed != null && packed.size > 12) {
+                    try {
+                        val cipher = createCipher()
+                        cipher.init(
+                            Cipher.DECRYPT_MODE,
+                            key(),
+                            GCMParameterSpec(128, packed, 0, 12)
+                        )
+                        val plainBytes = cipher.doFinal(packed, 12, packed.size - 12)
+                        SecurityUtils.zeroize(packed)
+                        return plainBytes
+                    } catch (e: Exception) {
+                        Log.e("SecureStorage", "Failed to decrypt existing db passphrase; generating fresh", e)
+                    }
                 }
             } else {
                 return enc.toByteArray(Charsets.UTF_8)

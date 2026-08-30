@@ -22,7 +22,11 @@ object AccountDataWiper {
     fun wipe(context: Context): Boolean {
         val appContext = context.applicationContext
         val steps = listOf(
-            "cancel background group work" to { GroupWorkScheduler.cancel(appContext); true },
+            "cancel background group work" to {
+                GroupWorkScheduler.cancel(appContext)
+                com.example.twopchat.group.runtime.GroupChatCoordinator.shutdown()
+                true
+            },
             "close encrypted chat databases" to {
                 ChatDatabaseHelper.closeAllConnections()
                 SecureStorage.clearDbPassphrase()

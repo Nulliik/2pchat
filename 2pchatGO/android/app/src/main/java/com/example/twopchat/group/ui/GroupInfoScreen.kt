@@ -1496,11 +1496,9 @@ private fun GroupMemberCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             val context = androidx.compose.ui.platform.LocalContext.current
-            val myAvatarFile = remember(context) { java.io.File(context.filesDir, "profile_avatar.jpg") }
-            val myAvatarBitmap = remember(myAvatarFile) {
-                if (myAvatarFile.isFile) {
-                    try { android.graphics.BitmapFactory.decodeFile(myAvatarFile.absolutePath) } catch (e: Exception) { null }
-                } else null
+            val myAvatarBitmap = remember(context) {
+                val profileUri = com.example.twopchat.config.P2PPreferences.prefs(context).getString("profile_photo_uri", null)
+                com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profileUri)
             }
             val memberAvatarBitmap = if (member.isCurrentUser) {
                 com.example.twopchat.relay.P2PMessageRelay.peerAvatars[member.displayName] ?: myAvatarBitmap
@@ -2245,11 +2243,9 @@ private fun MemberProfileModal(
     var animateIn by remember { mutableStateOf(false) }
     var showFullMemberAvatar by remember { mutableStateOf(false) }
     var fullMemberAvatarBitmap by remember(member.displayName) { mutableStateOf<Bitmap?>(null) }
-    val myAvatarFile = remember(context) { java.io.File(context.filesDir, "profile_avatar.jpg") }
-    val myAvatarBitmap = remember(myAvatarFile) {
-        if (myAvatarFile.isFile) {
-            try { android.graphics.BitmapFactory.decodeFile(myAvatarFile.absolutePath) } catch (e: Exception) { null }
-        } else null
+    val myAvatarBitmap = remember(context) {
+        val profileUri = com.example.twopchat.config.P2PPreferences.prefs(context).getString("profile_photo_uri", null)
+        com.example.twopchat.ui.onboarding.loadBitmapFromUri(context, profileUri)
     }
     val memberAvatarBitmap = if (member.isCurrentUser) {
         com.example.twopchat.relay.P2PMessageRelay.peerAvatars[member.displayName] ?: myAvatarBitmap

@@ -67,10 +67,7 @@ fun SettingsTab(
     val sharedPrefs = remember { P2PPreferences.prefs(context) }
     
     // Profile photo states
-    val defaultAvatarPath = remember(context) {
-        context.filesDir.resolve("profile_avatar.jpg").takeIf { it.exists() }?.absolutePath
-    }
-    var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", defaultAvatarPath) ?: defaultAvatarPath) }
+    var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
     var profileBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var fullProfileBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var pendingCropUri by remember { mutableStateOf<android.net.Uri?>(null) }

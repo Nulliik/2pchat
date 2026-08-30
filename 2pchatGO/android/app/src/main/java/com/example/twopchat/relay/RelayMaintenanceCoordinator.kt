@@ -78,9 +78,11 @@ internal class RelayMaintenanceCoordinator(
                     val prefs = P2PPreferences.prefs(appContext)
                     val oneOnOneChats = prefs.getStringSet("active_chats", emptySet()).orEmpty()
                         .filterNot { it == "Saved Messages" || isPlaceholderPeerName(it) }
-                    val groupMemberPeers = com.example.twopchat.group.runtime.GroupChatCoordinator
-                        .listActiveGroupMemberPeerNames(appContext)
-                        .filterNot { isPlaceholderPeerName(it) }
+                    val groupMemberPeers = try {
+                        com.example.twopchat.group.runtime.GroupChatCoordinator
+                            .listActiveGroupMemberPeerNames(appContext)
+                            .filterNot { isPlaceholderPeerName(it) }
+                    } catch (_: Throwable) { emptyList() }
                     val knownPeers = try {
                         com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getAllPeersWithOnion().keys
                     } catch (_: Throwable) { emptySet() }.filterNot { isPlaceholderPeerName(it) }

@@ -206,11 +206,9 @@ class MainActivity : ComponentActivity() {
         val appContext = applicationContext
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                kotlinx.coroutines.coroutineScope {
-                    launch { NativeBridge.initialize() }
-                    launch { SecureStorage.prewarm(appContext) }
-                    launch { com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).warmup() }
-                }
+                NativeBridge.initialize()
+                SecureStorage.prewarm(appContext)
+                com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).warmup()
                 if (P2PPreferences.isTorEnabled(appContext)) {
                     TorManager.startTor(appContext)
                 }

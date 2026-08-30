@@ -157,6 +157,8 @@ fun ChatsTab(
             ) ?: "UNKNOWN"
             val isPinned = sharedPrefs.getBoolean("pinned_chat_$name", false)
             val isBlocked = com.example.twopchat.config.P2PPreferences.isPeerBlocked(context, name)
+            val isVerified = sharedPrefs.getBoolean(com.example.twopchat.config.P2PPreferences.verifiedPeer(name), false)
+            val isMismatch = sharedPrefs.getBoolean("fingerprint_mismatch_$name", false)
             PeerItem(
                 name = name,
                 lastMsg = lastMsg,
@@ -166,7 +168,9 @@ fun ChatsTab(
                 unreadCount = sharedPrefs.getInt("unread_count_$name", 0),
                 isPinned = isPinned,
                 isBlocked = isBlocked,
-                hasDraft = hasDraft
+                hasDraft = hasDraft,
+                isVerified = isVerified,
+                isFingerprintMismatch = isMismatch,
             )
         }.sortedWith(
             compareByDescending<PeerItem> { it.isPinned }
@@ -1104,32 +1108,32 @@ fun ChatsTab(
                     if (peers.isEmpty()) {
                         item(key = "empty_chats") {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.25f)),
+                                colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.18f)),
                                 shape = RoundedCornerShape(20.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 10.dp, bottom = 14.dp)
-                                    .border(1.dp, onSurfaceColor.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+                                    .border(1.dp, onSurfaceColor.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
                             ) {
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 20.dp),
+                                        .padding(horizontal = 20.dp, vertical = 22.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     // Subtle soft icon halo
                                     Box(
                                         contentAlignment = Alignment.Center,
                                         modifier = Modifier
-                                            .size(54.dp)
-                                            .background(primaryColor.copy(alpha = 0.08f), shape = CircleShape)
-                                            .border(1.dp, primaryColor.copy(alpha = 0.18f), CircleShape)
+                                            .size(48.dp)
+                                            .background(primaryColor.copy(alpha = 0.06f), shape = CircleShape)
+                                            .border(0.75.dp, primaryColor.copy(alpha = 0.14f), CircleShape)
                                     ) {
                                         Icon(
                                             painter = painterResource(id = com.example.twopchat.R.drawable.ic_saved_messages),
                                             contentDescription = "Chats Empty",
-                                            tint = primaryColor.copy(alpha = 0.85f),
-                                            modifier = Modifier.size(24.dp)
+                                            tint = primaryColor.copy(alpha = 0.75f),
+                                            modifier = Modifier.size(22.dp)
                                         )
                                     }
 
@@ -1147,7 +1151,7 @@ fun ChatsTab(
                                         ),
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = onSurfaceColor.copy(alpha = 0.90f),
+                                        color = onSurfaceColor.copy(alpha = 0.85f),
                                         textAlign = TextAlign.Center
                                     )
 
@@ -1163,118 +1167,12 @@ fun ChatsTab(
                                             fr = "Invitez des amis ou partagez votre adresse pour communiquer directement sans serveur",
                                             pt = "Convide amigos ou compartilhe seu endereço para conversas diretas e privadas"
                                         ),
-                                        fontSize = 12.5.sp,
-                                        color = onSurfaceVariant.copy(alpha = 0.75f),
+                                        fontSize = 12.sp,
+                                        color = onSurfaceVariant.copy(alpha = 0.65f),
                                         textAlign = TextAlign.Center,
                                         lineHeight = 16.sp,
-                                        modifier = Modifier.padding(horizontal = 6.dp)
+                                        modifier = Modifier.padding(horizontal = 8.dp)
                                     )
-
-                                    Spacer(modifier = Modifier.height(16.dp))
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Button(
-                                            onClick = {
-                                                val onionAddr = com.example.twopchat.config.P2PPreferences.getTorOnionHostname(context).orEmpty()
-                                                val port = com.example.twopchat.relay.P2PMessageRelay.listenerPort(context)
-                                                val formattedOnion = if (onionAddr.isNotBlank()) {
-                                                    com.example.twopchat.ui.main.formatInviteEndpoint(onionAddr, port) ?: onionAddr
-                                                } else ""
-                                                val inviteText = if (formattedOnion.isNotBlank()) {
-                                                    "2PChat: $currentUsername ($localFingerprint)\nTor: $formattedOnion"
-                                                } else {
-                                                    "2PChat: $currentUsername ($localFingerprint)"
-                                                }
-                                                val sendIntent = android.content.Intent().apply {
-                                                    action = android.content.Intent.ACTION_SEND
-                                                    putExtra(android.content.Intent.EXTRA_TEXT, inviteText)
-                                                    type = "text/plain"
-                                                }
-                                                val shareIntent = android.content.Intent.createChooser(sendIntent, null)
-                                                context.startActivity(shareIntent)
-                                            },
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .height(40.dp),
-                                            shape = RoundedCornerShape(12.dp),
-                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
-                                        ) {
-                                            Icon(
-                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_quick_link),
-                                                contentDescription = null,
-                                                tint = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White,
-                                                modifier = Modifier.size(15.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = com.example.twopchat.data.Localizations.tr(
-                                                    appLanguage,
-                                                    ru = "Поделиться",
-                                                    en = "Share Invite",
-                                                    de = "Einladen",
-                                                    es = "Compartir",
-                                                    fr = "Partager",
-                                                    pt = "Compartilhar"
-                                                ),
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp,
-                                                maxLines = 1,
-                                                softWrap = false,
-                                                color = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White
-                                            )
-                                        }
-
-                                        OutlinedButton(
-                                            onClick = {
-                                                val onionAddr = com.example.twopchat.config.P2PPreferences.getTorOnionHostname(context).orEmpty()
-                                                val port = com.example.twopchat.relay.P2PMessageRelay.listenerPort(context)
-                                                val formattedOnion = if (onionAddr.isNotBlank()) {
-                                                    com.example.twopchat.ui.main.formatInviteEndpoint(onionAddr, port) ?: onionAddr
-                                                } else ""
-                                                val linkToCopy = if (formattedOnion.isNotBlank()) formattedOnion else localFingerprint
-                                                com.example.twopchat.copyTextToClipboard(context, "2PChat Address", linkToCopy)
-                                                Toast.makeText(
-                                                    context,
-                                                    if (appLanguage == "Русский") "Адрес скопирован в буфер" else "Address copied to clipboard",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                            },
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .height(40.dp),
-                                            shape = RoundedCornerShape(12.dp),
-                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, primaryColor.copy(alpha = 0.35f))
-                                        ) {
-                                            Icon(
-                                                painter = painterResource(id = com.example.twopchat.R.drawable.ic_copy_key),
-                                                contentDescription = null,
-                                                tint = primaryColor,
-                                                modifier = Modifier.size(15.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = com.example.twopchat.data.Localizations.tr(
-                                                    appLanguage,
-                                                    ru = "Скопировать",
-                                                    en = "Copy Link",
-                                                    de = "Kopieren",
-                                                    es = "Copiar",
-                                                    fr = "Copier",
-                                                    pt = "Copiar"
-                                                ),
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 12.sp,
-                                                maxLines = 1,
-                                                softWrap = false,
-                                                color = primaryColor
-                                            )
-                                        }
-                                    }
                                 }
                             }
                         }
@@ -1386,54 +1284,36 @@ fun ChatsTab(
                     if (groupSummaries.isEmpty()) {
                         item(key = "empty_groups") {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.55f)),
-                                shape = RoundedCornerShape(24.dp),
+                                colors = CardDefaults.cardColors(containerColor = surfaceColor.copy(alpha = 0.18f)),
+                                shape = RoundedCornerShape(20.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 12.dp, bottom = 16.dp)
-                                    .background(
-                                        brush = Brush.verticalGradient(
-                                            colors = listOf(
-                                                primaryColor.copy(alpha = 0.08f),
-                                                surfaceColor.copy(alpha = 0.65f),
-                                                primaryColor.copy(alpha = 0.02f)
-                                            )
-                                        ),
-                                        shape = RoundedCornerShape(24.dp)
-                                    )
-                                    .border(1.dp, primaryColor.copy(alpha = 0.22f), RoundedCornerShape(24.dp))
+                                    .padding(top = 10.dp, bottom = 14.dp)
+                                    .border(1.dp, onSurfaceColor.copy(alpha = 0.06f), RoundedCornerShape(20.dp))
                             ) {
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(24.dp),
+                                        .padding(horizontal = 20.dp, vertical = 22.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    // Glowing dual-halo icon
+                                    // Soft subtle icon halo
                                     Box(
                                         contentAlignment = Alignment.Center,
                                         modifier = Modifier
-                                            .size(72.dp)
-                                            .background(primaryColor.copy(alpha = 0.10f), shape = CircleShape)
-                                            .border(1.5.dp, primaryColor.copy(alpha = 0.35f), CircleShape)
-                                            .padding(6.dp)
+                                            .size(48.dp)
+                                            .background(primaryColor.copy(alpha = 0.06f), shape = CircleShape)
+                                            .border(0.75.dp, primaryColor.copy(alpha = 0.14f), CircleShape)
                                     ) {
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .background(primaryColor.copy(alpha = 0.18f), shape = CircleShape)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Add,
-                                                contentDescription = "Create Group",
-                                                tint = primaryColor,
-                                                modifier = Modifier.size(32.dp)
-                                            )
-                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "Create Group",
+                                            tint = primaryColor.copy(alpha = 0.75f),
+                                            modifier = Modifier.size(24.dp)
+                                        )
                                     }
 
-                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Spacer(modifier = Modifier.height(12.dp))
 
                                     Text(
                                         text = com.example.twopchat.data.Localizations.tr(
@@ -1445,13 +1325,13 @@ fun ChatsTab(
                                             fr = "Créez votre groupe privé",
                                             pt = "Crie seu grupo privado"
                                         ),
-                                        fontSize = 17.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = onSurfaceColor,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = onSurfaceColor.copy(alpha = 0.85f),
                                         textAlign = TextAlign.Center
                                     )
 
-                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Spacer(modifier = Modifier.height(4.dp))
 
                                     Text(
                                         text = com.example.twopchat.data.Localizations.tr(
@@ -1463,45 +1343,12 @@ fun ChatsTab(
                                             fr = "Groupes P2P sans serveur : chiffrement de bout en bout, médias, rôles et sondages",
                                             pt = "Grupos P2P sem servidores: criptografia de ponta a ponta, mídia, cargos e enquetes"
                                         ),
-                                        fontSize = 13.sp,
-                                        color = onSurfaceVariant,
+                                        fontSize = 12.sp,
+                                        color = onSurfaceVariant.copy(alpha = 0.65f),
                                         textAlign = TextAlign.Center,
-                                        lineHeight = 18.sp,
+                                        lineHeight = 16.sp,
                                         modifier = Modifier.padding(horizontal = 8.dp)
                                     )
-
-                                    Spacer(modifier = Modifier.height(20.dp))
-
-                                    Button(
-                                        onClick = { onItemClick(CreateGroup) },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(44.dp),
-                                        shape = RoundedCornerShape(14.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Add,
-                                            contentDescription = null,
-                                            tint = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = com.example.twopchat.data.Localizations.tr(
-                                                appLanguage,
-                                                ru = "Создать новую группу",
-                                                en = "Create New Group",
-                                                de = "Neue Gruppe erstellen",
-                                                es = "Crear nuevo grupo",
-                                                fr = "Créer un nouveau groupe",
-                                                pt = "Criar novo grupo"
-                                            ),
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            color = if (primaryColor == com.example.twopchat.theme.MintGreen) com.example.twopchat.theme.StealthBlack else Color.White
-                                        )
-                                    }
                                 }
                             }
                         }

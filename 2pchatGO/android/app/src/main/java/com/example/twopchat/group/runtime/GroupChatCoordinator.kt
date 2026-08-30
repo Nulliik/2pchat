@@ -138,6 +138,13 @@ object GroupChatCoordinator {
     @Volatile
     var activeChatsSubTab: Int = 0
 
+    private val runtimeExceptionHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
+        Log.e(TAG, "Uncaught exception in group runtime scope", throwable)
+    }
+
+    private fun newRuntimeScope(): CoroutineScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(4) + runtimeExceptionHandler)
+
     @Volatile
     private var scope = newRuntimeScope()
     private val emitMutex = Mutex()
@@ -193,17 +200,21 @@ object GroupChatCoordinator {
             scope
         }
         activeScope.launch {
-            runCatching {
-                db().listGroups().forEach { drainStoredControlChain(it.groupId) }
-                reconcileDurableState()
+            try {
+                runCatching {
+                    db().listGroups().forEach { drainStoredControlChain(it.groupId) }
+                    reconcileDurableState()
+                }
+                    .onSuccess { recoveryNeeded.set(false) }
+                    .onFailure { Log.w(TAG, "Group recovery failed: ${it.message}") }
+                refreshCreateState()
+                refreshPendingInvites()
+                refreshAllGroups()
+                flushDueOutbox()
+                flushDeclinedInviteResponses()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed during group coordinator startup initialization", e)
             }
-                .onSuccess { recoveryNeeded.set(false) }
-                .onFailure { Log.w(TAG, "Group recovery failed: ${it.message}") }
-            refreshCreateState()
-            refreshPendingInvites()
-            refreshAllGroups()
-            flushDueOutbox()
-            flushDeclinedInviteResponses()
         }
     }
 
@@ -231,9 +242,6 @@ object GroupChatCoordinator {
             scope = newRuntimeScope()
         }
     }
-
-    private fun newRuntimeScope(): CoroutineScope =
-        CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(4))
 
     fun deleteAll(context: Context): Boolean {
         shutdown()

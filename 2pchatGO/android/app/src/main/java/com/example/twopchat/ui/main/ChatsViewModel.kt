@@ -28,7 +28,6 @@ internal class ChatsViewModel(
     val chatListRevision = mutableIntStateOf(0)
     val profilePhotoUri = mutableStateOf(
         sharedPrefs.getString("profile_photo_uri", null)
-            ?: appContext.filesDir.resolve("profile_avatar.jpg").takeIf { it.exists() }?.absolutePath
     )
     val currentUsername = mutableStateOf(
         sharedPrefs.getString("username_profile", "Anonymous") ?: "Anonymous",
@@ -55,6 +54,21 @@ internal class ChatsViewModel(
         }
     }
 
+    private var revisionDebounceJob: kotlinx.coroutines.Job? = null
+
+    private fun notifyChatListChanged(immediate: Boolean = false) {
+        if (immediate) {
+            revisionDebounceJob?.cancel()
+            chatListRevision.intValue++
+            return
+        }
+        if (revisionDebounceJob?.isActive == true) return
+        revisionDebounceJob = viewModelScope.launch(Dispatchers.Main) {
+            delay(150L)
+            chatListRevision.intValue++
+        }
+    }
+
     private fun refreshActiveChats() {
         val prefChats = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
         val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext)
@@ -66,7 +80,7 @@ internal class ChatsViewModel(
         val combined = (prefChats + dbChats).filter { it.isNotBlank() && it != "null" && it != "Saved Messages" }.toSet()
         if (activeChatsSet.value != combined) {
             activeChatsSet.value = combined
-            chatListRevision.intValue++
+            notifyChatListChanged(immediate = true)
         }
         prefetchTopActiveChats(combined)
     }
@@ -82,10 +96,12 @@ internal class ChatsViewModel(
                 key?.startsWith("draft_msg_") == true ||
                 key?.startsWith("transport_") == true ||
                 key?.startsWith("last_endpoint_") == true ||
-                key?.startsWith("unread_count_") == true -> chatListRevision.intValue++
+                key?.startsWith("unread_count_") == true ||
+                key?.startsWith("verified_peer_") == true ||
+                key?.startsWith("fingerprint_mismatch_") == true ||
+                key?.startsWith("pinned_chat_") == true -> notifyChatListChanged()
             key == "profile_photo_uri" -> {
                 profilePhotoUri.value = prefs.getString(key, null)
-                    ?: appContext.filesDir.resolve("profile_avatar.jpg").takeIf { it.exists() }?.absolutePath
             }
             key == "username_profile" -> {
                 currentUsername.value = prefs.getString(key, "Anonymous") ?: "Anonymous"

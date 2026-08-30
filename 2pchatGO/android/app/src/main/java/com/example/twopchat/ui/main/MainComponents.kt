@@ -145,6 +145,7 @@ fun TabNavigationRow(
 }
 
 // Data models
+@androidx.compose.runtime.Immutable
 data class PeerItem(
     val name: String,
     val lastMsg: String,
@@ -155,7 +156,9 @@ data class PeerItem(
     val unreadCount: Int = 0,
     val isPinned: Boolean = false,
     val isBlocked: Boolean = false,
-    val hasDraft: Boolean = false
+    val hasDraft: Boolean = false,
+    val isVerified: Boolean = false,
+    val isFingerprintMismatch: Boolean = false,
 )
 
 data class ContactItem(
@@ -203,20 +206,6 @@ fun PeerRow(
     onLongClick: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
-    val sharedPrefs = remember(context) { P2PPreferences.prefs(context) }
-    var isVerified by remember(peer.name) {
-        mutableStateOf(sharedPrefs.getBoolean(P2PPreferences.verifiedPeer(peer.name), false))
-    }
-    DisposableEffect(sharedPrefs, peer.name) {
-        val verificationKey = P2PPreferences.verifiedPeer(peer.name)
-        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
-            if (key == verificationKey) {
-                isVerified = prefs.getBoolean(verificationKey, false)
-            }
-        }
-        sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
-        onDispose { sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener) }
-    }
 
     val isLight = surfaceColor.luminance() > 0.5f
     val borderAlpha = if (isLight) 0.08f else 0.04f
@@ -462,10 +451,9 @@ fun PeerRow(
                 }
 
                 if (!isSavedMessages) {
-                    val isMismatch = sharedPrefs.getBoolean("fingerprint_mismatch_${peer.name}", false)
                     val shieldColor = when {
-                        isMismatch -> Color(0xFFF44336) // Red
-                        isVerified -> Color(0xFF4CAF50) // Green
+                        peer.isFingerprintMismatch -> Color(0xFFF44336) // Red
+                        peer.isVerified -> Color(0xFF4CAF50) // Green
                         else -> Color(0xFFFFC107) // Yellow
                     }
                     Icon(

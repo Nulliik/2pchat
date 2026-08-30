@@ -187,8 +187,8 @@ data class StoredAdmissionCursor(
  * Timeline pages are returned newest-first in deterministic HLC/device/sequence/id order.
  */
 class GroupDatabaseHelper(
-    context: Context,
-    databaseName: String = DATABASE_NAME,
+    private val context: Context,
+    override val databaseName: String = DATABASE_NAME,
 ) : SQLiteOpenHelper(
     context.applicationContext,
     databaseName,
@@ -196,10 +196,35 @@ class GroupDatabaseHelper(
     null,
     DATABASE_VERSION,
     0,
-    null,
+    net.zetetic.database.DefaultDatabaseErrorHandler(),
     null,
     false,
 ) {
+    val safeReadableDatabase: SQLiteDatabase
+        get() = try {
+            readableDatabase
+        } catch (e: android.database.sqlite.SQLiteException) {
+            if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true) {
+                android.util.Log.e("GroupDatabaseHelper", "Group database unreadable (key mismatch or corrupted). Recreating.", e)
+                context.applicationContext.deleteDatabase(databaseName)
+                readableDatabase
+            } else {
+                throw e
+            }
+        }
+
+    val safeWritableDatabase: SQLiteDatabase
+        get() = try {
+            writableDatabase
+        } catch (e: android.database.sqlite.SQLiteException) {
+            if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true) {
+                android.util.Log.e("GroupDatabaseHelper", "Group database unreadable (key mismatch or corrupted). Recreating.", e)
+                context.applicationContext.deleteDatabase(databaseName)
+                writableDatabase
+            } else {
+                throw e
+            }
+        }
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
         com.example.twopchat.data.DatabaseTuning.applyOptimizations(db)
@@ -447,7 +472,7 @@ class GroupDatabaseHelper(
         require(initialEpochKey == null || initialEpochKey.groupId == group.groupId)
         require(ownerLineage.all { it.groupId == group.groupId })
         require(outboxTasks.all { it.groupId == group.groupId })
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             db.insertOrThrow(TABLE_GROUPS, null, groupValues(group))
@@ -466,7 +491,7 @@ class GroupDatabaseHelper(
     }
 
     fun upsertGroup(group: StoredGroup) {
-        val db = writableDatabase
+        val db = safeWritableDatabase
         val values = groupValues(group)
         val updated = db.update(
             TABLE_GROUPS,
@@ -478,7 +503,7 @@ class GroupDatabaseHelper(
     }
 
     fun getGroup(groupId: String): StoredGroup? =
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_GROUPS,
             null,
             "group_id = ?",
@@ -493,7 +518,7 @@ class GroupDatabaseHelper(
 
     fun listGroups(): List<StoredGroup> {
         val result = mutableListOf<StoredGroup>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_GROUPS,
             null,
             null,
@@ -508,7 +533,7 @@ class GroupDatabaseHelper(
     }
 
     fun upsertMember(member: StoredGroupMember) {
-        writableDatabase.insertWithOnConflict(
+        safeWritableDatabase.insertWithOnConflict(
             TABLE_MEMBERS,
             null,
             memberValues(member),
@@ -525,7 +550,7 @@ class GroupDatabaseHelper(
         val groupId = members.first().groupId
         require(groupId.isNotBlank() && members.all { it.groupId == groupId })
         require(members.map { it.deviceId }.toSet().size == members.size)
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             members.forEach { member ->
@@ -553,7 +578,7 @@ class GroupDatabaseHelper(
         require(certificates.all { it.groupId == groupId })
         require(certificates.map { it.sequence } == (1..certificates.size).toList())
         require(certificates.map { it.transitionId }.toSet().size == certificates.size)
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             insertOwnerLineage(db, groupId, certificates)
@@ -580,7 +605,7 @@ class GroupDatabaseHelper(
         require(syncCursors.all { it.groupId == updatedGroup.groupId })
         require(syncCursors.map { it.deviceId }.toSet().size == syncCursors.size)
         require(outboxTasks.all { it.groupId == updatedGroup.groupId })
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             val current = db.query(
@@ -659,7 +684,7 @@ class GroupDatabaseHelper(
 
     fun listOwnerLineage(groupId: String): List<StoredOwnerLineageCertificate> {
         val result = mutableListOf<StoredOwnerLineageCertificate>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_OWNER_LINEAGE,
             null,
             "group_id = ?",
@@ -684,7 +709,7 @@ class GroupDatabaseHelper(
         require(page.groupId.isNotBlank() && page.controlHead.isNotBlank())
         require(page.epoch > 0L)
         require(page.pageIndex in 0 until page.totalPages)
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             val existing = db.query(
@@ -736,7 +761,7 @@ class GroupDatabaseHelper(
         controlHead: String,
     ): List<StoredRosterSnapshotPage> {
         val result = mutableListOf<StoredRosterSnapshotPage>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_ROSTER_PAGES,
             null,
             "group_id = ? AND control_head = ?",
@@ -766,7 +791,7 @@ class GroupDatabaseHelper(
         controlHead: String,
     ): List<StoredAdmissionCursor> {
         val result = mutableListOf<StoredAdmissionCursor>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_ADMISSION_CURSORS,
             null,
             "group_id = ? AND recipient_device_id = ? AND control_head = ?",
@@ -802,7 +827,7 @@ class GroupDatabaseHelper(
             authorSequences.keys == members.mapTo(hashSetOf()) { it.deviceId } &&
                 authorSequences.values.all { it >= 0L },
         )
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             val matches = db.query(
@@ -865,7 +890,7 @@ class GroupDatabaseHelper(
     }
 
     fun getMember(groupId: String, deviceId: String): StoredGroupMember? =
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_MEMBERS,
             null,
             "group_id = ? AND device_id = ?",
@@ -880,7 +905,7 @@ class GroupDatabaseHelper(
 
     fun listMembers(groupId: String): List<StoredGroupMember> {
         val result = mutableListOf<StoredGroupMember>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_MEMBERS,
             null,
             "group_id = ?",
@@ -897,7 +922,7 @@ class GroupDatabaseHelper(
     fun storeEpochKey(key: StoredGroupEpochKey): Boolean {
         require(key.epoch >= 0)
         require(key.keyMaterial.isNotEmpty())
-        val inserted = writableDatabase.insertWithOnConflict(
+        val inserted = safeWritableDatabase.insertWithOnConflict(
             TABLE_EPOCH_KEYS,
             null,
             epochKeyValues(key),
@@ -909,7 +934,7 @@ class GroupDatabaseHelper(
     }
 
     fun getEpochKey(groupId: String, epoch: Long): StoredGroupEpochKey? =
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_EPOCH_KEYS,
             null,
             "group_id = ? AND epoch = ?",
@@ -940,7 +965,7 @@ class GroupDatabaseHelper(
      */
     fun ingestEvent(event: StoredGroupEvent, countAsUnread: Boolean): Boolean {
         validateEventForIngest(event)
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             if (!insertAndMaterializeEvent(db, event, countAsUnread)) return false
@@ -971,7 +996,7 @@ class GroupDatabaseHelper(
                     it.recipientDeviceId.isNotBlank()
             },
         ) { "outbox tasks must address the ingested event" }
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             if (!insertAndMaterializeEvent(db, event, countAsUnread)) return false
@@ -996,7 +1021,7 @@ class GroupDatabaseHelper(
      */
     fun ingestEventsBatch(items: List<Pair<StoredGroupEvent, Boolean>>): Int {
         if (items.isEmpty()) return 0
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             var count = 0
@@ -1014,7 +1039,7 @@ class GroupDatabaseHelper(
     }
 
     fun getEvent(groupId: String, eventId: String): StoredGroupEvent? =
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_EVENTS,
             null,
             "group_id = ? AND event_id = ?",
@@ -1032,7 +1057,7 @@ class GroupDatabaseHelper(
      * snapshot. A detached fork event is never returned by this lookup.
      */
     fun getCanonicalControlEvent(groupId: String): StoredGroupEvent? =
-        readableDatabase.rawQuery(
+        safeReadableDatabase.rawQuery(
             """
             SELECT event.*
             FROM $TABLE_GROUPS AS group_state
@@ -1049,7 +1074,7 @@ class GroupDatabaseHelper(
         groupId: String,
         authorDeviceId: String,
         authorSequence: Long,
-    ): StoredGroupEvent? = readableDatabase.query(
+    ): StoredGroupEvent? = safeReadableDatabase.query(
         TABLE_EVENTS,
         null,
         "group_id = ? AND author_device_id = ? AND author_seq = ?",
@@ -1070,7 +1095,7 @@ class GroupDatabaseHelper(
         require(limit in 1..MAX_PAGE_SIZE)
         require(minimumEpoch >= 0)
         val result = mutableListOf<StoredGroupEvent>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_EVENTS,
             null,
             "group_id = ? AND author_device_id = ? AND author_seq > ? AND epoch >= ?",
@@ -1105,7 +1130,7 @@ class GroupDatabaseHelper(
         require(afterAuthorSeq >= 0)
         require(limit in 1..MAX_PAGE_SIZE)
         val result = mutableListOf<StoredGroupEvent>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_EVENTS,
             null,
             "group_id = ? AND author_device_id = ? AND author_seq > ? AND payload IS NOT NULL",
@@ -1122,7 +1147,7 @@ class GroupDatabaseHelper(
 
     fun nextAuthorSequence(groupId: String, authorDeviceId: String): Long {
         require(groupId.isNotBlank() && authorDeviceId.isNotBlank())
-        return readableDatabase.rawQuery(
+        return safeReadableDatabase.rawQuery(
             "SELECT COALESCE(MAX(author_seq), 0) + 1 FROM $TABLE_EVENTS " +
                 "WHERE group_id = ? AND author_device_id = ?",
             arrayOf(groupId, authorDeviceId),
@@ -1140,7 +1165,7 @@ class GroupDatabaseHelper(
         require(groupId.isNotBlank() && authorDeviceId.isNotBlank())
         require(baselineSequence >= 0)
         var contiguous = baselineSequence
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_EVENTS,
             arrayOf("author_seq"),
             "group_id = ? AND author_device_id = ? AND author_seq > ?",
@@ -1162,7 +1187,7 @@ class GroupDatabaseHelper(
     }
 
     fun latestAuthorEvent(groupId: String, authorDeviceId: String): StoredGroupEvent? =
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_EVENTS,
             null,
             "group_id = ? AND author_device_id = ?",
@@ -1174,7 +1199,7 @@ class GroupDatabaseHelper(
         ).use { cursor -> if (cursor.moveToFirst()) cursor.toEvent() else null }
 
     fun hasEventTarget(groupId: String, targetEventId: String): Boolean =
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_EVENTS,
             arrayOf("event_id"),
             "group_id = ? AND target_event_id = ?",
@@ -1194,7 +1219,7 @@ class GroupDatabaseHelper(
             "ROLE_CHANGED",
             "OWNERSHIP_TRANSFERRED",
         )
-        return readableDatabase.query(
+        return safeReadableDatabase.query(
             TABLE_EVENTS,
             arrayOf("event_id"),
             "group_id = ? AND target_event_id = ? AND kind IN (${controlKinds.joinToString { "?" }})",
@@ -1207,7 +1232,7 @@ class GroupDatabaseHelper(
     }
 
     fun hasPendingOutboxEventPrefix(groupId: String, eventPrefix: String): Boolean =
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_OUTBOX,
             arrayOf("task_id"),
             "group_id = ? AND event_id LIKE ? AND state IN (?, ?)",
@@ -1239,7 +1264,7 @@ class GroupDatabaseHelper(
             args = arrayOf(groupId, controlHead)
         }
         val result = mutableListOf<StoredGroupEvent>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_EVENTS,
             null,
             selection,
@@ -1262,7 +1287,7 @@ class GroupDatabaseHelper(
     fun listEvents(groupId: String, limit: Int = MAX_PAGE_SIZE): List<StoredGroupEvent> {
         require(limit in 1..MAX_PAGE_SIZE)
         val result = mutableListOf<StoredGroupEvent>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_EVENTS,
             null,
             "group_id = ?",
@@ -1280,7 +1305,7 @@ class GroupDatabaseHelper(
     fun listRecentEvents(groupId: String, limit: Int = MAX_PAGE_SIZE): List<StoredGroupEvent> {
         require(limit in 1..MAX_PAGE_SIZE)
         val result = mutableListOf<StoredGroupEvent>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_EVENTS,
             null,
             "group_id = ?",
@@ -1305,7 +1330,7 @@ class GroupDatabaseHelper(
         val result = mutableListOf<String>()
         targetEventIds.distinct().chunked(400).forEach { targets ->
             val placeholders = targets.joinToString(",") { "?" }
-            readableDatabase.query(
+            safeReadableDatabase.query(
                 TABLE_REACTIONS,
                 arrayOf("target_event_id", "emoji", "author_device_id"),
                 "group_id = ? AND active = 1 AND target_event_id IN ($placeholders)",
@@ -1369,7 +1394,7 @@ class GroupDatabaseHelper(
             )
         }
         val result = mutableListOf<StoredGroupMessage>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_MESSAGES,
             null,
             selection,
@@ -1385,7 +1410,7 @@ class GroupDatabaseHelper(
     }
 
     fun loadMessage(groupId: String, messageId: String): StoredGroupMessage? =
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_MESSAGES,
             null,
             "group_id = ? AND message_id = ?",
@@ -1398,7 +1423,7 @@ class GroupDatabaseHelper(
 
     fun enqueueOutbox(task: StoredOutboxTask): Boolean {
         require(task.taskId.isNotBlank() && task.recipientDeviceId.isNotBlank())
-        return writableDatabase.insertWithOnConflict(
+        return safeWritableDatabase.insertWithOnConflict(
             TABLE_OUTBOX,
             null,
             outboxValues(task),
@@ -1408,7 +1433,7 @@ class GroupDatabaseHelper(
 
     fun enqueueOutbox(tasks: List<StoredOutboxTask>): Int {
         if (tasks.isEmpty()) return 0
-        val db = writableDatabase
+        val db = safeWritableDatabase
         var inserted = 0
         db.beginTransaction()
         try {
@@ -1434,7 +1459,7 @@ class GroupDatabaseHelper(
     fun loadDueOutbox(nowMs: Long, limit: Int): List<StoredOutboxTask> {
         require(limit in 1..MAX_PAGE_SIZE)
         val result = mutableListOf<StoredOutboxTask>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_OUTBOX,
             null,
             "state IN (?, ?) AND next_attempt_ms <= ?",
@@ -1454,11 +1479,11 @@ class GroupDatabaseHelper(
     }
 
     fun getOutboxTask(taskId: String): StoredOutboxTask? =
-        queryOutbox(readableDatabase, taskId)
+        queryOutbox(safeReadableDatabase, taskId)
 
     fun listOutboxForEvent(groupId: String, eventId: String): List<StoredOutboxTask> {
         val result = mutableListOf<StoredOutboxTask>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_OUTBOX,
             null,
             "group_id = ? AND event_id = ?",
@@ -1478,7 +1503,7 @@ class GroupDatabaseHelper(
         recipientDeviceId: String,
     ): Boolean {
         require(groupId.isNotBlank() && eventId.isNotBlank() && recipientDeviceId.isNotBlank())
-        return readableDatabase.query(
+        return safeReadableDatabase.query(
             TABLE_OUTBOX,
             arrayOf("task_id"),
             "group_id = ? AND event_id = ? AND recipient_device_id = ?",
@@ -1495,7 +1520,7 @@ class GroupDatabaseHelper(
         receiptType: String = "STORED",
         acknowledgedAtMs: Long = System.currentTimeMillis(),
     ): Boolean {
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             val task = queryOutbox(db, taskId) ?: return false
@@ -1530,7 +1555,7 @@ class GroupDatabaseHelper(
         lastError: String?,
         updatedAtMs: Long = System.currentTimeMillis(),
     ): Boolean {
-        val changed = writableDatabase.execUpdate(
+        val changed = safeWritableDatabase.execUpdate(
             """
             UPDATE $TABLE_OUTBOX
             SET state = ?, attempts = attempts + 1, next_attempt_ms = ?,
@@ -1553,7 +1578,7 @@ class GroupDatabaseHelper(
         taskId: String,
         lastError: String,
         updatedAtMs: Long = System.currentTimeMillis(),
-    ): Boolean = writableDatabase.execUpdate(
+    ): Boolean = safeWritableDatabase.execUpdate(
         """
         UPDATE $TABLE_OUTBOX
         SET state = ?, last_error = ?, updated_at_ms = ?
@@ -1572,7 +1597,7 @@ class GroupDatabaseHelper(
         groupId: String,
         eventId: String,
         nowMs: Long = System.currentTimeMillis(),
-    ): Int = writableDatabase.execUpdate(
+    ): Int = safeWritableDatabase.execUpdate(
         """
         UPDATE $TABLE_OUTBOX
         SET state = ?, attempts = 0, next_attempt_ms = ?, last_error = NULL,
@@ -1600,7 +1625,7 @@ class GroupDatabaseHelper(
         groupId: String,
         recipientDeviceId: String,
         nowMs: Long = System.currentTimeMillis(),
-    ): Int = writableDatabase.execUpdate(
+    ): Int = safeWritableDatabase.execUpdate(
         """
         UPDATE $TABLE_OUTBOX
         SET state = ?, next_attempt_ms = ?, last_error = NULL, updated_at_ms = ?
@@ -1619,7 +1644,7 @@ class GroupDatabaseHelper(
 
     fun listReceipts(groupId: String, eventId: String): List<StoredReceipt> {
         val result = mutableListOf<StoredReceipt>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_RECEIPTS,
             null,
             "group_id = ? AND event_id = ?",
@@ -1643,7 +1668,7 @@ class GroupDatabaseHelper(
 
     fun listAllReceipts(groupId: String): List<StoredReceipt> {
         val result = mutableListOf<StoredReceipt>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_RECEIPTS,
             null,
             "group_id = ?",
@@ -1668,7 +1693,7 @@ class GroupDatabaseHelper(
     fun recordReceipt(receipt: StoredReceipt) {
         require(receipt.groupId.isNotBlank() && receipt.eventId.isNotBlank())
         require(receipt.recipientDeviceId.isNotBlank() && receipt.type.isNotBlank())
-        writableDatabase.insertWithOnConflict(
+        safeWritableDatabase.insertWithOnConflict(
             TABLE_RECEIPTS,
             null,
             ContentValues().apply {
@@ -1683,7 +1708,7 @@ class GroupDatabaseHelper(
     }
 
     fun savePendingInvite(invite: StoredPendingInvite) {
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             val newerExists = db.rawQuery(
@@ -1729,7 +1754,7 @@ class GroupDatabaseHelper(
 
     fun listPendingInvites(nowMs: Long = System.currentTimeMillis()): List<StoredPendingInvite> {
         val result = mutableListOf<StoredPendingInvite>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_INVITES,
             null,
             "state = ? AND expires_at_ms > ?",
@@ -1757,7 +1782,7 @@ class GroupDatabaseHelper(
         listInvitesByState("DECLINED")
 
     fun getStoredInvite(inviteId: String): StoredPendingInvite? =
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_INVITES,
             null,
             "invite_id = ?",
@@ -1769,17 +1794,17 @@ class GroupDatabaseHelper(
         ).use { cursor -> if (cursor.moveToFirst()) cursor.toPendingInvite() else null }
 
     fun markInviteDeclined(inviteId: String): Boolean =
-        writableDatabase.execUpdate(
+        safeWritableDatabase.execUpdate(
             "UPDATE $TABLE_INVITES SET state = ? WHERE invite_id = ? AND state = ?",
             arrayOf<Any?>("DECLINED", inviteId, "PENDING"),
         ) > 0
 
     fun deletePendingInvite(inviteId: String): Boolean =
-        writableDatabase.delete(TABLE_INVITES, "invite_id = ?", arrayOf(inviteId)) > 0
+        safeWritableDatabase.delete(TABLE_INVITES, "invite_id = ?", arrayOf(inviteId)) > 0
 
     private fun listInvitesByState(state: String): List<StoredPendingInvite> {
         val result = mutableListOf<StoredPendingInvite>()
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_INVITES,
             null,
             "state = ?",
@@ -1794,11 +1819,11 @@ class GroupDatabaseHelper(
     }
 
     fun upsertSyncCursor(cursor: StoredSyncCursor) {
-        upsertSyncCursor(writableDatabase, cursor)
+        upsertSyncCursor(safeWritableDatabase, cursor)
     }
 
     fun getSyncCursor(groupId: String, deviceId: String): StoredSyncCursor? =
-        readableDatabase.query(
+        safeReadableDatabase.query(
             TABLE_SYNC_CURSORS,
             null,
             "group_id = ? AND device_id = ?",
@@ -1825,7 +1850,7 @@ class GroupDatabaseHelper(
         groupId: String,
         readAtMs: Long = System.currentTimeMillis(),
     ): Int {
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             val changed = db.execUpdate(
@@ -1879,7 +1904,7 @@ class GroupDatabaseHelper(
             "control_head = ?"
         }
         args += groupId
-        return writableDatabase.execUpdate(
+        return safeWritableDatabase.execUpdate(
             "UPDATE $TABLE_GROUPS SET ${assignments.joinToString(", ")} " +
                 "WHERE $headPredicate AND group_id = ?",
             args.toTypedArray(),
@@ -1912,7 +1937,7 @@ class GroupDatabaseHelper(
         require(admissionRecipientDeviceId == null || admissionRecipientDeviceId.isNotBlank())
         if (title != null) require(title.isNotBlank() && title.length <= 160)
         if (description != null) require(description.length <= 2_000)
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             val currentHead = db.query(
@@ -2066,7 +2091,7 @@ class GroupDatabaseHelper(
         groupId: String,
         eventId: String?,
         updatedAtMs: Long = System.currentTimeMillis(),
-    ): Boolean = writableDatabase.execUpdate(
+    ): Boolean = safeWritableDatabase.execUpdate(
         "UPDATE $TABLE_GROUPS SET pinned_event_id = ?, " +
             "updated_at_ms = MAX(updated_at_ms, ?) WHERE group_id = ?",
         arrayOf<Any?>(eventId, updatedAtMs, groupId),
@@ -2080,7 +2105,7 @@ class GroupDatabaseHelper(
     ): Boolean {
         require(title.isNotBlank() && title.length <= 160)
         require(description.length <= 2_000)
-        return writableDatabase.execUpdate(
+        return safeWritableDatabase.execUpdate(
             "UPDATE $TABLE_GROUPS SET title = ?, description = ?, " +
                 "updated_at_ms = MAX(updated_at_ms, ?) WHERE group_id = ?",
             arrayOf<Any?>(title, description, updatedAtMs, groupId),
@@ -2088,7 +2113,7 @@ class GroupDatabaseHelper(
     }
 
     fun deleteGroup(groupId: String): Boolean =
-        writableDatabase.delete(TABLE_GROUPS, "group_id = ?", arrayOf(groupId)) > 0
+        safeWritableDatabase.delete(TABLE_GROUPS, "group_id = ?", arrayOf(groupId)) > 0
 
     fun closeAndDelete(context: Context): Boolean {
         close()
@@ -2711,7 +2736,7 @@ class GroupDatabaseHelper(
     }
 
     fun clearHistory(groupId: String) {
-        val db = writableDatabase
+        val db = safeWritableDatabase
         db.beginTransaction()
         try {
             db.delete("group_messages", "group_id = ?", arrayOf(groupId))
