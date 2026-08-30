@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,23 +23,31 @@ import (
 
 // SessionManager manages active Double Ratchet sessions, local identity, networking, and discovery.
 type SessionManager struct {
-	mu           sync.RWMutex
-	storageDir   string
-	identity     *crypto.IdentityKeyPair
-	prekeyPriv   *crypto.X25519PrivateKey
-	prekeyPub    *crypto.X25519PublicKey
-	sessions     map[string]*crypto.SessionState
-	netManager   *session.Manager
-	discoverySvc *discovery.DiscoveryService
-	callbacks    session.EventCallbacks
-	onPeerDisc   discovery.DiscoveryCallback
-	torEnabled   bool
-	torProxy     string
-	onionAddress string
-	dialer       *transport.AdaptiveDialer
-	upnpMapper   *transport.UPnPMapper
-	natDiag      *transport.NATDiagnostics
-	holePuncher  *transport.HolePuncher
+	mu              sync.RWMutex
+	storageDir      string
+	identity        *crypto.IdentityKeyPair
+	prekeyPriv      *crypto.X25519PrivateKey
+	prekeyPub       *crypto.X25519PublicKey
+	sessions        map[string]*crypto.SessionState
+	netManager      *session.Manager
+	discoverySvc    *discovery.DiscoveryService
+	callbacks       session.EventCallbacks
+	onPeerDisc      discovery.DiscoveryCallback
+	onTrackerStatus discovery.TrackerStatusCallback
+	torEnabled      bool
+	torProxy        string
+	onionAddress    string
+	dialer          *transport.AdaptiveDialer
+	yggUDPRelay     string
+	upnpMapper      *transport.UPnPMapper
+	natDiag         *transport.NATDiagnostics
+	holePuncher     *transport.HolePuncher
+}
+
+func (m *SessionManager) SetTrackerStatusCallback(callback discovery.TrackerStatusCallback) {
+	m.mu.Lock()
+	m.onTrackerStatus = callback
+	m.mu.Unlock()
 }
 
 var (
@@ -197,10 +207,19 @@ func (m *SessionManager) Init() error {
 					onPeerDiscovered(infoHashHex, endpoint, source)
 				}
 			},
+			func(trackerURL string, success bool, peerCount int, elapsed time.Duration, detail string) {
+				m.mu.RLock()
+				callback := m.onTrackerStatus
+				m.mu.RUnlock()
+				if callback != nil {
+					callback(trackerURL, success, peerCount, elapsed, detail)
+				}
+			},
 		)
 		if m.onionAddress != "" {
 			m.discoverySvc.SetOnionAddress(m.onionAddress)
 		}
+		m.discoverySvc.SetYggdrasilUDPRelay(m.yggUDPRelay)
 	}
 
 	return nil
@@ -547,10 +566,23 @@ func (m *SessionManager) SetYggdrasilConfig(mode string, proxyAddr string) {
 	m.mu.Lock()
 	m.dialer.SetYggdrasilConfig(transport.YggdrasilMode(mode), proxyAddr)
 	nm := m.netManager
+	m.yggUDPRelay = ""
+	if strings.EqualFold(mode, "proxy") {
+		if host, portText, err := net.SplitHostPort(proxyAddr); err == nil {
+			if port, parseErr := strconv.Atoi(portText); parseErr == nil {
+				m.yggUDPRelay = net.JoinHostPort(host, strconv.Itoa(port+1))
+			}
+		}
+	}
+	svc := m.discoverySvc
+	relay := m.yggUDPRelay
 	m.mu.Unlock()
 
 	if nm != nil {
 		nm.SetYggdrasilConfig(mode, proxyAddr)
+	}
+	if svc != nil {
+		svc.SetYggdrasilUDPRelay(relay)
 	}
 }
 

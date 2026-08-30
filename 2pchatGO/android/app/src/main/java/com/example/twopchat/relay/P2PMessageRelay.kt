@@ -260,6 +260,7 @@ object P2PMessageRelay {
             fingerprint,
             port,
             force = isChanged,
+            rendezvousCode = P2PPreferences.getRendezvousCode(context),
         )
         if (success) {
             lastAnnouncedTransportState = newState

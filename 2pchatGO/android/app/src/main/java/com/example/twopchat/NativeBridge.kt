@@ -24,6 +24,7 @@ object NativeBridge {
     var onMessageReceivedListener: ((peerFP: String, payload: ByteArray, messageID: String) -> Unit)? = null
     var onErrorListener: ((code: Int, message: String) -> Unit)? = null
     var onPeerDiscoveredListener: ((infoHashHex: String, endpoint: String, source: String) -> Unit)? = null
+    var onTrackerStatusListener: ((trackerUrl: String, success: Boolean, peerCount: Int, elapsedMs: Long, detail: String) -> Unit)? = null
     var onFileProgressListener: ((peerFP: String, messageId: String, transferred: Long, total: Long, speedKbps: Double) -> Unit)? = null
 
     private fun logI(msg: String) {
@@ -477,6 +478,25 @@ object NativeBridge {
             } catch (e: Throwable) {
                 Log.e(TAG, "Error in onPeerDiscoveredListener", e)
             }
+        }
+    }
+
+    @JvmStatic
+    fun onTrackerStatus(trackerUrl: String, success: Boolean, peerCount: Int, elapsedMs: Long, detail: String) {
+        val result = if (success) "OK" else "FAIL"
+        val cleanDetail = detail.replace(Regex("[\\r\\n]+"), " ").take(160)
+        val summary = "announce=$result, peers=${peerCount.coerceAtLeast(0)}, announce_rtt=${elapsedMs.coerceAtLeast(0)}ms" +
+            cleanDetail.takeIf { it.isNotBlank() }?.let { ", detail=$it" }.orEmpty()
+        if (success) Log.i(TAG, "[TRACKER] $trackerUrl $summary") else Log.w(TAG, "[TRACKER] $trackerUrl $summary")
+        bridgeScope.launch {
+            val context = runCatching { com.example.twopchat.yggdrasil.GlobalApplication.appContext }.getOrNull()
+            if (context != null) {
+                com.example.twopchat.config.TrackerPreferences.recordDiagnosticStatus(
+                    context, trackerUrl, success, peerCount, elapsedMs, cleanDetail,
+                )
+                AppLog.append(context, "[TRACKER] $trackerUrl $summary\n")
+            }
+            onTrackerStatusListener?.invoke(trackerUrl, success, peerCount, elapsedMs, cleanDetail)
         }
     }
 

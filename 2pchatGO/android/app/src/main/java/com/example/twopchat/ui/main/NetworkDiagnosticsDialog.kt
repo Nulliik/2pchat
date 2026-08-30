@@ -132,7 +132,9 @@ private fun readDiagnosticsSnapshot(context: Context): DiagnosticsSnapshot {
     return DiagnosticsSnapshot(
         logs = readLogFile(context),
         upnp = upnpData,
-        trackers = defaultTrackerUrls.keys.associateWith { "announce=OK (Go Native)" },
+        // These statuses come exclusively from callbacks produced by the native
+        // announce operation; configuration or DNS lookup is never treated as success.
+        trackers = com.example.twopchat.config.TrackerPreferences.diagnosticStatuses(context),
         yggdrasil = mapOf("state" to if (P2PMessageRelay.getYggdrasilAddress().isNotBlank()) "connected" else "disabled"),
         activePeers = P2PMessageRelay.getActivePeerNames(),
     )
@@ -170,7 +172,8 @@ private fun shareLogFile(context: Context) {
     }
 }
 
-private fun getTrackerPing(announceUrl: String): Long {
+/** Returns DNS lookup latency only; it is deliberately not tracker ping/health. */
+private fun getTrackerDnsLatency(announceUrl: String): Long {
     val startTime = System.currentTimeMillis()
     try {
         val clean = announceUrl.trim()
@@ -455,7 +458,7 @@ fun NetworkDiagnosticsDialog(
                 trackerDiagnostics.keys.forEach { name ->
                     withContext(Dispatchers.IO) {
                         val url = defaultTrackerUrls[name] ?: ""
-                        val ping = if (name.startsWith("Yggdrasil-only") && !yggdrasilAvailable) -2L else getTrackerPing(url)
+                        val ping = if (name.startsWith("Yggdrasil-only") && !yggdrasilAvailable) -2L else getTrackerDnsLatency(url)
                         trackerPings[name] = ping
                     }
                 }
@@ -1192,10 +1195,10 @@ private fun NodeDetailContent(
                     else -> if (appLanguage == "Русский") "DNS недоступен" else "DNS unavailable"
                 }
                 val pingColor = when {
-                    announceOk || (ping != null && ping >= 0L) -> Color(0xFF4CAF50)
+                    announceOk -> Color(0xFF4CAF50)
                     failed -> Color(0xFFFF5252)
                     ping == -2L || ping == -3L || skipped -> onSurfaceVariant
-                    ping == null -> Color(0xFFFFD740)
+                    ping == null || ping >= 0L -> Color(0xFFFFD740)
                     else -> Color(0xFFFF5252)
                 }
                 Card(

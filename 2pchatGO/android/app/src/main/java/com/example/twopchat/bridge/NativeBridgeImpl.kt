@@ -1,5 +1,6 @@
 package com.example.twopchat.bridge
 
+import android.content.Context
 import android.util.Log
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.relay.P2PMessageRelay
@@ -257,7 +258,7 @@ class NativeBridgeImpl : IP2PBridge {
         rendezvousCode: String?,
     ): Boolean {
         val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
-        val trackers = com.example.twopchat.config.TrackerPreferences.getActiveTrackerUrls(context)
+        val trackers = usableTrackerUrls(context)
 
         val hashes = linkedSetOf<String>()
         if (!rendezvousCode.isNullOrBlank() && nickname.isNotBlank()) {
@@ -556,7 +557,7 @@ class NativeBridgeImpl : IP2PBridge {
         )
 
         val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
-        val trackers = com.example.twopchat.config.TrackerPreferences.getActiveTrackerUrls(appContext)
+        val trackers = usableTrackerUrls(appContext)
         NativeBridge.startDiscovery(trackers = trackers, infoHashes = infoHashes.toList())
 
         val knownCandidates = mutableListOf<String>()
@@ -611,3 +612,10 @@ internal fun legacyDiscoveryInfoHash(value: String): String =
         .digest(value.toByteArray(Charsets.UTF_8))
         .take(20)
         .joinToString("") { "%02x".format(it) }
+
+/**
+ * The native layer routes Yggdrasil UDP trackers through the local UDP relay
+ * in proxy mode, while TCP trackers continue through SOCKS5.
+ */
+private fun usableTrackerUrls(context: Context): List<String> =
+    com.example.twopchat.config.TrackerPreferences.getActiveTrackerUrls(context)

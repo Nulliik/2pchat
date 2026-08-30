@@ -181,6 +181,7 @@ fun ChatsTab(
     var heroActivePeers by chatsViewModel.heroActivePeers
     var heroUpnpOk by chatsViewModel.heroUpnpOk
     var heroTrackersOk by chatsViewModel.heroTrackersOk
+    var heroTrackerSuccesses by chatsViewModel.heroTrackerSuccesses
     var heroYggOk by chatsViewModel.heroYggOk
     var isRefreshingAll by chatsViewModel.isRefreshingAll
     val heroScope = rememberCoroutineScope()
@@ -888,12 +889,12 @@ fun ChatsTab(
                                         Text(
                                             text = com.example.twopchat.data.Localizations.tr(
                                                 appLanguage,
-                                                ru = "📡 Трек: ${if (heroTrackersOk == true) "$totalTrackers/$totalTrackers" else "0/$totalTrackers"}",
-                                                en = "📡 Track: ${if (heroTrackersOk == true) "$totalTrackers/$totalTrackers" else "0/$totalTrackers"}",
-                                                de = "📡 Track: ${if (heroTrackersOk == true) "$totalTrackers/$totalTrackers" else "0/$totalTrackers"}",
-                                                es = "📡 Rast: ${if (heroTrackersOk == true) "$totalTrackers/$totalTrackers" else "0/$totalTrackers"}",
-                                                fr = "📡 Traq: ${if (heroTrackersOk == true) "$totalTrackers/$totalTrackers" else "0/$totalTrackers"}",
-                                                pt = "📡 Rast: ${if (heroTrackersOk == true) "$totalTrackers/$totalTrackers" else "0/$totalTrackers"}"
+                                                ru = "📡 Трек: $heroTrackerSuccesses/$totalTrackers",
+                                                en = "📡 Track: $heroTrackerSuccesses/$totalTrackers",
+                                                de = "📡 Track: $heroTrackerSuccesses/$totalTrackers",
+                                                es = "📡 Rast: $heroTrackerSuccesses/$totalTrackers",
+                                                fr = "📡 Traq: $heroTrackerSuccesses/$totalTrackers",
+                                                pt = "📡 Rast: $heroTrackerSuccesses/$totalTrackers"
                                             ),
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,

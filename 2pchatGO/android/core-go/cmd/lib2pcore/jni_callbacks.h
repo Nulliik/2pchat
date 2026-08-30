@@ -120,6 +120,7 @@ void callbackOnMessageReceived(const char *peerFP, const jbyte *payload, jsize l
 void callbackOnError(int code, const char *msg);
 void callbackOnPeerDiscovered(const char *infoHashHex, const char *endpoint, const char *source);
 void callbackOnFileProgress(const char *peerFP, const char *messageID, jlong transferred, jlong total, jdouble speedKbps);
+void callbackOnTrackerStatus(const char *trackerURL, jboolean success, jint peerCount, jlong elapsedMs, const char *detail);
 
 // Helper functions for C
 const char* getJStringUTFChars(JNIEnv *env, jstring str);

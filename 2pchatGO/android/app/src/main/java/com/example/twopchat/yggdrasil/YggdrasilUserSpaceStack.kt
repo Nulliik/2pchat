@@ -7,6 +7,9 @@ import java.io.EOFException
 import java.io.OutputStream
 import java.net.Inet6Address
 import java.net.InetAddress
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.ByteBuffer
@@ -30,6 +33,7 @@ class YggdrasilUserSpaceStack(
 ) {
     private val running = AtomicBoolean(false)
     private var socksServer: ServerSocket? = null
+    private var udpRelaySocket: DatagramSocket? = null
     private var workerThreads = mutableListOf<Thread>()
 
     private val localIp: ByteArray by lazy {
@@ -57,6 +61,11 @@ class YggdrasilUserSpaceStack(
     private val activeSessions = ConcurrentHashMap<String, StreamSession>()
     private val pendingHandshakes = ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Boolean>>()
     private val portCounter = AtomicInteger(40000)
+    private data class UdpRelaySession(val client: InetSocketAddress)
+    private val udpSessions = ConcurrentHashMap<Int, UdpRelaySession>()
+    // BEP-15 tracker connect IDs are tied to the UDP source endpoint. Keep a
+    // stable mesh-side port for every native client socket across its requests.
+    private val udpClientPorts = ConcurrentHashMap<String, Int>()
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
@@ -76,6 +85,14 @@ class YggdrasilUserSpaceStack(
             Log.e(TAG, "Failed to bind SOCKS5 server on port $socksPort", e)
         }
 
+        try {
+            udpRelaySocket = DatagramSocket(InetSocketAddress("127.0.0.1", socksPort + 1))
+            workerThreads.add(thread(name = "Ygg-UDP-Relay") { udpRelayLoop() })
+            Log.i(TAG, "Yggdrasil UDP relay bound on 127.0.0.1:${socksPort + 1}")
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to bind Yggdrasil UDP relay", e)
+        }
+
         // 2. Start Mesh Packet Receiver
         val tRecv = thread(name = "Ygg-Mesh-Receiver") {
             meshReceiveLoop()
@@ -89,12 +106,15 @@ class YggdrasilUserSpaceStack(
         if (!running.compareAndSet(true, false)) return
 
         runCatching { socksServer?.close() }
+        runCatching { udpRelaySocket?.close() }
         activeSessions.values.forEach { sess ->
             runCatching { sess.clientSocket?.close() }
         }
         activeSessions.clear()
         pendingHandshakes.values.forEach { it.complete(false) }
         pendingHandshakes.clear()
+        udpSessions.clear()
+        udpClientPorts.clear()
 
         workerThreads.forEach { it.interrupt() }
         workerThreads.clear()
@@ -298,10 +318,35 @@ class YggdrasilUserSpaceStack(
         }
     }
 
+    /** Receives YUDP framing from the native Go tracker client. */
+    private fun udpRelayLoop() {
+        val socket = udpRelaySocket ?: return
+        val buf = ByteArray(4096)
+        while (running.get()) {
+            try {
+                val packet = DatagramPacket(buf, buf.size)
+                socket.receive(packet)
+                val data = packet.data
+                if (packet.length < 23 || String(data, 0, 4) != "YUDP") continue
+                val dstIp = data.copyOfRange(4, 20)
+                if (!isYggdrasilAddress(dstIp)) continue
+                val dstPort = ((data[20].toInt() and 0xFF) shl 8) or (data[21].toInt() and 0xFF)
+                val client = InetSocketAddress(packet.address, packet.port)
+                val clientKey = "${packet.address.hostAddress}:${packet.port}"
+                val localPort = udpClientPorts.computeIfAbsent(clientKey) {
+                    portCounter.getAndIncrement().also { if (it > 60000) portCounter.set(40000) }
+                }
+                udpSessions[localPort] = UdpRelaySession(client)
+                sendUdpPacket(localIp, dstIp, localPort, dstPort, data.copyOfRange(22, packet.length))
+            } catch (_: Throwable) { if (!running.get()) break }
+        }
+    }
+
     private fun handleInboundPacket(pkt: ByteArray, len: Int) {
-        if (len < 60) return // IPv6 and minimum TCP header
+        if (len < 48) return
         val nextHeader = pkt[6].toInt() and 0xFF
-        if (nextHeader != 6) return // TCP only
+        if (nextHeader == 17) { handleInboundUdp(pkt, len); return }
+        if (nextHeader != 6 || len < 60) return // TCP only
 
         val ipv6PayloadLength = ((pkt[4].toInt() and 0xFF) shl 8) or (pkt[5].toInt() and 0xFF)
         val packetEnd = 40 + ipv6PayloadLength
@@ -402,6 +447,16 @@ class YggdrasilUserSpaceStack(
                 handleInboundMeshConnection(srcIp, srcPort, dstPort, seq)
             }
         }
+    }
+
+    private fun handleInboundUdp(pkt: ByteArray, len: Int) {
+        val payloadLength = ((pkt[4].toInt() and 0xFF) shl 8) or (pkt[5].toInt() and 0xFF)
+        val end = 40 + payloadLength
+        if (payloadLength < 8 || end > len) return
+        val dstPort = ((pkt[42].toInt() and 0xFF) shl 8) or (pkt[43].toInt() and 0xFF)
+        val session = udpSessions[dstPort] ?: return
+        val payload = pkt.copyOfRange(48, end)
+        runCatching { udpRelaySocket?.send(DatagramPacket(payload, payload.size, session.client.address, session.client.port)) }
     }
 
     private fun handleInboundMeshConnection(srcIp: ByteArray, srcPort: Int, dstPort: Int, initialSeq: Long) {
@@ -530,6 +585,18 @@ class YggdrasilUserSpaceStack(
         } catch (_: Throwable) {}
     }
 
+    private fun sendUdpPacket(srcIp: ByteArray, dstIp: ByteArray, srcPort: Int, dstPort: Int, payload: ByteArray) {
+        val udpLen = 8 + payload.size
+        val raw = ByteBuffer.allocate(40 + udpLen).order(ByteOrder.BIG_ENDIAN).apply {
+            putInt(0x60000000); putShort(udpLen.toShort()); put(17); put(64)
+            put(srcIp); put(dstIp); putShort(srcPort.toShort()); putShort(dstPort.toShort())
+            putShort(udpLen.toShort()); putShort(0); put(payload)
+        }.array()
+        val csum = computeTransportChecksum(raw, 40, udpLen, srcIp, dstIp, 17)
+        raw[46] = ((csum ushr 8) and 0xFF).toByte(); raw[47] = (csum and 0xFF).toByte()
+        runCatching { ygg.sendBuffer(raw, raw.size.toLong()) }
+    }
+
     private fun computeTcpChecksum(
         pkt: ByteArray,
         tcpOffset: Int,
@@ -558,6 +625,19 @@ class YggdrasilUserSpaceStack(
         while ((sum ushr 16) > 0) {
             sum = (sum and 0xFFFF) + (sum ushr 16)
         }
+        return (sum.inv() and 0xFFFF).toInt()
+    }
+
+    private fun computeTransportChecksum(pkt: ByteArray, offset: Int, length: Int, srcIp: ByteArray, dstIp: ByteArray, protocol: Int): Int {
+        var sum = 0L
+        for (i in 0 until 16 step 2) {
+            sum += ((srcIp[i].toInt() and 0xFF) shl 8) or (srcIp[i + 1].toInt() and 0xFF)
+            sum += ((dstIp[i].toInt() and 0xFF) shl 8) or (dstIp[i + 1].toInt() and 0xFF)
+        }
+        sum += length.toLong() + protocol
+        for (i in offset until offset + length - 1 step 2) sum += ((pkt[i].toInt() and 0xFF) shl 8) or (pkt[i + 1].toInt() and 0xFF)
+        if (length % 2 != 0) sum += (pkt[offset + length - 1].toInt() and 0xFF) shl 8
+        while ((sum ushr 16) > 0) sum = (sum and 0xFFFF) + (sum ushr 16)
         return (sum.inv() and 0xFFFF).toInt()
     }
 

@@ -20,26 +20,28 @@ const (
 
 // DiscoveryCallback notifies Kotlin / upper layers when a peer endpoint is discovered.
 type DiscoveryCallback func(infoHashHex string, endpoint string, source string)
+type TrackerStatusCallback func(trackerURL string, success bool, peerCount int, elapsed time.Duration, detail string)
 
 // DiscoveryService manages tracker queries, LAN beacons, and peer endpoint discovery.
 type DiscoveryService struct {
-	mu           sync.RWMutex
-	fingerprint  string
-	peerID       [20]byte
-	listenPort   int
-	torEnabled   bool
-	trackers     []string
-	infoHashes   map[string][20]byte
-	udpClient    *UDPTrackerClient
-	httpClient   *HTTPTrackerClient
-	lanEngine    *LANEngine
-	prober       *FastTieredProber
-	callback     DiscoveryCallback
-	running      int32
-	onionAddress string
-	ctx          context.Context
-	cancel       context.CancelFunc
-	wg           sync.WaitGroup
+	mu            sync.RWMutex
+	fingerprint   string
+	peerID        [20]byte
+	listenPort    int
+	torEnabled    bool
+	trackers      []string
+	infoHashes    map[string][20]byte
+	udpClient     *UDPTrackerClient
+	httpClient    *HTTPTrackerClient
+	lanEngine     *LANEngine
+	prober        *FastTieredProber
+	callback      DiscoveryCallback
+	trackerStatus TrackerStatusCallback
+	running       int32
+	onionAddress  string
+	ctx           context.Context
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
 }
 
 // NewDiscoveryService creates a new unified DiscoveryService.
@@ -49,20 +51,22 @@ func NewDiscoveryService(
 	dialer *transport.AdaptiveDialer,
 	torEnabled bool,
 	callback DiscoveryCallback,
+	trackerStatus TrackerStatusCallback,
 ) *DiscoveryService {
 	var pID [20]byte
 	_, _ = rand.Read(pID[:])
 
 	s := &DiscoveryService{
-		fingerprint: fingerprint,
-		peerID:      pID,
-		listenPort:  listenPort,
-		torEnabled:  torEnabled,
-		infoHashes:  make(map[string][20]byte),
-		udpClient:   NewUDPTrackerClient(torEnabled, 5*time.Second),
-		httpClient:  NewHTTPTrackerClient(dialer, torEnabled, 5*time.Second),
-		prober:      NewFastTieredProber(),
-		callback:    callback,
+		fingerprint:   fingerprint,
+		peerID:        pID,
+		listenPort:    listenPort,
+		torEnabled:    torEnabled,
+		infoHashes:    make(map[string][20]byte),
+		udpClient:     NewUDPTrackerClient(torEnabled, 5*time.Second),
+		httpClient:    NewHTTPTrackerClient(dialer, torEnabled, 5*time.Second),
+		prober:        NewFastTieredProber(),
+		callback:      callback,
+		trackerStatus: trackerStatus,
 	}
 
 	s.lanEngine = NewLANEngine(fingerprint, listenPort, DefaultLANPort, func(peerFP, endpoint string) {
@@ -72,6 +76,21 @@ func NewDiscoveryService(
 	})
 
 	return s
+}
+
+func (s *DiscoveryService) reportTrackerStatus(url string, result *AnnounceResult, started time.Time, err error) {
+	if s.trackerStatus == nil {
+		return
+	}
+	if err != nil {
+		s.trackerStatus(url, false, 0, time.Since(started), err.Error())
+		return
+	}
+	peers := 0
+	if result != nil {
+		peers = len(result.Peers)
+	}
+	s.trackerStatus(url, true, peers, time.Since(started), "")
 }
 
 // SetOnionAddress sets the local Tor v3 .onion hidden service hostname.
@@ -95,6 +114,8 @@ func (s *DiscoveryService) SetTrackers(trackers []string) {
 	s.trackers = make([]string, len(trackers))
 	copy(s.trackers, trackers)
 }
+
+func (s *DiscoveryService) SetYggdrasilUDPRelay(addr string) { s.udpClient.SetYggdrasilUDPRelay(addr) }
 
 // RegisterInfoHash adds an info hash (20 bytes hex, raw 20-byte string, or arbitrary key to SHA-1) to announce/discover.
 func (s *DiscoveryService) RegisterInfoHash(hashStr string) error {
@@ -145,10 +166,12 @@ func (s *DiscoveryService) AnnounceHash(hashKey string, hashVal [20]byte) {
 
 	for _, trackerURL := range trackers {
 		go func(tURL string) {
+			started := time.Now()
 			ctx, cancel := context.WithTimeout(parentCtx, 8*time.Second)
 			defer cancel()
 
 			res, err := s.announceSingle(ctx, tURL, hashVal, peerID, port)
+			s.reportTrackerStatus(tURL, res, started, err)
 			if err == nil && res != nil {
 				for _, peer := range res.Peers {
 					if s.callback != nil {
@@ -236,11 +259,13 @@ func (s *DiscoveryService) AnnounceAll() {
 			sem <- struct{}{}
 			go func(tURL, hKey string, hVal [20]byte) {
 				defer func() { <-sem }()
+				started := time.Now()
 
 				ctx, cancel := context.WithTimeout(parentCtx, 8*time.Second)
 				defer cancel()
 
 				res, err := s.announceSingle(ctx, tURL, hVal, peerID, port)
+				s.reportTrackerStatus(tURL, res, started, err)
 				if err == nil && res != nil {
 					for _, peer := range res.Peers {
 						if s.callback != nil {

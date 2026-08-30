@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.twopchat.config.P2PPreferences
+import com.example.twopchat.config.TrackerPreferences
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.relay.P2PMessageRelay
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +36,7 @@ internal class ChatsViewModel(
     val heroActivePeers = mutableIntStateOf(0)
     val heroUpnpOk = mutableStateOf<Boolean?>(null)
     val heroTrackersOk = mutableStateOf<Boolean?>(null)
+    val heroTrackerSuccesses = mutableIntStateOf(0)
     val heroYggOk = mutableStateOf<Boolean?>(null)
     val isRefreshingAll = mutableStateOf(false)
 
@@ -119,10 +121,12 @@ internal class ChatsViewModel(
                 if (NativeBridge.isLoaded) {
                     val snapshot = runCatching {
                         withContext(Dispatchers.IO) {
+                            val trackerSuccesses = TrackerPreferences.activeTrackerSuccessCount(appContext)
                             HeroSnapshot(
                                 activePeers = P2PMessageRelay.getActivePeerNames().size,
                                 upnpOk = true,
-                                trackersOk = true,
+                                trackersOk = trackerSuccesses > 0,
+                                trackerSuccesses = trackerSuccesses,
                                 // Both VPN and user-space Proxy publish their
                                 // address/state here. The relay owns neither
                                 // service in Proxy mode, so querying only the
@@ -139,6 +143,7 @@ internal class ChatsViewModel(
                         heroActivePeers.intValue = it.activePeers
                         heroUpnpOk.value = it.upnpOk
                         heroTrackersOk.value = it.trackersOk
+                        heroTrackerSuccesses.intValue = it.trackerSuccesses
                         heroYggOk.value = it.yggOk
                     }
                 }
@@ -155,6 +160,7 @@ internal class ChatsViewModel(
         val activePeers: Int,
         val upnpOk: Boolean,
         val trackersOk: Boolean,
+        val trackerSuccesses: Int,
         val yggOk: Boolean,
     )
 

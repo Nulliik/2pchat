@@ -53,7 +53,11 @@ type AnnounceResult struct {
 type UDPTrackerClient struct {
 	torEnabled bool
 	timeout    time.Duration
+	yggRelay   string
 }
+
+// SetYggdrasilUDPRelay configures the local user-space Yggdrasil UDP relay.
+func (c *UDPTrackerClient) SetYggdrasilUDPRelay(addr string) { c.yggRelay = addr }
 
 // NewUDPTrackerClient creates a new BEP 15 UDP tracker client.
 func NewUDPTrackerClient(torEnabled bool, timeout time.Duration) *UDPTrackerClient {
@@ -89,7 +93,18 @@ func (c *UDPTrackerClient) Announce(
 		return nil, fmt.Errorf("failed to resolve UDP tracker %s: %w", hostPort, err)
 	}
 
-	conn, err := net.DialUDP("udp", nil, rAddr)
+	relay := c.yggRelay
+	if !isYggdrasilTrackerHost(u.Hostname()) {
+		relay = ""
+	}
+	dialAddr := rAddr
+	if relay != "" {
+		dialAddr, err = net.ResolveUDPAddr("udp4", relay)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve Yggdrasil UDP relay %s: %w", relay, err)
+		}
+	}
+	conn, err := net.DialUDP("udp", nil, dialAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dial UDP tracker %s: %w", hostPort, err)
 	}
@@ -106,7 +121,18 @@ func (c *UDPTrackerClient) Announce(
 	binary.BigEndian.PutUint32(connectReq[8:12], uint32(ActionConnect))
 	binary.BigEndian.PutUint32(connectReq[12:16], txID)
 
-	if _, err := conn.Write(connectReq); err != nil {
+	writePacket := func(payload []byte) (int, error) {
+		if relay == "" {
+			return conn.Write(payload)
+		}
+		frame := make([]byte, 22+len(payload))
+		copy(frame[:4], []byte("YUDP"))
+		copy(frame[4:20], rAddr.IP.To16())
+		binary.BigEndian.PutUint16(frame[20:22], uint16(rAddr.Port))
+		copy(frame[22:], payload)
+		return conn.Write(frame)
+	}
+	if _, err := writePacket(connectReq); err != nil {
 		return nil, fmt.Errorf("failed to write connect request: %w", err)
 	}
 
@@ -147,7 +173,7 @@ func (c *UDPTrackerClient) Announce(
 	binary.BigEndian.PutUint32(announceReq[92:96], uint32(50)) // num_want: 50
 	binary.BigEndian.PutUint16(announceReq[96:98], uint16(listenPort))
 
-	if _, err := conn.Write(announceReq); err != nil {
+	if _, err := writePacket(announceReq); err != nil {
 		return nil, fmt.Errorf("failed to write announce request: %w", err)
 	}
 

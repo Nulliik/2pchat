@@ -29,6 +29,7 @@ object TrackerPreferences {
     const val ENABLED_PROTOCOLS = "tracker_enabled_protocols"
     const val DISABLED_BUILTINS = "tracker_disabled_builtins"
     const val CUSTOM_TRACKERS_JSON = "tracker_custom_json"
+    private const val TRACKER_DIAGNOSTICS_JSON = "tracker_diagnostics_json"
     const val MAX_CUSTOM_TRACKERS = 32
 
     val supportedProtocols = setOf("http", "https", "udp")
@@ -45,18 +46,8 @@ object TrackerPreferences {
         BuiltInTracker("Dler UDP", "udp://tracker2.dler.org:80/announce", "udp"),
         BuiltInTracker("Nyacat HTTPS", "https://tr.nyacat.pw:443/announce", "https"),
         BuiltInTracker(
-            "Yggdrasil-only HTTP",
-            "http://[200:1e2f:e608:eb3a:2bf:1e62:87ba:e2f7]/announce",
-            "http",
-        ),
-        BuiltInTracker(
             "Yggdrasil-only UDP",
             "udp://[202:68d0:f0d5:b88d:1d1a:555e:2f6b:3148]:6969/announce",
-            "udp",
-        ),
-        BuiltInTracker(
-            "Yggdrasil-only Opentracker",
-            "udp://[201:23a4:4941:da9e:b18a:eb2a:c22c:c4a6]:6969/announce",
             "udp",
         ),
     )
@@ -212,7 +203,59 @@ object TrackerPreferences {
             .remove(ENABLED_PROTOCOLS)
             .remove(DISABLED_BUILTINS)
             .remove(CUSTOM_TRACKERS_JSON)
+            .remove(TRACKER_DIAGNOSTICS_JSON)
             .apply()
+    }
+
+    /** Stores only results reported by the native announce operation. */
+    fun recordDiagnosticStatus(
+        context: Context,
+        trackerUrl: String,
+        success: Boolean,
+        peerCount: Int,
+        elapsedMs: Long,
+        detail: String,
+    ) {
+        val prefs = P2PPreferences.prefs(context)
+        val all = runCatching {
+            JSONObject(prefs.getString(TRACKER_DIAGNOSTICS_JSON, "{}") ?: "{}")
+        }.getOrDefault(JSONObject())
+        all.put(trackerUrl, JSONObject().apply {
+            put("success", success)
+            put("peers", peerCount.coerceAtLeast(0))
+            put("elapsed_ms", elapsedMs.coerceAtLeast(0))
+            put("detail", detail.replace(Regex("[\\r\\n]+"), " ").take(160))
+            put("updated_at", System.currentTimeMillis())
+        })
+        prefs.edit().putString(TRACKER_DIAGNOSTICS_JSON, all.toString()).apply()
+    }
+
+    /** Maps every built-in tracker name to its latest actual announce result. */
+    fun diagnosticStatuses(context: Context): Map<String, String> {
+        val all = runCatching {
+            JSONObject(P2PPreferences.prefs(context).getString(TRACKER_DIAGNOSTICS_JSON, "{}") ?: "{}")
+        }.getOrDefault(JSONObject())
+        return builtInTrackers.associate { tracker ->
+            val item = all.optJSONObject(tracker.url)
+            val status = if (item == null) {
+                "announce=NOT_RUN, peers=n/a, announce_rtt=n/ams"
+            } else {
+                val result = if (item.optBoolean("success")) "OK" else "FAIL"
+                buildString {
+                    append("announce=$result, peers=${item.optInt("peers", 0)}, ")
+                    append("announce_rtt=${item.optLong("elapsed_ms", 0)}ms")
+                    item.optString("detail").takeIf { it.isNotBlank() }?.let { append(", detail=$it") }
+                }
+            }
+            tracker.name to status
+        }
+    }
+
+    fun activeTrackerSuccessCount(context: Context): Int {
+        val all = runCatching {
+            JSONObject(P2PPreferences.prefs(context).getString(TRACKER_DIAGNOSTICS_JSON, "{}") ?: "{}")
+        }.getOrDefault(JSONObject())
+        return getActiveTrackerUrls(context).count { url -> all.optJSONObject(url)?.optBoolean("success") == true }
     }
 
     fun configJson(context: Context): String = JSONObject().apply {

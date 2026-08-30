@@ -6,6 +6,7 @@ package main
 import "C"
 import (
 	"fmt"
+	"time"
 	"twopchat/core/pkg/bridge"
 	"twopchat/core/pkg/crypto"
 	"twopchat/core/pkg/session"
@@ -64,6 +65,19 @@ func init() {
 			C.callbackOnPeerDiscovered(cHash, cEndp, cSrc)
 		},
 	)
+	bridge.GetManager().SetTrackerStatusCallback(func(trackerURL string, success bool, peerCount int, elapsed time.Duration, detail string) {
+		cURL := C.CString(trackerURL)
+		cDetail := C.CString(detail)
+		defer C.free(unsafe.Pointer(cURL))
+		defer C.free(unsafe.Pointer(cDetail))
+		var ok C.jboolean
+		if success {
+			ok = C.jboolean(C.JNI_TRUE)
+		} else {
+			ok = C.jboolean(C.JNI_FALSE)
+		}
+		C.callbackOnTrackerStatus(cURL, ok, C.jint(peerCount), C.jlong(elapsed.Milliseconds()), cDetail)
+	})
 }
 
 func main() {}

@@ -212,7 +212,12 @@ internal class RelayMaintenanceCoordinator(
                         val networkChanged = addresses != lastAddresses && lastAddresses.isNotEmpty()
                         if (lastAnnounceTime == 0L || networkChanged || now - lastAnnounceTime >= 60_000L) {
                             log(appContext, "Announcing self on tracker. Network changed: $networkChanged, count: ${addresses.size}", "INFO", null)
-                            val success = bridge.announceSelf(username, fingerprint, port)
+                            val success = bridge.announceSelf(
+                                nickname = username,
+                                fingerprint = fingerprint,
+                                port = port,
+                                rendezvousCode = P2PPreferences.getRendezvousCode(appContext),
+                            )
                             log(appContext, "Announce self status: $success", "INFO", null)
                             if (success) {
                                 lastAddresses = addresses
