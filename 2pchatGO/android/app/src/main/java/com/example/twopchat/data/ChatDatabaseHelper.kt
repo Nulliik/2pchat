@@ -100,6 +100,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
                 instance = null
                 isMigrationChecked = false
                 isControlPurged = false
+                com.example.twopchat.ui.chat.state.ChatHistoryCache.clear()
             }
         }
     }
@@ -494,7 +495,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
     }
 
     private fun safeDec(stringCipher: SecureStorage.StringCipher, value: String?): String? {
-        if (value == null) return null
+        if (!SecureStorage.isEncrypted(value)) return value
         return try {
             stringCipher.decrypt(value)
         } catch (_: Exception) {
@@ -1248,6 +1249,7 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val db = this.safeWritableDatabase
         try {
             db.delete(TABLE_PEERS, "$KEY_PEER_NAME = ?", arrayOf(peerName))
+            com.example.twopchat.ui.chat.state.ChatHistoryCache.remove(peerName)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to delete peer from database", e)
         }
@@ -1314,6 +1316,10 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
             db.execSQL(
                 "CREATE INDEX IF NOT EXISTS idx_messages_peer_id " +
                     "ON $TABLE_MESSAGES($KEY_PEER_NAME, $KEY_ID)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_messages_peer_sent_desc " +
+                    "ON $TABLE_MESSAGES($KEY_PEER_NAME, $KEY_SENT_AT_MS DESC, rowid DESC)"
             )
         } catch (e: Exception) {
             Log.w(TAG, "Failed to create composite message indices", e)

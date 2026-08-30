@@ -39,10 +39,27 @@ internal class ChatsViewModel(
     val heroYggOk = mutableStateOf<Boolean?>(null)
     val isRefreshingAll = mutableStateOf(false)
 
+    private fun prefetchTopActiveChats(peers: Set<String>) {
+        if (peers.isEmpty()) return
+        val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext)
+        val topChats = peers.take(5)
+        for (peer in topChats) {
+            if (com.example.twopchat.ui.chat.state.ChatHistoryCache.get(peer) == null) {
+                try {
+                    val messages = db.getMessagesForPeerPaged(peerName = peer, limit = 40, offset = 0)
+                    if (messages.isNotEmpty()) {
+                        com.example.twopchat.ui.chat.state.ChatHistoryCache.put(peer, messages)
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
     private fun refreshActiveChats() {
         val prefChats = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
+        val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext)
         val dbChats = try {
-            com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext).getAllChatPeerNames()
+            db.getAllChatPeerNames()
         } catch (_: Exception) {
             emptySet()
         }
@@ -51,6 +68,7 @@ internal class ChatsViewModel(
             activeChatsSet.value = combined
             chatListRevision.intValue++
         }
+        prefetchTopActiveChats(combined)
     }
 
     private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->

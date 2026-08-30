@@ -234,7 +234,11 @@ fun ChatScreen(
         }
     }
     var pinnedMsgId by remember(peerName, isActive) { mutableStateOf(sharedPrefs.getString("pinned_msg_id_${peerName}", null)) }
-    var pinnedMsgText by remember(peerName, isActive) { mutableStateOf(SecureStorage.decrypt(sharedPrefs.getString("pinned_msg_text_${peerName}", null))) }
+    var pinnedMsgText by remember(peerName, isActive) { mutableStateOf<String?>(null) }
+    LaunchedEffect(peerName, isActive) {
+        val rawPinned = sharedPrefs.getString("pinned_msg_text_${peerName}", null)
+        pinnedMsgText = if (rawPinned != null) withContext(Dispatchers.IO) { SecureStorage.decrypt(rawPinned) } else null
+    }
     var pinnedMsgSender by remember(peerName, isActive) { mutableStateOf(sharedPrefs.getString("pinned_msg_sender_${peerName}", null)) }
     var pinnedBy by remember(peerName, isActive) { mutableStateOf(sharedPrefs.getString("pinned_by_${peerName}", null)) }
     var activePinnedIndex by remember(peerName) { mutableIntStateOf(0) }
@@ -366,6 +370,15 @@ fun ChatScreen(
     val persistEnabled = remember(context) { sharedPrefs.getBoolean("persist_chat_history", true) }
     val chatViewModel: ChatScreenViewModel = viewModel(key = "chat:$peerName")
     val initialMessages = chatViewModel.messages
+    remember(peerName) {
+        if (initialMessages.isEmpty()) {
+            val cached = com.example.twopchat.ui.chat.state.ChatHistoryCache.get(peerName)
+            if (cached != null && cached.isNotEmpty()) {
+                initialMessages.addAll(cached)
+            }
+        }
+        true
+    }
     val pinnedMessagesList = remember(initialMessages, pinnedMsgId, pinnedMsgText) {
         val dbPinned = initialMessages.filter { it.isPinned }
         val pId = pinnedMsgId
@@ -476,17 +489,6 @@ fun ChatScreen(
         }
         try {
             sharedPrefs.edit { putInt("unread_count_$peerName", 0) }
-            initialMessages.indices.forEach { index ->
-                val message = initialMessages[index]
-                val attachmentPath = message.attachmentUri
-                if (
-                    !attachmentPath.isNullOrBlank() &&
-                    "://" !in attachmentPath &&
-                    !File(attachmentPath).isFile
-                ) {
-                    initialMessages[index] = message.copy(attachmentUri = null)
-                }
-            }
             com.example.twopchat.relay.MessageNotificationService.clearHistory(context, peerName)
             hasAppliedInitialScroll = false
             isLoadingOlderHistory = false
@@ -516,19 +518,7 @@ fun ChatScreen(
                             peerName = peerName,
                             limit = fastHistoryLimit,
                             offset = 0,
-                        ).map { message ->
-                            repairMisclassifiedLocalImage(message).also { repaired ->
-                                if (repaired !== message) {
-                                    persistDatabase {
-                                        try {
-                                            db.saveMessage(peerName, repaired)
-                                        } catch (e: Exception) {
-                                            android.util.Log.e("ChatScreen", "Failed to update repaired message", e)
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        )
                     } catch (e: Exception) {
                         android.util.Log.e("ChatScreen", "Failed to load messages for $peerName", e)
                         emptyList()
@@ -558,6 +548,27 @@ fun ChatScreen(
             if (fastSnapshot != initialMessages.toList()) {
                 initialMessages.clear()
                 initialMessages.addAll(fastSnapshot)
+            }
+            if (recentPersistedMessages.isNotEmpty()) {
+                com.example.twopchat.ui.chat.state.ChatHistoryCache.put(peerName, recentPersistedMessages)
+                coroutineScope.launch(Dispatchers.IO) {
+                    recentPersistedMessages.forEach { msg ->
+                        if (msg.attachmentType == "FILE") {
+                            val repaired = repairMisclassifiedLocalImage(msg)
+                            if (repaired !== msg) {
+                                try {
+                                    db.saveMessage(peerName, repaired)
+                                    withContext(Dispatchers.Main) {
+                                        val idx = initialMessages.indexOfFirst { it.id == repaired.id }
+                                        if (idx >= 0) {
+                                            initialMessages[idx] = repaired
+                                        }
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
+                    }
+                }
             }
             if (persistEnabled && recentPersistedMessages.isEmpty() && localDefaults.isNotEmpty()) {
                 withContext(Dispatchers.IO) {
@@ -589,16 +600,15 @@ fun ChatScreen(
             val firstVisibleOffset = listState.firstVisibleItemScrollOffset
             val currentFirstVisibleMessageId = currentMessages.getOrNull(firstVisibleIndex)?.id
             val olderPage = withContext(Dispatchers.IO) {
-                db.getMessagesForPeerPaged(
-                    peerName = peerName,
-                    limit = HISTORY_PAGE_SIZE,
-                    offset = loadedPersistedMessageCount,
-                ).map { message ->
-                    repairMisclassifiedLocalImage(message).also { repaired ->
-                        if (repaired !== message) {
-                            persistDatabase { db.saveMessage(peerName, repaired) }
-                        }
-                    }
+                try {
+                    db.getMessagesForPeerPaged(
+                        peerName = peerName,
+                        limit = HISTORY_PAGE_SIZE,
+                        offset = loadedPersistedMessageCount,
+                    )
+                } catch (e: Exception) {
+                    android.util.Log.e("ChatScreen", "Failed to load older page for $peerName", e)
+                    emptyList()
                 }
             }
             loadedPersistedMessageCount += olderPage.size
@@ -613,19 +623,39 @@ fun ChatScreen(
                     initialMessages.addAll(mergedMessages)
                     if (preserveScrollPosition && addedMessageCount > 0) {
                         val targetIndex = if (currentFirstVisibleMessageId != null) {
-                            val newIdx = mergedMessages.indexOfFirst { it.id == currentFirstVisibleMessageId }
-                            if (newIdx >= 0) newIdx else (firstVisibleIndex + addedMessageCount)
+                            mergedMessages.indexOfFirst { it.id == currentFirstVisibleMessageId }
+                                .takeIf { it >= 0 } ?: (firstVisibleIndex + addedMessageCount)
                         } else {
                             firstVisibleIndex + addedMessageCount
                         }
-                        listState.scrollToItem(
-                            targetIndex.coerceIn(0, mergedMessages.lastIndex),
-                            firstVisibleOffset,
-                        )
+                        listState.scrollToItem(targetIndex, firstVisibleOffset)
+                    }
+                }
+                coroutineScope.launch(Dispatchers.IO) {
+                    olderPage.forEach { msg ->
+                        if (msg.attachmentType == "FILE") {
+                            val repaired = repairMisclassifiedLocalImage(msg)
+                            if (repaired !== msg) {
+                                try {
+                                    db.saveMessage(peerName, repaired)
+                                    withContext(Dispatchers.Main) {
+                                        val idx = initialMessages.indexOfFirst { it.id == repaired.id }
+                                        if (idx >= 0) {
+                                            initialMessages[idx] = repaired
+                                        }
+                                    }
+                                } catch (_: Exception) {}
+                            }
+                        }
                     }
                 }
                 true
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.e("ChatScreen", "Failed to load older history page for $peerName", e)
+            false
         } finally {
             isLoadingOlderHistory = false
         }
