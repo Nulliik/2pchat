@@ -138,12 +138,12 @@ object GroupChatCoordinator {
     @Volatile
     var activeChatsSubTab: Int = 0
 
-    private val runtimeExceptionHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
-        Log.e(TAG, "Uncaught exception in group runtime scope", throwable)
-    }
-
     private fun newRuntimeScope(): CoroutineScope =
-        CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(4) + runtimeExceptionHandler)
+        CoroutineScope(
+            SupervisorJob() + Dispatchers.IO.limitedParallelism(4) + kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
+                Log.e(TAG, "Uncaught exception in group runtime scope", throwable)
+            }
+        )
 
     @Volatile
     private var scope = newRuntimeScope()

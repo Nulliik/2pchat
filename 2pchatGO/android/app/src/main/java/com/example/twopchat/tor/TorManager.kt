@@ -415,8 +415,9 @@ object TorManager {
         if (parsedBridges.bridges.isNotEmpty()) {
             sb.appendLine("UseBridges 1")
             require(!bridgePluginPath.isNullOrBlank()) { "Missing Lyrebird transport binary" }
-            val transportList = parsedBridges.transports.joinToString(",")
-            sb.appendLine("ClientTransportPlugin $transportList exec $bridgePluginPath")
+            parsedBridges.transports.forEach { transport ->
+                sb.appendLine("ClientTransportPlugin $transport exec $bridgePluginPath")
+            }
             parsedBridges.bridges.forEach { bridgeLine ->
                 sb.appendLine("Bridge $bridgeLine")
             }
@@ -557,6 +558,33 @@ object TorManager {
         } catch (_: Exception) {
             false
         }
+    }
+
+    fun shutdownStaleTorDaemon(context: Context) {
+        try {
+            val appTorDir = File(context.filesDir, "app_tor")
+            val cookieFile = File(appTorDir, "control_auth_cookie")
+            val hexAuthCookie = if (cookieFile.exists()) formatControlAuthCookie(cookieFile.readBytes()) else ""
+            java.net.Socket().use { socket ->
+                socket.soTimeout = 1000
+                socket.connect(java.net.InetSocketAddress("127.0.0.1", DEFAULT_CONTROL_PORT), 1000)
+                val writer = socket.getOutputStream().bufferedWriter()
+                val reader = socket.getInputStream().bufferedReader()
+                if (hexAuthCookie.isNotBlank()) {
+                    writer.write("AUTHENTICATE $hexAuthCookie\r\n")
+                    writer.flush()
+                    reader.readLine()
+                } else {
+                    writer.write("AUTHENTICATE \"\"\r\n")
+                    writer.flush()
+                    reader.readLine()
+                }
+                writer.write("SIGNAL SHUTDOWN\r\n")
+                writer.flush()
+                reader.readLine()
+            }
+            Log.i(TAG, "Sent SIGNAL SHUTDOWN to stale Tor daemon on ControlPort")
+        } catch (_: Throwable) {}
     }
 
     suspend fun waitForPortsFree(
@@ -827,7 +855,10 @@ object TorManager {
 
             if (!currentCoroutineContext().isActive || !runGate.isCurrent(runId)) return
 
-            waitForPortsFree(listOf(DEFAULT_SOCKS_PORT, DEFAULT_CONTROL_PORT), timeoutMs = 2500L)
+            if (!waitForPortsFree(listOf(DEFAULT_SOCKS_PORT, DEFAULT_CONTROL_PORT), timeoutMs = 1500L)) {
+                shutdownStaleTorDaemon(context)
+                waitForPortsFree(listOf(DEFAULT_SOCKS_PORT, DEFAULT_CONTROL_PORT), timeoutMs = 2000L)
+            }
             if (!currentCoroutineContext().isActive || !runGate.isCurrent(runId)) return
 
             val processBuilder = ProcessBuilder(
@@ -854,6 +885,7 @@ object TorManager {
                     startedProcess.inputStream.bufferedReader().useLines { lines ->
                         lines.forEach { line ->
                             if (!runGate.isCurrent(runId)) return@forEach
+                            Log.d(TAG, "[TorNative] $line")
                             appendTorLog(context, line)
                             parseBootstrapProgress(line)?.let { progress ->
                                 _bootstrapProgress.value = progress

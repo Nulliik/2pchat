@@ -203,8 +203,8 @@ class GroupDatabaseHelper(
     val safeReadableDatabase: SQLiteDatabase
         get() = try {
             readableDatabase
-        } catch (e: android.database.sqlite.SQLiteException) {
-            if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true) {
+        } catch (e: Exception) {
+            if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true || e.message?.contains("corrupt") == true) {
                 android.util.Log.e("GroupDatabaseHelper", "Group database unreadable (key mismatch or corrupted). Recreating.", e)
                 context.applicationContext.deleteDatabase(databaseName)
                 readableDatabase
@@ -216,8 +216,8 @@ class GroupDatabaseHelper(
     val safeWritableDatabase: SQLiteDatabase
         get() = try {
             writableDatabase
-        } catch (e: android.database.sqlite.SQLiteException) {
-            if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true) {
+        } catch (e: Exception) {
+            if (e.message?.contains("file is not a database") == true || e.message?.contains("code 26") == true || e.message?.contains("corrupt") == true) {
                 android.util.Log.e("GroupDatabaseHelper", "Group database unreadable (key mismatch or corrupted). Recreating.", e)
                 context.applicationContext.deleteDatabase(databaseName)
                 writableDatabase

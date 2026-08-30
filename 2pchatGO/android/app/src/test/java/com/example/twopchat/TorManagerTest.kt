@@ -119,8 +119,8 @@ class TorManagerTest {
         assertTrue(config.contains("SocksPort 127.0.0.1:9050 IsolateDestAddr IsolateDestPort"))
         assertTrue(config.contains("IsolateDestAddr"))
         assertTrue(config.contains("IsolateDestPort"))
-        assertTrue(config.contains("UseBridges 1"))
-        assertTrue(config.contains("ClientTransportPlugin obfs4,snowflake exec /data/app/lib/liblyrebird.so"))
+        assertTrue(config.contains("ClientTransportPlugin obfs4 exec /data/app/lib/liblyrebird.so"))
+        assertTrue(config.contains("ClientTransportPlugin snowflake exec /data/app/lib/liblyrebird.so"))
         assertTrue(config.contains("Bridge obfs4 192.0.2.1:443 75263E44B1D414D3C6086716091A39DE46FDF1D0 cert=bW9jay1vYmZzNC1jZXJ0 iat-mode=0"))
         assertTrue(config.contains("Bridge snowflake 192.0.2.3:1 2B280B23E1107BB62AB6C19820C2D92660262B20"))
     }
