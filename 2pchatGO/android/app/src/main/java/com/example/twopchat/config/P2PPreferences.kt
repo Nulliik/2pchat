@@ -506,18 +506,86 @@ object P2PPreferences {
     fun directWallpaperDimming(peerName: String) = "direct_wallpaper_dimming_$peerName"
     fun directWallpaperBlur(peerName: String) = "direct_wallpaper_blur_$peerName"
 
+    fun isSamePeer(context: Context, peerA: String?, peerB: String?): Boolean {
+        if (peerA.isNullOrBlank() || peerB.isNullOrBlank()) return false
+        val cleanA = peerA.trim()
+        val cleanB = peerB.trim()
+        if (cleanA.equals(cleanB, ignoreCase = true)) return true
+
+        val fpA = getPeerFingerprint(context, cleanA) ?: (if (com.example.twopchat.relay.P2PMessageRelay.isRawFingerprint(cleanA)) cleanA else null)
+        val fpB = getPeerFingerprint(context, cleanB) ?: (if (com.example.twopchat.relay.P2PMessageRelay.isRawFingerprint(cleanB)) cleanB else null)
+
+        if (!fpA.isNullOrBlank() && !fpB.isNullOrBlank() && fpA.equals(fpB, ignoreCase = true)) {
+            return true
+        }
+        if (!fpA.isNullOrBlank() && (fpA.equals(cleanB, ignoreCase = true) || findPeerNameByFingerprint(context, fpA)?.equals(cleanB, ignoreCase = true) == true)) {
+            return true
+        }
+        if (!fpB.isNullOrBlank() && (fpB.equals(cleanA, ignoreCase = true) || findPeerNameByFingerprint(context, fpB)?.equals(cleanA, ignoreCase = true) == true)) {
+            return true
+        }
+
+        val nameA = if (!fpA.isNullOrBlank()) findPeerNameByFingerprint(context, fpA) else null
+        val nameB = if (!fpB.isNullOrBlank()) findPeerNameByFingerprint(context, fpB) else null
+        if (!nameA.isNullOrBlank() && !nameB.isNullOrBlank() && nameA.equals(nameB, ignoreCase = true)) {
+            return true
+        }
+
+        return false
+    }
+
     fun getDirectWallpaperPath(context: Context, peerName: String): String? {
         val clean = peerName.trim()
         if (clean.isBlank()) return null
         val sp = prefs(context)
+
+        // 1. Direct key by peerName
         val pathByName = sp.getString(directWallpaperPath(clean), null)?.takeIf { it.isNotBlank() }
         if (pathByName != null && java.io.File(pathByName).exists()) return pathByName
 
+        // 2. Direct key by lowercase peerName
+        val lower = clean.lowercase()
+        if (lower != clean) {
+            val pathByLower = sp.getString(directWallpaperPath(lower), null)?.takeIf { it.isNotBlank() }
+            if (pathByLower != null && java.io.File(pathByLower).exists()) return pathByLower
+        }
+
+        // 3. Key by fingerprint
         val fp = getPeerFingerprint(context, clean)
         if (!fp.isNullOrBlank() && fp != clean) {
             val pathByFp = sp.getString(directWallpaperPath(fp), null)?.takeIf { it.isNotBlank() }
             if (pathByFp != null && java.io.File(pathByFp).exists()) return pathByFp
         }
+
+        // 4. Key by resolved peer name
+        val resolvedName = if (!fp.isNullOrBlank()) findPeerNameByFingerprint(context, fp) else findPeerNameByFingerprint(context, clean)
+        if (!resolvedName.isNullOrBlank() && !resolvedName.equals(clean, ignoreCase = true)) {
+            val pathByResolved = sp.getString(directWallpaperPath(resolvedName), null)?.takeIf { it.isNotBlank() }
+            if (pathByResolved != null && java.io.File(pathByResolved).exists()) return pathByResolved
+        }
+
+        // 5. Disk fallback in filesDir/direct_wallpapers/
+        val dir = java.io.File(context.filesDir, "direct_wallpapers")
+        if (dir.exists() && dir.isDirectory) {
+            val fileByName = java.io.File(dir, "wallpaper_$clean.jpg")
+            if (fileByName.exists() && fileByName.length() > 0) return fileByName.absolutePath
+
+            if (lower != clean) {
+                val fileByLower = java.io.File(dir, "wallpaper_$lower.jpg")
+                if (fileByLower.exists() && fileByLower.length() > 0) return fileByLower.absolutePath
+            }
+
+            if (!fp.isNullOrBlank() && fp != clean) {
+                val fileByFp = java.io.File(dir, "wallpaper_$fp.jpg")
+                if (fileByFp.exists() && fileByFp.length() > 0) return fileByFp.absolutePath
+            }
+
+            if (!resolvedName.isNullOrBlank() && !resolvedName.equals(clean, ignoreCase = true)) {
+                val fileByResolved = java.io.File(dir, "wallpaper_$resolvedName.jpg")
+                if (fileByResolved.exists() && fileByResolved.length() > 0) return fileByResolved.absolutePath
+            }
+        }
+
         return null
     }
 
@@ -527,11 +595,25 @@ object P2PPreferences {
         val sp = prefs(context)
         val dimByName = sp.getInt(directWallpaperDimming(clean), -1)
         if (dimByName != -1) return dimByName
+
+        val lower = clean.lowercase()
+        if (lower != clean) {
+            val dimByLower = sp.getInt(directWallpaperDimming(lower), -1)
+            if (dimByLower != -1) return dimByLower
+        }
+
         val fp = getPeerFingerprint(context, clean)
         if (!fp.isNullOrBlank() && fp != clean) {
             val dimByFp = sp.getInt(directWallpaperDimming(fp), -1)
             if (dimByFp != -1) return dimByFp
         }
+
+        val resolvedName = if (!fp.isNullOrBlank()) findPeerNameByFingerprint(context, fp) else findPeerNameByFingerprint(context, clean)
+        if (!resolvedName.isNullOrBlank() && !resolvedName.equals(clean, ignoreCase = true)) {
+            val dimByResolved = sp.getInt(directWallpaperDimming(resolvedName), -1)
+            if (dimByResolved != -1) return dimByResolved
+        }
+
         return 30
     }
 
@@ -542,10 +624,22 @@ object P2PPreferences {
         if (sp.contains(directWallpaperBlur(clean))) {
             return sp.getBoolean(directWallpaperBlur(clean), false)
         }
+
+        val lower = clean.lowercase()
+        if (lower != clean && sp.contains(directWallpaperBlur(lower))) {
+            return sp.getBoolean(directWallpaperBlur(lower), false)
+        }
+
         val fp = getPeerFingerprint(context, clean)
         if (!fp.isNullOrBlank() && fp != clean && sp.contains(directWallpaperBlur(fp))) {
             return sp.getBoolean(directWallpaperBlur(fp), false)
         }
+
+        val resolvedName = if (!fp.isNullOrBlank()) findPeerNameByFingerprint(context, fp) else findPeerNameByFingerprint(context, clean)
+        if (!resolvedName.isNullOrBlank() && !resolvedName.equals(clean, ignoreCase = true) && sp.contains(directWallpaperBlur(resolvedName))) {
+            return sp.getBoolean(directWallpaperBlur(resolvedName), false)
+        }
+
         return false
     }
 
@@ -554,29 +648,65 @@ object P2PPreferences {
         if (clean.isBlank()) return
         val editor = prefs(context).edit()
         val fp = getPeerFingerprint(context, clean)
+        val resolvedName = if (!fp.isNullOrBlank()) findPeerNameByFingerprint(context, fp) else null
+        val lower = clean.lowercase()
+
         if (path != null) {
             editor.putString(directWallpaperPath(clean), path)
             editor.putInt(directWallpaperDimming(clean), dimming)
             editor.putBoolean(directWallpaperBlur(clean), blur)
+
+            if (lower != clean) {
+                editor.putString(directWallpaperPath(lower), path)
+                editor.putInt(directWallpaperDimming(lower), dimming)
+                editor.putBoolean(directWallpaperBlur(lower), blur)
+            }
+
             if (!fp.isNullOrBlank() && fp != clean) {
                 editor.putString(directWallpaperPath(fp), path)
                 editor.putInt(directWallpaperDimming(fp), dimming)
                 editor.putBoolean(directWallpaperBlur(fp), blur)
             }
+
+            if (!resolvedName.isNullOrBlank() && !resolvedName.equals(clean, ignoreCase = true)) {
+                editor.putString(directWallpaperPath(resolvedName), path)
+                editor.putInt(directWallpaperDimming(resolvedName), dimming)
+                editor.putBoolean(directWallpaperBlur(resolvedName), blur)
+            }
         } else {
             editor.remove(directWallpaperPath(clean))
             editor.remove(directWallpaperDimming(clean))
             editor.remove(directWallpaperBlur(clean))
+
+            if (lower != clean) {
+                editor.remove(directWallpaperPath(lower))
+                editor.remove(directWallpaperDimming(lower))
+                editor.remove(directWallpaperBlur(lower))
+            }
+
             if (!fp.isNullOrBlank() && fp != clean) {
                 editor.remove(directWallpaperPath(fp))
                 editor.remove(directWallpaperDimming(fp))
                 editor.remove(directWallpaperBlur(fp))
             }
+
+            if (!resolvedName.isNullOrBlank() && !resolvedName.equals(clean, ignoreCase = true)) {
+                editor.remove(directWallpaperPath(resolvedName))
+                editor.remove(directWallpaperDimming(resolvedName))
+                editor.remove(directWallpaperBlur(resolvedName))
+            }
+
             runCatching {
                 val dir = java.io.File(context.filesDir, "direct_wallpapers")
                 java.io.File(dir, "wallpaper_$clean.jpg").delete()
+                if (lower != clean) {
+                    java.io.File(dir, "wallpaper_$lower.jpg").delete()
+                }
                 if (!fp.isNullOrBlank() && fp != clean) {
                     java.io.File(dir, "wallpaper_$fp.jpg").delete()
+                }
+                if (!resolvedName.isNullOrBlank() && !resolvedName.equals(clean, ignoreCase = true)) {
+                    java.io.File(dir, "wallpaper_$resolvedName.jpg").delete()
                 }
             }
         }

@@ -412,15 +412,17 @@ fun ChatScreen(
     }
 
     var prefsWallpaperVersion by remember { mutableIntStateOf(0) }
-    DisposableEffect(peerName, peerFp) {
-        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+    val wallpaperListener = remember(context, peerName) {
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
             if (key != null && (key.startsWith("direct_wallpaper_") || key.startsWith("peer_fingerprint_"))) {
                 prefsWallpaperVersion++
             }
         }
-        sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+    DisposableEffect(peerName, peerFp, wallpaperListener) {
+        sharedPrefs.registerOnSharedPreferenceChangeListener(wallpaperListener)
         onDispose {
-            sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener)
+            sharedPrefs.unregisterOnSharedPreferenceChangeListener(wallpaperListener)
         }
     }
 
@@ -2862,6 +2864,7 @@ fun ChatScreen(
                 wallpaperPath = path
                 wallpaperDimming = dimming
                 wallpaperBlur = blur
+                prefsWallpaperVersion++
             }
         )
     }

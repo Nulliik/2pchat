@@ -670,13 +670,16 @@ object P2PMessageRelay {
             }
 
             val currentActivePeer = activeChatPeer.get()
-            val isChatOpenWithSender = currentActivePeer != null && currentActivePeer.equals(sender, ignoreCase = true)
+            val isChatOpenWithSender = currentActivePeer != null && P2PPreferences.isSamePeer(context, currentActivePeer, sender)
             if (countAsNew && !isChatOpenWithSender) {
                 val unreadKey = P2PPreferences.unreadCount(sender)
                 prefs.edit { putInt(unreadKey, prefs.getInt(unreadKey, 0) + 1) }
                 showNotification(context, sender, message, notificationText)
             } else {
                 MessageNotificationService.cancelNotificationForPeer(context, sender)
+                if (currentActivePeer != null) {
+                    MessageNotificationService.cancelNotificationForPeer(context, currentActivePeer)
+                }
             }
         }
     }

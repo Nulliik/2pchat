@@ -76,4 +76,17 @@ class IncomingFileTransferRoutingTest {
         assertEquals("VOICE", VoiceMessageSupport.attachmentType("voice.ogg", "audio/ogg"))
         assertEquals("FILE", VoiceMessageSupport.attachmentType("archive.zip", "application/zip"))
     }
+
+    @Test
+    fun isRawFingerprint_identifiesBase64AndHexFingerprints() {
+        val base64Fp = "dzPId8GVZuNv3LnrjUaHnD2pmtKRDp2guBrmwcVClGc="
+        val hexFp = "8da7c5fb537074e3d64d68e1f7e26900c640d890a1f8a7fb82aaeb921589056b"
+        val nickname = "doggy"
+        val torAddress = "6xu647ahsjnzdc5225t5wqol2mc252kmqtjjjbj5zwjji3mv4vv5aqyd.onion"
+
+        assertTrue(com.example.twopchat.relay.P2PMessageRelay.isRawFingerprint(base64Fp))
+        assertTrue(com.example.twopchat.relay.P2PMessageRelay.isRawFingerprint(hexFp))
+        assertFalse(com.example.twopchat.relay.P2PMessageRelay.isRawFingerprint(nickname))
+        assertFalse(com.example.twopchat.relay.P2PMessageRelay.isRawFingerprint(torAddress))
+    }
 }
