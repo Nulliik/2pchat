@@ -79,9 +79,20 @@ internal object IncomingMessageParser {
     private fun validatedIncomingFile(context: Context, path: String): File? {
         if (path.isBlank()) return null
         return try {
-            val downloads = File(context.filesDir, "config/downloads").canonicalFile
             val candidate = File(path).canonicalFile
-            candidate.takeIf { it.isFile && it.parentFile == downloads }
+            val filesDirCanonical = runCatching { context.filesDir?.canonicalPath }.getOrNull().orEmpty()
+            val cacheDirCanonical = runCatching { context.cacheDir?.canonicalPath }.getOrNull().orEmpty()
+            val extFilesCanonical = runCatching { context.getExternalFilesDir(null)?.canonicalPath }.getOrNull().orEmpty()
+            val tempDirProp = System.getProperty("java.io.tmpdir")
+            val tempDirCanonical = if (!tempDirProp.isNullOrBlank()) runCatching { File(tempDirProp).canonicalPath }.getOrNull().orEmpty() else ""
+            candidate.takeIf {
+                it.isFile && (
+                    (filesDirCanonical.isNotEmpty() && it.canonicalPath.startsWith(filesDirCanonical)) ||
+                    (cacheDirCanonical.isNotEmpty() && it.canonicalPath.startsWith(cacheDirCanonical)) ||
+                    (extFilesCanonical.isNotEmpty() && it.canonicalPath.startsWith(extFilesCanonical)) ||
+                    (tempDirCanonical.isNotEmpty() && it.canonicalPath.startsWith(tempDirCanonical))
+                )
+            }
         } catch (_: Exception) {
             null
         }

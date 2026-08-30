@@ -214,6 +214,21 @@ object P2PPreferences {
     fun getProxyPort(context: Context): Int =
         prefs(context).getInt(PROXY_PORT, DEFAULT_PROXY_PORT)
 
+    fun getAppLanguage(context: Context): String {
+        val sp = prefs(context)
+        val saved = sp.getString("app_language", null)?.takeIf { it.isNotBlank() }
+            ?: sp.getString("settings_language", null)?.takeIf { it.isNotBlank() }
+        if (saved != null) return saved
+        return if (java.util.Locale.getDefault().language == "ru") "Русский" else "English"
+    }
+
+    fun setAppLanguage(context: Context, lang: String): Boolean {
+        return prefs(context).edit()
+            .putString("app_language", lang)
+            .putString("settings_language", lang)
+            .commit()
+    }
+
     fun getTorBridgeLines(context: Context): List<String> =
         prefs(context).getString(TOR_BRIDGES, "")
             .orEmpty()
@@ -223,18 +238,16 @@ object P2PPreferences {
             .toList()
 
     fun setTorBridgeLines(context: Context, bridges: List<String>): Boolean {
-        prefs(context).edit()
+        return prefs(context).edit()
             .putString(TOR_BRIDGES, bridges.joinToString("\n") { it.trim() })
-            .apply()
-        return true
+            .commit()
     }
 
     fun publicTorBridgesEnabled(context: Context): Boolean =
         prefs(context).getBoolean(TOR_PUBLIC_BRIDGES_ENABLED, true)
 
     fun setPublicTorBridgesEnabled(context: Context, enabled: Boolean): Boolean {
-        prefs(context).edit().putBoolean(TOR_PUBLIC_BRIDGES_ENABLED, enabled).apply()
-        return true
+        return prefs(context).edit().putBoolean(TOR_PUBLIC_BRIDGES_ENABLED, enabled).commit()
     }
 
     fun torTransport(context: Context): TorTransport = TorTransport.fromStored(
@@ -242,16 +255,14 @@ object P2PPreferences {
     )
 
     fun setTorTransport(context: Context, transport: TorTransport): Boolean {
-        prefs(context).edit().putString(TOR_TRANSPORT, transport.storedValue).apply()
-        return true
+        return prefs(context).edit().putString(TOR_TRANSPORT, transport.storedValue).commit()
     }
 
     fun getTorOnionHostname(context: Context): String? =
         prefs(context).getString(TOR_ONION_HOSTNAME, null)?.takeIf { it.isNotBlank() }
 
     fun setTorOnionHostname(context: Context, hostname: String?): Boolean {
-        prefs(context).edit().putString(TOR_ONION_HOSTNAME, hostname).apply()
-        return true
+        return prefs(context).edit().putString(TOR_ONION_HOSTNAME, hostname).commit()
     }
 
     private const val KEY_TOR_HIDDEN_SERVICE_ENABLED = "tor_hidden_service_enabled"
@@ -260,8 +271,7 @@ object P2PPreferences {
         prefs(context).getBoolean(KEY_TOR_HIDDEN_SERVICE_ENABLED, true)
 
     fun setTorHiddenServiceEnabled(context: Context, enabled: Boolean): Boolean {
-        prefs(context).edit().putBoolean(KEY_TOR_HIDDEN_SERVICE_ENABLED, enabled).apply()
-        return true
+        return prefs(context).edit().putBoolean(KEY_TOR_HIDDEN_SERVICE_ENABLED, enabled).commit()
     }
 
     fun getEffectiveTorBridgeLines(context: Context): List<String> =
@@ -502,17 +512,13 @@ object P2PPreferences {
         val sp = prefs(context)
         val pathByName = sp.getString(directWallpaperPath(clean), null)?.takeIf { it.isNotBlank() }
         if (pathByName != null && java.io.File(pathByName).exists()) return pathByName
-        val directFileByName = java.io.File(context.filesDir, "direct_wallpapers/wallpaper_$clean.jpg").takeIf { it.exists() }?.absolutePath
-        if (directFileByName != null) return directFileByName
 
         val fp = getPeerFingerprint(context, clean)
         if (!fp.isNullOrBlank() && fp != clean) {
             val pathByFp = sp.getString(directWallpaperPath(fp), null)?.takeIf { it.isNotBlank() }
             if (pathByFp != null && java.io.File(pathByFp).exists()) return pathByFp
-            val directFileByFp = java.io.File(context.filesDir, "direct_wallpapers/wallpaper_$fp.jpg").takeIf { it.exists() }?.absolutePath
-            if (directFileByFp != null) return directFileByFp
         }
-        return pathByName ?: directFileByName
+        return null
     }
 
     fun getDirectWallpaperDimming(context: Context, peerName: String): Int {
@@ -566,8 +572,15 @@ object P2PPreferences {
                 editor.remove(directWallpaperDimming(fp))
                 editor.remove(directWallpaperBlur(fp))
             }
+            runCatching {
+                val dir = java.io.File(context.filesDir, "direct_wallpapers")
+                java.io.File(dir, "wallpaper_$clean.jpg").delete()
+                if (!fp.isNullOrBlank() && fp != clean) {
+                    java.io.File(dir, "wallpaper_$fp.jpg").delete()
+                }
+            }
         }
-        editor.apply()
+        editor.commit()
     }
 
     fun getPeerFingerprint(context: Context, peerName: String): String? {

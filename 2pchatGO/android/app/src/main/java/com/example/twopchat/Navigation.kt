@@ -64,6 +64,9 @@ fun MainNavigation(
         // makes a freshly created profile look incomplete and stops the
         // listener before it binds its port.
         sharedPrefs.edit().putBoolean("onboarding_completed", true).commit()
+        runCatching {
+          java.io.File(context.filesDir, "direct_wallpapers").deleteRecursively()
+        }
         isOnboardingCompleted = true
         // Account deletion stops the service completely. Recreate it only
         // after onboarding persisted the new name and generated a new key.

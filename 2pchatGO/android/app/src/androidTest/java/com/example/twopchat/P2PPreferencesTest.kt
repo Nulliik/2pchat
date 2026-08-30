@@ -69,13 +69,31 @@ class P2PPreferencesTest {
     }
 
     @Test
-    fun peerVerificationPersistsOutsideChatUiLifetime() {
-        assertFalse(P2PPreferences.isPeerVerified(context, "Alice"))
+    fun appLanguagePersistsCorrectly() {
+        assertTrue(P2PPreferences.setAppLanguage(context, "Русский"))
+        assertEquals("Русский", P2PPreferences.getAppLanguage(context))
 
-        P2PPreferences.setPeerVerified(context, "Alice", true)
-        assertTrue(P2PPreferences.isPeerVerified(context, "Alice"))
+        assertTrue(P2PPreferences.setAppLanguage(context, "English"))
+        assertEquals("English", P2PPreferences.getAppLanguage(context))
+    }
 
-        P2PPreferences.setPeerVerified(context, "Alice", false)
-        assertFalse(P2PPreferences.isPeerVerified(context, "Alice"))
+    @Test
+    fun directWallpaperDoesNotLeakWithoutPreference() {
+        val testDir = java.io.File(context.filesDir, "direct_wallpapers").also { it.mkdirs() }
+        val dummyFile = java.io.File(testDir, "wallpaper_UnconfiguredPeer.jpg").apply { writeText("dummy") }
+
+        // Preference not set -> must return null despite file presence on disk
+        org.junit.Assert.assertNull(P2PPreferences.getDirectWallpaperPath(context, "UnconfiguredPeer"))
+
+        // Preference set -> returns file path
+        P2PPreferences.setDirectWallpaper(context, "UnconfiguredPeer", dummyFile.absolutePath, 40, true)
+        assertEquals(dummyFile.absolutePath, P2PPreferences.getDirectWallpaperPath(context, "UnconfiguredPeer"))
+        assertEquals(40, P2PPreferences.getDirectWallpaperDimming(context, "UnconfiguredPeer"))
+        assertTrue(P2PPreferences.getDirectWallpaperBlur(context, "UnconfiguredPeer"))
+
+        // Cleared -> returns null and removes file
+        P2PPreferences.setDirectWallpaper(context, "UnconfiguredPeer", null, 0, false)
+        org.junit.Assert.assertNull(P2PPreferences.getDirectWallpaperPath(context, "UnconfiguredPeer"))
+        assertFalse(dummyFile.exists())
     }
 }

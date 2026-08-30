@@ -936,7 +936,7 @@ fun GroupChatScreen(
                         .fillMaxSize()
                         .padding(horizontal = 8.dp)
                         .testTag("group_message_list"),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.Bottom)
                 ) {
                     item(key = "pagination") {
                     Box(

@@ -201,7 +201,7 @@ internal fun ChatMessageList(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Bottom),
             contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
         ) {
         itemsIndexed(

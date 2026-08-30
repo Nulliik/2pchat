@@ -29,7 +29,7 @@ internal class IncomingMessageRouter(
         sendControlMessage: (Context, String, JSONObject) -> Unit,
         acknowledgeControl: (Context, String) -> Unit,
     ) {
-        if (P2PPreferences.isPeerBlocked(context, sender)) {
+        if (runCatching { P2PPreferences.isPeerBlocked(context, sender) }.getOrDefault(false)) {
             log(context, "Ignored message from a blocked peer", "INFO", null)
             return
         }
@@ -97,6 +97,10 @@ internal class IncomingMessageRouter(
                     }
                     "file_offer" -> {
                         handleFileOffer(context, sender, json, persistAndDispatch)
+                        return
+                    }
+                    "file" -> {
+                        handleFile(context, sender, text, json, payloadNickname, listeners, persistAndDispatch, log)
                         return
                     }
                     "file_cancelled" -> {
@@ -356,6 +360,9 @@ internal class IncomingMessageRouter(
         val offerKey = "$sender:$messageId"
         val isNewOffer = fileTransferCoordinator.incomingFileOffers.add(offerKey)
         val preview = fileTransferCoordinator.decodeFileTransferPreview(json.optString("preview_base64"))
+        val replyToId = json.optString("reply_to_id").takeIf { it.isNotBlank() }
+        val replyToText = json.optString("reply_to_text").takeIf { it.isNotBlank() }
+        val replyToName = json.optString("reply_to_name").takeIf { it.isNotBlank() }
         val offerMessage = Message(
             id = messageId,
             text = VoiceMessageSupport.displayMessage(attachmentType, fileName),
@@ -364,6 +371,9 @@ internal class IncomingMessageRouter(
             attachmentType = attachmentType,
             attachmentUri = null,
             attachmentName = fileName,
+            replyToId = replyToId,
+            replyToText = replyToText,
+            replyToName = replyToName,
             status = "RECEIVING",
         )
         fileTransferCoordinator.updateProgress(offerKey, messageId, 0L, totalBytes, 0.0)
@@ -371,9 +381,58 @@ internal class IncomingMessageRouter(
             fileTransferCoordinator.fileTransferPreviews[offerKey] = preview
             fileTransferCoordinator.fileTransferPreviews[messageId] = preview
         }
-        val isRu = P2PPreferences.prefs(context).getString("settings_language", "English") == "Русский"
+        val isRu = runCatching { P2PPreferences.getAppLanguage(context) == "Русский" }.getOrDefault(false)
         val notifText = if (isRu) "Началось получение файла: $fileName" else "Receiving file: $fileName"
         persistAndDispatch(context, sender, offerMessage, notifText, isNewOffer)
+    }
+
+    private fun handleFile(
+        context: Context,
+        sender: String,
+        rawText: String,
+        json: JSONObject,
+        payloadNickname: String,
+        listeners: List<P2PMessageRelay.MessageListener>,
+        persistAndDispatch: (Context, String, Message, String, Boolean) -> Unit,
+        log: (Context, String, String, Throwable?) -> Unit,
+    ) {
+        val attachment = IncomingMessageParser.parseAttachment(context, rawText)
+        if (attachment != null) {
+            val msgId = attachment.messageId.ifBlank { json.optString("message_id").ifBlank { java.util.UUID.randomUUID().toString() } }
+            val effectiveSender = if (payloadNickname.isNotBlank()) payloadNickname else sender
+            val offerKey = "$sender:$msgId"
+            val offerKeyEffective = "$effectiveSender:$msgId"
+            fileTransferCoordinator.incomingFileOffers.remove(offerKey)
+            fileTransferCoordinator.incomingFileOffers.remove(offerKeyEffective)
+            fileTransferCoordinator.updateTransferState(offerKey, msgId, FileTransferCoordinator.FileTransferState.COMPLETED)
+            if (offerKeyEffective != offerKey) {
+                fileTransferCoordinator.updateTransferState(offerKeyEffective, msgId, FileTransferCoordinator.FileTransferState.COMPLETED)
+            }
+
+            val replyToId = json.optString("reply_to_id").takeIf { it.isNotBlank() }
+            val replyToText = json.optString("reply_to_text").takeIf { it.isNotBlank() }
+            val replyToName = json.optString("reply_to_name").takeIf { it.isNotBlank() }
+
+            val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+            val fileMsg = Message(
+                id = msgId,
+                text = attachment.displayMessage,
+                isMe = false,
+                timestamp = time,
+                attachmentType = attachment.attachmentType,
+                attachmentUri = attachment.attachmentUri,
+                attachmentName = attachment.attachmentName,
+                replyToId = replyToId,
+                replyToText = replyToText,
+                replyToName = replyToName,
+                status = "DELIVERED",
+            )
+            val notifText = IncomingMessageParser.parseNotificationText(rawText)
+            persistAndDispatch(context, effectiveSender, fileMsg, notifText, false)
+            log(context, "Received completed file attachment: ${attachment.attachmentName} (${attachment.attachmentType}) for $effectiveSender", "INFO", null)
+        } else {
+            log(context, "Failed to parse or validate incoming file attachment: ${json.optString("file_path")}", "WARNING", null)
+        }
     }
 
     private fun handleFileCancelled(

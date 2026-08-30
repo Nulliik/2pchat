@@ -155,7 +155,7 @@ internal fun ChatMessageBubble(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
+                .padding(vertical = 4.dp),
             contentAlignment = Alignment.Center
         ) {
             Surface(

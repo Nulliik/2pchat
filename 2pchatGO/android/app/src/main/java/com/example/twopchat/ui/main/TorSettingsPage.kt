@@ -108,6 +108,30 @@ fun TorSettingsPage(
     }
     var torTransport by remember { mutableStateOf(P2PPreferences.torTransport(context)) }
 
+    val prefListener = remember(context) {
+        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            when (key) {
+                P2PPreferences.TOR_BRIDGES -> {
+                    savedBridgeLines = P2PPreferences.getTorBridgeLines(context)
+                }
+                P2PPreferences.TOR_PUBLIC_BRIDGES_ENABLED -> {
+                    publicTorBridgesEnabled = P2PPreferences.publicTorBridgesEnabled(context)
+                }
+                P2PPreferences.TOR_TRANSPORT -> {
+                    torTransport = P2PPreferences.torTransport(context)
+                }
+            }
+        }
+    }
+
+    androidx.compose.runtime.DisposableEffect(context, prefListener) {
+        val sp = P2PPreferences.prefs(context)
+        sp.registerOnSharedPreferenceChangeListener(prefListener)
+        onDispose {
+            sp.unregisterOnSharedPreferenceChangeListener(prefListener)
+        }
+    }
+
     val effectiveTorBridges = remember(savedBridgeLines, publicTorBridgesEnabled, torTransport) {
         TorBridgeCatalog.select(
             customBridges = savedBridgeLines,

@@ -287,8 +287,7 @@ class MainActivity : ComponentActivity() {
             }
             var useCerulean by remember(accentScheme) { mutableStateOf(accentScheme == "cerulean") }
             var useAmoled by remember { mutableStateOf(sharedPrefs.getBoolean("use_amoled", false)) }
-            val systemDefaultLanguage = if (java.util.Locale.getDefault().language == "ru") "Русский" else "English"
-            var appLanguage by remember { mutableStateOf(sharedPrefs.getString("settings_language", systemDefaultLanguage) ?: systemDefaultLanguage) }
+            var appLanguage by remember { mutableStateOf(P2PPreferences.getAppLanguage(this@MainActivity)) }
 
             LaunchedEffect(isDarkTheme, useAmoled) {
                 enableEdgeToEdge(
@@ -349,8 +348,8 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(P2PPreferences.isIncognitoKeyboardEnabled(this@MainActivity))
             }
 
-            DisposableEffect(sharedPrefs) {
-                val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            val prefsListener = remember(sharedPrefs) {
+                SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
                     when (key) {
                         P2PPreferences.INCOGNITO_KEYBOARD, null -> {
                             incognitoKeyboardEnabled = P2PPreferences.isIncognitoKeyboardEnabled(this@MainActivity)
@@ -367,14 +366,17 @@ class MainActivity : ComponentActivity() {
                         "use_amoled" -> {
                             useAmoled = sharedPrefs.getBoolean("use_amoled", false)
                         }
-                        "settings_language" -> {
-                            appLanguage = sharedPrefs.getString("settings_language", systemDefaultLanguage) ?: systemDefaultLanguage
+                        "settings_language", "app_language" -> {
+                            appLanguage = P2PPreferences.getAppLanguage(this@MainActivity)
                         }
                     }
                 }
-                sharedPrefs.registerOnSharedPreferenceChangeListener(listener)
+            }
+
+            DisposableEffect(sharedPrefs, prefsListener) {
+                sharedPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
                 onDispose {
-                    sharedPrefs.unregisterOnSharedPreferenceChangeListener(listener)
+                    sharedPrefs.unregisterOnSharedPreferenceChangeListener(prefsListener)
                 }
             }
 
@@ -457,6 +459,7 @@ class MainActivity : ComponentActivity() {
                                         useCerulean = false
                                         useAmoled = false
                                         appLanguage = "English"
+                                        P2PPreferences.setAppLanguage(applicationContext, "English")
                                         isAppLockedState.value = false
                                         P2PPreferences.setAppLocked(false)
                                         recreate()
@@ -468,30 +471,30 @@ class MainActivity : ComponentActivity() {
                                     isDarkTheme = isDarkTheme,
                                     onThemeChanged = { dark ->
                                         isDarkTheme = dark
-                                        sharedPrefs.edit().putString("theme_mode", if (dark) "dark" else "light").apply()
+                                        sharedPrefs.edit().putString("theme_mode", if (dark) "dark" else "light").commit()
                                     },
                                     useCerulean = useCerulean,
                                     onAccentChanged = { cerulean ->
                                         val newScheme = if (cerulean) "cerulean" else if (accentScheme == "cerulean") "mint" else accentScheme
                                         accentScheme = newScheme
                                         useCerulean = (newScheme == "cerulean")
-                                        sharedPrefs.edit().putString("accent_scheme", newScheme).putBoolean("use_cerulean", cerulean).apply()
+                                        sharedPrefs.edit().putString("accent_scheme", newScheme).putBoolean("use_cerulean", cerulean).commit()
                                     },
                                     accentScheme = accentScheme,
                                     onAccentSchemeChanged = { scheme ->
                                         accentScheme = scheme
                                         useCerulean = (scheme == "cerulean")
-                                        sharedPrefs.edit().putString("accent_scheme", scheme).putBoolean("use_cerulean", scheme == "cerulean").apply()
+                                        sharedPrefs.edit().putString("accent_scheme", scheme).putBoolean("use_cerulean", scheme == "cerulean").commit()
                                     },
                                     useAmoled = useAmoled,
                                     onAmoledChanged = { amoled ->
                                         useAmoled = amoled
-                                        sharedPrefs.edit().putBoolean("use_amoled", amoled).apply()
+                                        sharedPrefs.edit().putBoolean("use_amoled", amoled).commit()
                                     },
                                     appLanguage = appLanguage,
                                     onLanguageChanged = { lang ->
                                         appLanguage = lang
-                                        sharedPrefs.edit().putString("settings_language", lang).putString("app_language", lang).apply()
+                                        P2PPreferences.setAppLanguage(this@MainActivity, lang)
                                     },
                                     onIconChanged = { aliasName ->
                                         setAppIconAlias(aliasName)
