@@ -24,24 +24,26 @@ type TrackerStatusCallback func(trackerURL string, success bool, peerCount int, 
 
 // DiscoveryService manages tracker queries, LAN beacons, and peer endpoint discovery.
 type DiscoveryService struct {
-	mu            sync.RWMutex
-	fingerprint   string
-	peerID        [20]byte
-	listenPort    int
-	torEnabled    bool
-	trackers      []string
-	infoHashes    map[string][20]byte
-	udpClient     *UDPTrackerClient
-	httpClient    *HTTPTrackerClient
-	lanEngine     *LANEngine
-	prober        *FastTieredProber
-	callback      DiscoveryCallback
-	trackerStatus TrackerStatusCallback
-	running       int32
-	onionAddress  string
-	ctx           context.Context
-	cancel        context.CancelFunc
-	wg            sync.WaitGroup
+	mu               sync.RWMutex
+	fingerprint      string
+	peerID           [20]byte
+	listenPort       int
+	torEnabled       bool
+	trackers         []string
+	infoHashes       map[string][20]byte
+	udpClient        *UDPTrackerClient
+	httpClient       *HTTPTrackerClient
+	lanEngine        *LANEngine
+	prober           *FastTieredProber
+	callback         DiscoveryCallback
+	trackerStatus    TrackerStatusCallback
+	running          int32
+	onionAddress     string
+	ctx              context.Context
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
+	announceInFlight int32     // 1 when an AnnounceAll is already running
+	lastAnnounceAt   int64     // unix nano of last AnnounceAll start
 }
 
 // NewDiscoveryService creates a new unified DiscoveryService.
@@ -223,7 +225,23 @@ func (s *DiscoveryService) periodicAnnounceLoop() {
 }
 
 // AnnounceAll queries all registered trackers for all registered info hashes.
+// Concurrent calls are coalesced: if one is already in flight, new calls within
+// 3 seconds are silently dropped to prevent startup socket storms.
 func (s *DiscoveryService) AnnounceAll() {
+	// Coalesce: allow at most one concurrent AnnounceAll, with 3-second cooldown.
+	now := time.Now().UnixNano()
+	last := atomic.LoadInt64(&s.lastAnnounceAt)
+	if now-last < int64(3*time.Second) {
+		// Too soon after the last announce — skip this call.
+		return
+	}
+	if !atomic.CompareAndSwapInt32(&s.announceInFlight, 0, 1) {
+		// Another goroutine is already running AnnounceAll.
+		return
+	}
+	atomic.StoreInt64(&s.lastAnnounceAt, now)
+	defer atomic.StoreInt32(&s.announceInFlight, 0)
+
 	s.mu.RLock()
 	trackers := make([]string, len(s.trackers))
 	copy(trackers, s.trackers)
@@ -245,8 +263,8 @@ func (s *DiscoveryService) AnnounceAll() {
 		parentCtx = context.Background()
 	}
 
-	// Limit concurrent tracker network queries to 8 workers to prevent socket storms
-	sem := make(chan struct{}, 8)
+	// Limit concurrent tracker queries to 6 workers to prevent socket storms.
+	sem := make(chan struct{}, 6)
 
 	for hashKey, hashVal := range hashes {
 		for _, trackerURL := range trackers {
@@ -261,7 +279,8 @@ func (s *DiscoveryService) AnnounceAll() {
 				defer func() { <-sem }()
 				started := time.Now()
 
-				ctx, cancel := context.WithTimeout(parentCtx, 8*time.Second)
+				// 4-second timeout (was 8s) — halved to reduce startup latency.
+				ctx, cancel := context.WithTimeout(parentCtx, 4*time.Second)
 				defer cancel()
 
 				res, err := s.announceSingle(ctx, tURL, hVal, peerID, port)
