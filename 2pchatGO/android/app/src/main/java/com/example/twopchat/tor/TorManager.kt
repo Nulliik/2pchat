@@ -88,6 +88,15 @@ object TorManager {
     private const val TAG = "TorManager"
     private const val DEFAULT_SOCKS_PORT = 9050
     private const val DEFAULT_CONTROL_PORT = 9051
+
+    @Volatile
+    var effectiveSocksPort: Int = DEFAULT_SOCKS_PORT
+        private set
+
+    @Volatile
+    var effectiveControlPort: Int = DEFAULT_CONTROL_PORT
+        private set
+
     private const val MAX_BRIDGE_INPUT_CHARS = 32768
     private const val MAX_BRIDGE_LINE_CHARS = 4096
     private const val MAX_BRIDGE_LINES = 16
@@ -534,7 +543,7 @@ object TorManager {
         newHostname
     }
 
-    suspend fun waitForSocksPort(socksPort: Int = DEFAULT_SOCKS_PORT, timeoutMs: Long = 3000): Boolean = withContext(Dispatchers.IO) {
+    suspend fun waitForSocksPort(socksPort: Int = effectiveSocksPort, timeoutMs: Long = 3000): Boolean = withContext(Dispatchers.IO) {
         val startTime = System.nanoTime()
         while (isActive && elapsedMillisSince(startTime) < timeoutMs) {
             try {
@@ -549,9 +558,20 @@ object TorManager {
     }
 
     fun isPortFree(port: Int, host: String = "127.0.0.1"): Boolean {
+        // 1. If we can connect to the port, an active server is listening -> definitely NOT free
+        try {
+            java.net.Socket().use { socket ->
+                socket.connect(java.net.InetSocketAddress(host, port), 150)
+                return false
+            }
+        } catch (_: Exception) {
+            // Not accepting connections, continue to bind check
+        }
+
+        // 2. Check if ServerSocket can bind exclusively (without SO_REUSEADDR)
         return try {
             java.net.ServerSocket().use { serverSocket ->
-                serverSocket.reuseAddress = true
+                serverSocket.reuseAddress = false
                 serverSocket.bind(java.net.InetSocketAddress(host, port))
                 true
             }
@@ -560,14 +580,25 @@ object TorManager {
         }
     }
 
+    fun findFreePort(startPort: Int, maxAttempts: Int = 10, host: String = "127.0.0.1"): Int {
+        for (offset in 0 until maxAttempts) {
+            val candidate = startPort + offset
+            if (isPortFree(candidate, host)) {
+                return candidate
+            }
+        }
+        return startPort
+    }
+
     fun shutdownStaleTorDaemon(context: Context) {
         try {
             val appTorDir = File(context.filesDir, "app_tor")
             val cookieFile = File(appTorDir, "control_auth_cookie")
             val hexAuthCookie = if (cookieFile.exists()) formatControlAuthCookie(cookieFile.readBytes()) else ""
+            val controlPort = effectiveControlPort
             java.net.Socket().use { socket ->
                 socket.soTimeout = 1000
-                socket.connect(java.net.InetSocketAddress("127.0.0.1", DEFAULT_CONTROL_PORT), 1000)
+                socket.connect(java.net.InetSocketAddress("127.0.0.1", controlPort), 1000)
                 val writer = socket.getOutputStream().bufferedWriter()
                 val reader = socket.getInputStream().bufferedReader()
                 if (hexAuthCookie.isNotBlank()) {
@@ -579,16 +610,40 @@ object TorManager {
                     writer.flush()
                     reader.readLine()
                 }
-                writer.write("SIGNAL SHUTDOWN\r\n")
+
+                // Query and kill PID if accessible
+                runCatching {
+                    writer.write("GETINFO process/pid\r\n")
+                    writer.flush()
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        val l = line ?: break
+                        if (l.startsWith("250 OK")) break
+                        if (l.startsWith("250-process/pid=") || l.startsWith("250+process/pid=")) {
+                            val pid = l.substringAfter('=').trim().toIntOrNull()
+                            if (pid != null && pid > 0) {
+                                runCatching { android.os.Process.killProcess(pid) }
+                            }
+                        }
+                    }
+                }
+
+                // Send SIGNAL HALT for instant stop (unlike SIGNAL SHUTDOWN which waits 30s)
+                writer.write("SIGNAL HALT\r\n")
                 writer.flush()
-                reader.readLine()
+                val resp = reader.readLine()
+                if (resp == null || !resp.startsWith("250")) {
+                    writer.write("SIGNAL SHUTDOWN\r\n")
+                    writer.flush()
+                    reader.readLine()
+                }
             }
-            Log.i(TAG, "Sent SIGNAL SHUTDOWN to stale Tor daemon on ControlPort")
+            Log.i(TAG, "Sent SIGNAL HALT to stale Tor daemon on ControlPort $controlPort")
         } catch (_: Throwable) {}
     }
 
     suspend fun waitForPortsFree(
-        ports: List<Int> = listOf(DEFAULT_SOCKS_PORT, DEFAULT_CONTROL_PORT),
+        ports: List<Int> = listOf(effectiveSocksPort, effectiveControlPort),
         host: String = "127.0.0.1",
         timeoutMs: Long = 3000L,
     ): Boolean = withContext(Dispatchers.IO) {
@@ -612,8 +667,9 @@ object TorManager {
                 return@withContext true
             }
             val hexAuthCookie = formatControlAuthCookie(cookieFile.readBytes())
+            val controlPort = effectiveControlPort
             java.net.Socket().use { socket ->
-                socket.connect(java.net.InetSocketAddress("127.0.0.1", DEFAULT_CONTROL_PORT), 1000)
+                socket.connect(java.net.InetSocketAddress("127.0.0.1", controlPort), 1000)
                 val writer = socket.getOutputStream().bufferedWriter()
                 val reader = socket.getInputStream().bufferedReader()
 
@@ -711,9 +767,9 @@ object TorManager {
         }
         stopTor()
         scope.launch {
-            val freed = waitForPortsFree(listOf(DEFAULT_SOCKS_PORT, DEFAULT_CONTROL_PORT), timeoutMs = 3000L)
+            val freed = waitForPortsFree(listOf(effectiveSocksPort, effectiveControlPort), timeoutMs = 3000L)
             if (!freed) {
-                Log.w(TAG, "[TOR] Ports 9050/9051 not freed after stopTor() within timeout, proceeding to startTor anyway.")
+                Log.w(TAG, "[TOR] Ports $effectiveSocksPort/$effectiveControlPort not freed after stopTor() within timeout, proceeding to startTor anyway.")
             }
             _isRotatingBridge.value = false
             startTor(context, effectiveBridges, isUserInitiated = false)
@@ -830,10 +886,29 @@ object TorManager {
                 android.system.Os.chmod(hsDir.absolutePath, 448 /* 0700 */)
             } catch (_: Throwable) {}
 
+            // Check ports and free stale instances before generating torrc
+            var socksPort = DEFAULT_SOCKS_PORT
+            var controlPort = DEFAULT_CONTROL_PORT
+
+            if (!waitForPortsFree(listOf(socksPort, controlPort), timeoutMs = 1000L)) {
+                shutdownStaleTorDaemon(context)
+                if (!waitForPortsFree(listOf(socksPort, controlPort), timeoutMs = 1500L)) {
+                    socksPort = findFreePort(DEFAULT_SOCKS_PORT, 5)
+                    controlPort = findFreePort(DEFAULT_CONTROL_PORT, 5)
+                    Log.i(TAG, "Default ports busy; dynamically selected Tor ports: socks=$socksPort, control=$controlPort")
+                }
+            }
+            effectiveSocksPort = socksPort
+            effectiveControlPort = controlPort
+
+            if (!currentCoroutineContext().isActive || !runGate.isCurrent(runId)) return
+
             val listenerPort = P2PPreferences.listenerPort(context)
             val torrcFile = File(appTorDir, "torrc")
             val torrcContent = generateTorrcContent(
                 dataDir = appTorDir.absolutePath,
+                socksPort = effectiveSocksPort,
+                controlPort = effectiveControlPort,
                 bridges = bridgeConfiguration.bridges,
                 bridgePluginPath = bridgePlugin?.absolutePath,
                 hiddenServiceDir = hsDir.absolutePath,
@@ -850,15 +925,9 @@ object TorManager {
 
             Log.i(
                 TAG,
-                "Initialized embedded Tor configuration (Bridges active: ${bridgeConfiguration.bridges.isNotEmpty()})"
+                "Initialized embedded Tor configuration (Bridges active: ${bridgeConfiguration.bridges.isNotEmpty()}, Ports: socks=$effectiveSocksPort, control=$effectiveControlPort)"
             )
 
-            if (!currentCoroutineContext().isActive || !runGate.isCurrent(runId)) return
-
-            if (!waitForPortsFree(listOf(DEFAULT_SOCKS_PORT, DEFAULT_CONTROL_PORT), timeoutMs = 1500L)) {
-                shutdownStaleTorDaemon(context)
-                waitForPortsFree(listOf(DEFAULT_SOCKS_PORT, DEFAULT_CONTROL_PORT), timeoutMs = 2000L)
-            }
             if (!currentCoroutineContext().isActive || !runGate.isCurrent(runId)) return
 
             val processBuilder = ProcessBuilder(

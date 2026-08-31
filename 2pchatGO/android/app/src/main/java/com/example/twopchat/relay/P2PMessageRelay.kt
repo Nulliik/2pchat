@@ -1186,10 +1186,6 @@ object P2PMessageRelay {
                                         )
                                         rememberAuthenticatedPeerEndpoint(effectiveName, formatted)
                                     }
-                                    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-                                    if (!activeSet.contains(effectiveName) && !isPlaceholderPeerName(effectiveName)) {
-                                        sharedPrefs.edit().putStringSet("active_chats", activeSet + effectiveName).apply()
-                                    }
                                     shareAvatar(appContext, effectiveName, "")
                                     return
                                 }

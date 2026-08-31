@@ -103,6 +103,27 @@ type AdaptiveDialer struct {
 	timeout        time.Duration
 }
 
+var PublicDNSServers = []string{
+	"1.1.1.1:53",
+	"8.8.8.8:53",
+	"9.9.9.9:53",
+	"10.0.2.3:53", // Android emulator default gateway DNS
+}
+
+var FallbackResolver = &net.Resolver{
+	PreferGo: true,
+	Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+		d := net.Dialer{Timeout: 2 * time.Second}
+		for _, dns := range PublicDNSServers {
+			conn, err := d.DialContext(ctx, "udp", dns)
+			if err == nil {
+				return conn, nil
+			}
+		}
+		return d.DialContext(ctx, network, address)
+	},
+}
+
 // NewAdaptiveDialer creates a new AdaptiveDialer.
 func NewAdaptiveDialer(torProxyAddr string, proxyEnabled bool, timeout time.Duration) *AdaptiveDialer {
 	if torProxyAddr == "" {
@@ -123,6 +144,7 @@ func NewAdaptiveDialer(torProxyAddr string, proxyEnabled bool, timeout time.Dura
 			Timeout:   timeout,
 			KeepAlive: 30 * time.Second,
 			DualStack: true,
+			Resolver:  FallbackResolver,
 		},
 	}
 	d.initTorDialer()

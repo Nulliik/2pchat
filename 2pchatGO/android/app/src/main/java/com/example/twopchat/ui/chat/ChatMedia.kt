@@ -126,13 +126,49 @@ internal fun sampledImageCacheKey(filePath: String, targetWidth: Int, targetHeig
 fun resolveAttachmentFile(context: android.content.Context, filePath: String?): java.io.File? {
     if (filePath.isNullOrBlank()) return null
     val cleanPath = filePath.removePrefix("file://")
-    val candidateFiles = listOfNotNull(
-        java.io.File(cleanPath),
-        java.io.File(java.io.File(context.filesDir, "attachments"), cleanPath),
-        java.io.File(context.filesDir, cleanPath),
-        java.io.File(context.filesDir, java.io.File(cleanPath).name)
-    )
-    return candidateFiles.firstOrNull { it.exists() && it.length() > 0L }
+    val direct = java.io.File(cleanPath)
+    if (direct.exists() && direct.length() > 0L) return direct
+
+    val attachDirFile = java.io.File(java.io.File(context.filesDir, "attachments"), cleanPath)
+    if (attachDirFile.exists() && attachDirFile.length() > 0L) return attachDirFile
+
+    val filesDirFile = java.io.File(context.filesDir, cleanPath)
+    if (filesDirFile.exists() && filesDirFile.length() > 0L) return filesDirFile
+
+    val byName = java.io.File(context.filesDir, direct.name)
+    if (byName.exists() && byName.length() > 0L) return byName
+
+    return null
+}
+
+private fun extractVideoThumbnail(
+    retriever: android.media.MediaMetadataRetriever,
+    targetWidth: Int = 400,
+    targetHeight: Int = 400,
+): Bitmap? {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+        retriever.getScaledFrameAtTime(
+            0,
+            android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+            targetWidth,
+            targetHeight,
+        )
+    } else {
+        val full = retriever.getFrameAtTime(
+            0,
+            android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+        ) ?: return null
+        if (full.width > targetWidth || full.height > targetHeight) {
+            val scale = minOf(targetWidth.toFloat() / full.width, targetHeight.toFloat() / full.height)
+            val dstW = (full.width * scale).toInt().coerceAtLeast(1)
+            val dstH = (full.height * scale).toInt().coerceAtLeast(1)
+            val scaled = Bitmap.createScaledBitmap(full, dstW, dstH, true)
+            if (scaled != full) full.recycle()
+            scaled
+        } else {
+            full
+        }
+    }
 }
 
 @Composable
@@ -181,11 +217,11 @@ fun rememberSampledImage(filePath: String?, targetWidth: Int = 400, targetHeight
 }
 
 @Composable
-fun rememberVideoThumbnail(filePath: String?): Bitmap? {
+fun rememberVideoThumbnail(filePath: String?, targetWidth: Int = 400, targetHeight: Int = 400): Bitmap? {
     if (filePath.isNullOrBlank()) return null
     val context = androidx.compose.ui.platform.LocalContext.current
     val cleanPath = filePath.removePrefix("file://")
-    val cacheKey = "thumb_$cleanPath"
+    val cacheKey = "thumb_${cleanPath}_${targetWidth}x$targetHeight"
     val cached = AttachmentImageCache.get(cacheKey)
     var bitmapState by remember(cacheKey) { mutableStateOf<Bitmap?>(cached) }
     LaunchedEffect(cacheKey) {
@@ -198,10 +234,7 @@ fun rememberVideoThumbnail(filePath: String?): Bitmap? {
                         val retriever = android.media.MediaMetadataRetriever()
                         try {
                             retriever.setDataSource(targetFile.absolutePath)
-                            retriever.getFrameAtTime(
-                                0,
-                                android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                            )
+                            extractVideoThumbnail(retriever, targetWidth, targetHeight)
                         } catch (_: Exception) {
                             null
                         } finally {
@@ -213,10 +246,7 @@ fun rememberVideoThumbnail(filePath: String?): Bitmap? {
                         val retriever = android.media.MediaMetadataRetriever()
                         try {
                             retriever.setDataSource(context, android.net.Uri.parse(cleanPath))
-                            retriever.getFrameAtTime(
-                                0,
-                                android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                            )
+                            extractVideoThumbnail(retriever, targetWidth, targetHeight)
                         } catch (_: Exception) {
                             null
                         } finally {
@@ -243,7 +273,7 @@ fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeig
     if (height > reqHeight || width > reqWidth) {
         val halfHeight = height / 2
         val halfWidth = width / 2
-        while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+        while (halfHeight / inSampleSize >= reqHeight || halfWidth / inSampleSize >= reqWidth) {
             inSampleSize *= 2
         }
     }

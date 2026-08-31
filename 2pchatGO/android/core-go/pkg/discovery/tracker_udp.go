@@ -9,7 +9,9 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
+	"twopchat/core/pkg/transport"
 )
 
 const (
@@ -28,6 +30,36 @@ var (
 	ErrTransactionMismatch = errors.New("tracker transaction ID mismatch")
 	ErrTrackerResponse     = errors.New("error response from tracker")
 )
+
+func resolveUDPAddress(ctx context.Context, hostPort string) (*net.UDPAddr, error) {
+	host, portStr, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		host = hostPort
+		portStr = "0"
+	}
+	port, _ := strconv.Atoi(portStr)
+
+	cleanHost := strings.Trim(host, "[]")
+	if ip := net.ParseIP(cleanHost); ip != nil {
+		return &net.UDPAddr{IP: ip, Port: port}, nil
+	}
+
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err == nil && len(ips) > 0 {
+		return &net.UDPAddr{IP: ips[0], Port: port}, nil
+	}
+
+	ips, err = transport.FallbackResolver.LookupIP(ctx, "ip", host)
+	if err == nil && len(ips) > 0 {
+		return &net.UDPAddr{IP: ips[0], Port: port}, nil
+	}
+
+	rAddr, err := net.ResolveUDPAddr("udp", hostPort)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve UDP tracker %s: %w", hostPort, err)
+	}
+	return rAddr, nil
+}
 
 // PeerEndpoint represents a discovered peer network address.
 type PeerEndpoint struct {
@@ -88,7 +120,7 @@ func (c *UDPTrackerClient) Announce(
 	}
 
 	hostPort := u.Host
-	rAddr, err := net.ResolveUDPAddr("udp", hostPort)
+	rAddr, err := resolveUDPAddress(ctx, hostPort)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve UDP tracker %s: %w", hostPort, err)
 	}

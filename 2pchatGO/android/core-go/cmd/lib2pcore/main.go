@@ -6,14 +6,17 @@ package main
 import "C"
 import (
 	"fmt"
+	"net"
 	"time"
 	"twopchat/core/pkg/bridge"
 	"twopchat/core/pkg/crypto"
 	"twopchat/core/pkg/session"
+	"twopchat/core/pkg/transport"
 	"unsafe"
 )
 
 func init() {
+	net.DefaultResolver = transport.FallbackResolver
 	bridge.GetManager().SetCallbacks(
 		session.EventCallbacks{
 			OnPeerConnected: func(peerFP, endpoint string) {

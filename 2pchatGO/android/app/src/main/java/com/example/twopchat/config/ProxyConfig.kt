@@ -36,7 +36,11 @@ object ProxyConfig {
         customPort: Int
     ): ResolvedProxyConfig {
         return when {
-            isTorEnabled && isTorRunning -> ResolvedProxyConfig(enabled = true, host = "127.0.0.1", port = 9050)
+            isTorEnabled && isTorRunning -> ResolvedProxyConfig(
+                enabled = true,
+                host = "127.0.0.1",
+                port = TorManager.effectiveSocksPort
+            )
             customSocks5Enabled -> ResolvedProxyConfig(
                 enabled = true,
                 host = customHost.trim().takeIf(::isValidHost)
@@ -44,7 +48,11 @@ object ProxyConfig {
                 port = customPort.takeIf(::isValidPort)
                     ?: P2PPreferences.DEFAULT_SOCKS5_PORT
             )
-            else -> ResolvedProxyConfig(enabled = false, host = "127.0.0.1", port = 9050)
+            else -> ResolvedProxyConfig(
+                enabled = false,
+                host = "127.0.0.1",
+                port = TorManager.effectiveSocksPort
+            )
         }
     }
 
