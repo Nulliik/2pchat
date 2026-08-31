@@ -33,7 +33,13 @@ val unpackBridgeTransportBinaries by tasks.registering(Sync::class) {
 }
 
 val buildGoCoreBinaries by tasks.registering(Exec::class) {
-    val ndkDir = file("/Users/kodzy/Library/Android/sdk/ndk/26.3.11579264")
+    val envNdk = System.getenv("ANDROID_NDK_HOME") ?: System.getenv("ANDROID_NDK_ROOT")
+    val sdkDir = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+    val ndkDir = when {
+        envNdk != null && file(envNdk).exists() -> file(envNdk)
+        sdkDir != null && file("$sdkDir/ndk/26.3.11579264").exists() -> file("$sdkDir/ndk/26.3.11579264")
+        else -> file("/Users/kodzy/Library/Android/sdk/ndk/26.3.11579264")
+    }
     workingDir = file("../core-go")
     commandLine("make", "NDK_DIR=${ndkDir.absolutePath}", "android-all")
     onlyIf {
@@ -53,8 +59,8 @@ android {
         applicationId = "com.example.twopchat.go"
         minSdk = 24
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.0.8"
+        versionCode = 9
+        versionName = "0.0.8.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
