@@ -32,8 +32,8 @@ sealed class UpdateCheckResult {
 }
 
 object AppUpdateManager {
-    private const val GITHUB_OWNER = "Nulliik"
-    private const val GITHUB_REPO = "2pchat"
+    private const val GITHUB_OWNER = "kodzyfox"
+    private const val GITHUB_REPO = "2pchat-releases"
     private const val USER_AGENT = "2PChat-Android-App"
 
     fun getCurrentVersionName(context: Context): String {
