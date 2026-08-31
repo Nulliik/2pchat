@@ -152,44 +152,7 @@ fun AdvancedNetworkSettingsPage(
                         }
                     }
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
 
-                    // Experimental Go Core status badge
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                if (appLanguage == "Русский") "Движок P2P" else "P2P Engine",
-                                fontWeight = FontWeight.Medium,
-                                color = onSurfaceColor
-                            )
-                            Text(
-                                if (appLanguage == "Русский") {
-                                    "Нативное Go-ядро (lib2pcore.so) — максимальная производительность, 0% GIL."
-                                } else {
-                                    "Native Go core (lib2pcore.so) — peak performance, 0% GIL."
-                                },
-                                fontSize = 12.sp,
-                                color = onSurfaceVariant
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Surface(
-                            color = Color(0xFF4CAF50).copy(alpha = 0.15f),
-                            shape = RoundedCornerShape(12.dp),
-                        ) {
-                            Text(
-                                text = "Go Active",
-                                color = Color(0xFF4CAF50),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp), color = onSurfaceColor.copy(alpha = 0.05f))
 
