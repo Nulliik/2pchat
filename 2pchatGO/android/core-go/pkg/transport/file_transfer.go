@@ -284,7 +284,7 @@ func (m *FileTransferManager) SendFileStreamWithResume(
 					minByteDelta = int64(DefaultChunkSize)
 				}
 
-				if isFirst || isLast || timeDelta >= 100*time.Millisecond || byteDelta >= minByteDelta {
+				if isFirst || isLast || (timeDelta >= 100*time.Millisecond && (byteDelta >= minByteDelta || timeDelta >= 500*time.Millisecond)) {
 					elapsed := now.Sub(startTime).Seconds()
 					speed := 0.0
 					if elapsed > 0 {
@@ -458,7 +458,7 @@ func (m *FileTransferManager) SendFileStreamParallel(
 						minByteDelta = int64(DefaultChunkSize)
 					}
 
-					shouldReport := m.onProgress != nil && (isFirst || isComplete || timeDelta >= 100*time.Millisecond || byteDelta >= minByteDelta)
+					shouldReport := m.onProgress != nil && (isFirst || isComplete || (timeDelta >= 100*time.Millisecond && (byteDelta >= minByteDelta || timeDelta >= 500*time.Millisecond)))
 					if shouldReport {
 						lastReportTime = now
 						lastReportBytes = curTransferred
@@ -642,7 +642,7 @@ func (m *FileTransferManager) ReceiveChunk(
 		minByteDelta = int64(DefaultChunkSize)
 	}
 
-	shouldReportProgress := m.onProgress != nil && (isFirst || isComplete || timeDelta >= 100*time.Millisecond || byteDelta >= minByteDelta)
+	shouldReportProgress := m.onProgress != nil && (isFirst || isComplete || (timeDelta >= 100*time.Millisecond && (byteDelta >= minByteDelta || timeDelta >= 500*time.Millisecond)))
 	if shouldReportProgress {
 		transfer.LastProgressTime = now
 		transfer.LastProgressBytes = receivedBytes
