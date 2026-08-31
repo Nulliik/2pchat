@@ -51,7 +51,7 @@ jobs:
         run: |
           VERSION="${{ github.ref_name }}"
           if [ -z "$VERSION" ] || [ "$VERSION" = "main" ]; then
-            VERSION="0.0.8.1"
+            VERSION="0.0.8.2"
           fi
           cp 2pchatGO/android/app/build/outputs/apk/debug/app-debug.apk "2pchat-${VERSION}.apk"
 
