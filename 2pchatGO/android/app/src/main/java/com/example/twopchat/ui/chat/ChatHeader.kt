@@ -120,8 +120,7 @@ internal fun ChatHeader(
             else -> peerName.take(2).uppercase()
         }
         // Query Go Core as source of truth: avoids stale-RAM false-negative when the
-        // fingerprint↔nickname mapping has not yet propagated to peerSessionStates.
-        val isOnline = P2PMessageRelay.isPeerOnline(context, peerName)
+        val isOnline = P2PMessageRelay.peerSessionStates[peerName] == true
         val isMismatch = com.example.twopchat.config.P2PPreferences.prefs(context)
             .getBoolean("fingerprint_mismatch_$peerName", false)
         val shieldColor = when {
