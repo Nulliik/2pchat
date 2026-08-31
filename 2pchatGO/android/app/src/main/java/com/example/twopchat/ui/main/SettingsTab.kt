@@ -1111,8 +1111,9 @@ fun SettingsTab(
                         }
 
                         Spacer(modifier = Modifier.height(20.dp))
+                        val footerVerName = remember { AppUpdateManager.getCurrentVersionName(context) }
                         Text(
-                            text = "2PChat v0.0.8 • Go Core v1.4 (P2P)",
+                            text = "2PChat v$footerVerName • Go Core v1.4 (P2P)",
                             fontSize = 12.sp,
                             color = onSurfaceVariant.copy(alpha = 0.6f),
                             fontWeight = FontWeight.Medium,
