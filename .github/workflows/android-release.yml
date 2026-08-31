@@ -3,7 +3,7 @@ name: Android APK Release
 on:
   push:
     tags:
-      - "v*"
+      - "ci-v*"
   workflow_dispatch:
 
 permissions:
