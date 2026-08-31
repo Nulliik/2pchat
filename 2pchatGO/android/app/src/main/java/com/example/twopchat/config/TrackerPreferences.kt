@@ -40,9 +40,9 @@ object TrackerPreferences {
         BuiltInTracker("Open Stealth UDP", "udp://open.stealth.si:80/announce", "udp"),
         BuiltInTracker("Cyberia UDP", "udp://tracker.cyberia.is:6969/announce", "udp"),
         BuiltInTracker("Qu.Ax UDP", "udp://tracker.qu.ax:6969/announce", "udp"),
-        BuiltInTracker("Exodus UDP", "udp://exodus.desync.com:6969/announce", "udp"),
+        BuiltInTracker("Bittor UDP", "udp://tracker.bittor.pw:1337/announce", "udp"),
         BuiltInTracker("Explodie UDP", "udp://explodie.org:6969/announce", "udp"),
-        BuiltInTracker("Demonii UDP", "udp://open.demonii.com:1337/announce", "udp"),
+        BuiltInTracker("Filemail UDP", "udp://tracker.filemail.com:6969/announce", "udp"),
         BuiltInTracker("Dler UDP", "udp://tracker2.dler.org:80/announce", "udp"),
         BuiltInTracker("Nyacat HTTPS", "https://tr.nyacat.pw:443/announce", "https"),
         BuiltInTracker(
