@@ -3,4 +3,5 @@
     <files-path name="attachments" path="attachments/" />
     <files-path name="config" path="config/" />
     <cache-path name="sticker_pack_exports" path="sticker_pack_exports/" />
+    <cache-path name="apk_updates" path="apk_updates/" />
 </paths>

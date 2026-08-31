@@ -36,7 +36,11 @@ import com.example.twopchat.config.P2PPreferences
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.theme.*
 import com.example.twopchat.tor.TorManager
+import com.example.twopchat.update.AppUpdateManager
+import com.example.twopchat.update.ReleaseInfo
+import com.example.twopchat.update.UpdateCheckResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -63,8 +67,17 @@ fun SettingsTab(
     onShowLogs: () -> Unit
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
     val sharedPrefs = remember { P2PPreferences.prefs(context) }
+
+    // App update states
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var updateResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
+    var isDownloadingApk by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf(0f) }
+    var downloadStatusText by remember { mutableStateOf("") }
     
     // Profile photo states
     var profilePhotoUri by remember { mutableStateOf(sharedPrefs.getString("profile_photo_uri", null)) }
@@ -1041,6 +1054,35 @@ fun SettingsTab(
                                         }
                                     }
                                 )
+
+                                HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
+
+                                val currentVerName = remember { AppUpdateManager.getCurrentVersionName(context) }
+                                SettingsRow(
+                                    title = if (appLanguage == "Русский") "Проверить обновления" else "Check for Updates",
+                                    subtitle = if (isCheckingUpdate) {
+                                        if (appLanguage == "Русский") "Проверка релизов на GitHub..." else "Checking GitHub releases..."
+                                    } else {
+                                        if (appLanguage == "Русский") "Текущая версия: v$currentVerName" else "Current version: v$currentVerName"
+                                    },
+                                    value = if (isCheckingUpdate) "..." else null,
+                                    iconRes = com.example.twopchat.R.drawable.ic_menu_settings,
+                                    iconColor = Color(0xFF10B981),
+                                    onSurfaceColor = onSurfaceColor,
+                                    onSurfaceVariant = onSurfaceVariant,
+                                    primaryColor = primaryColor,
+                                    onClick = {
+                                        if (!isCheckingUpdate) {
+                                            isCheckingUpdate = true
+                                            coroutineScope.launch {
+                                                val result = AppUpdateManager.checkLatestRelease(context)
+                                                updateResult = result
+                                                isCheckingUpdate = false
+                                                showUpdateDialog = true
+                                            }
+                                        }
+                                    }
+                                )
                             }
                         }
 
@@ -1261,6 +1303,183 @@ fun SettingsTab(
         aboutMeText = aboutMeText,
         onAboutMeSaved = { aboutMeText = it }
     )
+
+    if (showUpdateDialog) {
+        val res = updateResult
+        AlertDialog(
+            onDismissRequest = {
+                if (!isDownloadingApk) {
+                    showUpdateDialog = false
+                    updateResult = null
+                }
+            },
+            containerColor = surfaceColor,
+            title = {
+                Text(
+                    text = when (res) {
+                        is UpdateCheckResult.UpdateAvailable -> if (appLanguage == "Русский") "Доступно обновление 🚀" else "Update Available 🚀"
+                        is UpdateCheckResult.UpToDate -> if (appLanguage == "Русский") "У вас последняя версия" else "Up to date"
+                        is UpdateCheckResult.Error -> if (appLanguage == "Русский") "Ошибка проверки" else "Check Failed"
+                        null -> ""
+                    },
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = onSurfaceColor
+                )
+            },
+            text = {
+                Column {
+                    when (res) {
+                        is UpdateCheckResult.UpdateAvailable -> {
+                            val rel = res.release
+                            val sizeMb = if (rel.apkSizeBytes > 0) " (%.1f MB)".format(rel.apkSizeBytes / (1024.0 * 1024.0)) else ""
+                            Text(
+                                text = if (appLanguage == "Русский") "Новая версия: v${rel.versionName}$sizeMb\nТекущая версия: v${res.currentVersion}" else "New version: v${rel.versionName}$sizeMb\nCurrent version: v${res.currentVersion}",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                color = primaryColor
+                            )
+                            if (rel.changelog.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = if (appLanguage == "Русский") "Что нового:" else "What's new:",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = onSurfaceColor
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 160.dp)
+                                        .background(onSurfaceColor.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+                                        .padding(10.dp)
+                                        .verticalScroll(rememberScrollState())
+                                ) {
+                                    Text(
+                                        text = rel.changelog,
+                                        fontSize = 12.sp,
+                                        color = onSurfaceVariant
+                                    )
+                                }
+                            }
+                            if (isDownloadingApk) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                LinearProgressIndicator(
+                                    progress = { downloadProgress },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(4.dp)),
+                                    color = primaryColor,
+                                    trackColor = onSurfaceColor.copy(alpha = 0.1f)
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = downloadStatusText,
+                                    fontSize = 11.sp,
+                                    color = onSurfaceVariant
+                                )
+                            }
+                        }
+                        is UpdateCheckResult.UpToDate -> {
+                            Text(
+                                text = if (appLanguage == "Русский") "Установлена актуальная версия v${res.currentVersion}. Обновлений не найдено." else "Installed version v${res.currentVersion} is up to date.",
+                                fontSize = 14.sp,
+                                color = onSurfaceVariant
+                            )
+                        }
+                        is UpdateCheckResult.Error -> {
+                            Text(
+                                text = if (appLanguage == "Русский") "Не удалось проверить обновления:\n${res.message}" else "Failed to check for updates:\n${res.message}",
+                                fontSize = 13.sp,
+                                color = onSurfaceVariant
+                            )
+                        }
+                        null -> {}
+                    }
+                }
+            },
+            confirmButton = {
+                when (res) {
+                    is UpdateCheckResult.UpdateAvailable -> {
+                        Button(
+                            onClick = {
+                                if (!isDownloadingApk) {
+                                    if (!AppUpdateManager.canInstallPackages(context)) {
+                                        Toast.makeText(
+                                            context,
+                                            if (appLanguage == "Русский") "Разрешите установку неизвестных приложений" else "Please allow installing unknown apps",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                        AppUpdateManager.openInstallPermissionSettings(context)
+                                    } else {
+                                        isDownloadingApk = true
+                                        downloadProgress = 0f
+                                        downloadStatusText = if (appLanguage == "Русский") "Подготовка загрузки..." else "Preparing download..."
+                                        coroutineScope.launch {
+                                            val downloadResult = AppUpdateManager.downloadApk(context, res.release.apkUrl) { bytes, total, prog ->
+                                                downloadProgress = prog
+                                                val mbDown = bytes / (1024.0 * 1024.0)
+                                                val mbTotal = total / (1024.0 * 1024.0)
+                                                downloadStatusText = "%.1f / %.1f MB (%.0f%%)".format(mbDown, mbTotal, prog * 100)
+                                            }
+                                            isDownloadingApk = false
+                                            downloadResult.onSuccess { apkFile ->
+                                                showUpdateDialog = false
+                                                updateResult = null
+                                                val installed = AppUpdateManager.installApk(context, apkFile)
+                                                if (!installed) {
+                                                    Toast.makeText(context, "Failed to launch installer", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }.onFailure { err ->
+                                                downloadStatusText = err.localizedMessage ?: "Download failed"
+                                                Toast.makeText(context, "Download failed: ${err.message}", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = !isDownloadingApk,
+                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
+                        ) {
+                            Text(
+                                text = if (isDownloadingApk) (if (appLanguage == "Русский") "Загрузка..." else "Downloading...") else (if (appLanguage == "Русский") "Скачать и установить" else "Download & Install"),
+                                color = Color.White
+                            )
+                        }
+                    }
+                    else -> {
+                        TextButton(
+                            onClick = {
+                                showUpdateDialog = false
+                                updateResult = null
+                            }
+                        ) {
+                            Text(
+                                text = if (appLanguage == "Русский") "Понятно" else "OK",
+                                color = primaryColor
+                            )
+                        }
+                    }
+                }
+            },
+            dismissButton = {
+                if (res is UpdateCheckResult.UpdateAvailable && !isDownloadingApk) {
+                    TextButton(
+                        onClick = {
+                            showUpdateDialog = false
+                            updateResult = null
+                        }
+                    ) {
+                        Text(
+                            text = if (appLanguage == "Русский") "Позже" else "Later",
+                            color = onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        )
+    }
 }
 
 @Composable
