@@ -141,6 +141,7 @@ func (s *Session) performInitiatorHandshake(expectedFingerprint string) error {
 	if err != nil {
 		return fmt.Errorf("failed to generate ephemeral keypair: %w", err)
 	}
+	defer crypto.Zeroize(eph.Private.Bytes())
 
 	prekeySig := crypto.SignPreKey(s.localIdentity.Signing, s.localPrekeyPub)
 

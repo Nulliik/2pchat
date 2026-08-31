@@ -327,7 +327,7 @@ object P2PMessageRelay {
     private val lastOnionShareAt = ConcurrentHashMap<String, Long>()
 
     fun getPeerTransportType(context: Context, peerName: String): TransportType {
-        val isOnline = isPeerOnline(context, peerName) || peerSessionStates[peerName] == true
+        val isOnline = isPeerOnline(context, peerName)
         val fp = P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null)
         val raw = peerConnectionTransports[peerName]
             ?: (if (!fp.isNullOrBlank()) peerConnectionTransports[fp] else null)
@@ -342,8 +342,8 @@ object P2PMessageRelay {
     }
 
     fun getPeerTransportType(peerName: String): TransportType {
-        val isOnline = peerSessionStates[peerName] == true ||
-            (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerSessionStates[it] == true } == true)
+        val isOnline = storedAppContext?.let { isPeerOnline(it, peerName) }
+            ?: (peerSessionStates[peerName] == true)
         val raw = peerConnectionTransports[peerName]
             ?: (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerConnectionTransports[it] })
         val ep = peerEndpoints[peerName]
@@ -352,13 +352,10 @@ object P2PMessageRelay {
     }
 
     fun isPeerOnline(context: Context, peerName: String): Boolean {
-        if (peerSessionStates[peerName] == true) return true
         val fp = P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null)
         val online = getBridge(context).isPeerOnline(peerName, fp)
-        if (online) {
-            runOnMain {
-                peerSessionStates[peerName] = true
-            }
+        runOnMain {
+            peerSessionStates[peerName] = online
         }
         return online
     }
@@ -2063,16 +2060,7 @@ object P2PMessageRelay {
                         ?.filterNot { it == "Saved Messages" || isPlaceholderPeerName(it) }
                         .orEmpty()
 
-                    var resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint, endpoint)
-                    if (isPlaceholderPeerName(resolvedPeerName) && activeChats.size == 1) {
-                        val singlePeer = activeChats.first()
-                        log(appContext, "1-on-1 fallback: mapping unnamed session $fingerprint to $singlePeer")
-                        identityPrefs.edit().putString("peer_fingerprint_$singlePeer", fingerprint).apply()
-                        fingerprintToPeerName[fingerprint] = singlePeer
-                        getBridge(appContext).updatePeerNameMapping(fingerprint, singlePeer)
-                        resolvedPeerName = singlePeer
-                    }
-
+                    val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint, endpoint)
                     val canonicalTransport = canonicalConnectionTransport(transport, endpoint)
                     if (isPlaceholderPeerName(resolvedPeerName)) {
                         log(appContext, "Authenticated unnamed session awaiting identity information - sending self profile")

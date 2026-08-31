@@ -9,7 +9,7 @@ class DefaultPeerRepository : PeerRepository {
 
     override fun isPeerOnline(peerName: String): Boolean {
         val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
-        return P2PMessageRelay.isPeerOnline(context, peerName) || P2PMessageRelay.peerSessionStates[peerName] == true
+        return P2PMessageRelay.isPeerOnline(context, peerName)
     }
 
     override fun getPeerTransport(peerName: String): String? {
