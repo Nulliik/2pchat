@@ -42,9 +42,9 @@ type LANEngine struct {
 	wg          sync.WaitGroup
 }
 
-// NewLANEngine creates a new LAN discovery engine.
+// NewLANEngine creates a new LAN discovery engine. If udpPort is 0, a dynamic port is chosen.
 func NewLANEngine(fingerprint string, tcpPort, udpPort int, handler LANDiscoveryHandler) *LANEngine {
-	if udpPort <= 0 {
+	if udpPort < 0 {
 		udpPort = DefaultLANPort
 	}
 	return &LANEngine{
@@ -53,6 +53,18 @@ func NewLANEngine(fingerprint string, tcpPort, udpPort int, handler LANDiscovery
 		udpPort:     udpPort,
 		handler:     handler,
 	}
+}
+
+// Port returns the bound UDP port, or configured port if not running.
+func (e *LANEngine) Port() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.listener != nil {
+		if addr, ok := e.listener.LocalAddr().(*net.UDPAddr); ok {
+			return addr.Port
+		}
+	}
+	return e.udpPort
 }
 
 // Start launches the background LAN beacon listener and periodic broadcaster.
