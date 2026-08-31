@@ -1066,7 +1066,7 @@ fun SettingsTab(
                                         if (appLanguage == "Русский") "Текущая версия: v$currentVerName" else "Current version: v$currentVerName"
                                     },
                                     value = if (isCheckingUpdate) "..." else null,
-                                    iconRes = com.example.twopchat.R.drawable.ic_menu_settings,
+                                    iconRes = com.example.twopchat.R.drawable.ic_app_update,
                                     iconColor = Color(0xFF10B981),
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
