@@ -471,25 +471,25 @@ class MainActivity : ComponentActivity() {
                                     isDarkTheme = isDarkTheme,
                                     onThemeChanged = { dark ->
                                         isDarkTheme = dark
-                                        sharedPrefs.edit().putString("theme_mode", if (dark) "dark" else "light").commit()
+                                        sharedPrefs.edit().putString("theme_mode", if (dark) "dark" else "light").apply()
                                     },
                                     useCerulean = useCerulean,
                                     onAccentChanged = { cerulean ->
                                         val newScheme = if (cerulean) "cerulean" else if (accentScheme == "cerulean") "mint" else accentScheme
                                         accentScheme = newScheme
                                         useCerulean = (newScheme == "cerulean")
-                                        sharedPrefs.edit().putString("accent_scheme", newScheme).putBoolean("use_cerulean", cerulean).commit()
+                                        sharedPrefs.edit().putString("accent_scheme", newScheme).putBoolean("use_cerulean", cerulean).apply()
                                     },
                                     accentScheme = accentScheme,
                                     onAccentSchemeChanged = { scheme ->
                                         accentScheme = scheme
                                         useCerulean = (scheme == "cerulean")
-                                        sharedPrefs.edit().putString("accent_scheme", scheme).putBoolean("use_cerulean", scheme == "cerulean").commit()
+                                        sharedPrefs.edit().putString("accent_scheme", scheme).putBoolean("use_cerulean", scheme == "cerulean").apply()
                                     },
                                     useAmoled = useAmoled,
                                     onAmoledChanged = { amoled ->
                                         useAmoled = amoled
-                                        sharedPrefs.edit().putBoolean("use_amoled", amoled).commit()
+                                        sharedPrefs.edit().putBoolean("use_amoled", amoled).apply()
                                     },
                                     appLanguage = appLanguage,
                                     onLanguageChanged = { lang ->

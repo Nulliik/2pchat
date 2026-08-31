@@ -10,6 +10,8 @@ object AppLog {
     private val bracketedIpv6Pattern = Regex("\\[[0-9a-fA-F:]+](?::\\d{1,5})?")
     private val bareIpv6Pattern = Regex("(?<![\\w:])(?:[0-9a-fA-F]{1,4}:){3,7}[0-9a-fA-F]{1,4}(?::\\d{1,5})?")
     private val fingerprintPattern = Regex("(?i)(?<![0-9a-f])[0-9a-f]{40,128}(?![0-9a-f])")
+    private val onionPattern = Regex("(?i)[a-z2-7]{56}\\.onion")
+    private val base64KeyPattern = Regex("(?<![A-Za-z0-9+/\\-_=])[A-Za-z0-9+/\\-_]{30,128}={1,2}(?![A-Za-z0-9+/\\-_=])")
 
     internal fun redactSensitive(text: String, privateRoot: String? = null): String {
         var redacted = text
@@ -17,7 +19,9 @@ object AppLog {
         redacted = ipv4Pattern.replace(redacted, "<ip>")
         redacted = bracketedIpv6Pattern.replace(redacted, "<ip>")
         redacted = bareIpv6Pattern.replace(redacted, "<ip>")
+        redacted = onionPattern.replace(redacted, "<onion>")
         redacted = fingerprintPattern.replace(redacted, "<fingerprint>")
+        redacted = base64KeyPattern.replace(redacted, "<key>")
         return redacted
     }
 
