@@ -56,6 +56,20 @@ type STUNMappedAddress struct {
 	Port int
 }
 
+// IsShareablePublicIPv4 rejects LAN and special-use addresses before a STUN
+// result is offered as a direct-contact route. Tracker announces never carry
+// this list, but an untrusted STUN response must not poison route storage.
+func IsShareablePublicIPv4(ip net.IP) bool {
+	v4 := ip.To4()
+	if v4 == nil || v4.IsLoopback() || v4.IsLinkLocalUnicast() || v4.IsMulticast() || v4.IsUnspecified() {
+		return false
+	}
+	if v4.IsPrivate() || (v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127) {
+		return false
+	}
+	return v4[0] > 0 && v4[0] < 224
+}
+
 func (a *STUNMappedAddress) String() string {
 	if a == nil || a.IP == nil {
 		return ""
@@ -281,7 +295,9 @@ func DetectNATEnvironment(ctx context.Context, torEnabled bool) *NATDiagnostics 
 		addr, err := QuerySTUNServer(sCtx, s, torEnabled)
 		cancel()
 		if err == nil && addr != nil {
-			results = append(results, addr)
+			if IsShareablePublicIPv4(addr.IP) {
+				results = append(results, addr)
+			}
 		}
 	}
 

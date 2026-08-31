@@ -587,6 +587,10 @@ func (s *Session) sendReliablePlaintext(msgID string, raw []byte) (string, error
 	}
 	for attempt := 0; attempt <= s.maxRetries; attempt++ {
 		if err := s.sendEncryptedFrame(raw); err != nil {
+			// A write failure means the socket is no longer a usable liveness
+			// signal. Close it so Manager removes the session and the Android
+			// presence indicator cannot remain falsely online.
+			_ = s.Close()
 			return "", err
 		}
 
@@ -602,6 +606,10 @@ func (s *Session) sendReliablePlaintext(msgID string, raw []byte) (string, error
 		}
 	}
 
+	// Pings use the same acknowledged channel as messages. If all ACK retries
+	// are exhausted, TCP may be half-open; closing forces OnPeerDisconnected
+	// and lets the relay reconnect instead of showing a stale green presence.
+	_ = s.Close()
 	return "", ErrAckTimeout
 }
 

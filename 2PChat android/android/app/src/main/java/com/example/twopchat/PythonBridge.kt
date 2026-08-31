@@ -600,6 +600,7 @@ object PythonBridge {
     interface PySessionListener {
         fun onSessionEstablished(peerName: String, fingerprint: String, endpoint: String, transport: String, aboutMe: String): Boolean
         fun onSessionClosed(peerName: String, fingerprint: String)
+        fun onPeerRoutesUpdated(peerName: String, fingerprint: String, routesJson: String)
     }
 
     fun configureLocalIdentity(nickname: String, fingerprint: String, aboutMe: String = ""): Boolean {

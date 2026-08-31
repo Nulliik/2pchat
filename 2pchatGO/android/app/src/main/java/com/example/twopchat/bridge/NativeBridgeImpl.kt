@@ -4,10 +4,15 @@ import android.content.Context
 import android.util.Log
 import com.example.twopchat.NativeBridge
 import com.example.twopchat.relay.P2PMessageRelay
+import com.example.twopchat.relay.canonicalConnectionTransport
+import com.example.twopchat.relay.isExpectedPeerFingerprint
+import com.example.twopchat.relay.isValidPeerEndpointList
 import com.example.twopchat.config.P2PPreferences
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Native Go implementation of IP2PBridge backed by lib2pcore.so.
@@ -33,6 +38,13 @@ class NativeBridgeImpl : IP2PBridge {
     private val onlinePeers = ConcurrentHashMap<String, Boolean>()
     private val peerNameMap = ConcurrentHashMap<String, String>()
     private val nameToFpMap = ConcurrentHashMap<String, String>()
+    private val activeEndpoints = ConcurrentHashMap<String, String>()
+    private val activeTransports = ConcurrentHashMap<String, String>()
+    // Every payload reaching this callback was authenticated by the Go ratchet
+    // session. It is therefore a valid liveness signal when the native session
+    // registry is briefly between replacement/removal operations.
+    private val lastAuthenticatedInboundAt = ConcurrentHashMap<String, Long>()
+    private val authenticatedLivenessGraceMs = 15_000L
     // Connecting is asynchronous in the native core. Keep outbound messages
     // until its authenticated-session callback arrives instead of losing the
     // first message while the X3DH handshake is still in progress.
@@ -132,8 +144,15 @@ class NativeBridgeImpl : IP2PBridge {
             if (resolvedName != peerFP) {
                 P2PMessageRelay.clearAvatarShareCooldown(resolvedName)
             }
-            val transportHint = if (endpoint.contains(".onion", ignoreCase = true)) "onion" else if (endpoint.contains(":")) "yggdrasil" else "direct"
+            // A TCP endpoint always has a ':' before its port. Determine the
+            // route from the host range instead of treating every host:port
+            // as Yggdrasil.
+            val transportHint = canonicalConnectionTransport(null, endpoint) ?: "Direct P2P"
+            activeEndpoints[peerFP] = endpoint
+            activeTransports[peerFP] = transportHint
+            Log.i(TAG, "[GoCore] Active route for $peerFP: $transportHint @ $endpoint")
             sessionListener?.onSessionEstablished(resolvedName, peerFP, endpoint, transportHint, "")
+            sendAuthenticatedRouteUpdate(peerFP)
             flushPendingMessages(peerFP)
             if (resolvedName != peerFP) {
                 flushPendingMessages(resolvedName)
@@ -145,16 +164,24 @@ class NativeBridgeImpl : IP2PBridge {
             val resolvedName = resolvePeerName(peerFP) ?: peerNameMap[peerFP] ?: peerFP
             onlinePeers[peerFP] = false
             onlinePeers[resolvedName] = false
+            lastAuthenticatedInboundAt.remove(peerFP)
+            activeEndpoints.remove(peerFP)
+            activeTransports.remove(peerFP)
             sessionListener?.onSessionClosed(resolvedName, peerFP)
         }
 
-        NativeBridge.onMessageReceivedListener = { peerFP, payload, messageID ->
+        NativeBridge.onMessageReceivedListener = message@{ peerFP, payload, messageID ->
+            lastAuthenticatedInboundAt[peerFP] = System.currentTimeMillis()
             val payloadStr = String(payload, Charsets.UTF_8)
             // If the message contains identity_info or profile_avatar_share with a nickname, bind securely!
             if (payloadStr.startsWith("{")) {
                 try {
-                    val json = org.json.JSONObject(payloadStr)
+                    val json = JSONObject(payloadStr)
                     val mtype = json.optString("type")
+                    if (mtype == "endpoint_update") {
+                        storeAuthenticatedRouteUpdate(peerFP, json)
+                        return@message
+                    }
                     if (mtype == "identity_info" || mtype == "profile_avatar_share") {
                         val remoteNick = json.optString("nickname").trim()
                         val claimedFP = json.optString("fingerprint").trim().ifBlank { peerFP }
@@ -163,16 +190,42 @@ class NativeBridgeImpl : IP2PBridge {
                             val appContext = com.example.twopchat.yggdrasil.GlobalApplication.appContext
                             val existingFP = P2PPreferences.prefs(appContext).getString(P2PPreferences.peerFingerprint(remoteNick), null)
                             if (existingFP.isNullOrBlank() || existingFP == peerFP) {
+                                // The nickname is authenticated by peerFP. Merge any older
+                                // contact alias for this same identity before publishing the
+                                // new session state, otherwise one device appears twice.
+                                P2PMessageRelay.adoptAuthenticatedPeerNickname(appContext, peerFP, remoteNick)
                                 val wasNameOnline = onlinePeers[remoteNick] == true
                                 val existingNameForFingerprint = peerNameMap[peerFP]
                                 val existingFingerprintForName = nameToFpMap[remoteNick]
+                                nameToFpMap.entries
+                                    .filter { (name, fingerprint) -> fingerprint == peerFP && name != remoteNick }
+                                    .map { it.key }
+                                    .forEach { staleName ->
+                                        nameToFpMap.remove(staleName)
+                                        onlinePeers.remove(staleName)
+                                    }
                                 peerNameMap[peerFP] = remoteNick
                                 nameToFpMap[remoteNick] = peerFP
                                 onlinePeers[remoteNick] = true
                                 onlinePeers[peerFP] = true
-                                P2PPreferences.prefs(appContext).edit()
-                                    .putString(P2PPreferences.peerFingerprint(remoteNick), peerFP)
+                                val peerPrefs = P2PPreferences.prefs(appContext)
+                                val pendingRoutes = peerPrefs.getString(
+                                    P2PPreferences.lastEndpoint(peerFP), null
+                                )
+                                peerPrefs.edit()
+                                    .apply {
+                                        putString(P2PPreferences.peerFingerprint(remoteNick), peerFP)
+                                        // Route updates can arrive immediately after the
+                                        // encrypted handshake, before identity_info gives
+                                        // us a human-readable name. Preserve that
+                                        // fingerprint-keyed cache when the name arrives.
+                                        if (!pendingRoutes.isNullOrBlank()) {
+                                            putString(P2PPreferences.lastEndpoint(remoteNick), pendingRoutes)
+                                            remove(P2PPreferences.lastEndpoint(peerFP))
+                                        }
+                                    }
                                     .apply()
+                                P2PPreferences.updateFingerprintCache(peerFP, remoteNick)
                                 NativeBridge.updatePeerNameMapping(peerFP, remoteNick)
                                 // Profile frames may be repeated. Treat them as metadata updates,
                                 // not fresh transport sessions; otherwise the session callback
@@ -186,7 +239,13 @@ class NativeBridgeImpl : IP2PBridge {
                                         peerFP = peerFP,
                                     )
                                 ) {
-                                    sessionListener?.onSessionEstablished(remoteNick, peerFP, "", "direct", "")
+                                    sessionListener?.onSessionEstablished(
+                                        remoteNick,
+                                        peerFP,
+                                        activeEndpoints[peerFP].orEmpty(),
+                                        activeTransports[peerFP] ?: "Direct P2P",
+                                        "",
+                                    )
                                 }
                             } else {
                                 Log.w(TAG, "[Security] TOFU key change detected for $remoteNick: existing=$existingFP, incoming=$peerFP")
@@ -259,6 +318,18 @@ class NativeBridgeImpl : IP2PBridge {
     ): Boolean {
         val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
         val trackers = usableTrackerUrls(context)
+
+        // Resolve STUN before future private route updates.  The
+        // BitTorrent tracker still receives no LAN endpoint list: it derives
+        // an address only from the announce socket's source address.
+        val natRefreshed = NativeBridge.refreshNatDiagnostics()
+        val publicIpv4Available = NativeBridge.getNatDiagnostics()["public_endpoint"]
+            ?.substringBeforeLast(':')
+            ?.isNotBlank() == true
+        Log.i(
+            TAG,
+            "STUN diagnostics before announce: refreshed=$natRefreshed, publicIpv4Available=$publicIpv4Available"
+        )
 
         val hashes = linkedSetOf<String>()
         if (!rendezvousCode.isNullOrBlank() && nickname.isNotBlank()) {
@@ -492,8 +563,84 @@ class NativeBridgeImpl : IP2PBridge {
         }
     }
 
+    private fun sendAuthenticatedRouteUpdate(peerFingerprint: String) {
+        if (peerFingerprint.isBlank()) return
+        val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        val port = P2PPreferences.listenerPort(context)
+        val routes = linkedSetOf<String>()
+        P2PMessageRelay.getLocalIpAddress(context)
+            .takeIf { it.isNotBlank() && it != "127.0.0.1" }
+            ?.let { routes.add("$it:$port") }
+        P2PMessageRelay.getYggdrasilAddress()
+            .takeIf { it.isNotBlank() }
+            ?.let { routes.add("[$it]:$port") }
+        P2PPreferences.getTorOnionHostname(context)
+            ?.takeIf { it.isNotBlank() }
+            ?.let { routes.add("$it:$port") }
+
+        // STUN reports a UDP mapping; use only its external IPv4 and our TCP
+        // listener port. UPnP, when available, makes that listener reachable.
+        val stunHost = NativeBridge.getNatDiagnostics()["public_endpoint"]
+            ?.substringBeforeLast(':')?.trim('[', ']')
+            .orEmpty()
+        if (stunHost.isNotBlank()) routes.add("$stunHost:$port")
+
+        val safeRoutes = routes.filter(::isValidPeerEndpointList).take(12)
+        if (safeRoutes.isEmpty()) return
+        val payload = JSONObject().apply {
+            put("type", "endpoint_update")
+            put("routes", JSONArray(safeRoutes))
+        }.toString()
+        NativeBridge.sendMessage(peerFingerprint, payload)
+    }
+
+    private fun storeAuthenticatedRouteUpdate(peerFingerprint: String, json: JSONObject) {
+        val routes = json.optJSONArray("routes") ?: return
+        val endpoints = buildList {
+            for (index in 0 until minOf(routes.length(), 12)) {
+                val candidate = when (val route = routes.opt(index)) {
+                    is String -> route.trim()
+                    is JSONObject -> {
+                        val host = route.optString("host").trim()
+                        val port = route.optInt("port", 0)
+                        when {
+                            host.isBlank() || port !in 1..65_535 -> ""
+                            host.contains(':') -> "[$host]:$port"
+                            else -> "$host:$port"
+                        }
+                    }
+                    else -> ""
+                }
+                candidate
+                    .takeIf(::isValidPeerEndpointList)
+                    ?.let(::add)
+            }
+        }.distinct().joinToString(",")
+        if (endpoints.isBlank() || !isValidPeerEndpointList(endpoints)) return
+
+        val context = com.example.twopchat.yggdrasil.GlobalApplication.appContext
+        // An endpoint_update normally arrives before the peer's identity_info
+        // frame. Cache it under the authenticated fingerprint first, then
+        // migrate it to the nickname when identity_info is processed.
+        val peerName = resolvePeerName(peerFingerprint) ?: peerFingerprint
+        val knownFingerprint = P2PPreferences.prefs(context)
+            .getString(P2PPreferences.peerFingerprint(peerName), null)
+        if (peerName != peerFingerprint && !isExpectedPeerFingerprint(knownFingerprint, peerFingerprint)) {
+            Log.w(TAG, "Ignored endpoint_update with unexpected fingerprint")
+            return
+        }
+        P2PPreferences.prefs(context).edit()
+            .putString(P2PPreferences.lastEndpoint(peerName), endpoints)
+            .apply()
+        sessionListener?.onPeerRoutesUpdated(peerName, peerFingerprint, endpoints)
+        Log.i(TAG, "Stored ${endpoints.split(',').size} authenticated peer route(s)")
+    }
+
     override fun closePeerSession(peerName: String, expectedFingerprint: String?): Boolean {
-        if (!expectedFingerprint.isNullOrBlank()) onlinePeers[expectedFingerprint] = false
+        if (!expectedFingerprint.isNullOrBlank()) {
+            onlinePeers[expectedFingerprint] = false
+            lastAuthenticatedInboundAt.remove(expectedFingerprint)
+        }
         nameToFpMap[peerName]?.let { onlinePeers[it] = false }
         onlinePeers[peerName] = false
         return true
@@ -506,7 +653,13 @@ class NativeBridgeImpl : IP2PBridge {
             ?: resolveFingerprint(peerName)
 
         if (!targetFP.isNullOrBlank()) {
-            val isOnline = NativeBridge.isPeerOnline(targetFP)
+            val nativeOnline = NativeBridge.isPeerOnline(targetFP)
+            val authenticatedRecently = lastAuthenticatedInboundAt[targetFP]
+                ?.let { System.currentTimeMillis() - it <= authenticatedLivenessGraceMs }
+                ?: false
+            // A ratchet-authenticated heartbeat/message is stronger evidence than
+            // a transient empty lookup during simultaneous session replacement.
+            val isOnline = nativeOnline || authenticatedRecently
             onlinePeers[targetFP] = isOnline
             onlinePeers[peerName] = isOnline
             return isOnline
@@ -520,6 +673,7 @@ class NativeBridgeImpl : IP2PBridge {
         NativeBridge.stopDiscovery()
         NativeBridge.stopListener()
         onlinePeers.clear()
+        lastAuthenticatedInboundAt.clear()
         pendingMessages.clear()
         return true
     }

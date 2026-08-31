@@ -104,11 +104,11 @@ internal class RelayMaintenanceCoordinator(
                                     lastHeartbeatSentAt[peerName] = now
                                     P2PMessageRelay.sendConnectedPeerHeartbeat(appContext, peerName)
                                 }
-                                val transport = canonicalConnectionTransport(
-                                    rawTransport = prefs.getString(P2PPreferences.transport(peerName), null),
-                                    endpoint = peerEndpoints[peerName]
-                                        ?: prefs.getString(P2PPreferences.lastEndpoint(peerName), null),
-                                )
+                                // A saved preference is an instruction for the next dial, not
+                                // evidence of the route used by this established session.
+                                // Keep the transport written by onSessionEstablished instead of
+                                // periodically relabelling a direct connection as Yggdrasil/Tor.
+                                val transport = P2PMessageRelay.peerConnectionTransports[peerName]
                                 onPeerObservedOnline(
                                     appContext,
                                     peerName,

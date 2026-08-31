@@ -28,6 +28,7 @@ import base64
 import os
 import socket
 import struct
+import ipaddress
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -370,6 +371,11 @@ _announce_enabled = True
 _clearnet_trackers_enabled = True
 _ygg_trackers_enabled = True
 _ipv4_announce_mode = "auto"
+# Routes that may be shared only inside an authenticated Session.  Tracker
+# announcements intentionally use a stricter subset (never LAN addresses).
+local_contact_routes: list[PeerEndpoint] = []
+peer_route_cache: dict[str, list[str]] = {}
+MAX_CONTACT_ROUTES = 12
 
 
 def _tracker_spec_from_custom(item):
@@ -853,6 +859,124 @@ def _parse_endpoint_hosts(addresses, port: int):
     return endpoints
 
 
+def _is_private_or_nonroutable_ipv4(host: str) -> bool:
+    """Return whether *host* is an IPv4 address that must not leave the LAN."""
+    try:
+        address = ipaddress.IPv4Address(host)
+    except ipaddress.AddressValueError:
+        return False
+    # Do not rely on ``is_private`` here: Python deliberately classifies the
+    # RFC 5737 documentation ranges as non-global, while tests and private
+    # deployments may use them as harmless stand-ins for public endpoints.
+    return (
+        address in ipaddress.ip_network("10.0.0.0/8")
+        or address in ipaddress.ip_network("172.16.0.0/12")
+        or address in ipaddress.ip_network("192.168.0.0/16")
+        or address in ipaddress.ip_network("100.64.0.0/10")
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+        or address.is_reserved
+    )
+
+
+def _is_tracker_safe_endpoint(endpoint: PeerEndpoint) -> bool:
+    """Trackers must never receive a LAN IPv4 address or local-only IPv6."""
+    host = endpoint.host.strip().split("%", 1)[0]
+    if host.lower().endswith(".onion"):
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    if isinstance(address, ipaddress.IPv4Address):
+        return not _is_private_or_nonroutable_ipv4(host)
+    # Yggdrasil addresses are globally routable within its overlay.  Do not
+    # publish loopback, link-local, ULA, multicast, or unspecified IPv6.
+    return not (
+        address.is_loopback
+        or address.is_link_local
+        or address in ipaddress.ip_network("fc00::/7")
+        or address.is_multicast
+        or address.is_unspecified
+    )
+
+
+def _is_contact_safe_endpoint(endpoint: PeerEndpoint) -> bool:
+    """Validate a route for an already authenticated contact update.
+
+    LAN routes are useful after the two peers have explicitly connected, so
+    they are permitted here.  They never pass the tracker-specific check.
+    """
+    host = endpoint.host.strip().split("%", 1)[0]
+    if host.lower().endswith(".onion"):
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return not (
+        address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+    )
+
+
+def _cache_peer_routes(peer_fingerprint: str, routes: list[PeerEndpoint]) -> list[str]:
+    """Store validated authenticated routes, keyed by the session identity."""
+    if not peer_fingerprint:
+        return []
+    values = []
+    for route in routes:
+        if not _is_contact_safe_endpoint(route):
+            continue
+        endpoint = _format_endpoint(route.host, route.port)
+        if endpoint not in values:
+            values.append(endpoint)
+        if len(values) >= MAX_CONTACT_ROUTES:
+            break
+    if values:
+        peer_route_cache[peer_fingerprint] = values
+    return values
+
+
+def _validated_endpoint_update(message) -> list[PeerEndpoint]:
+    """Parse the bounded, encrypted endpoint_update application frame."""
+    raw_routes = message.get("routes") if isinstance(message, dict) else None
+    if not isinstance(raw_routes, list):
+        return []
+    routes = []
+    for item in raw_routes[:MAX_CONTACT_ROUTES]:
+        if isinstance(item, str):
+            value = item.strip()
+            if value.startswith("[") and "]:" in value:
+                host, _, raw_port = value[1:].partition("]:")
+            else:
+                host, separator, raw_port = value.rpartition(":")
+                if not separator:
+                    continue
+            try:
+                port = int(raw_port)
+            except ValueError:
+                continue
+        elif isinstance(item, dict):
+            host = str(item.get("host", "")).strip()
+            try:
+                port = int(item.get("port", 0))
+            except (TypeError, ValueError):
+                continue
+        else:
+            continue
+        if not host or len(host) > 253 or not 1 <= port <= 65535:
+            continue
+        route = PeerEndpoint(host=host, port=port)
+        if _is_contact_safe_endpoint(route) and route not in routes:
+            routes.append(route)
+    return routes
+
+
 def _has_ipv6_endpoint(endpoints: list[PeerEndpoint]) -> bool:
     return any(":" in endpoint.host for endpoint in endpoints)
 
@@ -928,7 +1052,11 @@ def _discover_public_ipv4_stun(timeout: float = 1.5) -> str | None:
                     if attr_type == 0x0020:
                         mask = struct.pack(">I", cookie)
                         packed_ip = bytes(left ^ right for left, right in zip(packed_ip, mask))
-                    return socket.inet_ntop(socket.AF_INET, packed_ip)
+                    discovered = socket.inet_ntop(socket.AF_INET, packed_ip)
+                    # A malicious/misconfigured STUN server must not make us
+                    # advertise loopback or a private address to public trackers.
+                    if not _is_private_or_nonroutable_ipv4(discovered):
+                        return discovered
             except (OSError, struct.error):
                 continue
             finally:
@@ -1035,6 +1163,16 @@ async def _send_local_identity_info(session) -> bool:
         "fingerprint": actual_fingerprint,
         "listen_port": listener_port,
     })
+    # This is an encrypted application frame, never a tracker payload.  A
+    # peer's authenticated session fingerprint supplies the binding; the
+    # payload itself deliberately carries no user-visible chat content.
+    routes = [
+        {"host": route.host, "port": route.port}
+        for route in local_contact_routes[:MAX_CONTACT_ROUTES]
+        if _is_contact_safe_endpoint(route)
+    ]
+    if routes:
+        await session.send_reliable({"type": "endpoint_update", "routes": routes})
     print(f"Sent authenticated identity_info as '{local_identity_nickname}'")
     return True
 
@@ -1576,7 +1714,7 @@ def announce_peer_endpoints(
     Announce all current IPv4 and Yggdrasil/global IPv6 endpoints across the tracker set.
     """
     import urllib.error
-    global local_identity_nickname, local_identity_fingerprint, local_yggdrasil_available, local_announced_ips
+    global local_identity_nickname, local_identity_fingerprint, local_yggdrasil_available, local_announced_ips, local_contact_routes
 
     if not _announce_enabled:
         for tracker_name in _resolve_tracker_names():
@@ -1609,6 +1747,29 @@ def announce_peer_endpoints(
     proxy_active = get_proxy_configuration().get("enabled", False)
     with _tracker_config_lock:
         ipv4_policy = _ipv4_announce_mode
+
+    # STUN has to finish before the announce payload is constructed.  The old
+    # background call discovered an address but never registered it anywhere.
+    should_stun = (
+        not proxy_active
+        and ipv4_policy != "never"
+        and (ipv4_policy == "always" or not local_yggdrasil_available)
+    )
+    if should_stun:
+        public_ipv4 = _discover_public_ipv4_stun()
+        if public_ipv4:
+            public_address_observations.add(public_ipv4)
+            stun_endpoint = PeerEndpoint(host=public_ipv4, port=port)
+            if stun_endpoint not in endpoints:
+                endpoints.append(stun_endpoint)
+
+    # Retain LAN routes for an encrypted contact update, but strip them before
+    # any tracker or DHT receives the list.
+    local_contact_routes = [route for route in endpoints if _is_contact_safe_endpoint(route)]
+    endpoints = [route for route in local_contact_routes if _is_tracker_safe_endpoint(route)]
+    if not endpoints:
+        print("No public or overlay endpoint is safe to announce.")
+        return False
 
     if proxy_active:
         # When Tor is active, outbound tracker connections route via Tor exit relays.
@@ -1740,17 +1901,6 @@ def announce_peer_endpoints(
                         str(round((time.monotonic() - dht_started) * 1000)),
                     )
 
-            # Launch STUN discovery in background according to IPv4 policy
-            with _tracker_config_lock:
-                stun_policy = _ipv4_announce_mode
-
-            should_stun = (
-                stun_policy == "always"
-                or (stun_policy == "auto" and not local_yggdrasil_available)
-            )
-            if should_stun:
-                asyncio.create_task(asyncio.to_thread(_discover_public_ipv4_stun))
-
             tracker_tasks = {
                 tracker_name: asyncio.create_task(_announce_tracker(tracker_name))
                 for tracker_name in tracker_names
@@ -1844,6 +1994,11 @@ def get_tracker_diagnostics_json() -> str:
 
 def get_public_addresses_json() -> str:
     return json.dumps(sorted(public_address_observations))
+
+
+def get_peer_routes_json(peer_fingerprint: str) -> str:
+    """Expose only routes received over an authenticated session for a peer."""
+    return json.dumps(peer_route_cache.get(str(peer_fingerprint or ""), []))
 
 
 # =====================================================================
@@ -2141,6 +2296,21 @@ async def _read_loop(session, peer_name, fp):
                 # Do not invent a name: nodes that have not configured one
                 # cannot be discovered by nickname.
                 await _send_local_identity_info(session)
+                continue
+            elif mtype == "endpoint_update":
+                routes = _validated_endpoint_update(msg)
+                cached = _cache_peer_routes(fp, routes)
+                if cached:
+                    print(f"Stored {len(cached)} authenticated route(s) for {fp[:8]}")
+                    # New Android bridges may expose this optional callback;
+                    # older ones remain wire-compatible and simply use the
+                    # bridge cache for reconnects.
+                    callback = getattr(session_listener_callback, "onPeerRoutesUpdated", None)
+                    if callback is not None:
+                        try:
+                            callback(peer_name, fp, json.dumps(cached))
+                        except Exception as callback_error:
+                            print("Error invoking route update callback:", callback_error)
                 continue
             elif mtype == "chat":
                 body = msg.get("body", "")
@@ -3511,6 +3681,11 @@ def reconnect_peer_session(peer_name: str, endpoint: str, expected_fingerprint=N
             signing_key = load_or_create_signing_identity()
             trust_store = TrustStore()
             endpoints = [e.strip() for e in endpoint.split(",") if e.strip()]
+            # Routes learned in a previous encrypted chat are tried before a
+            # public tracker.  They remain fingerprint-bound at handshake.
+            if expected_fingerprint:
+                cached_routes = peer_route_cache.get(expected_fingerprint, [])
+                endpoints = list(dict.fromkeys([*cached_routes, *endpoints]))
             
             connected_session = None
             connected_endpoint = ""

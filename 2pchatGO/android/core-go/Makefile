@@ -4,7 +4,10 @@ NDK_DIR ?= $(ANDROID_NDK_HOME)
 
 ifeq ($(OS),Windows_NT)
 NDK_HOST_TAG ?= windows-x86_64
-TOOLCHAIN_EXE_SUFFIX ?= .cmd
+ANDROID_CLANG = $(TOOLCHAIN)/clang.exe
+ANDROID_ARM64_CC = $(ANDROID_CLANG) --target=aarch64-linux-android$(API_LEVEL)
+ANDROID_X86_64_CC = $(ANDROID_CLANG) --target=x86_64-linux-android$(API_LEVEL)
+ANDROID_ARM_CC = $(ANDROID_CLANG) --target=armv7a-linux-androideabi$(API_LEVEL)
 else
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
@@ -12,7 +15,9 @@ NDK_HOST_TAG ?= darwin-x86_64
 else
 NDK_HOST_TAG ?= linux-x86_64
 endif
-TOOLCHAIN_EXE_SUFFIX ?=
+ANDROID_ARM64_CC = $(TOOLCHAIN)/aarch64-linux-android$(API_LEVEL)-clang
+ANDROID_X86_64_CC = $(TOOLCHAIN)/x86_64-linux-android$(API_LEVEL)-clang
+ANDROID_ARM_CC = $(TOOLCHAIN)/armv7a-linux-androideabi$(API_LEVEL)-clang
 endif
 
 ifeq ($(strip $(NDK_DIR)),)
@@ -39,7 +44,7 @@ android-arm64:
 	CGO_LDFLAGS="$(CGO_LDFLAGS)" \
 	GOOS=android \
 	GOARCH=arm64 \
-	CC=$(TOOLCHAIN)/aarch64-linux-android$(API_LEVEL)-clang$(TOOLCHAIN_EXE_SUFFIX) \
+	CC="$(ANDROID_ARM64_CC)" \
 	go build -ldflags="-s -w -extldflags '$(CGO_LDFLAGS)'" -buildmode=c-shared -o $(JNILIBS_DIR)/arm64-v8a/lib2pcore.so ./cmd/lib2pcore
 	@rm -f $(JNILIBS_DIR)/arm64-v8a/lib2pcore.h
 	@echo "✓ Built arm64-v8a: $(JNILIBS_DIR)/arm64-v8a/lib2pcore.so"
@@ -51,7 +56,7 @@ android-x86_64:
 	CGO_LDFLAGS="$(CGO_LDFLAGS)" \
 	GOOS=android \
 	GOARCH=amd64 \
-	CC=$(TOOLCHAIN)/x86_64-linux-android$(API_LEVEL)-clang$(TOOLCHAIN_EXE_SUFFIX) \
+	CC="$(ANDROID_X86_64_CC)" \
 	go build -ldflags="-s -w -extldflags '$(CGO_LDFLAGS)'" -buildmode=c-shared -o $(JNILIBS_DIR)/x86_64/lib2pcore.so ./cmd/lib2pcore
 	@rm -f $(JNILIBS_DIR)/x86_64/lib2pcore.h
 	@echo "✓ Built x86_64: $(JNILIBS_DIR)/x86_64/lib2pcore.so"
@@ -64,7 +69,7 @@ android-arm:
 	GOOS=android \
 	GOARCH=arm \
 	GOARM=7 \
-	CC=$(TOOLCHAIN)/armv7a-linux-androideabi$(API_LEVEL)-clang$(TOOLCHAIN_EXE_SUFFIX) \
+	CC="$(ANDROID_ARM_CC)" \
 	go build -ldflags="-s -w -extldflags '$(CGO_LDFLAGS)'" -buildmode=c-shared -o $(JNILIBS_DIR)/armeabi-v7a/lib2pcore.so ./cmd/lib2pcore
 	@rm -f $(JNILIBS_DIR)/armeabi-v7a/lib2pcore.h
 	@echo "✓ Built armeabi-v7a: $(JNILIBS_DIR)/armeabi-v7a/lib2pcore.so"

@@ -95,3 +95,14 @@ func TestSTUNTorBlockedGuard(t *testing.T) {
 		t.Errorf("Expected NATTypeBlocked for Tor mode, got %v", diag.NATType)
 	}
 }
+
+func TestIsShareablePublicIPv4RejectsLANAndSpecialAddresses(t *testing.T) {
+	for _, raw := range []string{"10.0.0.7", "172.16.1.7", "192.168.1.7", "100.64.0.1", "127.0.0.1", "169.254.1.7", "0.0.0.0"} {
+		if IsShareablePublicIPv4(net.ParseIP(raw)) {
+			t.Fatalf("%s must not be accepted as a public STUN route", raw)
+		}
+	}
+	if !IsShareablePublicIPv4(net.ParseIP("203.0.113.20")) {
+		t.Fatal("documentation-range stand-in must be accepted as a public route")
+	}
+}

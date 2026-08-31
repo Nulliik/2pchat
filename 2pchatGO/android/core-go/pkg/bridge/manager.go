@@ -927,8 +927,11 @@ func (m *SessionManager) GroupDecrypt(epochSecret, authenticatedData []byte, non
 	return crypto.GroupDecrypt(epochSecret, authenticatedData, nonceBase64, ciphertextBase64)
 }
 
-// TriggerNatTraversal launches background STUN NAT discovery and UPnP port mapping.
-func (m *SessionManager) TriggerNatTraversal() bool {
+// RefreshNATDiagnostics performs STUN discovery and UPnP mapping before a
+// route announcement. Callers that need an externally reachable IPv4 must use
+// this synchronous path; a background probe can otherwise finish after the
+// endpoint_update has already been sent.
+func (m *SessionManager) RefreshNATDiagnostics(ctx context.Context) bool {
 	m.mu.Lock()
 	torActive := m.torEnabled
 	port := 0
@@ -945,24 +948,30 @@ func (m *SessionManager) TriggerNatTraversal() bool {
 	}
 	m.mu.Unlock()
 
+	diag := transport.DetectNATEnvironment(ctx, torActive)
+
+	if !torActive && port > 0 {
+		_ = m.upnpMapper.DiscoverAndMapPort(ctx, port)
+		mapped, extIP, mPort, sType := m.upnpMapper.GetStatus()
+		diag.UPnPMapped = mapped
+		diag.UPnPExternalIP = extIP
+		diag.UPnPMappedPort = mPort
+		diag.UPnPService = sType
+	}
+
+	m.mu.Lock()
+	m.natDiag = diag
+	m.mu.Unlock()
+	return true
+}
+
+// TriggerNatTraversal retains the non-blocking diagnostics API used by the
+// settings screen. Announce flows use RefreshNATDiagnostics instead.
+func (m *SessionManager) TriggerNatTraversal() bool {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-
-		diag := transport.DetectNATEnvironment(ctx, torActive)
-
-		if !torActive && port > 0 {
-			_ = m.upnpMapper.DiscoverAndMapPort(ctx, port)
-			mapped, extIP, mPort, sType := m.upnpMapper.GetStatus()
-			diag.UPnPMapped = mapped
-			diag.UPnPExternalIP = extIP
-			diag.UPnPMappedPort = mPort
-			diag.UPnPService = sType
-		}
-
-		m.mu.Lock()
-		m.natDiag = diag
-		m.mu.Unlock()
+		_ = m.RefreshNATDiagnostics(ctx)
 	}()
 
 	return true

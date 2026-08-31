@@ -262,6 +262,62 @@ def test_public_ipv4_discovery_is_exposed_for_qr(monkeypatch):
     assert json.loads(bridge.get_public_addresses_json()) == ["203.0.113.20"]
 
 
+def test_announce_uses_stun_ipv4_and_never_sends_lan_routes(monkeypatch):
+    bridge = _load_discovery_bridge()
+    announced = []
+
+    class FakeProvider:
+        observed_addresses = ()
+
+        async def announce(self, *_args, **kwargs):
+            announced.extend(kwargs["endpoints"])
+            return object()
+
+    monkeypatch.setattr(bridge, "CLEARNET_TRACKERS", ("Test tracker",))
+    monkeypatch.setattr(bridge, "YGG_TRACKERS", ())
+    monkeypatch.setattr(bridge, "_dht_enabled", False)
+    monkeypatch.setattr(bridge, "_ipv4_announce_mode", "always")
+    monkeypatch.setattr(
+        bridge,
+        "get_tracker_by_name",
+        lambda _name: SimpleNamespace(discovery_scheme="http-tracker", announce_url="https://tracker.invalid"),
+    )
+    monkeypatch.setattr(bridge, "get_discovery_provider", lambda *_args, **_kwargs: FakeProvider())
+    monkeypatch.setattr(bridge, "_discover_public_ipv4_stun", lambda: "203.0.113.20")
+
+    assert bridge.announce_peer_endpoints(
+        "alice", "fingerprint", '["192.168.1.12", "200::2"]', 50001, "code"
+    ) is True
+
+    assert {(route.host, route.port) for route in announced} == {
+        ("203.0.113.20", 50001), ("200::2", 50001)
+    }
+    assert "192.168.1.12" not in bridge.get_public_addresses_json()
+
+
+def test_authenticated_endpoint_update_keeps_lan_private_and_is_fingerprint_bound():
+    bridge = _load_discovery_bridge()
+    routes = bridge._validated_endpoint_update({
+        "routes": [
+            {"host": "192.168.1.7", "port": 50001},
+            {"host": "200::2", "port": 50001},
+            {"host": "203.0.113.20", "port": "50002"},
+            {"host": "invalid", "port": 50003},
+        ]
+    })
+
+    assert [(route.host, route.port) for route in routes] == [
+        ("192.168.1.7", 50001), ("200::2", 50001), ("203.0.113.20", 50002)
+    ]
+    assert bridge._cache_peer_routes("peer-one", routes) == [
+        "192.168.1.7:50001", "[200::2]:50001", "203.0.113.20:50002"
+    ]
+    assert json.loads(bridge.get_peer_routes_json("peer-one")) == [
+        "192.168.1.7:50001", "[200::2]:50001", "203.0.113.20:50002"
+    ]
+    assert json.loads(bridge.get_peer_routes_json("peer-two")) == []
+
+
 def test_direct_yggdrasil_search_reuses_authenticated_active_session(monkeypatch):
     bridge = _load_discovery_bridge()
 

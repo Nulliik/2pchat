@@ -24,6 +24,7 @@ class ConnectionTransportTest {
     @Test
     fun `infers route from endpoint while session metadata catches up`() {
         assertEquals("Direct P2P", canonicalConnectionTransport(null, "192.0.2.12:50001"))
+        assertEquals("Direct P2P", canonicalConnectionTransport(null, "[2a00:1450:4001:828::200e]:50001"))
         assertEquals("Yggdrasil", canonicalConnectionTransport(null, "[200:abcd::12]:50001"))
         assertEquals(
             "Tor Onion",

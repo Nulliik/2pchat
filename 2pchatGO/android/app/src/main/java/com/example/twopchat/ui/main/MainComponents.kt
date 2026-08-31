@@ -289,8 +289,7 @@ fun PeerRow(
                         }
                     }
                     if (peer.name != "Saved Messages") {
-                        val isOnline = com.example.twopchat.relay.P2PMessageRelay.isPeerOnline(context, peer.name) ||
-                            com.example.twopchat.relay.P2PMessageRelay.peerSessionStates[peer.name] == true
+                        val isOnline = com.example.twopchat.relay.P2PMessageRelay.isPeerOnline(context, peer.name)
                         if (isOnline) {
                             Box(
                                 modifier = Modifier
@@ -357,9 +356,17 @@ fun PeerRow(
             Spacer(modifier = Modifier.width(8.dp))
 
             // Transport Badge (Quiet Luxury design with icons)
-            val transportKind = connectionTransportKind(peer.transport)
             val isGroup = !peer.isDirect
             val isSavedMessages = peer.name == Localizations.getString("saved_messages_title", appLanguage) || peer.transport == "LOCAL RAM"
+            // The route badge describes a live socket, not the last saved
+            // endpoint or the user's next-connection preference.
+            val hasActiveSession = !isGroup && !isSavedMessages &&
+                com.example.twopchat.relay.P2PMessageRelay.isPeerOnline(context, peer.name)
+            val transportKind = if (hasActiveSession) {
+                connectionTransportKind(peer.transport)
+            } else {
+                ConnectionTransportKind.UNKNOWN
+            }
 
             val badgeSpec = when {
                 peer.isBlocked -> TransportBadgeSpec(
@@ -392,6 +399,12 @@ fun PeerRow(
                         label
                     )
                 }
+                !hasActiveSession -> TransportBadgeSpec(
+                    onSurfaceColor.copy(alpha = 0.06f),
+                    onSurfaceVariant,
+                    "○",
+                    if (appLanguage == "Русский") "Не в сети" else "Offline"
+                )
                 transportKind == ConnectionTransportKind.DIRECT -> TransportBadgeSpec(
                     primaryColor.copy(alpha = 0.12f),
                     primaryColor,

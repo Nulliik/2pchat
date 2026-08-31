@@ -243,6 +243,26 @@ func TestManagerNatTraversal(t *testing.T) {
 	}
 }
 
+func TestRefreshNatDiagnosticsBlocksSTUNUnderTor(t *testing.T) {
+	mgr := &SessionManager{
+		sessions:   make(map[string]*crypto.SessionState),
+		torEnabled: true,
+		torProxy:   "127.0.0.1:9050",
+		dialer:     transport.NewAdaptiveDialer("127.0.0.1:9050", true, 5*time.Second),
+	}
+	if err := mgr.Init(); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if !mgr.RefreshNATDiagnostics(ctx) {
+		t.Fatal("synchronous NAT refresh returned false")
+	}
+	if got := mgr.GetPublicEndpoint(); got != "" {
+		t.Fatalf("Tor mode must not expose a STUN public endpoint, got %q", got)
+	}
+}
+
 func TestConcurrentCallbacksNoDeadlock(t *testing.T) {
 	var mgr *SessionManager
 	var wg sync.WaitGroup

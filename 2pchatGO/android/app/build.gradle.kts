@@ -34,14 +34,46 @@ val unpackBridgeTransportBinaries by tasks.registering(Sync::class) {
 
 val buildGoCoreBinaries by tasks.registering(Exec::class) {
     val envNdk = System.getenv("ANDROID_NDK_HOME") ?: System.getenv("ANDROID_NDK_ROOT")
-    val sdkDir = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+    val defaultWindowsSdk = file("${System.getProperty("user.home")}/AppData/Local/Android/Sdk")
+    val sdkDir = System.getenv("ANDROID_HOME")
+        ?: System.getenv("ANDROID_SDK_ROOT")
+        ?: defaultWindowsSdk.takeIf { it.exists() }?.absolutePath
     val ndkDir = when {
         envNdk != null && file(envNdk).exists() -> file(envNdk)
         sdkDir != null && file("$sdkDir/ndk/26.3.11579264").exists() -> file("$sdkDir/ndk/26.3.11579264")
+        sdkDir != null && file("$sdkDir/ndk/android-ndk-r26d").exists() -> file("$sdkDir/ndk/android-ndk-r26d")
         else -> file("/Users/kodzy/Library/Android/sdk/ndk/26.3.11579264")
     }
     workingDir = file("../core-go")
-    commandLine("make", "NDK_DIR=${ndkDir.absolutePath}", "android-all")
+    if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+        val clang = ndkDir.resolve("toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe").absolutePath
+        val jniLibs = file("src/main/jniLibs").absolutePath.replace("\\", "/")
+        val buildScript = """
+            ${'$'}ErrorActionPreference = 'Stop'
+            ${'$'}env:CGO_ENABLED = '1'
+            ${'$'}env:CGO_CFLAGS = '-fno-omit-frame-pointer -O2'
+            ${'$'}env:CGO_LDFLAGS = '-Wl,-z,max-page-size=16384'
+            ${'$'}targets = @(
+                @{ Abi = 'arm64-v8a'; Arch = 'arm64'; Target = 'aarch64-linux-android24' },
+                @{ Abi = 'x86_64'; Arch = 'amd64'; Target = 'x86_64-linux-android24' },
+                @{ Abi = 'armeabi-v7a'; Arch = 'arm'; Target = 'armv7a-linux-androideabi24' }
+            )
+            foreach (${ '$' }target in ${ '$' }targets) {
+                ${'$'}outputDir = '${jniLibs}/' + ${'$'}target.Abi
+                New-Item -ItemType Directory -Force -Path ${'$'}outputDir | Out-Null
+                ${'$'}env:GOOS = 'android'
+                ${'$'}env:GOARCH = ${'$'}target.Arch
+                ${'$'}env:GOARM = if (${ '$' }target.Arch -eq 'arm') { '7' } else { '' }
+                ${'$'}env:CC = '${clang} --target=' + ${'$'}target.Target
+                & go build '-ldflags=-s -w -extldflags=-Wl,-z,max-page-size=16384' '-buildmode=c-shared' '-o' (${ '$' }outputDir + '/lib2pcore.so') './cmd/lib2pcore'
+                if (${ '$' }LASTEXITCODE -ne 0) { exit ${ '$' }LASTEXITCODE }
+                Remove-Item -LiteralPath (${ '$' }outputDir + '/lib2pcore.h') -ErrorAction SilentlyContinue
+            }
+        """.trimIndent()
+        commandLine("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", buildScript)
+    } else {
+        commandLine("make", "NDK_DIR=${ndkDir.absolutePath}", "android-all")
+    }
     onlyIf {
         file("../core-go/Makefile").exists() && ndkDir.exists()
     }

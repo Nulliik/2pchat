@@ -522,6 +522,17 @@ object NativeBridge {
         }
     }
 
+    /** Refresh STUN/UPnP synchronously before publishing a contact route. */
+    fun refreshNatDiagnostics(): Boolean {
+        if (!isLoaded) return false
+        return try {
+            nativeRefreshNatDiagnostics()
+        } catch (e: Throwable) {
+            Log.e(TAG, "nativeRefreshNatDiagnostics failed", e)
+            false
+        }
+    }
+
     fun getNatDiagnostics(): Map<String, String> {
         if (!isLoaded) return emptyMap()
         val jsonStr = nativeGetNatDiagnosticsJSON() ?: return emptyMap()
@@ -634,6 +645,7 @@ object NativeBridge {
     private external fun nativeGroupEncrypt(epochSecret: ByteArray, authenticatedData: ByteArray, plaintext: ByteArray): String?
     private external fun nativeGroupDecrypt(epochSecret: ByteArray, authenticatedData: ByteArray, nonceBase64: String, ciphertextBase64: String): ByteArray?
     private external fun nativeTriggerNatTraversal(): Boolean
+    private external fun nativeRefreshNatDiagnostics(): Boolean
     private external fun nativeGetNatDiagnosticsJSON(): String?
     private external fun nativeOnNetworkChanged(): Boolean
 }

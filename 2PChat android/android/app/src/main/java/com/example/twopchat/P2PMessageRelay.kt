@@ -19,6 +19,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import kotlinx.coroutines.delay
 import androidx.core.content.edit
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.ByteArrayOutputStream
@@ -1605,6 +1606,32 @@ object P2PMessageRelay {
                     val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
                     log(appContext, "Secure Double Ratchet session closed")
                     schedulePeerOffline(resolvedPeerName)
+                }
+
+                override fun onPeerRoutesUpdated(peerName: String, fingerprint: String, routesJson: String) {
+                    val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
+                    val prefs = P2PPreferences.prefs(appContext)
+                    val persistedFingerprint = prefs.getString(
+                        P2PPreferences.peerFingerprint(resolvedPeerName), null
+                    )
+                    if (!isExpectedPeerFingerprint(persistedFingerprint, fingerprint)) {
+                        log(appContext, "Ignored route update with unexpected fingerprint", "ERROR")
+                        return
+                    }
+                    val routes = runCatching {
+                        val array = JSONArray(routesJson)
+                        (0 until array.length()).mapNotNull { index ->
+                            array.optString(index).trim().takeIf(::isValidSingleEndpoint)
+                        }.distinct().take(12)
+                    }.getOrElse {
+                        log(appContext, "Ignored malformed authenticated route update", "ERROR", it)
+                        emptyList()
+                    }
+                    val endpoints = routes.joinToString(",")
+                    if (endpoints.isEmpty() || !isValidEndpoint(endpoints)) return
+                    prefs.edit().putString(P2PPreferences.lastEndpoint(resolvedPeerName), endpoints).apply()
+                    _peerEndpoints[resolvedPeerName] = endpoints
+                    log(appContext, "Stored ${routes.size} authenticated peer route(s)")
                 }
             })
             

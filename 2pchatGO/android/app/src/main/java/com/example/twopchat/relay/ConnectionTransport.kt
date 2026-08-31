@@ -41,10 +41,17 @@ internal fun connectionTransportKind(
     }
     return when {
         host in listOf("127.0.0.1", "localhost", "::1") -> ConnectionTransportKind.ONION
-        ':' in host -> ConnectionTransportKind.YGGDRASIL
+        isYggdrasilIpv6(host) -> ConnectionTransportKind.YGGDRASIL
         host.isNotBlank() -> ConnectionTransportKind.DIRECT
         else -> ConnectionTransportKind.UNKNOWN
     }
+}
+
+/** Yggdrasil addresses are allocated from 0200::/7, not from all IPv6. */
+private fun isYggdrasilIpv6(host: String): Boolean {
+    if (':' !in host) return false
+    val firstHextet = host.substringBefore(':').substringBefore('%').toIntOrNull(16) ?: return false
+    return firstHextet in 0x0200..0x03ff
 }
 
 internal fun canonicalConnectionTransport(

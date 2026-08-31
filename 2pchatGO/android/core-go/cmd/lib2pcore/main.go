@@ -5,6 +5,7 @@ package main
 */
 import "C"
 import (
+	"context"
 	"fmt"
 	"net"
 	"time"
@@ -881,6 +882,16 @@ func Java_com_example_twopchat_NativeBridge_nativeGroupDecrypt(
 func Java_com_example_twopchat_NativeBridge_nativeTriggerNatTraversal(env *C.JNIEnv, clazz C.jclass) C.jboolean {
 	ok := bridge.GetManager().TriggerNatTraversal()
 	if ok {
+		return C.JNI_TRUE
+	}
+	return C.JNI_FALSE
+}
+
+//export Java_com_example_twopchat_NativeBridge_nativeRefreshNatDiagnostics
+func Java_com_example_twopchat_NativeBridge_nativeRefreshNatDiagnostics(env *C.JNIEnv, clazz C.jclass) C.jboolean {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	if bridge.GetManager().RefreshNATDiagnostics(ctx) {
 		return C.JNI_TRUE
 	}
 	return C.JNI_FALSE

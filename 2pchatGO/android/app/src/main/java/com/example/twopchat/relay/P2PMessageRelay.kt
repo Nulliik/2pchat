@@ -356,6 +356,10 @@ object P2PMessageRelay {
         val online = getBridge(context).isPeerOnline(peerName, fp)
         runOnMain {
             peerSessionStates[peerName] = online
+            if (!online) {
+                peerConnectionTransports.remove(peerName)
+                peerRttMs.remove(peerName)
+            }
         }
         return online
     }
@@ -794,6 +798,40 @@ object P2PMessageRelay {
             }
         }
         return true
+    }
+
+    /**
+     * A peer nickname is metadata authenticated by its session fingerprint.  If that
+     * peer was previously saved under another nickname, keep a single contact record
+     * and carry the local chat state forward to the newly announced nickname.
+     */
+    fun adoptAuthenticatedPeerNickname(context: Context, fingerprint: String, nickname: String) {
+        val cleanFingerprint = fingerprint.trim()
+        val cleanNickname = nickname.trim()
+        if (cleanFingerprint.isBlank() || cleanNickname.isBlank() || isPlaceholderPeerName(cleanNickname)) {
+            return
+        }
+
+        val aliases = synchronized(identityLock) {
+            P2PPreferences.prefs(context).all.entries
+                .asSequence()
+                .filter { (key, value) ->
+                    key.startsWith("peer_fingerprint_") &&
+                        value == cleanFingerprint &&
+                        key.removePrefix("peer_fingerprint_") != cleanNickname
+                }
+                .map { (key, _) -> key.removePrefix("peer_fingerprint_") }
+                .filter { it.isNotBlank() }
+                .toList()
+        }
+
+        aliases.forEach { alias ->
+            renamePeer(context, alias, cleanNickname)
+        }
+        synchronized(identityLock) {
+            fingerprintToPeerName[cleanFingerprint] = cleanNickname
+        }
+        P2PPreferences.updateFingerprintCache(cleanFingerprint, cleanNickname)
     }
 
     private fun moveChatState(
