@@ -95,10 +95,13 @@ fun MainNavigation(
     }
 
     val currentDestination = backStack.lastOrNull()
+    val isReducedMotion = com.example.twopchat.theme.rememberIsReducedMotionEnabled()
     AnimatedContent(
       targetState = currentDestination,
       transitionSpec = {
-        if (targetState != Main) {
+        if (isReducedMotion) {
+          fadeIn(animationSpec = tween(0)).togetherWith(fadeOut(animationSpec = tween(0)))
+        } else if (targetState != Main) {
           (slideInHorizontally(initialOffsetX = { width -> width }, animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)) + fadeIn(animationSpec = tween(260)))
             .togetherWith(slideOutHorizontally(targetOffsetX = { width -> -width / 3 }, animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)) + fadeOut(animationSpec = tween(200)))
         } else {
