@@ -328,27 +328,26 @@ object P2PMessageRelay {
 
     fun getPeerTransportType(context: Context, peerName: String): TransportType {
         val isOnline = isPeerOnline(context, peerName)
+        if (!isOnline) return TransportType.DISCONNECTED
         val fp = P2PPreferences.prefs(context).getString(P2PPreferences.peerFingerprint(peerName), null)
         val raw = peerConnectionTransports[peerName]
             ?: (if (!fp.isNullOrBlank()) peerConnectionTransports[fp] else null)
             ?: (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerConnectionTransports[it] })
-            ?: P2PPreferences.prefs(context).getString(P2PPreferences.transport(peerName), null)
         val ep = peerEndpoints[peerName]
             ?: (if (!fp.isNullOrBlank()) peerEndpoints[fp] else null)
             ?: (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerEndpoints[it] })
-            ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null)
-            ?: P2PPreferences.getPeerOnionAddress(context, peerName)
-        return resolveTransportType(raw, ep, isOnline)
+        return resolveTransportType(raw, ep, true)
     }
 
     fun getPeerTransportType(peerName: String): TransportType {
         val isOnline = storedAppContext?.let { isPeerOnline(it, peerName) }
             ?: (peerSessionStates[peerName] == true)
+        if (!isOnline) return TransportType.DISCONNECTED
         val raw = peerConnectionTransports[peerName]
             ?: (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerConnectionTransports[it] })
         val ep = peerEndpoints[peerName]
             ?: (fingerprintToPeerName.entries.firstOrNull { it.value == peerName }?.key?.let { peerEndpoints[it] })
-        return resolveTransportType(raw, ep, isOnline)
+        return resolveTransportType(raw, ep, true)
     }
 
     fun isPeerOnline(context: Context, peerName: String): Boolean {
@@ -2192,6 +2191,33 @@ object P2PMessageRelay {
                     clearPeerPresenceImmediately(resolvedPeerName)
                     if (fingerprint.isNotBlank() && fingerprint != resolvedPeerName) {
                         clearPeerPresenceImmediately(fingerprint)
+                    }
+                }
+
+                override fun onPeerRoutesUpdated(peerName: String, fingerprint: String, endpoints: String) {
+                    val resolvedPeerName = canonicalPeerName(appContext, peerName, fingerprint)
+                    rememberAuthenticatedPeerEndpoint(resolvedPeerName, endpoints)
+                    if (fingerprint.isNotBlank() && fingerprint != resolvedPeerName) {
+                        rememberAuthenticatedPeerEndpoint(fingerprint, endpoints)
+                    }
+
+                    // Extract and persist Tor .onion address if present in route list
+                    val onionRoute = endpoints.split(",")
+                        .map { it.trim() }
+                        .firstOrNull { it.contains(".onion", ignoreCase = true) }
+                    if (!onionRoute.isNullOrBlank()) {
+                        val onionHost = when {
+                            onionRoute.startsWith("[") -> onionRoute.substringAfter('[').substringBefore(']')
+                            onionRoute.contains(":") -> onionRoute.substringBefore(':')
+                            else -> onionRoute
+                        }
+                        if (onionHost.endsWith(".onion", ignoreCase = true)) {
+                            P2PPreferences.setPeerOnionAddress(appContext, resolvedPeerName, onionHost)
+                            if (fingerprint.isNotBlank() && fingerprint != resolvedPeerName) {
+                                P2PPreferences.setPeerOnionAddress(appContext, fingerprint, onionHost)
+                            }
+                            log(appContext, "Saved authenticated Tor .onion address for $resolvedPeerName: $onionHost")
+                        }
                     }
                 }
 

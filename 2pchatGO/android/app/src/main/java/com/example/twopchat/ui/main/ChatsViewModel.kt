@@ -122,20 +122,16 @@ internal class ChatsViewModel(
                     val snapshot = runCatching {
                         withContext(Dispatchers.IO) {
                             val trackerSuccesses = TrackerPreferences.activeTrackerSuccessCount(appContext)
+                            val yggState = sharedPrefs.getString("yggdrasil_runtime_state", "").orEmpty()
+                            val yggAddress = P2PMessageRelay.getYggdrasilAddress()
+                            val isYggStateOk = yggState.equals("ENABLED", ignoreCase = true) ||
+                                yggState.equals("CONNECTED", ignoreCase = true)
                             HeroSnapshot(
                                 activePeers = P2PMessageRelay.getActivePeerNames().size,
                                 upnpOk = true,
                                 trackersOk = trackerSuccesses > 0,
                                 trackerSuccesses = trackerSuccesses,
-                                // Both VPN and user-space Proxy publish their
-                                // address/state here. The relay owns neither
-                                // service in Proxy mode, so querying only the
-                                // relay made a live SOCKS Yggdrasil stack look
-                                // falsely disabled in the dashboard.
-                                yggOk = sharedPrefs.getString("yggdrasil_runtime_state", "")
-                                    .equals("ENABLED", ignoreCase = true) ||
-                                    sharedPrefs.getString("yggdrasil_runtime_state", "")
-                                        .equals("CONNECTED", ignoreCase = true),
+                                yggOk = isYggStateOk && yggAddress.isNotBlank(),
                             )
                         }
                     }.getOrNull()

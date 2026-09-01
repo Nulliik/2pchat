@@ -629,9 +629,27 @@ class NativeBridgeImpl : IP2PBridge {
             Log.w(TAG, "Ignored endpoint_update with unexpected fingerprint")
             return
         }
-        P2PPreferences.prefs(context).edit()
+        val editor = P2PPreferences.prefs(context).edit()
             .putString(P2PPreferences.lastEndpoint(peerName), endpoints)
-            .apply()
+
+        // Persist Tor .onion address explicitly so TOR_ONLY transport preferences resolve instantly
+        val onionRoute = endpoints.split(",")
+            .map { it.trim() }
+            .firstOrNull { it.contains(".onion", ignoreCase = true) }
+        if (!onionRoute.isNullOrBlank()) {
+            val onionHost = when {
+                onionRoute.startsWith("[") -> onionRoute.substringAfter('[').substringBefore(']')
+                onionRoute.contains(":") -> onionRoute.substringBefore(':')
+                else -> onionRoute
+            }
+            if (onionHost.endsWith(".onion", ignoreCase = true)) {
+                editor.putString(P2PPreferences.peerOnionAddress(peerName), onionHost)
+                if (peerFingerprint.isNotBlank() && peerFingerprint != peerName) {
+                    editor.putString(P2PPreferences.peerOnionAddress(peerFingerprint), onionHost)
+                }
+            }
+        }
+        editor.apply()
         sessionListener?.onPeerRoutesUpdated(peerName, peerFingerprint, endpoints)
         Log.i(TAG, "Stored ${endpoints.split(',').size} authenticated peer route(s)")
     }

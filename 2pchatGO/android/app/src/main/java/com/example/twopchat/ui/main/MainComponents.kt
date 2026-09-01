@@ -362,7 +362,7 @@ fun PeerRow(
             // endpoint or the user's next-connection preference.
             val hasActiveSession = !isGroup && !isSavedMessages &&
                 (com.example.twopchat.relay.P2PMessageRelay.peerSessionStates[peer.name] == true)
-            val liveTransport = com.example.twopchat.relay.P2PMessageRelay.peerConnectionTransports[peer.name] ?: peer.transport
+            val liveTransport = com.example.twopchat.relay.P2PMessageRelay.peerConnectionTransports[peer.name] ?: "Direct P2P"
             val transportKind = if (hasActiveSession) {
                 connectionTransportKind(liveTransport)
             } else {
