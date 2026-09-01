@@ -109,27 +109,21 @@ internal fun StickerSuggestionBar(
     }
 
     if (previewSticker != null) {
-        androidx.compose.ui.window.Popup(
-            alignment = Alignment.Center,
-            properties = androidx.compose.ui.window.PopupProperties(focusable = false, clippingEnabled = false),
-        ) {
-            StickerPreviewDialog(
-                sticker = previewSticker,
-                appLanguage = appLanguage,
-                primaryColor = primaryColor,
-                modifier = Modifier.fillMaxSize(),
-                initialShowActions = actionsRevealed,
-                onActionsRevealed = { actionsRevealed = true },
-                onDismiss = {
-                    previewSticker = null
-                    actionsRevealed = false
-                },
-                onSendSticker = {
-                    previewSticker = null
-                    actionsRevealed = false
-                    onStickerSelect(it)
-                },
-            )
-        }
+        StickerPreviewDialog(
+            sticker = previewSticker,
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            initialShowActions = actionsRevealed,
+            onActionsRevealed = { actionsRevealed = true },
+            onDismiss = {
+                previewSticker = null
+                actionsRevealed = false
+            },
+            onSendSticker = {
+                previewSticker = null
+                actionsRevealed = false
+                onStickerSelect(it)
+            },
+        )
     }
 }
