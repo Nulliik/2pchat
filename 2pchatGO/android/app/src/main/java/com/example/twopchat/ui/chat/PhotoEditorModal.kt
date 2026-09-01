@@ -9,9 +9,11 @@ import android.graphics.RectF
 import android.net.Uri
 import android.widget.Toast
 import com.example.twopchat.data.Localizations
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -165,6 +167,9 @@ fun PhotoEditorModal(
     var currentPathPoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
     var captionText by remember { mutableStateOf("") }
     var sendOriginalQuality by remember { mutableStateOf(false) }
+    var showQualityTooltip by remember { mutableStateOf(false) }
+    var qualityTooltipJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val scope = rememberCoroutineScope()
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
 
     // Palette colors (starts with current active primary theme color)
@@ -253,39 +258,21 @@ fun PhotoEditorModal(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Quality Toggle (SD / HD)
-                        IconButton(onClick = {
-                            sendOriginalQuality = !sendOriginalQuality
-                            val toastText = if (sendOriginalQuality) {
-                                Localizations.tr(
-                                    appLanguage,
-                                    ru = "Качество: HD (Оригинал)",
-                                    en = "Quality: HD (Original)",
-                                    de = "Qualität: HD (Original)",
-                                    es = "Calidad: HD (Original)",
-                                    fr = "Qualité: HD (Original)",
-                                    pt = "Qualidade: HD (Original)"
-                                )
-                            } else {
-                                Localizations.tr(
-                                    appLanguage,
-                                    ru = "Качество: SD (Сжатое)",
-                                    en = "Quality: SD (Compressed)",
-                                    de = "Qualität: SD (Komprimiert)",
-                                    es = "Calidad: SD (Comprimido)",
-                                    fr = "Qualité: SD (Compressé)",
-                                    pt = "Qualidade: SD (Comprimido)"
-                                )
-                            }
-                            Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
-                        }) {
-                            Icon(
-                                painter = painterResource(id = if (sendOriginalQuality) com.example.twopchat.R.drawable.ic_quality_hd else com.example.twopchat.R.drawable.ic_quality_sd),
-                                contentDescription = if (sendOriginalQuality) "HD Quality" else "SD Quality",
-                                tint = if (sendOriginalQuality) primaryColor else onSurfaceColor,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                        // Quality Toggle (SD / HD) with animation and tooltip
+                        AnimatedQualityToggle(
+                            isHd = sendOriginalQuality,
+                            onToggle = {
+                                sendOriginalQuality = !sendOriginalQuality
+                                showQualityTooltip = true
+                                qualityTooltipJob?.cancel()
+                                qualityTooltipJob = scope.launch {
+                                    delay(1800)
+                                    showQualityTooltip = false
+                                }
+                            },
+                            activeColor = primaryColor,
+                            inactiveColor = onSurfaceColor
+                        )
 
                         // Rotate 90°
                         IconButton(onClick = {
@@ -337,6 +324,29 @@ fun PhotoEditorModal(
                                 tint = if (drawnPaths.isNotEmpty()) Color(0xFFFF5252) else onSurfaceVariant.copy(alpha = 0.4f)
                             )
                         }
+                    }
+                }
+
+                // Quality Tooltip Popup (Telegram style)
+                AnimatedVisibility(
+                    visible = showQualityTooltip,
+                    enter = fadeIn(tween(160)) + slideInVertically(tween(160)) { -it / 2 },
+                    exit = fadeOut(tween(160)) + slideOutVertically(tween(160)) { -it / 2 },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp)
+                        .zIndex(20f)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.TopEnd
+                    ) {
+                        QualityTooltipBubble(
+                            isHd = sendOriginalQuality,
+                            appLanguage = appLanguage,
+                            arrowAtTop = true,
+                            modifier = Modifier.padding(end = 120.dp)
+                        )
                     }
                 }
 

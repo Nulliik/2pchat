@@ -27,8 +27,12 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.twopchat.R
 import com.example.twopchat.data.Localizations
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import java.io.File
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +51,8 @@ fun AlbumPreviewModal(
     val context = androidx.compose.ui.platform.LocalContext.current
     var captionText by remember { mutableStateOf("") }
     var sendOriginalQuality by remember { mutableStateOf(false) }
+    var showQualityTooltip by remember { mutableStateOf(false) }
+    var qualityTooltipJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var isCompressing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val currentFiles = remember(files) { mutableStateListOf<File>().apply { addAll(files) } }
@@ -112,38 +118,20 @@ fun AlbumPreviewModal(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        IconButton(onClick = {
-                            sendOriginalQuality = !sendOriginalQuality
-                            val toastText = if (sendOriginalQuality) {
-                                Localizations.tr(
-                                    appLanguage,
-                                    ru = "Качество альбома: HD (Оригинал)",
-                                    en = "Album quality: HD (Original)",
-                                    de = "Albumqualität: HD (Original)",
-                                    es = "Calidad del álbum: HD (Original)",
-                                    fr = "Qualité de l'album: HD (Original)",
-                                    pt = "Qualidade do álbum: HD (Original)"
-                                )
-                            } else {
-                                Localizations.tr(
-                                    appLanguage,
-                                    ru = "Качество альбома: SD (Сжатое)",
-                                    en = "Album quality: SD (Compressed)",
-                                    de = "Albumqualität: SD (Komprimiert)",
-                                    es = "Calidad del álbum: SD (Comprimido)",
-                                    fr = "Qualité de l'album: SD (Compressé)",
-                                    pt = "Qualidade do álbum: SD (Comprimido)"
-                                )
-                            }
-                            Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
-                        }) {
-                            Icon(
-                                painter = painterResource(id = if (sendOriginalQuality) R.drawable.ic_quality_hd else R.drawable.ic_quality_sd),
-                                contentDescription = if (sendOriginalQuality) "HD Quality" else "SD Quality",
-                                tint = if (sendOriginalQuality) primaryColor else Color.White,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                        AnimatedQualityToggle(
+                            isHd = sendOriginalQuality,
+                            onToggle = {
+                                sendOriginalQuality = !sendOriginalQuality
+                                showQualityTooltip = true
+                                qualityTooltipJob?.cancel()
+                                qualityTooltipJob = scope.launch {
+                                    delay(1800)
+                                    showQualityTooltip = false
+                                }
+                            },
+                            activeColor = primaryColor,
+                            inactiveColor = Color.White
+                        )
                         IconButton(
                             onClick = {
                                 if (currentFiles.isNotEmpty()) {
@@ -162,6 +150,29 @@ fun AlbumPreviewModal(
                                 tint = Color(0xFFFF5252)
                             )
                         }
+                    }
+                }
+
+                // Quality Tooltip Popup
+                AnimatedVisibility(
+                    visible = showQualityTooltip,
+                    enter = fadeIn(tween(160)) + slideInVertically(tween(160)) { -it / 2 },
+                    exit = fadeOut(tween(160)) + slideOutVertically(tween(160)) { -it / 2 },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp)
+                        .zIndex(20f)
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.TopEnd
+                    ) {
+                        QualityTooltipBubble(
+                            isHd = sendOriginalQuality,
+                            appLanguage = appLanguage,
+                            arrowAtTop = true,
+                            modifier = Modifier.padding(end = 56.dp)
+                        )
                     }
                 }
 
