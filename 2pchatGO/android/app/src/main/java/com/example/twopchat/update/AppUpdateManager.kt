@@ -116,9 +116,9 @@ object AppUpdateManager {
                 @Suppress("DEPRECATION")
                 context.packageManager.getPackageInfo(context.packageName, 0)
             }
-            pInfo.versionName ?: "0.0.8.2"
+            pInfo.versionName ?: "0.0.8.4(1)"
         } catch (_: Throwable) {
-            "0.0.8.2"
+            "0.0.8.4(1)"
         }
     }
 
@@ -126,8 +126,14 @@ object AppUpdateManager {
         val cleanCurrent = current.trim().removePrefix("v").removePrefix("V")
         val cleanCandidate = candidate.trim().removePrefix("v").removePrefix("V")
 
-        val currentParts = cleanCurrent.split(".", "-").mapNotNull { it.toIntOrNull() }
-        val candidateParts = cleanCandidate.split(".", "-").mapNotNull { it.toIntOrNull() }
+        val currentParts = cleanCurrent.split(".", "-", "(", ")", "_")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .mapNotNull { it.toIntOrNull() }
+        val candidateParts = cleanCandidate.split(".", "-", "(", ")", "_")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .mapNotNull { it.toIntOrNull() }
 
         val maxLen = maxOf(currentParts.size, candidateParts.size)
         for (i in 0 until maxLen) {

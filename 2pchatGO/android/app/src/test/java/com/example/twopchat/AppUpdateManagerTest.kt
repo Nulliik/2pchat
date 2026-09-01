@@ -12,11 +12,16 @@ class AppUpdateManagerTest {
         assertTrue(AppUpdateManager.isNewerVersion("0.0.8", "v0.1.0"))
         assertTrue(AppUpdateManager.isNewerVersion("0.0.8", "1.0.0"))
         assertTrue(AppUpdateManager.isNewerVersion("0.0.8", "0.0.8.1"))
+        assertTrue(AppUpdateManager.isNewerVersion("0.0.8.4", "0.0.8.4(1)"))
+        assertTrue(AppUpdateManager.isNewerVersion("0.0.8.4(1)", "0.0.8.4(2)"))
+        assertTrue(AppUpdateManager.isNewerVersion("0.0.8.4(1)", "0.0.8.5"))
 
         assertFalse(AppUpdateManager.isNewerVersion("0.0.8", "0.0.8"))
         assertFalse(AppUpdateManager.isNewerVersion("0.0.8", "v0.0.8"))
         assertFalse(AppUpdateManager.isNewerVersion("0.0.8", "0.0.7"))
         assertFalse(AppUpdateManager.isNewerVersion("1.0.0", "0.9.9"))
+        assertFalse(AppUpdateManager.isNewerVersion("0.0.8.4(1)", "0.0.8.4(1)"))
+        assertFalse(AppUpdateManager.isNewerVersion("0.0.8.4(1)", "0.0.8.4"))
     }
 
     @Test
