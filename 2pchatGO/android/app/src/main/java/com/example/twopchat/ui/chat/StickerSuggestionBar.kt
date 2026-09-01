@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -108,21 +109,27 @@ internal fun StickerSuggestionBar(
     }
 
     if (previewSticker != null) {
-        StickerPreviewDialog(
-            sticker = previewSticker,
-            appLanguage = appLanguage,
-            primaryColor = primaryColor,
-            initialShowActions = actionsRevealed,
-            onActionsRevealed = { actionsRevealed = true },
-            onDismiss = {
-                previewSticker = null
-                actionsRevealed = false
-            },
-            onSendSticker = {
-                previewSticker = null
-                actionsRevealed = false
-                onStickerSelect(it)
-            },
-        )
+        androidx.compose.ui.window.Popup(
+            alignment = Alignment.Center,
+            properties = androidx.compose.ui.window.PopupProperties(focusable = false, clippingEnabled = false),
+        ) {
+            StickerPreviewDialog(
+                sticker = previewSticker,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                modifier = Modifier.fillMaxSize(),
+                initialShowActions = actionsRevealed,
+                onActionsRevealed = { actionsRevealed = true },
+                onDismiss = {
+                    previewSticker = null
+                    actionsRevealed = false
+                },
+                onSendSticker = {
+                    previewSticker = null
+                    actionsRevealed = false
+                    onStickerSelect(it)
+                },
+            )
+        }
     }
 }

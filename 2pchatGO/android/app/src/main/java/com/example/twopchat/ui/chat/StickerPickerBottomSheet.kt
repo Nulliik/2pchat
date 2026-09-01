@@ -97,11 +97,12 @@ internal fun StickerPickerBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-        ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+            ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -233,7 +234,7 @@ internal fun StickerPickerBottomSheet(
                                     if (!rootGrid.isAttached) return@detectDragGesturesAfterLongPress
                                     val rootPos = rootGrid.localToRoot(localOffset)
                                     val hitSticker = filteredStickers.firstOrNull { sticker ->
-                                        val coords = cellCoordinates[sticker.stickerId] ?: return@firstOrNull false
+                                        val coords = cellCoordinates["${sticker.packId}_${sticker.stickerId}"] ?: return@firstOrNull false
                                         if (!coords.isAttached) return@firstOrNull false
                                         coords.boundsInRoot().contains(rootPos)
                                     }
@@ -249,11 +250,11 @@ internal fun StickerPickerBottomSheet(
                                     if (!rootGrid.isAttached) return@detectDragGesturesAfterLongPress
                                     val rootPos = rootGrid.localToRoot(change.position)
                                     val hitSticker = filteredStickers.firstOrNull { sticker ->
-                                        val coords = cellCoordinates[sticker.stickerId] ?: return@firstOrNull false
+                                        val coords = cellCoordinates["${sticker.packId}_${sticker.stickerId}"] ?: return@firstOrNull false
                                         if (!coords.isAttached) return@firstOrNull false
                                         coords.boundsInRoot().contains(rootPos)
                                     }
-                                    if (hitSticker != null && hitSticker.stickerId != previewSticker?.stickerId) {
+                                    if (hitSticker != null && (hitSticker.packId != previewSticker?.packId || hitSticker.stickerId != previewSticker?.stickerId)) {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         previewSticker = hitSticker
                                     }
@@ -283,7 +284,7 @@ internal fun StickerPickerBottomSheet(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .onGloballyPositioned { coords ->
-                                        cellCoordinates[sticker.stickerId] = coords
+                                        cellCoordinates["${sticker.packId}_${sticker.stickerId}"] = coords
                                     }
                                     .background(
                                         if (sticker.localFilePath == null) {
@@ -293,14 +294,7 @@ internal fun StickerPickerBottomSheet(
                                         },
                                         RoundedCornerShape(22.dp),
                                     )
-                                    .combinedClickable(
-                                        onClick = { onStickerSelected(sticker) },
-                                        onLongClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            actionsRevealed = false
-                                            previewSticker = sticker
-                                        },
-                                    )
+                                    .clickable { onStickerSelected(sticker) }
                                     .padding(vertical = 12.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -318,24 +312,27 @@ internal fun StickerPickerBottomSheet(
             }
             Spacer(Modifier.height(16.dp))
         }
-    }
 
-    if (previewSticker != null) {
-        StickerPreviewDialog(
-            sticker = previewSticker,
-            appLanguage = appLanguage,
-            primaryColor = primaryColor,
-            initialShowActions = actionsRevealed,
-            onActionsRevealed = { actionsRevealed = true },
-            onDismiss = {
-                previewSticker = null
-                actionsRevealed = false
-            },
-            onSendSticker = {
-                previewSticker = null
-                actionsRevealed = false
-                onStickerSelected(it)
-            },
-        )
+        if (previewSticker != null) {
+            StickerPreviewDialog(
+                sticker = previewSticker,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                modifier = Modifier.matchParentSize(),
+                initialShowActions = actionsRevealed,
+                onActionsRevealed = { actionsRevealed = true },
+                onDismiss = {
+                    previewSticker = null
+                    actionsRevealed = false
+                },
+                onSendSticker = {
+                    previewSticker = null
+                    actionsRevealed = false
+                    onStickerSelected(it)
+                },
+            )
+        }
     }
 }
+}
+

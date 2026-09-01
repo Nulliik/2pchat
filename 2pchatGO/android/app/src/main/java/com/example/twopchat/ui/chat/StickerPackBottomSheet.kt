@@ -121,51 +121,52 @@ internal fun StickerPackBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp),
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = pack?.title ?: if (appLanguage == "Русский") {
-                            "Стикерпак собеседника"
-                        } else {
-                            "Peer sticker pack"
-                        },
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = pack?.author ?: packId,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (packLoading || requestInProgress || installInProgress) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = primaryColor,
-                        strokeWidth = 2.dp,
-                    )
-                } else if (pack == null && canRequestFromPeer) {
-                    Button(
-                        onClick = {
-                            requestAttempted = true
-                            onRequestPack()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
-                    ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(Modifier.weight(1f)) {
                         Text(
-                            if (appLanguage == "Русский") "Повторить" else "Retry",
+                            text = pack?.title ?: if (appLanguage == "Русский") {
+                                "Стикерпак собеседника"
+                            } else {
+                                "Peer sticker pack"
+                            },
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = pack?.author ?: packId,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    if (packLoading || requestInProgress || installInProgress) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = primaryColor,
+                            strokeWidth = 2.dp,
+                        )
+                    } else if (pack == null && canRequestFromPeer) {
+                        Button(
+                            onClick = {
+                                requestAttempted = true
+                                onRequestPack()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                        ) {
+                            Text(
+                                if (appLanguage == "Русский") "Повторить" else "Retry",
+                            )
+                        }
                 } else if (pack != null && !isInstalled) {
                     Button(
                         onClick = {
@@ -244,7 +245,7 @@ internal fun StickerPackBottomSheet(
                                     if (!rootGrid.isAttached) return@detectDragGesturesAfterLongPress
                                     val rootPos = rootGrid.localToRoot(localOffset)
                                     val hitSticker = currentPack.stickers.firstOrNull { sticker ->
-                                        val coords = cellCoordinates[sticker.stickerId] ?: return@firstOrNull false
+                                        val coords = cellCoordinates["${sticker.packId}_${sticker.stickerId}"] ?: return@firstOrNull false
                                         if (!coords.isAttached) return@firstOrNull false
                                         coords.boundsInRoot().contains(rootPos)
                                     }
@@ -260,11 +261,11 @@ internal fun StickerPackBottomSheet(
                                     if (!rootGrid.isAttached) return@detectDragGesturesAfterLongPress
                                     val rootPos = rootGrid.localToRoot(change.position)
                                     val hitSticker = currentPack.stickers.firstOrNull { sticker ->
-                                        val coords = cellCoordinates[sticker.stickerId] ?: return@firstOrNull false
+                                        val coords = cellCoordinates["${sticker.packId}_${sticker.stickerId}"] ?: return@firstOrNull false
                                         if (!coords.isAttached) return@firstOrNull false
                                         coords.boundsInRoot().contains(rootPos)
                                     }
-                                    if (hitSticker != null && hitSticker.stickerId != previewSticker?.stickerId) {
+                                    if (hitSticker != null && (hitSticker.packId != previewSticker?.packId || hitSticker.stickerId != previewSticker?.stickerId)) {
                                         haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                         previewSticker = hitSticker
                                     }
@@ -289,13 +290,13 @@ internal fun StickerPackBottomSheet(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(currentPack.stickers, key = { it.stickerId }) { sticker ->
+                        items(currentPack.stickers, key = { "${it.packId}_${it.stickerId}" }) { sticker ->
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(78.dp)
                                     .onGloballyPositioned { coords ->
-                                        cellCoordinates[sticker.stickerId] = coords
+                                        cellCoordinates["${sticker.packId}_${sticker.stickerId}"] = coords
                                     }
                                     .background(
                                         if (sticker.localFilePath == null) {
@@ -305,17 +306,10 @@ internal fun StickerPackBottomSheet(
                                         },
                                         RoundedCornerShape(20.dp),
                                     )
-                                    .combinedClickable(
-                                        onClick = {
-                                            onStickerSelected(sticker)
-                                            onDismiss()
-                                        },
-                                        onLongClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            actionsRevealed = false
-                                            previewSticker = sticker
-                                        },
-                                    ),
+                                    .clickable {
+                                        onStickerSelected(sticker)
+                                        onDismiss()
+                                    },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 AnimatedStickerImage(
@@ -394,25 +388,27 @@ internal fun StickerPackBottomSheet(
             }
             Spacer(Modifier.height(20.dp))
         }
-    }
 
-    if (previewSticker != null) {
-        StickerPreviewDialog(
-            sticker = previewSticker,
-            appLanguage = appLanguage,
-            primaryColor = primaryColor,
-            initialShowActions = actionsRevealed,
-            onActionsRevealed = { actionsRevealed = true },
-            onDismiss = {
-                previewSticker = null
-                actionsRevealed = false
-            },
-            onSendSticker = {
-                previewSticker = null
-                actionsRevealed = false
-                onStickerSelected(it)
-                onDismiss()
-            },
-        )
+        if (previewSticker != null) {
+            StickerPreviewDialog(
+                sticker = previewSticker,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                modifier = Modifier.matchParentSize(),
+                initialShowActions = actionsRevealed,
+                onActionsRevealed = { actionsRevealed = true },
+                onDismiss = {
+                    previewSticker = null
+                    actionsRevealed = false
+                },
+                onSendSticker = {
+                    previewSticker = null
+                    actionsRevealed = false
+                    onStickerSelected(it)
+                    onDismiss()
+                },
+            )
+        }
     }
+}
 }
