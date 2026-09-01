@@ -47,6 +47,7 @@ internal fun StickerSuggestionBar(
 ) {
     val haptic = LocalHapticFeedback.current
     var previewSticker by remember { mutableStateOf<BuiltinSticker?>(null) }
+    var actionsRevealed by remember { mutableStateOf(false) }
 
     AnimatedVisibility(
         visible = stickers.isNotEmpty(),
@@ -111,9 +112,15 @@ internal fun StickerSuggestionBar(
             sticker = previewSticker,
             appLanguage = appLanguage,
             primaryColor = primaryColor,
-            onDismiss = { previewSticker = null },
+            initialShowActions = actionsRevealed,
+            onActionsRevealed = { actionsRevealed = true },
+            onDismiss = {
+                previewSticker = null
+                actionsRevealed = false
+            },
             onSendSticker = {
                 previewSticker = null
+                actionsRevealed = false
                 onStickerSelect(it)
             },
         )

@@ -4,11 +4,13 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -35,6 +37,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -72,6 +78,8 @@ internal fun StickerPackBottomSheet(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var previewSticker by remember { mutableStateOf<BuiltinSticker?>(null) }
+    var actionsRevealed by remember { mutableStateOf(false) }
+    var gridCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var pack by remember(context, packId) {
         mutableStateOf(
             StickerSupport.builtinPacks.firstOrNull { it.id == packId },
@@ -223,46 +231,101 @@ internal fun StickerPackBottomSheet(
                     fontSize = 12.sp,
                 )
                 Spacer(Modifier.height(8.dp))
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(4),
+                val cellCoordinates = remember(currentPack.stickers) { mutableMapOf<String, LayoutCoordinates>() }
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(280.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(currentPack.stickers, key = { it.stickerId }) { sticker ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(78.dp)
-                                .background(
-                                    if (sticker.localFilePath == null) {
-                                        Color(sticker.backgroundColor).copy(alpha = 0.75f)
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                    },
-                                    RoundedCornerShape(20.dp),
-                                )
-                                .combinedClickable(
-                                    onClick = {
-                                        onStickerSelected(sticker)
-                                        onDismiss()
-                                    },
-                                    onLongClick = {
+                        .height(280.dp)
+                        .onGloballyPositioned { gridCoordinates = it }
+                        .pointerInput(currentPack.stickers) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { localOffset ->
+                                    val rootGrid = gridCoordinates ?: return@detectDragGesturesAfterLongPress
+                                    if (!rootGrid.isAttached) return@detectDragGesturesAfterLongPress
+                                    val rootPos = rootGrid.localToRoot(localOffset)
+                                    val hitSticker = currentPack.stickers.firstOrNull { sticker ->
+                                        val coords = cellCoordinates[sticker.stickerId] ?: return@firstOrNull false
+                                        if (!coords.isAttached) return@firstOrNull false
+                                        coords.boundsInRoot().contains(rootPos)
+                                    }
+                                    if (hitSticker != null) {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        previewSticker = sticker
-                                    },
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            AnimatedStickerImage(
-                                filePath = sticker.localFilePath,
-                                fallbackEmoji = sticker.emoji,
-                                contentDescription = sticker.emoji.ifBlank { "Sticker" },
-                                targetSizePx = 136,
-                                modifier = Modifier.size(68.dp),
+                                        actionsRevealed = false
+                                        previewSticker = hitSticker
+                                    }
+                                },
+                                onDrag = { change, _ ->
+                                    change.consume()
+                                    val rootGrid = gridCoordinates ?: return@detectDragGesturesAfterLongPress
+                                    if (!rootGrid.isAttached) return@detectDragGesturesAfterLongPress
+                                    val rootPos = rootGrid.localToRoot(change.position)
+                                    val hitSticker = currentPack.stickers.firstOrNull { sticker ->
+                                        val coords = cellCoordinates[sticker.stickerId] ?: return@firstOrNull false
+                                        if (!coords.isAttached) return@firstOrNull false
+                                        coords.boundsInRoot().contains(rootPos)
+                                    }
+                                    if (hitSticker != null && hitSticker.stickerId != previewSticker?.stickerId) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        previewSticker = hitSticker
+                                    }
+                                },
+                                onDragEnd = {
+                                    if (!actionsRevealed) {
+                                        previewSticker = null
+                                    }
+                                },
+                                onDragCancel = {
+                                    if (!actionsRevealed) {
+                                        previewSticker = null
+                                    }
+                                },
                             )
+                        },
+                ) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(4),
+                        modifier = Modifier
+                            .fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(currentPack.stickers, key = { it.stickerId }) { sticker ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(78.dp)
+                                    .onGloballyPositioned { coords ->
+                                        cellCoordinates[sticker.stickerId] = coords
+                                    }
+                                    .background(
+                                        if (sticker.localFilePath == null) {
+                                            Color(sticker.backgroundColor).copy(alpha = 0.75f)
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                        },
+                                        RoundedCornerShape(20.dp),
+                                    )
+                                    .combinedClickable(
+                                        onClick = {
+                                            onStickerSelected(sticker)
+                                            onDismiss()
+                                        },
+                                        onLongClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            actionsRevealed = false
+                                            previewSticker = sticker
+                                        },
+                                    ),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                AnimatedStickerImage(
+                                    filePath = sticker.localFilePath,
+                                    fallbackEmoji = sticker.emoji,
+                                    contentDescription = sticker.emoji.ifBlank { "Sticker" },
+                                    targetSizePx = 136,
+                                    modifier = Modifier.size(68.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -282,18 +345,18 @@ internal fun StickerPackBottomSheet(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.padding(16.dp),
                         ) {
-                            Text("⚠️", fontSize = 32.sp)
+                            Text("⚠️", fontSize = 48.sp)
                             Spacer(Modifier.height(8.dp))
                             val errorMessage = when (requestError) {
                                 StickerPackRequestError.PEER_OFFLINE -> if (appLanguage == "Русский") {
-                                    "Собеседник находится не в сети"
+                                    "Собеседник не в сети"
                                 } else {
-                                    "Peer is currently offline"
+                                    "Peer is offline"
                                 }
                                 StickerPackRequestError.TIMEOUT -> if (appLanguage == "Русский") {
-                                    "Таймаут ожидания P2P ответа"
+                                    "Время ожидания ответа истекло"
                                 } else {
-                                    "P2P request timed out"
+                                    "Request timed out"
                                 }
                                 StickerPackRequestError.NOT_FOUND -> if (appLanguage == "Русский") {
                                     "Стикерпак не найден у собеседника"
@@ -338,9 +401,15 @@ internal fun StickerPackBottomSheet(
             sticker = previewSticker,
             appLanguage = appLanguage,
             primaryColor = primaryColor,
-            onDismiss = { previewSticker = null },
+            initialShowActions = actionsRevealed,
+            onActionsRevealed = { actionsRevealed = true },
+            onDismiss = {
+                previewSticker = null
+                actionsRevealed = false
+            },
             onSendSticker = {
                 previewSticker = null
+                actionsRevealed = false
                 onStickerSelected(it)
                 onDismiss()
             },

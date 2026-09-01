@@ -1,5 +1,12 @@
 package com.example.twopchat.ui.chat
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -21,7 +28,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,16 +45,38 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.twopchat.R
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.media.BuiltinSticker
+import kotlinx.coroutines.delay
 
 @Composable
 internal fun StickerPreviewDialog(
     sticker: BuiltinSticker?,
     appLanguage: String,
     primaryColor: Color,
+    initialShowActions: Boolean = false,
+    onActionsRevealed: (() -> Unit)? = null,
     onDismiss: () -> Unit,
     onSendSticker: (BuiltinSticker) -> Unit,
 ) {
     if (sticker == null) return
+
+    val cleanEmoji = remember(sticker.emoji) {
+        val raw = sticker.emoji.trim()
+        val withoutMask = raw.replace("🎭", "").trim()
+        if (withoutMask.isNotEmpty()) withoutMask else ""
+    }
+
+    var showActions by remember(sticker.stickerId) { mutableStateOf(initialShowActions) }
+
+    LaunchedEffect(sticker.stickerId, initialShowActions) {
+        if (!initialShowActions) {
+            showActions = false
+            delay(1500L)
+            showActions = true
+            onActionsRevealed?.invoke()
+        } else {
+            showActions = true
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -76,15 +109,15 @@ internal fun StickerPreviewDialog(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                // Emoji badge above sticker (Telegram style)
-                if (sticker.emoji.isNotBlank()) {
+                // Emoji badge above sticker (Telegram style) - mask 🎭 removed
+                if (cleanEmoji.isNotBlank()) {
                     Surface(
                         shape = CircleShape,
                         color = Color(0xFF262628),
                         shadowElevation = 6.dp,
                     ) {
                         Text(
-                            text = sticker.emoji,
+                            text = cleanEmoji,
                             fontSize = 28.sp,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                         )
@@ -108,84 +141,90 @@ internal fun StickerPreviewDialog(
                     ) {
                         AnimatedStickerImage(
                             filePath = sticker.localFilePath,
-                            fallbackEmoji = sticker.emoji,
-                            contentDescription = sticker.emoji.ifBlank { "Sticker" },
+                            fallbackEmoji = cleanEmoji.ifBlank { sticker.emoji },
+                            contentDescription = cleanEmoji.ifBlank { "Sticker" },
                             targetSizePx = 384,
                             modifier = Modifier.size(160.dp),
                         )
                     }
                 }
 
-                // Action Buttons: Close & Send
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                // Action Buttons: Close & Send (Appear after 1.5s hold or kept visible)
+                AnimatedVisibility(
+                    visible = showActions,
+                    enter = fadeIn(tween(250)) + expandVertically(animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f)),
+                    exit = fadeOut(tween(150)) + shrinkVertically(animationSpec = tween(150)),
                 ) {
-                    OutlinedButton(
-                        onClick = onDismiss,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = Color(0xFF262628),
-                            contentColor = Color.White,
-                        ),
-                        border = null,
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = Localizations.tr(
-                                appLanguage,
-                                ru = "Закрыть",
-                                en = "Close",
-                                de = "Schließen",
-                                es = "Cerrar",
-                                fr = "Fermer",
-                                pt = "Fechar",
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = Color(0xFF262628),
+                                contentColor = Color.White,
                             ),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
-
-                    Button(
-                        onClick = {
-                            onDismiss()
-                            onSendSticker(sticker)
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = primaryColor,
-                            contentColor = Color.White,
-                        ),
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            border = null,
                         ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_send_airplane),
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = Color.White,
-                            )
                             Text(
                                 text = Localizations.tr(
                                     appLanguage,
-                                    ru = "Отправить",
-                                    en = "Send",
-                                    de = "Senden",
-                                    es = "Enviar",
-                                    fr = "Envoyer",
-                                    pt = "Enviar",
+                                    ru = "Закрыть",
+                                    en = "Close",
+                                    de = "Schließen",
+                                    es = "Cerrar",
+                                    fr = "Fermer",
+                                    pt = "Fechar",
                                 ),
                                 fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.Medium,
                             )
+                        }
+
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                onSendSticker(sticker)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = primaryColor,
+                                contentColor = Color.White,
+                            ),
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_send_airplane),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color.White,
+                                )
+                                Text(
+                                    text = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Отправить",
+                                        en = "Send",
+                                        de = "Senden",
+                                        es = "Enviar",
+                                        fr = "Envoyer",
+                                        pt = "Enviar",
+                                    ),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
                         }
                     }
                 }

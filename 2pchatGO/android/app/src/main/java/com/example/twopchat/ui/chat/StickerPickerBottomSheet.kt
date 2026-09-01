@@ -4,11 +4,13 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -38,6 +40,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +64,8 @@ internal fun StickerPickerBottomSheet(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var previewSticker by remember { mutableStateOf<BuiltinSticker?>(null) }
+    var actionsRevealed by remember { mutableStateOf(false) }
+    var gridCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val packs by produceState(
         initialValue = StickerSupport.builtinPacks,
         context,
@@ -212,43 +220,98 @@ internal fun StickerPickerBottomSheet(
                     }
                 }
             } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(4),
+                val cellCoordinates = remember(filteredStickers) { mutableMapOf<String, LayoutCoordinates>() }
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(260.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(filteredStickers, key = { "${it.packId}_${it.stickerId}" }) { sticker ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    if (sticker.localFilePath == null) {
-                                        Color(sticker.backgroundColor).copy(alpha = 0.75f)
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                    },
-                                    RoundedCornerShape(22.dp),
-                                )
-                                .combinedClickable(
-                                    onClick = { onStickerSelected(sticker) },
-                                    onLongClick = {
+                        .height(260.dp)
+                        .onGloballyPositioned { gridCoordinates = it }
+                        .pointerInput(filteredStickers) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { localOffset ->
+                                    val rootGrid = gridCoordinates ?: return@detectDragGesturesAfterLongPress
+                                    if (!rootGrid.isAttached) return@detectDragGesturesAfterLongPress
+                                    val rootPos = rootGrid.localToRoot(localOffset)
+                                    val hitSticker = filteredStickers.firstOrNull { sticker ->
+                                        val coords = cellCoordinates[sticker.stickerId] ?: return@firstOrNull false
+                                        if (!coords.isAttached) return@firstOrNull false
+                                        coords.boundsInRoot().contains(rootPos)
+                                    }
+                                    if (hitSticker != null) {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        previewSticker = sticker
-                                    },
-                                )
-                                .padding(vertical = 12.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            AnimatedStickerImage(
-                                filePath = sticker.localFilePath,
-                                fallbackEmoji = sticker.emoji,
-                                contentDescription = sticker.emoji.ifBlank { "Sticker" },
-                                targetSizePx = 128,
-                                modifier = Modifier.size(64.dp),
+                                        actionsRevealed = false
+                                        previewSticker = hitSticker
+                                    }
+                                },
+                                onDrag = { change, _ ->
+                                    change.consume()
+                                    val rootGrid = gridCoordinates ?: return@detectDragGesturesAfterLongPress
+                                    if (!rootGrid.isAttached) return@detectDragGesturesAfterLongPress
+                                    val rootPos = rootGrid.localToRoot(change.position)
+                                    val hitSticker = filteredStickers.firstOrNull { sticker ->
+                                        val coords = cellCoordinates[sticker.stickerId] ?: return@firstOrNull false
+                                        if (!coords.isAttached) return@firstOrNull false
+                                        coords.boundsInRoot().contains(rootPos)
+                                    }
+                                    if (hitSticker != null && hitSticker.stickerId != previewSticker?.stickerId) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        previewSticker = hitSticker
+                                    }
+                                },
+                                onDragEnd = {
+                                    if (!actionsRevealed) {
+                                        previewSticker = null
+                                    }
+                                },
+                                onDragCancel = {
+                                    if (!actionsRevealed) {
+                                        previewSticker = null
+                                    }
+                                },
                             )
+                        },
+                ) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(4),
+                        modifier = Modifier
+                            .fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(filteredStickers, key = { "${it.packId}_${it.stickerId}" }) { sticker ->
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onGloballyPositioned { coords ->
+                                        cellCoordinates[sticker.stickerId] = coords
+                                    }
+                                    .background(
+                                        if (sticker.localFilePath == null) {
+                                            Color(sticker.backgroundColor).copy(alpha = 0.75f)
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                        },
+                                        RoundedCornerShape(22.dp),
+                                    )
+                                    .combinedClickable(
+                                        onClick = { onStickerSelected(sticker) },
+                                        onLongClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            actionsRevealed = false
+                                            previewSticker = sticker
+                                        },
+                                    )
+                                    .padding(vertical = 12.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                AnimatedStickerImage(
+                                    filePath = sticker.localFilePath,
+                                    fallbackEmoji = sticker.emoji,
+                                    contentDescription = sticker.emoji.ifBlank { "Sticker" },
+                                    targetSizePx = 128,
+                                    modifier = Modifier.size(64.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -262,9 +325,15 @@ internal fun StickerPickerBottomSheet(
             sticker = previewSticker,
             appLanguage = appLanguage,
             primaryColor = primaryColor,
-            onDismiss = { previewSticker = null },
+            initialShowActions = actionsRevealed,
+            onActionsRevealed = { actionsRevealed = true },
+            onDismiss = {
+                previewSticker = null
+                actionsRevealed = false
+            },
             onSendSticker = {
                 previewSticker = null
+                actionsRevealed = false
                 onStickerSelected(it)
             },
         )
