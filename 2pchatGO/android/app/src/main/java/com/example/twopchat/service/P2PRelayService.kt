@@ -181,6 +181,7 @@ class P2PRelayService : Service() {
                     override fun onAvailable(network: Network) {
                         Log.i(TAG, "Network became available -> triggering fast reconnect")
                         NativeBridge.onNetworkChanged()
+                        P2PMessageRelay.resetPeerBackoffs()
                         P2PMessageRelay.triggerImmediateReconnect(applicationContext)
                         P2PMessageRelay.triggerMaintenanceWakeup("NETWORK_AVAILABLE")
                     }
@@ -194,6 +195,8 @@ class P2PRelayService : Service() {
                     override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
                         if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
                             networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                            P2PMessageRelay.resetPeerBackoffs()
+                            P2PMessageRelay.triggerImmediateReconnect(applicationContext)
                             P2PMessageRelay.triggerMaintenanceWakeup("NETWORK_VALIDATED")
                         }
                     }

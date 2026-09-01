@@ -41,6 +41,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -114,6 +115,7 @@ internal fun ChatMessageBubble(
     onOpenVideo: (String) -> Unit,
     onOpenStickerPack: (Message) -> Unit,
     onCancelFileTransfer: (Message) -> Unit,
+    onRetryFileTransfer: (Message) -> Unit = {},
     onScrollToReply: (String) -> Unit,
     onOpenGifGallery: (Message) -> Unit,
     onOpenImageGallery: (Message) -> Unit,
@@ -571,45 +573,83 @@ internal fun ChatMessageBubble(
                                                     Box(
                                                         modifier = Modifier
                                                             .fillMaxSize()
-                                                            .background(Color.Black.copy(alpha = 0.18f)),
+                                                            .background(Color.Black.copy(alpha = 0.45f)),
                                                         contentAlignment = Alignment.Center,
                                                     ) {
-                                                        Text(
-                                                            text = if (isCancelled) {
-                                                                Localizations.tr(
-                                                                    appLanguage,
-                                                                    ru = "Передача отменена",
-                                                                    en = "Transfer cancelled",
-                                                                    de = "Übertragung abgebrochen",
-                                                                    es = "Transferencia cancelada",
-                                                                    fr = "Transfert annulé",
-                                                                    pt = "Transferência cancelada"
-                                                                )
-                                                            } else if (hasFailed) {
-                                                                Localizations.tr(
-                                                                    appLanguage,
-                                                                    ru = "Ошибка передачи",
-                                                                    en = "Transfer failed",
-                                                                    de = "Übertragungsfehler",
-                                                                    es = "Error de transferencia",
-                                                                    fr = "Échec du transfert",
-                                                                    pt = "Falha na transferência"
-                                                                )
-                                                            } else {
-                                                                Localizations.tr(
-                                                                    appLanguage,
-                                                                    ru = "Файл удалён",
-                                                                    en = "File removed",
-                                                                    de = "Datei entfernt",
-                                                                    es = "Archivo eliminado",
-                                                                    fr = "Fichier supprimé",
-                                                                    pt = "Arquivo removido"
-                                                                )
-                                                            },
-                                                            color = textColor.copy(alpha = 0.75f),
-                                                            fontSize = 13.sp,
-                                                            fontWeight = FontWeight.SemiBold,
-                                                        )
+                                                        Column(
+                                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                                            verticalArrangement = Arrangement.Center
+                                                        ) {
+                                                            Text(
+                                                                text = if (isCancelled) {
+                                                                    Localizations.tr(
+                                                                        appLanguage,
+                                                                        ru = "Передача отменена",
+                                                                        en = "Transfer cancelled",
+                                                                        de = "Übertragung abgebrochen",
+                                                                        es = "Transferencia cancelada",
+                                                                        fr = "Transfert annulé",
+                                                                        pt = "Transferência cancelada"
+                                                                    )
+                                                                } else if (hasFailed) {
+                                                                    Localizations.tr(
+                                                                        appLanguage,
+                                                                        ru = "Ошибка передачи",
+                                                                        en = "Transfer failed",
+                                                                        de = "Übertragungsfehler",
+                                                                        es = "Error de transferencia",
+                                                                        fr = "Échec du transfert",
+                                                                        pt = "Falha na transferência"
+                                                                    )
+                                                                } else {
+                                                                    Localizations.tr(
+                                                                        appLanguage,
+                                                                        ru = "Файл удалён",
+                                                                        en = "File removed",
+                                                                        de = "Datei entfernt",
+                                                                        es = "Archivo eliminado",
+                                                                        fr = "Fichier supprimé",
+                                                                        pt = "Arquivo removido"
+                                                                    )
+                                                                },
+                                                                color = Color.White.copy(alpha = 0.9f),
+                                                                fontSize = 13.sp,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                            )
+                                                            if (msg.isMe && (hasFailed || isCancelled) && attachmentAvailable) {
+                                                                Spacer(modifier = Modifier.height(6.dp))
+                                                                Row(
+                                                                    verticalAlignment = Alignment.CenterVertically,
+                                                                    modifier = Modifier
+                                                                        .clip(RoundedCornerShape(14.dp))
+                                                                        .background(Color.White.copy(alpha = 0.25f))
+                                                                        .clickable { onRetryFileTransfer(msg) }
+                                                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                                                ) {
+                                                                    Icon(
+                                                                        imageVector = Icons.Default.Refresh,
+                                                                        contentDescription = "Retry",
+                                                                        tint = Color.White,
+                                                                        modifier = Modifier.size(13.dp)
+                                                                    )
+                                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                                    Text(
+                                                                        text = Localizations.tr(
+                                                                            appLanguage,
+                                                                            ru = "Возобновить",
+                                                                            en = "Resume",
+                                                                            de = "Fortsetzen",
+                                                                            es = "Reanudar",
+                                                                            fr = "Reprendre",
+                                                                            pt = "Retomar"
+                                                                        ),
+                                                                        color = Color.White,
+                                                                        fontSize = 12.sp,
+                                                                        fontWeight = FontWeight.Bold
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
                                                     }
                                                 }
 
@@ -887,42 +927,80 @@ internal fun ChatMessageBubble(
                                                         .background(Color.Black.copy(alpha = 0.55f)),
                                                     contentAlignment = Alignment.Center,
                                                 ) {
-                                                    Text(
-                                                        text = if (isCancelled) {
-                                                            Localizations.tr(
-                                                                appLanguage,
-                                                                ru = "Передача отменена",
-                                                                en = "Transfer cancelled",
-                                                                de = "Übertragung abgebrochen",
-                                                                es = "Transferencia cancelada",
-                                                                fr = "Transfert annulé",
-                                                                pt = "Transferência cancelada"
-                                                            )
-                                                        } else if (hasFailed) {
-                                                            Localizations.tr(
-                                                                appLanguage,
-                                                                ru = "Ошибка передачи",
-                                                                en = "Transfer failed",
-                                                                de = "Übertragungsfehler",
-                                                                es = "Error de transferencia",
-                                                                fr = "Échec du transfert",
-                                                                pt = "Falha na transferência"
-                                                            )
-                                                        } else {
-                                                            Localizations.tr(
-                                                                appLanguage,
-                                                                ru = "Файл удалён",
-                                                                en = "File removed",
-                                                                de = "Datei entfernt",
-                                                                es = "Archivo eliminado",
-                                                                fr = "Fichier supprimé",
-                                                                pt = "Arquivo removido"
-                                                            )
-                                                        },
-                                                        color = Color.White,
-                                                        fontSize = 13.sp,
-                                                        fontWeight = FontWeight.SemiBold,
-                                                    )
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.Center
+                                                    ) {
+                                                        Text(
+                                                            text = if (isCancelled) {
+                                                                Localizations.tr(
+                                                                    appLanguage,
+                                                                    ru = "Передача отменена",
+                                                                    en = "Transfer cancelled",
+                                                                    de = "Übertragung abgebrochen",
+                                                                    es = "Transferencia cancelada",
+                                                                    fr = "Transfert annulé",
+                                                                    pt = "Transferência cancelada"
+                                                                )
+                                                            } else if (hasFailed) {
+                                                                Localizations.tr(
+                                                                    appLanguage,
+                                                                    ru = "Ошибка передачи",
+                                                                    en = "Transfer failed",
+                                                                    de = "Übertragungsfehler",
+                                                                    es = "Error de transferencia",
+                                                                    fr = "Échec du transfert",
+                                                                    pt = "Falha na transferência"
+                                                                )
+                                                            } else {
+                                                                Localizations.tr(
+                                                                    appLanguage,
+                                                                    ru = "Файл удалён",
+                                                                    en = "File removed",
+                                                                    de = "Datei entfernt",
+                                                                    es = "Archivo eliminado",
+                                                                    fr = "Fichier supprimé",
+                                                                    pt = "Arquivo removido"
+                                                                )
+                                                            },
+                                                            color = Color.White,
+                                                            fontSize = 13.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                        )
+                                                        if (msg.isMe && (hasFailed || isCancelled) && attachmentAvailable) {
+                                                            Spacer(modifier = Modifier.height(6.dp))
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                modifier = Modifier
+                                                                    .clip(RoundedCornerShape(14.dp))
+                                                                    .background(Color.White.copy(alpha = 0.25f))
+                                                                    .clickable { onRetryFileTransfer(msg) }
+                                                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Refresh,
+                                                                    contentDescription = "Retry",
+                                                                    tint = Color.White,
+                                                                    modifier = Modifier.size(13.dp)
+                                                                )
+                                                                Spacer(modifier = Modifier.width(4.dp))
+                                                                Text(
+                                                                    text = Localizations.tr(
+                                                                        appLanguage,
+                                                                        ru = "Возобновить",
+                                                                        en = "Resume",
+                                                                        de = "Fortsetzen",
+                                                                        es = "Reanudar",
+                                                                        fr = "Reprendre",
+                                                                        pt = "Retomar"
+                                                                    ),
+                                                                    color = Color.White,
+                                                                    fontSize = 12.sp,
+                                                                    fontWeight = FontWeight.Bold
+                                                                )
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
 
@@ -1103,6 +1181,39 @@ internal fun ChatMessageBubble(
                                                     fontSize = 11.sp,
                                                     fontWeight = if (isTransferring) FontWeight.Bold else FontWeight.Normal
                                                 )
+                                                if (!isTransferring && msg.isMe && (hasFailed || isCancelled) && attachmentAvailable) {
+                                                    Spacer(modifier = Modifier.height(6.dp))
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(12.dp))
+                                                            .background(if (msg.isMe) Color.White.copy(alpha = 0.18f) else primaryColor.copy(alpha = 0.12f))
+                                                            .clickable { onRetryFileTransfer(msg) }
+                                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Refresh,
+                                                            contentDescription = "Resume Transfer",
+                                                            tint = if (msg.isMe) Color.White else primaryColor,
+                                                            modifier = Modifier.size(13.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text(
+                                                            text = Localizations.tr(
+                                                                appLanguage,
+                                                                ru = "Возобновить",
+                                                                en = "Resume",
+                                                                de = "Fortsetzen",
+                                                                es = "Reanudar",
+                                                                fr = "Reprendre",
+                                                                pt = "Retomar"
+                                                            ),
+                                                            color = if (msg.isMe) Color.White else primaryColor,
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                         if (isTransferring) {

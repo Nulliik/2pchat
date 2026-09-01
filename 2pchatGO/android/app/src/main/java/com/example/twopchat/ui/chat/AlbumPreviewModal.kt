@@ -28,6 +28,9 @@ import com.example.twopchat.R
 import com.example.twopchat.data.Localizations
 import coil.compose.AsyncImage
 import java.io.File
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,6 +45,9 @@ fun AlbumPreviewModal(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var captionText by remember { mutableStateOf("") }
+    var sendOriginalQuality by remember { mutableStateOf(false) }
+    var isCompressing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val currentFiles = remember(files) { mutableStateListOf<File>().apply { addAll(files) } }
     var selectedPreviewIndex by remember { mutableIntStateOf(0) }
 
@@ -101,23 +107,49 @@ fun AlbumPreviewModal(
                         fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold
                     )
-                    IconButton(
-                        onClick = {
-                            if (currentFiles.isNotEmpty()) {
-                                currentFiles.removeAt(selectedPreviewIndex)
-                                if (currentFiles.isEmpty()) {
-                                    onDismiss()
-                                } else if (selectedPreviewIndex >= currentFiles.size) {
-                                    selectedPreviewIndex = currentFiles.lastIndex
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        FilterChip(
+                            selected = sendOriginalQuality,
+                            onClick = { sendOriginalQuality = !sendOriginalQuality },
+                            label = {
+                                Text(
+                                    text = if (sendOriginalQuality) {
+                                        Localizations.tr(appLanguage, ru = "💎 Оригинал", en = "💎 Original", de = "💎 Original", es = "💎 Original", fr = "💎 Original", pt = "💎 Original")
+                                    } else {
+                                        Localizations.tr(appLanguage, ru = "⚡ Сжатое", en = "⚡ Compressed", de = "⚡ Komprimiert", es = "⚡ Comprimido", fr = "⚡ Compressé", pt = "⚡ Comprimido")
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = if (sendOriginalQuality) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = primaryColor,
+                                selectedLabelColor = Color.White,
+                                containerColor = Color.White.copy(alpha = 0.12f),
+                                labelColor = Color.White.copy(alpha = 0.85f)
+                            )
+                        )
+                        IconButton(
+                            onClick = {
+                                if (currentFiles.isNotEmpty()) {
+                                    currentFiles.removeAt(selectedPreviewIndex)
+                                    if (currentFiles.isEmpty()) {
+                                        onDismiss()
+                                    } else if (selectedPreviewIndex >= currentFiles.size) {
+                                        selectedPreviewIndex = currentFiles.lastIndex
+                                    }
                                 }
                             }
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_delete),
+                                contentDescription = "Delete Item",
+                                tint = Color(0xFFFF5252)
+                            )
                         }
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_delete),
-                            contentDescription = "Delete Item",
-                            tint = Color(0xFFFF5252)
-                        )
                     }
                 }
 
@@ -307,18 +339,64 @@ fun AlbumPreviewModal(
                         IconButton(
                             onClick = {
                                 if (currentFiles.isNotEmpty()) {
-                                    onSendAlbum(currentFiles.toList(), captionText.trim())
+                                    if (sendOriginalQuality) {
+                                        onSendAlbum(currentFiles.toList(), captionText.trim())
+                                    } else {
+                                        isCompressing = true
+                                        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                            val attachmentsDir = File(context.filesDir, "attachments").apply { if (!exists()) mkdirs() }
+                                            val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+                                            val processedFiles = currentFiles.mapIndexed { idx, file ->
+                                                try {
+                                                    val ext = file.extension.lowercase()
+                                                    if (ext in listOf("jpg", "jpeg", "png", "webp")) {
+                                                        val bmp = BitmapFactory.decodeFile(file.absolutePath)
+                                                        if (bmp != null) {
+                                                            val maxDim = 1920
+                                                            var scaledBmp = bmp
+                                                            if (bmp.width > maxDim || bmp.height > maxDim) {
+                                                                val ratio = bmp.width.toFloat() / bmp.height.toFloat()
+                                                                val newW = if (ratio > 1f) maxDim else (maxDim * ratio).toInt()
+                                                                val newH = if (ratio > 1f) (maxDim / ratio).toInt() else maxDim
+                                                                scaledBmp = android.graphics.Bitmap.createScaledBitmap(bmp, newW, newH, true)
+                                                            }
+                                                            val destFile = File(attachmentsDir, "album_${timeStamp}_${idx}_${java.util.UUID.randomUUID().toString().take(6)}.jpg")
+                                                            java.io.FileOutputStream(destFile).use { out ->
+                                                                scaledBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, out)
+                                                            }
+                                                            destFile
+                                                        } else file
+                                                    } else file
+                                                } catch (_: Exception) {
+                                                    file
+                                                }
+                                            }
+                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                isCompressing = false
+                                                onSendAlbum(processedFiles, captionText.trim())
+                                            }
+                                        }
+                                    }
                                 }
                             },
+                            enabled = !isCompressing,
                             modifier = Modifier
                                 .size(48.dp)
                                 .background(primaryColor, CircleShape)
                         ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_send_airplane),
-                                contentDescription = "Send Album",
-                                tint = Color.White
-                            )
+                            if (isCompressing) {
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_send_airplane),
+                                    contentDescription = "Send Album",
+                                    tint = Color.White
+                                )
+                            }
                         }
                     }
                 }

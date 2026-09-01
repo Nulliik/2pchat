@@ -164,6 +164,7 @@ fun PhotoEditorModal(
     val drawnPaths = remember { mutableStateListOf<DrawPathData>() }
     var currentPathPoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
     var captionText by remember { mutableStateOf("") }
+    var sendOriginalQuality by remember { mutableStateOf(false) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
 
     // Palette colors (starts with current active primary theme color)
@@ -362,6 +363,47 @@ fun PhotoEditorModal(
                             modifier = Modifier.padding(horizontal = 3.dp)
                         )
                     }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    FilterChip(
+                        selected = sendOriginalQuality,
+                        onClick = { sendOriginalQuality = !sendOriginalQuality },
+                        label = {
+                            Text(
+                                text = if (sendOriginalQuality) {
+                                    Localizations.tr(
+                                        appLanguage,
+                                        ru = "💎 Оригинал",
+                                        en = "💎 Original",
+                                        de = "💎 Original",
+                                        es = "💎 Original",
+                                        fr = "💎 Original",
+                                        pt = "💎 Original"
+                                    )
+                                } else {
+                                    Localizations.tr(
+                                        appLanguage,
+                                        ru = "⚡ Сжатое",
+                                        en = "⚡ Compressed",
+                                        de = "⚡ Komprimiert",
+                                        es = "⚡ Comprimido",
+                                        fr = "⚡ Compressé",
+                                        pt = "⚡ Comprimido"
+                                    )
+                                },
+                                fontSize = 12.sp,
+                                fontWeight = if (sendOriginalQuality) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = primaryColor,
+                            selectedLabelColor = Color.White,
+                            containerColor = onSurfaceColor.copy(alpha = 0.08f),
+                            labelColor = onSurfaceColor.copy(alpha = 0.8f)
+                        ),
+                        modifier = Modifier.padding(horizontal = 3.dp)
+                    )
                 }
 
                 // Image Preview + Drawing + Freeform Crop Overlay Container
@@ -772,7 +814,19 @@ fun PhotoEditorModal(
                                     val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                                     val editedFile = File(attachmentsDir, "sent_photo_${timeStamp}_${java.util.UUID.randomUUID().toString().take(8)}.jpg")
                                     FileOutputStream(editedFile).use { out ->
-                                        finalBmp.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                                        if (!sendOriginalQuality) {
+                                            val maxDim = 1920
+                                            var scaledBmp = finalBmp
+                                            if (finalBmp.width > maxDim || finalBmp.height > maxDim) {
+                                                val ratio = finalBmp.width.toFloat() / finalBmp.height.toFloat()
+                                                val newW = if (ratio > 1f) maxDim else (maxDim * ratio).toInt()
+                                                val newH = if (ratio > 1f) (maxDim / ratio).toInt() else maxDim
+                                                scaledBmp = Bitmap.createScaledBitmap(finalBmp, newW, newH, true)
+                                            }
+                                            scaledBmp.compress(Bitmap.CompressFormat.JPEG, 82, out)
+                                        } else {
+                                            finalBmp.compress(Bitmap.CompressFormat.JPEG, 98, out)
+                                        }
                                     }
 
                                     onSendPhoto(editedFile.absolutePath, captionText.trim())

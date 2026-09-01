@@ -2146,6 +2146,29 @@ fun ChatScreen(
                                 initialMessages[idx] = current.copy(status = "CANCELLED")
                             }
                         },
+                        onRetryFileTransfer = { message ->
+                            val filePath = message.attachmentUri ?: return@ChatMessageList
+                            val file = File(filePath)
+                            if (file.exists() && peerName != "Saved Messages") {
+                                val endpoint = P2PMessageRelay.peerEndpoints[peerName]
+                                    ?: P2PPreferences.prefs(context).getString(P2PPreferences.lastEndpoint(peerName), null).orEmpty()
+                                val idx = initialMessages.indexOfFirst { it.id == message.id }
+                                if (idx != -1) {
+                                    initialMessages[idx] = message.copy(status = "SENDING")
+                                }
+                                persistDatabase { db.updateMessageStatus(message.id, "SENDING") }
+                                P2PMessageRelay.sendFile(context, peerName, endpoint, file.absolutePath, message.id, message.text) { success ->
+                                    val finalStatus = if (success) "SENT" else "PENDING"
+                                    persistDatabase { db.updateMessageStatus(message.id, finalStatus) }
+                                    coroutineScope.launch {
+                                        val curIdx = initialMessages.indexOfFirst { it.id == message.id }
+                                        if (curIdx != -1) {
+                                            initialMessages[curIdx] = message.copy(status = finalStatus)
+                                        }
+                                    }
+                                }
+                            }
+                        },
                         highlightedMessageId = highlightedMessageId,
                         onHighlightFinished = { highlightedMessageId = null },
                         onJumpToMessage = { targetMsg ->

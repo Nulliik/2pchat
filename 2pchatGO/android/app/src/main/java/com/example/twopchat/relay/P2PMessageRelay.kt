@@ -429,6 +429,8 @@ object P2PMessageRelay {
             if (transport != null) peerConnectionTransports[peerName] = transport
         }
         sendConnectedPeerHeartbeat(context, peerName)
+        val endpoint = peerEndpoints[peerName].orEmpty()
+        processOfflineQueue(context, peerName, endpoint)
     }
 
     internal fun sendConnectedPeerHeartbeat(context: Context, peerName: String) {

@@ -38,9 +38,12 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -334,20 +337,23 @@ fun FullscreenImageViewer(
         }
     }
 
+    val dismissOffsetY = remember { Animatable(0f) }
+    val bgAlpha = (1f - (kotlin.math.abs(dismissOffsetY.value) / 600f)).coerceIn(0f, 1f)
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(Color.Black.copy(alpha = bgAlpha)),
         contentAlignment = Alignment.Center
     ) {
         androidx.compose.foundation.pager.HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
-            userScrollEnabled = zoomedPage != pagerState.currentPage
+            userScrollEnabled = zoomedPage != pagerState.currentPage && kotlin.math.abs(dismissOffsetY.value) < 10f
         ) { page ->
             val imagePath = imagePaths[page]
             val isGif = remember(imagePath) { isGifMediaPath(imagePath) }
-            var scale by remember(page) { mutableStateOf(1f) }
+            var scale by remember(page) { mutableFloatStateOf(1f) }
             var offset by remember(page) { mutableStateOf(Offset.Zero) }
 
             val transformState = rememberTransformableState { zoomChange, offsetChange, _ ->
@@ -362,9 +368,54 @@ fun FullscreenImageViewer(
                 }
             }
 
+            val isZoomed = scale > 1.05f
+            val dragModifier = if (!isZoomed) {
+                Modifier.pointerInput(page) {
+                    detectDragGestures(
+                        onDragEnd = {
+                            if (kotlin.math.abs(dismissOffsetY.value) > 160f) {
+                                scope.launch {
+                                    dismissOffsetY.animateTo(
+                                        if (dismissOffsetY.value > 0) 1200f else -1200f,
+                                        animationSpec = tween(180)
+                                    )
+                                    onClose()
+                                }
+                            } else {
+                                scope.launch {
+                                    dismissOffsetY.animateTo(
+                                        0f,
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                                            stiffness = Spring.StiffnessMedium
+                                        )
+                                    )
+                                }
+                            }
+                        },
+                        onDragCancel = {
+                            scope.launch {
+                                dismissOffsetY.animateTo(0f, animationSpec = spring())
+                            }
+                        },
+                        onDrag = { change, dragAmount ->
+                            if (kotlin.math.abs(dragAmount.y) > kotlin.math.abs(dragAmount.x) || kotlin.math.abs(dismissOffsetY.value) > 10f) {
+                                change.consume()
+                                scope.launch {
+                                    dismissOffsetY.snapTo(dismissOffsetY.value + dragAmount.y)
+                                }
+                            }
+                        }
+                    )
+                }
+            } else {
+                Modifier
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .then(dragModifier)
                     .clickable(
                         interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                         indication = null
@@ -395,7 +446,7 @@ fun FullscreenImageViewer(
                                     offset = Offset.Zero
                                     zoomedPage = -1
                                 } else {
-                                    scale = 3f
+                                    scale = 2.5f
                                     zoomedPage = page
                                 }
                             },
@@ -405,7 +456,7 @@ fun FullscreenImageViewer(
                         scaleX = scale,
                         scaleY = scale,
                         translationX = if (scale > 1f) offset.x else 0f,
-                        translationY = if (scale > 1f) offset.y else 0f,
+                        translationY = if (scale > 1f) offset.y else dismissOffsetY.value,
                     )
                 if (isGif) {
                     AnimatedGifImage(
@@ -434,6 +485,7 @@ fun FullscreenImageViewer(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(top = 40.dp, start = 16.dp)
+                .alpha(bgAlpha)
                 .background(Color.Black.copy(alpha = 0.5f), CircleShape)
         ) {
             Icon(
@@ -486,6 +538,7 @@ fun FullscreenImageViewer(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 40.dp, end = 16.dp)
+                    .alpha(bgAlpha)
                     .background(Color.Black.copy(alpha = 0.5f), CircleShape)
             ) {
                 Icon(
@@ -504,6 +557,7 @@ fun FullscreenImageViewer(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 40.dp, end = if (hasDownload) 64.dp else 16.dp)
+                    .alpha(bgAlpha)
                     .background(Color.Black.copy(alpha = 0.5f), CircleShape)
             ) {
                 Icon(
