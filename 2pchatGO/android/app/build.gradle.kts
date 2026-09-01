@@ -91,7 +91,7 @@ android {
         applicationId = "com.example.twopchat.go"
         minSdk = 24
         targetSdk = 36
-        versionCode = 13
+        versionCode = 14
         versionName = "0.0.8.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
