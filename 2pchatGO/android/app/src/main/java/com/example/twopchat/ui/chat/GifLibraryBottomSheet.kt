@@ -61,6 +61,10 @@ import androidx.compose.ui.zIndex
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun GifLibraryBottomSheet(
@@ -76,12 +80,11 @@ internal fun GifLibraryBottomSheet(
     val density = LocalDensity.current
     val hapticFeedback = LocalHapticFeedback.current
     val gridState = rememberLazyGridState()
-    var previewIndex by remember(gifs) { mutableStateOf<Int?>(null) }
+    var previewGif by remember { mutableStateOf<StoredGif?>(null) }
+    var actionsRevealed by remember { mutableStateOf(false) }
+    var gridCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val animatedPreviewTargetPx = remember(density) {
         with(density) { 112.dp.roundToPx().coerceIn(192, 384) }
-    }
-    val largePreviewTargetPx = remember(density) {
-        with(density) { 320.dp.roundToPx().coerceIn(512, 1024) }
     }
     val animatedIndices by remember(gridState) {
         derivedStateOf {
@@ -173,111 +176,119 @@ internal fun GifLibraryBottomSheet(
                     )
                 }
             } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(GIF_GRID_COLUMNS),
-                    state = gridState,
+                val cellCoordinates = remember(gifs) { mutableMapOf<String, LayoutCoordinates>() }
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(360.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    itemsIndexed(gifs, key = { _, gif -> gif.id }) { index, gif ->
-                        val previewPath by produceState(gif.previewPath, gif.id) {
-                            if (value.isNullOrBlank() || !java.io.File(value.orEmpty()).isFile) {
-                                value = withContext(Dispatchers.IO) {
-                                    GifStorageManager.ensurePreview(context, gif)
-                                }
-                            }
-                        }
-                        val preview = rememberSampledImage(
-                            previewPath,
-                            targetWidth = 192,
-                            targetHeight = 192,
-                        )
-                        var cellWidthPx by remember(gif.id) { mutableIntStateOf(1) }
-                        val tileShape = RoundedCornerShape(14.dp)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
-                                .onSizeChanged { cellWidthPx = it.width.coerceAtLeast(1) }
-                                .clip(tileShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .semantics { contentDescription = "Saved GIF tile" }
-                                .clickable { onGifSelected(gif) }
-                                .pointerInput(gif.id, gifs.size, cellWidthPx) {
-                                    var currentIndex = index
-                                    var horizontalTravelPx = 0f
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = {
-                                            currentIndex = index
-                                            horizontalTravelPx = 0f
-                                            previewIndex = index
-                                            hapticFeedback.performHapticFeedback(
-                                                HapticFeedbackType.LongPress,
-                                            )
-                                        },
-                                        onDragCancel = {
-                                            horizontalTravelPx = 0f
-                                            previewIndex = null
-                                        },
-                                        onDragEnd = {
-                                            horizontalTravelPx = 0f
-                                            previewIndex = null
-                                        },
-                                    ) { change, dragAmount ->
-                                        change.consume()
-                                        horizontalTravelPx += dragAmount.x
-                                        val switchThreshold =
-                                            (cellWidthPx * PREVIEW_SWITCH_FRACTION)
-                                                .coerceAtLeast(32.dp.toPx())
-                                        while (kotlin.math.abs(horizontalTravelPx) >= switchThreshold) {
-                                            val direction = if (horizontalTravelPx > 0f) 1 else -1
-                                            val nextIndex =
-                                                (currentIndex + direction).coerceIn(0, gifs.lastIndex)
-                                            if (nextIndex == currentIndex) {
-                                                horizontalTravelPx = 0f
-                                                break
-                                            }
-                                            currentIndex = nextIndex
-                                            previewIndex = currentIndex
-                                            horizontalTravelPx -= direction * switchThreshold
-                                            hapticFeedback.performHapticFeedback(
-                                                HapticFeedbackType.LongPress,
-                                            )
-                                        }
+                        .height(360.dp)
+                        .onGloballyPositioned { gridCoordinates = it }
+                        .pointerInput(gifs) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { localOffset ->
+                                    val rootGrid = gridCoordinates ?: return@detectDragGesturesAfterLongPress
+                                    if (!rootGrid.isAttached) return@detectDragGesturesAfterLongPress
+                                    val rootPos = rootGrid.localToRoot(localOffset)
+                                    val hitGif = gifs.firstOrNull { gif ->
+                                        val coords = cellCoordinates[gif.id] ?: return@firstOrNull false
+                                        if (!coords.isAttached) return@firstOrNull false
+                                        coords.boundsInRoot().contains(rootPos)
+                                    }
+                                    if (hitGif != null) {
+                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        actionsRevealed = false
+                                        previewGif = hitGif
                                     }
                                 },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (preview != null) {
-                                Image(
-                                    bitmap = preview.asImageBitmap(),
-                                    contentDescription = "GIF",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            } else {
-                                Text(
-                                    text = "GIF",
-                                    color = Color.White,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier
-                                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                                )
+                                onDrag = { change, _ ->
+                                    change.consume()
+                                    val rootGrid = gridCoordinates ?: return@detectDragGesturesAfterLongPress
+                                    if (!rootGrid.isAttached) return@detectDragGesturesAfterLongPress
+                                    val rootPos = rootGrid.localToRoot(change.position)
+                                    val hitGif = gifs.firstOrNull { gif ->
+                                        val coords = cellCoordinates[gif.id] ?: return@firstOrNull false
+                                        if (!coords.isAttached) return@firstOrNull false
+                                        coords.boundsInRoot().contains(rootPos)
+                                    }
+                                    if (hitGif != null && hitGif.id != previewGif?.id) {
+                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        previewGif = hitGif
+                                    }
+                                },
+                                onDragEnd = {
+                                    if (!actionsRevealed) {
+                                        previewGif = null
+                                    }
+                                },
+                                onDragCancel = {
+                                    if (!actionsRevealed) {
+                                        previewGif = null
+                                    }
+                                },
+                            )
+                        },
+                ) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(GIF_GRID_COLUMNS),
+                        state = gridState,
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        itemsIndexed(gifs, key = { _, gif -> gif.id }) { index, gif ->
+                            val previewPath by produceState(gif.previewPath, gif.id) {
+                                if (value.isNullOrBlank() || !java.io.File(value.orEmpty()).isFile) {
+                                    value = withContext(Dispatchers.IO) {
+                                        GifStorageManager.ensurePreview(context, gif)
+                                    }
+                                }
                             }
-                            if (previewIndex == null && index in animatedIndices) {
-                                AnimatedGifImage(
-                                    filePath = gif.filePath,
-                                    targetMaxDimensionPx = animatedPreviewTargetPx,
-                                    contentScale = GifContentScale.CROP,
-                                    contentDescription = "Animated GIF preview",
-                                    modifier = Modifier.fillMaxSize(),
-                                    loadingLabel = null,
-                                )
+                            val preview = rememberSampledImage(
+                                previewPath,
+                                targetWidth = 192,
+                                targetHeight = 192,
+                            )
+                            val tileShape = RoundedCornerShape(14.dp)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(1f)
+                                    .onGloballyPositioned { coords ->
+                                        cellCoordinates[gif.id] = coords
+                                    }
+                                    .clip(tileShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .semantics { contentDescription = "Saved GIF tile" }
+                                    .clickable { onGifSelected(gif) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (preview != null) {
+                                    Image(
+                                        bitmap = preview.asImageBitmap(),
+                                        contentDescription = "GIF",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                } else {
+                                    Text(
+                                        text = "GIF",
+                                        color = Color.White,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                                    )
+                                }
+                                if (previewGif == null && index in animatedIndices) {
+                                    AnimatedGifImage(
+                                        filePath = gif.filePath,
+                                        targetMaxDimensionPx = animatedPreviewTargetPx,
+                                        contentScale = GifContentScale.CROP,
+                                        contentDescription = "Animated GIF preview",
+                                        modifier = Modifier.fillMaxSize(),
+                                        loadingLabel = null,
+                                    )
+                                }
                             }
                         }
                     }
@@ -286,64 +297,31 @@ internal fun GifLibraryBottomSheet(
             Spacer(Modifier.height(18.dp))
         }
 
-            val activePreviewIndex = previewIndex
-            val activePreviewGif = activePreviewIndex?.let(gifs::getOrNull)
-            if (activePreviewGif != null) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .zIndex(10f)
-                        .background(Color.Black.copy(alpha = 0.78f))
-                        .semantics { contentDescription = "GIF hold preview" },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 36.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(24.dp))
-                                .background(Color.Black),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            AnimatedGifImage(
-                                filePath = activePreviewGif.filePath,
-                                targetMaxDimensionPx = largePreviewTargetPx,
-                                contentScale = GifContentScale.FIT,
-                                contentDescription = "Selected GIF preview",
-                                modifier = Modifier.fillMaxSize(),
-                                loadingLabel = null,
-                            )
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            text = "${activePreviewIndex + 1} / ${gifs.size}",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = if (appLanguage == "Русский") {
-                                "Ведите влево или вправо, чтобы переключить"
-                            } else {
-                                "Slide left or right to switch"
-                            },
-                            color = Color.White.copy(alpha = 0.75f),
-                            fontSize = 12.sp,
-                        )
-                    }
-                }
-            }
+        if (previewGif != null) {
+            GifPreviewDialog(
+                gif = previewGif,
+                appLanguage = appLanguage,
+                primaryColor = primaryColor,
+                initialShowActions = actionsRevealed,
+                onActionsRevealed = { actionsRevealed = true },
+                onDismiss = {
+                    previewGif = null
+                    actionsRevealed = false
+                },
+                onSendGif = {
+                    previewGif = null
+                    actionsRevealed = false
+                    onGifSelected(it)
+                    onDismiss()
+                },
+            )
         }
     }
+}
 }
 
 // GIF frame decoding dominated the sampled CPU profile. Four centered previews
 // retain the animated affordance without running a decoder for every grid cell.
 private const val MAX_ANIMATED_GIF_PREVIEWS = 4
 private const val GIF_GRID_COLUMNS = 3
-private const val PREVIEW_SWITCH_FRACTION = 0.55f
+
