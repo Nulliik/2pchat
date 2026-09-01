@@ -394,7 +394,6 @@ internal fun StickerPackBottomSheet(
                 sticker = previewSticker,
                 appLanguage = appLanguage,
                 primaryColor = primaryColor,
-                modifier = Modifier.matchParentSize(),
                 initialShowActions = actionsRevealed,
                 onActionsRevealed = { actionsRevealed = true },
                 onDismiss = {

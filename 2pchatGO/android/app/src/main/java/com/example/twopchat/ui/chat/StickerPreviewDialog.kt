@@ -57,7 +57,6 @@ internal fun StickerPreviewDialog(
     sticker: BuiltinSticker?,
     appLanguage: String,
     primaryColor: Color,
-    modifier: Modifier = Modifier,
     initialShowActions: Boolean = false,
     onActionsRevealed: (() -> Unit)? = null,
     onDismiss: () -> Unit,
