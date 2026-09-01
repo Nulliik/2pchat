@@ -837,7 +837,11 @@ object P2PMessageRelay {
         try {
             val prefs = P2PPreferences.prefs(context)
             val activeChats = prefs.getStringSet("active_chats", emptySet())?.toSet() ?: return
-            val dangling = activeChats.filter {
+            val validChats = activeChats.filter { P2PPreferences.isValidPeerChatName(it) }.toSet()
+            if (validChats.size != activeChats.size) {
+                prefs.edit().putStringSet("active_chats", validChats).apply()
+            }
+            val dangling = validChats.filter {
                 it.endsWith(" ·") || it.endsWith(" · ") || it.endsWith(" .") || it.endsWith(" . ")
             }
             if (dangling.isEmpty()) return

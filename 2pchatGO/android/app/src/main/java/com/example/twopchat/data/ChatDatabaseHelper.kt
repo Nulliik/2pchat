@@ -1293,18 +1293,6 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         } catch (e: Exception) {
             Log.e(TAG, "Failed to query chat peer names from database messages", e)
         }
-        try {
-            db.rawQuery("SELECT DISTINCT $KEY_PEER_NAME FROM $TABLE_PEERS WHERE $KEY_PEER_NAME IS NOT NULL AND $KEY_PEER_NAME != '' AND $KEY_PEER_NAME != 'Saved Messages'", null)?.use { cursor ->
-                while (cursor.moveToNext()) {
-                    val name = cursor.getString(0)?.trim()
-                    if (!name.isNullOrBlank() && name != "Saved Messages") {
-                        result.add(name)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to query chat peer names from database peers table", e)
-        }
         return result
     }
 
