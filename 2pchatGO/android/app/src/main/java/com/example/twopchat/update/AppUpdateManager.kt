@@ -15,6 +15,10 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 data class ReleaseInfo(
     val versionName: String,
     val tagName: String,
@@ -23,7 +27,20 @@ data class ReleaseInfo(
     val apkUrl: String,
     val apkSizeBytes: Long,
     val publishedAt: String,
-)
+) {
+    fun toJsonString(): String = JSONObject().apply {
+        put("tag_name", tagName)
+        put("name", title)
+        put("body", changelog)
+        put("published_at", publishedAt)
+        val asset = JSONObject().apply {
+            put("name", "2pchat-update.apk")
+            put("browser_download_url", apkUrl)
+            put("size", apkSizeBytes)
+        }
+        put("assets", org.json.JSONArray().put(asset))
+    }.toString()
+}
 
 sealed class UpdateCheckResult {
     data class UpdateAvailable(val release: ReleaseInfo, val currentVersion: String) : UpdateCheckResult()
@@ -35,6 +52,61 @@ object AppUpdateManager {
     private const val GITHUB_OWNER = "kodzyfox"
     private const val GITHUB_REPO = "2pchat-releases"
     private const val USER_AGENT = "2PChat-Android-App"
+    private const val PREFS_NAME = "app_update_prefs"
+    private const val KEY_CACHED_TAG = "cached_update_tag"
+    private const val KEY_CACHED_JSON = "cached_update_json"
+
+    private val _availableUpdateRelease = MutableStateFlow<ReleaseInfo?>(null)
+    val availableUpdateRelease: StateFlow<ReleaseInfo?> = _availableUpdateRelease.asStateFlow()
+
+    private val _isCheckingSilently = MutableStateFlow(false)
+    val isCheckingSilently: StateFlow<Boolean> = _isCheckingSilently.asStateFlow()
+
+    fun initUpdateState(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val cachedTag = prefs.getString(KEY_CACHED_TAG, null)
+        val cachedJson = prefs.getString(KEY_CACHED_JSON, null)
+        val currentVersion = getCurrentVersionName(context)
+        if (!cachedTag.isNullOrBlank() && !cachedJson.isNullOrBlank()) {
+            if (isNewerVersion(currentVersion, cachedTag)) {
+                parseGitHubReleaseJson(cachedJson)?.let {
+                    _availableUpdateRelease.value = it
+                }
+            } else {
+                prefs.edit().clear().apply()
+                _availableUpdateRelease.value = null
+            }
+        }
+    }
+
+    suspend fun checkForUpdatesSilently(context: Context): ReleaseInfo? = withContext(Dispatchers.IO) {
+        if (_isCheckingSilently.value) return@withContext _availableUpdateRelease.value
+        _isCheckingSilently.value = true
+        try {
+            val result = checkLatestRelease(context)
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            when (result) {
+                is UpdateCheckResult.UpdateAvailable -> {
+                    _availableUpdateRelease.value = result.release
+                    prefs.edit()
+                        .putString(KEY_CACHED_TAG, result.release.tagName)
+                        .putString(KEY_CACHED_JSON, result.release.toJsonString())
+                        .apply()
+                    result.release
+                }
+                is UpdateCheckResult.UpToDate -> {
+                    _availableUpdateRelease.value = null
+                    prefs.edit().clear().apply()
+                    null
+                }
+                is UpdateCheckResult.Error -> {
+                    _availableUpdateRelease.value
+                }
+            }
+        } finally {
+            _isCheckingSilently.value = false
+        }
+    }
 
     fun getCurrentVersionName(context: Context): String {
         return try {
@@ -134,8 +206,12 @@ object AppUpdateManager {
                 ?: return@withContext UpdateCheckResult.Error("No valid APK found in latest release")
 
             if (isNewerVersion(currentVersion, release.versionName)) {
+                _availableUpdateRelease.value = release
                 UpdateCheckResult.UpdateAvailable(release, currentVersion)
             } else {
+                _availableUpdateRelease.value = null
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                prefs.edit().clear().apply()
                 UpdateCheckResult.UpToDate(currentVersion)
             }
         } catch (e: Exception) {

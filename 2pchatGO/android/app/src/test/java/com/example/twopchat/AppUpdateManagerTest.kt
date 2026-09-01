@@ -78,4 +78,24 @@ class AppUpdateManagerTest {
         val release = AppUpdateManager.parseGitHubReleaseJson("{ invalid json }")
         assertNull(release)
     }
+
+    @Test
+    fun testReleaseInfoSerializationRoundtrip() {
+        val original = com.example.twopchat.update.ReleaseInfo(
+            versionName = "0.0.8.4",
+            tagName = "v0.0.8.4",
+            title = "Release v0.0.8.4",
+            changelog = "Bug fixes and improvements",
+            apkUrl = "https://github.com/kodzyfox/2pchat-releases/releases/download/v0.0.8.4/2pchat-update.apk",
+            apkSizeBytes = 73400320L,
+            publishedAt = "2026-09-01T05:00:00Z"
+        )
+        val jsonStr = original.toJsonString()
+        val parsed = AppUpdateManager.parseGitHubReleaseJson(jsonStr)
+        assertNotNull(parsed)
+        assertEquals("0.0.8.4", parsed?.versionName)
+        assertEquals("v0.0.8.4", parsed?.tagName)
+        assertEquals("Release v0.0.8.4", parsed?.title)
+        assertEquals(73400320L, parsed?.apkSizeBytes)
+    }
 }

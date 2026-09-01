@@ -74,6 +74,7 @@ fun TabNavigationRow(
     surfaceColor: Color,
     onSurfaceColor: Color,
     unreadCount: Int = 0,
+    hasAppUpdate: Boolean = false,
     backgroundColor: Color = surfaceColor,
     modifier: Modifier = Modifier
 ) {
@@ -120,6 +121,15 @@ fun TabNavigationRow(
                                     .align(Alignment.TopEnd)
                                     .offset(x = 6.dp, y = (-2).dp)
                                     .background(primaryColor, shape = CircleShape)
+                            )
+                        }
+                        if (index == 2 && hasAppUpdate) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 6.dp, y = (-2).dp)
+                                    .background(Color(0xFFFF3B30), shape = CircleShape)
                             )
                         }
                     }

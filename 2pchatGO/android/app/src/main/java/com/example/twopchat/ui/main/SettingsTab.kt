@@ -131,6 +131,12 @@ fun SettingsTab(
     var isSearchingSettings by remember { mutableStateOf(false) }
     var settingsSearchQuery by remember { mutableStateOf("") }
     val isTorRunning by TorManager.isTorRunning.collectAsState()
+    val availableUpdateRelease by AppUpdateManager.availableUpdateRelease.collectAsState()
+
+    LaunchedEffect(Unit) {
+        AppUpdateManager.initUpdateState(context)
+        AppUpdateManager.checkForUpdatesSilently(context)
+    }
 
     val cropUri = pendingCropUri
     if (cropUri != null) {
@@ -1058,27 +1064,41 @@ fun SettingsTab(
                                 HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f))
 
                                 val currentVerName = remember { AppUpdateManager.getCurrentVersionName(context) }
+                                val hasUpdate = availableUpdateRelease != null
                                 SettingsRow(
                                     title = if (appLanguage == "Русский") "Проверить обновления" else "Check for Updates",
                                     subtitle = if (isCheckingUpdate) {
                                         if (appLanguage == "Русский") "Проверка релизов на GitHub..." else "Checking GitHub releases..."
+                                    } else if (hasUpdate) {
+                                        if (appLanguage == "Русский") "🔥 Доступна новая версия v${availableUpdateRelease?.versionName} • Нажмите для установки"
+                                        else "🔥 New version v${availableUpdateRelease?.versionName} available • Tap to install"
                                     } else {
                                         if (appLanguage == "Русский") "Текущая версия: v$currentVerName" else "Current version: v$currentVerName"
                                     },
                                     value = if (isCheckingUpdate) "..." else null,
                                     iconRes = com.example.twopchat.R.drawable.ic_app_update,
-                                    iconColor = Color(0xFF10B981),
+                                    iconColor = if (hasUpdate) Color(0xFFFF3B30) else Color(0xFF10B981),
                                     onSurfaceColor = onSurfaceColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     primaryColor = primaryColor,
+                                    hasNotificationDot = hasUpdate,
+                                    badgeLabel = if (hasUpdate) "NEW" else null,
                                     onClick = {
                                         if (!isCheckingUpdate) {
-                                            isCheckingUpdate = true
-                                            coroutineScope.launch {
-                                                val result = AppUpdateManager.checkLatestRelease(context)
-                                                updateResult = result
-                                                isCheckingUpdate = false
+                                            if (availableUpdateRelease != null) {
+                                                updateResult = com.example.twopchat.update.UpdateCheckResult.UpdateAvailable(
+                                                    availableUpdateRelease!!,
+                                                    currentVerName
+                                                )
                                                 showUpdateDialog = true
+                                            } else {
+                                                isCheckingUpdate = true
+                                                coroutineScope.launch {
+                                                    val result = AppUpdateManager.checkLatestRelease(context)
+                                                    updateResult = result
+                                                    isCheckingUpdate = false
+                                                    showUpdateDialog = true
+                                                }
                                             }
                                         }
                                     }
@@ -1507,6 +1527,8 @@ fun SettingsRow(
     primaryColor: Color,
     isWarning: Boolean = false,
     useOriginalIconColors: Boolean = false,
+    hasNotificationDot: Boolean = false,
+    badgeLabel: String? = null,
     onClick: () -> Unit
 ) {
     val warningRed = Color(0xFFFF5252)
@@ -1535,6 +1557,16 @@ fun SettingsRow(
                 tint = if (useOriginalIconColors) Color.Unspecified else effectiveIconColor,
                 modifier = Modifier.size(if (useOriginalIconColors) 22.dp else 19.dp)
             )
+            if (hasNotificationDot) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .align(Alignment.TopEnd)
+                        .offset(x = 1.dp, y = (-1).dp)
+                        .background(Color(0xFFFF3B30), shape = CircleShape)
+                        .border(1.5.dp, Color.White, shape = CircleShape)
+                )
+            }
         }
         
         Spacer(modifier = Modifier.width(14.dp))
@@ -1542,18 +1574,44 @@ fun SettingsRow(
         Column(
             modifier = Modifier.weight(1f)
         ) {
-            Text(
-                text = title,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = effectiveOnSurfaceColor
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = effectiveOnSurfaceColor
+                )
+                if (hasNotificationDot) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .background(Color(0xFFFF3B30), shape = CircleShape)
+                    )
+                    if (badgeLabel != null) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .background(Color(0xFFFF3B30).copy(alpha = 0.15f), shape = RoundedCornerShape(6.dp))
+                                .padding(horizontal = 5.dp, vertical = 1.5.dp)
+                        ) {
+                            Text(
+                                text = badgeLabel,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFF3B30)
+                            )
+                        }
+                    }
+                }
+            }
             if (subtitle != null) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = subtitle,
                     fontSize = 12.sp,
-                    color = onSurfaceVariant.copy(alpha = 0.78f)
+                    color = if (hasNotificationDot) Color(0xFFFF3B30).copy(alpha = 0.9f) else onSurfaceVariant.copy(alpha = 0.78f),
+                    fontWeight = if (hasNotificationDot) FontWeight.Medium else FontWeight.Normal
                 )
             }
         }

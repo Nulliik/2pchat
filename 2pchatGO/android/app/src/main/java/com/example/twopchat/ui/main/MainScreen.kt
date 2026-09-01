@@ -90,7 +90,10 @@ fun MainScreen(
         localFingerprint = withContext(Dispatchers.IO) {
             P2PBridgeProvider.get(context).getLocalFingerprint()
         }
+        com.example.twopchat.update.AppUpdateManager.initUpdateState(context)
+        com.example.twopchat.update.AppUpdateManager.checkForUpdatesSilently(context)
     }
+    val availableUpdateRelease by com.example.twopchat.update.AppUpdateManager.availableUpdateRelease.collectAsState()
     val sharedPrefs = remember { com.example.twopchat.config.P2PPreferences.prefs(context) }
     var activeIconAlias by remember { mutableStateOf(sharedPrefs.getString("active_icon_alias", "MainActivityAliasDefault") ?: "MainActivityAliasDefault") }
 
@@ -232,6 +235,7 @@ fun MainScreen(
                 onSurfaceColor = onSurfaceColor,
                 backgroundColor = backgroundColor,
                 unreadCount = combinedUnreadCount,
+                hasAppUpdate = (availableUpdateRelease != null),
                 modifier = Modifier.navigationBarsPadding()
             )
         }
