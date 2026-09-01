@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.twopchat.R
@@ -32,6 +33,7 @@ fun QualityTooltipBubble(
     isHd: Boolean,
     appLanguage: String,
     arrowAtTop: Boolean = true,
+    arrowEndPadding: Dp = 18.dp,
     modifier: Modifier = Modifier
 ) {
     val bubbleColor = Color(0xFA242426)
@@ -42,7 +44,7 @@ fun QualityTooltipBubble(
         if (arrowAtTop) {
             Canvas(
                 modifier = Modifier
-                    .padding(end = 18.dp)
+                    .padding(end = arrowEndPadding)
                     .size(width = 12.dp, height = 6.dp)
             ) {
                 val path = Path().apply {
@@ -111,7 +113,7 @@ fun QualityTooltipBubble(
         if (!arrowAtTop) {
             Canvas(
                 modifier = Modifier
-                    .padding(end = 18.dp)
+                    .padding(end = arrowEndPadding)
                     .size(width = 12.dp, height = 6.dp)
             ) {
                 val path = Path().apply {

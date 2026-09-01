@@ -153,29 +153,6 @@ fun AlbumPreviewModal(
                     }
                 }
 
-                // Quality Tooltip Popup
-                AnimatedVisibility(
-                    visible = showQualityTooltip,
-                    enter = fadeIn(tween(160)) + slideInVertically(tween(160)) { -it / 2 },
-                    exit = fadeOut(tween(160)) + slideOutVertically(tween(160)) { -it / 2 },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp)
-                        .zIndex(20f)
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.TopEnd
-                    ) {
-                        QualityTooltipBubble(
-                            isHd = sendOriginalQuality,
-                            appLanguage = appLanguage,
-                            arrowAtTop = true,
-                            modifier = Modifier.padding(end = 56.dp)
-                        )
-                    }
-                }
-
                 // Main Preview Image Box
                 Box(
                     modifier = Modifier
@@ -423,6 +400,24 @@ fun AlbumPreviewModal(
                         }
                     }
                 }
+            }
+
+            // Floating Quality Tooltip Popup Overlay (Telegram style, does NOT shift screen content)
+            AnimatedVisibility(
+                visible = showQualityTooltip,
+                enter = fadeIn(tween(160)) + slideInVertically(tween(160)) { -it / 2 },
+                exit = fadeOut(tween(160)) + slideOutVertically(tween(160)) { -it / 2 },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 58.dp, end = 12.dp)
+                    .zIndex(50f)
+            ) {
+                QualityTooltipBubble(
+                    isHd = sendOriginalQuality,
+                    appLanguage = appLanguage,
+                    arrowAtTop = true,
+                    arrowEndPadding = 66.dp
+                )
             }
         }
     }
