@@ -1070,8 +1070,8 @@ fun SettingsTab(
                                     subtitle = if (isCheckingUpdate) {
                                         if (appLanguage == "Русский") "Проверка релизов на GitHub..." else "Checking GitHub releases..."
                                     } else if (hasUpdate) {
-                                        if (appLanguage == "Русский") "🔥 Доступна новая версия v${availableUpdateRelease?.versionName} • Нажмите для установки"
-                                        else "🔥 New version v${availableUpdateRelease?.versionName} available • Tap to install"
+                                        if (appLanguage == "Русский") "Доступна новая версия v${availableUpdateRelease?.versionName} • Нажмите для установки"
+                                        else "New version v${availableUpdateRelease?.versionName} available • Tap to install"
                                     } else {
                                         if (appLanguage == "Русский") "Текущая версия: v$currentVerName" else "Current version: v$currentVerName"
                                     },
@@ -1338,7 +1338,7 @@ fun SettingsTab(
             title = {
                 Text(
                     text = when (res) {
-                        is UpdateCheckResult.UpdateAvailable -> if (appLanguage == "Русский") "Доступно обновление 🚀" else "Update Available 🚀"
+                        is UpdateCheckResult.UpdateAvailable -> if (appLanguage == "Русский") "Доступно обновление" else "Update Available"
                         is UpdateCheckResult.UpToDate -> if (appLanguage == "Русский") "У вас последняя версия" else "Up to date"
                         is UpdateCheckResult.Error -> if (appLanguage == "Русский") "Ошибка проверки" else "Check Failed"
                         null -> ""
@@ -1610,8 +1610,8 @@ fun SettingsRow(
                 Text(
                     text = subtitle,
                     fontSize = 12.sp,
-                    color = if (hasNotificationDot) Color(0xFFFF3B30).copy(alpha = 0.9f) else onSurfaceVariant.copy(alpha = 0.78f),
-                    fontWeight = if (hasNotificationDot) FontWeight.Medium else FontWeight.Normal
+                    color = onSurfaceVariant.copy(alpha = 0.78f),
+                    fontWeight = FontWeight.Normal
                 )
             }
         }
