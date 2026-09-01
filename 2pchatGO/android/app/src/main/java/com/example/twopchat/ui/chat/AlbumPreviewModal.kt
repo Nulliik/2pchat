@@ -1,6 +1,7 @@
 package com.example.twopchat.ui.chat
 
 import android.graphics.BitmapFactory
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -111,27 +112,38 @@ fun AlbumPreviewModal(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        FilterChip(
-                            selected = sendOriginalQuality,
-                            onClick = { sendOriginalQuality = !sendOriginalQuality },
-                            label = {
-                                Text(
-                                    text = if (sendOriginalQuality) {
-                                        Localizations.tr(appLanguage, ru = "💎 Оригинал", en = "💎 Original", de = "💎 Original", es = "💎 Original", fr = "💎 Original", pt = "💎 Original")
-                                    } else {
-                                        Localizations.tr(appLanguage, ru = "⚡ Сжатое", en = "⚡ Compressed", de = "⚡ Komprimiert", es = "⚡ Comprimido", fr = "⚡ Compressé", pt = "⚡ Comprimido")
-                                    },
-                                    fontSize = 11.sp,
-                                    fontWeight = if (sendOriginalQuality) FontWeight.Bold else FontWeight.Normal
+                        IconButton(onClick = {
+                            sendOriginalQuality = !sendOriginalQuality
+                            val toastText = if (sendOriginalQuality) {
+                                Localizations.tr(
+                                    appLanguage,
+                                    ru = "Качество альбома: HD (Оригинал)",
+                                    en = "Album quality: HD (Original)",
+                                    de = "Albumqualität: HD (Original)",
+                                    es = "Calidad del álbum: HD (Original)",
+                                    fr = "Qualité de l'album: HD (Original)",
+                                    pt = "Qualidade do álbum: HD (Original)"
                                 )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = primaryColor,
-                                selectedLabelColor = Color.White,
-                                containerColor = Color.White.copy(alpha = 0.12f),
-                                labelColor = Color.White.copy(alpha = 0.85f)
+                            } else {
+                                Localizations.tr(
+                                    appLanguage,
+                                    ru = "Качество альбома: SD (Сжатое)",
+                                    en = "Album quality: SD (Compressed)",
+                                    de = "Albumqualität: SD (Komprimiert)",
+                                    es = "Calidad del álbum: SD (Comprimido)",
+                                    fr = "Qualité de l'album: SD (Compressé)",
+                                    pt = "Qualidade do álbum: SD (Comprimido)"
+                                )
+                            }
+                            Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(
+                                painter = painterResource(id = if (sendOriginalQuality) R.drawable.ic_quality_hd else R.drawable.ic_quality_sd),
+                                contentDescription = if (sendOriginalQuality) "HD Quality" else "SD Quality",
+                                tint = if (sendOriginalQuality) primaryColor else Color.White,
+                                modifier = Modifier.size(24.dp)
                             )
-                        )
+                        }
                         IconButton(
                             onClick = {
                                 if (currentFiles.isNotEmpty()) {

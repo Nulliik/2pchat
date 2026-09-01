@@ -253,6 +253,40 @@ fun PhotoEditorModal(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Quality Toggle (SD / HD)
+                        IconButton(onClick = {
+                            sendOriginalQuality = !sendOriginalQuality
+                            val toastText = if (sendOriginalQuality) {
+                                Localizations.tr(
+                                    appLanguage,
+                                    ru = "Качество: HD (Оригинал)",
+                                    en = "Quality: HD (Original)",
+                                    de = "Qualität: HD (Original)",
+                                    es = "Calidad: HD (Original)",
+                                    fr = "Qualité: HD (Original)",
+                                    pt = "Qualidade: HD (Original)"
+                                )
+                            } else {
+                                Localizations.tr(
+                                    appLanguage,
+                                    ru = "Качество: SD (Сжатое)",
+                                    en = "Quality: SD (Compressed)",
+                                    de = "Qualität: SD (Komprimiert)",
+                                    es = "Calidad: SD (Comprimido)",
+                                    fr = "Qualité: SD (Compressé)",
+                                    pt = "Qualidade: SD (Comprimido)"
+                                )
+                            }
+                            Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(
+                                painter = painterResource(id = if (sendOriginalQuality) com.example.twopchat.R.drawable.ic_quality_hd else com.example.twopchat.R.drawable.ic_quality_sd),
+                                contentDescription = if (sendOriginalQuality) "HD Quality" else "SD Quality",
+                                tint = if (sendOriginalQuality) primaryColor else onSurfaceColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
                         // Rotate 90°
                         IconButton(onClick = {
                             rotationDegrees = (rotationDegrees + 90) % 360
@@ -363,47 +397,6 @@ fun PhotoEditorModal(
                             modifier = Modifier.padding(horizontal = 3.dp)
                         )
                     }
-
-                    Spacer(modifier = Modifier.width(4.dp))
-
-                    FilterChip(
-                        selected = sendOriginalQuality,
-                        onClick = { sendOriginalQuality = !sendOriginalQuality },
-                        label = {
-                            Text(
-                                text = if (sendOriginalQuality) {
-                                    Localizations.tr(
-                                        appLanguage,
-                                        ru = "💎 Оригинал",
-                                        en = "💎 Original",
-                                        de = "💎 Original",
-                                        es = "💎 Original",
-                                        fr = "💎 Original",
-                                        pt = "💎 Original"
-                                    )
-                                } else {
-                                    Localizations.tr(
-                                        appLanguage,
-                                        ru = "⚡ Сжатое",
-                                        en = "⚡ Compressed",
-                                        de = "⚡ Komprimiert",
-                                        es = "⚡ Comprimido",
-                                        fr = "⚡ Compressé",
-                                        pt = "⚡ Comprimido"
-                                    )
-                                },
-                                fontSize = 12.sp,
-                                fontWeight = if (sendOriginalQuality) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = primaryColor,
-                            selectedLabelColor = Color.White,
-                            containerColor = onSurfaceColor.copy(alpha = 0.08f),
-                            labelColor = onSurfaceColor.copy(alpha = 0.8f)
-                        ),
-                        modifier = Modifier.padding(horizontal = 3.dp)
-                    )
                 }
 
                 // Image Preview + Drawing + Freeform Crop Overlay Container
