@@ -1233,7 +1233,27 @@ internal fun ChatMessageBubble(
                                                     groupInvite.groupToken,
                                                     groupInvite.inviterPeerName
                                                 )
-                                                val msgText = if (accepted) "Вы вошли в группу!" else "Запрос на вступление отправлен!"
+                                                val msgText = if (accepted) {
+                                                    com.example.twopchat.data.Localizations.tr(
+                                                        appLanguage,
+                                                        ru = "Вы вошли в группу!",
+                                                        en = "You joined the group!",
+                                                        de = "Du bist der Gruppe beigetreten!",
+                                                        es = "¡Te has unido al grupo!",
+                                                        fr = "Vous avez rejoint le groupe !",
+                                                        pt = "Você entrou no grupo!"
+                                                    )
+                                                } else {
+                                                    com.example.twopchat.data.Localizations.tr(
+                                                        appLanguage,
+                                                        ru = "Запрос на вступление отправлен!",
+                                                        en = "Join request sent!",
+                                                        de = "Beitrittsanfrage gesendet!",
+                                                        es = "¡Solicitud de unión enviada!",
+                                                        fr = "Demande d'adhésion envoyée !",
+                                                        pt = "Pedido de adesão enviado!"
+                                                    )
+                                                }
                                                 android.widget.Toast.makeText(
                                                     context,
                                                     msgText,
@@ -1721,6 +1741,8 @@ internal fun GroupInviteCard(
             .fillMaxWidth()
             .padding(vertical = 4.dp)
     ) {
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val appLanguage = remember(context) { com.example.twopchat.config.P2PPreferences.getAppLanguage(context) }
         Column(
             modifier = Modifier.padding(14.dp)
         ) {
@@ -1739,7 +1761,15 @@ internal fun GroupInviteCard(
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Приглашение в группу",
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Приглашение в группу",
+                            en = "Group Invitation",
+                            de = "Gruppeneinladung",
+                            es = "Invitación al grupo",
+                            fr = "Invitation de groupe",
+                            pt = "Convite do grupo"
+                        ),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = if (isMe) Color.White.copy(alpha = 0.75f) else onSurfaceColor.copy(alpha = 0.6f)
@@ -1769,7 +1799,15 @@ internal fun GroupInviteCard(
                     .height(40.dp)
             ) {
                 Text(
-                    text = "Принять приглашение",
+                    text = com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Принять приглашение",
+                        en = "Accept Invite",
+                        de = "Einladung annehmen",
+                        es = "Aceptar invitación",
+                        fr = "Accepter l'invitation",
+                        pt = "Aceitar convite"
+                    ),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
                 )

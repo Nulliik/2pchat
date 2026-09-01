@@ -60,7 +60,14 @@ enum class GroupRole(val label: String) {
   OWNER("Создатель"),
   ADMIN("Администратор"),
   MODERATOR("Модератор"),
-  MEMBER("Участник")
+  MEMBER("Участник");
+
+  fun getLocalizedLabel(language: String): String = when (this) {
+    OWNER -> com.example.twopchat.data.Localizations.tr(language, ru = "Создатель", en = "Owner", de = "Eigentümer", es = "Creador", fr = "Créateur", pt = "Criador")
+    ADMIN -> com.example.twopchat.data.Localizations.tr(language, ru = "Администратор", en = "Admin", de = "Administrator", es = "Administrador", fr = "Administrateur", pt = "Administrador")
+    MODERATOR -> com.example.twopchat.data.Localizations.tr(language, ru = "Модератор", en = "Moderator", de = "Moderator", es = "Moderador", fr = "Modérateur", pt = "Moderador")
+    MEMBER -> com.example.twopchat.data.Localizations.tr(language, ru = "Участник", en = "Member", de = "Mitglied", es = "Miembro", fr = "Membre", pt = "Membro")
+  }
 }
 
 enum class GroupDeliveryStatus(val label: String) {

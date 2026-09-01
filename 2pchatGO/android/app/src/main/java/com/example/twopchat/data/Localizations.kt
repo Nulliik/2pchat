@@ -222,6 +222,7 @@ object Localizations {
         "msg_options" to "Message Options",
         "copy_text" to "📋 Copy text",
         "reply_msg" to "💬 Reply message",
+        "delete_msg" to "🗑️ Delete message (from RAM)",
         "close" to "Close",
         "you_disabled_forwarding" to "You disabled forwarding in this chat",
         "you_enabled_forwarding" to "You enabled forwarding in this chat",

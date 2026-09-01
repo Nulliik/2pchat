@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
@@ -67,12 +68,25 @@ data class RecipientItem(
 @Composable
 fun RecipientPickerDialog(
     title: String,
-    searchPlaceholder: String = "Поиск получателя...",
+    searchPlaceholder: String = "",
     recipients: List<RecipientItem>,
     primaryColor: Color = MaterialTheme.colorScheme.primary,
     onDismiss: () -> Unit,
     onRecipientSelected: (RecipientItem) -> Unit,
 ) {
+    val context = LocalContext.current
+    val appLanguage = remember(context) { com.example.twopchat.config.P2PPreferences.getAppLanguage(context) }
+    val effectivePlaceholder = searchPlaceholder.ifBlank {
+        com.example.twopchat.data.Localizations.tr(
+            appLanguage,
+            ru = "Поиск получателя...",
+            en = "Search recipient...",
+            de = "Empfänger suchen...",
+            es = "Buscar destinatario...",
+            fr = "Rechercher un destinataire...",
+            pt = "Buscar destinatário..."
+        )
+    }
     val surfaceColor = MaterialTheme.colorScheme.surface
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
@@ -167,7 +181,7 @@ fun RecipientPickerDialog(
                             ) {
                                 if (searchQuery.isEmpty()) {
                                     Text(
-                                        text = searchPlaceholder,
+                                        text = effectivePlaceholder,
                                         color = onSurfaceVariant.copy(alpha = 0.5f),
                                         fontSize = 14.sp,
                                         style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false))
@@ -192,7 +206,7 @@ fun RecipientPickerDialog(
                     }
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 val filtered = remember(recipients, searchQuery) {
                     if (searchQuery.isBlank()) recipients
@@ -210,7 +224,27 @@ fun RecipientPickerDialog(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (searchQuery.isBlank()) "Нет доступных чатов" else "Ничего не найдено",
+                            text = if (searchQuery.isBlank()) {
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Нет доступных чатов",
+                                    en = "No available chats",
+                                    de = "Keine verfügbaren Chats",
+                                    es = "No hay chats disponibles",
+                                    fr = "Aucun chat disponible",
+                                    pt = "Nenhum chat disponível"
+                                )
+                            } else {
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Ничего не найдено",
+                                    en = "No results found",
+                                    de = "Keine Ergebnisse gefunden",
+                                    es = "No se encontraron resultados",
+                                    fr = "Aucun résultat trouvé",
+                                    pt = "Nenhum resultado encontrado"
+                                )
+                            },
                             color = onSurfaceVariant,
                             fontSize = 14.sp
                         )
@@ -286,7 +320,29 @@ fun RecipientPickerDialog(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = item.subtitle.ifBlank { if (item.isOnline) "В сети" else "Был(а) недавно" },
+                                            text = item.subtitle.ifBlank {
+                                                if (item.isOnline) {
+                                                    com.example.twopchat.data.Localizations.tr(
+                                                        appLanguage,
+                                                        ru = "В сети",
+                                                        en = "Online",
+                                                        de = "Online",
+                                                        es = "En línea",
+                                                        fr = "En ligne",
+                                                        pt = "Online"
+                                                    )
+                                                } else {
+                                                    com.example.twopchat.data.Localizations.tr(
+                                                        appLanguage,
+                                                        ru = "Был(а) недавно",
+                                                        en = "Recently seen",
+                                                        de = "Kürzlich gesehen",
+                                                        es = "Visto recientemente",
+                                                        fr = "Vu récemment",
+                                                        pt = "Visto recentemente"
+                                                    )
+                                                }
+                                            },
                                             color = onSurfaceVariant,
                                             fontSize = 12.sp,
                                             maxLines = 1

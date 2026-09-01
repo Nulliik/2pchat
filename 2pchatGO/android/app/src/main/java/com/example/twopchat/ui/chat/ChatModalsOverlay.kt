@@ -91,8 +91,6 @@ internal fun ChatModalsOverlay(
     wallpaperBlur: Boolean,
     onWallpaperUpdated: (String?, Int, Boolean) -> Unit,
 ) {
-    val sharedPrefs = context.getSharedPreferences("twopchat_prefs", Context.MODE_PRIVATE)
-
     if (showProfileOverlay && peerName != "Saved Messages") {
         SharedMediaScreen(
             peerName = peerName,

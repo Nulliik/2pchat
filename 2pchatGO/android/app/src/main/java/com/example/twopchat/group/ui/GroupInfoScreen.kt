@@ -498,7 +498,7 @@ fun GroupInfoScreen(
             }
 
             // Add Members Row
-            if (state.management.canInviteMembers && state.inviteCandidates.isNotEmpty()) {
+            if (state.management.canInviteMembers) {
                 item(key = "add_members_row") {
                     Surface(
                         color = surfaceColor,
@@ -976,40 +976,131 @@ fun GroupInfoScreen(
         var selected by remember(state.metadata.groupId) { mutableStateOf<Set<String>>(emptySet()) }
         AlertDialog(
             onDismissRequest = { showInviteMembers = false },
-            title = { Text(if (appLanguage == "Русский") "Добавить участников" else "Add Members", fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    text = com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Добавить участников",
+                        en = "Add Members",
+                        de = "Mitglieder hinzufügen",
+                        es = "Añadir miembros",
+                        fr = "Ajouter des membres",
+                        pt = "Adicionar membros"
+                    ),
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
-                Column {
-                    state.inviteCandidates.forEach { contact ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                        ) {
-                            Checkbox(
-                                checked = contact.contactId in selected,
-                                onCheckedChange = { checked ->
-                                    selected = selected.toMutableSet().apply {
-                                        if (checked) add(contact.contactId) else remove(contact.contactId)
+                if (state.inviteCandidates.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Все известные контакты уже добавлены в эту группу или список контактов пуст.",
+                                en = "All known contacts are already in this group or contact list is empty.",
+                                de = "Alle bekannten Kontakte sind bereits in dieser Gruppe oder die Kontaktliste ist leer.",
+                                es = "Todos los contactos conocidos ya están en este grupo o la lista está vacía.",
+                                fr = "Tous les contacts connus sont déjà dans ce groupe ou la liste est vide.",
+                                pt = "Todos os contatos conhecidos já estão neste grupo ou a lista está vazia."
+                            ),
+                            color = onSurfaceColor.copy(alpha = 0.7f),
+                            fontSize = 14.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 340.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        state.inviteCandidates.forEach { contact ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        val isChecked = contact.contactId in selected
+                                        selected = selected.toMutableSet().apply {
+                                            if (isChecked) remove(contact.contactId) else add(contact.contactId)
+                                        }
+                                    }
+                                    .padding(vertical = 6.dp, horizontal = 4.dp)
+                            ) {
+                                Checkbox(
+                                    checked = contact.contactId in selected,
+                                    onCheckedChange = { checked ->
+                                        selected = selected.toMutableSet().apply {
+                                            if (checked) add(contact.contactId) else remove(contact.contactId)
+                                        }
+                                    }
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = contact.displayName,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 15.sp,
+                                        color = onSurfaceColor
+                                    )
+                                    if (contact.secondaryText.isNotBlank() && contact.secondaryText != contact.displayName) {
+                                        Text(
+                                            text = contact.secondaryText,
+                                            fontSize = 12.sp,
+                                            color = onSurfaceColor.copy(alpha = 0.6f)
+                                        )
                                     }
                                 }
-                            )
-                            Text(contact.displayName, fontWeight = FontWeight.Medium)
+                            }
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(
-                    enabled = selected.isNotEmpty(),
-                    onClick = {
-                        controller.inviteMembers(state.metadata.groupId, selected)
-                        showInviteMembers = false
+                if (state.inviteCandidates.isNotEmpty()) {
+                    TextButton(
+                        enabled = selected.isNotEmpty(),
+                        onClick = {
+                            controller.inviteMembers(state.metadata.groupId, selected)
+                            showInviteMembers = false
+                        }
+                    ) {
+                        Text(
+                            text = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Пригласить",
+                                en = "Invite",
+                                de = "Einladen",
+                                es = "Invitar",
+                                fr = "Inviter",
+                                pt = "Convidar"
+                            ),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                ) { Text(if (appLanguage == "Русский") "Пригласить" else "Invite", fontWeight = FontWeight.Bold) }
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showInviteMembers = false }) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
+                TextButton(onClick = { showInviteMembers = false }) {
+                    Text(
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Отмена",
+                            en = "Cancel",
+                            de = "Abbrechen",
+                            es = "Cancelar",
+                            fr = "Annuler",
+                            pt = "Cancelar"
+                        )
+                    )
+                }
             },
             containerColor = surfaceColor,
             shape = RoundedCornerShape(20.dp)

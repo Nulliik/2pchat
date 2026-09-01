@@ -183,8 +183,8 @@ fun GroupForwardDialog(
     primaryColor: Color,
     onDismiss: () -> Unit,
 ) {
-    val sharedPrefs = context.getSharedPreferences("twopchat_prefs", Context.MODE_PRIVATE)
-    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+    val knownPeers = com.example.twopchat.config.P2PPreferences.getAllKnownPeers(context)
+    val allPeers = (knownPeers + "Saved Messages").filter { it.isNotBlank() && it != "null" }.distinct()
     val allGroups = GroupChatCoordinator.visibleGroups()
 
     val groupItems = allGroups.filter { it.groupId != state.groupId }.map { g ->
@@ -197,7 +197,7 @@ fun GroupForwardDialog(
         )
     }
 
-    val peerItems = activeSet.map { name ->
+    val peerItems = allPeers.map { name ->
         val avatar = P2PMessageRelay.peerAvatars[name]
         val isOnline = P2PMessageRelay.peerSessionStates[name] == true || name == "Saved Messages"
         val subtitle = when {
@@ -270,7 +270,7 @@ fun GroupForwardDialog(
                 )
 
                 com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).saveMessage(chatName, fwdMsg)
-                sharedPrefs.edit().putString("last_msg_$chatName", SecureStorage.encrypt("You: $textToForward")).apply()
+                com.example.twopchat.config.P2PPreferences.prefs(context).edit().putString("last_msg_$chatName", SecureStorage.encrypt("You: $textToForward")).apply()
 
                 if (forwardEndpoint != null && chatName != "Saved Messages") {
                     val attachUri = att?.localPath
@@ -378,7 +378,7 @@ fun GroupSeenByDialog(
                                     )
                                     if (role != GroupRole.MEMBER) {
                                         Text(
-                                            text = role.label,
+                                            text = role.getLocalizedLabel(appLanguage),
                                             fontSize = 11.sp,
                                             color = primaryColor
                                         )

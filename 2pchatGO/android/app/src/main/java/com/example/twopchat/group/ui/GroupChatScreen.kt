@@ -3061,6 +3061,8 @@ private fun GroupComposer(
 @Composable
 private fun RoleBadge(role: GroupRole) {
     if (role == GroupRole.MEMBER) return
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val appLanguage = remember(context) { com.example.twopchat.config.P2PPreferences.getAppLanguage(context) }
     val labelColor = when (role) {
         GroupRole.OWNER -> Color(0xFFE53935)
         GroupRole.ADMIN -> Color(0xFF1E88E5)
@@ -3068,7 +3070,7 @@ private fun RoleBadge(role: GroupRole) {
         GroupRole.MEMBER -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     Text(
-        "· ${role.label}",
+        "· ${role.getLocalizedLabel(appLanguage)}",
         fontSize = 11.sp,
         fontWeight = FontWeight.SemiBold,
         color = labelColor

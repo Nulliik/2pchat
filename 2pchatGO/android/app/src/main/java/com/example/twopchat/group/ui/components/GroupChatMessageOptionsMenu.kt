@@ -23,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,9 +44,9 @@ import java.io.File
 fun GroupChatMessageOptionsMenu(
     context: Context,
     message: GroupTimelineMessage,
-    primaryColor: Color,
     surfaceColor: Color,
     onSurfaceColor: Color,
+    primaryColor: Color,
     onDismiss: () -> Unit,
     onReactionClick: (String) -> Unit,
     onReply: () -> Unit,
@@ -56,6 +57,7 @@ fun GroupChatMessageOptionsMenu(
     onDelete: () -> Unit,
     onSelect: () -> Unit,
 ) {
+    val appLanguage = remember(context) { com.example.twopchat.config.P2PPreferences.getAppLanguage(context) }
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {},
@@ -71,7 +73,15 @@ fun GroupChatMessageOptionsMenu(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 Text(
-                    text = "Действия с сообщением",
+                    text = com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Действия с сообщением",
+                        en = "Message Actions",
+                        de = "Nachrichtenaktionen",
+                        es = "Acciones del mensaje",
+                        fr = "Actions sur le message",
+                        pt = "Ações da mensagem"
+                    ),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = primaryColor,
@@ -146,7 +156,15 @@ fun GroupChatMessageOptionsMenu(
                         )
                         Spacer(modifier = Modifier.width(14.dp))
                         Text(
-                            text = "Ответить",
+                            text = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Ответить",
+                                en = "Reply",
+                                de = "Antworten",
+                                es = "Responder",
+                                fr = "Répondre",
+                                pt = "Responder"
+                            ),
                             fontSize = 15.sp,
                             color = onSurfaceColor
                         )
@@ -172,7 +190,27 @@ fun GroupChatMessageOptionsMenu(
                         )
                         Spacer(modifier = Modifier.width(14.dp))
                         Text(
-                            text = if (message.isPinned) "Открепить" else "Закрепить",
+                            text = if (message.isPinned) {
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Открепить",
+                                    en = "Unpin",
+                                    de = "Lösen",
+                                    es = "Desfijar",
+                                    fr = "Détacher",
+                                    pt = "Desafixar"
+                                )
+                            } else {
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Закрепить",
+                                    en = "Pin",
+                                    de = "Anheften",
+                                    es = "Fijar",
+                                    fr = "Épingler",
+                                    pt = "Fixar"
+                                )
+                            },
                             fontSize = 15.sp,
                             color = onSurfaceColor
                         )
@@ -198,7 +236,15 @@ fun GroupChatMessageOptionsMenu(
                         )
                         Spacer(modifier = Modifier.width(14.dp))
                         Text(
-                            text = "Редактировать",
+                            text = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Редактировать",
+                                en = "Edit",
+                                de = "Bearbeiten",
+                                es = "Editar",
+                                fr = "Modifier",
+                                pt = "Editar"
+                            ),
                             fontSize = 15.sp,
                             color = onSurfaceColor
                         )
@@ -213,7 +259,19 @@ fun GroupChatMessageOptionsMenu(
                             .clip(RoundedCornerShape(8.dp))
                             .clickable {
                                 copyTextToClipboard(context, "Message Text", message.text)
-                                Toast.makeText(context, "Текст скопирован", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Текст скопирован",
+                                        en = "Text copied",
+                                        de = "Text kopiert",
+                                        es = "Texto copiado",
+                                        fr = "Texte copié",
+                                        pt = "Texto copiado"
+                                    ),
+                                    Toast.LENGTH_SHORT
+                                ).show()
                                 onDismiss()
                             }
                             .padding(vertical = 12.dp, horizontal = 12.dp),
@@ -227,7 +285,15 @@ fun GroupChatMessageOptionsMenu(
                         )
                         Spacer(modifier = Modifier.width(14.dp))
                         Text(
-                            text = "Скопировать текст",
+                            text = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Скопировать текст",
+                                en = "Copy text",
+                                de = "Text kopieren",
+                                es = "Copiar texto",
+                                fr = "Copier le texte",
+                                pt = "Copiar texto"
+                            ),
                             fontSize = 15.sp,
                             color = onSurfaceColor
                         )
@@ -245,7 +311,19 @@ fun GroupChatMessageOptionsMenu(
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable {
                                     GifStorageManager.save(context, File(filePath))
-                                    Toast.makeText(context, "Сохранено в Мои GIF", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(
+                                        context,
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Сохранено в Мои GIF",
+                                            en = "Saved to My GIFs",
+                                            de = "In Meinen GIFs gespeichert",
+                                            es = "Guardado en Mis GIFs",
+                                            fr = "Enregistré dans Mes GIFs",
+                                            pt = "Salvo em Meus GIFs"
+                                        ),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
                                     onDismiss()
                                 }
                                 .padding(vertical = 12.dp, horizontal = 12.dp),
@@ -259,7 +337,15 @@ fun GroupChatMessageOptionsMenu(
                             )
                             Spacer(modifier = Modifier.width(14.dp))
                             Text(
-                                text = "Сохранить в Мои GIF",
+                                text = com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Сохранить в Мои GIF",
+                                    en = "Save to My GIFs",
+                                    de = "Zu Meinen GIFs hinzufügen",
+                                    es = "Guardar en Mis GIFs",
+                                    fr = "Enregistrer dans Mes GIFs",
+                                    pt = "Salvar em Meus GIFs"
+                                ),
                                 fontSize = 15.sp,
                                 color = onSurfaceColor
                             )
@@ -273,9 +359,33 @@ fun GroupChatMessageOptionsMenu(
                                 .clickable {
                                     val savedUri = saveFileToPublicDownloads(context, filePath, att.fileName)
                                     if (savedUri != null) {
-                                        Toast.makeText(context, "Файл сохранён в Загрузки", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(
+                                            context,
+                                            com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Файл сохранён в Загрузки",
+                                                en = "File saved to Downloads",
+                                                de = "Datei in Downloads gespeichert",
+                                                es = "Archivo guardado en Descargas",
+                                                fr = "Fichier enregistré dans Téléchargements",
+                                                pt = "Arquivo salvo em Downloads"
+                                            ),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
                                     } else {
-                                        Toast.makeText(context, "Ошибка сохранения", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(
+                                            context,
+                                            com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Ошибка сохранения",
+                                                en = "Save failed",
+                                                de = "Fehler beim Speichern",
+                                                es = "Error al guardar",
+                                                fr = "Échec de l'enregistrement",
+                                                pt = "Falha ao salvar"
+                                            ),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
                                     }
                                     onDismiss()
                                 }
@@ -290,7 +400,15 @@ fun GroupChatMessageOptionsMenu(
                             )
                             Spacer(modifier = Modifier.width(14.dp))
                             Text(
-                                text = "Скачать файл",
+                                text = com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Скачать файл",
+                                    en = "Download file",
+                                    de = "Datei herunterladen",
+                                    es = "Descargar archivo",
+                                    fr = "Télécharger le fichier",
+                                    pt = "Baixar arquivo"
+                                ),
                                 fontSize = 15.sp,
                                 color = onSurfaceColor
                             )
@@ -316,7 +434,15 @@ fun GroupChatMessageOptionsMenu(
                     )
                     Spacer(modifier = Modifier.width(14.dp))
                     Text(
-                        text = "Переслать",
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Переслать",
+                            en = "Forward",
+                            de = "Weiterleiten",
+                            es = "Reenviar",
+                            fr = "Transférer",
+                            pt = "Encaminhar"
+                        ),
                         fontSize = 15.sp,
                         color = onSurfaceColor
                     )
@@ -339,7 +465,15 @@ fun GroupChatMessageOptionsMenu(
                     )
                     Spacer(modifier = Modifier.width(14.dp))
                     Text(
-                        text = "Просмотрено (${message.readByMembers.size})",
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Просмотрено (${message.readByMembers.size})",
+                            en = "Seen by (${message.readByMembers.size})",
+                            de = "Gesehen von (${message.readByMembers.size})",
+                            es = "Visto por (${message.readByMembers.size})",
+                            fr = "Vu par (${message.readByMembers.size})",
+                            pt = "Visto por (${message.readByMembers.size})"
+                        ),
                         fontSize = 15.sp,
                         color = onSurfaceColor
                     )
@@ -364,7 +498,15 @@ fun GroupChatMessageOptionsMenu(
                         )
                         Spacer(modifier = Modifier.width(14.dp))
                         Text(
-                            text = "Удалить",
+                            text = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Удалить",
+                                en = "Delete",
+                                de = "Löschen",
+                                es = "Eliminar",
+                                fr = "Supprimer",
+                                pt = "Excluir"
+                            ),
                             fontSize = 15.sp,
                             color = Color.Red,
                             fontWeight = FontWeight.Bold
@@ -389,7 +531,15 @@ fun GroupChatMessageOptionsMenu(
                     )
                     Spacer(modifier = Modifier.width(14.dp))
                     Text(
-                        text = "Выделить",
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Выделить",
+                            en = "Select",
+                            de = "Auswählen",
+                            es = "Seleccionar",
+                            fr = "Sélectionner",
+                            pt = "Selecionar"
+                        ),
                         fontSize = 15.sp,
                         color = onSurfaceColor
                     )

@@ -4807,22 +4807,14 @@ object GroupChatCoordinator {
     private fun getKnownContacts(): List<GroupContactSummary> {
         val context = applicationContext ?: return emptyList()
         val prefs = P2PPreferences.prefs(context)
-        val contactNames = mutableSetOf<String>()
-        prefs.getStringSet("active_chats", emptySet())?.let { contactNames.addAll(it) }
-        prefs.all.keys.forEach { key ->
-            if (key.startsWith("peer_fingerprint_")) {
-                val peerName = key.removePrefix("peer_fingerprint_")
-                if (peerName.isNotBlank() && peerName != "Saved Messages") {
-                    contactNames.add(peerName)
-                }
-            }
-        }
-        contactNames.remove("Saved Messages")
+        val allPeers = P2PPreferences.getAllKnownPeers(context)
 
-        return contactNames
+        return allPeers
             .asSequence()
             .mapNotNull { peerName ->
-                val fingerprint = prefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
+                val fingerprint = P2PPreferences.getPeerFingerprint(context, peerName)
+                    ?: prefs.getString(P2PPreferences.peerFingerprint(peerName), null).orEmpty()
+                val avatar = P2PMessageRelay.peerAvatars[peerName]
                 GroupContactSummary(
                     contactId = peerName,
                     displayName = peerName,

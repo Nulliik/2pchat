@@ -232,7 +232,7 @@ internal fun SearchBottomBarPill(
                     )
                     val text = if (!isListView) {
                         if (matchCount > 0) {
-                            "${currentIndex + 1} из $matchCount"
+                            if (isRu) "${currentIndex + 1} из $matchCount" else "${currentIndex + 1} of $matchCount"
                         } else {
                             if (isRu) "0 результатов" else "0 results"
                         }

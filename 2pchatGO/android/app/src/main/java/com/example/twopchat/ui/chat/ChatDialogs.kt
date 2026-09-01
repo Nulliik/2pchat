@@ -692,9 +692,7 @@ fun ChatConnectionErrorDialog(
                             val mode = com.example.twopchat.config.P2PPreferences.getYggdrasilMode(context)
                             if (mode == com.example.twopchat.config.P2PPreferences.YggdrasilMode.PROXY) {
                                 com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context, com.example.twopchat.config.P2PPreferences.YggdrasilMode.PROXY)
-                                context.getSharedPreferences("twopchat_prefs", Context.MODE_PRIVATE).edit {
-                                    putBoolean("settings_yggdrasil", true)
-                                }
+                                com.example.twopchat.config.P2PPreferences.prefs(context).edit().putBoolean("settings_yggdrasil", true).apply()
                                 Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
                             } else {
                                 val vpnIntent = VpnService.prepare(context)
@@ -702,9 +700,7 @@ fun ChatConnectionErrorDialog(
                                     vpnLauncher.launch(vpnIntent)
                                 } else {
                                     com.example.twopchat.yggdrasil.YggdrasilCoordinator.start(context, com.example.twopchat.config.P2PPreferences.YggdrasilMode.VPN)
-                                    context.getSharedPreferences("twopchat_prefs", Context.MODE_PRIVATE).edit {
-                                        putBoolean("settings_yggdrasil", true)
-                                    }
+                                    com.example.twopchat.config.P2PPreferences.prefs(context).edit().putBoolean("settings_yggdrasil", true).apply()
                                     Toast.makeText(context, if (appLanguage == "Русский") "Yggdrasil успешно включен!" else "Yggdrasil enabled successfully!", Toast.LENGTH_SHORT).show()
                                 }
                             }
@@ -740,8 +736,8 @@ fun ChatForwardDialog(
     onPersistDatabase: (() -> Unit) -> Unit,
 ) {
     if (messageToForward == null) return
-    val sharedPrefs = context.getSharedPreferences("twopchat_prefs", Context.MODE_PRIVATE)
-    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+    val knownPeers = com.example.twopchat.config.P2PPreferences.getAllKnownPeers(context)
+    val allPeers = (knownPeers + "Saved Messages").filter { it.isNotBlank() && it != "null" }.distinct()
     val groups = com.example.twopchat.group.runtime.GroupChatCoordinator.visibleGroups()
 
     val groupItems = groups.map { group ->
@@ -754,7 +750,7 @@ fun ChatForwardDialog(
         )
     }
 
-    val peerItems = activeSet.filter { it != peerName }.map { name ->
+    val peerItems = allPeers.filter { it != peerName }.map { name ->
         val avatar = P2PMessageRelay.peerAvatars[name]
         val isOnline = P2PMessageRelay.peerSessionStates[name] == true || name == "Saved Messages"
         val subtitle = when {
@@ -832,7 +828,7 @@ fun ChatForwardDialog(
                         com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).saveMessage(chatName, fwdMsg)
                     }
                 }
-                sharedPrefs.edit { putString("last_msg_$chatName", com.example.twopchat.security.SecureStorage.encrypt("You: $textToForward")) }
+                com.example.twopchat.config.P2PPreferences.prefs(context).edit().putString("last_msg_$chatName", com.example.twopchat.security.SecureStorage.encrypt("You: $textToForward")).apply()
 
                 if (forwardEndpoint != null && chatName != "Saved Messages") {
                     val attachUri = currentMsg.attachmentUri

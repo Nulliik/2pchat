@@ -991,6 +991,80 @@ object P2PPreferences {
             .apply()
         return true
     }
+
+    /**
+     * Aggregates all known individual peers/contacts across preferences, SQLite databases,
+     * in-memory relay mappings, and cached sessions. Excludes "Saved Messages" and blank keys.
+     */
+    fun getAllKnownPeers(context: Context): Set<String> {
+        val result = linkedSetOf<String>()
+        val sp = prefs(context)
+
+        // 1. active_chats from SharedPreferences
+        sp.getStringSet(ACTIVE_CHATS, emptySet())?.let { active ->
+            for (p in active) {
+                val clean = p.trim()
+                if (clean.isNotBlank() && clean != "null" && clean != "Saved Messages") {
+                    result.add(clean)
+                }
+            }
+        }
+
+        // 2. Database chat peer names and table_peers
+        try {
+            val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
+            for (p in db.getAllChatPeerNames()) {
+                val clean = p.trim()
+                if (clean.isNotBlank() && clean != "null" && clean != "Saved Messages") {
+                    result.add(clean)
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 3. Scan preference keys for peer identifiers
+        val prefixes = listOf(
+            "peer_fingerprint_",
+            "last_endpoint_",
+            "last_msg_",
+            "verified_peer_",
+            "pinned_chat_",
+            "pinned_msg_id_",
+            "draft_msg_",
+            "unread_count_",
+            "transport_",
+            "peer_rendezvous_",
+            "direct_wallpaper_"
+        )
+        try {
+            for (key in sp.all.keys) {
+                for (prefix in prefixes) {
+                    if (key.startsWith(prefix)) {
+                        val name = key.removePrefix(prefix).trim()
+                        if (name.isNotBlank() && name != "null" && name != "Saved Messages") {
+                            result.add(name)
+                        }
+                        break
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 4. In-memory relay maps
+        for (name in com.example.twopchat.relay.P2PMessageRelay.peerEndpoints.keys) {
+            val clean = name.trim()
+            if (clean.isNotBlank() && clean != "null" && clean != "Saved Messages") result.add(clean)
+        }
+        for (name in com.example.twopchat.relay.P2PMessageRelay.peerSessionStates.keys) {
+            val clean = name.trim()
+            if (clean.isNotBlank() && clean != "null" && clean != "Saved Messages") result.add(clean)
+        }
+        for (name in com.example.twopchat.relay.P2PMessageRelay.peerAvatars.keys) {
+            val clean = name.trim()
+            if (clean.isNotBlank() && clean != "null" && clean != "Saved Messages") result.add(clean)
+        }
+
+        return result
+    }
 }
 
 internal data class AcceptedPeerIdentity(
