@@ -38,9 +38,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import com.example.twopchat.R
 import com.example.twopchat.data.Localizations
@@ -79,8 +84,21 @@ internal fun StickerPreviewDialog(
         }
     }
 
+    val positionProvider = remember {
+        object : PopupPositionProvider {
+            override fun calculatePosition(
+                anchorBounds: IntRect,
+                windowSize: IntSize,
+                layoutDirection: LayoutDirection,
+                popupContentSize: IntSize,
+            ): IntOffset {
+                return IntOffset(0, 0)
+            }
+        }
+    }
+
     Popup(
-        alignment = Alignment.TopStart,
+        popupPositionProvider = positionProvider,
         properties = PopupProperties(focusable = false, clippingEnabled = false),
     ) {
         val configuration = LocalConfiguration.current
@@ -107,7 +125,7 @@ internal fun StickerPreviewDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 90.dp, start = 24.dp, end = 24.dp)
+                    .padding(top = 80.dp, start = 24.dp, end = 24.dp)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
