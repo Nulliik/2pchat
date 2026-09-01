@@ -90,7 +90,7 @@ private fun readLogFile(context: Context): String {
             return "No logs found yet. Connection activities will appear here."
         }
         val lines = logFile.readLines()
-        val lastLines = lines.takeLast(400)
+        val lastLines = lines.takeLast(1000)
         lastLines.joinToString("\n")
     } catch (e: Exception) {
         "Error reading log file: ${e.message}"
@@ -263,7 +263,7 @@ private suspend fun runConnectionDiagnosticsTest(context: Context): String = wit
     // 2. Yggdrasil IPv6 Interface
     val yggAddr = P2PMessageRelay.getYggdrasilAddress()
     val yggOk = yggAddr.isNotBlank() && yggAddr != "N/A" && yggAddr != "unavailable"
-    sb.appendLine("2. Yggdrasil IPv6: ${if (yggAddr.isNotBlank()) yggAddr else "Not Active"} -> ${if (yggOk) "OK" else "OFFLINE"}")
+    sb.appendLine("2. [YGGDRASIL] IPv6: ${if (yggAddr.isNotBlank()) yggAddr else "Not Active"} · State: ${if (yggOk) "CONNECTED (OK)" else "OFFLINE"}")
 
     // 3. UPnP Gateway Status
     sb.appendLine("3. Native Transport & Discovery: Dual-Stack / SOCKS5 Direct -> OK")
@@ -350,7 +350,7 @@ private fun formatLogs(
                 val matchesLevel = when (levelFilter) {
                     "ERRORS" -> (line.contains("[ERROR]", ignoreCase = true) || line.contains("[PYTHON_ERR]", ignoreCase = true) || line.contains("FAILED", ignoreCase = true) || line.contains("timed out", ignoreCase = true) || line.contains("Exception", ignoreCase = true) || line.contains("Error", ignoreCase = true)) && !line.contains("[INFO]", ignoreCase = true) && !line.contains("accepted", ignoreCase = true) && !line.contains("Announce self status", ignoreCase = true)
                     "P2P" -> line.contains("P2PMessageRelay", ignoreCase = true) || line.contains("p2p", ignoreCase = true) || line.contains("NativeBridge", ignoreCase = true) || line.contains("OutboundMessenger", ignoreCase = true)
-                    "YGG" -> line.contains("PacketTunnelProvider", ignoreCase = true) || line.contains("Yggdrasil", ignoreCase = true) || line.contains("ygg", ignoreCase = true) || line.contains("TUN", ignoreCase = true) || line.contains("200:", ignoreCase = true) || line.contains("0200:", ignoreCase = true) || line.contains("YggdrasilProxyService", ignoreCase = true) || line.contains("UserSpaceStack", ignoreCase = true)
+                    "YGG" -> line.contains("[YGGDRASIL]", ignoreCase = true) || line.contains("Yggdrasil", ignoreCase = true) || line.contains("ygg", ignoreCase = true) || line.contains("PacketTunnelProvider", ignoreCase = true) || line.contains("YggdrasilProxyService", ignoreCase = true) || line.contains("UserSpaceStack", ignoreCase = true) || line.contains("YggUserStack", ignoreCase = true) || line.contains("TUN", ignoreCase = true) || line.contains("200:", ignoreCase = true) || line.contains("0200:", ignoreCase = true)
                     "TRACKERS" -> line.contains("Tracker", ignoreCase = true) || line.contains("announce", ignoreCase = true) || line.contains("discovery", ignoreCase = true)
                     "TOR" -> line.contains("TorManager", ignoreCase = true) || line.contains("[PROXY]", ignoreCase = true) || line.contains("SOCKS5", ignoreCase = true) || line.contains("socks", ignoreCase = true) || line.contains("torrc", ignoreCase = true) || line.contains("Tor", ignoreCase = true)
                     else -> true

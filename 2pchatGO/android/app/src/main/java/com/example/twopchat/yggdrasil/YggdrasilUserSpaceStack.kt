@@ -100,11 +100,23 @@ class YggdrasilUserSpaceStack(
         workerThreads.add(tRecv)
 
         Log.i(TAG, "Yggdrasil User-Space Proxy Stack started on 127.0.0.1:$socksPort")
+        runCatching {
+            com.example.twopchat.AppLog.append(
+                GlobalApplication.getContext(),
+                "[YGGDRASIL] [YggUserStack] SOCKS5 server listening on 127.0.0.1:$socksPort, UDP relay on 127.0.0.1:${socksPort + 1}\n"
+            )
+        }
     }
 
     fun stop() {
         if (!running.compareAndSet(true, false)) return
 
+        runCatching {
+            com.example.twopchat.AppLog.append(
+                GlobalApplication.getContext(),
+                "[YGGDRASIL] [YggUserStack] Stopping user-space stack\n"
+            )
+        }
         runCatching { socksServer?.close() }
         runCatching { udpRelaySocket?.close() }
         activeSessions.values.forEach { sess ->

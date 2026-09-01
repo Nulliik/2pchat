@@ -481,6 +481,50 @@ object NativeBridge {
         }
     }
 
+    private data class TrackerLogRecord(
+        val wasSuccess: Boolean,
+        val peerCount: Int,
+        val detail: String,
+        val lastLoggedAt: Long,
+    )
+    private val trackerLogHistory = java.util.concurrent.ConcurrentHashMap<String, TrackerLogRecord>()
+
+    internal fun shouldLogTrackerEvent(
+        trackerUrl: String,
+        success: Boolean,
+        peerCount: Int,
+        detail: String,
+        currentTimeMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        val prev = trackerLogHistory[trackerUrl]
+        if (prev == null) {
+            trackerLogHistory[trackerUrl] = TrackerLogRecord(success, peerCount, detail, currentTimeMs)
+            return true
+        }
+
+        // 1. State change: success flipped (failed -> success or success -> failed)
+        if (prev.wasSuccess != success) {
+            trackerLogHistory[trackerUrl] = TrackerLogRecord(success, peerCount, detail, currentTimeMs)
+            return true
+        }
+
+        // 2. If it's a success and discovered peers count changed
+        if (success && prev.peerCount != peerCount) {
+            trackerLogHistory[trackerUrl] = TrackerLogRecord(success, peerCount, detail, currentTimeMs)
+            return true
+        }
+
+        // 3. For repetitive failures or identical successes, rate limit to at most once per 5 minutes
+        val elapsed = currentTimeMs - prev.lastLoggedAt
+        val intervalMs = if (success) 120_000L else 300_000L
+        if (elapsed >= intervalMs) {
+            trackerLogHistory[trackerUrl] = TrackerLogRecord(success, peerCount, detail, currentTimeMs)
+            return true
+        }
+
+        return false
+    }
+
     @JvmStatic
     fun onTrackerStatus(trackerUrl: String, success: Boolean, peerCount: Int, elapsedMs: Long, detail: String) {
         val result = if (success) "OK" else "FAIL"
@@ -494,7 +538,9 @@ object NativeBridge {
                 com.example.twopchat.config.TrackerPreferences.recordDiagnosticStatus(
                     context, trackerUrl, success, peerCount, elapsedMs, cleanDetail,
                 )
-                AppLog.append(context, "[TRACKER] $trackerUrl $summary\n")
+                if (shouldLogTrackerEvent(trackerUrl, success, peerCount, cleanDetail)) {
+                    AppLog.append(context, "[TRACKER] $trackerUrl $summary\n")
+                }
             }
             onTrackerStatusListener?.invoke(trackerUrl, success, peerCount, elapsedMs, cleanDetail)
         }

@@ -17,6 +17,11 @@ object YggdrasilCoordinator {
 
     fun start(context: Context, requestedMode: YggdrasilMode? = null) {
         val mode = requestedMode ?: P2PPreferences.getYggdrasilMode(context)
+        val yggAddr = com.example.twopchat.relay.P2PMessageRelay.getYggdrasilAddress()
+        com.example.twopchat.AppLog.append(
+            context,
+            "[YGGDRASIL] Starting mesh network coordinator in mode=${mode.name} (IPv6: ${if (yggAddr.isNotBlank()) yggAddr else "initializing"})\n"
+        )
         when (mode) {
             YggdrasilMode.PROXY -> {
                 val wasTunnelActive = PacketTunnelProvider.isTunnelActive(context) || PacketTunnelProvider.isTunnelActive
@@ -56,6 +61,7 @@ object YggdrasilCoordinator {
     }
 
     fun stop(context: Context) {
+        com.example.twopchat.AppLog.append(context, "[YGGDRASIL] Stopping mesh network coordinator\n")
         stopProxy(context)
         stopVpn(context)
     }

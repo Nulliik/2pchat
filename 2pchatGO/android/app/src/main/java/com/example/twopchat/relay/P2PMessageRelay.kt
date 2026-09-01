@@ -833,7 +833,24 @@ object P2PMessageRelay {
         P2PPreferences.updateFingerprintCache(cleanFingerprint, cleanNickname)
     }
 
-    private fun moveChatState(
+    fun sanitizeAndMergeDanglingChats(context: Context) {
+        try {
+            val prefs = P2PPreferences.prefs(context)
+            val activeChats = prefs.getStringSet("active_chats", emptySet())?.toSet() ?: return
+            val dangling = activeChats.filter {
+                it.endsWith(" ·") || it.endsWith(" · ") || it.endsWith(" .") || it.endsWith(" . ")
+            }
+            if (dangling.isEmpty()) return
+            for (danglingName in dangling) {
+                val cleanName = danglingName.substringBefore(" ·").substringBefore(" .").trim()
+                if (cleanName.isNotBlank() && cleanName != danglingName) {
+                    moveChatState(context, danglingName, cleanName)
+                }
+            }
+        } catch (_: Throwable) {}
+    }
+
+    internal fun moveChatState(
         context: Context,
         fromName: String,
         toName: String

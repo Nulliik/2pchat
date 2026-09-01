@@ -72,6 +72,7 @@ internal class ChatsViewModel(
     }
 
     private fun refreshActiveChats() {
+        com.example.twopchat.relay.P2PMessageRelay.sanitizeAndMergeDanglingChats(appContext)
         val prefChats = sharedPrefs.getStringSet("active_chats", emptySet()).orEmpty()
         val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(appContext)
         val dbChats = try {

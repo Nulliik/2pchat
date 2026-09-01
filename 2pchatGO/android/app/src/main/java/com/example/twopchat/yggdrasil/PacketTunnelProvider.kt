@@ -56,7 +56,7 @@ open class PacketTunnelProvider: VpnService() {
             if (context != null) {
                 try {
                     val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS", Locale.getDefault()).format(Date())
-                    com.example.twopchat.AppLog.append(context, "$timestamp [KOTLIN_$level] $TAG: $fullMsg\n")
+                    com.example.twopchat.AppLog.append(context, "$timestamp [KOTLIN_$level] [YGGDRASIL] $TAG: $fullMsg\n")
                 } catch (_: Exception) {}
             }
         }
@@ -458,6 +458,9 @@ open class PacketTunnelProvider: VpnService() {
         // Publish immediately: a 10-second blank period made a successful
         // fresh connection look failed on phones.
         var lastStateUpdate = 0L
+        var lastLoggedState = ""
+        var lastLoggedPeers = -1
+        var lastLogTime = 0L
         val probeStartedAt = System.currentTimeMillis()
         updates@ while (started.get()) {
             if (readerThread?.isAlive != true || writerThread?.isAlive != true) {
@@ -501,12 +504,14 @@ open class PacketTunnelProvider: VpnService() {
                 intent.putExtra("state", state)
                 intent.setPackage(packageName)
                 sendBroadcast(intent)
-                // The package-scoped state broadcast above is handled by
-                // GlobalApplication in the main process. Do not call the P2P
-                // relay here: this VPN process owns libgojni, while the relay
-                // loads lib2pcore, and two Go runtimes in one process corrupt
-                // cgo callback unwinding.
                 lastStateUpdate = curTime
+
+                if (state != lastLoggedState || peerCount != lastLoggedPeers || curTime - lastLogTime >= 30_000L) {
+                    yggLog(applicationContext, "Mesh state=$state, peers=$peerCount, routes=$routes, treeNodes=$treeNodes, IPv6=${ygg.addressString}")
+                    lastLoggedState = state
+                    lastLoggedPeers = peerCount
+                    lastLogTime = curTime
+                }
             }
 
             // The first start uses the embedded offline public-peer snapshot.

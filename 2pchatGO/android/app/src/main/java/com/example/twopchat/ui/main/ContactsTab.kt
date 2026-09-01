@@ -2,7 +2,9 @@
 package com.example.twopchat.ui.main
 
 import android.widget.Toast
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import com.example.twopchat.config.*
 import android.net.VpnService
 import com.example.twopchat.yggdrasil.PacketTunnelProvider
@@ -344,6 +346,58 @@ internal fun contactFromPeerSearchResult(
     )
 }
 
+internal fun resolvePeerKeyForContact(
+    context: Context,
+    contactName: String,
+    contactFingerprint: String,
+    contactEndpoints: String,
+    activeChats: Set<String>,
+    sharedPrefs: SharedPreferences,
+): String {
+    val cleanName = contactName.trim()
+    if (cleanName.isBlank()) return "Unknown"
+
+    // 1. Direct active_chats exact match
+    if (activeChats.contains(cleanName)) {
+        val existingFp = sharedPrefs.getString("peer_fingerprint_$cleanName", null)
+        // If no conflicting fingerprint or search didn't provide a different non-empty fingerprint, reuse existing chat
+        if (existingFp.isNullOrBlank() || contactFingerprint.isBlank() || existingFp == contactFingerprint) {
+            return cleanName
+        }
+    }
+
+    // 2. Lookup by fingerprint in activeChats
+    if (contactFingerprint.isNotBlank()) {
+        val byFp = P2PPreferences.findPeerNameByFingerprint(context, contactFingerprint)
+        if (!byFp.isNullOrBlank() && activeChats.contains(byFp)) {
+            return byFp
+        }
+    }
+
+    // 3. Lookup by endpoint in activeChats
+    if (contactEndpoints.isNotBlank() && contactEndpoints != "Unknown") {
+        for (ep in contactEndpoints.split(',')) {
+            val trimmedEp = ep.trim()
+            if (trimmedEp.isNotBlank()) {
+                val byEp = P2PPreferences.findPeerNameByEndpoint(context, trimmedEp)
+                if (!byEp.isNullOrBlank() && activeChats.contains(byEp)) {
+                    return byEp
+                }
+            }
+        }
+    }
+
+    // 4. If name exists in activeChats with a different verified non-blank fingerprint (real collision)
+    val existingFp = sharedPrefs.getString("peer_fingerprint_$cleanName", null)
+    if (!existingFp.isNullOrBlank() && contactFingerprint.isNotBlank() && existingFp != contactFingerprint) {
+        val fpSuffix = contactFingerprint.take(8).trim()
+        if (fpSuffix.isNotEmpty()) {
+            return "$cleanName · $fpSuffix"
+        }
+    }
+
+    return cleanName
+}
 
 @Composable
 fun ContactsTab(
@@ -494,40 +548,50 @@ fun ContactsTab(
                                     if (generation != searchGeneration) return@withContext
                                 if (endpointStr.isNotEmpty() || request.expectedLiveName.isNotBlank()) {
                                     val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
-                                    if (!activeSet.contains(request.expectedLiveName)) {
+                                    val effectiveName = resolvePeerKeyForContact(
+                                        context = context,
+                                        contactName = request.expectedLiveName,
+                                        contactFingerprint = request.expectedFingerprint.orEmpty(),
+                                        contactEndpoints = endpointStr,
+                                        activeChats = activeSet,
+                                        sharedPrefs = sharedPrefs,
+                                    )
+                                    if (!activeSet.contains(effectiveName)) {
                                         sharedPrefs.edit()
-                                            .putStringSet("active_chats", activeSet + request.expectedLiveName)
-                                            .putString("transport_${request.expectedLiveName}", if (endpointStr.contains(".onion")) "Tor Onion" else "DIRECT P2P")
-                                            .putString("peer_fingerprint_${request.expectedLiveName}", request.expectedFingerprint.orEmpty())
-                                            .putString("discovery_code_${request.expectedLiveName}", request.sharedCode)
+                                            .putStringSet("active_chats", activeSet + effectiveName)
+                                            .putString("transport_${effectiveName}", if (endpointStr.contains(".onion")) "Tor Onion" else "DIRECT P2P")
+                                            .putString("peer_fingerprint_${effectiveName}", request.expectedFingerprint.orEmpty())
+                                            .putString("discovery_code_${effectiveName}", request.sharedCode)
                                             .apply()
+                                    } else if (request.expectedFingerprint?.isNotBlank() == true) {
+                                        sharedPrefs.edit().putString("peer_fingerprint_${effectiveName}", request.expectedFingerprint).apply()
                                     }
-                                    if (endpointStr.isNotBlank() && endpointStr != request.expectedLiveName) {
-                                        sharedPrefs.edit().putString("last_endpoint_${request.expectedLiveName}", endpointStr).apply()
+                                    if (endpointStr.isNotBlank() && endpointStr != effectiveName) {
+                                        sharedPrefs.edit().putString("last_endpoint_${effectiveName}", endpointStr).apply()
                                         if (endpointStr.contains(".onion")) {
-                                            P2PPreferences.setPeerOnionAddress(context, request.expectedLiveName, endpointStr)
+                                            P2PPreferences.setPeerOnionAddress(context, effectiveName, endpointStr)
                                             ChatDatabaseHelper.getInstance(context).savePeerOnionAddress(
-                                                peerName = request.expectedLiveName,
+                                                peerName = effectiveName,
                                                 onionAddress = endpointStr,
                                                 fingerprint = request.expectedFingerprint?.takeIf { it.isNotBlank() },
                                                 endpoint = endpointStr,
                                             )
                                         }
                                         if (!request.expectedFingerprint.isNullOrBlank()) {
-                                            P2PBridgeProvider.get(context).updatePeerNameMapping(request.expectedFingerprint, request.expectedLiveName)
+                                            P2PBridgeProvider.get(context).updatePeerNameMapping(request.expectedFingerprint, effectiveName)
                                         }
-                                        com.example.twopchat.relay.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(request.expectedLiveName, endpointStr)
+                                        com.example.twopchat.relay.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(effectiveName, endpointStr)
                                     }
                                     com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(context)
                                     if (!requestedGroupId.isNullOrBlank() && !groupInviteToken.isNullOrBlank()) {
                                         com.example.twopchat.group.runtime.GroupChatCoordinator.requestJoinFromInvite(
                                             requestedGroupId,
                                             groupInviteToken,
-                                            request.expectedLiveName,
+                                            effectiveName,
                                         )
                                     }
                                     resolveInviteStatus = ""
-                                    onItemClick(Chat(request.expectedLiveName))
+                                    onItemClick(Chat(effectiveName))
                                 } else {
                                     resolveInviteStatus = if (appLanguage == "Русский") "Собеседник не найден. Попробуйте снова." else "Peer not found. Please try again."
                                 }
@@ -565,14 +629,21 @@ fun ContactsTab(
                         ).show()
                     }
                     val existingPeerName = P2PPreferences.findPeerNameByEndpoint(context, directOnion.onionEndpoint)
-                    val effectiveName = existingPeerName ?: directOnion.nickname
+                    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+                    val effectiveName = resolvePeerKeyForContact(
+                        context = context,
+                        contactName = existingPeerName ?: directOnion.nickname,
+                        contactFingerprint = "",
+                        contactEndpoints = directOnion.onionEndpoint,
+                        activeChats = activeSet,
+                        sharedPrefs = sharedPrefs,
+                    )
 
                     isResolvingInvite = true
                     resolveInviteStatus = if (appLanguage == "Русский") "Подключение к скрытому сервису Tor..." else "Connecting to Tor hidden service..."
                     com.example.twopchat.relay.P2PMessageRelay.injectLocalDiscoveryCandidate(
                         effectiveName, "", directOnion.onionEndpoint,
                     )
-                    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                     if (!activeSet.contains(effectiveName)) {
                         sharedPrefs.edit()
                             .putStringSet("active_chats", activeSet + effectiveName)
@@ -606,14 +677,21 @@ fun ContactsTab(
                 val directIP = parseDirectIPAddress(trimmed, P2PMessageRelay.listenerPort(context))
                 if (directIP != null) {
                     val existingPeerName = P2PPreferences.findPeerNameByEndpoint(context, directIP.endpoint)
-                    val effectiveName = existingPeerName ?: directIP.nickname
+                    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+                    val effectiveName = resolvePeerKeyForContact(
+                        context = context,
+                        contactName = existingPeerName ?: directIP.nickname,
+                        contactFingerprint = "",
+                        contactEndpoints = directIP.endpoint,
+                        activeChats = activeSet,
+                        sharedPrefs = sharedPrefs,
+                    )
 
                     isResolvingInvite = true
                     resolveInviteStatus = if (appLanguage == "Русский") "Подключение к прямому P2P адресу..." else "Connecting to direct P2P endpoint..."
                     com.example.twopchat.relay.P2PMessageRelay.injectLocalDiscoveryCandidate(
                         effectiveName, "", directIP.endpoint,
                     )
-                    val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
                     if (!activeSet.contains(effectiveName)) {
                         sharedPrefs.edit()
                             .putStringSet("active_chats", activeSet + effectiveName)
@@ -1528,18 +1606,15 @@ fun ContactsTab(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable(enabled = true) {
-                                    val existingFingerprint = sharedPrefs.getString("peer_fingerprint_${contact.name}", null)
-
-                                    val peerKey = if (
-                                        existingFingerprint.isNullOrBlank() || existingFingerprint == contact.fingerprint
-                                    ) {
-                                        contact.name
-                                    } else {
-                                        // Preserve both contacts only for a real
-                                        // same-name/different-key collision.
-                                        "${contact.name} · ${contact.fingerprint.take(8)}"
-                                    }
                                     val activeSet = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet()
+                                    val peerKey = resolvePeerKeyForContact(
+                                        context = context,
+                                        contactName = contact.name,
+                                        contactFingerprint = contact.fingerprint,
+                                        contactEndpoints = contact.endpoints,
+                                        activeChats = activeSet,
+                                        sharedPrefs = sharedPrefs,
+                                    )
                                     if (!activeSet.contains(peerKey)) {
                                         val newSet = activeSet.toMutableSet()
                                         newSet.add(peerKey)
@@ -1549,9 +1624,14 @@ fun ContactsTab(
                                             .any { it.startsWith('[') }
                                         sharedPrefs.edit()
                                             .putString("transport_$peerKey", if (isYgg) "YGGDRASIL" else "DIRECT P2P")
-                                            .putString("peer_fingerprint_$peerKey", contact.fingerprint)
-                                            .putString("discovery_code_$peerKey", (if (searchQuery.trim().split('#').size > 1) searchQuery.trim().split('#')[1].trim() else ""))
                                             .apply()
+                                    }
+                                    if (contact.fingerprint.isNotBlank()) {
+                                        sharedPrefs.edit().putString("peer_fingerprint_$peerKey", contact.fingerprint).apply()
+                                    }
+                                    val searchCode = if (searchQuery.trim().split('#').size > 1) searchQuery.trim().split('#')[1].trim() else ""
+                                    if (searchCode.isNotBlank()) {
+                                        sharedPrefs.edit().putString("discovery_code_$peerKey", searchCode).apply()
                                     }
                                     // The live search already authenticated this fingerprint.
                                     if (contact.endpoints.isNotBlank() && contact.endpoints != "Unknown") {
@@ -1568,8 +1648,8 @@ fun ContactsTab(
                                         if (contact.fingerprint.isNotBlank()) {
                                             P2PBridgeProvider.get(context).updatePeerNameMapping(contact.fingerprint, peerKey)
                                         }
-                                        P2PMessageRelay.rememberAuthenticatedPeerEndpoint(peerKey, contact.endpoints)
-                                        P2PMessageRelay.triggerImmediateReconnect(context)
+                                        com.example.twopchat.relay.P2PMessageRelay.rememberAuthenticatedPeerEndpoint(peerKey, contact.endpoints)
+                                        com.example.twopchat.relay.P2PMessageRelay.triggerImmediateReconnect(context)
                                     }
                                     onItemClick(Chat(peerKey))
                                 }
@@ -1589,7 +1669,18 @@ fun ContactsTab(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     // Avatar
+                                    val resolvedPeerName = resolvePeerKeyForContact(
+                                        context = context,
+                                        contactName = contact.name,
+                                        contactFingerprint = contact.fingerprint,
+                                        contactEndpoints = contact.endpoints,
+                                        activeChats = sharedPrefs.getStringSet("active_chats", emptySet()) ?: emptySet(),
+                                        sharedPrefs = sharedPrefs,
+                                    )
                                     val peerAvatarBitmap = P2PMessageRelay.peerAvatars[contact.name]
+                                        ?: P2PMessageRelay.peerAvatars[resolvedPeerName]
+                                        ?: (if (contact.fingerprint.isNotBlank()) P2PPreferences.findPeerNameByFingerprint(context, contact.fingerprint)?.let { P2PMessageRelay.peerAvatars[it] } else null)
+                                        ?: (if (contact.endpoints.isNotBlank() && contact.endpoints != "Unknown") P2PPreferences.findPeerNameByEndpoint(context, contact.endpoints)?.let { P2PMessageRelay.peerAvatars[it] } else null)
                                     Box(
                                         contentAlignment = Alignment.Center,
                                         modifier = Modifier

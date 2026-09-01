@@ -55,7 +55,7 @@ class YggdrasilProxyService : Service() {
             if (context != null) {
                 try {
                     val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS", Locale.getDefault()).format(Date())
-                    com.example.twopchat.AppLog.append(context, "$timestamp [KOTLIN_$level] $TAG: $fullMsg\n")
+                    com.example.twopchat.AppLog.append(context, "$timestamp [KOTLIN_$level] [YGGDRASIL] $TAG: $fullMsg\n")
                 } catch (_: Exception) {}
             }
         }
@@ -348,6 +348,9 @@ class YggdrasilProxyService : Service() {
             return
         }
         var lastStateUpdate = 0L
+        var lastLoggedState = ""
+        var lastLoggedPeers = -1
+        var lastLogTime = 0L
         val probeStartedAt = System.currentTimeMillis()
         updates@ while (started.get()) {
             val ygg = yggdrasil ?: break@updates
@@ -383,6 +386,13 @@ class YggdrasilProxyService : Service() {
                 intent.setPackage(packageName)
                 sendBroadcast(intent)
                 lastStateUpdate = curTime
+
+                if (state != lastLoggedState || peerCount != lastLoggedPeers || curTime - lastLogTime >= 30_000L) {
+                    yggLog(applicationContext, "Mesh state=$state, peers=$peerCount, routes=$routes, treeNodes=$treeNodes, IPv6=${ygg.addressString}")
+                    lastLoggedState = state
+                    lastLoggedPeers = peerCount
+                    lastLogTime = curTime
+                }
             }
 
             if (

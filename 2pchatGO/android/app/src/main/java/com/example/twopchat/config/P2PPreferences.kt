@@ -311,6 +311,15 @@ object P2PPreferences {
         }
     }
 
+    @androidx.annotation.VisibleForTesting
+    fun setCachedPrefsForTesting(prefs: SharedPreferences?) {
+        synchronized(this) {
+            cachedPrefs = prefs
+            fingerprintToPeerNameCache.clear()
+            fingerprintCacheInitialized = false
+        }
+    }
+
     private val fingerprintToPeerNameCache = ConcurrentHashMap<String, String>()
     @Volatile
     private var fingerprintCacheInitialized = false

@@ -736,7 +736,11 @@ class NativeBridgeImpl : IP2PBridge {
         knownCandidates.addAll(P2PMessageRelay.localDiscoveryEndpoints(resultName))
         knownCandidates.addAll(P2PMessageRelay.localDiscoveryEndpoints(query))
 
-        val resultFP = expectedFingerprint.orEmpty()
+        val resultFP = expectedFingerprint?.takeIf { it.isNotBlank() }
+            ?: P2PPreferences.prefs(appContext).getString("peer_fingerprint_$resultName", null)?.takeIf { it.isNotBlank() }
+            ?: P2PPreferences.findPeerNameByEndpoint(appContext, query)?.let {
+                P2PPreferences.prefs(appContext).getString("peer_fingerprint_$it", null)
+            }.orEmpty()
         return listOf(
             mapOf(
                 "nickname" to resultName,
