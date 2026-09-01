@@ -116,9 +116,9 @@ object AppUpdateManager {
                 @Suppress("DEPRECATION")
                 context.packageManager.getPackageInfo(context.packageName, 0)
             }
-            pInfo.versionName ?: "0.0.8.4(1)"
+            pInfo.versionName ?: "0.0.8.5"
         } catch (_: Throwable) {
-            "0.0.8.4(1)"
+            "0.0.8.5"
         }
     }
 
