@@ -82,6 +82,7 @@ internal fun ChatInputBar(
             primaryColor = primaryColor,
             surfaceVariant = surfaceVariant,
             onStickerSelect = onSelectSuggestedSticker,
+            appLanguage = appLanguage,
         )
 
         AnimatedVisibility(

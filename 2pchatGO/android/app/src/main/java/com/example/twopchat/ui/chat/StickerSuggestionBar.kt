@@ -5,8 +5,10 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,13 +22,20 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.example.twopchat.media.*
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun StickerSuggestionBar(
     stickers: List<BuiltinSticker>,
@@ -34,7 +43,11 @@ internal fun StickerSuggestionBar(
     surfaceVariant: Color,
     onStickerSelect: (BuiltinSticker) -> Unit,
     modifier: Modifier = Modifier,
+    appLanguage: String = "Русский",
 ) {
+    val haptic = LocalHapticFeedback.current
+    var previewSticker by remember { mutableStateOf<BuiltinSticker?>(null) }
+
     AnimatedVisibility(
         visible = stickers.isNotEmpty(),
         enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
@@ -71,7 +84,13 @@ internal fun StickerSuggestionBar(
                                     surfaceVariant.copy(alpha = 0.65f)
                                 },
                             )
-                            .clickable { onStickerSelect(sticker) },
+                            .combinedClickable(
+                                onClick = { onStickerSelect(sticker) },
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    previewSticker = sticker
+                                },
+                            ),
                         contentAlignment = Alignment.Center,
                     ) {
                         AnimatedStickerImage(
@@ -85,5 +104,18 @@ internal fun StickerSuggestionBar(
                 }
             }
         }
+    }
+
+    if (previewSticker != null) {
+        StickerPreviewDialog(
+            sticker = previewSticker,
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            onDismiss = { previewSticker = null },
+            onSendSticker = {
+                previewSticker = null
+                onStickerSelect(it)
+            },
+        )
     }
 }

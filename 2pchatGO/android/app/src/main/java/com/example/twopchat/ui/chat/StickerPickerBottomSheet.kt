@@ -1,7 +1,9 @@
 package com.example.twopchat.ui.chat
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,15 +37,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.platform.LocalContext
 import com.example.twopchat.media.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun StickerPickerBottomSheet(
     appLanguage: String,
@@ -52,6 +56,8 @@ internal fun StickerPickerBottomSheet(
     onStickerSelected: (BuiltinSticker) -> Unit,
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    var previewSticker by remember { mutableStateOf<BuiltinSticker?>(null) }
     val packs by produceState(
         initialValue = StickerSupport.builtinPacks,
         context,
@@ -226,7 +232,13 @@ internal fun StickerPickerBottomSheet(
                                     },
                                     RoundedCornerShape(22.dp),
                                 )
-                                .clickable { onStickerSelected(sticker) }
+                                .combinedClickable(
+                                    onClick = { onStickerSelected(sticker) },
+                                    onLongClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        previewSticker = sticker
+                                    },
+                                )
                                 .padding(vertical = 12.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -243,5 +255,18 @@ internal fun StickerPickerBottomSheet(
             }
             Spacer(Modifier.height(16.dp))
         }
+    }
+
+    if (previewSticker != null) {
+        StickerPreviewDialog(
+            sticker = previewSticker,
+            appLanguage = appLanguage,
+            primaryColor = primaryColor,
+            onDismiss = { previewSticker = null },
+            onSendSticker = {
+                previewSticker = null
+                onStickerSelected(it)
+            },
+        )
     }
 }
