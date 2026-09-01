@@ -21,6 +21,7 @@ import com.example.twopchat.copyTextToClipboard
 import com.example.twopchat.R
 import com.example.twopchat.media.*
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -283,6 +284,41 @@ fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeig
     return inSampleSize
 }
 
+fun shareMediaFile(context: android.content.Context, filePath: String) {
+    try {
+        val targetFile = resolveAttachmentFile(context, filePath) ?: File(filePath.removePrefix("file://"))
+        if (!targetFile.exists()) {
+            Toast.makeText(context, "File not found", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            targetFile
+        )
+        val ext = targetFile.extension.lowercase()
+        val mimeType = when (ext) {
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            "webp" -> "image/webp"
+            "gif" -> "image/gif"
+            "mp4" -> "video/mp4"
+            "mkv" -> "video/x-matroska"
+            "mov" -> "video/quicktime"
+            else -> "*/*"
+        }
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, null))
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Failed to share file", Toast.LENGTH_SHORT).show()
+    }
+}
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun FullscreenImageViewer(
@@ -290,7 +326,12 @@ fun FullscreenImageViewer(
     initialIndex: Int,
     appLanguage: String,
     bitmapOverrides: Map<String, Bitmap> = emptyMap(),
+    caption: String? = null,
+    timestamp: String? = null,
     onGoToMessage: ((String) -> Unit)? = null,
+    onShare: ((String) -> Unit)? = null,
+    onDelete: ((String) -> Unit)? = null,
+    onForward: ((String) -> Unit)? = null,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
@@ -310,6 +351,9 @@ fun FullscreenImageViewer(
         pageCount = { imagePaths.size }
     )
     var zoomedPage by remember { mutableIntStateOf(-1) }
+    val rotationAngles = remember { mutableStateMapOf<Int, Float>() }
+    var isControlsVisible by remember { mutableStateOf(true) }
+    var showMenu by remember { mutableStateOf(false) }
 
     LaunchedEffect(pagerState.currentPage) {
         // Zoom belongs to a page, never to the pager. Re-enable swiping as soon
@@ -415,11 +459,7 @@ fun FullscreenImageViewer(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .then(dragModifier)
-                    .clickable(
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null
-                    ) { onClose() },
+                    .then(dragModifier),
                 contentAlignment = Alignment.Center
             ) {
                 val overriddenBitmap = bitmapOverrides[imagePath]
@@ -429,17 +469,16 @@ fun FullscreenImageViewer(
                     targetHeight = 2048,
                 )
                 val bitmap = overriddenBitmap ?: sampledBitmap
+                val currentRot = rotationAngles[page] ?: 0f
                 val mediaModifier = Modifier
                     .fillMaxSize()
                     .transformable(
                         state = transformState,
-                        // At 1x the pager owns one-finger horizontal drags. Pinch still
-                        // starts zoom, and once zoomed the media owns panning.
                         canPan = { scale > 1f },
                     )
-                    .pointerInput(Unit) {
+                    .pointerInput(page) {
                         detectTapGestures(
-                            onTap = { onClose() },
+                            onTap = { isControlsVisible = !isControlsVisible },
                             onDoubleTap = {
                                 if (scale > 1f) {
                                     scale = 1f
@@ -455,6 +494,7 @@ fun FullscreenImageViewer(
                     .graphicsLayer(
                         scaleX = scale,
                         scaleY = scale,
+                        rotationZ = currentRot,
                         translationX = if (scale > 1f) offset.x else 0f,
                         translationY = if (scale > 1f) offset.y else dismissOffsetY.value,
                     )
@@ -479,93 +519,298 @@ fun FullscreenImageViewer(
             }
         }
 
-        // Close Button
-        IconButton(
-            onClick = { onClose() },
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(top = 40.dp, start = 16.dp)
-                .alpha(bgAlpha)
-                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+        // Top Action Bar (Animated with controls visibility)
+        AnimatedVisibility(
+            visible = isControlsVisible,
+            enter = fadeIn(tween(150)) + slideInVertically(tween(150)) { -it },
+            exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { -it },
+            modifier = Modifier.align(Alignment.TopCenter)
         ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_back_arrow),
-                contentDescription = "Close",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-
-        // Page Indicator
-        if (imagePaths.size > 1) {
-            Text(
-                text = "${pagerState.currentPage + 1} / ${imagePaths.size}",
-                color = Color.White,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
+            Box(
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 48.dp)
-            )
-        }
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                // Close / Back Button
+                IconButton(
+                    onClick = { onClose() },
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_back_arrow),
+                        contentDescription = "Close",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
 
-        // Bitmap overrides are decrypted in-memory avatars. Do not materialize
-        // them as plaintext files or expose a misleading download action.
-        if (bitmapOverrides[imagePaths[pagerState.currentPage]] == null) {
-            IconButton(
-                onClick = {
+                // Page Indicator
+                if (imagePaths.size > 1) {
+                    Text(
+                        text = "${pagerState.currentPage + 1} / ${imagePaths.size}",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+
+                // Top Right Action Buttons: Download, Share, 3-dots Menu
+                Row(
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     val currentPath = imagePaths[pagerState.currentPage]
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
-                        ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.WRITE_EXTERNAL_STORAGE
-                        ) == PackageManager.PERMISSION_GRANTED
-                    ) {
-                        scope.launch(Dispatchers.IO) {
-                            val uri = saveImageToPublicGallery(context, currentPath)
-                            withContext(Dispatchers.Main) {
-                                if (uri != null) {
-                                    Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
+                    val isPlaintextFile = bitmapOverrides[currentPath] == null
+
+                    if (isPlaintextFile) {
+                        // Share
+                        IconButton(
+                            onClick = {
+                                if (onShare != null) {
+                                    onShare(currentPath)
                                 } else {
-                                    Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image", Toast.LENGTH_SHORT).show()
+                                    shareMediaFile(context, currentPath)
                                 }
+                            },
+                            modifier = Modifier.background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_share),
+                                contentDescription = "Share",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // Download
+                        IconButton(
+                            onClick = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                                    ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    scope.launch(Dispatchers.IO) {
+                                        val uri = saveImageToPublicGallery(context, currentPath)
+                                        withContext(Dispatchers.Main) {
+                                            if (uri != null) {
+                                                Toast.makeText(context, if (appLanguage == "Русский") "Изображение сохранено в Галерею" else "Image saved to Gallery", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить изображение" else "Failed to save image", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                                }
+                            },
+                            modifier = Modifier.background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_download),
+                                contentDescription = "Download",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    // 3-dots Menu
+                    Box {
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_more_vert),
+                                contentDescription = "More",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                            modifier = Modifier.background(Color(0xFF262628))
+                        ) {
+                            // Rotate 90°
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = Localizations.tr(appLanguage, ru = "Повернуть", en = "Rotate", de = "Drehen", es = "Girar", fr = "Faire pivoter", pt = "Girar"),
+                                        color = Color.White
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_rotate),
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    val currentRot = rotationAngles[pagerState.currentPage] ?: 0f
+                                    rotationAngles[pagerState.currentPage] = (currentRot + 90f) % 360f
+                                }
+                            )
+
+                            // Share
+                            if (isPlaintextFile) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = Localizations.tr(appLanguage, ru = "Поделиться", en = "Share", de = "Teilen", es = "Compartir", fr = "Partager", pt = "Compartilhar"),
+                                            color = Color.White
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_share),
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        if (onShare != null) {
+                                            onShare(currentPath)
+                                        } else {
+                                            shareMediaFile(context, currentPath)
+                                        }
+                                    }
+                                )
+                            }
+
+                            // Forward
+                            if (onForward != null) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = Localizations.tr(appLanguage, ru = "Переслать", en = "Forward", de = "Weiterleiten", es = "Reenviar", fr = "Transférer", pt = "Encaminhar"),
+                                            color = Color.White
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_forward),
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        onForward(currentPath)
+                                    }
+                                )
+                            }
+
+                            // Show in chat
+                            if (onGoToMessage != null) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = Localizations.tr(appLanguage, ru = "Показать в чате", en = "Show in chat", de = "Im Chat anzeigen", es = "Mostrar en el chat", fr = "Afficher dans le chat", pt = "Mostrar no chat"),
+                                            color = Color.White
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_eye),
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        onGoToMessage(currentPath)
+                                    }
+                                )
+                            }
+
+                            // Delete
+                            if (onDelete != null) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = Localizations.tr(appLanguage, ru = "Удалить", en = "Delete", de = "Löschen", es = "Eliminar", fr = "Supprimer", pt = "Excluir"),
+                                            color = Color(0xFFFF5252)
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_delete),
+                                            contentDescription = null,
+                                            tint = Color(0xFFFF5252),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        onDelete(currentPath)
+                                    }
+                                )
                             }
                         }
-                    } else {
-                        launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                     }
-                },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 40.dp, end = 16.dp)
-                    .alpha(bgAlpha)
-                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-            ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_download),
-                    contentDescription = "Download",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
+                }
             }
         }
 
-        if (onGoToMessage != null) {
-            val hasDownload = bitmapOverrides[imagePaths[pagerState.currentPage]] == null
-            IconButton(
-                onClick = { onGoToMessage(imagePaths[pagerState.currentPage]) },
+        // Bottom Caption & Timestamp Bar
+        AnimatedVisibility(
+            visible = isControlsVisible && (!caption.isNullOrBlank() || !timestamp.isNullOrBlank()),
+            enter = fadeIn(tween(150)) + slideInVertically(tween(150)) { it },
+            exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { it },
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Box(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 40.dp, end = if (hasDownload) 64.dp else 16.dp)
-                    .alpha(bgAlpha)
-                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                        )
+                    )
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_eye),
-                    contentDescription = "Go to message in chat",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    if (!caption.isNullOrBlank()) {
+                        Text(
+                            text = caption,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    if (!timestamp.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = timestamp,
+                            color = Color.White.copy(alpha = 0.65f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
+                }
             }
         }
     }
@@ -602,12 +847,19 @@ fun getVerificationEmojis(localFingerprint: String, peerFingerprint: String): Li
 fun FullscreenVideoPlayer(
     videoPath: String,
     appLanguage: String,
+    caption: String? = null,
+    timestamp: String? = null,
     onGoToMessage: ((String) -> Unit)? = null,
+    onShare: ((String) -> Unit)? = null,
+    onDelete: ((String) -> Unit)? = null,
+    onForward: ((String) -> Unit)? = null,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    
+    var isControlsVisible by remember { mutableStateOf(true) }
+    var showMenu by remember { mutableStateOf(false) }
+
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -643,91 +895,330 @@ fun FullscreenVideoPlayer(
         }
     }
 
+    val dismissOffsetY = remember { Animatable(0f) }
+    val bgAlpha = (1f - (kotlin.math.abs(dismissOffsetY.value) / 600f)).coerceIn(0f, 1f)
+
+    val dragModifier = Modifier.pointerInput(Unit) {
+        detectDragGestures(
+            onDragEnd = {
+                if (kotlin.math.abs(dismissOffsetY.value) > 160f) {
+                    scope.launch {
+                        dismissOffsetY.animateTo(
+                            if (dismissOffsetY.value > 0) 1200f else -1200f,
+                            animationSpec = tween(180)
+                        )
+                        onClose()
+                    }
+                } else {
+                    scope.launch {
+                        dismissOffsetY.animateTo(
+                            0f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            )
+                        )
+                    }
+                }
+            },
+            onDragCancel = {
+                scope.launch {
+                    dismissOffsetY.animateTo(0f, animationSpec = spring())
+                }
+            },
+            onDrag = { change, dragAmount ->
+                if (kotlin.math.abs(dragAmount.y) > kotlin.math.abs(dragAmount.x) || kotlin.math.abs(dismissOffsetY.value) > 10f) {
+                    change.consume()
+                    scope.launch {
+                        dismissOffsetY.snapTo(dismissOffsetY.value + dragAmount.y)
+                    }
+                }
+            }
+        )
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(Color.Black.copy(alpha = bgAlpha)),
         contentAlignment = Alignment.Center
     ) {
-        AndroidView(
-            factory = { ctx ->
-                androidx.media3.ui.PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = true
-                    setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_ALWAYS)
-                    layoutParams = android.view.ViewGroup.LayoutParams(
-                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
-
-        IconButton(
-            onClick = { onClose() },
+        Box(
             modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(top = 40.dp, start = 16.dp)
-                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                .fillMaxSize()
+                .then(dragModifier)
+                .graphicsLayer(translationY = dismissOffsetY.value)
         ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_back_arrow),
-                contentDescription = "Close",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp)
+            AndroidView(
+                factory = { ctx ->
+                    androidx.media3.ui.PlayerView(ctx).apply {
+                        player = exoPlayer
+                        useController = true
+                        setShowBuffering(androidx.media3.ui.PlayerView.SHOW_BUFFERING_ALWAYS)
+                        setControllerVisibilityListener(androidx.media3.ui.PlayerView.ControllerVisibilityListener { visibility ->
+                            isControlsVisible = visibility == android.view.View.VISIBLE
+                        })
+                        layoutParams = android.view.ViewGroup.LayoutParams(
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
             )
         }
 
-        IconButton(
-            onClick = {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
-                    ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE
-                    ) == PackageManager.PERMISSION_GRANTED
+        // Top Action Bar
+        AnimatedVisibility(
+            visible = isControlsVisible,
+            enter = fadeIn(tween(150)) + slideInVertically(tween(150)) { -it },
+            exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { -it },
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                // Back Button
+                IconButton(
+                    onClick = { onClose() },
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .background(Color.Black.copy(alpha = 0.4f), CircleShape)
                 ) {
-                    scope.launch(Dispatchers.IO) {
-                        val uri = saveVideoToPublicGallery(context, videoPath)
-                        withContext(Dispatchers.Main) {
-                            if (uri != null) {
-                                Toast.makeText(context, if (appLanguage == "Русский") "Видео сохранено в Галерею" else "Video saved to Gallery", Toast.LENGTH_SHORT).show()
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_back_arrow),
+                        contentDescription = "Close",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // Right Actions
+                Row(
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Share
+                    IconButton(
+                        onClick = {
+                            if (onShare != null) {
+                                onShare(videoPath)
                             } else {
-                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить видео" else "Failed to save video", Toast.LENGTH_SHORT).show()
+                                shareMediaFile(context, videoPath)
+                            }
+                        },
+                        modifier = Modifier.background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_share),
+                            contentDescription = "Share",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Download
+                    IconButton(
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+                                ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                                ) == PackageManager.PERMISSION_GRANTED
+                            ) {
+                                scope.launch(Dispatchers.IO) {
+                                    val uri = saveVideoToPublicGallery(context, videoPath)
+                                    withContext(Dispatchers.Main) {
+                                        if (uri != null) {
+                                            Toast.makeText(context, if (appLanguage == "Русский") "Видео сохранено в Галерею" else "Video saved to Gallery", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, if (appLanguage == "Русский") "Не удалось сохранить видео" else "Failed to save video", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            } else {
+                                launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                            }
+                        },
+                        modifier = Modifier.background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_download),
+                            contentDescription = "Download",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // 3-dots Menu
+                    Box {
+                        IconButton(
+                            onClick = { showMenu = true },
+                            modifier = Modifier.background(Color.Black.copy(alpha = 0.4f), CircleShape)
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_more_vert),
+                                contentDescription = "More",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                            modifier = Modifier.background(Color(0xFF262628))
+                        ) {
+                            // Share
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = Localizations.tr(appLanguage, ru = "Поделиться", en = "Share", de = "Teilen", es = "Compartir", fr = "Partager", pt = "Compartilhar"),
+                                        color = Color.White
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_share),
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    if (onShare != null) {
+                                        onShare(videoPath)
+                                    } else {
+                                        shareMediaFile(context, videoPath)
+                                    }
+                                }
+                            )
+
+                            // Forward
+                            if (onForward != null) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = Localizations.tr(appLanguage, ru = "Переслать", en = "Forward", de = "Weiterleiten", es = "Reenviar", fr = "Transférer", pt = "Encaminhar"),
+                                            color = Color.White
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_forward),
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        onForward(videoPath)
+                                    }
+                                )
+                            }
+
+                            // Show in chat
+                            if (onGoToMessage != null) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = Localizations.tr(appLanguage, ru = "Показать в чате", en = "Show in chat", de = "Im Chat anzeigen", es = "Mostrar en el chat", fr = "Afficher dans le chat", pt = "Mostrar no chat"),
+                                            color = Color.White
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_eye),
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        onGoToMessage(videoPath)
+                                    }
+                                )
+                            }
+
+                            // Delete
+                            if (onDelete != null) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = Localizations.tr(appLanguage, ru = "Удалить", en = "Delete", de = "Löschen", es = "Eliminar", fr = "Supprimer", pt = "Excluir"),
+                                            color = Color(0xFFFF5252)
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.ic_delete),
+                                            contentDescription = null,
+                                            tint = Color(0xFFFF5252),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        onDelete(videoPath)
+                                    }
+                                )
                             }
                         }
                     }
-                } else {
-                    launcher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 }
-            },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 40.dp, end = 16.dp)
-                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_download),
-                contentDescription = "Download",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp)
-            )
+            }
         }
 
-        if (onGoToMessage != null) {
-            IconButton(
-                onClick = { onGoToMessage(videoPath) },
+        // Bottom Caption & Timestamp Bar
+        AnimatedVisibility(
+            visible = isControlsVisible && (!caption.isNullOrBlank() || !timestamp.isNullOrBlank()),
+            enter = fadeIn(tween(150)) + slideInVertically(tween(150)) { it },
+            exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { it },
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Box(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 40.dp, end = 64.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                        )
+                    )
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_eye),
-                    contentDescription = "Go to message in chat",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    if (!caption.isNullOrBlank()) {
+                        Text(
+                            text = caption,
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    if (!timestamp.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = timestamp,
+                            color = Color.White.copy(alpha = 0.65f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
+                }
             }
         }
     }

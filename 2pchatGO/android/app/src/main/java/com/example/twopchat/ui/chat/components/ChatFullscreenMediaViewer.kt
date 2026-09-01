@@ -12,6 +12,12 @@ internal fun ChatFullscreenMediaViewer(
     activeFullscreenBitmapOverrides: Map<String, Bitmap>,
     activeFullscreenVideo: String?,
     appLanguage: String,
+    activeFullscreenCaption: String? = null,
+    activeFullscreenTimestamp: String? = null,
+    onNavigateToMessage: ((String) -> Unit)? = null,
+    onShareMedia: ((String) -> Unit)? = null,
+    onDeleteMedia: ((String) -> Unit)? = null,
+    onForwardMedia: ((String) -> Unit)? = null,
     onCloseImages: () -> Unit,
     onCloseVideo: () -> Unit,
 ) {
@@ -21,6 +27,12 @@ internal fun ChatFullscreenMediaViewer(
             initialIndex = activeFullscreenImageIndex,
             appLanguage = appLanguage,
             bitmapOverrides = activeFullscreenBitmapOverrides,
+            caption = activeFullscreenCaption,
+            timestamp = activeFullscreenTimestamp,
+            onGoToMessage = onNavigateToMessage,
+            onShare = onShareMedia,
+            onDelete = onDeleteMedia,
+            onForward = onForwardMedia,
             onClose = onCloseImages,
         )
     }
@@ -29,6 +41,12 @@ internal fun ChatFullscreenMediaViewer(
         FullscreenVideoPlayer(
             videoPath = activeFullscreenVideo,
             appLanguage = appLanguage,
+            caption = activeFullscreenCaption,
+            timestamp = activeFullscreenTimestamp,
+            onGoToMessage = onNavigateToMessage,
+            onShare = onShareMedia,
+            onDelete = onDeleteMedia,
+            onForward = onForwardMedia,
             onClose = onCloseVideo,
         )
     }

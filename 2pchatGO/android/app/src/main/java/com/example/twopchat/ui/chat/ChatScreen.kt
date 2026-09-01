@@ -99,6 +99,9 @@ fun ChatScreen(
     var activeFullscreenImageIndex by remember { mutableStateOf(0) }
     var activeFullscreenBitmapOverrides by remember { mutableStateOf<Map<String, Bitmap>>(emptyMap()) }
     var activeFullscreenVideo by remember { mutableStateOf<String?>(null) }
+    var activeFullscreenCaption by remember { mutableStateOf<String?>(null) }
+    var activeFullscreenTimestamp by remember { mutableStateOf<String?>(null) }
+    var activeFullscreenMessageId by remember { mutableStateOf<String?>(null) }
     var showProfileOverlay by remember { mutableStateOf(false) }
     var showConnectionModeSheet by remember { mutableStateOf(false) }
 
@@ -106,8 +109,14 @@ fun ChatScreen(
         if (activeFullscreenImages.isNotEmpty()) {
             activeFullscreenImages = emptyList()
             activeFullscreenBitmapOverrides = emptyMap()
+            activeFullscreenCaption = null
+            activeFullscreenTimestamp = null
+            activeFullscreenMessageId = null
         } else if (activeFullscreenVideo != null) {
             activeFullscreenVideo = null
+            activeFullscreenCaption = null
+            activeFullscreenTimestamp = null
+            activeFullscreenMessageId = null
         } else if (showProfileOverlay) {
             showProfileOverlay = false
         } else if (showConnectionModeSheet) {
@@ -2124,12 +2133,32 @@ fun ChatScreen(
                         onSurfaceVariant = onSurfaceVariant,
                         onReply = { replyingToMessage = it },
                         onShowOptions = { selectedMessageForOptions = it },
-                        onOpenImages = { images, index ->
+                        onOpenImages = { images, index, message ->
                             activeFullscreenBitmapOverrides = emptyMap()
                             activeFullscreenImages = images
                             activeFullscreenImageIndex = index
+                            val isDefaultText = message?.text?.isBlank() == true ||
+                                message?.text?.startsWith("Sent an image") == true ||
+                                message?.text?.startsWith("Captured a photo") == true ||
+                                message?.text?.startsWith("Sent an album") == true ||
+                                message?.text?.startsWith("Album") == true ||
+                                message?.text?.startsWith("Альбом") == true ||
+                                message?.text?.equals("Фотография", ignoreCase = true) == true ||
+                                message?.text?.equals("Отправлена фотография", ignoreCase = true) == true
+                            activeFullscreenCaption = if (!isDefaultText) message?.text else null
+                            activeFullscreenTimestamp = message?.let { MessageTimestampFormatter.format(it, appLanguage) }
+                            activeFullscreenMessageId = message?.id
                         },
-                        onOpenVideo = { activeFullscreenVideo = it },
+                        onOpenVideo = { videoUri, message ->
+                            activeFullscreenVideo = videoUri
+                            val isDefaultText = message?.text?.isBlank() == true ||
+                                message?.text?.startsWith("Sent a video") == true ||
+                                message?.text?.equals("Видеозапись", ignoreCase = true) == true ||
+                                message?.text?.equals("Отправлено видео", ignoreCase = true) == true
+                            activeFullscreenCaption = if (!isDefaultText) message?.text else null
+                            activeFullscreenTimestamp = message?.let { MessageTimestampFormatter.format(it, appLanguage) }
+                            activeFullscreenMessageId = message?.id
+                        },
                         onOpenStickerPack = {
                             stickerPackRequestInProgress = false
                             viewedStickerMessage = it
@@ -2814,11 +2843,53 @@ fun ChatScreen(
             activeFullscreenImageIndex = activeFullscreenImageIndex,
             activeFullscreenBitmapOverrides = activeFullscreenBitmapOverrides,
             activeFullscreenVideo = activeFullscreenVideo,
+            activeFullscreenCaption = activeFullscreenCaption,
+            activeFullscreenTimestamp = activeFullscreenTimestamp,
+            onShareMedia = { filePath ->
+                shareMediaFile(context, filePath)
+            },
+            onDeleteMedia = { _ ->
+                val targetId = activeFullscreenMessageId
+                if (targetId != null) {
+                    val targetMsg = initialMessages.find { it.id == targetId }
+                    if (targetMsg != null) {
+                        persistDatabase { db.deleteMessage(targetMsg.id) }
+                        initialMessages.remove(targetMsg)
+                        P2PMessageRelay.sendDeleteMessage(context, peerName, targetMsg.id)
+                    }
+                }
+                activeFullscreenImages = emptyList()
+                activeFullscreenVideo = null
+                activeFullscreenCaption = null
+                activeFullscreenTimestamp = null
+                activeFullscreenMessageId = null
+            },
+            onForwardMedia = { _ ->
+                val targetId = activeFullscreenMessageId
+                val targetMsg = initialMessages.find { it.id == targetId }
+                if (targetMsg != null) {
+                    messageToForward = targetMsg
+                    showForwardDialog = true
+                }
+                activeFullscreenImages = emptyList()
+                activeFullscreenVideo = null
+                activeFullscreenCaption = null
+                activeFullscreenTimestamp = null
+                activeFullscreenMessageId = null
+            },
             onCloseFullscreenImages = {
                 activeFullscreenImages = emptyList()
                 activeFullscreenBitmapOverrides = emptyMap()
+                activeFullscreenCaption = null
+                activeFullscreenTimestamp = null
+                activeFullscreenMessageId = null
             },
-            onCloseFullscreenVideo = { activeFullscreenVideo = null },
+            onCloseFullscreenVideo = {
+                activeFullscreenVideo = null
+                activeFullscreenCaption = null
+                activeFullscreenTimestamp = null
+                activeFullscreenMessageId = null
+            },
             onOpenFullscreenAvatar = { avatarBitmap ->
                 val highRes = P2PMessageRelay.getOriginalAvatar(context, peerName) ?: avatarBitmap
                 if (highRes != null) {
@@ -2826,16 +2897,39 @@ fun ChatScreen(
                     activeFullscreenBitmapOverrides = mapOf(avatarKey to highRes)
                     activeFullscreenImages = listOf(avatarKey)
                     activeFullscreenImageIndex = 0
+                    activeFullscreenCaption = null
+                    activeFullscreenTimestamp = null
+                    activeFullscreenMessageId = null
                 }
             },
-            onOpenFullscreenImages = { paths, index ->
+            onOpenFullscreenImages = { paths, index, message ->
                 if (paths.isNotEmpty()) {
                     activeFullscreenBitmapOverrides = emptyMap()
                     activeFullscreenImages = paths
                     activeFullscreenImageIndex = index
+                    val isDefaultText = message?.text?.isBlank() == true ||
+                        message?.text?.startsWith("Sent an image") == true ||
+                        message?.text?.startsWith("Captured a photo") == true ||
+                        message?.text?.startsWith("Sent an album") == true ||
+                        message?.text?.startsWith("Album") == true ||
+                        message?.text?.startsWith("Альбом") == true ||
+                        message?.text?.equals("Фотография", ignoreCase = true) == true ||
+                        message?.text?.equals("Отправлена фотография", ignoreCase = true) == true
+                    activeFullscreenCaption = if (!isDefaultText) message?.text else null
+                    activeFullscreenTimestamp = message?.let { MessageTimestampFormatter.format(it, appLanguage) }
+                    activeFullscreenMessageId = message?.id
                 }
             },
-            onOpenFullscreenVideo = { activeFullscreenVideo = it },
+            onOpenFullscreenVideo = { videoUri, message ->
+                activeFullscreenVideo = videoUri
+                val isDefaultText = message?.text?.isBlank() == true ||
+                    message?.text?.startsWith("Sent a video") == true ||
+                    message?.text?.equals("Видеозапись", ignoreCase = true) == true ||
+                    message?.text?.equals("Отправлено видео", ignoreCase = true) == true
+                activeFullscreenCaption = if (!isDefaultText) message?.text else null
+                activeFullscreenTimestamp = message?.let { MessageTimestampFormatter.format(it, appLanguage) }
+                activeFullscreenMessageId = message?.id
+            },
             showConnectionModeSheet = showConnectionModeSheet,
             onDismissConnectionModeSheet = { showConnectionModeSheet = false },
             showStickerPicker = showStickerPicker,

@@ -88,8 +88,8 @@ internal fun ChatMessageList(
     onSurfaceVariant: Color,
     onReply: (Message) -> Unit,
     onShowOptions: (Message) -> Unit,
-    onOpenImages: (List<String>, Int) -> Unit,
-    onOpenVideo: (String) -> Unit,
+    onOpenImages: (List<String>, Int, Message?) -> Unit,
+    onOpenVideo: (String, Message?) -> Unit,
     onOpenStickerPack: (Message) -> Unit,
     onCancelFileTransfer: (Message) -> Unit,
     onRetryFileTransfer: (Message) -> Unit = {},
@@ -126,9 +126,9 @@ internal fun ChatMessageList(
             val clickedPath = message.attachmentUri
             val clickedIndex = paths.indexOf(clickedPath)
             if (clickedIndex >= 0) {
-                currentOnOpenImages(paths, clickedIndex)
+                currentOnOpenImages(paths, clickedIndex, message)
             } else if (!clickedPath.isNullOrBlank()) {
-                currentOnOpenImages(listOf(clickedPath), 0)
+                currentOnOpenImages(listOf(clickedPath), 0, message)
             }
         }
     }
@@ -143,9 +143,9 @@ internal fun ChatMessageList(
             val clickedPath = message.attachmentUri
             val clickedIndex = paths.indexOf(clickedPath)
             if (clickedIndex >= 0) {
-                currentOnOpenImages(paths, clickedIndex)
+                currentOnOpenImages(paths, clickedIndex, message)
             } else if (!clickedPath.isNullOrBlank()) {
-                currentOnOpenImages(listOf(clickedPath), 0)
+                currentOnOpenImages(listOf(clickedPath), 0, message)
             }
         }
     }

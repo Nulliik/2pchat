@@ -111,8 +111,8 @@ internal fun ChatMessageBubble(
     onSurfaceVariant: Color,
     onReply: (Message) -> Unit,
     onShowOptions: (Message) -> Unit,
-    onOpenImages: (List<String>, Int) -> Unit,
-    onOpenVideo: (String) -> Unit,
+    onOpenImages: (List<String>, Int, Message?) -> Unit,
+    onOpenVideo: (String, Message?) -> Unit,
     onOpenStickerPack: (Message) -> Unit,
     onCancelFileTransfer: (Message) -> Unit,
     onRetryFileTransfer: (Message) -> Unit = {},
@@ -804,7 +804,7 @@ internal fun ChatMessageBubble(
                                                         if (isSelectMode) {
                                                             onSelectionChange(msg, !isSelected)
                                                         } else {
-                                                            msg.attachmentUri?.let(onOpenVideo)
+                                                            msg.attachmentUri?.let { onOpenVideo(it, msg) }
                                                         }
                                                     },
                                                     onLongClick = {
@@ -2110,8 +2110,8 @@ private fun MediaAlbumGridBubble(
     linkColor: Color,
     bubbleShape: androidx.compose.ui.graphics.Shape,
     index: Int,
-    onOpenImages: (List<String>, Int) -> Unit,
-    onOpenVideo: (String) -> Unit,
+    onOpenImages: (List<String>, Int, Message?) -> Unit,
+    onOpenVideo: (String, Message?) -> Unit,
     onShowOptions: (Message) -> Unit
 ) {
     val onToggleSelection = { onSelectionChange(msg, !isSelected) }
@@ -2388,8 +2388,8 @@ private fun AlbumItemCell(
     msg: Message,
     onToggleSelection: () -> Unit,
     isSelectMode: Boolean,
-    onOpenImages: (List<String>, Int) -> Unit,
-    onOpenVideo: (String) -> Unit,
+    onOpenImages: (List<String>, Int, Message?) -> Unit,
+    onOpenVideo: (String, Message?) -> Unit,
     onShowOptions: (Message) -> Unit
 ) {
     if (uri.isBlank()) return
@@ -2408,11 +2408,11 @@ private fun AlbumItemCell(
                         onToggleSelection()
                     } else {
                         if (isVideo) {
-                            onOpenVideo(uri)
+                            onOpenVideo(uri, msg)
                         } else {
                             val imageUrisOnly = allUris.filter { !it.endsWith(".mp4", ignoreCase = true) && !it.endsWith(".mov", ignoreCase = true) }
                             val idx = imageUrisOnly.indexOf(uri).coerceAtLeast(0)
-                            onOpenImages(imageUrisOnly.ifEmpty { allUris }, idx)
+                            onOpenImages(imageUrisOnly.ifEmpty { allUris }, idx, msg)
                         }
                     }
                 },
