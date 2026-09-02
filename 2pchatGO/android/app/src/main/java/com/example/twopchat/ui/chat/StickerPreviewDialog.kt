@@ -45,19 +45,13 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupPositionProvider
-import androidx.compose.ui.window.PopupProperties
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.twopchat.R
 import com.example.twopchat.data.Localizations
 import com.example.twopchat.media.BuiltinSticker
 import kotlinx.coroutines.delay
-
-import android.content.Context
-import android.os.Build
-import android.view.WindowManager
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 
 @Composable
 internal fun StickerPreviewDialog(
@@ -91,63 +85,31 @@ internal fun StickerPreviewDialog(
         }
     }
 
-    val positionProvider = remember {
-        object : PopupPositionProvider {
-            override fun calculatePosition(
-                anchorBounds: IntRect,
-                windowSize: IntSize,
-                layoutDirection: LayoutDirection,
-                popupContentSize: IntSize,
-            ): IntOffset {
-                return IntOffset(0, 0)
-            }
-        }
-    }
-
-    Popup(
-        popupPositionProvider = positionProvider,
-        properties = PopupProperties(focusable = false, clippingEnabled = false),
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+        ),
     ) {
-        val context = LocalContext.current
-        val density = LocalDensity.current
-        val screenWidth = remember(density) {
-            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-            val bounds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                windowManager?.currentWindowMetrics?.bounds
-            } else null
-            val px = bounds?.width() ?: context.resources.displayMetrics.widthPixels
-            with(density) { px.toDp() }
-        }
-        val screenHeight = remember(density) {
-            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-            val bounds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                windowManager?.currentWindowMetrics?.bounds
-            } else null
-            val px = bounds?.height() ?: context.resources.displayMetrics.heightPixels
-            with(density) { px.toDp() + 160.dp }
-        }
-
         Box(
             modifier = Modifier
-                .size(screenWidth, screenHeight)
-                .background(Color.Black.copy(alpha = 0.55f))
-                .then(
-                    if (showActions) {
-                        Modifier.clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onDismiss,
-                        )
-                    } else {
-                        Modifier
-                    }
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.65f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss,
                 ),
             contentAlignment = Alignment.TopCenter,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 80.dp, start = 24.dp, end = 24.dp)
+                    .statusBarsPadding()
+                    .padding(top = 48.dp, start = 24.dp, end = 24.dp)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
