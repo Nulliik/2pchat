@@ -201,9 +201,12 @@ dependencies {
   implementation("net.zetetic:sqlcipher-android:4.6.1")
   implementation("androidx.sqlite:sqlite:2.3.1")
 
-  // Media3 ExoPlayer for Video Player
+  // Media3 ExoPlayer & Transformer for Video Player & Compression
   implementation("androidx.media3:media3-exoplayer:1.5.1")
   implementation("androidx.media3:media3-ui:1.5.1")
+  implementation("androidx.media3:media3-transformer:1.5.1")
+  implementation("androidx.media3:media3-effect:1.5.1")
+  implementation("androidx.media3:media3-common:1.5.1")
 
   // QR Code Generation & Scanning
   implementation("com.google.zxing:core:3.5.3")
