@@ -323,6 +323,7 @@ object P2PMessageRelay {
     private val fingerprintToPeerName = ConcurrentHashMap<String, String>()
     private val avatarSharesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val lastAvatarShareAt = ConcurrentHashMap<String, Long>()
+    private val lastProfileRequestAt = ConcurrentHashMap<String, Long>()
     private val onionSharesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val lastOnionShareAt = ConcurrentHashMap<String, Long>()
 
@@ -1233,6 +1234,12 @@ object P2PMessageRelay {
                                 // Reliability/liveness control frames are consumed by the
                                 // session layer. They must never become visible chat rows.
                                 "heartbeat", "ping", "pong" -> return
+                                "profile_request" -> {
+                                    val requester = payloadNickname.ifBlank { resolvedSender }
+                                    log(appContext, "Received profile request from $requester, replying with full profile", "INFO", null)
+                                    shareAvatar(appContext, requester, force = true)
+                                    return
+                                }
                                 "identity_info" -> {
                                     val nickname = json.optString("nickname").trim().takeIf { it.isNotBlank() }
                                     val rawFp = json.optString("fingerprint").trim()
@@ -1422,6 +1429,32 @@ object P2PMessageRelay {
                                     return
                                 }
                                 "profile_avatar_share" -> {
+                                    val nickname = json.optString("nickname").ifEmpty { json.optString("sender") }.takeIf { it.isNotBlank() }
+                                    val aboutMe = json.optString("about_me").takeIf { it.isNotBlank() }
+                                    val fingerprint = json.optString("fingerprint").takeIf { it.isNotBlank() }
+                                    val effectiveName = nickname ?: resolvedSender
+                                    val discCode = json.optString("discovery_code").takeIf { it.isNotBlank() }
+                                    if (discCode != null) {
+                                        val editor = sharedPrefs.edit()
+                                        editor.putString("discovery_code_$effectiveName", discCode)
+                                        val baseEff = effectiveName.substringBefore("#").trim()
+                                        if (baseEff.isNotEmpty()) editor.putString("discovery_code_$baseEff", discCode)
+                                        if (sender.isNotBlank()) {
+                                            editor.putString("discovery_code_$sender", discCode)
+                                            val baseSender = sender.substringBefore("#").trim()
+                                            if (baseSender.isNotEmpty()) editor.putString("discovery_code_$baseSender", discCode)
+                                        }
+                                        if (fingerprint != null) {
+                                            editor.putString("discovery_code_$fingerprint", discCode)
+                                        }
+                                        editor.apply()
+                                    }
+                                    if (fingerprint != null && nickname != null) {
+                                        sharedPrefs.edit().putString("peer_fingerprint_$nickname", fingerprint).apply()
+                                        getBridge(appContext).updatePeerNameMapping(fingerprint, nickname)
+                                    }
+                                    handlePeerNicknameReceived(appContext, sender, nickname, aboutMe)
+
                                     val b64 = json.optString("avatar_base64")
                                     // Avatars are control-plane thumbnails, not file transfers. Bound their
                                     // encoded size and decoded dimensions before allocating a full bitmap.
@@ -1964,6 +1997,13 @@ object P2PMessageRelay {
                                     )
                                     persistAndDispatchIncoming(appContext, effectiveSender, rxMsg)
                                     return
+                                }
+                                else -> {
+                                    val mtype = json.optString("type")
+                                    if (mtype.isNotEmpty()) {
+                                        log(appContext, "Silently consumed unhandled control frame of type: $mtype", "DEBUG", null)
+                                        return
+                                    }
                                 }
                         }
                     }
@@ -2537,6 +2577,10 @@ object P2PMessageRelay {
     fun requestPeerProfile(context: Context, peerName: String) {
         if (peerName == "Saved Messages" || isPlaceholderPeerName(peerName)) return
         val appContext = context.applicationContext
+        val now = System.currentTimeMillis()
+        val lastReq = lastProfileRequestAt[peerName] ?: 0L
+        if (now - lastReq < 30_000L) return
+        lastProfileRequestAt[peerName] = now
         val endpoint = _peerEndpoints[peerName].orEmpty()
         val expectedFingerprint = P2PPreferences.findPeerFingerprint(appContext, peerName)
         val payload = JSONObject().apply {
