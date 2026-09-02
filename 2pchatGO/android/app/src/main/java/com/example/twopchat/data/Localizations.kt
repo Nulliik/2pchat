@@ -260,7 +260,8 @@ object Localizations {
         "paste_from_clipboard" to "Paste from Clipboard",
         "restore_btn" to "Restore Account",
         "invalid_seed_error" to "Invalid phrase or checksum error. Please check your words.",
-        "account_restored_success" to "Account successfully restored!"
+        "account_restored_success" to "Account successfully restored!",
+        "poll_notification_prefix" to "Poll: "
     )
 
     private val ruStrings = mapOf(
@@ -522,7 +523,8 @@ object Localizations {
         "paste_from_clipboard" to "Вставить из буфера",
         "restore_btn" to "Восстановить аккаунт",
         "invalid_seed_error" to "Неверная фраза или ошибка контрольной суммы. Проверьте введенные слова.",
-        "account_restored_success" to "Аккаунт успешно восстановлен!"
+        "account_restored_success" to "Аккаунт успешно восстановлен!",
+        "poll_notification_prefix" to "Опрос: "
     )
 
     private val deStrings = mapOf(
@@ -782,6 +784,7 @@ object Localizations {
         "help_tip_screen_security_desc" to "Aktivieren Sie 'Bildschirmschutz' in den Sicherheitseinstellungen, um Screenshots zu blockieren und zu verhindern, dass Android Chat-Vorschauen in der App-Übersicht speichert.",
         "help_tip_tor_rotation_title" to "Sofortige Tor-Geschwindigkeitsoptimierung",
         "help_tip_tor_rotation_desc" to "Falls die Nachrichtenübertragung langsam ist, tippen Sie in den Tor-Einstellungen oder im Chat-Kopf auf 'Identität erneuern'. Dies sendet ein SIGNAL NEWNYM, um Ihren Exit-Node auf eine schnellere Route zu wechseln.",
+        "poll_notification_prefix" to "Umfrage: "
     )
 
     private val esStrings = mapOf(
@@ -1041,6 +1044,7 @@ object Localizations {
         "help_tip_screen_security_desc" to "Activa 'Protección de pantalla' en los ajustes de seguridad para bloquear capturas de pantalla y evitar que Android guarde miniaturas del chat en la vista de aplicaciones recientes.",
         "help_tip_tor_rotation_title" to "Aumento instantáneo de velocidad de Tor",
         "help_tip_tor_rotation_desc" to "Si el envío de mensajes parece lento, toca 'Renovar identidad' en los ajustes de Tor o en el encabezado del chat. Esto envía una señal SIGNAL NEWNYM para rotar tu nodo de salida a un circuito más rápido.",
+        "poll_notification_prefix" to "Encuesta: "
     )
 
     private val frStrings = mapOf(
@@ -1300,6 +1304,7 @@ object Localizations {
         "help_tip_screen_security_desc" to "Activez 'Protection d'écran' dans les paramètres de sécurité pour bloquer les captures d'écran et empêcher Android de mettre en cache les aperçus de discussion dans les applications récentes.",
         "help_tip_tor_rotation_title" to "Boost instantané de vitesse Tor",
         "help_tip_tor_rotation_desc" to "Si l'envoi de messages semble lent, appuyez sur 'Renouveler l'identité' dans les paramètres Tor ou dans l'en-tête du chat. Cela envoie un SIGNAL NEWNYM pour faire basculer votre nœud de sortie vers un circuit plus rapide.",
+        "poll_notification_prefix" to "Sondage : "
     )
 
     private val ptStrings = mapOf(
@@ -1559,6 +1564,7 @@ object Localizations {
         "help_tip_screen_security_desc" to "Ative 'Proteção de tela' nas configurações de segurança para bloquear capturas de tela e impedir que o Android salve miniaturas de chat no alternador de aplicativos recentes.",
         "help_tip_tor_rotation_title" to "Aceleração instantânea de velocidade do Tor",
         "help_tip_tor_rotation_desc" to "Se o envio de mensagens parecer lento, toque em 'Renovar identidade' nas configurações do Tor ou no cabeçalho do chat. Isso aciona um SIGNAL NEWNYM para trocar seu nó de saída para um circuito mais rápido.",
+        "poll_notification_prefix" to "Enquete: "
     )
 
     fun getString(key: String, language: String): String {

@@ -2169,6 +2169,7 @@ object GroupChatCoordinator {
             group.groupId,
             event.authorDeviceId,
             event.authorSequence,
+            minimumEpoch = author.joinedEpoch,
         )
         require(sequenceOccupant == null || sequenceOccupant.eventId == event.eventId) {
             "group author equivocation at sequence ${event.authorSequence}"
@@ -2196,6 +2197,7 @@ object GroupChatCoordinator {
                 group.groupId,
                 event.authorDeviceId,
                 event.authorSequence - 1L,
+                minimumEpoch = author.joinedEpoch,
             )?.let { predecessor ->
                 require(event.previousAuthorEvent == predecessor.eventId) {
                     "group author hash chain does not reference its predecessor"
@@ -2207,6 +2209,7 @@ object GroupChatCoordinator {
                 group.groupId,
                 event.authorDeviceId,
                 event.authorSequence + 1L,
+                minimumEpoch = author.joinedEpoch,
             )?.let { successor ->
                 val successorWire = successor.payload?.let {
                     GroupWireProtocol.parseEvent(JSONObject(it.toString(Charsets.UTF_8)))
@@ -2312,12 +2315,14 @@ object GroupChatCoordinator {
             )
         ) {
             applicationContext?.let { context ->
+                val prefs = com.example.twopchat.config.P2PPreferences.prefs(context)
                 val text = if (event.kind == GroupEventKind.POLL) {
-                    "Опрос: ${payload.optString("question")}"
+                    val appLang = prefs.getString("app_language", "en") ?: "en"
+                    val pollPrefix = com.example.twopchat.data.Localizations.tr(appLang, "poll_notification_prefix", "Poll: ")
+                    "$pollPrefix${payload.optString("question")}"
                 } else {
                     payload.optString("text")
                 }
-                val prefs = com.example.twopchat.config.P2PPreferences.prefs(context)
                 val myDisplayName = prefs.getString("username_profile", "") ?: ""
                 val isMentioned = GroupNotificationService.isGroupMention(text, myDisplayName)
                 val isChatActive = group.groupId in activeGroupChats
@@ -2505,7 +2510,7 @@ object GroupChatCoordinator {
         ))
         val controlPayload = JSONObject(control.body.orEmpty())
         require(controlPayload.optLong("next_epoch", -1L) == keyPackage.epoch)
-        require(group.currentEpoch >= keyPackage.epoch)
+        require(keyPackage.epoch <= group.currentEpoch + 1L)
         val localMember = db().getMember(group.groupId, group.localDeviceId)
             ?: throw SecurityException("local device is not in the group roster")
         require(memberWasActiveAt(localMember, keyPackage.epoch))

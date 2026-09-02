@@ -286,7 +286,15 @@ fun TorSettingsPage(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = if (isRussian) "Onion-адрес (v3)" else "Onion Address (v3)",
+                                text = com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Onion-адрес (v3)",
+                                    en = "Onion Address (v3)",
+                                    de = "Onion-Adresse (v3)",
+                                    es = "Dirección Onion (v3)",
+                                    fr = "Adresse Onion (v3)",
+                                    pt = "Endereço Onion (v3)"
+                                ),
                                 fontSize = 14.sp,
                                 color = onSurfaceColor,
                                 fontWeight = FontWeight.SemiBold,
@@ -310,9 +318,25 @@ fun TorSettingsPage(
                                     )
                                     Text(
                                         text = if (isHsActive) {
-                                            if (isRussian) "Сервис активен" else "Service Active"
+                                            com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Сервис активен",
+                                                en = "Service Active",
+                                                de = "Dienst aktiv",
+                                                es = "Servicio activo",
+                                                fr = "Service actif",
+                                                pt = "Serviço ativo"
+                                            )
                                         } else {
-                                            if (isRussian) "Сервис оффлайн" else "Service Offline"
+                                            com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Сервис оффлайн",
+                                                en = "Service Offline",
+                                                de = "Dienst offline",
+                                                es = "Servicio desconectado",
+                                                fr = "Service hors ligne",
+                                                pt = "Serviço offline"
+                                            )
                                         },
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
@@ -323,11 +347,15 @@ fun TorSettingsPage(
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = if (isRussian) {
-                                "Позволяет общаться напрямую через Tor без Yggdrasil и трекеров"
-                            } else {
-                                "Allows direct P2P messaging over Tor without Yggdrasil or trackers"
-                            },
+                            text = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Позволяет общаться напрямую через Tor без Yggdrasil и трекеров",
+                                en = "Allows direct P2P messaging over Tor without Yggdrasil or trackers",
+                                de = "Ermöglicht direkte P2P-Nachrichten über Tor ohne Yggdrasil oder Tracker",
+                                es = "Permite mensajería directa P2P a través de Tor sin Yggdrasil ni rastreadores",
+                                fr = "Permet la messagerie P2P directe via Tor sans Yggdrasil ni trackers",
+                                pt = "Permite mensagens P2P diretas via Tor sem Yggdrasil ou rastreadores"
+                            ),
                             fontSize = 12.sp,
                             color = onSurfaceVariant,
                         )
@@ -348,9 +376,10 @@ fun TorSettingsPage(
                             )
                         }
                         Spacer(Modifier.height(12.dp))
-                        Row(
+                        FlowRow(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
                             AssistChip(
@@ -358,14 +387,32 @@ fun TorSettingsPage(
                                     clipboard.setText(androidx.compose.ui.text.AnnotatedString(activeOnion))
                                     Toast.makeText(
                                         context,
-                                        if (isRussian) "Onion-адрес скопирован" else "Onion address copied",
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Onion-адрес скопирован",
+                                            en = "Onion address copied",
+                                            de = "Onion-Adresse kopiert",
+                                            es = "Dirección Onion copiada",
+                                            fr = "Adresse Onion copiée",
+                                            pt = "Endereço Onion copiado"
+                                        ),
                                         Toast.LENGTH_SHORT,
                                     ).show()
                                 },
                                 label = {
                                     Text(
-                                        if (isRussian) "Копировать адрес" else "Copy address",
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Копировать адрес",
+                                            en = "Copy address",
+                                            de = "Adresse kopieren",
+                                            es = "Copiar dirección",
+                                            fr = "Copier l'adresse",
+                                            pt = "Copiar endereço"
+                                        ),
                                         fontSize = 12.sp,
+                                        maxLines = 1,
+                                        softWrap = false,
                                     )
                                 },
                                 colors = AssistChipDefaults.assistChipColors(
@@ -376,8 +423,30 @@ fun TorSettingsPage(
                                 onClick = { showOnionQr = !showOnionQr },
                                 label = {
                                     Text(
-                                        if (showOnionQr) (if (isRussian) "Скрыть QR" else "Hide QR") else (if (isRussian) "Показать QR" else "Show QR"),
+                                        if (showOnionQr) {
+                                            com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Скрыть QR",
+                                                en = "Hide QR",
+                                                de = "QR verbergen",
+                                                es = "Ocultar QR",
+                                                fr = "Masquer le QR",
+                                                pt = "Ocultar QR"
+                                            )
+                                        } else {
+                                            com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Показать QR",
+                                                en = "Show QR",
+                                                de = "QR anzeigen",
+                                                es = "Mostrar QR",
+                                                fr = "Afficher le QR",
+                                                pt = "Mostrar QR"
+                                            )
+                                        },
                                         fontSize = 12.sp,
+                                        maxLines = 1,
+                                        softWrap = false,
                                     )
                                 },
                                 colors = AssistChipDefaults.assistChipColors(
@@ -390,11 +459,29 @@ fun TorSettingsPage(
                                 label = {
                                     Text(
                                         if (isRotatingOnion) {
-                                            if (isRussian) "Смена адреса..." else "Rotating..."
+                                            com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Смена адреса...",
+                                                en = "Rotating...",
+                                                de = "Adresse wird gewechselt...",
+                                                es = "Cambiando dirección...",
+                                                fr = "Changement d'adresse...",
+                                                pt = "Trocando endereço..."
+                                            )
                                         } else {
-                                            if (isRussian) "Сменить адрес" else "Rotate Address"
+                                            com.example.twopchat.data.Localizations.tr(
+                                                appLanguage,
+                                                ru = "Сменить адрес",
+                                                en = "Rotate address",
+                                                de = "Adresse wechseln",
+                                                es = "Cambiar dirección",
+                                                fr = "Changer d'adresse",
+                                                pt = "Trocar endereço"
+                                            )
                                         },
                                         fontSize = 12.sp,
+                                        maxLines = 1,
+                                        softWrap = false,
                                     )
                                 },
                                 colors = AssistChipDefaults.assistChipColors(
@@ -428,9 +515,25 @@ fun TorSettingsPage(
                             Spacer(Modifier.height(6.dp))
                             Text(
                                 text = if (isHsActive) {
-                                    if (isRussian) "● Сервис готов к приёму соединений" else "● Service ready for inbound connections"
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "● Сервис готов к приёму соединений",
+                                        en = "● Service ready for inbound connections",
+                                        de = "● Dienst bereit für eingehende Verbindungen",
+                                        es = "● Servicio listo para conexiones entrantes",
+                                        fr = "● Service prêt pour les connexions entrantes",
+                                        pt = "● Serviço pronto para conexões de entrada"
+                                    )
                                 } else {
-                                    if (isRussian) "○ Включите Tor для приёма соединений по QR" else "○ Enable Tor to accept inbound connections via QR"
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "○ Включите Tor для приёма соединений по QR",
+                                        en = "○ Enable Tor to accept inbound connections via QR",
+                                        de = "○ Tor aktivieren, um eingehende Verbindungen per QR zu akzeptieren",
+                                        es = "○ Habilite Tor para aceptar conexiones entrantes mediante QR",
+                                        fr = "○ Activez Tor pour accepter les connexions entrantes via QR",
+                                        pt = "○ Ative o Tor para aceitar conexões de entrada via QR"
+                                    )
                                 },
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
@@ -652,18 +755,30 @@ fun TorSettingsPage(
             onDismissRequest = { if (!isRotatingOnion) showRotateOnionDialog = false },
             title = {
                 Text(
-                    if (isRussian) "Сменить Tor Onion-адрес?" else "Rotate Tor Onion Address?",
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Сменить Tor Onion-адрес?",
+                        en = "Rotate Tor Onion Address?",
+                        de = "Tor-Onion-Adresse wechseln?",
+                        es = "¿Cambiar dirección Onion de Tor?",
+                        fr = "Changer l'adresse Tor Onion ?",
+                        pt = "Trocar endereço Tor Onion?"
+                    ),
                     fontWeight = FontWeight.Bold,
                     color = onSurfaceColor,
                 )
             },
             text = {
                 Text(
-                    if (isRussian) {
-                        "Сгенерирует новый .onion ключ и автоматически разошлет его вашим доверенным контактам. Заблокированные пользователи навсегда потеряют связь с вашим узлом."
-                    } else {
-                        "Generates a new .onion keypair and broadcasts it only to trusted non-blocked contacts. Blocked users will permanently lose access to your node."
-                    },
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Сгенерирует новый .onion ключ и автоматически разошлет его вашим доверенным контактам. Заблокированные пользователи навсегда потеряют связь с вашим узлом.",
+                        en = "Generates a new .onion keypair and broadcasts it only to trusted non-blocked contacts. Blocked users will permanently lose access to your node.",
+                        de = "Erstellt ein neues .onion-Schlüsselpaar und sendet es nur an vertrauenswürdige Kontakte. Blockierte Benutzer verlieren dauerhaft den Zugriff.",
+                        es = "Genera un nuevo par de claves .onion y lo envía solo a contactos de confianza. Los usuarios bloqueados perderán el acceso de forma permanente.",
+                        fr = "Génère une nouvelle paire de clés .onion et l'envoie uniquement aux contacts de confiance. Les utilisateurs bloqués perdront définitivement l'accès.",
+                        pt = "Gera um novo par de chaves .onion e envia apenas para contatos confiáveis. Usuários bloqueados perderão o acesso permanentemente."
+                    ),
                     fontSize = 13.sp,
                     color = onSurfaceVariant,
                 )
@@ -679,13 +794,29 @@ fun TorSettingsPage(
                             if (newAddr != null) {
                                 Toast.makeText(
                                     context,
-                                    if (isRussian) "Новый адрес сгенерирован и разослан" else "New Tor address generated & broadcasted",
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Новый адрес сгенерирован и разослан",
+                                        en = "New Tor address generated & broadcasted",
+                                        de = "Neue Tor-Adresse generiert & gesendet",
+                                        es = "Nueva dirección Tor generada y enviada",
+                                        fr = "Nouvelle adresse Tor générée et diffusée",
+                                        pt = "Novo endereço Tor gerado e transmitido"
+                                    ),
                                     Toast.LENGTH_LONG,
                                 ).show()
                             } else {
                                 Toast.makeText(
                                     context,
-                                    if (isRussian) "Ошибка при смене адреса Tor" else "Failed to rotate Tor address",
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Ошибка при смене адреса Tor",
+                                        en = "Failed to rotate Tor address",
+                                        de = "Fehler beim Wechseln der Tor-Adresse",
+                                        es = "Error al cambiar la dirección Tor",
+                                        fr = "Échec du changement d'adresse Tor",
+                                        pt = "Erro ao trocar endereço Tor"
+                                    ),
                                     Toast.LENGTH_LONG,
                                 ).show()
                             }
@@ -693,7 +824,19 @@ fun TorSettingsPage(
                     },
                     enabled = !isRotatingOnion,
                 ) {
-                    Text(if (isRussian) "Сменить адрес" else "Rotate Address", color = primaryColor, fontWeight = FontWeight.Bold)
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Сменить адрес",
+                            en = "Rotate Address",
+                            de = "Adresse wechseln",
+                            es = "Cambiar dirección",
+                            fr = "Changer d'adresse",
+                            pt = "Trocar endereço"
+                        ),
+                        color = primaryColor,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             },
             dismissButton = {
@@ -701,7 +844,18 @@ fun TorSettingsPage(
                     onClick = { showRotateOnionDialog = false },
                     enabled = !isRotatingOnion,
                 ) {
-                    Text(if (isRussian) "Отмена" else "Cancel", color = onSurfaceVariant)
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Отмена",
+                            en = "Cancel",
+                            de = "Abbrechen",
+                            es = "Cancelar",
+                            fr = "Annuler",
+                            pt = "Cancelar"
+                        ),
+                        color = onSurfaceVariant
+                    )
                 }
             },
             containerColor = surfaceColor,
