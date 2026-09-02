@@ -1085,9 +1085,10 @@ fun SettingsTab(
                                     badgeLabel = if (hasUpdate) "NEW" else null,
                                     onClick = {
                                         if (!isCheckingUpdate) {
-                                            if (availableUpdateRelease != null) {
+                                            val release = availableUpdateRelease
+                                            if (release != null) {
                                                 updateResult = com.example.twopchat.update.UpdateCheckResult.UpdateAvailable(
-                                                    availableUpdateRelease!!,
+                                                    release,
                                                     currentVerName
                                                 )
                                                 showUpdateDialog = true

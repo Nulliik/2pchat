@@ -75,7 +75,12 @@ enum class AspectRatioOption(val labelRu: String, val labelEn: String, val ratio
 private enum class DragHandle { NONE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, CENTER }
 
 private fun calculateImageBounds(containerW: Float, containerH: Float, imgW: Float, imgH: Float): Rect {
-    if (containerW <= 0f || containerH <= 0f || imgW <= 0f || imgH <= 0f) return Rect(0f, 0f, containerW, containerH)
+    if (!containerW.isFinite() || !containerH.isFinite() || !imgW.isFinite() || !imgH.isFinite() ||
+        containerW <= 0f || containerH <= 0f || imgW <= 0f || imgH <= 0f) {
+        val safeW = if (containerW.isFinite() && containerW > 0f) containerW else 0f
+        val safeH = if (containerH.isFinite() && containerH > 0f) containerH else 0f
+        return Rect(0f, 0f, safeW, safeH)
+    }
     val containerRatio = containerW / containerH
     val imgRatio = imgW / imgH
 
@@ -186,8 +191,8 @@ fun PhotoEditorModal(
     }
 
     // Current transformed preview bitmap (rotation & preset ratio crop)
-    val transformedBitmap = remember(originalBitmap, rotationDegrees, selectedAspectRatio) {
-        var bmp = originalBitmap
+    val transformedBitmap: Bitmap = remember(originalBitmap, rotationDegrees, selectedAspectRatio) {
+        var bmp: Bitmap = originalBitmap
 
         // Apply rotation if needed
         if (rotationDegrees != 0) {
@@ -200,18 +205,24 @@ fun PhotoEditorModal(
         if (targetRatio != null && targetRatio > 0f) {
             val srcW = bmp.width
             val srcH = bmp.height
-            val currentRatio = srcW.toFloat() / srcH.toFloat()
+            if (srcW > 0 && srcH > 0) {
+                val currentRatio = srcW.toFloat() / srcH.toFloat()
 
-            var cropW = srcW
-            var cropH = srcH
-            if (currentRatio > targetRatio) {
-                cropW = (srcH * targetRatio).toInt().coerceAtMost(srcW)
-            } else {
-                cropH = (srcW / targetRatio).toInt().coerceAtMost(srcH)
+                var cropW = srcW
+                var cropH = srcH
+                if (currentRatio > targetRatio) {
+                    cropW = (srcH * targetRatio).toInt().coerceIn(1, srcW)
+                } else {
+                    cropH = (srcW / targetRatio).toInt().coerceIn(1, srcH)
+                }
+                val startX = ((srcW - cropW) / 2).coerceIn(0, srcW - cropW)
+                val startY = ((srcH - cropH) / 2).coerceIn(0, srcH - cropH)
+                try {
+                    bmp = Bitmap.createBitmap(bmp, startX, startY, cropW, cropH)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
-            val startX = (srcW - cropW) / 2
-            val startY = (srcH - cropH) / 2
-            bmp = Bitmap.createBitmap(bmp, startX, startY, cropW, cropH)
         }
 
         bmp

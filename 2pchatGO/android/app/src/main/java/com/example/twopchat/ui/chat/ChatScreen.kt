@@ -1518,12 +1518,14 @@ fun ChatScreen(
         if (uris.size == 1) {
             val uri = uris.first()
             var fileName = "video.mp4"
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (nameIndex != -1 && cursor.moveToFirst()) {
-                    val queried = cursor.getString(nameIndex)
-                    if (!queried.isNullOrBlank()) {
-                        fileName = if (!queried.contains(".")) "$queried.mp4" else queried
+            runCatching {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (nameIndex != -1 && cursor.moveToFirst()) {
+                        val queried = cursor.getString(nameIndex)
+                        if (!queried.isNullOrBlank()) {
+                            fileName = if (!queried.contains(".")) "$queried.mp4" else queried
+                        }
                     }
                 }
             }

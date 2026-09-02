@@ -3596,67 +3596,93 @@ private fun GroupMediaAlbumBubble(
             .testTag("attachment_${message.messageId}")
     ) {
         when (uris.size) {
+            0 -> {
+                Box(modifier = Modifier.fillMaxWidth().height(120.dp))
+            }
+            1 -> {
+                val singleUri = uris.firstOrNull() ?: ""
+                val singleType = types.firstOrNull() ?: "IMAGE"
+                val singleAttachment = attachments.firstOrNull()
+                if (singleAttachment != null) {
+                    GroupAlbumCell(
+                        uri = singleUri,
+                        type = singleType,
+                        att = singleAttachment,
+                        modifier = Modifier.fillMaxWidth().height(200.dp),
+                        onMediaClick = onMediaClick
+                    )
+                }
+            }
             2 -> {
+                val defaultAtt = attachments.firstOrNull()
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(180.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    GroupAlbumCell(uris[0], types.getOrNull(0) ?: "IMAGE", attachments[0], Modifier.weight(1f).fillMaxHeight(), onMediaClick)
-                    GroupAlbumCell(uris[1], types.getOrNull(1) ?: "IMAGE", attachments[1], Modifier.weight(1f).fillMaxHeight(), onMediaClick)
+                    if (defaultAtt != null) {
+                        GroupAlbumCell(uris.getOrNull(0) ?: "", types.getOrNull(0) ?: "IMAGE", attachments.getOrNull(0) ?: defaultAtt, Modifier.weight(1f).fillMaxHeight(), onMediaClick)
+                        GroupAlbumCell(uris.getOrNull(1) ?: "", types.getOrNull(1) ?: "IMAGE", attachments.getOrNull(1) ?: defaultAtt, Modifier.weight(1f).fillMaxHeight(), onMediaClick)
+                    }
                 }
             }
             3 -> {
+                val defaultAtt = attachments.firstOrNull()
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    GroupAlbumCell(uris[0], types.getOrNull(0) ?: "IMAGE", attachments[0], Modifier.weight(1.2f).fillMaxHeight(), onMediaClick)
-                    Column(
-                        modifier = Modifier
-                            .weight(0.8f)
-                            .fillMaxHeight(),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        GroupAlbumCell(uris[1], types.getOrNull(1) ?: "IMAGE", attachments[1], Modifier.fillMaxWidth().weight(1f), onMediaClick)
-                        GroupAlbumCell(uris[2], types.getOrNull(2) ?: "IMAGE", attachments[2], Modifier.fillMaxWidth().weight(1f), onMediaClick)
+                    if (defaultAtt != null) {
+                        GroupAlbumCell(uris.getOrNull(0) ?: "", types.getOrNull(0) ?: "IMAGE", attachments.getOrNull(0) ?: defaultAtt, Modifier.weight(1.2f).fillMaxHeight(), onMediaClick)
+                        Column(
+                            modifier = Modifier
+                                .weight(0.8f)
+                                .fillMaxHeight(),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            GroupAlbumCell(uris.getOrNull(1) ?: "", types.getOrNull(1) ?: "IMAGE", attachments.getOrNull(1) ?: defaultAtt, Modifier.fillMaxWidth().weight(1f), onMediaClick)
+                            GroupAlbumCell(uris.getOrNull(2) ?: "", types.getOrNull(2) ?: "IMAGE", attachments.getOrNull(2) ?: defaultAtt, Modifier.fillMaxWidth().weight(1f), onMediaClick)
+                        }
                     }
                 }
             }
             else -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(220.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Row(
+                val defaultAtt = attachments.firstOrNull()
+                if (defaultAtt != null) {
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            .height(220.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        GroupAlbumCell(uris[0], types.getOrNull(0) ?: "IMAGE", attachments[0], Modifier.weight(1f).fillMaxHeight(), onMediaClick)
-                        GroupAlbumCell(uris[1], types.getOrNull(1) ?: "IMAGE", attachments[1], Modifier.weight(1f).fillMaxHeight(), onMediaClick)
-                    }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        GroupAlbumCell(uris[2], types.getOrNull(2) ?: "IMAGE", attachments[2], Modifier.weight(1f).fillMaxHeight(), onMediaClick)
-                        GroupAlbumCell(
-                            uris.getOrNull(3) ?: "",
-                            types.getOrNull(3) ?: "IMAGE",
-                            attachments.getOrNull(3) ?: attachments.last(),
-                            Modifier.weight(1f).fillMaxHeight(),
-                            onMediaClick,
-                            extraCount = if (uris.size > 4) uris.size - 4 else 0
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            GroupAlbumCell(uris.getOrNull(0) ?: "", types.getOrNull(0) ?: "IMAGE", attachments.getOrNull(0) ?: defaultAtt, Modifier.weight(1f).fillMaxHeight(), onMediaClick)
+                            GroupAlbumCell(uris.getOrNull(1) ?: "", types.getOrNull(1) ?: "IMAGE", attachments.getOrNull(1) ?: defaultAtt, Modifier.weight(1f).fillMaxHeight(), onMediaClick)
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            GroupAlbumCell(uris.getOrNull(2) ?: "", types.getOrNull(2) ?: "IMAGE", attachments.getOrNull(2) ?: defaultAtt, Modifier.weight(1f).fillMaxHeight(), onMediaClick)
+                            GroupAlbumCell(
+                                uris.getOrNull(3) ?: "",
+                                types.getOrNull(3) ?: "IMAGE",
+                                attachments.getOrNull(3) ?: defaultAtt,
+                                Modifier.weight(1f).fillMaxHeight(),
+                                onMediaClick,
+                                extraCount = if (uris.size > 4) uris.size - 4 else 0
+                            )
+                        }
                     }
                 }
             }
