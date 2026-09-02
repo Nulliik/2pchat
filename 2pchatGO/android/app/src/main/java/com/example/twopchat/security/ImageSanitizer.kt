@@ -10,6 +10,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
 
+import android.net.Uri
 import com.example.twopchat.media.*
 
 /**
@@ -146,6 +147,61 @@ object ImageSanitizer {
             }
         }
         return inSampleSize
+    }
+
+    /**
+     * Safely decodes a bitmap from a file path using bounds inspection and computed subsampling,
+     * protecting against OutOfMemoryError and heap exhaustion.
+     */
+    fun decodeSampledBitmap(
+        filePath: String,
+        maxDim: Int = MAX_IMAGE_DIMENSION,
+        preferRgb565: Boolean = false,
+    ): Bitmap? = try {
+        val file = File(filePath)
+        if (!file.isFile || file.length() <= 0) null
+        else {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) null
+            else {
+                val opts = BitmapFactory.Options().apply {
+                    inSampleSize = calculateInSampleSize(bounds, maxDim)
+                    if (preferRgb565) inPreferredConfig = Bitmap.Config.RGB_565
+                }
+                BitmapFactory.decodeFile(file.absolutePath, opts)
+            }
+        }
+    } catch (_: Throwable) {
+        null
+    }
+
+    /**
+     * Safely decodes a bitmap from an Android content/file Uri using bounds inspection and computed subsampling,
+     * protecting against OutOfMemoryError and heap exhaustion.
+     */
+    fun decodeSampledBitmap(
+        context: Context,
+        uri: Uri,
+        maxDim: Int = MAX_IMAGE_DIMENSION,
+        preferRgb565: Boolean = false,
+    ): Bitmap? = try {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream, null, bounds)
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) null
+        else {
+            val opts = BitmapFactory.Options().apply {
+                inSampleSize = calculateInSampleSize(bounds, maxDim)
+                if (preferRgb565) inPreferredConfig = Bitmap.Config.RGB_565
+            }
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, opts)
+            }
+        }
+    } catch (_: Throwable) {
+        null
     }
 
     /**

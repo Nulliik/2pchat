@@ -121,15 +121,19 @@ fun PhotoEditorModal(
     val originalBitmap = remember(imageUri, imagePath) {
         try {
             if (imageUri != null) {
-                context.contentResolver.openInputStream(imageUri)?.use { stream ->
-                    BitmapFactory.decodeStream(stream)
-                }
+                com.example.twopchat.security.ImageSanitizer.decodeSampledBitmap(
+                    context = context,
+                    uri = imageUri,
+                    maxDim = 2048,
+                )
             } else if (!imagePath.isNullOrBlank()) {
-                val file = File(imagePath)
-                if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+                com.example.twopchat.security.ImageSanitizer.decodeSampledBitmap(
+                    filePath = imagePath,
+                    maxDim = 2048,
+                )
             } else null
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (t: Throwable) {
+            t.printStackTrace()
             null
         }
     }

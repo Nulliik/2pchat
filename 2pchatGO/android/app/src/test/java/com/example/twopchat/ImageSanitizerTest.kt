@@ -104,4 +104,16 @@ class ImageSanitizerTest {
         // 8160 / 2 = 4080 (>= 2048), so inSampleSize becomes 2
         assertEquals(2, ImageSanitizer.calculateInSampleSize(hugeOptions, 2048))
     }
+
+    @Test
+    fun testDecodeSampledBitmap_nonExistentFile_returnsNullGracefully() {
+        val result = ImageSanitizer.decodeSampledBitmap("/non/existent/path/photo.jpg", maxDim = 1280)
+        org.junit.Assert.assertNull(result)
+    }
+
+    @Test
+    fun testDecodeSampledBitmap_blankPath_returnsNullGracefully() {
+        val result = ImageSanitizer.decodeSampledBitmap("", maxDim = 1280)
+        org.junit.Assert.assertNull(result)
+    }
 }

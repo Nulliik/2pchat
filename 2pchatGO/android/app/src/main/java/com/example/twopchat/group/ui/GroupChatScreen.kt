@@ -218,20 +218,32 @@ private fun rememberGroupBitmap(
     ) {
         if (cacheKey == null || value != null) return@produceState
         value = withContext(Dispatchers.IO) {
-            val decoded = runCatching {
+            val decoded: Bitmap? = try {
                 when {
                     !uri.isNullOrBlank() && uri.startsWith("content://") ->
-                        context.contentResolver.openInputStream(Uri.parse(uri))?.use {
-                            BitmapFactory.decodeStream(it)
-                        }
-                    !uri.isNullOrBlank() -> File(uri).takeIf(File::isFile)?.let {
-                        BitmapFactory.decodeFile(it.absolutePath)
-                    }
-                    else -> fallbackFile?.takeIf(File::isFile)?.let {
-                        BitmapFactory.decodeFile(it.absolutePath)
-                    }
+                        com.example.twopchat.security.ImageSanitizer.decodeSampledBitmap(
+                            context = context,
+                            uri = Uri.parse(uri),
+                            maxDim = 1280,
+                            preferRgb565 = true,
+                        )
+                    !uri.isNullOrBlank() ->
+                        com.example.twopchat.security.ImageSanitizer.decodeSampledBitmap(
+                            filePath = uri,
+                            maxDim = 1280,
+                            preferRgb565 = true,
+                        )
+                    fallbackFile != null ->
+                        com.example.twopchat.security.ImageSanitizer.decodeSampledBitmap(
+                            filePath = fallbackFile.absolutePath,
+                            maxDim = 1280,
+                            preferRgb565 = true,
+                        )
+                    else -> null
                 }
-            }.getOrNull()
+            } catch (_: Throwable) {
+                null
+            }
             val effective = if (decoded != null && isBlurred) {
                 val blurred = com.example.twopchat.security.ImageSanitizer.fastBlur(decoded, 20)
                 if (blurred != decoded) decoded.recycle()

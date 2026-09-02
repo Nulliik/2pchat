@@ -350,24 +350,32 @@ fun AlbumPreviewModal(
                                                 try {
                                                     val ext = file.extension.lowercase()
                                                     if (ext in listOf("jpg", "jpeg", "png", "webp")) {
-                                                        val bmp = BitmapFactory.decodeFile(file.absolutePath)
+                                                        val maxDim = 1920
+                                                        val bmp = com.example.twopchat.security.ImageSanitizer.decodeSampledBitmap(
+                                                            filePath = file.absolutePath,
+                                                            maxDim = maxDim,
+                                                        )
                                                         if (bmp != null) {
-                                                            val maxDim = 1920
                                                             var scaledBmp = bmp
                                                             if (bmp.width > maxDim || bmp.height > maxDim) {
                                                                 val ratio = bmp.width.toFloat() / bmp.height.toFloat()
                                                                 val newW = if (ratio > 1f) maxDim else (maxDim * ratio).toInt()
                                                                 val newH = if (ratio > 1f) (maxDim / ratio).toInt() else maxDim
                                                                 scaledBmp = android.graphics.Bitmap.createScaledBitmap(bmp, newW, newH, true)
+                                                                if (scaledBmp != bmp) bmp.recycle()
                                                             }
                                                             val destFile = File(attachmentsDir, "album_${timeStamp}_${idx}_${java.util.UUID.randomUUID().toString().take(6)}.jpg")
-                                                            java.io.FileOutputStream(destFile).use { out ->
-                                                                scaledBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, out)
+                                                            try {
+                                                                java.io.FileOutputStream(destFile).use { out ->
+                                                                    scaledBmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, out)
+                                                                }
+                                                                destFile
+                                                            } finally {
+                                                                scaledBmp.recycle()
                                                             }
-                                                            destFile
                                                         } else file
                                                     } else file
-                                                } catch (_: Exception) {
+                                                } catch (_: Throwable) {
                                                     file
                                                 }
                                             }

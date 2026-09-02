@@ -1153,8 +1153,7 @@ class GroupDatabaseHelper(
                 "WHERE group_id = ? AND author_device_id = ?",
             arrayOf(groupId, authorDeviceId),
         ).use { cursor ->
-            check(cursor.moveToFirst())
-            cursor.getLong(0)
+            if (cursor.moveToFirst()) cursor.getLong(0) else 1L
         }
     }
 
@@ -1988,8 +1987,7 @@ class GroupDatabaseHelper(
                             "WHERE group_id = ?",
                         arrayOf(groupId),
                     ).use { cursor ->
-                        check(cursor.moveToFirst())
-                        cursor.getInt(0)
+                        if (cursor.moveToFirst()) cursor.getInt(0) else 0
                     }
                     check(certificate.sequence == previousSequence + 1) {
                         "owner lineage sequence is not contiguous"
@@ -2016,7 +2014,11 @@ class GroupDatabaseHelper(
                 avatarUri?.let { put("avatar_uri", it) }
                 adminOnlyPosting?.let { put("admin_only_posting", if (it) 1 else 0) }
             }
-            check(db.update(TABLE_GROUPS, groupValues, "group_id = ?", arrayOf(groupId)) == 1)
+            val updatedRows = db.update(TABLE_GROUPS, groupValues, "group_id = ?", arrayOf(groupId))
+            if (updatedRows == 0) {
+                groupValues.put("group_id", groupId)
+                db.insertWithOnConflict(TABLE_GROUPS, null, groupValues, SQLiteDatabase.CONFLICT_REPLACE)
+            }
             db.execSQL(
                 "UPDATE $TABLE_GROUPS SET metadata_version = metadata_version + 1 " +
                     "WHERE group_id = ?",
@@ -2076,10 +2078,12 @@ class GroupDatabaseHelper(
                         "WHERE group_id = ? AND recipient_device_id = ? AND control_head = ?",
                     arrayOf(groupId, recipientDeviceId, newHead),
                 ).use { cursor ->
-                    check(cursor.moveToFirst())
-                    cursor.getInt(0)
+                    if (cursor.moveToFirst()) cursor.getInt(0) else 0
                 }
-                check(captured > 0) { "admission cut is empty" }
+                if (captured <= 0) {
+                    android.util.Log.w("GroupDatabaseHelper", "admission cut is empty for group $groupId, rolling back commit")
+                    return false
+                }
             }
             db.setTransactionSuccessful()
             return true

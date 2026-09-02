@@ -456,7 +456,11 @@ fun ChatScreen(
             val resolvedPath = wallpaperPath ?: com.example.twopchat.config.P2PPreferences.getDirectWallpaperPath(context, peerName)
             resolvedPath?.let { path ->
                 try {
-                    val rawBmp = BitmapFactory.decodeFile(path)
+                    val rawBmp = com.example.twopchat.security.ImageSanitizer.decodeSampledBitmap(
+                        filePath = path,
+                        maxDim = 1280,
+                        preferRgb565 = true,
+                    )
                     if (rawBmp != null && wallpaperBlur) {
                         val blurred = com.example.twopchat.security.ImageSanitizer.fastBlur(rawBmp, 20)
                         if (blurred != rawBmp) rawBmp.recycle()
@@ -464,7 +468,7 @@ fun ChatScreen(
                     } else {
                         rawBmp
                     }
-                } catch (e: Exception) {
+                } catch (_: Throwable) {
                     null
                 }
             }
