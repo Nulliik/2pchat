@@ -111,8 +111,8 @@ class LongMediaChatPerformanceTest {
                     onSurfaceVariant = Color(0xFFB5BBC5),
                     onReply = {},
                     onShowOptions = {},
-                    onOpenImages = { _, _ -> },
-                    onOpenVideo = {},
+                    onOpenImages = { _, _, _ -> },
+                    onOpenVideo = { _, _ -> },
                     onOpenStickerPack = {},
                     onCancelFileTransfer = {},
                 )
