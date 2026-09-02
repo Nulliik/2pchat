@@ -52,6 +52,12 @@ import com.example.twopchat.data.Localizations
 import com.example.twopchat.media.StoredGif
 import kotlinx.coroutines.delay
 
+import android.content.Context
+import android.os.Build
+import android.view.WindowManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+
 @Composable
 internal fun GifPreviewDialog(
     gif: StoredGif?,
@@ -94,9 +100,24 @@ internal fun GifPreviewDialog(
         popupPositionProvider = positionProvider,
         properties = PopupProperties(focusable = false, clippingEnabled = false),
     ) {
-        val configuration = LocalConfiguration.current
-        val screenWidth = configuration.screenWidthDp.dp
-        val screenHeight = configuration.screenHeightDp.dp
+        val context = LocalContext.current
+        val density = LocalDensity.current
+        val screenWidth = remember(density) {
+            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+            val bounds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                windowManager?.currentWindowMetrics?.bounds
+            } else null
+            val px = bounds?.width() ?: context.resources.displayMetrics.widthPixels
+            with(density) { px.toDp() }
+        }
+        val screenHeight = remember(density) {
+            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+            val bounds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                windowManager?.currentWindowMetrics?.bounds
+            } else null
+            val px = bounds?.height() ?: context.resources.displayMetrics.heightPixels
+            with(density) { px.toDp() + 160.dp }
+        }
 
         Box(
             modifier = Modifier

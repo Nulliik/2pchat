@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -52,6 +53,12 @@ import com.example.twopchat.data.Localizations
 import com.example.twopchat.media.BuiltinSticker
 import kotlinx.coroutines.delay
 
+import android.content.Context
+import android.os.Build
+import android.view.WindowManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+
 @Composable
 internal fun StickerPreviewDialog(
     sticker: BuiltinSticker?,
@@ -64,6 +71,7 @@ internal fun StickerPreviewDialog(
 ) {
     if (sticker == null) return
 
+    val isBuiltin = sticker.localFilePath == null
     val cleanEmoji = remember(sticker.emoji) {
         val raw = sticker.emoji.trim()
         val withoutMask = raw.replace("🎭", "").trim()
@@ -100,9 +108,24 @@ internal fun StickerPreviewDialog(
         popupPositionProvider = positionProvider,
         properties = PopupProperties(focusable = false, clippingEnabled = false),
     ) {
-        val configuration = LocalConfiguration.current
-        val screenWidth = configuration.screenWidthDp.dp
-        val screenHeight = configuration.screenHeightDp.dp
+        val context = LocalContext.current
+        val density = LocalDensity.current
+        val screenWidth = remember(density) {
+            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+            val bounds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                windowManager?.currentWindowMetrics?.bounds
+            } else null
+            val px = bounds?.width() ?: context.resources.displayMetrics.widthPixels
+            with(density) { px.toDp() }
+        }
+        val screenHeight = remember(density) {
+            val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+            val bounds = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                windowManager?.currentWindowMetrics?.bounds
+            } else null
+            val px = bounds?.height() ?: context.resources.displayMetrics.heightPixels
+            with(density) { px.toDp() + 160.dp }
+        }
 
         Box(
             modifier = Modifier
@@ -131,10 +154,10 @@ internal fun StickerPreviewDialog(
                         onClick = {},
                     ),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                // Emoji badge above sticker (like Telegram Screenshot 1)
-                if (cleanEmoji.isNotBlank()) {
+                // Emoji badge above sticker (only for custom packs with associated emoji)
+                if (!isBuiltin && cleanEmoji.isNotBlank()) {
                     Surface(
                         shape = CircleShape,
                         color = Color(0xFF262628),
@@ -148,18 +171,39 @@ internal fun StickerPreviewDialog(
                     }
                 }
 
-                // Main Sticker Preview (Clean floating sticker, Telegram style!)
-                Box(
-                    modifier = Modifier.size(240.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    AnimatedStickerImage(
-                        filePath = sticker.localFilePath,
-                        fallbackEmoji = cleanEmoji.ifBlank { sticker.emoji },
-                        contentDescription = cleanEmoji.ifBlank { "Sticker" },
-                        targetSizePx = 480,
-                        modifier = Modifier.size(230.dp),
-                    )
+                // Main Sticker Preview
+                if (isBuiltin) {
+                    // Builtin standard sticker (2P Moods, 2P Animals): styled card with background color
+                    Surface(
+                        shape = RoundedCornerShape(32.dp),
+                        color = Color(sticker.backgroundColor),
+                        shadowElevation = 8.dp,
+                        modifier = Modifier.size(200.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                text = cleanEmoji.ifBlank { sticker.emoji },
+                                fontSize = 92.sp,
+                            )
+                        }
+                    }
+                } else {
+                    // Custom pack sticker: clean floating sticker (Telegram style)
+                    Box(
+                        modifier = Modifier.size(240.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        AnimatedStickerImage(
+                            filePath = sticker.localFilePath,
+                            fallbackEmoji = cleanEmoji.ifBlank { sticker.emoji },
+                            contentDescription = cleanEmoji.ifBlank { "Sticker" },
+                            targetSizePx = 480,
+                            modifier = Modifier.size(230.dp),
+                        )
+                    }
                 }
 
                 // Action Buttons: Close & Send (Appear after 1.5s hold or kept visible)
