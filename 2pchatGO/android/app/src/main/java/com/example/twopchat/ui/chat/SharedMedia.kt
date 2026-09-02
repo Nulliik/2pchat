@@ -95,9 +95,7 @@ fun SharedMediaScreen(
     onNavigateToMessage: (String) -> Unit
 ) {
     val context = LocalContext.current
-    var currentPeerName by remember(peerName) { mutableStateOf(peerName) }
-    var showRenameDialog by remember { mutableStateOf(false) }
-    var newNicknameInput by remember { mutableStateOf("") }
+    val currentPeerName = peerName
     var selectedTab by remember { mutableIntStateOf(0) }
     var isSelectMode by remember { mutableStateOf(false) }
     val selectedItems = remember { mutableStateListOf<Message>() }
@@ -470,45 +468,6 @@ fun SharedMediaScreen(
                                     overflow = TextOverflow.Ellipsis,
                                     textAlign = TextAlign.Center
                                 )
-                                if (currentPeerName != "Saved Messages") {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    IconButton(
-                                        onClick = {
-                                            newNicknameInput = if (isRawKey) "" else currentPeerName
-                                            showRenameDialog = true
-                                        },
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .background(primaryColor.copy(alpha = 0.12f), shape = CircleShape)
-                                    ) {
-                                        Icon(
-                                            painter = painterResource(id = R.drawable.ic_edit),
-                                            contentDescription = "Edit Name",
-                                            tint = primaryColor,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            if (isRawKey) {
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Surface(
-                                    color = primaryColor.copy(alpha = 0.12f),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.clickable {
-                                        newNicknameInput = ""
-                                        showRenameDialog = true
-                                    }
-                                ) {
-                                    Text(
-                                        text = Localizations.tr(appLanguage, "+ Задать имя контакта", "+ Set contact name", "+ Name festlegen", "+ Establecer nombre", "+ Définir le nom", "+ Definir nome"),
-                                        color = primaryColor,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                    )
-                                }
                             }
 
                             Spacer(modifier = Modifier.height(4.dp))
@@ -1328,79 +1287,6 @@ fun SharedMediaScreen(
         )
     }
 
-    if (showRenameDialog) {
-        AlertDialog(
-            onDismissRequest = { showRenameDialog = false },
-            title = {
-                Text(
-                    text = Localizations.tr(appLanguage, "Имя контакта", "Contact Name", "Kontaktname", "Nombre de contacto", "Nom du contact", "Nome do contato"),
-                    fontWeight = FontWeight.Bold,
-                    color = onSurfaceColor
-                )
-            },
-            text = {
-                Column {
-                    Text(
-                        text = Localizations.tr(appLanguage, "Задайте удобное имя для этого собеседника:", "Set a display name for this contact:", "Legen Sie einen Namen für diesen Kontakt fest:", "Establece un nombre para este contacto:", "Définissez un nom pour ce contact :", "Defina um nome para este contato:"),
-                        fontSize = 14.sp,
-                        color = onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    )
-                    OutlinedTextField(
-                        value = newNicknameInput,
-                        onValueChange = { newNicknameInput = it },
-                        placeholder = {
-                            Text(Localizations.tr(appLanguage, "Введите имя...", "Enter name...", "Namen eingeben...", "Introduce el nombre...", "Entrez le nom...", "Insira o nome..."))
-                        },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = primaryColor,
-                            unfocusedBorderColor = onSurfaceVariant.copy(alpha = 0.3f),
-                            focusedTextColor = onSurfaceColor,
-                            unfocusedTextColor = onSurfaceColor
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val trimmed = newNicknameInput.trim()
-                        if (trimmed.isNotBlank()) {
-                            val success = P2PMessageRelay.renamePeer(context, currentPeerName, trimmed)
-                            if (success) {
-                                currentPeerName = trimmed
-                                Toast.makeText(
-                                    context,
-                                    Localizations.tr(appLanguage, "Имя контакта обновлено", "Contact name updated", "Kontaktname aktualisiert", "Nombre actualizado", "Nom mis à jour", "Nome atualizado"),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                            showRenameDialog = false
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
-                ) {
-                    Text(
-                        text = Localizations.tr(appLanguage, "Сохранить", "Save", "Speichern", "Guardar", "Enregistrer", "Salvar"),
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRenameDialog = false }) {
-                    Text(
-                        text = Localizations.tr(appLanguage, "Отмена", "Cancel", "Abbrechen", "Cancelar", "Annuler", "Cancelar"),
-                        color = onSurfaceVariant
-                    )
-                }
-            },
-            containerColor = surfaceColor,
-            shape = RoundedCornerShape(16.dp)
-        )
-    }
 }
 
 @Composable
