@@ -44,6 +44,7 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.animation.*
@@ -350,6 +351,8 @@ fun FullscreenImageViewer(
         initialPage = initialIndex,
         pageCount = { imagePaths.size }
     )
+    val dismissOffsetY = remember { Animatable(0f) }
+    val bgAlpha = (1f - (kotlin.math.abs(dismissOffsetY.value) / 600f)).coerceIn(0f, 1f)
     var zoomedPage by remember { mutableIntStateOf(-1) }
     val rotationAngles = remember { mutableStateMapOf<Int, Float>() }
     var isControlsVisible by remember { mutableStateOf(true) }
@@ -359,6 +362,7 @@ fun FullscreenImageViewer(
         // Zoom belongs to a page, never to the pager. Re-enable swiping as soon
         // as the selected page changes, even during a fast gesture.
         zoomedPage = -1
+        dismissOffsetY.snapTo(0f)
     }
 
     val launcher = rememberLauncherForActivityResult(
@@ -381,9 +385,6 @@ fun FullscreenImageViewer(
         }
     }
 
-    val dismissOffsetY = remember { Animatable(0f) }
-    val bgAlpha = (1f - (kotlin.math.abs(dismissOffsetY.value) / 600f)).coerceIn(0f, 1f)
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -402,20 +403,21 @@ fun FullscreenImageViewer(
 
             val transformState = rememberTransformableState { zoomChange, offsetChange, _ ->
                 scale = (scale * zoomChange).coerceIn(1f, 5f)
-                if (scale > 1f) {
+                if (scale > 1.05f) {
                     offset += offsetChange
                 } else {
                     offset = Offset.Zero
+                    scale = 1f
                 }
                 if (page == pagerState.currentPage) {
-                    zoomedPage = if (scale > 1f) page else -1
+                    zoomedPage = if (scale > 1.05f) page else -1
                 }
             }
 
             val isZoomed = scale > 1.05f
             val dragModifier = if (!isZoomed) {
                 Modifier.pointerInput(page) {
-                    detectDragGestures(
+                    detectVerticalDragGestures(
                         onDragEnd = {
                             if (kotlin.math.abs(dismissOffsetY.value) > 160f) {
                                 scope.launch {
@@ -442,12 +444,10 @@ fun FullscreenImageViewer(
                                 dismissOffsetY.animateTo(0f, animationSpec = spring())
                             }
                         },
-                        onDrag = { change, dragAmount ->
-                            if (kotlin.math.abs(dragAmount.y) > kotlin.math.abs(dragAmount.x) || kotlin.math.abs(dismissOffsetY.value) > 10f) {
-                                change.consume()
-                                scope.launch {
-                                    dismissOffsetY.snapTo(dismissOffsetY.value + dragAmount.y)
-                                }
+                        onVerticalDrag = { change, dragAmount ->
+                            change.consume()
+                            scope.launch {
+                                dismissOffsetY.snapTo(dismissOffsetY.value + dragAmount)
                             }
                         }
                     )
