@@ -184,9 +184,10 @@ internal fun StickerPreviewDialog(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center,
                         ) {
+                            val text = cleanEmoji.ifBlank { sticker.emoji }
                             Text(
-                                text = cleanEmoji.ifBlank { sticker.emoji },
-                                fontSize = 92.sp,
+                                text = text,
+                                fontSize = if (text.length > 2 || text.codePointCount(0, text.length) > 1) 68.sp else 92.sp,
                             )
                         }
                     }

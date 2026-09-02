@@ -116,6 +116,13 @@ object StickerSupport {
                 BuiltinSticker("moods", "devil", "😈", 0xFFE1BEE7),
                 BuiltinSticker("moods", "sleepy", "😴", 0xFFC5CAE9),
                 BuiltinSticker("moods", "thinking", "🤔", 0xFFFFF59D),
+                BuiltinSticker("moods", "point_laugh", "🫵😂", 0xFFFFE8A3),
+                BuiltinSticker("moods", "pointing", "🫵", 0xFFFFE082),
+                BuiltinSticker("moods", "stare", "😳", 0xFFFFE0B2),
+                BuiltinSticker("moods", "sus", "🤨", 0xFFFFF59D),
+                BuiltinSticker("moods", "monocle", "🧐", 0xFFE0F2F1),
+                BuiltinSticker("moods", "melting", "🫠", 0xFFFFD54F),
+                BuiltinSticker("moods", "skull", "💀", 0xFFECEFF1),
                 BuiltinSticker("moods", "shh", "🤫", 0xFFB2DFDB),
                 BuiltinSticker("moods", "salute", "🫡", 0xFFDCEDC8),
                 BuiltinSticker("moods", "rocket", "🚀", 0xFFB3E5FC),
@@ -650,6 +657,10 @@ object StickerSupport {
             val emojiPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 textAlign = Paint.Align.CENTER
                 textSize = 260f
+            }
+            val textWidth = emojiPaint.measureText(sticker.emoji)
+            if (textWidth > 360f) {
+                emojiPaint.textSize = (260f * (360f / textWidth)).coerceAtLeast(80f)
             }
             val centerY = 256f - (emojiPaint.ascent() + emojiPaint.descent()) / 2f
             canvas.drawText(sticker.emoji, 256f, centerY, emojiPaint)
