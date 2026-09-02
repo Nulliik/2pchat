@@ -195,6 +195,22 @@ internal class IncomingMessageRouter(
                             }
                             editor.apply()
                         }
+                        val discCode = json.optString("discovery_code").takeIf { it.isNotBlank() }
+                        if (discCode != null) {
+                            val editor = P2PPreferences.prefs(context).edit()
+                            editor.putString("discovery_code_$effectiveName", discCode)
+                            val baseEff = effectiveName.substringBefore("#").trim()
+                            if (baseEff.isNotEmpty()) editor.putString("discovery_code_$baseEff", discCode)
+                            if (sender.isNotBlank()) {
+                                editor.putString("discovery_code_$sender", discCode)
+                                val baseSender = sender.substringBefore("#").trim()
+                                if (baseSender.isNotEmpty()) editor.putString("discovery_code_$baseSender", discCode)
+                            }
+                            if (fingerprint != null) {
+                                editor.putString("discovery_code_$fingerprint", discCode)
+                            }
+                            editor.apply()
+                        }
                         P2PMessageRelay.handlePeerNicknameReceived(context, sender, nickname, aboutMe)
                         P2PMessageRelay.shareAvatar(context, effectiveName, "", force = true)
                         return

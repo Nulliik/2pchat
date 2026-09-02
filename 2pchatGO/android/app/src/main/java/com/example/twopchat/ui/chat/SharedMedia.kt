@@ -607,10 +607,12 @@ fun SharedMediaScreen(
                         val stableCode = remember(currentPeerName, fingerprint, preferenceVersion) {
                             val sp = com.example.twopchat.config.P2PPreferences.prefs(context)
                             val bySp = sp.getString("discovery_code_$currentPeerName", null)?.trim()
+                                ?: (if (fingerprint.isNotBlank()) sp.getString("discovery_code_$fingerprint", null)?.trim() else null)
+                                ?: sp.getString("discovery_code_${currentPeerName.substringBefore('#')}", null)?.trim()
                             if (!bySp.isNullOrBlank()) {
                                 bySp
                             } else {
-                                val seedString = fingerprint.ifBlank { currentPeerName }
+                                val seedString = fingerprint.ifBlank { currentPeerName.substringBefore('#') }
                                 val digest = java.security.MessageDigest.getInstance("SHA-256")
                                     .digest(seedString.toByteArray(Charsets.UTF_8))
                                 digest.take(4).joinToString("") { "%02x".format(it) }

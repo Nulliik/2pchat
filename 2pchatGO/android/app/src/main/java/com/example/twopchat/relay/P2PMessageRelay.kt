@@ -2480,6 +2480,7 @@ object P2PMessageRelay {
                         if (myAboutMe.isNotEmpty()) {
                             put("about_me", myAboutMe)
                         }
+                        put("discovery_code", P2PPreferences.getRendezvousCode(context))
                         put("fingerprint", getBridge(context).getLocalFingerprint())
                         put("listen_port", listenerPort(context))
                         val onionHost = TorManager.onionAddress.value?.takeIf { it.isNotBlank() }
