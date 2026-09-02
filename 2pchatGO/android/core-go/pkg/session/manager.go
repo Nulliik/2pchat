@@ -499,11 +499,15 @@ func (m *Manager) dispatchSessionMessages(s *Session, peerFP string) {
 				continue
 			}
 
+			fileNameStr := firstNonEmptyString(msg["file_name"], "")
 			offer := map[string]any{
 				"type":       "file_offer",
 				"message_id": firstNonEmptyString(msg["message_id"], msg["id"], fileIDB64),
-				"file_name":  msg["file_name"],
+				"file_name":  fileNameStr,
 				"size":       msg["file_size"],
+				"caption":    firstNonEmptyString(msg["caption"], ""),
+				"emoji":      firstNonEmptyString(msg["emoji"], ""),
+				"mime":       guessMimeType(fileNameStr),
 			}
 			rawOffer, err := json.Marshal(offer)
 			callbacks := m.callbacksSnapshot()

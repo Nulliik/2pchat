@@ -578,18 +578,41 @@ class ChatDatabaseHelper private constructor(private val context: Context) :
         val rawAlbumTypes = if (indices.indexAlbumTypes != -1) cursor.getString(indices.indexAlbumTypes) else null
         val albumMediaTypes = rawAlbumTypes?.split("|||") ?: emptyList()
 
+        var resolvedAttachUri = attachUri
+        var resolvedStatus = status
+        if (resolvedAttachUri.isNullOrBlank() && !attachName.isNullOrBlank()) {
+            val candidateInDownloads = java.io.File(java.io.File(context.filesDir, "config/downloads"), attachName)
+            val candidateInStickers = java.io.File(java.io.File(context.filesDir, "received_stickers"), attachName)
+            val foundFile = when {
+                candidateInDownloads.isFile && candidateInDownloads.length() > 0 -> candidateInDownloads
+                candidateInStickers.isFile && candidateInStickers.length() > 0 -> candidateInStickers
+                else -> null
+            }
+            if (foundFile != null) {
+                if (attachType == com.example.twopchat.media.StickerSupport.ATTACHMENT_TYPE) {
+                    val cached = com.example.twopchat.media.StickerSupport.cacheIncomingSticker(context, foundFile)
+                    resolvedAttachUri = cached?.absolutePath ?: foundFile.absolutePath
+                } else {
+                    resolvedAttachUri = foundFile.absolutePath
+                }
+                if (resolvedStatus == "RECEIVING" || resolvedStatus == "PENDING") {
+                    resolvedStatus = if (isMe) "SENT" else "DELIVERED"
+                }
+            }
+        }
+
         return Message(
             id = id,
             text = text,
             isMe = isMe,
             timestamp = timestamp,
             attachmentType = attachType,
-            attachmentUri = attachUri,
+            attachmentUri = resolvedAttachUri,
             attachmentName = attachName,
             replyToId = replyToId,
             replyToText = replyToText,
             replyToName = replyToName,
-            status = status,
+            status = resolvedStatus,
             reactions = reactions,
             sentAtEpochMs = sentAtEpochMs,
             isPinned = isPinned,

@@ -117,10 +117,17 @@ internal fun AnimatedStickerImage(
                 },
                 modifier = Modifier.fillMaxSize(),
             )
-            else -> Text(
-                text = fallbackEmoji.ifBlank { "🎭" },
-                fontSize = (targetSizePx.coerceIn(48, 144) * 0.32f).sp,
-            )
+            else -> {
+                val cleanEmoji = if (
+                    fallbackEmoji.isBlank() ||
+                    fallbackEmoji.equals("Sticker", ignoreCase = true) ||
+                    fallbackEmoji.equals("Стикер", ignoreCase = true)
+                ) "🎭" else fallbackEmoji
+                Text(
+                    text = cleanEmoji,
+                    fontSize = (targetSizePx.coerceIn(48, 144) * 0.32f).sp,
+                )
+            }
         }
     }
 }

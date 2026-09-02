@@ -89,4 +89,38 @@ class IncomingFileTransferRoutingTest {
         assertFalse(com.example.twopchat.relay.P2PMessageRelay.isRawFingerprint(nickname))
         assertFalse(com.example.twopchat.relay.P2PMessageRelay.isRawFingerprint(torAddress))
     }
+
+    @Test
+    fun completedFileOfferRemoval_supportsBothResolvedAndRawSenderKeys() {
+        val coordinator = FileTransferCoordinator()
+        val rawSender = "dzPId8GVZuNv3LnrjUaHnD2pmtKRDp2guBrmwcVClGc="
+        val resolvedSender = "Foxxxy"
+        val messageId = "msg-12345"
+
+        // Offer registered under resolved sender name (e.g., from file_offer event)
+        val offerKeyResolved = "$resolvedSender:$messageId"
+        val offerKeyRaw = "$rawSender:$messageId"
+        coordinator.incomingFileOffers.add(offerKeyResolved)
+        assertTrue(coordinator.incomingFileOffers.contains(offerKeyResolved))
+
+        // Completion logic removes using resolvedSender or rawSender
+        val removed = coordinator.incomingFileOffers.remove(offerKeyResolved) ||
+            coordinator.incomingFileOffers.remove(offerKeyRaw)
+        assertTrue(removed)
+        assertFalse(coordinator.incomingFileOffers.contains(offerKeyResolved))
+    }
+
+    @Test
+    fun fileOfferPayload_preservesCaptionOrEmojiWhenPresent() {
+        val rawJsonWithCaption = """{"type":"file_offer","message_id":"m1","file_name":"2psticker_animals--fox.webp","size":10240,"caption":"🦊"}"""
+        val json = org.json.JSONObject(rawJsonWithCaption)
+        val fileName = json.optString("file_name")
+        val attachmentType = VoiceMessageSupport.attachmentType(fileName, "")
+        val caption = json.optString("caption").ifBlank { json.optString("emoji") }.ifBlank { json.optString("text") }.trim()
+        val displayMsg = if (caption.isNotBlank()) caption else VoiceMessageSupport.displayMessage(attachmentType, fileName)
+
+        assertEquals("STICKER", attachmentType)
+        assertEquals("🦊", displayMsg)
+    }
 }
+

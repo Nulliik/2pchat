@@ -1159,7 +1159,11 @@ object P2PMessageRelay {
             // Register incoming message callback
             bridge.registerMessageListener(object : com.example.twopchat.bridge.BridgeMessageListener {
                 override fun onFileProgress(sender: String, messageId: String, bytesTransferred: Long, totalBytes: Long, speedKbps: Double) {
+                    val resolved = if (isRawFingerprint(sender)) {
+                        P2PPreferences.findPeerNameByFingerprint(appContext, sender) ?: sender
+                    } else sender
                     val key = "$sender:$messageId"
+                    val resolvedKey = "$resolved:$messageId"
                     val info = FileProgressInfo(
                         bytesTransferred = bytesTransferred,
                         totalBytes = totalBytes,
@@ -1171,16 +1175,20 @@ object P2PMessageRelay {
                         },
                     )
                     serviceScope.launch(Dispatchers.Main) {
-                        val existing = fileProgressStates[key] ?: fileProgressStates[messageId]
+                        val existing = fileProgressStates[key] ?: fileProgressStates[resolvedKey] ?: fileProgressStates[messageId]
                         if (existing?.state == FileTransferState.CANCELLED) {
                             return@launch
                         }
                         if (messageId.isNotEmpty()) {
                             fileProgressStates[key] = info
+                            fileProgressStates[resolvedKey] = info
                             fileProgressStates[messageId] = info
                         }
                         messageListeners.forEach {
-                            it.onFileProgress(sender, messageId, bytesTransferred, totalBytes, speedKbps)
+                            it.onFileProgress(resolved, messageId, bytesTransferred, totalBytes, speedKbps)
+                            if (resolved != sender) {
+                                it.onFileProgress(sender, messageId, bytesTransferred, totalBytes, speedKbps)
+                            }
                         }
                     }
                 }
@@ -1318,9 +1326,11 @@ object P2PMessageRelay {
                                     val preview = decodeFileTransferPreview(
                                         json.optString("preview_base64"),
                                     )
+                                    val caption = json.optString("caption").ifBlank { json.optString("emoji") }.ifBlank { json.optString("text") }.trim()
+                                    val displayMsg = if (caption.isNotBlank()) caption else VoiceMessageSupport.displayMessage(attachmentType, fileName)
                                     val offerMessage = Message(
                                         id = messageId,
-                                        text = VoiceMessageSupport.displayMessage(attachmentType, fileName),
+                                        text = displayMsg,
                                         isMe = false,
                                         timestamp = SimpleDateFormat(
                                             "HH:mm",
@@ -2012,6 +2022,9 @@ object P2PMessageRelay {
                                     persistAndDispatchIncoming(appContext, effectiveSender, rxMsg)
                                     return
                                 }
+                                "file" -> {
+                                    // Completed file payload: fall through to parseIncomingAttachment below
+                                }
                                 else -> {
                                     val mtype = json.optString("type")
                                     if (mtype.isNotEmpty()) {
@@ -2102,14 +2115,18 @@ object P2PMessageRelay {
                             )
                         }
                         val completedOffer = incomingAttachment?.let {
-                            incomingFileOffers.remove("$sender:${it.messageId}")
+                            incomingFileOffers.remove("$resolvedSender:${it.messageId}") ||
+                                incomingFileOffers.remove("$sender:${it.messageId}")
                         } == true
                         if (incomingAttachment?.attachmentType == StickerSupport.PACK_ATTACHMENT_TYPE) {
                             StickerSupport.packIdFromArchiveFileName(incomingAttachment.attachmentName)
                                 ?.let { packId ->
                                     serviceScope.launch(Dispatchers.Main) {
                                         messageListeners.forEach {
-                                            it.onStickerPackInstalled(sender, packId)
+                                            it.onStickerPackInstalled(resolvedSender, packId)
+                                            if (resolvedSender != sender) {
+                                                it.onStickerPackInstalled(sender, packId)
+                                            }
                                         }
                                     }
                                 }
@@ -2117,15 +2134,17 @@ object P2PMessageRelay {
                         if (incomingAttachment != null) {
                             NetworkTrafficStats.recordFile(
                                 appContext,
-                                sender,
-                                _peerEndpoints[sender],
+                                resolvedSender,
+                                _peerEndpoints[resolvedSender] ?: _peerEndpoints[sender],
                                 File(incomingAttachment.attachmentUri),
                                 incomingAttachment.attachmentType,
                                 TrafficDirection.RECEIVED,
                             )
                             serviceScope.launch(Dispatchers.Main) {
-                                val key = "$sender:${incomingMessage.id}"
+                                val key = "$resolvedSender:${incomingMessage.id}"
+                                val rawKey = "$sender:${incomingMessage.id}"
                                 val current = fileProgressStates[key]
+                                    ?: fileProgressStates[rawKey]
                                     ?: fileProgressStates[incomingMessage.id]
                                 if (current?.state != FileTransferState.CANCELLED) {
                                     val completed = (current ?: FileProgressInfo(
@@ -2138,9 +2157,11 @@ object P2PMessageRelay {
                                         speedKbps = 0.0,
                                     )
                                     fileProgressStates[key] = completed
+                                    fileProgressStates[rawKey] = completed
                                     fileProgressStates[incomingMessage.id] = completed
                                 }
                                 fileTransferPreviews.remove(key)?.recycle()
+                                fileTransferPreviews.remove(rawKey)?.takeIf { !it.isRecycled }?.recycle()
                                 fileTransferPreviews.remove(incomingMessage.id)
                                     ?.takeIf { !it.isRecycled }
                                     ?.recycle()
@@ -2152,15 +2173,18 @@ object P2PMessageRelay {
                                 val onionAddr = onionMatch.value.trim()
                                 val formatted = com.example.twopchat.ui.main.formatInviteEndpoint(onionAddr, listenerPort(appContext))
                                 if (formatted != null && formatted.contains(".onion", ignoreCase = true)) {
+                                    P2PPreferences.setPeerOnionAddress(appContext, resolvedSender, formatted)
                                     P2PPreferences.setPeerOnionAddress(appContext, sender, formatted)
                                     val fingerprint = P2PPreferences.prefs(appContext)
-                                        .getString("peer_fingerprint_$sender", null)
+                                        .getString("peer_fingerprint_$resolvedSender", null)
+                                        ?: P2PPreferences.prefs(appContext).getString("peer_fingerprint_$sender", null)
                                     ChatDatabaseHelper.getInstance(appContext).savePeerOnionAddress(
-                                        peerName = sender,
+                                        peerName = resolvedSender,
                                         onionAddress = formatted,
                                         fingerprint = fingerprint,
-                                        endpoint = _peerEndpoints[sender],
+                                        endpoint = _peerEndpoints[resolvedSender] ?: _peerEndpoints[sender],
                                     )
+                                    rememberAuthenticatedPeerEndpoint(resolvedSender, formatted)
                                     rememberAuthenticatedPeerEndpoint(sender, formatted)
                                     log(appContext, "Saved authenticated onion address discovered from message: $formatted")
                                 }
@@ -2169,7 +2193,7 @@ object P2PMessageRelay {
 
                         persistAndDispatchIncoming(
                             appContext,
-                            sender,
+                            resolvedSender,
                             incomingMessage,
                             countAsNew = if (albumKey != null) {
                                 existingAlbum == null

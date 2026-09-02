@@ -560,6 +560,13 @@ func (m *FileTransferManager) ReceiveChunk(
 			}
 			m.mu.Unlock()
 			if m.onProgress != nil {
+				targetMsgID := meta.MessageID
+				if targetMsgID == "" {
+					targetMsgID = meta.ID
+				}
+				if targetMsgID != "" && targetMsgID != messageID {
+					m.onProgress(peerFP, targetMsgID, 0, meta.FileSize, 0)
+				}
 				m.onProgress(peerFP, messageID, 0, meta.FileSize, 0)
 			}
 			return nil, nil
@@ -655,6 +662,15 @@ func (m *FileTransferManager) ReceiveChunk(
 		if elapsed > 0 {
 			speed = (float64(receivedBytes) * 8 / 1024) / elapsed
 		}
+		if meta != nil {
+			targetMsgID := meta.MessageID
+			if targetMsgID == "" {
+				targetMsgID = meta.ID
+			}
+			if targetMsgID != "" && targetMsgID != messageID {
+				m.onProgress(peerFP, targetMsgID, receivedBytes, totalBytes, speed)
+			}
+		}
 		m.onProgress(peerFP, messageID, receivedBytes, totalBytes, speed)
 	}
 
@@ -718,6 +734,17 @@ func (m *FileTransferManager) ReceiveChunk(
 		}
 		if assembledMessageID == "" {
 			assembledMessageID = messageID
+		}
+		if m.onProgress != nil {
+			elapsed := time.Since(startTime).Seconds()
+			speed := 0.0
+			if elapsed > 0 {
+				speed = (float64(meta.FileSize) * 8 / 1024) / elapsed
+			}
+			if assembledMessageID != "" && assembledMessageID != messageID {
+				m.onProgress(peerFP, assembledMessageID, meta.FileSize, meta.FileSize, speed)
+			}
+			m.onProgress(peerFP, messageID, meta.FileSize, meta.FileSize, speed)
 		}
 		return &AssembledFile{
 			MessageID: assembledMessageID,

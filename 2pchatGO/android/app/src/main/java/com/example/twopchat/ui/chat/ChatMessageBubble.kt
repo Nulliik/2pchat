@@ -1693,6 +1693,13 @@ private fun StickerMessageContent(
             targetSizePx = 420,
             modifier = Modifier.fillMaxSize(),
         )
+        if (filePath == null) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(36.dp),
+                strokeWidth = 2.5.dp,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+            )
+        }
     }
 }
 
