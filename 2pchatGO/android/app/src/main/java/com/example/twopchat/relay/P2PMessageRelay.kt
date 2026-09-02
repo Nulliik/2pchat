@@ -720,18 +720,34 @@ object P2PMessageRelay {
 
         val sharedPrefs = P2PPreferences.prefs(context)
         if (cleanAboutMe != null) {
-            sharedPrefs.edit().putString("peer_about_me_$targetKey", cleanAboutMe).apply()
-            ChatDatabaseHelper.getInstance(context).savePeerAboutMe(targetKey, cleanAboutMe)
-            if (cleanNickname != null && cleanNickname != targetKey) {
-                sharedPrefs.edit().putString("peer_about_me_$cleanNickname", cleanAboutMe).apply()
-                ChatDatabaseHelper.getInstance(context).savePeerAboutMe(cleanNickname, cleanAboutMe)
+            val db = ChatDatabaseHelper.getInstance(context)
+            val keys = linkedSetOf<String>()
+            keys.add(targetKey)
+            val baseTarget = targetKey.substringBefore("#").trim()
+            if (baseTarget.isNotEmpty()) keys.add(baseTarget)
+            if (cleanNickname != null) {
+                keys.add(cleanNickname)
+                val baseClean = cleanNickname.substringBefore("#").trim()
+                if (baseClean.isNotEmpty()) keys.add(baseClean)
+            }
+            if (sender.isNotBlank()) {
+                keys.add(sender)
+                val baseSender = sender.substringBefore("#").trim()
+                if (baseSender.isNotEmpty()) keys.add(baseSender)
             }
             val currentFp = sharedPrefs.getString("peer_fingerprint_$targetKey", null)
                 ?: if (isRawFingerprint(targetKey)) targetKey else null
             if (currentFp != null) {
-                sharedPrefs.edit().putString("peer_about_me_$currentFp", cleanAboutMe).apply()
-                ChatDatabaseHelper.getInstance(context).savePeerAboutMe(currentFp, cleanAboutMe)
+                keys.add(currentFp)
             }
+            val editor = sharedPrefs.edit()
+            for (k in keys) {
+                if (k.isNotEmpty()) {
+                    editor.putString("peer_about_me_$k", cleanAboutMe)
+                    db.savePeerAboutMe(k, cleanAboutMe)
+                }
+            }
+            editor.apply()
         }
 
         if (cleanNickname != null && cleanNickname != targetKey) {
@@ -2197,7 +2213,7 @@ object P2PMessageRelay {
                     clearAvatarShareCooldown(fingerprint)
                     resetPeerBackoffs(resolvedPeerName)
                     resetPeerBackoffs(fingerprint)
-                    shareAvatar(appContext, resolvedPeerName, endpoint)
+                    shareAvatar(appContext, resolvedPeerName, endpoint, force = true)
                     shareOnionAddress(appContext, resolvedPeerName, endpoint)
                     processOfflineQueue(appContext, resolvedPeerName, endpoint)
                     GroupChatCoordinator.onPeerConnected(appContext, resolvedPeerName)
@@ -2515,6 +2531,19 @@ object P2PMessageRelay {
             val endpoint = _peerEndpoints[peerName].orEmpty()
             shareAvatar(appContext, peerName, endpoint, force = force)
         }
+    }
+
+    fun requestPeerProfile(context: Context, peerName: String) {
+        if (peerName == "Saved Messages" || isPlaceholderPeerName(peerName)) return
+        val appContext = context.applicationContext
+        val endpoint = _peerEndpoints[peerName].orEmpty()
+        val expectedFingerprint = P2PPreferences.findPeerFingerprint(appContext, peerName)
+        val payload = JSONObject().apply {
+            put("type", "profile_request")
+            put("sender", P2PPreferences.username(appContext))
+            put("fingerprint", getBridge(appContext).getLocalFingerprint())
+        }.toString()
+        getBridge(appContext).sendP2pMessage(peerName, endpoint, payload, expectedFingerprint)
     }
 
     fun shareOnionAddressWithKnownPeers(context: Context) {

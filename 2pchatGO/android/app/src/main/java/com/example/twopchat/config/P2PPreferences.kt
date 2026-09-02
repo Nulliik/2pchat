@@ -128,18 +128,70 @@ object P2PPreferences {
 
     fun setAboutMe(context: Context, text: String) {
         val clean = text.trim()
-        prefs(context).edit().putString("about_me_profile", clean).apply()
+        val sp = prefs(context)
+        sp.edit().putString("about_me_profile", clean).apply()
         runCatching {
             val file = java.io.File(context.filesDir, "profile_about_me.txt")
             file.writeText(clean)
         }
         runCatching {
-            com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).savePeerAboutMe("my_profile_about_me", clean)
+            val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
+            db.savePeerAboutMe("my_profile_about_me", clean)
             val username = username(context)
             if (username.isNotBlank()) {
-                com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).savePeerAboutMe(username, clean)
+                db.savePeerAboutMe(username, clean)
+                sp.edit().putString("peer_about_me_$username", clean).apply()
+                val base = username.substringBefore("#").trim()
+                if (base.isNotEmpty() && base != username) {
+                    db.savePeerAboutMe(base, clean)
+                    sp.edit().putString("peer_about_me_$base", clean).apply()
+                }
             }
         }
+    }
+
+    fun findPeerFingerprint(context: Context, peerName: String): String? {
+        val sp = prefs(context)
+        val byName = sp.getString("peer_fingerprint_$peerName", null)?.trim()?.takeIf { it.isNotBlank() }
+        if (byName != null) return byName
+        val baseName = peerName.substringBefore("#").trim()
+        if (baseName.isNotEmpty() && baseName != peerName) {
+            val byBase = sp.getString("peer_fingerprint_$baseName", null)?.trim()?.takeIf { it.isNotBlank() }
+            if (byBase != null) return byBase
+        }
+        return if (P2PMessageRelay.isRawFingerprint(peerName)) peerName else null
+    }
+
+    fun getPeerAboutMe(context: Context, peerName: String, fingerprint: String? = null): String {
+        val sp = prefs(context)
+        val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
+        val myName = sp.getString("username_profile", "")?.trim().orEmpty()
+        val baseName = peerName.substringBefore("#").trim()
+        val isSelf = peerName == "Saved Messages" || 
+            (myName.isNotEmpty() && (peerName.equals(myName, ignoreCase = true) || baseName.equals(myName, ignoreCase = true)))
+        if (isSelf) {
+            return aboutMe(context).trim()
+        }
+
+        val candidates = linkedSetOf<String>()
+        if (peerName.isNotBlank()) {
+            candidates.add(peerName.trim())
+            if (baseName.isNotEmpty() && baseName != peerName) {
+                candidates.add(baseName)
+            }
+        }
+        val fp = fingerprint?.takeIf { it.isNotBlank() } ?: findPeerFingerprint(context, peerName)
+        if (!fp.isNullOrBlank()) {
+            candidates.add(fp.trim())
+        }
+
+        for (cand in candidates) {
+            val fromSp = sp.getString("peer_about_me_$cand", null)?.trim()?.takeIf { it.isNotEmpty() }
+            if (fromSp != null) return fromSp
+            val fromDb = db.getPeerAboutMe(cand)?.trim()?.takeIf { it.isNotEmpty() }
+            if (fromDb != null) return fromDb
+        }
+        return ""
     }
 
     fun getRendezvousCode(context: Context): String {

@@ -807,8 +807,11 @@ fun ChatScreen(
             } else {
                 P2PMessageRelay.sendConnectedPeerHeartbeat(context, peerName)
             }
+            if (peerName != "Saved Messages") {
+                P2PMessageRelay.requestPeerProfile(context, peerName)
+                P2PMessageRelay.shareAvatar(context, peerName, resolvedEp, force = true)
+            }
             if (resolvedEp.isNotBlank()) {
-                P2PMessageRelay.shareAvatar(context, peerName, resolvedEp)
                 P2PMessageRelay.processOfflineQueue(context, peerName, resolvedEp)
             }
         }
@@ -2476,6 +2479,7 @@ fun ChatScreen(
                                     sharedPrefs.edit { putString("last_msg_$peerName", SecureStorage.encrypt("You: $userText")) }
 
                                     // Send message payload
+                                    val myAboutMe = com.example.twopchat.config.P2PPreferences.aboutMe(context).trim()
                                     val payload = if (replyTo != null) {
                                         org.json.JSONObject().apply {
                                             put("type", "reply")
@@ -2483,6 +2487,9 @@ fun ChatScreen(
                                             put("text", userText)
                                             put("sender", username)
                                             put("nickname", username)
+                                            if (myAboutMe.isNotEmpty()) {
+                                                put("about_me", myAboutMe)
+                                            }
                                             put("reply_to_id", replyTo.id)
                                             put("reply_to_text", replyTo.text)
                                             put("reply_to_name", replyTo.let { if (it.isMe) username else peerName })
@@ -2494,6 +2501,9 @@ fun ChatScreen(
                                             put("text", userText)
                                             put("sender", username)
                                             put("nickname", username)
+                                            if (myAboutMe.isNotEmpty()) {
+                                                put("about_me", myAboutMe)
+                                            }
                                         }.toString()
                                     }
 

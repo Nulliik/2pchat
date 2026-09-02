@@ -159,6 +159,10 @@ fun SharedMediaScreen(
         withContext(Dispatchers.IO) {
             highResAvatarBitmap = P2PMessageRelay.getOriginalAvatar(context, currentPeerName)
         }
+        if (currentPeerName != "Saved Messages") {
+            P2PMessageRelay.requestPeerProfile(context, currentPeerName)
+            P2PMessageRelay.shareAvatar(context, currentPeerName, force = true)
+        }
     }
     val avatarBitmap = highResAvatarBitmap ?: P2PMessageRelay.peerAvatars[currentPeerName]
 
@@ -596,31 +600,26 @@ fun SharedMediaScreen(
                             modifier = Modifier.padding(bottom = 12.dp)
                         )
 
-                        // Personal Search Address Row
                         val fingerprint = remember(currentPeerName, preferenceVersion) {
-                            val sp = com.example.twopchat.config.P2PPreferences.prefs(context)
-                            val bySp = sp.getString("peer_fingerprint_$currentPeerName", "")?.trim().orEmpty()
-                            if (bySp.isNotEmpty()) bySp else {
-                                com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerFingerprint(currentPeerName) ?: ""
-                            }
+                            com.example.twopchat.config.P2PPreferences.findPeerFingerprint(context, currentPeerName).orEmpty()
                         }
+
                         val stableCode = remember(currentPeerName, fingerprint, preferenceVersion) {
                             val sp = com.example.twopchat.config.P2PPreferences.prefs(context)
-                            val savedCode = sp.getString("discovery_code_$currentPeerName", null)
-                            if (!savedCode.isNullOrBlank()) {
-                                savedCode
+                            val bySp = sp.getString("discovery_code_$currentPeerName", null)?.trim()
+                            if (!bySp.isNullOrBlank()) {
+                                bySp
                             } else {
                                 val seedString = fingerprint.ifBlank { currentPeerName }
-                                val hash = seedString.hashCode().toLong() and 0xFFFFFFFFL
-                                val random = java.util.Random(hash)
-                                val alphabet = "23456789bcdfghjkmnpqrstvwxyz"
-                                (1..3).joinToString("-") {
-                                    (1..4).map { alphabet[random.nextInt(alphabet.length)] }.joinToString("")
-                                }
+                                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                                    .digest(seedString.toByteArray(Charsets.UTF_8))
+                                digest.take(4).joinToString("") { "%02x".format(it) }
                             }
                         }
+
                         val searchAddress = remember(currentPeerName, stableCode) {
-                            "$currentPeerName#$stableCode"
+                            val baseName = currentPeerName.substringBefore("#").trim().ifEmpty { currentPeerName }
+                            "$baseName#$stableCode"
                         }
 
                         InfoDetailRow(
@@ -640,23 +639,7 @@ fun SharedMediaScreen(
                         )
 
                         val peerAboutMe = remember(currentPeerName, fingerprint, preferenceVersion) {
-                            val sp = com.example.twopchat.config.P2PPreferences.prefs(context)
-                            val db = com.example.twopchat.data.ChatDatabaseHelper.getInstance(context)
-                            val myName = sp.getString("username_profile", "")?.trim().orEmpty()
-                            val isSelf = currentPeerName == "Saved Messages" || (myName.isNotEmpty() && currentPeerName.equals(myName, ignoreCase = true))
-                            if (isSelf) {
-                                com.example.twopchat.config.P2PPreferences.aboutMe(context).trim()
-                            } else {
-                                val byName = sp.getString("peer_about_me_$currentPeerName", null)?.trim()
-                                val byFp = if (fingerprint.isNotBlank()) sp.getString("peer_about_me_$fingerprint", null)?.trim() else null
-                                val byDb = db.getPeerAboutMe(currentPeerName)?.trim()
-                                val byDbFp = if (fingerprint.isNotBlank()) db.getPeerAboutMe(fingerprint)?.trim() else null
-                                byName?.takeIf { it.isNotEmpty() }
-                                    ?: byFp?.takeIf { it.isNotEmpty() }
-                                    ?: byDb?.takeIf { it.isNotEmpty() }
-                                    ?: byDbFp?.takeIf { it.isNotEmpty() }
-                                    ?: ""
-                            }
+                            com.example.twopchat.config.P2PPreferences.getPeerAboutMe(context, currentPeerName, fingerprint)
                         }
 
                         HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))

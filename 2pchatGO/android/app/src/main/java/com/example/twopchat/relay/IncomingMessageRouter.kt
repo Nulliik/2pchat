@@ -39,11 +39,20 @@ internal class IncomingMessageRouter(
             try {
                 val json = JSONObject(trimmed)
                 val payloadNickname = json.optString("nickname").ifEmpty { json.optString("sender").ifEmpty { json.optString("sender_name") } }
+                val payloadAboutMe = json.optString("about_me").takeIf { it.isNotBlank() }
                 if (payloadNickname.isNotBlank() && isValidNickname(payloadNickname)) {
-                    P2PMessageRelay.handlePeerNicknameReceived(context, sender, payloadNickname, null)
+                    P2PMessageRelay.handlePeerNicknameReceived(context, sender, payloadNickname, payloadAboutMe)
+                } else if (payloadAboutMe != null) {
+                    P2PMessageRelay.handlePeerNicknameReceived(context, sender, null, payloadAboutMe)
                 }
                 val msgType = json.optString("type")
                 when (msgType) {
+                    "profile_request" -> {
+                        val requester = payloadNickname.ifBlank { sender }
+                        log(context, "Received profile request from $requester, replying with full profile", "INFO", null)
+                        P2PMessageRelay.shareAvatar(context, requester, "", force = true)
+                        return
+                    }
                     "text" -> {
                         val msgId = json.optString("message_id")
                         val msgText = json.optString("text")
@@ -164,19 +173,30 @@ internal class IncomingMessageRouter(
                             log(context, "Saved Tor .onion endpoint from profile share for $effectiveName: $formatted", "INFO", null)
                         }
                         if (aboutMe != null) {
-                            ChatDatabaseHelper.getInstance(context).savePeerAboutMe(effectiveName, aboutMe)
-                            P2PPreferences.prefs(context).edit().putString("peer_about_me_$effectiveName", aboutMe).apply()
-                            if (effectiveName != sender && sender.isNotBlank()) {
-                                ChatDatabaseHelper.getInstance(context).savePeerAboutMe(sender, aboutMe)
-                                P2PPreferences.prefs(context).edit().putString("peer_about_me_$sender", aboutMe).apply()
+                            val keys = linkedSetOf<String>()
+                            keys.add(effectiveName)
+                            val baseEff = effectiveName.substringBefore("#").trim()
+                            if (baseEff.isNotEmpty()) keys.add(baseEff)
+                            if (sender.isNotBlank()) {
+                                keys.add(sender)
+                                val baseSender = sender.substringBefore("#").trim()
+                                if (baseSender.isNotEmpty()) keys.add(baseSender)
                             }
                             if (fingerprint != null) {
-                                ChatDatabaseHelper.getInstance(context).savePeerAboutMe(fingerprint, aboutMe)
-                                P2PPreferences.prefs(context).edit().putString("peer_about_me_$fingerprint", aboutMe).apply()
+                                keys.add(fingerprint)
                             }
+                            val editor = P2PPreferences.prefs(context).edit()
+                            val db = ChatDatabaseHelper.getInstance(context)
+                            for (k in keys) {
+                                if (k.isNotEmpty()) {
+                                    editor.putString("peer_about_me_$k", aboutMe)
+                                    db.savePeerAboutMe(k, aboutMe)
+                                }
+                            }
+                            editor.apply()
                         }
                         P2PMessageRelay.handlePeerNicknameReceived(context, sender, nickname, aboutMe)
-                        P2PMessageRelay.shareAvatar(context, effectiveName, "")
+                        P2PMessageRelay.shareAvatar(context, effectiveName, "", force = true)
                         return
                     }
                     "onion_address_share" -> {

@@ -456,10 +456,19 @@ internal class P2POutboundMessenger(
                         log(context, "Paused offline queue for $peerName after an identity change", "ERROR", null)
                         break
                     }
+                    val myName = P2PPreferences.username(context)
+                    val myAboutMe = P2PPreferences.aboutMe(context).trim()
                     val payload = if (message.replyToId != null) JSONObject().apply {
                         put("type", "reply")
                         put("message_id", message.id)
                         put("text", message.text)
+                        if (myName.isNotEmpty()) {
+                            put("sender", myName)
+                            put("nickname", myName)
+                        }
+                        if (myAboutMe.isNotEmpty()) {
+                            put("about_me", myAboutMe)
+                        }
                         put("reply_to_id", message.replyToId)
                         put("reply_to_text", message.replyToText)
                         put("reply_to_name", message.replyToName)
@@ -467,6 +476,13 @@ internal class P2POutboundMessenger(
                         put("type", "text")
                         put("message_id", message.id)
                         put("text", message.text)
+                        if (myName.isNotEmpty()) {
+                            put("sender", myName)
+                            put("nickname", myName)
+                        }
+                        if (myAboutMe.isNotEmpty()) {
+                            put("about_me", myAboutMe)
+                        }
                     }.toString()
                     val albumFiles = message.albumMediaUris.map(::File)
                     val hasAlbum = message.attachmentType == "ALBUM" && albumFiles.size > 1
