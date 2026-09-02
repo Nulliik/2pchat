@@ -608,29 +608,46 @@ object P2PPreferences {
         if (clean.isBlank()) return DirectWallpaper(null, 30, false)
         val sp = prefs(context)
         val lower = clean.lowercase()
-        val fp = getPeerFingerprint(context, clean)
+        val baseName = clean.substringBefore("#").substringBefore(" · ").trim()
+        val baseLower = baseName.lowercase()
+        val fp = findPeerFingerprint(context, clean) ?: getPeerFingerprint(context, clean)
         val resolvedName = if (!fp.isNullOrBlank()) findPeerNameByFingerprint(context, fp) else findPeerNameByFingerprint(context, clean)
-        val aliases = listOf(clean, lower, fp, resolvedName)
-            .filterNotNull()
-            .filter { it.isNotBlank() }
-            .distinct()
+        val resolvedLower = resolvedName?.lowercase()
 
-        fun result(alias: String, path: String) = DirectWallpaper(
+        val aliases = listOfNotNull(
+            clean,
+            lower,
+            baseName.takeIf { it.isNotBlank() },
+            baseLower.takeIf { it.isNotBlank() },
+            fp,
+            resolvedName,
+            resolvedLower
+        ).filter { it.isNotBlank() }.distinct()
+
+        val resolvedBlur = aliases.any { alias ->
+            sp.getBoolean(directWallpaperBlur(alias), false)
+        }
+        val resolvedDimming = aliases.asSequence()
+            .filter { alias -> sp.contains(directWallpaperDimming(alias)) }
+            .map { alias -> sp.getInt(directWallpaperDimming(alias), 30) }
+            .firstOrNull() ?: 30
+
+        fun result(path: String) = DirectWallpaper(
             path = path,
-            dimming = sp.getInt(directWallpaperDimming(alias), 30),
-            blur = sp.getBoolean(directWallpaperBlur(alias), false),
+            dimming = resolvedDimming,
+            blur = resolvedBlur,
         )
 
         aliases.forEach { alias ->
             val path = sp.getString(directWallpaperPath(alias), null)?.takeIf { it.isNotBlank() }
-            if (path != null && java.io.File(path).exists()) return result(alias, path)
+            if (path != null && java.io.File(path).exists()) return result(path)
         }
 
         val dir = java.io.File(context.filesDir, "direct_wallpapers")
         if (dir.exists() && dir.isDirectory) {
             aliases.forEach { alias ->
                 val file = java.io.File(dir, "wallpaper_$alias.jpg")
-                if (file.exists() && file.length() > 0) return result(alias, file.absolutePath)
+                if (file.exists() && file.length() > 0) return result(file.absolutePath)
             }
         }
 
@@ -652,66 +669,40 @@ object P2PPreferences {
         val clean = peerName.trim()
         if (clean.isBlank()) return
         val editor = prefs(context).edit()
-        val fp = getPeerFingerprint(context, clean)
-        val resolvedName = if (!fp.isNullOrBlank()) findPeerNameByFingerprint(context, fp) else null
         val lower = clean.lowercase()
+        val baseName = clean.substringBefore("#").substringBefore(" · ").trim()
+        val baseLower = baseName.lowercase()
+        val fp = findPeerFingerprint(context, clean) ?: getPeerFingerprint(context, clean)
+        val resolvedName = if (!fp.isNullOrBlank()) findPeerNameByFingerprint(context, fp) else findPeerNameByFingerprint(context, clean)
+        val resolvedLower = resolvedName?.lowercase()
+
+        val allAliases = listOfNotNull(
+            clean,
+            lower,
+            baseName.takeIf { it.isNotBlank() },
+            baseLower.takeIf { it.isNotBlank() },
+            fp,
+            resolvedName,
+            resolvedLower
+        ).filter { it.isNotBlank() }.distinct()
 
         if (path != null) {
-            editor.putString(directWallpaperPath(clean), path)
-            editor.putInt(directWallpaperDimming(clean), dimming)
-            editor.putBoolean(directWallpaperBlur(clean), blur)
-
-            if (lower != clean) {
-                editor.putString(directWallpaperPath(lower), path)
-                editor.putInt(directWallpaperDimming(lower), dimming)
-                editor.putBoolean(directWallpaperBlur(lower), blur)
-            }
-
-            if (!fp.isNullOrBlank() && fp != clean) {
-                editor.putString(directWallpaperPath(fp), path)
-                editor.putInt(directWallpaperDimming(fp), dimming)
-                editor.putBoolean(directWallpaperBlur(fp), blur)
-            }
-
-            if (!resolvedName.isNullOrBlank() && !resolvedName.equals(clean, ignoreCase = true)) {
-                editor.putString(directWallpaperPath(resolvedName), path)
-                editor.putInt(directWallpaperDimming(resolvedName), dimming)
-                editor.putBoolean(directWallpaperBlur(resolvedName), blur)
+            allAliases.forEach { alias ->
+                editor.putString(directWallpaperPath(alias), path)
+                editor.putInt(directWallpaperDimming(alias), dimming)
+                editor.putBoolean(directWallpaperBlur(alias), blur)
             }
         } else {
-            editor.remove(directWallpaperPath(clean))
-            editor.remove(directWallpaperDimming(clean))
-            editor.remove(directWallpaperBlur(clean))
-
-            if (lower != clean) {
-                editor.remove(directWallpaperPath(lower))
-                editor.remove(directWallpaperDimming(lower))
-                editor.remove(directWallpaperBlur(lower))
-            }
-
-            if (!fp.isNullOrBlank() && fp != clean) {
-                editor.remove(directWallpaperPath(fp))
-                editor.remove(directWallpaperDimming(fp))
-                editor.remove(directWallpaperBlur(fp))
-            }
-
-            if (!resolvedName.isNullOrBlank() && !resolvedName.equals(clean, ignoreCase = true)) {
-                editor.remove(directWallpaperPath(resolvedName))
-                editor.remove(directWallpaperDimming(resolvedName))
-                editor.remove(directWallpaperBlur(resolvedName))
+            allAliases.forEach { alias ->
+                editor.remove(directWallpaperPath(alias))
+                editor.remove(directWallpaperDimming(alias))
+                editor.remove(directWallpaperBlur(alias))
             }
 
             runCatching {
                 val dir = java.io.File(context.filesDir, "direct_wallpapers")
-                java.io.File(dir, "wallpaper_$clean.jpg").delete()
-                if (lower != clean) {
-                    java.io.File(dir, "wallpaper_$lower.jpg").delete()
-                }
-                if (!fp.isNullOrBlank() && fp != clean) {
-                    java.io.File(dir, "wallpaper_$fp.jpg").delete()
-                }
-                if (!resolvedName.isNullOrBlank() && !resolvedName.equals(clean, ignoreCase = true)) {
-                    java.io.File(dir, "wallpaper_$resolvedName.jpg").delete()
+                allAliases.forEach { alias ->
+                    java.io.File(dir, "wallpaper_$alias.jpg").delete()
                 }
             }
         }
@@ -723,9 +714,18 @@ object P2PPreferences {
         if (clean.isBlank()) return null
         val fromPrefs = prefs(context).getString(peerFingerprint(clean), null)?.takeIf { it.isNotBlank() }
         if (fromPrefs != null) return fromPrefs
+        val baseName = clean.substringBefore("#").substringBefore(" · ").trim()
+        if (baseName.isNotEmpty() && baseName != clean) {
+            val fromBase = prefs(context).getString(peerFingerprint(baseName), null)?.takeIf { it.isNotBlank() }
+            if (fromBase != null) return fromBase
+        }
         if (com.example.twopchat.relay.P2PMessageRelay.isRawFingerprint(clean)) return clean
+        if (baseName.isNotEmpty() && com.example.twopchat.relay.P2PMessageRelay.isRawFingerprint(baseName)) return baseName
         return runCatching {
             com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerFingerprint(clean)
+                ?: if (baseName.isNotEmpty() && baseName != clean) {
+                    com.example.twopchat.data.ChatDatabaseHelper.getInstance(context).getPeerFingerprint(baseName)
+                } else null
         }.getOrNull()?.takeIf { it.isNotBlank() }
     }
 

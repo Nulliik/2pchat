@@ -1558,6 +1558,20 @@ object P2PMessageRelay {
                                                 } catch (_: Exception) {}
                                             }
 
+                                            val baseSender = resolvedSender.substringBefore("#").substringBefore(" · ").trim()
+                                            if (baseSender.isNotEmpty() && baseSender != resolvedSender) {
+                                                try {
+                                                    File(dir, "wallpaper_$baseSender.jpg").writeBytes(bytes)
+                                                } catch (_: Exception) {}
+                                                P2PPreferences.setDirectWallpaper(appContext, baseSender, destFile.absolutePath, dimming, isBlur)
+                                            }
+                                            val lowerSender = resolvedSender.lowercase()
+                                            if (lowerSender != resolvedSender && lowerSender != baseSender) {
+                                                try {
+                                                    File(dir, "wallpaper_$lowerSender.jpg").writeBytes(bytes)
+                                                } catch (_: Exception) {}
+                                            }
+
                                             P2PPreferences.setDirectWallpaper(appContext, resolvedSender, destFile.absolutePath, dimming, isBlur)
                                             if (resolvedSender != sender) {
                                                 P2PPreferences.setDirectWallpaper(appContext, sender, destFile.absolutePath, dimming, isBlur)

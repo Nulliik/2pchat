@@ -445,6 +445,12 @@ fun ChatScreen(
         mutableStateOf<Bitmap?>(null)
     }
 
+    LaunchedEffect(persistedWallpaper) {
+        wallpaperPath = persistedWallpaper.path
+        wallpaperDimming = persistedWallpaper.dimming
+        wallpaperBlur = persistedWallpaper.blur
+    }
+
     LaunchedEffect(wallpaperPath, peerName, prefsWallpaperVersion, wallpaperBlur) {
         wallpaperBitmap = withContext(Dispatchers.IO) {
             val resolvedPath = wallpaperPath ?: com.example.twopchat.config.P2PPreferences.getDirectWallpaperPath(context, peerName)
