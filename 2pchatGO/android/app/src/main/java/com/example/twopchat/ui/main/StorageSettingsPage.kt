@@ -371,17 +371,31 @@ fun StorageSettingsPage(
                                 AttachmentImageCache.clear()
                                 showMediaCleanupDialog = false
                                 selectedMediaCategories = emptySet()
-                                val message = Localizations.tr(appLanguage, "Удалено: ${result.deletedFiles}" + if (result.skippedActiveTransfers > 0) ". Активные передачи пропущены" else "", "Deleted: ${result.deletedFiles}" + if (result.skippedActiveTransfers > 0) ". Active transfers were skipped" else "")
+                                val deletedCount = result.deletedFiles
+                                val skipped = result.skippedActiveTransfers > 0
+                                val message = com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Удалено: $deletedCount" + if (skipped) ". Активные передачи пропущены" else "",
+                                    en = "Deleted: $deletedCount" + if (skipped) ". Active transfers were skipped" else "",
+                                    de = "Gelöscht: $deletedCount" + if (skipped) ". Aktive Übertragungen übersprungen" else "",
+                                    es = "Eliminado: $deletedCount" + if (skipped) ". Se omitieron las transferencias activas" else "",
+                                    fr = "Supprimé : $deletedCount" + if (skipped) ". Les transferts actifs ont été ignorés" else "",
+                                    pt = "Excluído: $deletedCount" + if (skipped) ". As transferências ativas foram ignoradas" else ""
+                                )
                                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                             } catch (error: Exception) {
                                 error.printStackTrace()
                                 Toast.makeText(
                                     context,
-                                    if (appLanguage == "Русский") {
-                                        "Не удалось удалить выбранные файлы"
-                                    } else {
-                                        "Could not delete selected files"
-                                    },
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Не удалось удалить выбранные файлы",
+                                        en = "Could not delete selected files",
+                                        de = "Ausgewählte Dateien konnten nicht gelöscht werden",
+                                        es = "No se pudieron eliminar los archivos seleccionados",
+                                        fr = "Impossible de supprimer les fichiers sélectionnés",
+                                        pt = "Não foi possível excluir os arquivos selecionados"
+                                    ),
                                     Toast.LENGTH_SHORT,
                                 ).show()
                             } finally {

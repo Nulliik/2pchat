@@ -378,7 +378,19 @@ internal fun GroupChatModalsOverlay(
                             apply()
                         }
                         controller.updateGroupWallpaper(state.groupId, targetFile.absolutePath, dimming, isBlur)
-                        Toast.makeText(context, if (appLanguage == "Русский") "Обои установлены для всех участников" else "Wallpaper updated for all members", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            context,
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Обои установлены для всех участников",
+                                en = "Wallpaper updated for all members",
+                                de = "Hintergrundbild für alle Mitglieder aktualisiert",
+                                es = "Fondo de pantalla actualizado para todos los miembros",
+                                fr = "Fond d'écran mis à jour pour tous les membres",
+                                pt = "Papel de parede atualizado para todos os membros"
+                            ),
+                            Toast.LENGTH_SHORT
+                        ).show()
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -390,7 +402,19 @@ internal fun GroupChatModalsOverlay(
                         apply()
                     }
                     controller.updateGroupWallpaper(state.groupId, null, 45, false)
-                    Toast.makeText(context, if (appLanguage == "Русский") "Обои сброшены для всех участников" else "Wallpaper removed for all members", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        context,
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Обои сброшены для всех участников",
+                            en = "Wallpaper removed for all members",
+                            de = "Hintergrundbild für alle Mitglieder entfernt",
+                            es = "Fondo de pantalla eliminado para todos los miembros",
+                            fr = "Fond d'écran supprimé pour tous les membres",
+                            pt = "Papel de parede removido para todos os membros"
+                        ),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         )

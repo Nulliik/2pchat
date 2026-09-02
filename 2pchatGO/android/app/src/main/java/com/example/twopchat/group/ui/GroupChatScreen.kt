@@ -642,7 +642,15 @@ fun GroupChatScreen(
             if (result == null) {
                 Toast.makeText(
                     context,
-                    if (appLanguage == "Русский") "Не удалось добавить GIF" else "Could not add GIF",
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Не удалось добавить GIF",
+                        en = "Could not add GIF",
+                        de = "GIF konnte nicht hinzugefügt werden",
+                        es = "No se pudo añadir el GIF",
+                        fr = "Impossible d'ajouter le GIF",
+                        pt = "Não foi possível adicionar o GIF"
+                    ),
                     Toast.LENGTH_SHORT,
                 ).show()
             } else {
@@ -819,22 +827,76 @@ fun GroupChatScreen(
                 )
             }
 
-        // Pinned Message Bar matching Screenshot 2
-
         if (pinnedGroupMessages.isNotEmpty()) {
             val currentPinnedMsg = pinnedGroupMessages[activePinnedIndex % pinnedGroupMessages.size]
             val previewText = when {
                 currentPinnedMsg.text.isNotBlank() -> currentPinnedMsg.text
-                currentPinnedMsg.attachment?.mimeType?.startsWith("image/") == true -> if (appLanguage == "Русский") "📷 Фотография" else "📷 Photo"
-                currentPinnedMsg.attachment?.mimeType?.startsWith("video/") == true -> if (appLanguage == "Русский") "🎥 Видеозапись" else "🎥 Video"
-                currentPinnedMsg.attachment?.mimeType?.startsWith("audio/") == true -> if (appLanguage == "Русский") "🎤 Голосовое сообщение" else "🎤 Voice Message"
+                currentPinnedMsg.attachment?.mimeType?.startsWith("image/") == true -> {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "📷 Фотография",
+                        en = "📷 Photo",
+                        de = "📷 Foto",
+                        es = "📷 Foto",
+                        fr = "📷 Photo",
+                        pt = "📷 Foto"
+                    )
+                }
+                currentPinnedMsg.attachment?.mimeType?.startsWith("video/") == true -> {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "🎥 Видеозапись",
+                        en = "🎥 Video",
+                        de = "🎥 Video",
+                        es = "🎥 Video",
+                        fr = "🎥 Vidéo",
+                        pt = "🎥 Vídeo"
+                    )
+                }
+                currentPinnedMsg.attachment?.mimeType?.startsWith("audio/") == true -> {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "🎤 Голосовое сообщение",
+                        en = "🎤 Voice Message",
+                        de = "🎤 Sprachnachricht",
+                        es = "🎤 Mensaje de voz",
+                        fr = "🎤 Message vocal",
+                        pt = "🎤 Mensagem de voz"
+                    )
+                }
                 currentPinnedMsg.attachment != null -> "📁 ${currentPinnedMsg.attachment.fileName}"
-                else -> if (appLanguage == "Русский") "Вложение" else "Attachment"
+                else -> {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Вложение",
+                        en = "Attachment",
+                        de = "Anhang",
+                        es = "Archivo adjunto",
+                        fr = "Pièce jointe",
+                        pt = "Anexo"
+                    )
+                }
             }
             val titleText = if (currentPinnedMsg.authorName.isNotBlank()) {
-                if (appLanguage == "Русский") "${currentPinnedMsg.authorName} закрепил(а) сообщение" else "${currentPinnedMsg.authorName} pinned a message"
+                com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "${currentPinnedMsg.authorName} закрепил(а) сообщение",
+                    en = "${currentPinnedMsg.authorName} pinned a message",
+                    de = "${currentPinnedMsg.authorName} hat eine Nachricht angepinnt",
+                    es = "${currentPinnedMsg.authorName} fijó un mensaje",
+                    fr = "${currentPinnedMsg.authorName} a épinglé un message",
+                    pt = "${currentPinnedMsg.authorName} fixou uma mensagem"
+                )
             } else {
-                if (appLanguage == "Русский") "Закреплённое сообщение" else "Pinned message"
+                com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Закреплённое сообщение",
+                    en = "Pinned message",
+                    de = "Angepinnte Nachricht",
+                    es = "Mensaje fijado",
+                    fr = "Message épinglé",
+                    pt = "Mensagem fixada"
+                )
             }
 
             ConversationPinnedMessageBar(
@@ -961,10 +1023,29 @@ fun GroupChatScreen(
                                 },
                                 modifier = Modifier.testTag("load_older_messages")
                             ) {
-                                Text(if (appLanguage == "Русский") "Загрузить ранние сообщения" else "Load earlier messages", fontSize = 12.sp)
+                                Text(
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Загрузить ранние сообщения",
+                                        en = "Load earlier messages",
+                                        de = "Frühere Nachrichten laden",
+                                        es = "Cargar mensajes anteriores",
+                                        fr = "Charger les messages précédents",
+                                        pt = "Carregar mensagens anteriores"
+                                    ),
+                                    fontSize = 12.sp
+                                )
                             }
                             state.messages.isNotEmpty() -> Text(
-                                if (appLanguage == "Русский") "Начало истории группы" else "Beginning of group history",
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Начало истории группы",
+                                    en = "Beginning of group history",
+                                    de = "Beginn des Gruppenverlaufs",
+                                    es = "Inicio del historial del grupo",
+                                    fr = "Début de l'historique du groupe",
+                                    pt = "Início do histórico do grupo"
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             )
@@ -1371,7 +1452,19 @@ fun GroupChatScreen(
                                 )
                                 cameraLauncher.launch(photoUri)
                             } catch (e: Exception) {
-                                Toast.makeText(context, if (appLanguage == "Русский") "Не удалось открыть камеру" else "Camera launch failed", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Не удалось открыть камеру",
+                                        en = "Camera launch failed",
+                                        de = "Kamera konnte nicht geöffnet werden",
+                                        es = "No se pudo abrir la cámara",
+                                        fr = "Impossible d'ouvrir la caméra",
+                                        pt = "Não foi possível abrir a câmera"
+                                    ),
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         }
                         "Gallery" -> galleryLauncher.launch("image/*")
@@ -1799,14 +1892,43 @@ private fun GroupChatHeader(
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (state.typingStatus.isNotBlank()) {
-                            val displayTyping = if (appLanguage != "Русский") {
-                                state.typingStatus
-                                    .replace(" печатает...", " is typing...")
-                                    .replace(" печатают...", " are typing...")
-                                    .replace(" и ", " and ")
-                                    .replace("Несколько участников", "Several members")
-                            } else {
-                                state.typingStatus
+                            val displayTyping = when (appLanguage) {
+                                "Deutsch" -> {
+                                    state.typingStatus
+                                        .replace(" печатает...", " tippt...")
+                                        .replace(" печатают...", " tippen...")
+                                        .replace(" и ", " und ")
+                                        .replace("Несколько участников", "Mehrere Mitglieder")
+                                }
+                                "Español" -> {
+                                    state.typingStatus
+                                        .replace(" печатает...", " está escribiendo...")
+                                        .replace(" печатают...", " están escribiendo...")
+                                        .replace(" и ", " y ")
+                                        .replace("Несколько участников", "Varios miembros")
+                                }
+                                "Français" -> {
+                                    state.typingStatus
+                                        .replace(" печатает...", " écrit...")
+                                        .replace(" печатают...", " écrivent...")
+                                        .replace(" и ", " et ")
+                                        .replace("Несколько участников", "Plusieurs membres")
+                                }
+                                "Português" -> {
+                                    state.typingStatus
+                                        .replace(" печатает...", " está digitando...")
+                                        .replace(" печатают...", " estão digitando...")
+                                        .replace(" и ", " e ")
+                                        .replace("Несколько участников", "Vários membros")
+                                }
+                                "Русский" -> state.typingStatus
+                                else -> {
+                                    state.typingStatus
+                                        .replace(" печатает...", " is typing...")
+                                        .replace(" печатают...", " are typing...")
+                                        .replace(" и ", " and ")
+                                        .replace("Несколько участников", "Several members")
+                                }
                             }
                             Text(
                                 displayTyping,
@@ -1815,15 +1937,20 @@ private fun GroupChatHeader(
                                 fontWeight = FontWeight.SemiBold
                             )
                         } else {
-                            val membersWord = if (appLanguage == "Русский") {
-                                when {
-                                    state.memberCount % 100 in 11..19 -> "участников"
-                                    state.memberCount % 10 == 1 -> "участник"
-                                    state.memberCount % 10 in 2..4 -> "участника"
-                                    else -> "участников"
+                            val membersWord = when (appLanguage) {
+                                "Deutsch" -> if (state.memberCount == 1) "Mitglied" else "Mitglieder"
+                                "Español" -> if (state.memberCount == 1) "miembro" else "miembros"
+                                "Français" -> if (state.memberCount == 1) "membre" else "membres"
+                                "Português" -> if (state.memberCount == 1) "membro" else "membros"
+                                "Русский" -> {
+                                    when {
+                                        state.memberCount % 100 in 11..19 -> "участников"
+                                        state.memberCount % 10 == 1 -> "участник"
+                                        state.memberCount % 10 in 2..4 -> "участника"
+                                        else -> "участников"
+                                    }
                                 }
-                            } else {
-                                if (state.memberCount == 1) "member" else "members"
+                                else -> if (state.memberCount == 1) "member" else "members"
                             }
                             Text(
                                 "${state.memberCount} $membersWord",
@@ -1880,8 +2007,35 @@ private fun GroupChatHeader(
                 if (showDeleteGroupConfirmation) {
                     AlertDialog(
                         onDismissRequest = { showDeleteGroupConfirmation = false },
-                        title = { Text(if (appLanguage == "Русский") "Удалить группу?" else "Delete group?", fontWeight = FontWeight.Bold, color = onSurfaceColor) },
-                        text = { Text(if (appLanguage == "Русский") "Вы уверены, что хотите полностью удалить группу «${state.title}» и всю её историю?" else "Are you sure you want to permanently delete group \"${state.title}\" and all its history?", color = onSurfaceColor.copy(alpha = 0.7f)) },
+                        title = {
+                            Text(
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Удалить группу?",
+                                    en = "Delete group?",
+                                    de = "Gruppe löschen?",
+                                    es = "¿Eliminar grupo?",
+                                    fr = "Supprimer le groupe ?",
+                                    pt = "Excluir grupo?"
+                                ),
+                                fontWeight = FontWeight.Bold,
+                                color = onSurfaceColor
+                            )
+                        },
+                        text = {
+                            Text(
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Вы уверены, что хотите полностью удалить группу «${state.title}» и всю её историю?",
+                                    en = "Are you sure you want to permanently delete group \"${state.title}\" and all its history?",
+                                    de = "Möchten Sie die Gruppe \"${state.title}\" und ihren gesamten Verlauf wirklich dauerhaft löschen?",
+                                    es = "¿Seguro que quieres eliminar permanentemente el grupo \"${state.title}\" y todo su historial?",
+                                    fr = "Voulez-vous vraiment supprimer définitivement le groupe « ${state.title} » et tout son historique ?",
+                                    pt = "Tem certeza de que deseja excluir permanentemente o grupo \"${state.title}\" e todo o histórico?"
+                                ),
+                                color = onSurfaceColor.copy(alpha = 0.7f)
+                            )
+                        },
                         confirmButton = {
                             TextButton(
                                 onClick = {
@@ -1889,12 +2043,35 @@ private fun GroupChatHeader(
                                     controller.deleteGroup(state.groupId)
                                 }
                             ) {
-                                Text(if (appLanguage == "Русский") "Удалить" else "Delete", color = Color.Red, fontWeight = FontWeight.Bold)
+                                Text(
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Удалить",
+                                        en = "Delete",
+                                        de = "Löschen",
+                                        es = "Eliminar",
+                                        fr = "Supprimer",
+                                        pt = "Excluir"
+                                    ),
+                                    color = Color.Red,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { showDeleteGroupConfirmation = false }) {
-                                Text(if (appLanguage == "Русский") "Отмена" else "Cancel", color = onSurfaceColor)
+                                Text(
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Отмена",
+                                        en = "Cancel",
+                                        de = "Abbrechen",
+                                        es = "Cancelar",
+                                        fr = "Annuler",
+                                        pt = "Cancelar"
+                                    ),
+                                    color = onSurfaceColor
+                                )
                             }
                         },
                         containerColor = surfaceColor,
@@ -3147,7 +3324,15 @@ private fun GroupSearchResultsListViewOverlay(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (appLanguage == "Русский") "Ничего не найдено" else "No results found",
+                    text = com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Ничего не найдено",
+                        en = "No results found",
+                        de = "Keine Ergebnisse gefunden",
+                        es = "No se encontraron resultados",
+                        fr = "Aucun résultat trouvé",
+                        pt = "Nenhum resultado encontrado"
+                    ),
                     color = onSurfaceVariant,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Medium
@@ -3163,7 +3348,15 @@ private fun GroupSearchResultsListViewOverlay(
                     val msg = messages.getOrNull(messageIndex) ?: return@itemsIndexed
                     val avatarBitmap = if (msg.isMine) myAvatarBitmap else com.example.twopchat.relay.P2PMessageRelay.peerAvatars[msg.authorName]
                     val displayName = if (msg.isMine) {
-                        if (appLanguage == "Русский") "Вы" else "You"
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Вы",
+                            en = "You",
+                            de = "Du",
+                            es = "Tú",
+                            fr = "Vous",
+                            pt = "Você"
+                        )
                     } else {
                         msg.authorName.ifBlank { "User" }
                     }
@@ -3234,7 +3427,17 @@ private fun GroupSearchResultsListViewOverlay(
                                 msg.text.isNotBlank() -> msg.text
                                 msg.attachment != null -> msg.attachment.fileName.ifBlank { msg.attachment.mimeType }
                                 msg.poll != null -> "📊 " + msg.poll.question
-                                else -> if (appLanguage == "Русский") "Сообщение" else "Message"
+                                else -> {
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Сообщение",
+                                        en = "Message",
+                                        de = "Nachricht",
+                                        es = "Mensaje",
+                                        fr = "Message",
+                                        pt = "Mensagem"
+                                    )
+                                }
                             }
                             Text(
                                 text = snippet,

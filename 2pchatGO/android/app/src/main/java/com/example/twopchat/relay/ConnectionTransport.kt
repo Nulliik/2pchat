@@ -83,4 +83,12 @@ internal fun connectionTransportLabel(
     endpoint: String?,
     appLanguage: String,
 ): String = canonicalConnectionTransport(rawTransport, endpoint)
-    ?: if (appLanguage == "Русский") "маршрут определяется" else "detecting route"
+    ?: com.example.twopchat.data.Localizations.tr(
+        appLanguage,
+        ru = "маршрут определяется",
+        en = "detecting route",
+        de = "Route wird ermittelt",
+        es = "detectando ruta",
+        fr = "détection de l'itinéraire",
+        pt = "detectando rota"
+    )

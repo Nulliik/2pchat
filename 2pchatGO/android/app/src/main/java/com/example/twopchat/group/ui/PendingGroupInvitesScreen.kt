@@ -87,7 +87,15 @@ fun PendingGroupInvitesScreen(
                 }
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    if (appLanguage == "Русский") "Приглашения в группы" else "Group Invitations",
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Приглашения в группы",
+                        en = "Group Invitations",
+                        de = "Gruppeneinladungen",
+                        es = "Invitaciones a grupos",
+                        fr = "Invitations aux groupes",
+                        pt = "Convites de grupo"
+                    ),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = onSurfaceColor
@@ -148,7 +156,15 @@ fun PendingGroupInvitesScreen(
                     }
                     Spacer(Modifier.height(16.dp))
                     Text(
-                        text = com.example.twopchat.data.Localizations.tr(appLanguage, "Нет входящих приглашений", "No incoming invitations", "Keine eingehenden Einladungen", "No hay invitaciones entrantes"),
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Нет входящих приглашений",
+                            en = "No incoming invitations",
+                            de = "Keine eingehenden Einladungen",
+                            es = "No hay invitaciones entrantes",
+                            fr = "Aucune invitation entrante",
+                            pt = "Nenhum convite recebido"
+                        ),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = onSurfaceColor,
@@ -156,7 +172,15 @@ fun PendingGroupInvitesScreen(
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = com.example.twopchat.data.Localizations.tr(appLanguage, "Когда вас пригласят в новую группу, приглашение появится здесь.", "When you are invited to a new group, the invitation will appear here.", "Wenn Sie zu einer neuen Gruppe eingeladen werden, erscheint die Einladung hier.", "Cuando te inviten a un nuevo grupo, la invitación aparecerá aquí."),
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Когда вас пригласят в новую группу, приглашение появится здесь.",
+                            en = "When you are invited to a new group, the invitation will appear here.",
+                            de = "Wenn Sie zu einer neuen Gruppe eingeladen werden, erscheint die Einladung hier.",
+                            es = "Cuando te inviten a un nuevo grupo, la invitación aparecerá aquí.",
+                            fr = "Lorsque vous serez invité à un nouveau groupe, l'invitation apparaîtra ici.",
+                            pt = "Quando você for convidado para um novo grupo, o convite aparecerá aqui."
+                        ),
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -322,7 +346,15 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
-                            text = com.example.twopchat.data.Localizations.tr(appLanguage, "Приглашение от ${invite.inviterName}", "Invitation from ${invite.inviterName}", "Einladung von ${invite.inviterName}", "Invitación de ${invite.inviterName}"),
+                            text = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Приглашение от ${invite.inviterName}",
+                                en = "Invitation from ${invite.inviterName}",
+                                de = "Einladung von ${invite.inviterName}",
+                                es = "Invitación de ${invite.inviterName}",
+                                fr = "Invitation de ${invite.inviterName}",
+                                pt = "Convite de ${invite.inviterName}"
+                            ),
                             fontSize = 12.sp,
                             color = Color(0xFF34D399),
                             fontWeight = FontWeight.SemiBold,
@@ -354,7 +386,15 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "👥 ${invite.memberCount} " + com.example.twopchat.data.Localizations.tr(appLanguage, "участников", "members", "Mitglieder", "miembros"),
+                        text = "👥 ${invite.memberCount} " + com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "участников",
+                            en = "members",
+                            de = "Mitglieder",
+                            es = "miembros",
+                            fr = "membres",
+                            pt = "membros"
+                        ),
                         fontSize = 12.sp,
                         color = Color.White.copy(alpha = 0.5f)
                     )
@@ -363,7 +403,7 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
                             text = " · ${invite.receivedAtLabel}",
                             fontSize = 12.sp,
                             color = Color.White.copy(alpha = 0.5f)
-                        )
+                         )
                     }
                 }
             }
@@ -385,7 +425,19 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White.copy(alpha = 0.8f))
                 ) {
-                    Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Отклонить", "Decline", "Ablehnen", "Rechazar"), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Отклонить",
+                            en = "Decline",
+                            de = "Ablehnen",
+                            es = "Rechazar",
+                            fr = "Refuser",
+                            pt = "Recusar"
+                        ),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
 
                 Button(
@@ -407,7 +459,20 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
                             color = Color.White
                         )
                     } else {
-                        Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Принять", "Accept", "Annehmen", "Aceptar"), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Принять",
+                                en = "Accept",
+                                de = "Annehmen",
+                                es = "Aceptar",
+                                fr = "Accepter",
+                                pt = "Aceitar"
+                            ),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
                     }
                 }
             }

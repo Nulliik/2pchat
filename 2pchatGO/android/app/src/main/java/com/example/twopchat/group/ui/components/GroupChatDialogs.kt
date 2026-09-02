@@ -84,7 +84,15 @@ fun GroupProcessingAlbumDialog(appLanguage: String) {
                     modifier = Modifier.size(36.dp)
                 )
                 Text(
-                    text = if (appLanguage == "Русский") "Подготовка медиафайлов..." else "Preparing media files...",
+                    text = com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Подготовка медиафайлов...",
+                        en = "Preparing media files...",
+                        de = "Mediendateien werden vorbereitet...",
+                        es = "Preparando archivos multimedia...",
+                        fr = "Préparation des fichiers multimédias...",
+                        pt = "Preparando arquivos de mídia..."
+                    ),
                     color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Medium
@@ -106,7 +114,20 @@ fun GroupEditMessageDialog(
     var editedText by remember(message.messageId) { mutableStateOf(message.text) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (appLanguage == "Русский") "Редактировать сообщение" else "Edit Message", fontWeight = FontWeight.Bold) },
+        title = {
+            Text(
+                com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Редактировать сообщение",
+                    en = "Edit Message",
+                    de = "Nachricht bearbeiten",
+                    es = "Editar mensaje",
+                    fr = "Modifier le message",
+                    pt = "Editar mensagem"
+                ),
+                fontWeight = FontWeight.Bold
+            )
+        },
         text = {
             OutlinedTextField(
                 value = editedText,
@@ -129,12 +150,33 @@ fun GroupEditMessageDialog(
                     onDismiss()
                 }
             ) {
-                Text(if (appLanguage == "Русский") "Сохранить" else "Save", fontWeight = FontWeight.Bold)
+                Text(
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Сохранить",
+                        en = "Save",
+                        de = "Speichern",
+                        es = "Guardar",
+                        fr = "Enregistrer",
+                        pt = "Salvar"
+                    ),
+                    fontWeight = FontWeight.Bold
+                )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
+                Text(
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Отмена",
+                        en = "Cancel",
+                        de = "Abbrechen",
+                        es = "Cancelar",
+                        fr = "Annuler",
+                        pt = "Cancelar"
+                    )
+                )
             }
         },
         containerColor = surfaceColor,
@@ -151,8 +193,33 @@ fun GroupDeleteMessageDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (appLanguage == "Русский") "Удалить сообщение?" else "Delete Message?", fontWeight = FontWeight.Bold) },
-        text = { Text(if (appLanguage == "Русский") "Это действие зафиксируется в журнале событий группы." else "This action will be logged in the group audit event log.") },
+        title = {
+            Text(
+                com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Удалить сообщение?",
+                    en = "Delete Message?",
+                    de = "Nachricht löschen?",
+                    es = "¿Eliminar mensaje?",
+                    fr = "Supprimer le message ?",
+                    pt = "Excluir mensagem?"
+                ),
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Text(
+                com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Это действие зафиксируется в журнале событий группы.",
+                    en = "This action will be logged in the group audit event log.",
+                    de = "Diese Aktion wird im Gruppen-Audit-Protokoll erfasst.",
+                    es = "Esta acción se registrará en el registro de auditoría del grupo.",
+                    fr = "Cette action sera enregistrée dans le journal d'audit du groupe.",
+                    pt = "Esta ação será registrada no log de auditoria do grupo."
+                )
+            )
+        },
         confirmButton = {
             TextButton(
                 onClick = {
@@ -161,12 +228,34 @@ fun GroupDeleteMessageDialog(
                 },
                 modifier = Modifier.testTag("confirm_delete_message")
             ) {
-                Text(if (appLanguage == "Русский") "Удалить" else "Delete", color = Color.Red, fontWeight = FontWeight.Bold)
+                Text(
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Удалить",
+                        en = "Delete",
+                        de = "Löschen",
+                        es = "Eliminar",
+                        fr = "Supprimer",
+                        pt = "Excluir"
+                    ),
+                    color = Color.Red,
+                    fontWeight = FontWeight.Bold
+                )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(if (appLanguage == "Русский") "Отмена" else "Cancel")
+                Text(
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Отмена",
+                        en = "Cancel",
+                        de = "Abbrechen",
+                        es = "Cancelar",
+                        fr = "Annuler",
+                        pt = "Cancelar"
+                    )
+                )
             }
         },
         containerColor = surfaceColor,
@@ -191,7 +280,15 @@ fun GroupForwardDialog(
         RecipientItem(
             id = "group_${g.groupId}",
             title = g.title,
-            subtitle = if (appLanguage == "Русский") "Группа" else "Group",
+            subtitle = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Группа",
+                en = "Group",
+                de = "Gruppe",
+                es = "Grupo",
+                fr = "Groupe",
+                pt = "Grupo"
+            ),
             isOnline = true,
             isGroup = true,
         )
@@ -201,9 +298,33 @@ fun GroupForwardDialog(
         val avatar = P2PMessageRelay.peerAvatars[name]
         val isOnline = P2PMessageRelay.peerSessionStates[name] == true || name == "Saved Messages"
         val subtitle = when {
-            name == "Saved Messages" -> if (appLanguage == "Русский") "Личное хранилище" else "Personal storage"
-            isOnline -> if (appLanguage == "Русский") "В сети" else "Online"
-            else -> if (appLanguage == "Русский") "Был(а) недавно" else "Offline"
+            name == "Saved Messages" -> com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Личное хранилище",
+                en = "Personal storage",
+                de = "Persönlicher Speicher",
+                es = "Almacenamiento personal",
+                fr = "Stockage personnel",
+                pt = "Armazenamento pessoal"
+            )
+            isOnline -> com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "В сети",
+                en = "Online",
+                de = "Online",
+                es = "En línea",
+                fr = "En ligne",
+                pt = "Online"
+            )
+            else -> com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Был(а) недавно",
+                en = "Offline",
+                de = "Offline",
+                es = "Desconectado",
+                fr = "Hors ligne",
+                pt = "Offline"
+            )
         }
         val initials = if (name == "Saved Messages") {
             "🔖"
@@ -224,8 +345,24 @@ fun GroupForwardDialog(
     }
 
     RecipientPickerDialog(
-        title = if (appLanguage == "Русский") "Переслать сообщение" else "Forward Message",
-        searchPlaceholder = if (appLanguage == "Русский") "Поиск получателя..." else "Search recipient...",
+        title = com.example.twopchat.data.Localizations.tr(
+            appLanguage,
+            ru = "Переслать сообщение",
+            en = "Forward Message",
+            de = "Nachricht weiterleiten",
+            es = "Reenviar mensaje",
+            fr = "Transférer le message",
+            pt = "Encaminhar mensagem"
+        ),
+        searchPlaceholder = com.example.twopchat.data.Localizations.tr(
+            appLanguage,
+            ru = "Поиск получателя...",
+            en = "Search recipient...",
+            de = "Empfänger suchen...",
+            es = "Buscar destinatario...",
+            fr = "Rechercher un destinataire...",
+            pt = "Pesquisar destinatário..."
+        ),
         recipients = groupItems + peerItems,
         primaryColor = primaryColor,
         onDismiss = onDismiss,
@@ -244,13 +381,33 @@ fun GroupForwardDialog(
                 } else {
                     GroupChatCoordinator.sendMessage(targetGroupId, textToForward, null)
                 }
-                Toast.makeText(context, if (appLanguage == "Русский") "Переслано в ${item.title}" else "Forwarded to ${item.title}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Переслано в ${item.title}",
+                        en = "Forwarded to ${item.title}",
+                        de = "Weitergeleitet an ${item.title}",
+                        es = "Reenviado a ${item.title}",
+                        fr = "Transféré à ${item.title}",
+                        pt = "Encaminhado para ${item.title}"
+                    ),
+                    Toast.LENGTH_SHORT
+                ).show()
             } else {
                 val chatName = item.id.removePrefix("peer_")
                 if (P2PPreferences.isPeerIdentityChangePending(context, chatName)) {
                     Toast.makeText(
                         context,
-                        if (appLanguage == "Русский") "В чате $chatName отправка приостановлена из-за смены ключа" else "Sending to $chatName is paused because its key changed",
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "В чате $chatName отправка приостановлена из-за смены ключа",
+                            en = "Sending to $chatName is paused because its key changed",
+                            de = "Das Senden an $chatName ist pausiert, da sich der Schlüssel geändert hat",
+                            es = "El envío a $chatName está pausado porque cambió su clave",
+                            fr = "L'envoi à $chatName est suspendu car sa clé a changé",
+                            pt = "O envio para $chatName está pausado porque sua chave mudou"
+                        ),
                         Toast.LENGTH_LONG,
                     ).show()
                     return@RecipientPickerDialog
@@ -289,7 +446,19 @@ fun GroupForwardDialog(
                         }
                     }
                 }
-                Toast.makeText(context, if (appLanguage == "Русский") "Переслано в $chatName" else "Forwarded to $chatName", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Переслано в $chatName",
+                        en = "Forwarded to $chatName",
+                        de = "Weitergeleitet an $chatName",
+                        es = "Reenviado a $chatName",
+                        fr = "Transféré à $chatName",
+                        pt = "Encaminhado para $chatName"
+                    ),
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     )
@@ -325,7 +494,15 @@ fun GroupSeenByDialog(
                     )
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        text = if (appLanguage == "Русский") "Просмотрели (${msg.readByMembers.size})" else "Seen by (${msg.readByMembers.size})",
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Просмотрели (${msg.readByMembers.size})",
+                            en = "Seen by (${msg.readByMembers.size})",
+                            de = "Gesehen von (${msg.readByMembers.size})",
+                            es = "Visto por (${msg.readByMembers.size})",
+                            fr = "Vu par (${msg.readByMembers.size})",
+                            pt = "Visto por (${msg.readByMembers.size})"
+                        ),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = onSurfaceColor
@@ -337,7 +514,15 @@ fun GroupSeenByDialog(
 
                 if (msg.readByMembers.isEmpty()) {
                     Text(
-                        text = if (appLanguage == "Русский") "Ещё никто не прочитал" else "No one has read this message yet",
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Ещё никто не прочитал",
+                            en = "No one has read this message yet",
+                            de = "Noch niemand hat diese Nachricht gelesen",
+                            es = "Nadie ha leído este mensaje aún",
+                            fr = "Personne n'a encore lu ce message",
+                            pt = "Ninguém leu esta mensagem ainda"
+                        ),
                         fontSize = 14.sp,
                         color = onSurfaceColor.copy(alpha = 0.6f),
                         modifier = Modifier.padding(vertical = 16.dp)
@@ -396,7 +581,15 @@ fun GroupSeenByDialog(
                 ) {
                     TextButton(onClick = onDismiss) {
                         Text(
-                            text = if (appLanguage == "Русский") "Закрыть" else "Close",
+                            text = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Закрыть",
+                                en = "Close",
+                                de = "Schließen",
+                                es = "Cerrar",
+                                fr = "Fermer",
+                                pt = "Fechar"
+                            ),
                             color = primaryColor,
                             fontWeight = FontWeight.Bold
                         )
@@ -444,7 +637,15 @@ fun GroupDatePickerDialog(
                 colors = ButtonDefaults.textButtonColors(contentColor = primaryColor)
             ) {
                 Text(
-                    text = if (appLanguage == "Русский") "ОК" else "OK",
+                    text = com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "ОК",
+                        en = "OK",
+                        de = "OK",
+                        es = "OK",
+                        fr = "OK",
+                        pt = "OK"
+                    ),
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -455,7 +656,15 @@ fun GroupDatePickerDialog(
                 colors = ButtonDefaults.textButtonColors(contentColor = primaryColor)
             ) {
                 Text(
-                    text = if (appLanguage == "Русский") "ОТМЕНА" else "CANCEL",
+                    text = com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "ОТМЕНА",
+                        en = "CANCEL",
+                        de = "ABBRECHEN",
+                        es = "CANCELAR",
+                        fr = "ANNULER",
+                        pt = "CANCELAR"
+                    ),
                     fontWeight = FontWeight.Bold
                 )
             }
@@ -498,27 +707,77 @@ fun CreatePollDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (appLanguage == "Русский") "Создать опрос" else "Create Poll", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+        title = {
+            Text(
+                com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Создать опрос",
+                    en = "Create Poll",
+                    de = "Umfrage erstellen",
+                    es = "Crear encuesta",
+                    fr = "Créer un sondage",
+                    pt = "Criar enquete"
+                ),
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = question,
                     onValueChange = { question = it },
-                    placeholder = { Text(if (appLanguage == "Русский") "Задайте вопрос..." else "Ask a question...") },
+                    placeholder = {
+                        Text(
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Задайте вопрос...",
+                                en = "Ask a question...",
+                                de = "Stellen Sie eine Frage...",
+                                es = "Haz una pregunta...",
+                                fr = "Posez une question...",
+                                pt = "Faça uma pergunta..."
+                            )
+                        )
+                    },
                     keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
                         context = context,
                         capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text(if (appLanguage == "Русский") "Варианты ответов:" else "Options:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Варианты ответов:",
+                        en = "Options:",
+                        de = "Antwortoptionen:",
+                        es = "Opciones:",
+                        fr = "Options :",
+                        pt = "Opções:"
+                    ),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
                 options.forEachIndexed { index, opt ->
                     OutlinedTextField(
                         value = opt,
                         onValueChange = { newText ->
                             options = options.toMutableList().also { it[index] = newText }
                         },
-                        placeholder = { Text(if (appLanguage == "Русский") "Вариант ${index + 1}" else "Option ${index + 1}") },
+                        placeholder = {
+                            Text(
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Вариант ${index + 1}",
+                                    en = "Option ${index + 1}",
+                                    de = "Option ${index + 1}",
+                                    es = "Opción ${index + 1}",
+                                    fr = "Option ${index + 1}",
+                                    pt = "Opção ${index + 1}"
+                                )
+                            )
+                        },
                         keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
                             context = context,
                             capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
@@ -528,12 +787,33 @@ fun CreatePollDialog(
                 }
                 if (options.size < 6) {
                     TextButton(onClick = { options = options + "" }) {
-                        Text(if (appLanguage == "Русский") "+ Добавить вариант" else "+ Add option")
+                        Text(
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "+ Добавить вариант",
+                                en = "+ Add option",
+                                de = "+ Option hinzufügen",
+                                es = "+ Añadir opción",
+                                fr = "+ Ajouter une option",
+                                pt = "+ Adicionar opção"
+                            )
+                        )
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = isAnonymous, onCheckedChange = { isAnonymous = it })
-                    Text(if (appLanguage == "Русский") "Анонимный опрос" else "Anonymous poll", fontSize = 13.sp)
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Анонимный опрос",
+                            en = "Anonymous poll",
+                            de = "Anonyme Umfrage",
+                            es = "Encuesta anónima",
+                            fr = "Sondage anonyme",
+                            pt = "Enquete anônima"
+                        ),
+                        fontSize = 13.sp
+                    )
                 }
             }
         },
@@ -546,10 +826,34 @@ fun CreatePollDialog(
                         onDismiss()
                     }
                 }
-            ) { Text(if (appLanguage == "Русский") "Создать" else "Create") }
+            ) {
+                Text(
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Создать",
+                        en = "Create",
+                        de = "Erstellen",
+                        es = "Crear",
+                        fr = "Créer",
+                        pt = "Criar"
+                    )
+                )
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
+            TextButton(onClick = onDismiss) {
+                Text(
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Отмена",
+                        en = "Cancel",
+                        de = "Abbrechen",
+                        es = "Cancelar",
+                        fr = "Annuler",
+                        pt = "Cancelar"
+                    )
+                )
+            }
         }
     )
 }

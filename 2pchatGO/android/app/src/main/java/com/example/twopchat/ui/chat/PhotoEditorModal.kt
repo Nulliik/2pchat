@@ -365,7 +365,7 @@ fun PhotoEditorModal(
                                             appLanguage,
                                             ru = option.labelRu,
                                             en = option.labelEn,
-                                            de = option.labelEn,
+                                            de = if (option == AspectRatioOption.ORIGINAL) "Original" else "Frei",
                                             es = if (option == AspectRatioOption.ORIGINAL) "Original" else "Libre",
                                             fr = if (option == AspectRatioOption.ORIGINAL) "Original" else "Libre",
                                             pt = if (option == AspectRatioOption.ORIGINAL) "Original" else "Livre"

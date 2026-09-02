@@ -344,7 +344,20 @@ fun GroupInfoScreen(
                     ) {
                         if (state.management.canEditMetadata) {
                             DropdownMenuItem(
-                                text = { Text(if (appLanguage == "Русский") "Редактировать группу" else "Edit Group", color = onSurfaceColor) },
+                                text = {
+                                    Text(
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Редактировать группу",
+                                            en = "Edit Group",
+                                            de = "Gruppe bearbeiten",
+                                            es = "Editar grupo",
+                                            fr = "Modifier le groupe",
+                                            pt = "Editar grupo"
+                                        ),
+                                        color = onSurfaceColor
+                                    )
+                                },
                                 onClick = {
                                     showTopMenu = false
                                     showEditMetadata = true
@@ -360,7 +373,32 @@ fun GroupInfoScreen(
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text(if (isMuted) (if (appLanguage == "Русский") "Включить уведомления" else "Unmute Notifications") else (if (appLanguage == "Русский") "Выключить уведомления" else "Mute Notifications"), color = onSurfaceColor) },
+                            text = {
+                                Text(
+                                    if (isMuted) {
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Включить уведомления",
+                                            en = "Unmute Notifications",
+                                            de = "Benachrichtigungen aktivieren",
+                                            es = "Activar notificaciones",
+                                            fr = "Activer les notifications",
+                                            pt = "Ativar notificações"
+                                        )
+                                    } else {
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Выключить уведомления",
+                                            en = "Mute Notifications",
+                                            de = "Benachrichtigungen stummschalten",
+                                            es = "Silenciar notificaciones",
+                                            fr = "Couper les notifications",
+                                            pt = "Silenciar notificações"
+                                        )
+                                    },
+                                    color = onSurfaceColor
+                                )
+                            },
                             onClick = {
                                 showTopMenu = false
                                 val newMuted = !isMuted
@@ -377,7 +415,20 @@ fun GroupInfoScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(if (appLanguage == "Русский") "Очистить историю" else "Clear History", color = Color.Red) },
+                            text = {
+                                Text(
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Очистить историю",
+                                        en = "Clear History",
+                                        de = "Verlauf löschen",
+                                        es = "Borrar historial",
+                                        fr = "Effacer l'historique",
+                                        pt = "Limpar histórico"
+                                    ),
+                                    color = Color.Red
+                                )
+                            },
                             onClick = {
                                 showTopMenu = false
                                 showClearHistoryConfirmation = true
@@ -392,7 +443,32 @@ fun GroupInfoScreen(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(if (isSoloOwner) (if (appLanguage == "Русский") "Удалить группу" else "Delete Group") else (if (appLanguage == "Русский") "Покинуть группу" else "Leave Group"), color = Color.Red) },
+                            text = {
+                                Text(
+                                    if (isSoloOwner) {
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Удалить группу",
+                                            en = "Delete Group",
+                                            de = "Gruppe löschen",
+                                            es = "Eliminar grupo",
+                                            fr = "Supprimer le groupe",
+                                            pt = "Excluir grupo"
+                                        )
+                                    } else {
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Покинуть группу",
+                                            en = "Leave Group",
+                                            de = "Gruppe verlassen",
+                                            es = "Salir del grupo",
+                                            fr = "Quitter le groupe",
+                                            pt = "Sair do grupo"
+                                        )
+                                    },
+                                    color = Color.Red
+                                )
+                            },
                             onClick = {
                                 showTopMenu = false
                                 showLeaveConfirmation = true
@@ -438,13 +514,54 @@ fun GroupInfoScreen(
                     isMuted = isMuted,
                     appLanguage = appLanguage,
                     canInviteByLink = state.metadata.inviteToken.isNotBlank(),
-                    leaveLabel = if (isSoloOwner) (if (appLanguage == "Русский") "Удалить" else "Delete") else (if (appLanguage == "Русский") "Покинуть" else "Leave"),
+                    leaveLabel = if (isSoloOwner) {
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Удалить",
+                            en = "Delete",
+                            de = "Löschen",
+                            es = "Eliminar",
+                            fr = "Supprimer",
+                            pt = "Excluir"
+                        )
+                    } else {
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Покинуть",
+                            en = "Leave",
+                            de = "Verlassen",
+                            es = "Salir",
+                            fr = "Quitter",
+                            pt = "Sair"
+                        )
+                    },
                     onChatClick = controller::onBack,
                     onToggleMuteClick = {
                         val newMuted = !isMuted
                         P2PPreferences.prefs(context).edit().putBoolean("mute_group_${state.metadata.groupId}", newMuted).apply()
                         isMuted = newMuted
-                        android.widget.Toast.makeText(context, if (newMuted) (if (appLanguage == "Русский") "Уведомления группы отключены" else "Group notifications disabled") else (if (appLanguage == "Русский") "Уведомления группы включены" else "Group notifications enabled"), android.widget.Toast.LENGTH_SHORT).show()
+                        val toastMsg = if (newMuted) {
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Уведомления группы отключены",
+                                en = "Group notifications disabled",
+                                de = "Gruppenbenachrichtigungen deaktiviert",
+                                es = "Notificaciones de grupo desactivadas",
+                                fr = "Notifications de groupe désactivées",
+                                pt = "Notificações do grupo desativadas"
+                            )
+                        } else {
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Уведомления группы включены",
+                                en = "Group notifications enabled",
+                                de = "Gruppenbenachrichtigungen aktiviert",
+                                es = "Notificaciones de grupo activadas",
+                                fr = "Notifications de groupe activées",
+                                pt = "Notificações do grupo ativadas"
+                            )
+                        }
+                        android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_SHORT).show()
                     },
                     onQrClick = { showQrModal = true },
                     onLeaveClick = { showLeaveConfirmation = true }
@@ -472,14 +589,30 @@ fun GroupInfoScreen(
                         ) {
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    if (appLanguage == "Русский") "Только администраторы могут писать" else "Only admins can send messages",
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Только администраторы могут писать",
+                                        en = "Only admins can send messages",
+                                        de = "Nur Administratoren können schreiben",
+                                        es = "Solo los administradores pueden escribir",
+                                        fr = "Seuls les administrateurs peuvent écrire",
+                                        pt = "Apenas administradores podem enviar mensagens"
+                                    ),
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = onSurfaceColor,
                                 )
                                 Spacer(Modifier.height(2.dp))
                                 Text(
-                                    if (appLanguage == "Русский") "Участники и модераторы смогут читать, голосовать и оставлять реакции." else "Members and moderators can read, vote, and react.",
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Участники и модераторы смогут читать, голосовать и оставлять реакции.",
+                                        en = "Members and moderators can read, vote, and react.",
+                                        de = "Mitglieder und Moderatoren können lesen, abstimmen und reagieren.",
+                                        es = "Los miembros y moderadores podrán leer, votar y reaccionar.",
+                                        fr = "Les membres et modérateurs peuvent lire, voter et réagir.",
+                                        pt = "Membros e moderadores podem ler, votar e reagir."
+                                    ),
                                     fontSize = 12.sp,
                                     color = onSurfaceVariant,
                                 )
@@ -521,7 +654,15 @@ fun GroupInfoScreen(
                             )
                             Spacer(Modifier.width(14.dp))
                             Text(
-                                if (appLanguage == "Русский") "Добавить участников" else "Add Members",
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Добавить участников",
+                                    en = "Add Members",
+                                    de = "Mitglieder hinzufügen",
+                                    es = "Añadir miembros",
+                                    fr = "Ajouter des membres",
+                                    pt = "Adicionar membros"
+                                ),
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = onSurfaceColor
@@ -550,13 +691,29 @@ fun GroupInfoScreen(
                         ) {
                             Icon(
                                 painter = painterResource(R.drawable.ic_chat_wallpaper),
-                                contentDescription = if (appLanguage == "Русский") "Обои чата" else "Chat Wallpaper",
+                                contentDescription = com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Обои чата",
+                                    en = "Chat Wallpaper",
+                                    de = "Chat-Hintergrundbild",
+                                    es = "Fondo del chat",
+                                    fr = "Fond d'écran du chat",
+                                    pt = "Papel de parede do chat"
+                                ),
                                 tint = onSurfaceColor,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(Modifier.width(14.dp))
                             Text(
-                                if (appLanguage == "Русский") "Обои чата" else "Chat Wallpaper",
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Обои чата",
+                                    en = "Chat Wallpaper",
+                                    de = "Chat-Hintergrundbild",
+                                    es = "Fondo del chat",
+                                    fr = "Fond d'écran du chat",
+                                    pt = "Papel de parede do chat"
+                                ),
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = onSurfaceColor
@@ -583,13 +740,29 @@ fun GroupInfoScreen(
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.ic_broom),
-                            contentDescription = if (appLanguage == "Русский") "Очистить историю" else "Clear History",
+                            contentDescription = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Очистить историю",
+                                en = "Clear History",
+                                de = "Verlauf löschen",
+                                es = "Borrar historial",
+                                fr = "Effacer l'historique",
+                                pt = "Limpar histórico"
+                            ),
                             tint = Color(0xFFE53935),
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(Modifier.width(14.dp))
                         Text(
-                            if (appLanguage == "Русский") "Очистить историю" else "Clear History",
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Очистить историю",
+                                en = "Clear History",
+                                de = "Verlauf löschen",
+                                es = "Borrar historial",
+                                fr = "Effacer l'historique",
+                                pt = "Limpar histórico"
+                            ),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color(0xFFE53935)
@@ -634,7 +807,15 @@ fun GroupInfoScreen(
                     if (mediaItems.isEmpty()) {
                         item(key = "empty_media") {
                             EmptyStateView(
-                                text = if (appLanguage == "Русский") "Медиафайлы отсутствуют" else "No media files",
+                                text = com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Медиафайлы отсутствуют",
+                                    en = "No media files",
+                                    de = "Keine Mediendateien",
+                                    es = "No hay archivos multimedia",
+                                    fr = "Aucun fichier multimédia",
+                                    pt = "Nenhum arquivo de mídia"
+                                ),
                                 onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -690,7 +871,15 @@ fun GroupInfoScreen(
                     if (fileItems.isEmpty()) {
                         item(key = "empty_files") {
                             EmptyStateView(
-                                text = if (appLanguage == "Русский") "Файлы отсутствуют" else "No files",
+                                text = com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Файлы отсутствуют",
+                                    en = "No files",
+                                    de = "Keine Dateien",
+                                    es = "No hay archivos",
+                                    fr = "Aucun fichier",
+                                    pt = "Nenhum arquivo"
+                                ),
                                 onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -703,7 +892,15 @@ fun GroupInfoScreen(
                 else -> { // Избранное
                     item(key = "tab_empty_state") {
                         EmptyStateView(
-                            text = if (appLanguage == "Русский") "Избранные сообщения отсутствуют" else "No favorite messages",
+                            text = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Избранные сообщения отсутствуют",
+                                en = "No favorite messages",
+                                de = "Keine Favoriten-Nachrichten",
+                                es = "No hay mensajes favoritos",
+                                fr = "Aucun message favori",
+                                pt = "Nenhuma mensagem favorita"
+                            ),
                             onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -817,7 +1014,19 @@ fun GroupInfoScreen(
                             apply()
                         }
                         controller.updateGroupWallpaper(state.metadata.groupId, targetFile.absolutePath, dimming, isBlur)
-                        android.widget.Toast.makeText(context, if (appLanguage == "Русский") "Обои установлены для всех участников" else "Wallpaper updated for all members", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(
+                            context,
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Обои установлены для всех участников",
+                                en = "Wallpaper updated for all members",
+                                de = "Hintergrundbild für alle Mitglieder aktualisiert",
+                                es = "Fondo de pantalla actualizado para todos los miembros",
+                                fr = "Fond d'écran mis à jour pour tous les membres",
+                                pt = "Papel de parede atualizado para todos os membros"
+                            ),
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -829,7 +1038,19 @@ fun GroupInfoScreen(
                         apply()
                     }
                     controller.updateGroupWallpaper(state.metadata.groupId, null, 45, false)
-                    android.widget.Toast.makeText(context, if (appLanguage == "Русский") "Обои сброшены для всех участников" else "Wallpaper removed for all members", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(
+                        context,
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Обои сброшены для всех участников",
+                            en = "Wallpaper removed for all members",
+                            de = "Hintergrundbild für alle Mitglieder entfernt",
+                            es = "Fondo de pantalla eliminado para todos los miembros",
+                            fr = "Fond d'écran supprimé pour tous les membres",
+                            pt = "Papel de parede removido para todos os membros"
+                        ),
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         )
@@ -848,10 +1069,35 @@ fun GroupInfoScreen(
 
     removeConfirmation?.let { member ->
         ConfirmationDialog(
-            title = if (appLanguage == "Русский") "Удалить ${member.displayName}?" else "Remove ${member.displayName}?",
-            body = if (appLanguage == "Русский") "Участник потеряет доступ к будущим эпохам шифрования группы." else "Member will lose access to future group encryption epochs.",
-            confirmLabel = if (appLanguage == "Русский") "Удалить" else "Remove",
+            title = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Удалить ${member.displayName}?",
+                en = "Remove ${member.displayName}?",
+                de = "${member.displayName} entfernen?",
+                es = "¿Eliminar a ${member.displayName}?",
+                fr = "Retirer ${member.displayName} ?",
+                pt = "Remover ${member.displayName}?"
+            ),
+            body = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Участник потеряет доступ к будущим эпохам шифрования группы.",
+                en = "Member will lose access to future group encryption epochs.",
+                de = "Das Mitglied verliert den Zugriff auf zukünftige Verschlüsselungsepochen der Gruppe.",
+                es = "El miembro perderá el acceso a las futuras épocas de cifrado del grupo.",
+                fr = "Le membre perdra l'accès aux futures époques de chiffrement du groupe.",
+                pt = "O membro perderá o acesso às futuras épocas de criptografia do grupo."
+            ),
+            confirmLabel = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Удалить",
+                en = "Remove",
+                de = "Entfernen",
+                es = "Eliminar",
+                fr = "Retirer",
+                pt = "Remover"
+            ),
             confirmTag = "confirm_remove_member",
+            appLanguage = appLanguage,
             onDismiss = { removeConfirmation = null },
             onConfirm = {
                 controller.removeMember(state.metadata.groupId, member.memberId)
@@ -862,10 +1108,35 @@ fun GroupInfoScreen(
 
     banConfirmation?.let { member ->
         ConfirmationDialog(
-            title = if (appLanguage == "Русский") "Заблокировать ${member.displayName}?" else "Ban ${member.displayName}?",
-            body = if (appLanguage == "Русский") "Участник будет исключен из состава группы и заблокирован." else "Member will be excluded from the group and banned.",
-            confirmLabel = if (appLanguage == "Русский") "Заблокировать" else "Ban",
+            title = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Заблокировать ${member.displayName}?",
+                en = "Ban ${member.displayName}?",
+                de = "${member.displayName} sperren?",
+                es = "¿Bloquear a ${member.displayName}?",
+                fr = "Bannir ${member.displayName} ?",
+                pt = "Banir ${member.displayName}?"
+            ),
+            body = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Участник будет исключен из состава группы и заблокирован.",
+                en = "Member will be excluded from the group and banned.",
+                de = "Das Mitglied wird aus der Gruppe ausgeschlossen und gesperrt.",
+                es = "El miembro será expulsado del grupo y bloqueado.",
+                fr = "Le membre sera exclu du groupe et banni.",
+                pt = "O membro será excluído do grupo e banido."
+            ),
+            confirmLabel = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Заблокировать",
+                en = "Ban",
+                de = "Sperren",
+                es = "Bloquear",
+                fr = "Bannir",
+                pt = "Banir"
+            ),
             confirmTag = "confirm_ban_member",
+            appLanguage = appLanguage,
             onDismiss = { banConfirmation = null },
             onConfirm = {
                 controller.banMember(state.metadata.groupId, member.memberId)
@@ -876,10 +1147,35 @@ fun GroupInfoScreen(
 
     transferConfirmation?.let { member ->
         ConfirmationDialog(
-            title = if (appLanguage == "Русский") "Передать права владельца?" else "Transfer Ownership?",
-            body = if (appLanguage == "Русский") "${member.displayName} станет главным владельцем группы." else "${member.displayName} will become the primary group owner.",
-            confirmLabel = if (appLanguage == "Русский") "Передать" else "Transfer",
+            title = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Передать права владельца?",
+                en = "Transfer Ownership?",
+                de = "Eigentumsrechte übertragen?",
+                es = "¿Transferir propiedad?",
+                fr = "Transférer la propriété ?",
+                pt = "Transferir posse?"
+            ),
+            body = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "${member.displayName} станет главным владельцем группы.",
+                en = "${member.displayName} will become the primary group owner.",
+                de = "${member.displayName} wird Hauptbesitzer der Gruppe.",
+                es = "${member.displayName} se convertirá en el propietario principal del grupo.",
+                fr = "${member.displayName} deviendra le propriétaire principal du groupe.",
+                pt = "${member.displayName} se tornará o proprietário principal do grupo."
+            ),
+            confirmLabel = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Передать",
+                en = "Transfer",
+                de = "Übertragen",
+                es = "Transferir",
+                fr = "Transférer",
+                pt = "Transferir"
+            ),
             confirmTag = "confirm_transfer_ownership",
+            appLanguage = appLanguage,
             onDismiss = { transferConfirmation = null },
             onConfirm = {
                 controller.transferOwnership(state.metadata.groupId, member.memberId)
@@ -891,23 +1187,96 @@ fun GroupInfoScreen(
     if (showLeaveConfirmation) {
         ConfirmationDialog(
             title = when {
-                isSoloOwner -> if (appLanguage == "Русский") "Удалить группу?" else "Delete group?"
-                ownerMustTransfer -> if (appLanguage == "Русский") "Сначала передайте права" else "Transfer ownership first"
-                else -> if (appLanguage == "Русский") "Выйти из группы?" else "Leave group?"
+                isSoloOwner -> com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Удалить группу?",
+                    en = "Delete group?",
+                    de = "Gruppe löschen?",
+                    es = "¿Eliminar grupo?",
+                    fr = "Supprimer le groupe ?",
+                    pt = "Excluir grupo?"
+                )
+                ownerMustTransfer -> com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Сначала передайте права",
+                    en = "Transfer ownership first",
+                    de = "Zuerst Rechte übertragen",
+                    es = "Transfiera la propiedad primero",
+                    fr = "Transférez d'abord la propriété",
+                    pt = "Transfira a posse primeiro"
+                )
+                else -> com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Выйти из группы?",
+                    en = "Leave group?",
+                    de = "Gruppe verlassen?",
+                    es = "¿Salir del grupo?",
+                    fr = "Quitter le groupe ?",
+                    pt = "Sair do grupo?"
+                )
             },
             body = if (isSoloOwner) {
-                if (appLanguage == "Русский") "Группа и история сообщений будут удалены с этого устройства." else "Group and message history will be deleted from this device."
+                com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Группа и история сообщений будут удалены с этого устройства.",
+                    en = "Group and message history will be deleted from this device.",
+                    de = "Die Gruppe und der Nachrichtenverlauf werden von diesem Gerät gelöscht.",
+                    es = "El grupo y el historial de mensajes se eliminarán de este dispositivo.",
+                    fr = "Le groupe et l'historique des messages seront supprimés de cet appareil.",
+                    pt = "O grupo e o histórico de mensagens serão apagados deste dispositivo."
+                )
             } else if (ownerMustTransfer) {
-                if (appLanguage == "Русский") "Владелец не может покинуть группу, пока в ней остаются другие участники." else "Owner cannot leave group while other members remain."
+                com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Владелец не может покинуть группу, пока в ней остаются другие участники.",
+                    en = "Owner cannot leave group while other members remain.",
+                    de = "Der Besitzer kann die Gruppe nicht verlassen, solange andere Mitglieder vorhanden sind.",
+                    es = "El propietario no puede salir del grupo mientras queden otros miembros.",
+                    fr = "Le propriétaire ne peut pas quitter le groupe tant qu'il reste d'autres membres.",
+                    pt = "O proprietário não pode sair do grupo enquanto outros membros permanecerem."
+                )
             } else {
-                if (appLanguage == "Русский") "Группа будет скрыта сразу, а локальные данные удалятся после подтверждения выхода владельцем." else "Group will be hidden immediately and local data removed."
+                com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Группа будет скрыта сразу, а локальные данные удалятся после подтверждения выхода владельцем.",
+                    en = "Group will be hidden immediately and local data removed.",
+                    de = "Die Gruppe wird sofort ausgeblendet und lokale Daten nach Bestätigung gelöscht.",
+                    es = "El grupo se ocultará inmediatamente y los datos locales se eliminarán.",
+                    fr = "Le groupe sera immédiatement masqué et les données locales supprimées.",
+                    pt = "O grupo será ocultado imediatamente e os dados locais removidos."
+                )
             },
             confirmLabel = when {
-                isSoloOwner -> if (appLanguage == "Русский") "Удалить" else "Delete"
-                ownerMustTransfer -> if (appLanguage == "Русский") "Понятно" else "Got it"
-                else -> if (appLanguage == "Русский") "Выйти" else "Leave"
+                isSoloOwner -> com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Удалить",
+                    en = "Delete",
+                    de = "Löschen",
+                    es = "Eliminar",
+                    fr = "Supprimer",
+                    pt = "Excluir"
+                )
+                ownerMustTransfer -> com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Понятно",
+                    en = "Got it",
+                    de = "Verstanden",
+                    es = "Entendido",
+                    fr = "Compris",
+                    pt = "Entendido"
+                )
+                else -> com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Выйти",
+                    en = "Leave",
+                    de = "Verlassen",
+                    es = "Salir",
+                    fr = "Quitter",
+                    pt = "Sair"
+                )
             },
             confirmTag = "confirm_leave_group",
+            appLanguage = appLanguage,
             onDismiss = { showLeaveConfirmation = false },
             onConfirm = {
                 if (!ownerMustTransfer) controller.leaveGroup(state.metadata.groupId)
@@ -921,13 +1290,38 @@ fun GroupInfoScreen(
         var description by remember(state.metadata.groupId) { mutableStateOf(state.metadata.description) }
         AlertDialog(
             onDismissRequest = { showEditMetadata = false },
-            title = { Text(if (appLanguage == "Русский") "Редактировать группу" else "Edit Group", fontWeight = FontWeight.Bold) },
+            title = {
+                Text(
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Редактировать группу",
+                        en = "Edit Group",
+                        de = "Gruppe bearbeiten",
+                        es = "Editar grupo",
+                        fr = "Modifier le groupe",
+                        pt = "Editar grupo"
+                    ),
+                    fontWeight = FontWeight.Bold
+                )
+            },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = title,
                         onValueChange = { title = it.take(160) },
-                        label = { Text(if (appLanguage == "Русский") "Название" else "Title") },
+                        label = {
+                            Text(
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Название",
+                                    en = "Title",
+                                    de = "Titel",
+                                    es = "Título",
+                                    fr = "Titre",
+                                    pt = "Título"
+                                )
+                            )
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("edit_group_title"),
@@ -941,7 +1335,19 @@ fun GroupInfoScreen(
                     OutlinedTextField(
                         value = description,
                         onValueChange = { description = it.take(2_000) },
-                        label = { Text(if (appLanguage == "Русский") "Описание (опционально)" else "Description (optional)") },
+                        label = {
+                            Text(
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Описание (опционально)",
+                                    en = "Description (optional)",
+                                    de = "Beschreibung (optional)",
+                                    es = "Descripción (opcional)",
+                                    fr = "Description (facultative)",
+                                    pt = "Descrição (opcional)"
+                                )
+                            )
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
                             context = context,
@@ -962,10 +1368,35 @@ fun GroupInfoScreen(
                         )
                         showEditMetadata = false
                     }
-                ) { Text(if (appLanguage == "Русский") "Сохранить" else "Save", fontWeight = FontWeight.Bold) }
+                ) {
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Сохранить",
+                            en = "Save",
+                            de = "Speichern",
+                            es = "Guardar",
+                            fr = "Enregistrer",
+                            pt = "Salvar"
+                        ),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showEditMetadata = false }) { Text(if (appLanguage == "Русский") "Отмена" else "Cancel") }
+                TextButton(onClick = { showEditMetadata = false }) {
+                    Text(
+                        com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Отмена",
+                            en = "Cancel",
+                            de = "Abbrechen",
+                            es = "Cancelar",
+                            fr = "Annuler",
+                            pt = "Cancelar"
+                        )
+                    )
+                }
             },
             containerColor = surfaceColor,
             shape = RoundedCornerShape(20.dp)
@@ -1244,7 +1675,15 @@ private fun GroupHeroHeader(
 
         Spacer(Modifier.height(4.dp))
         Text(
-            text = if (appLanguage == "Русский") "${metadata.memberCount} участников" else if (metadata.memberCount == 1) "1 member" else "${metadata.memberCount} members",
+            text = com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "${metadata.memberCount} участников",
+                en = if (metadata.memberCount == 1) "1 member" else "${metadata.memberCount} members",
+                de = if (metadata.memberCount == 1) "1 Mitglied" else "${metadata.memberCount} Mitglieder",
+                es = if (metadata.memberCount == 1) "1 miembro" else "${metadata.memberCount} miembros",
+                fr = if (metadata.memberCount == 1) "1 membre" else "${metadata.memberCount} membres",
+                pt = if (metadata.memberCount == 1) "1 membro" else "${metadata.memberCount} membros"
+            ),
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1270,10 +1709,58 @@ private fun GroupQuickActionsRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         val actions = buildList {
-            add(Triple(if (appLanguage == "Русский") "Чат" else "Chat", R.drawable.ic_menu_chats, onChatClick))
-            add(Triple(if (isMuted) (if (appLanguage == "Русский") "Вкл. звук" else "Unmute") else (if (appLanguage == "Русский") "Звук" else "Mute"), R.drawable.ic_notifications, onToggleMuteClick))
+            add(Triple(
+                com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Чат",
+                    en = "Chat",
+                    de = "Chat",
+                    es = "Chat",
+                    fr = "Discussion",
+                    pt = "Chat"
+                ),
+                R.drawable.ic_menu_chats,
+                onChatClick
+            ))
+            add(Triple(
+                if (isMuted) {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Вкл. звук",
+                        en = "Unmute",
+                        de = "Stummschaltung aufheben",
+                        es = "Reactivar sonido",
+                        fr = "Réactiver",
+                        pt = "Desativar mudo"
+                    )
+                } else {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Звук",
+                        en = "Mute",
+                        de = "Stumm",
+                        es = "Silenciar",
+                        fr = "Muet",
+                        pt = "Silenciar"
+                    )
+                },
+                R.drawable.ic_notifications,
+                onToggleMuteClick
+            ))
             if (canInviteByLink) {
-                add(Triple(if (appLanguage == "Русский") "QR код" else "QR code", R.drawable.ic_qr_code, onQrClick))
+                add(Triple(
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "QR код",
+                        en = "QR code",
+                        de = "QR-Code",
+                        es = "Código QR",
+                        fr = "Code QR",
+                        pt = "Código QR"
+                    ),
+                    R.drawable.ic_qr_code,
+                    onQrClick
+                ))
             }
             add(Triple(leaveLabel, if (leaveLabel == "Удалить" || leaveLabel == "Delete") R.drawable.ic_delete else R.drawable.ic_leave, onLeaveClick))
         }
@@ -1503,7 +1990,14 @@ private fun GroupTabNavigation(
     appLanguage: String = "Русский"
 ) {
     val haptic = LocalHapticFeedback.current
-    val tabs = if (appLanguage == "Русский") listOf("Участники", "Медиа", "Избранное", "Файлы") else listOf("Members", "Media", "Favorites", "Files")
+    val tabs = when (appLanguage) {
+        "Deutsch" -> listOf("Mitglieder", "Medien", "Favoriten", "Dateien")
+        "Español" -> listOf("Miembros", "Multimedia", "Favoritos", "Archivos")
+        "Français" -> listOf("Membres", "Médias", "Favoris", "Fichiers")
+        "Português" -> listOf("Membros", "Mídia", "Favoritos", "Arquivos")
+        "Русский" -> listOf("Участники", "Медиа", "Избранное", "Файлы")
+        else -> listOf("Members", "Media", "Favorites", "Files")
+    }
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(20.dp),
@@ -1638,7 +2132,19 @@ private fun GroupMemberCard(
                     Text(
                         text = buildString {
                             append(cleanDisplayName)
-                            if (member.isCurrentUser) append(if (appLanguage == "Русский") " (Вы)" else " (You)")
+                            if (member.isCurrentUser) {
+                                append(
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = " (Вы)",
+                                        en = " (You)",
+                                        de = " (Du)",
+                                        es = " (Tú)",
+                                        fr = " (Vous)",
+                                        pt = " (Você)"
+                                    )
+                                )
+                            }
                         },
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
@@ -1668,10 +2174,10 @@ private fun GroupMemberCard(
                 shape = RoundedCornerShape(8.dp)
             ) {
                 val roleStr = when (member.role) {
-                    GroupRole.OWNER -> if (appLanguage == "Русский") "Создатель" else "Owner"
-                    GroupRole.ADMIN -> if (appLanguage == "Русский") "Администратор" else "Admin"
-                    GroupRole.MODERATOR -> if (appLanguage == "Русский") "Модератор" else "Moderator"
-                    GroupRole.MEMBER -> if (appLanguage == "Русский") "Участник" else "Member"
+                    GroupRole.OWNER -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Создатель", en = "Owner", de = "Besitzer", es = "Propietario", fr = "Créateur", pt = "Criador")
+                    GroupRole.ADMIN -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Администратор", en = "Admin", de = "Administrator", es = "Administrador", fr = "Administrateur", pt = "Administrador")
+                    GroupRole.MODERATOR -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Модератор", en = "Moderator", de = "Moderator", es = "Moderador", fr = "Modérateur", pt = "Moderador")
+                    GroupRole.MEMBER -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Участник", en = "Member", de = "Mitglied", es = "Miembro", fr = "Membre", pt = "Membro")
                 }
                 Text(
                     text = when (member.role) {
@@ -1975,6 +2481,7 @@ private fun ConfirmationDialog(
     body: String,
     confirmLabel: String,
     confirmTag: String,
+    appLanguage: String = "Русский",
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
@@ -1989,7 +2496,19 @@ private fun ConfirmationDialog(
             ) { Text(confirmLabel, fontWeight = FontWeight.Bold, color = Color.Red) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) {
+                Text(
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Отмена",
+                        en = "Cancel",
+                        de = "Abbrechen",
+                        es = "Cancelar",
+                        fr = "Annuler",
+                        pt = "Cancelar"
+                    )
+                )
+            }
         },
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(20.dp)
@@ -1997,13 +2516,51 @@ private fun ConfirmationDialog(
 }
 
 private fun formatMemberStatus(status: String, appLanguage: String): String {
-    if (appLanguage == "Русский") return status.ifBlank { "офлайн ?" }
     return when {
-        status.contains("В сети (Это устройство)") -> "Online (This device)"
-        status.contains("В сети") -> "Online"
-        status.contains("Приглашение отправлено") -> "Invite sent"
-        status.contains("Не в сети") || status.contains("офлайн") -> "Offline"
-        status.isBlank() -> "Offline"
+        status.contains("В сети (Это устройство)") || status.contains("Online (This device)") -> {
+            com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "В сети (Это устройство)",
+                en = "Online (This device)",
+                de = "Online (Dieses Gerät)",
+                es = "En línea (Este dispositivo)",
+                fr = "En ligne (Cet appareil)",
+                pt = "Online (Este dispositivo)"
+            )
+        }
+        status.contains("В сети") || status.contains("Online") -> {
+            com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "В сети",
+                en = "Online",
+                de = "Online",
+                es = "En línea",
+                fr = "En ligne",
+                pt = "Online"
+            )
+        }
+        status.contains("Приглашение отправлено") || status.contains("Invite sent") -> {
+            com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Приглашение отправлено",
+                en = "Invite sent",
+                de = "Einladung gesendet",
+                es = "Invitación enviada",
+                fr = "Invitation envoyée",
+                pt = "Convite enviado"
+            )
+        }
+        status.contains("Не в сети") || status.contains("офлайн") || status.contains("Offline") || status.isBlank() -> {
+            com.example.twopchat.data.Localizations.tr(
+                appLanguage,
+                ru = "Не в сети",
+                en = "Offline",
+                de = "Offline",
+                es = "Desconectado",
+                fr = "Hors ligne",
+                pt = "Offline"
+            )
+        }
         else -> status
     }
 }
@@ -2028,7 +2585,15 @@ private fun GroupInfoDetailsCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = if (appLanguage == "Русский") "Информация" else "Information",
+                text = com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Информация",
+                    en = "Information",
+                    de = "Informationen",
+                    es = "Información",
+                    fr = "Informations",
+                    pt = "Informações"
+                ),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 color = primaryColor
@@ -2038,7 +2603,15 @@ private fun GroupInfoDetailsCard(
 
             // Group P2P Address
             Text(
-                text = if (appLanguage == "Русский") "Личный адрес группы" else "Group Personal Address",
+                text = com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "Личный адрес группы",
+                    en = "Group Personal Address",
+                    de = "Persönliche Gruppenadresse",
+                    es = "Dirección personal del grupo",
+                    fr = "Adresse personnelle du groupe",
+                    pt = "Endereço pessoal do grupo"
+                ),
                 fontSize = 12.sp,
                 color = onSurfaceVariant
             )
@@ -2059,7 +2632,19 @@ private fun GroupInfoDetailsCard(
                 IconButton(
                     onClick = {
                         com.example.twopchat.copyTextToClipboard(context, "Group ID", "group#${metadata.groupId}")
-                        android.widget.Toast.makeText(context, if (appLanguage == "Русский") "Адрес группы скопирован" else "Group address copied", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(
+                            context,
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Адрес группы скопирован",
+                                en = "Group address copied",
+                                de = "Gruppenadresse kopiert",
+                                es = "Dirección del grupo copiada",
+                                fr = "Adresse du groupe copiée",
+                                pt = "Endereço do grupo copiado"
+                            ),
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
                     },
                     modifier = Modifier.size(28.dp)
                 ) {
@@ -2079,13 +2664,31 @@ private fun GroupInfoDetailsCard(
 
             // Group Description
             Text(
-                text = if (appLanguage == "Русский") "О себе / Описание" else "About / Description",
+                text = com.example.twopchat.data.Localizations.tr(
+                    appLanguage,
+                    ru = "О себе / Описание",
+                    en = "About / Description",
+                    de = "Über / Beschreibung",
+                    es = "Acerca de / Descripción",
+                    fr = "À propos / Description",
+                    pt = "Sobre / Descrição"
+                ),
                 fontSize = 12.sp,
                 color = onSurfaceVariant
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                text = metadata.description.ifBlank { if (appLanguage == "Русский") "P2P децентрализованный групповой чат" else "P2P decentralized group chat" },
+                text = metadata.description.ifBlank {
+                    com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "P2P децентрализованный групповой чат",
+                        en = "P2P decentralized group chat",
+                        de = "P2P dezentralisierter Gruppenchat",
+                        es = "Chat grupal descentralizado P2P",
+                        fr = "Chat de groupe décentralisé P2P",
+                        pt = "Chat em grupo descentralizado P2P"
+                    )
+                },
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Normal,
                 color = onSurfaceColor
@@ -2115,12 +2718,28 @@ private fun GroupInfoDetailsCard(
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
-                        text = if (appLanguage == "Русский") "Статус верификации" else "Verification Status",
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Статус верификации",
+                            en = "Verification Status",
+                            de = "Verifizierungsstatus",
+                            es = "Estado de verificación",
+                            fr = "Statut de vérification",
+                            pt = "Status de verificação"
+                        ),
                         fontSize = 12.sp,
                         color = onSurfaceVariant
                     )
                     Text(
-                        text = if (appLanguage == "Русский") "Группа верифицирована (Double Ratchet)" else "Group verified (Double Ratchet)",
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Группа верифицирована (Double Ratchet)",
+                            en = "Group verified (Double Ratchet)",
+                            de = "Gruppe verifiziert (Double Ratchet)",
+                            es = "Grupo verificado (Double Ratchet)",
+                            fr = "Groupe vérifié (Double Ratchet)",
+                            pt = "Grupo verificado (Double Ratchet)"
+                        ),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         color = onSurfaceColor
@@ -2476,7 +3095,19 @@ private fun MemberProfileModal(
                     Text(
                         text = buildString {
                             append(cleanDisplayName)
-                            if (member.isCurrentUser) append(if (appLanguage == "Русский") " (Вы)" else " (You)")
+                            if (member.isCurrentUser) {
+                                append(
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = " (Вы)",
+                                        en = " (You)",
+                                        de = " (Du)",
+                                        es = " (Tú)",
+                                        fr = " (Vous)",
+                                        pt = " (Você)"
+                                    )
+                                )
+                            }
                         },
                         fontWeight = FontWeight.Bold,
                         fontSize = 20.sp,
@@ -2492,10 +3123,10 @@ private fun MemberProfileModal(
                         border = BorderStroke(1.dp, roleColor.copy(alpha = 0.35f))
                     ) {
                         val roleStr = when (member.role) {
-                            GroupRole.OWNER -> if (appLanguage == "Русский") "Создатель" else "Owner"
-                            GroupRole.ADMIN -> if (appLanguage == "Русский") "Администратор" else "Admin"
-                            GroupRole.MODERATOR -> if (appLanguage == "Русский") "Модератор" else "Moderator"
-                            GroupRole.MEMBER -> if (appLanguage == "Русский") "Участник" else "Member"
+                            GroupRole.OWNER -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Создатель", en = "Owner", de = "Besitzer", es = "Propietario", fr = "Créateur", pt = "Criador")
+                            GroupRole.ADMIN -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Администратор", en = "Admin", de = "Administrator", es = "Administrador", fr = "Administrateur", pt = "Administrador")
+                            GroupRole.MODERATOR -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Модератор", en = "Moderator", de = "Moderator", es = "Moderador", fr = "Modérateur", pt = "Moderador")
+                            GroupRole.MEMBER -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Участник", en = "Member", de = "Mitglied", es = "Miembro", fr = "Membre", pt = "Membro")
                         }
                         Text(
                             text = roleStr,
@@ -2557,7 +3188,15 @@ private fun MemberProfileModal(
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    if (appLanguage == "Русский") "Написать личное сообщение" else "Send Direct Message",
+                                    com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Написать личное сообщение",
+                                        en = "Send Direct Message",
+                                        de = "Direktnachricht senden",
+                                        es = "Enviar mensaje directo",
+                                        fr = "Envoyer un message direct",
+                                        pt = "Enviar mensagem direta"
+                                    ),
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp
@@ -2577,7 +3216,15 @@ private fun MemberProfileModal(
                         Spacer(Modifier.height(12.dp))
 
                         Text(
-                            text = if (appLanguage == "Русский") "Управление участником" else "Member Management",
+                            text = com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Управление участником",
+                                en = "Member Management",
+                                de = "Mitgliederverwaltung",
+                                es = "Gestión de miembros",
+                                fr = "Gestion des membres",
+                                pt = "Gerenciamento de membros"
+                            ),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = primaryColor,
@@ -2593,21 +3240,45 @@ private fun MemberProfileModal(
                             if (management.canManageRoles && member.canChangeRole && !member.isCurrentUser && member.role != GroupRole.OWNER) {
                                 if (member.role != GroupRole.ADMIN) {
                                     ModalActionButton(
-                                        title = if (appLanguage == "Русский") "Назначить администратором" else "Make Administrator",
+                                        title = com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Назначить администратором",
+                                            en = "Make Administrator",
+                                            de = "Zum Administrator ernennen",
+                                            es = "Nombrar administrador",
+                                            fr = "Nommer administrateur",
+                                            pt = "Tornar administrador"
+                                        ),
                                         titleColor = onSurfaceColor,
                                         onClick = { onSetMemberRole(GroupRole.ADMIN) }
                                     )
                                 }
                                 if (member.role != GroupRole.MODERATOR) {
                                     ModalActionButton(
-                                        title = if (appLanguage == "Русский") "Назначить модератором" else "Make Moderator",
+                                        title = com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Назначить модератором",
+                                            en = "Make Moderator",
+                                            de = "Zum Moderator ernennen",
+                                            es = "Nombrar moderador",
+                                            fr = "Nommer modérateur",
+                                            pt = "Tornar moderador"
+                                        ),
                                         titleColor = onSurfaceColor,
                                         onClick = { onSetMemberRole(GroupRole.MODERATOR) }
                                     )
                                 }
                                 if (member.role != GroupRole.MEMBER) {
                                     ModalActionButton(
-                                        title = "Снять роль",
+                                        title = com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Снять роль",
+                                            en = "Demote to Member",
+                                            de = "Rolle entziehen",
+                                            es = "Quitar rol",
+                                            fr = "Rétrograder membre",
+                                            pt = "Remover cargo"
+                                        ),
                                         titleColor = onSurfaceColor.copy(alpha = 0.85f),
                                         onClick = { onSetMemberRole(GroupRole.MEMBER) }
                                     )
@@ -2616,7 +3287,15 @@ private fun MemberProfileModal(
 
                             if (management.canRestrictMembers && member.canRestrict && !member.isCurrentUser) {
                                 ModalActionButton(
-                                    title = "Ограничить права",
+                                    title = com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Ограничить права",
+                                        en = "Restrict Permissions",
+                                        de = "Rechte einschränken",
+                                        es = "Restringir permisos",
+                                        fr = "Restreindre les droits",
+                                        pt = "Restringir permissões"
+                                    ),
                                     titleColor = Color.White,
                                     onClick = onRestrict
                                 )
@@ -2624,7 +3303,15 @@ private fun MemberProfileModal(
 
                             if (management.canRemoveMembers && member.canRemove && !member.isCurrentUser) {
                                 ModalActionButton(
-                                    title = "Исключить из группы",
+                                    title = com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Исключить из группы",
+                                        en = "Remove from Group",
+                                        de = "Aus der Gruppe entfernen",
+                                        es = "Eliminar del grupo",
+                                        fr = "Retirer du groupe",
+                                        pt = "Remover do grupo"
+                                    ),
                                     titleColor = Color(0xFFFF453A),
                                     onClick = onRemove
                                 )
@@ -2632,7 +3319,15 @@ private fun MemberProfileModal(
 
                             if (management.canBanMembers && member.canBan && !member.isCurrentUser) {
                                 ModalActionButton(
-                                    title = "Заблокировать",
+                                    title = com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Заблокировать",
+                                        en = "Ban Member",
+                                        de = "Blockieren",
+                                        es = "Bloquear",
+                                        fr = "Bannir",
+                                        pt = "Banir"
+                                    ),
                                     titleColor = Color(0xFFFF453A),
                                     onClick = onBan
                                 )
@@ -2647,7 +3342,15 @@ private fun MemberProfileModal(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            "Закрыть",
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Закрыть",
+                                en = "Close",
+                                de = "Schließen",
+                                es = "Cerrar",
+                                fr = "Fermer",
+                                pt = "Fechar"
+                            ),
                             color = Color.White.copy(alpha = 0.7f),
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 15.sp

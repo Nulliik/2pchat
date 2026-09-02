@@ -126,7 +126,19 @@ fun SecuritySettingsPage(
                     ) {
                         SelectionContainer {
                             Text(
-                                text = if (formattedLocalFingerprint.isNotBlank()) formattedLocalFingerprint else if (appLanguage == "Русский") "Инициализация ключа..." else "Initializing key...",
+                                text = if (formattedLocalFingerprint.isNotBlank()) {
+                                    formattedLocalFingerprint
+                                } else {
+                                    Localizations.tr(
+                                        appLanguage,
+                                        ru = "Инициализация ключа...",
+                                        en = "Initializing key...",
+                                        de = "Schlüssel wird initialisiert...",
+                                        es = "Inicializando clave...",
+                                        fr = "Initialisation de la clé...",
+                                        pt = "Inicializando chave..."
+                                    )
+                                },
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
                                 fontFamily = FontFamily.Monospace,

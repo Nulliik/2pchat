@@ -105,7 +105,15 @@ fun CreateGroupScreen(
                         )
                     }
                     Text(
-                        text = com.example.twopchat.data.Localizations.tr(appLanguage, "Новая группа", "New Group", "Neue Gruppe", "Nuevo grupo"),
+                        text = com.example.twopchat.data.Localizations.tr(
+                            appLanguage,
+                            ru = "Новая группа",
+                            en = "New Group",
+                            de = "Neue Gruppe",
+                            es = "Nuevo grupo",
+                            fr = "Nouveau groupe",
+                            pt = "Novo grupo"
+                        ),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = onSurfaceColor
@@ -125,10 +133,46 @@ fun CreateGroupScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("group_title_input"),
-                    label = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Название группы", "Group Title", "Gruppenname", "Nombre del grupo")) },
-                    placeholder = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Например: Команда 2PChat", "Example: 2PChat Team", "z.B.: 2PChat Team", "Ejemplo: Equipo 2PChat")) },
+                    label = {
+                        Text(
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Название группы",
+                                en = "Group Title",
+                                de = "Gruppenname",
+                                es = "Nombre del grupo",
+                                fr = "Nom du groupe",
+                                pt = "Nome do grupo"
+                            )
+                        )
+                    },
+                    placeholder = {
+                        Text(
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Например: Команда 2PChat",
+                                en = "Example: 2PChat Team",
+                                de = "z.B.: 2PChat Team",
+                                es = "Ejemplo: Equipo 2PChat",
+                                fr = "Exemple : Équipe 2PChat",
+                                pt = "Exemplo: Equipe 2PChat"
+                            )
+                        )
+                    },
                     supportingText = {
-                        if (cleanTitle.isEmpty() && title.isNotEmpty()) Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Название не может быть пустым", "Title cannot be empty", "Name darf nicht leer sein", "El nombre no puede estar vacío"))
+                        if (cleanTitle.isEmpty() && title.isNotEmpty()) {
+                            Text(
+                                com.example.twopchat.data.Localizations.tr(
+                                    appLanguage,
+                                    ru = "Название не может быть пустым",
+                                    en = "Title cannot be empty",
+                                    de = "Name darf nicht leer sein",
+                                    es = "El nombre no puede estar vacío",
+                                    fr = "Le nom ne peut pas être vide",
+                                    pt = "O nome não pode estar vazio"
+                                )
+                            )
+                        }
                     },
                     isError = cleanTitle.isEmpty() && title.isNotEmpty(),
                     singleLine = true,
@@ -151,8 +195,32 @@ fun CreateGroupScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("group_description_input"),
-                    label = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Описание (опционально)", "Description (optional)", "Beschreibung (optional)", "Descripción (opcional)")) },
-                    placeholder = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "О чем эта группа...", "What is this group about...", "Worum geht es in dieser Gruppe...", "¿De qué trata este grupo...")) },
+                    label = {
+                        Text(
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Описание (опционально)",
+                                en = "Description (optional)",
+                                de = "Beschreibung (optional)",
+                                es = "Descripción (opcional)",
+                                fr = "Description (facultatif)",
+                                pt = "Descrição (opcional)"
+                            )
+                        )
+                    },
+                    placeholder = {
+                        Text(
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "О чем эта группа...",
+                                en = "What is this group about...",
+                                de = "Worum geht es in dieser Gruppe...",
+                                es = "¿De qué trata este grupo...",
+                                fr = "De quoi parle ce groupe...",
+                                pt = "Sobre o que é este grupo..."
+                            )
+                        )
+                    },
                     minLines = 2,
                     maxLines = 3,
                     keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
@@ -169,13 +237,29 @@ fun CreateGroupScreen(
                 Spacer(Modifier.height(16.dp))
 
                 Text(
-                    text = com.example.twopchat.data.Localizations.tr(appLanguage, "Участники · Выбрано: ${selectedContactIds.size}", "Members · Selected: ${selectedContactIds.size}", "Mitglieder · Ausgewählt: ${selectedContactIds.size}", "Miembros · Seleccionados: ${selectedContactIds.size}"),
+                    text = com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Участники · Выбрано: ${selectedContactIds.size}",
+                        en = "Members · Selected: ${selectedContactIds.size}",
+                        de = "Mitglieder · Ausgewählt: ${selectedContactIds.size}",
+                        es = "Miembros · Seleccionados: ${selectedContactIds.size}",
+                        fr = "Membres · Sélectionnés : ${selectedContactIds.size}",
+                        pt = "Membros · Selecionados: ${selectedContactIds.size}"
+                    ),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = primaryColor
                 )
                 Text(
-                    text = com.example.twopchat.data.Localizations.tr(appLanguage, "Это необязательно: участников можно добавить после создания. Вы станете владельцем группы.", "Optional: members can be added after creation. You will become the group owner.", "Optional: Mitglieder können später hinzugefügt werden. Sie werden Gruppenbesitzer.", "Opcional: puedes añadir miembros más tarde. Serás el propietario del grupo."),
+                    text = com.example.twopchat.data.Localizations.tr(
+                        appLanguage,
+                        ru = "Это необязательно: участников можно добавить после создания. Вы станете владельцем группы.",
+                        en = "Optional: members can be added after creation. You will become the group owner.",
+                        de = "Optional: Mitglieder können später hinzugefügt werden. Sie werden Gruppenbesitzer.",
+                        es = "Opcional: puedes añadir miembros más tarde. Serás el propietario del grupo.",
+                        fr = "Facultatif : les membres peuvent être ajoutés après création. Vous deviendrez le propriétaire du groupe.",
+                        pt = "Opcional: membros podem ser adicionados após a criação. Você se tornará o proprietário do grupo."
+                    ),
                     fontSize = 12.sp,
                     color = onSurfaceColor.copy(alpha = 0.6f)
                 )
@@ -197,7 +281,15 @@ fun CreateGroupScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = com.example.twopchat.data.Localizations.tr(appLanguage, "Контакты пока не найдены", "No contacts found yet", "Noch keine Kontakte gefunden", "Aún no se han encontrado contactos"),
+                                    text = com.example.twopchat.data.Localizations.tr(
+                                        appLanguage,
+                                        ru = "Контакты пока не найдены",
+                                        en = "No contacts found yet",
+                                        de = "Noch keine Kontakte gefunden",
+                                        es = "Aún no se han encontrado contactos",
+                                        fr = "Aucun contact trouvé pour l'instant",
+                                        pt = "Nenhum contato encontrado ainda"
+                                    ),
                                     fontSize = 13.sp,
                                     color = onSurfaceColor.copy(alpha = 0.5f)
                                 )
@@ -261,7 +353,27 @@ fun CreateGroupScreen(
                             Column(Modifier.weight(1f)) {
                                 Text(contact.displayName, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                                 val detail = contact.secondaryText.ifBlank {
-                                    if (contact.isOnline) com.example.twopchat.data.Localizations.tr(appLanguage, "В сети", "Online", "Online", "En línea") else com.example.twopchat.data.Localizations.tr(appLanguage, "Не в сети", "Offline", "Offline", "Desconectado")
+                                    if (contact.isOnline) {
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "В сети",
+                                            en = "Online",
+                                            de = "Online",
+                                            es = "En línea",
+                                            fr = "En ligne",
+                                            pt = "Online"
+                                        )
+                                    } else {
+                                        com.example.twopchat.data.Localizations.tr(
+                                            appLanguage,
+                                            ru = "Не в сети",
+                                            en = "Offline",
+                                            de = "Offline",
+                                            es = "Desconectado",
+                                            fr = "Hors ligne",
+                                            pt = "Offline"
+                                        )
+                                    }
                                 }
                                 Text(
                                     detail,
@@ -310,7 +422,19 @@ fun CreateGroupScreen(
                             color = Color.White
                         )
                     } else {
-                        Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Создать группу", "Create Group", "Gruppe erstellen", "Crear grupo"), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(
+                            com.example.twopchat.data.Localizations.tr(
+                                appLanguage,
+                                ru = "Создать группу",
+                                en = "Create Group",
+                                de = "Gruppe erstellen",
+                                es = "Crear grupo",
+                                fr = "Créer le groupe",
+                                pt = "Criar grupo"
+                            ),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
                     }
                 }
             }
