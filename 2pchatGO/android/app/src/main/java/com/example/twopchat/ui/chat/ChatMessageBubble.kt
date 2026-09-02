@@ -333,6 +333,7 @@ internal fun ChatMessageBubble(
                                     StickerMessageContent(
                                         filePath = msg.attachmentUri,
                                         fallbackEmoji = msg.text,
+                                        isAnimationEnabled = isAnimatedMediaEnabled,
                                         onClick = {
                                             if (isSelectMode) {
                                                 onSelectionChange(msg, !isSelected)
@@ -1658,6 +1659,7 @@ private fun GifMessageContent(
 private fun StickerMessageContent(
     filePath: String?,
     fallbackEmoji: String,
+    isAnimationEnabled: Boolean = true,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
@@ -1692,6 +1694,7 @@ private fun StickerMessageContent(
             contentDescription = fallbackEmoji.ifBlank { "Sticker" },
             targetSizePx = 420,
             modifier = Modifier.fillMaxSize(),
+            isAnimationEnabled = isAnimationEnabled,
         )
         if (filePath == null) {
             androidx.compose.material3.CircularProgressIndicator(

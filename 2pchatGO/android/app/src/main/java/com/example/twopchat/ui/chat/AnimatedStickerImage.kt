@@ -6,15 +6,22 @@ import android.graphics.drawable.Animatable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.sp
@@ -23,7 +30,11 @@ import com.github.penfeizhou.animation.webp.WebPDrawable
 import com.example.twopchat.media.*
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+
+private val stickerDecodeSlots = Semaphore(3)
 
 /**
  * Decodes animated WEBP stickers only while their lazy-grid/message item is composed.
@@ -44,13 +55,42 @@ internal fun AnimatedStickerImage(
     isAnimationEnabled: Boolean = true,
 ) {
     val shouldAnimate = isAnimationEnabled && isAnimatedMediaActive()
+    val isScrolling = LocalScrollInProgress.current
+
+    // Fast static first-frame for zero-latency placeholder & scroll rendering
+    var staticBitmap by remember(filePath) {
+        mutableStateOf(filePath?.let { StickerThumbnailCache.get(it) })
+    }
+
+    LaunchedEffect(filePath, targetSizePx) {
+        if (filePath != null && staticBitmap == null) {
+            withContext(Dispatchers.IO) {
+                val bmp = StickerThumbnailCache.loadFirstFrame(filePath, targetSizePx)
+                if (bmp != null) {
+                    withContext(Dispatchers.Main) {
+                        staticBitmap = bmp
+                    }
+                }
+            }
+        }
+    }
+
     val drawable by produceState<Drawable?>(
         initialValue = null,
         filePath,
         targetSizePx,
+        isScrolling,
     ) {
-        value = if (filePath != null) {
-            withContext(Dispatchers.IO) {
+        if (filePath == null) {
+            value = null
+            return@produceState
+        }
+        // Defer heavy multi-frame animated decoding while rapid scrolling is active
+        if (isScrolling) {
+            return@produceState
+        }
+        value = withContext(Dispatchers.IO) {
+            stickerDecodeSlots.withPermit {
                 val file = File(filePath)
                 val info = StickerSupport.validateWebP(file)
                 if (info == null) {
@@ -84,8 +124,6 @@ internal fun AnimatedStickerImage(
                     }.getOrNull()
                 }
             }
-        } else {
-            null
         }
     }
     DisposableEffect(drawable, shouldAnimate) {
@@ -105,7 +143,7 @@ internal fun AnimatedStickerImage(
         contentAlignment = Alignment.Center,
     ) {
         when {
-            drawable != null -> AndroidView(
+            drawable != null && shouldAnimate -> AndroidView(
                 factory = { context ->
                     android.widget.ImageView(context).apply {
                         scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
@@ -116,6 +154,12 @@ internal fun AnimatedStickerImage(
                     if (imageView.drawable !== drawable) imageView.setImageDrawable(drawable)
                 },
                 modifier = Modifier.fillMaxSize(),
+            )
+            staticBitmap != null -> Image(
+                bitmap = staticBitmap!!.asImageBitmap(),
+                contentDescription = contentDescription,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
             )
             else -> {
                 val cleanEmoji = if (

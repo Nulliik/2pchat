@@ -72,6 +72,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1004,7 +1005,8 @@ fun GroupChatScreen(
                     }
                 )
             } else {
-                LazyColumn(
+                CompositionLocalProvider(com.example.twopchat.ui.chat.LocalScrollInProgress provides listState.isScrollInProgress) {
+                    LazyColumn(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
@@ -1278,6 +1280,7 @@ fun GroupChatScreen(
                             )
                         }
                     }
+                }
                 }
             }
 

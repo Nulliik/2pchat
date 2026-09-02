@@ -33,6 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -197,7 +198,8 @@ internal fun ChatMessageList(
                 modifier = Modifier.align(Alignment.Center)
             )
         } else {
-            LazyColumn(
+            CompositionLocalProvider(LocalScrollInProgress provides listState.isScrollInProgress) {
+                LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
@@ -351,7 +353,8 @@ internal fun ChatMessageList(
                 }
             }
         }
-    }
+            }
+        }
     }
 
     // Scroll To Bottom Button
