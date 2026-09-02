@@ -134,6 +134,8 @@ object VideoTranscoder {
             Result.failure(e)
         } finally {
             progressJob.cancel()
+            // Stop the hardware codec pipeline on coroutine cancellation or error
+            runCatching<Unit> { transformer.cancel() }
         }
     }
 }
