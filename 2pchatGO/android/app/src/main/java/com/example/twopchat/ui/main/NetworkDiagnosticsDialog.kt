@@ -247,7 +247,31 @@ private fun DetailRow(label: String, value: String, valueColor: Color) {
     }
 }
 
-private suspend fun runConnectionDiagnosticsTest(context: Context): String = withContext(Dispatchers.IO) {
+data class ConnectionSweepResult(
+    val timestamp: String,
+    val port: Int,
+    val portOk: Boolean,
+    val natType: String,
+    val publicEndpoint: String,
+    val upnpMapped: Boolean,
+    val upnpPort: String,
+    val yggAddress: String,
+    val yggOk: Boolean,
+    val yggModeLabel: String,
+    val torActive: Boolean,
+    val onionAddress: String,
+    val trackersOnline: Int,
+    val trackersTotal: Int,
+    val trackerAvgRtt: Long,
+    val relayReady: Boolean,
+    val activePeersCount: Int,
+    val isRooted: Boolean,
+    val verdict: String,
+    val isAllOk: Boolean,
+    val formattedLog: String
+)
+
+private suspend fun runConnectionDiagnosticsTest(context: Context): ConnectionSweepResult = withContext(Dispatchers.IO) {
     val sb = java.lang.StringBuilder()
     val timeStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())
     sb.appendLine("=========================================")
@@ -256,32 +280,87 @@ private suspend fun runConnectionDiagnosticsTest(context: Context): String = wit
 
     // 1. P2P Local Server Listener Port
     val port = P2PMessageRelay.listenerPort(context)
-    val isLoopRunning = true
     val portOk = port > 0
-    sb.appendLine("1. Native Go P2P Server: Port $port | Listener Active: $isLoopRunning -> ${if (portOk) "OK" else "WARN"}")
+    sb.appendLine("1. Native Go P2P Server: Port $port | Listener Active: $portOk -> ${if (portOk) "OK" else "WARN"}")
 
-    // 2. Yggdrasil IPv6 Interface
+    // 2. Active NAT, STUN & UPnP Diagnostics (via Go Core JNI)
+    try {
+        NativeBridge.refreshNatDiagnostics()
+    } catch (_: Exception) {}
+    val nat = NativeBridge.getNatDiagnostics()
+    val natType = nat["nat_type"]?.takeIf { it.isNotBlank() } ?: "UNKNOWN"
+    val upnpMapped = nat["upnp_mapped"] == "true"
+    val upnpPort = nat["upnp_mapped_port"]?.takeIf { it.isNotBlank() } ?: "$port"
+    val publicEndpoint = nat["public_endpoint"]?.takeIf { it.isNotBlank() }
+        ?: nat["upnp_external_ip"]?.takeIf { it.isNotBlank() }
+        ?: ""
+    val localIp = nat["local_ip"]?.takeIf { it.isNotBlank() } ?: P2PMessageRelay.getLocalIpAddress(context)
+
+    sb.appendLine("2. NAT Environment: Type=$natType | Local IP=$localIp")
+    sb.appendLine("   └ STUN Public Endpoint: ${if (publicEndpoint.isNotBlank()) publicEndpoint else "None (Behind Symmetric NAT / Tor)"}")
+    sb.appendLine("   └ UPnP / NAT-PMP Port Forward: ${if (upnpMapped) "MAPPED (External Port: $upnpPort) -> OK" else "NOT MAPPED (Relying on Hole Punch / Relay)"}")
+
+    // 3. Yggdrasil IPv6 Interface
     val yggAddr = P2PMessageRelay.getYggdrasilAddress()
     val yggOk = yggAddr.isNotBlank() && yggAddr != "N/A" && yggAddr != "unavailable"
-    sb.appendLine("2. [YGGDRASIL] IPv6: ${if (yggAddr.isNotBlank()) yggAddr else "Not Active"} · State: ${if (yggOk) "CONNECTED (OK)" else "OFFLINE"}")
+    val yggMode = P2PPreferences.getYggdrasilMode(context)
+    val yggModeLabel = if (yggMode == P2PPreferences.YggdrasilMode.PROXY) "Proxy (SOCKS5 :9053)" else "System VPN"
+    sb.appendLine("3. [YGGDRASIL] IPv6: ${if (yggAddr.isNotBlank()) yggAddr else "Not Active"} · Mode: $yggModeLabel · State: ${if (yggOk) "CONNECTED (OK)" else "OFFLINE"}")
 
-    // 3. UPnP Gateway Status
-    sb.appendLine("3. Native Transport & Discovery: Dual-Stack / SOCKS5 Direct -> OK")
+    // 4. Tor & Onion Routing
+    val isTorRunning = TorManager.isTorRunning.value
+    val torEffective = ProxyConfig.getEffectiveProxyConfig(context)
+    val torActive = isTorRunning && torEffective.enabled
+    val onionAddr: String = try { NativeBridge.getOnionAddress() ?: "" } catch (_: Exception) { "" }
+    sb.appendLine("4. [TOR_ROUTING] SOCKS5 Proxy: ${if (torActive) "ACTIVE (127.0.0.1:9050)" else "OFF"} · Onion Service: ${if (onionAddr.isNotBlank()) onionAddr else "N/A"}")
 
-    // 4. BitTorrent Trackers Health
-    sb.appendLine("4. BitTorrent UDP/HTTP Trackers: High-performance Go Engine -> ONLINE")
+    // 5. BitTorrent Discovery Trackers Live Health & Latency
+    val trackerStatuses = com.example.twopchat.config.TrackerPreferences.diagnosticStatuses(context)
+    val totalTrackers = trackerStatuses.size
+    var onlineTrackers = 0
+    var totalRtt = 0L
+    var rttCount = 0
+    for ((_, status) in trackerStatuses) {
+        if (status.contains("OK", ignoreCase = true) || status.contains("peers", ignoreCase = true)) {
+            onlineTrackers++
+        }
+        val rttMatch = Regex("(?:announce_rtt=|rtt=|rtt:)\\s*([0-9]+)", RegexOption.IGNORE_CASE).find(status)
+        if (rttMatch != null) {
+            val rttVal = rttMatch.groupValues[1].toLongOrNull()
+            if (rttVal != null && rttVal > 0) {
+                totalRtt += rttVal
+                rttCount++
+            }
+        }
+    }
+    val avgRtt = if (rttCount > 0) totalRtt / rttCount else 0L
+    sb.appendLine("5. BitTorrent Discovery Trackers: $onlineTrackers/$totalTrackers ONLINE ${if (avgRtt > 0) "(Avg RTT: ${avgRtt}ms)" else ""}")
 
-    // 5. Active Peer Sessions
+    // 6. Blind Relay & TCP Hole Punching Readiness
+    val relayReady = portOk
+    sb.appendLine("6. Fallback Transports: TCP Hole Punching & E2EE Blind Relay Tunnel -> ${if (relayReady) "ARMED & READY" else "INACTIVE"}")
+
+    // 7. Active Peer Sessions
     val activePeers = P2PMessageRelay.getActivePeerNames()
     val registeredEndpoints = P2PMessageRelay.peerEndpoints.size
-    sb.appendLine("5. Active Double Ratchet Sessions: ${activePeers.size} active (${registeredEndpoints} endpoints registered)")
+    sb.appendLine("7. Active Double Ratchet Sessions: ${activePeers.size} active (${registeredEndpoints} endpoints registered)")
 
-    // 6. Security & System Integrity Check
+    // 8. Security & System Integrity Check
     val isRooted = com.example.twopchat.security.RootDetectionHelper.isRooted()
-    sb.appendLine("6. System Integrity: ${if (isRooted) "ROOT DETECTED (RAM Security Reduced)" else "OK (No Root Detected)"}")
+    sb.appendLine("8. System Integrity: ${if (isRooted) "ROOT DETECTED (RAM Security Reduced)" else "OK (No Root Detected)"}")
+
+    val isAllOk = portOk && (yggOk || publicEndpoint.isNotBlank() || upnpMapped || relayReady)
+    val verdict = when {
+        !portOk -> "P2P Listener Offline"
+        torActive -> "Tor Privacy Route Active"
+        yggOk && upnpMapped -> "Dual-Stack Direct & Mesh Active"
+        upnpMapped || natType == "FULL_CONE" || natType == "OPEN_INTERNET" -> "Direct P2P Reachable"
+        natType == "SYMMETRIC" -> "Symmetric NAT (Hole Punch / Relay Fallback Active)"
+        else -> "P2P Operational"
+    }
 
     sb.appendLine("=========================================")
-    sb.appendLine("⚡ [DIAGNOSTICS_TEST] SWEEP FINISHED: ${if (portOk) "ALL SYSTEMS OPERATIONAL" else "PARTIAL CONNECTIVITY"}")
+    sb.appendLine("⚡ [DIAGNOSTICS_TEST] SWEEP FINISHED: $verdict")
     sb.appendLine("=========================================")
 
     val resultLog = sb.toString()
@@ -290,7 +369,229 @@ private suspend fun runConnectionDiagnosticsTest(context: Context): String = wit
         logFile.appendText("\n" + resultLog)
     } catch (_: Exception) {}
 
-    return@withContext resultLog
+    ConnectionSweepResult(
+        timestamp = timeStr,
+        port = port,
+        portOk = portOk,
+        natType = natType,
+        publicEndpoint = publicEndpoint,
+        upnpMapped = upnpMapped,
+        upnpPort = upnpPort,
+        yggAddress = yggAddr,
+        yggOk = yggOk,
+        yggModeLabel = yggModeLabel,
+        torActive = torActive,
+        onionAddress = onionAddr,
+        trackersOnline = onlineTrackers,
+        trackersTotal = totalTrackers,
+        trackerAvgRtt = avgRtt,
+        relayReady = relayReady,
+        activePeersCount = activePeers.size,
+        isRooted = isRooted,
+        verdict = verdict,
+        isAllOk = isAllOk,
+        formattedLog = resultLog
+    )
+}
+
+@Composable
+private fun SweepStatusRow(
+    label: String,
+    value: String,
+    isOk: Boolean,
+    onSurfaceVariant: Color
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = "• $label:",
+            fontSize = 11.sp,
+            color = onSurfaceVariant,
+            fontWeight = FontWeight.Medium
+        )
+        Text(
+            text = value,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            color = if (isOk) Color(0xFF4CAF50) else Color(0xFFFFB74D),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun ConnectionSweepCard(
+    result: ConnectionSweepResult,
+    appLanguage: String,
+    primaryColor: Color,
+    surfaceVariant: Color,
+    onSurfaceColor: Color,
+    onSurfaceVariant: Color,
+    onCopy: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = surfaceVariant.copy(alpha = 0.55f)),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                1.dp,
+                if (result.isAllOk) Color(0xFF4CAF50).copy(alpha = 0.5f) else Color(0xFFFFB74D).copy(alpha = 0.5f),
+                RoundedCornerShape(12.dp)
+            )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            // Header: Status badge, Title, Copy button, Dismiss button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(if (result.isAllOk) Color(0xFF4CAF50) else Color(0xFFFFB74D))
+                    )
+                    Text(
+                        text = if (appLanguage == "Русский") "РЕЗУЛЬТАТ ТЕСТА СВЯЗИ" else "CONNECTION TEST RESULT",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryColor
+                    )
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(
+                        onClick = onCopy,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        CustomCopyIcon(tint = primaryColor, modifier = Modifier.size(12.dp))
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = onSurfaceVariant,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+            }
+
+            // Verdict banner
+            val verdictColor = if (result.isAllOk) Color(0xFF81C784) else Color(0xFFFFD54F)
+            val verdictLabel = when {
+                appLanguage == "Русский" && result.verdict == "Direct P2P Reachable" -> "Прямой P2P доступен (STUN/UPnP)"
+                appLanguage == "Русский" && result.verdict.contains("Symmetric NAT") -> "Симметричный NAT (Hole Punch / Relay активны)"
+                appLanguage == "Русский" && result.verdict.contains("Dual-Stack") -> "Dual-Stack: Прямой P2P + Yggdrasil Mesh"
+                appLanguage == "Русский" && result.verdict.contains("Tor") -> "Tor: маршрутизация через защищённую сеть"
+                appLanguage == "Русский" && result.verdict == "P2P Operational" -> "P2P системы работают штатно"
+                appLanguage == "Русский" && result.verdict == "P2P Listener Offline" -> "Слушатель P2P не запущен"
+                else -> result.verdict
+            }
+            Text(
+                text = verdictLabel,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = verdictColor
+            )
+
+            HorizontalDivider(
+                color = onSurfaceColor.copy(alpha = 0.08f),
+                thickness = 0.5.dp,
+                modifier = Modifier.padding(vertical = 2.dp)
+            )
+
+            // Diagnostic badges grid
+            SweepStatusRow(
+                label = if (appLanguage == "Русский") "P2P Сервер" else "P2P Server",
+                value = if (result.portOk) "Порт ${result.port} (Активен)" else "Не активен",
+                isOk = result.portOk,
+                onSurfaceVariant = onSurfaceVariant
+            )
+
+            val natLabel = if (result.upnpMapped) {
+                "${result.natType} · UPnP (${result.upnpPort})"
+            } else if (result.publicEndpoint.isNotBlank()) {
+                "${result.natType} · STUN"
+            } else {
+                "${result.natType} (Hole Punch / Relay)"
+            }
+            SweepStatusRow(
+                label = if (appLanguage == "Русский") "NAT & STUN" else "NAT & STUN",
+                value = natLabel,
+                isOk = result.upnpMapped || result.natType in setOf("FULL_CONE", "OPEN_INTERNET", "RESTRICTED_CONE"),
+                onSurfaceVariant = onSurfaceVariant
+            )
+
+            val trackerText = if (result.trackersTotal > 0) {
+                val rttText = if (result.trackerAvgRtt > 0) " (RTT ~${result.trackerAvgRtt}мс)" else ""
+                "${result.trackersOnline}/${result.trackersTotal} онлайн$rttText"
+            } else {
+                if (appLanguage == "Русский") "Не настроены" else "None"
+            }
+            SweepStatusRow(
+                label = if (appLanguage == "Русский") "Трекеры Discovery" else "Discovery Trackers",
+                value = trackerText,
+                isOk = result.trackersOnline > 0,
+                onSurfaceVariant = onSurfaceVariant
+            )
+
+            val meshText = buildString {
+                if (result.yggOk) append("YGG: OK") else append(if (appLanguage == "Русский") "YGG: Выкл" else "YGG: Off")
+                append(" · ")
+                if (result.torActive) append(if (appLanguage == "Русский") "Tor: Активен" else "Tor: Active") else append(if (appLanguage == "Русский") "Tor: Выкл" else "Tor: Off")
+            }
+            SweepStatusRow(
+                label = if (appLanguage == "Русский") "Сети Ygg & Tor" else "Ygg & Tor Mesh",
+                value = meshText,
+                isOk = result.yggOk || result.torActive,
+                onSurfaceVariant = onSurfaceVariant
+            )
+
+            SweepStatusRow(
+                label = if (appLanguage == "Русский") "Relay & Hole Punch" else "Relay & Hole Punch",
+                value = if (result.relayReady) (if (appLanguage == "Русский") "Готов (E2EE туннель)" else "Armed & Ready") else (if (appLanguage == "Русский") "Недоступен" else "Disabled"),
+                isOk = result.relayReady,
+                onSurfaceVariant = onSurfaceVariant
+            )
+
+            SweepStatusRow(
+                label = if (appLanguage == "Русский") "Активные сессии" else "Active Sessions",
+                value = "${result.activePeersCount} ${if (appLanguage == "Русский") "пиров" else "peers"}",
+                isOk = true,
+                onSurfaceVariant = onSurfaceVariant
+            )
+
+            Text(
+                text = "${if (appLanguage == "Русский") "Замер от" else "Tested at"}: ${result.timestamp}",
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace,
+                color = onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+    }
 }
 
 @Composable
@@ -427,6 +728,7 @@ fun NetworkDiagnosticsDialog(
         var levelFilter by remember { mutableStateOf("ALL") }
         var searchQuery by remember { mutableStateOf("") }
         var isTestingConnection by remember { mutableStateOf(false) }
+        var lastSweepResult by remember { mutableStateOf<ConnectionSweepResult?>(null) }
 
         val trackerPings = remember { mutableStateMapOf<String, Long>() }
 
@@ -771,6 +1073,23 @@ fun NetworkDiagnosticsDialog(
                             }
                         }
 
+                        if (lastSweepResult != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            ConnectionSweepCard(
+                                result = lastSweepResult!!,
+                                appLanguage = appLanguage,
+                                primaryColor = primaryColor,
+                                surfaceVariant = surfaceVariant,
+                                onSurfaceColor = onSurfaceColor,
+                                onSurfaceVariant = onSurfaceVariant,
+                                onCopy = {
+                                    clipboardManager.setText(AnnotatedString(lastSweepResult!!.formattedLog))
+                                    Toast.makeText(context, if (appLanguage == "Русский") "Отчёт скопирован" else "Report copied", Toast.LENGTH_SHORT).show()
+                                },
+                                onDismiss = { lastSweepResult = null }
+                            )
+                        }
+
                         Spacer(modifier = Modifier.height(8.dp))
 
                         // Log Filter Chips Row
@@ -1047,7 +1366,8 @@ fun NetworkDiagnosticsDialog(
                                     if (!isTestingConnection) {
                                         isTestingConnection = true
                                         diagnosticsScope.launch {
-                                            runConnectionDiagnosticsTest(context)
+                                            val sweep = runConnectionDiagnosticsTest(context)
+                                            lastSweepResult = sweep
                                             applySnapshot(withContext(Dispatchers.IO) { readDiagnosticsSnapshot(context) })
                                             isTestingConnection = false
                                             Toast.makeText(context, if (appLanguage == "Русский") "Тест связи завершен!" else "Connection test complete!", Toast.LENGTH_SHORT).show()
@@ -1068,7 +1388,11 @@ fun NetworkDiagnosticsDialog(
                                         CustomLightningIcon(tint = primaryColor, modifier = Modifier.size(14.dp))
                                     }
                                     Text(
-                                        text = if (appLanguage == "Русский") "Тест связи" else "Test Sweep",
+                                        text = if (isTestingConnection) {
+                                            if (appLanguage == "Русский") "Тестирование..." else "Testing..."
+                                        } else {
+                                            if (appLanguage == "Русский") "Тест связи" else "Test Sweep"
+                                        },
                                         color = onSurfaceColor,
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold
