@@ -2491,6 +2491,22 @@ private fun AlbumItemCell(
                 )
             }
         }
+        val extraCount = allUris.size - 4
+        if (extraCount > 0 && cellIndex == 3) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.5f))
+            ) {
+                Text(
+                    text = "+$extraCount",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                )
+            }
+        }
     }
 }
 

@@ -1415,8 +1415,7 @@ fun ChatScreen(
                     for ((idx, file) in tempFiles.withIndex()) {
                         val fileCaption = if (idx == 0) customCaption else ""
                         val fileTransferId = "${outMsg.id}_$idx"
-                        val latch = java.util.concurrent.CountDownLatch(1)
-                        var transferOk = false
+                        val deferred = kotlinx.coroutines.CompletableDeferred<Boolean>()
                         P2PMessageRelay.sendFile(
                             context = context,
                             peerName = peerName,
@@ -1428,10 +1427,11 @@ fun ChatScreen(
                             albumIndex = idx,
                             albumCount = tempFiles.size,
                         ) { success ->
-                            transferOk = success
-                            latch.countDown()
+                            deferred.complete(success)
                         }
-                        latch.await(5, java.util.concurrent.TimeUnit.MINUTES)
+                        val transferOk = kotlinx.coroutines.withTimeoutOrNull(5 * 60 * 1000L) {
+                            deferred.await()
+                        } ?: false
                         if (!transferOk) {
                             allTransfersOk = false
                             persistDatabase { db.updateMessageStatus(outMsg.id, "PENDING") }
@@ -2584,7 +2584,7 @@ fun ChatScreen(
                         }
 
                         initialMessages[idx] = current.copy(reactions = updatedMap)
-                        db.updateMessageReactions(msg.id, updatedMap)
+                        persistDatabase { db.updateMessageReactions(msg.id, updatedMap) }
                     }
                     val endpoint = P2PMessageRelay.peerEndpoints[peerName]
                     if (endpoint != null && peerName != "Saved Messages") {

@@ -3069,10 +3069,12 @@ object P2PMessageRelay {
         }
 
         // Clear messages database, pending controls, and peer table for this peer and all aliases
-        val db = ChatDatabaseHelper.getInstance(context)
-        db.clearMessagesForPeer(peerName, aliases)
-        db.deletePendingControlsForPeer(peerName)
-        db.deletePeer(peerName, aliases)
+        serviceScope.launch(Dispatchers.IO) {
+            val db = ChatDatabaseHelper.getInstance(context)
+            db.clearMessagesForPeer(peerName, aliases)
+            db.deletePendingControlsForPeer(peerName)
+            db.deletePeer(peerName, aliases)
+        }
 
         // Clear notification history
         aliases.forEach { alias ->
