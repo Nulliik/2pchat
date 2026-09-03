@@ -1,6 +1,7 @@
 package com.example.twopchat.ui.main
 
 import android.widget.Toast
+import com.example.twopchat.data.Localizations
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -77,7 +78,7 @@ fun LanguageSettingsPage(
             ) {
                 Icon(
                     painter = painterResource(id = com.example.twopchat.R.drawable.ic_back_arrow),
-                    contentDescription = if (appLanguage == "Русский") "Назад" else "Back",
+                    contentDescription = Localizations.tr(appLanguage, ru = "Назад", en = "Back", de = "Zurück", es = "Atrás", fr = "Retour", pt = "Voltar", tr = "Geri"),
                     tint = onSurfaceColor,
                     modifier = Modifier.size(20.dp)
                 )
@@ -104,7 +105,7 @@ fun LanguageSettingsPage(
                         Box(contentAlignment = Alignment.CenterStart) {
                             if (searchQuery.isEmpty()) {
                                 Text(
-                                    text = if (appLanguage == "Русский") "Поиск языка..." else "Search language...",
+                                    text = Localizations.tr(appLanguage, ru = "Поиск языка...", en = "Search language...", de = "Sprache suchen...", es = "Buscar idioma...", fr = "Rechercher une langue...", pt = "Pesquisar idioma...", tr = "Dil ara..."),
                                     fontSize = 14.sp,
                                     color = onSurfaceVariant.copy(alpha = 0.6f)
                                 )
@@ -129,7 +130,7 @@ fun LanguageSettingsPage(
                 }
             } else {
                 Text(
-                    text = if (appLanguage == "Русский") "Язык" else "Language",
+                    text = Localizations.tr(appLanguage, ru = "Язык", en = "Language", de = "Sprache", es = "Idioma", fr = "Langue", pt = "Idioma", tr = "Dil"),
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     color = onSurfaceColor,
@@ -153,7 +154,7 @@ fun LanguageSettingsPage(
 
         // Section Title: "Язык" / "Language"
         Text(
-            text = if (appLanguage == "Русский") "Язык" else "Language",
+            text = Localizations.tr(appLanguage, ru = "Язык", en = "Language", de = "Sprache", es = "Idioma", fr = "Langue", pt = "Idioma", tr = "Dil"),
             color = Color(0xFF00E676),
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,

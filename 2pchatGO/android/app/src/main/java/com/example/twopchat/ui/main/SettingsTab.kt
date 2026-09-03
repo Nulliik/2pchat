@@ -281,7 +281,6 @@ fun SettingsTab(
                         }
                     }
 
-                    val isRu = appLanguage == "Русский"
                     val trimmedQuery = settingsSearchQuery.trim().lowercase()
 
                     val hasPasscode = remember(showSetPasscodeDialog, showDisablePasscodeDialog) { sharedPrefs.contains("passcode_value") }
@@ -292,180 +291,180 @@ fun SettingsTab(
                     val deepSettingsList = remember(appLanguage, hasPasscode, hasDuressPIN, allowScreenshots, incognitoKeyboard) {
                         listOf(
                             DeepSettingItem(
-                                category = if (isRu) "Оформление" else "Appearance",
+                                category = Localizations.tr(appLanguage, ru = "Оформление", en = "Appearance", de = "Erscheinungsbild", es = "Apariencia", fr = "Apparence", pt = "Aparência", tr = "Görünüm"),
                                 categoryColor = Color(0xFFFFA726),
-                                title = if (isRu) "Тема приложения" else "App Theme",
-                                subtitle = if (isRu) "Светлая тема, цвет акцента, AMOLED" else "Light mode, accent color, AMOLED",
-                                valueBadge = if (isRu) "Настройки" else "Light",
-                                keywords = listOf("app theme", "theme", "тема", "оформление", "light", "dark", "amoled", "stealth", "акцент", "цвет"),
+                                title = Localizations.tr(appLanguage, ru = "Тема приложения", en = "App Theme", de = "App-Design", es = "Tema de la aplicación", fr = "Thème de l'application", pt = "Tema do aplicativo", tr = "Uygulama Teması"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Светлая тема, цвет акцента, AMOLED", en = "Light mode, accent color, AMOLED", de = "Heller Modus, Farbackzent, AMOLED", es = "Modo claro, acento de color, AMOLED", fr = "Mode clair, accent de couleur, AMOLED", pt = "Modo claro, acento de cor, AMOLED", tr = "Açık tema, renk vurgusu, AMOLED"),
+                                valueBadge = if (appLanguage == "Русский") "Настройки" else if (appLanguage == "Türkçe") "Açık" else "Light",
+                                keywords = listOf("app theme", "theme", "тема", "оформление", "light", "dark", "amoled", "stealth", "акцент", "цвет", "tema", "renk", "görünüm"),
                                 onClick = { activeSubPage = "chat_settings" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Оформление" else "Appearance",
+                                category = Localizations.tr(appLanguage, ru = "Оформление", en = "Appearance", de = "Erscheinungsbild", es = "Apariencia", fr = "Apparence", pt = "Aparência", tr = "Görünüm"),
                                 categoryColor = Color(0xFFFFA726),
-                                title = if (isRu) "Иконка приложения" else "App Launcher Icon",
-                                subtitle = if (isRu) "Выберите стиль иконки на рабочем столе" else "Select a style for your home screen app icon",
-                                valueBadge = if (isRu) "Выбрать" else "Mint Classic",
-                                keywords = listOf("app launcher icon", "app icon", "icon", "иконка", "значок", "mint classic", "launcher", "иконки"),
+                                title = Localizations.tr(appLanguage, ru = "Иконка приложения", en = "App Launcher Icon", de = "App-Symbol", es = "Icono de la aplicación", fr = "Icône de l'application", pt = "Ícone do aplicativo", tr = "Uygulama Simgesi"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Выберите стиль иконки на рабочем столе", en = "Select a style for your home screen app icon", de = "Wählen Sie ein Symbol für den Startbildschirm", es = "Elige un estilo para el icono de inicio", fr = "Choisissez un style pour l'icône d'accueil", pt = "Escolha um estilo para o ícone da tela inicial", tr = "Ana ekran uygulama simgesi için bir stil seçin"),
+                                valueBadge = if (appLanguage == "Русский") "Выбрать" else if (appLanguage == "Türkçe") "Seç" else "Select",
+                                keywords = listOf("app launcher icon", "app icon", "icon", "иконка", "значок", "mint classic", "launcher", "иконки", "simge", "ikon"),
                                 onClick = { activeSubPage = "chat_settings" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Оформление" else "Appearance",
+                                category = Localizations.tr(appLanguage, ru = "Оформление", en = "Appearance", de = "Erscheinungsbild", es = "Apariencia", fr = "Apparence", pt = "Aparência", tr = "Görünüm"),
                                 categoryColor = Color(0xFFFF7043),
-                                title = if (isRu) "Стикерпаки" else "Sticker Packs",
-                                subtitle = if (isRu) "Создание, импорт из Telegram и управление наклейками" else "Create, import from Telegram & manage sticker packs",
-                                keywords = listOf("sticker", "stickers", "стикерпак", "стикеры", "паки", "наклейки", "telegram"),
+                                title = Localizations.tr(appLanguage, ru = "Стикерпаки", en = "Sticker Packs", de = "Sticker-Pakete", es = "Paquetes de stickers", fr = "Packs d'autocollants", pt = "Pacotes de figurinhas", tr = "Çıkartma Paketleri"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Создание, импорт из Telegram и управление наклейками", en = "Create, import from Telegram & manage sticker packs", de = "Erstellen, aus Telegram importieren & Sticker-Pakete verwalten", es = "Crear, importar de Telegram y administrar paquetes de stickers", fr = "Créer, importer depuis Telegram et gérer les packs d'autocollants", pt = "Criar, importar do Telegram e gerenciar pacotes de figurinhas", tr = "Çıkartma paketleri oluşturma, Telegram'dan içe aktarma ve yönetme"),
+                                keywords = listOf("sticker", "stickers", "стикерпак", "стикеры", "паки", "наклейки", "telegram", "çıkartma", "çıkartmalar"),
                                 onClick = { activeSubPage = "sticker_packs" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Безопасность" else "Security",
+                                category = Localizations.tr(appLanguage, ru = "Безопасность", en = "Security", de = "Sicherheit", es = "Seguridad", fr = "Sécurité", pt = "Segurança", tr = "Güvenlik"),
                                 categoryColor = Color(0xFF66BB6A),
-                                title = if (isRu) "Личный ключ безопасности" else "Personal Security Key",
-                                subtitle = if (isRu) "Отпечаток (Fingerprint) для сверки личности и сессий" else "Cryptographic fingerprint to verify identity and sessions",
+                                title = Localizations.tr(appLanguage, ru = "Личный ключ безопасности", en = "Personal Security Key", de = "Persönlicher Sicherheitsschlüssel", es = "Clave de seguridad personal", fr = "Clé de sécurité personnelle", pt = "Chave de segurança pessoal", tr = "Kişisel Güvenlik Anahtarı"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Отпечаток (Fingerprint) для сверки личности и сессий", en = "Cryptographic fingerprint to verify identity and sessions", de = "Kryptografischer Fingerabdruck zur Identitätsprüfung", es = "Huella criptográfica para verificar identidad y sesiones", fr = "Empreinte cryptographique pour vérifier l'identité et les sessions", pt = "Impressão digital criptográfica para verificar identidade e sessões", tr = "Kimlik ve oturumları doğrulamak için kriptografik parmak izi"),
                                 valueBadge = if (localFingerprint.isNotBlank()) localFingerprint.take(8) + "…" else null,
-                                keywords = listOf("fingerprint", "key", "ключ", "отпечаток", "безопасность", "сверка", "mitm", "identity"),
+                                keywords = listOf("fingerprint", "key", "ключ", "отпечаток", "безопасность", "сверка", "mitm", "identity", "anahtar", "parmak izi", "güvenlik", "kimlik"),
                                 onClick = { activeSubPage = "security" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Безопасность" else "Security",
+                                category = Localizations.tr(appLanguage, ru = "Безопасность", en = "Security", de = "Sicherheit", es = "Seguridad", fr = "Sécurité", pt = "Segurança", tr = "Güvenlik"),
                                 categoryColor = Color(0xFF66BB6A),
-                                title = if (isRu) "Код-пароль приложения" else "App Passcode Lock",
-                                subtitle = if (isRu) "4-значный PIN-код для защиты доступа к чатам" else "4-digit PIN for securing app access",
-                                valueBadge = if (hasPasscode) (if (isRu) "Включен" else "ON") else (if (isRu) "Выключен" else "OFF"),
-                                keywords = listOf("passcode", "pin", "lock", "пароль", "код", "код-пароль", "пин", "защита", "блокировка"),
+                                title = Localizations.tr(appLanguage, ru = "Код-пароль приложения", en = "App Passcode Lock", de = "App-PIN-Sperre", es = "Bloqueo con código de la app", fr = "Verrouillage par code de l'application", pt = "Bloqueio por PIN do aplicativo", tr = "Uygulama PIN Kilidi"),
+                                subtitle = Localizations.tr(appLanguage, ru = "4-значный PIN-код для защиты доступа к чатам", en = "4-digit PIN for securing app access", de = "4-stellige PIN zum Schutz des App-Zugriffs", es = "PIN de 4 dígitos para proteger el acceso a la app", fr = "Code PIN à 4 chiffres pour sécuriser l'accès à l'application", pt = "PIN de 4 dígitos para proteger o acesso ao app", tr = "Uygulama erişimini güvence altına almak için 4 haneli PIN"),
+                                valueBadge = if (hasPasscode) Localizations.tr(appLanguage, ru = "Включен", en = "ON", de = "AN", es = "ACTIVADO", fr = "ACTIVÉ", pt = "ATIVADO", tr = "AÇIK") else Localizations.tr(appLanguage, ru = "Выключен", en = "OFF", de = "AUS", es = "DESACTIVADO", fr = "DÉSACTIVÉ", pt = "DESATIVADO", tr = "KAPALI"),
+                                keywords = listOf("passcode", "pin", "lock", "пароль", "код", "код-пароль", "пин", "защита", "блокировка", "kilit", "şifre"),
                                 onClick = { activeSubPage = "security" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Безопасность" else "Security",
+                                category = Localizations.tr(appLanguage, ru = "Безопасность", en = "Security", de = "Sicherheit", es = "Seguridad", fr = "Sécurité", pt = "Segurança", tr = "Güvenlik"),
                                 categoryColor = Color(0xFF66BB6A),
-                                title = if (isRu) "Тревожный PIN-код (Duress)" else "Duress Emergency PIN",
-                                subtitle = if (isRu) "Экстренный код для стирания данных при принуждении" else "Emergency PIN for forced data wipe",
-                                valueBadge = if (hasDuressPIN) (if (isRu) "Задан" else "Set") else (if (isRu) "Не задан" else "Not set"),
-                                keywords = listOf("duress", "emergency", "тревожный", "экстренный", "паника", "сброс"),
+                                title = Localizations.tr(appLanguage, ru = "Тревожный PIN-код (Duress)", en = "Duress Emergency PIN", de = "Duress-Notfall-PIN", es = "PIN de emergencia (Duress)", fr = "Code PIN d'urgence Duress", pt = "PIN de emergência Duress", tr = "Tehdit (Duress) Acil Durum PIN'i"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Экстренный код для стирания данных при принуждении", en = "Emergency PIN for forced data wipe", de = "Notfall-PIN zur erzwungenen Datenlöschung", es = "PIN de emergencia para borrado forzado de datos", fr = "Code PIN d'urgence pour l'effacement forcé des données", pt = "PIN de emergência para limpeza forçada de dados", tr = "Zorla veri silme için acil durum PIN'i"),
+                                valueBadge = if (hasDuressPIN) Localizations.tr(appLanguage, ru = "Задан", en = "Set", de = "Gesetzt", es = "Configurado", fr = "Défini", pt = "Configurado", tr = "Ayarlandı") else Localizations.tr(appLanguage, ru = "Не задан", en = "Not set", de = "Nicht gesetzt", es = "No configurado", fr = "Non défini", pt = "Não configurado", tr = "Ayarlanmadı"),
+                                keywords = listOf("duress", "emergency", "тревожный", "экстренный", "паника", "сброс", "tehdit", "acil", "sıfırlama"),
                                 onClick = { activeSubPage = "security" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Безопасность" else "Security",
+                                category = Localizations.tr(appLanguage, ru = "Безопасность", en = "Security", de = "Sicherheit", es = "Seguridad", fr = "Sécurité", pt = "Segurança", tr = "Güvenlik"),
                                 categoryColor = Color(0xFF66BB6A),
-                                title = if (isRu) "Разрешить скриншоты" else "Allow Screenshots",
-                                subtitle = if (isRu) "Запрет создания снимков экрана и превью" else "Block screen capture and task switcher preview",
+                                title = Localizations.tr(appLanguage, ru = "Разрешить скриншоты", en = "Allow Screenshots", de = "Screenshots erlauben", es = "Permitir capturas de pantalla", fr = "Autoriser les captures d'écran", pt = "Permitir capturas de tela", tr = "Ekran Görüntülerine İzin Ver"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Запрет создания снимков экрана и превью", en = "Block screen capture and task switcher preview", de = "Screenshot-Erstellung und Task-Vorschau blockieren", es = "Bloquear capturas de pantalla y vista previa de tareas", fr = "Bloquer les captures d'écran et l'aperçu multitâche", pt = "Bloquear capturas de tela e pré-visualização de tarefas", tr = "Ekran görüntüsü yakalamayı ve görev değiştirici önizlemesini engelle"),
                                 valueBadge = if (allowScreenshots) "ON" else "OFF",
-                                keywords = listOf("screenshot", "screenshots", "скриншот", "скриншоты", "снимок", "экран", "capture"),
+                                keywords = listOf("screenshot", "screenshots", "скриншот", "скриншоты", "снимок", "экран", "capture", "ekran görüntüsü"),
                                 onClick = { activeSubPage = "security" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Безопасность" else "Security",
+                                category = Localizations.tr(appLanguage, ru = "Безопасность", en = "Security", de = "Sicherheit", es = "Seguridad", fr = "Sécurité", pt = "Segurança", tr = "Güvenlik"),
                                 categoryColor = Color(0xFF66BB6A),
-                                title = if (isRu) "Клавиатура инкогнито" else "Incognito Keyboard",
-                                subtitle = if (isRu) "Запрос на отключение обучения клавиатуры и сохранения текста" else "Request keyboard to disable personalized learning and logging",
+                                title = Localizations.tr(appLanguage, ru = "Клавиатура инкогнито", en = "Incognito Keyboard", de = "Inkognito-Tastatur", es = "Teclado incógnito", fr = "Clavier incognito", pt = "Teclado anônimo", tr = "Gizli Klavye"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Запрос на отключение обучения клавиатуры и сохранения текста", en = "Request keyboard to disable personalized learning and logging", de = "Tastatur auffordern, personalisiertes Lernen und Protokollieren zu deaktivieren", es = "Solicitar al teclado que desactive el aprendizaje personalizado y registro", fr = "Demander au clavier de désactiver l'apprentissage personnalisé et l'enregistrement", pt = "Solicitar ao teclado que desative o aprendizado personalizado e registro", tr = "Klavyeden kişiselleştirilmiş öğrenmeyi ve günlük kaydını devre dışı bırakmasını isteyin"),
                                 valueBadge = if (incognitoKeyboard) "ON" else "OFF",
-                                keywords = listOf("incognito", "keyboard", "инкогнито", "клавиатура", "gboard", "swiftkey", "ime", "t9"),
+                                keywords = listOf("incognito", "keyboard", "инкогнито", "клавиатура", "gboard", "swiftkey", "ime", "t9", "gizli klavye"),
                                 onClick = { activeSubPage = "security" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Сеть" else "Network",
+                                category = Localizations.tr(appLanguage, ru = "Сеть", en = "Network", de = "Netzwerk", es = "Red", fr = "Réseau", pt = "Rede", tr = "Ağ"),
                                 categoryColor = Color(0xFF66BB6A),
-                                title = if (isRu) "Входящий порт Direct P2P" else "Direct P2P Listening Port",
-                                subtitle = if (isRu) "Сетевой порт для принятия входящих P2P соединений" else "Inbound network port for direct P2P connections",
+                                title = Localizations.tr(appLanguage, ru = "Входящий порт Direct P2P", en = "Direct P2P Listening Port", de = "Direkter P2P-Listening-Port", es = "Puerto de escucha Direct P2P", fr = "Port d'écoute direct P2P", pt = "Porta de escuta direta P2P", tr = "Doğrudan P2P Dinleme Bağlantı Noktası"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Сетевой порт для принятия входящих P2P соединений", en = "Inbound network port for direct P2P connections", de = "Eingehender Netzwerkport für direkte P2P-Verbindungen", es = "Puerto de red entrante para conexiones P2P directas", fr = "Port réseau entrant pour les connexions directes P2P", pt = "Porta de rede de entrada para conexões P2P diretas", tr = "Doğrudan P2P bağlantıları için gelen ağ bağlantı noktası"),
                                 valueBadge = "50001",
-                                keywords = listOf("port", "p2p port", "direct p2p", "порт", "прямое соединение", "50001"),
+                                keywords = listOf("port", "p2p port", "direct p2p", "порт", "прямое соединение", "50001", "bağlantı noktası"),
                                 onClick = { activeSubPage = "advanced_network" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Сеть" else "Network",
+                                category = Localizations.tr(appLanguage, ru = "Сеть", en = "Network", de = "Netzwerk", es = "Red", fr = "Réseau", pt = "Rede", tr = "Ağ"),
                                 categoryColor = Color(0xFF29B6F6),
-                                title = if (isRu) "Трекеры и P2P обнаружение" else "Trackers & Peer Discovery",
-                                subtitle = if (isRu) "DHT, mDNS локальная сеть и список трекеров" else "DHT, local mDNS discovery & tracker servers",
-                                keywords = listOf("tracker", "trackers", "dht", "mdns", "announce", "трекер", "трекеры", "обнаружение"),
+                                title = Localizations.tr(appLanguage, ru = "Трекеры и P2P обнаружение", en = "Trackers & Peer Discovery", de = "Tracker & Peer-Erkennung", es = "Rastreadores y descubrimiento de pares", fr = "Trackers et découverte de pairs", pt = "Rastreadores e descoberta de pares", tr = "İzleyiciler ve Eş Keşfi"),
+                                subtitle = Localizations.tr(appLanguage, ru = "DHT, mDNS локальная сеть и список трекеров", en = "DHT, local mDNS discovery & tracker servers", de = "DHT, lokale mDNS-Erkennung & Tracker-Server", es = "DHT, descubrimiento mDNS local y servidores de rastreo", fr = "DHT, découverte mDNS locale et serveurs de trackers", pt = "DHT, descoberta mDNS local e servidores de rastreadores", tr = "DHT, yerel mDNS keşfi ve izleyici sunucuları"),
+                                keywords = listOf("tracker", "trackers", "dht", "mdns", "announce", "трекер", "трекеры", "обнаружение", "izleyici", "keşif"),
                                 onClick = { activeSubPage = "trackers" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Анонимизация" else "Anonymization",
+                                category = Localizations.tr(appLanguage, ru = "Анонимизация", en = "Anonymization", de = "Anonymisierung", es = "Anonimización", fr = "Anonymisation", pt = "Anonimização", tr = "Anonimleştirme"),
                                 categoryColor = Color(0xFFAB47BC),
-                                title = if (isRu) "Встроенный Tor & Мосты obfs4" else "Embedded Tor & obfs4 Bridges",
-                                subtitle = if (isRu) "Луковая маршрутизация, мосты obfs4 и ротация цепочки" else "Onion routing, obfs4 bridges & circuit rotation",
-                                keywords = listOf("tor", "onion", "obfs4", "bridge", "bridges", "тор", "мосты", "анонимность", "цепочка", "circuit", "new identity", "ротация"),
+                                title = Localizations.tr(appLanguage, ru = "Встроенный Tor & Мосты obfs4", en = "Embedded Tor & obfs4 Bridges", de = "Integrierter Tor & obfs4-Bridges", es = "Tor integrado y puentes obfs4", fr = "Tor intégré et ponts obfs4", pt = "Tor integrado e pontes obfs4", tr = "Gömülü Tor ve obfs4 Köprüleri"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Луковая маршрутизация, мосты obfs4 и ротация цепочки", en = "Onion routing, obfs4 bridges & circuit rotation", de = "Onion-Routing, obfs4-Bridges & Circuit-Rotation", es = "Enrutamiento Onion, puentes obfs4 y rotación de circuito", fr = "Routage en oignon, ponts obfs4 et rotation de circuit", pt = "Roteamento cebola, pontes obfs4 e rotação de circuito", tr = "Onion yönlendirme, obfs4 köprüleri ve devre rotasyonu"),
+                                keywords = listOf("tor", "onion", "obfs4", "bridge", "bridges", "тор", "мосты", "анонимность", "цепочка", "circuit", "new identity", "ротация", "köprü", "anonimlik"),
                                 onClick = { activeSubPage = "tor" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Сеть" else "Network",
+                                category = Localizations.tr(appLanguage, ru = "Сеть", en = "Network", de = "Netzwerk", es = "Red", fr = "Réseau", pt = "Rede", tr = "Ağ"),
                                 categoryColor = Color(0xFF26A69A),
-                                title = if (isRu) "SOCKS5 / Внешний Прокси" else "SOCKS5 / Custom Proxy",
-                                subtitle = if (isRu) "Настройка внешнего SOCKS5 прокси или Orbot" else "Route connections via custom SOCKS5 proxy or Orbot",
-                                keywords = listOf("socks5", "proxy", "socks", "прокси", "хост", "порт", "1080", "9050", "orbot"),
+                                title = Localizations.tr(appLanguage, ru = "SOCKS5 / Внешний Прокси", en = "SOCKS5 / Custom Proxy", de = "SOCKS5 / Eigener Proxy", es = "SOCKS5 / Proxy personalizado", fr = "SOCKS5 / Proxy personnalisé", pt = "SOCKS5 / Proxy personalizado", tr = "SOCKS5 / Özel Vekil Sunucu"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Настройка внешнего SOCKS5 прокси или Orbot", en = "Route connections via custom SOCKS5 proxy or Orbot", de = "Verbindungen über eigenen SOCKS5-Proxy oder Orbot leiten", es = "Enrutar conexiones a través de un proxy SOCKS5 personalizado u Orbot", fr = "Acheminer les connexions via un proxy SOCKS5 personnalisé ou Orbot", pt = "Rotear conexões via proxy SOCKS5 personalizado ou Orbot", tr = "Bağlantıları özel SOCKS5 vekil sunucusu veya Orbot üzerinden yönlendirin"),
+                                keywords = listOf("socks5", "proxy", "socks", "прокси", "хост", "порт", "1080", "9050", "orbot", "vekil sunucu"),
                                 onClick = { activeSubPage = "trackers" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Оформление" else "Appearance",
+                                category = Localizations.tr(appLanguage, ru = "Оформление", en = "Appearance", de = "Erscheinungsbild", es = "Apariencia", fr = "Apparence", pt = "Aparência", tr = "Görünüm"),
                                 categoryColor = Color(0xFFFFA726),
-                                title = if (isRu) "Сворачивать NexusTab по умолчанию" else "Collapse NexusTab by Default",
-                                subtitle = if (isRu) "Компактный режим виджета статуса на экране чатов" else "Compact NexusTab status bar on chats tab",
-                                keywords = listOf("nexustab", "nexus", "hero", "widget", "виджет", "сворачивать", "компактный", "статус"),
+                                title = Localizations.tr(appLanguage, ru = "Сворачивать NexusTab по умолчанию", en = "Collapse NexusTab by Default", de = "NexusTab standardmäßig minimieren", es = "Colapsar NexusTab por defecto", fr = "Réduire NexusTab par défaut", pt = "Recolher NexusTab por padrão", tr = "NexusTab'ı Varsayılan Olarak Daralt"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Компактный режим виджета статуса на экране чатов", en = "Compact NexusTab status bar on chats tab", de = "Kompakte NexusTab-Statusleiste im Chats-Tab", es = "Barra de estado compacta de NexusTab en la pestaña de chats", fr = "Barre d'état compacte de NexusTab dans l'onglet des discussions", pt = "Barra de status compacta do NexusTab na aba de conversas", tr = "Sohbetler sekmesinde kompakt NexusTab durum çubuğu"),
+                                keywords = listOf("nexustab", "nexus", "hero", "widget", "виджет", "сворачивать", "компактный", "статус", "daralt"),
                                 onClick = { activeSubPage = "chat_settings" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Сеть" else "Network",
+                                category = Localizations.tr(appLanguage, ru = "Сеть", en = "Network", de = "Netzwerk", es = "Red", fr = "Réseau", pt = "Rede", tr = "Ağ"),
                                 categoryColor = Color(0xFFAB47BC),
-                                title = if (isRu) "Настройки Yggdrasil" else "Yggdrasil Settings",
-                                subtitle = if (isRu) "Маршрутизация mesh-сети, пиры и генерация ключей" else "Mesh routing, public & custom peers, key management",
-                                keywords = listOf("yggdrasil", "peers", "mesh", "vpn", "nodes", "пиры", "узлы", "маршрутизация", "ключ", "ipv6", "иггдрасиль"),
+                                title = Localizations.tr(appLanguage, ru = "Настройки Yggdrasil", en = "Yggdrasil Settings", de = "Yggdrasil-Einstellungen", es = "Ajustes de Yggdrasil", fr = "Paramètres d'Yggdrasil", pt = "Configurações do Yggdrasil", tr = "Yggdrasil Ayarları"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Маршрутизация mesh-сети, пиры и генерация ключей", en = "Mesh routing, public & custom peers, key management", de = "Mesh-Routing, öffentliche & eigene Peers, Schlüsselverwaltung", es = "Enrutamiento mesh, pares públicos y personalizados, gestión de claves", fr = "Routage maillé, pairs publics et personnalisés, gestion des clés", pt = "Roteamento mesh, pares públicos e personalizados, gerenciamento de chaves", tr = "Mesh yönlendirme, genel ve özel eşler, anahtar yönetimi"),
+                                keywords = listOf("yggdrasil", "peers", "mesh", "vpn", "nodes", "пиры", "узлы", "маршрутизация", "ключ", "ipv6", "иггдрасиль", "eşler"),
                                 onClick = { activeSubPage = "yggdrasil_peers" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Уведомления" else "Notifications",
+                                category = Localizations.tr(appLanguage, ru = "Уведомления", en = "Notifications", de = "Benachrichtigungen", es = "Notificaciones", fr = "Notifications", pt = "Notificações", tr = "Bildirimler"),
                                 categoryColor = Color(0xFFEF5350),
-                                title = if (isRu) "Уведомления и звуки" else "Notifications & Sounds",
-                                subtitle = if (isRu) "Звуковые сигналы, вибрация и превью сообщений" else "Sounds, vibration & message previews",
-                                keywords = listOf("notification", "notifications", "sound", "sounds", "vibration", "preview", "уведомление", "уведомления", "звуки", "превью"),
+                                title = Localizations.tr(appLanguage, ru = "Уведомления и звуки", en = "Notifications & Sounds", de = "Benachrichtigungen & Töne", es = "Notificaciones y sonidos", fr = "Notifications et sons", pt = "Notificações e sons", tr = "Bildirimler ve Sesler"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Звуковые сигналы, вибрация и превью сообщений", en = "Sounds, vibration & message previews", de = "Töne, Vibration & Nachrichtenvorschau", es = "Sonidos, vibración y vista previa de mensajes", fr = "Sons, vibration et aperçus des messages", pt = "Sons, vibração e pré-visualização de mensagens", tr = "Sesli uyarılar, titreşim ve mesaj önizlemeleri"),
+                                keywords = listOf("notification", "notifications", "sound", "sounds", "vibration", "preview", "уведомление", "уведомления", "звуки", "превью", "bildirim", "sesler", "titreşim"),
                                 onClick = { activeSubPage = "notifications" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Память" else "Storage",
+                                category = Localizations.tr(appLanguage, ru = "Память", en = "Storage", de = "Speicher", es = "Almacenamiento", fr = "Stockage", pt = "Armazenamento", tr = "Depolama"),
                                 categoryColor = Color(0xFF26A69A),
-                                title = if (isRu) "Данные и память (Кэш)" else "Data & Storage (Cache)",
-                                subtitle = if (isRu) "Использование памяти и очистка кэша файлов" else "Storage usage & clearing media cache",
-                                keywords = listOf("data", "storage", "cache", "memory", "кэш", "память", "данные", "очистить", "медиа"),
+                                title = Localizations.tr(appLanguage, ru = "Данные и память (Кэш)", en = "Data & Storage (Cache)", de = "Daten & Speicher (Cache)", es = "Datos y almacenamiento (Caché)", fr = "Données et stockage (Cache)", pt = "Dados e armazenamento (Cache)", tr = "Veri ve Depolama (Önbellek)"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Использование памяти и очистка кэша файлов", en = "Storage usage & clearing media cache", de = "Speicherbelegung und Cache-Bereinigung", es = "Uso de almacenamiento y limpieza de caché de medios", fr = "Utilisation du stockage et nettoyage du cache des médias", pt = "Uso do armazenamento e limpeza do cache de mídia", tr = "Depolama kullanımı ve medya önbelleğini temizleme"),
+                                keywords = listOf("data", "storage", "cache", "memory", "кэш", "память", "данные", "очистить", "медиа", "önbellek", "depolama"),
                                 onClick = { activeSubPage = "storage" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Статистика" else "Stats",
+                                category = Localizations.tr(appLanguage, ru = "Статистика", en = "Stats", de = "Statistiken", es = "Estadísticas", fr = "Statistiques", pt = "Estatísticas", tr = "İstatistikler"),
                                 categoryColor = Color(0xFF42A5F5),
-                                title = if (isRu) "Использование сети (Трафик)" else "Network Data Usage",
-                                subtitle = if (isRu) "Статистика входящего и исходящего P2P трафика" else "Inbound and outbound P2P traffic statistics",
-                                keywords = listOf("network usage", "traffic", "bytes", "трафик", "сеть", "байты", "статистика"),
+                                title = Localizations.tr(appLanguage, ru = "Использование сети (Трафик)", en = "Network Data Usage", de = "Netzwerk-Datennutzung", es = "Uso de datos de red", fr = "Consommation de données réseau", pt = "Uso de dados de rede", tr = "Ağ Veri Kullanımı"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Статистика входящего и исходящего P2P трафика", en = "Inbound and outbound P2P traffic statistics", de = "Statistiken zum eingehenden und ausgehenden P2P-Datenverkehr", es = "Estadísticas de tráfico P2P entrante y saliente", fr = "Statistiques du trafic P2P entrant et sortant", pt = "Estatísticas de tráfego P2P de entrada e saída", tr = "Gelen ve giden P2P veri trafiği istatistikleri"),
+                                keywords = listOf("network usage", "traffic", "bytes", "трафик", "сеть", "байты", "статистика", "veri", "istatistik"),
                                 onClick = { activeSubPage = "network_usage" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Система" else "System",
+                                category = Localizations.tr(appLanguage, ru = "Система", en = "System", de = "System", es = "Sistema", fr = "Système", pt = "Sistema", tr = "Sistem"),
                                 categoryColor = Color(0xFFEC407A),
-                                title = if (isRu) "Язык приложения" else "App Language",
-                                subtitle = if (isRu) "Переключение между Русским и English" else "Switch between Russian and English",
+                                title = Localizations.tr(appLanguage, ru = "Язык приложения", en = "App Language", de = "App-Sprache", es = "Idioma de la app", fr = "Langue de l'application", pt = "Idioma do aplicativo", tr = "Uygulama Dili"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Русский, English, Deutsch, Español, Türkçe...", en = "Russian, English, German, Spanish, Turkish...", de = "Russisch, Englisch, Deutsch, Spanisch, Türkisch...", es = "Ruso, Inglés, Alemán, Español, Turco...", fr = "Russe, Anglais, Allemand, Espagnol, Turc...", pt = "Russo, Inglês, Alemão, Espanhol, Turco...", tr = "Rusça, İngilizce, Almanca, İspanyolca, Türkçe..."),
                                 valueBadge = appLanguage,
-                                keywords = listOf("language", "ru", "en", "язык", "русский", "английский", "english"),
+                                keywords = listOf("language", "ru", "en", "язык", "русский", "английский", "english", "dil", "türkçe"),
                                 onClick = { activeSubPage = "language" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Справка" else "Help",
+                                category = Localizations.tr(appLanguage, ru = "Справка", en = "Help", de = "Hilfe", es = "Ayuda", fr = "Aide", pt = "Ajuda", tr = "Yardım"),
                                 categoryColor = Color(0xFF7E57C2),
-                                title = if (isRu) "Справка и руководства" else "Help & Reference",
-                                subtitle = if (isRu) "Ответы на частые вопросы и руководства P2P" else "FAQ & P2P protocol reference guides",
-                                keywords = listOf("help", "reference", "faq", "справка", "помощь", "вопросы", "руководство"),
+                                title = Localizations.tr(appLanguage, ru = "Справка и руководства", en = "Help & Reference", de = "Hilfe & Referenz", es = "Ayuda y referencias", fr = "Aide et références", pt = "Ajuda e referências", tr = "Rehber ve Güvenlik İpuçları"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Ответы на частые вопросы и руководства P2P", en = "FAQ & P2P protocol reference guides", de = "FAQ & P2P-Protokoll-Leitfäden", es = "Preguntas frecuentes y guías del protocolo P2P", fr = "FAQ et guides de référence du protocole P2P", pt = "FAQ e guias de referência do protocolo P2P", tr = "Kavramlar, ağ rehberi ve gizlilik açıklamaları"),
+                                keywords = listOf("help", "reference", "faq", "справка", "помощь", "вопросы", "руководство", "yardım", "rehber", "sss"),
                                 onClick = { activeSubPage = "help_reference" }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Отладка" else "Debug",
+                                category = Localizations.tr(appLanguage, ru = "Отладка", en = "Debug", de = "Debugging", es = "Depuración", fr = "Débogage", pt = "Depuração", tr = "Hata Ayıklama"),
                                 categoryColor = Color(0xFF78909C),
-                                title = if (isRu) "Сетевой отладчик и Логи" else "Network Diagnostics & Logs",
-                                subtitle = if (isRu) "Мониторинг событий сети и соединений live" else "Live monitoring of P2P network events",
-                                keywords = listOf("log", "logs", "debugger", "diagnostics", "логи", "отладчик", "отладка"),
+                                title = Localizations.tr(appLanguage, ru = "Сетевой отладчик и Логи", en = "Network Diagnostics & Logs", de = "Netzwerkdiagnose & Protokolle", es = "Diagnóstico de red y registros", fr = "Diagnostics réseau et journaux", pt = "Diagnósticos de rede e registros", tr = "Ağ Tanılama ve Günlükler"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Мониторинг событий сети и соединений live", en = "Live monitoring of P2P network events", de = "Live-Überwachung von P2P-Netzwerkereignissen", es = "Monitoreo en vivo de eventos de red P2P", fr = "Surveillance en direct des événements réseau P2P", pt = "Monitoramento ao vivo de eventos da rede P2P", tr = "P2P ağ olaylarının canlı izlenmesi"),
+                                keywords = listOf("log", "logs", "debugger", "diagnostics", "логи", "отладчик", "отладка", "günlük", "tanılama"),
                                 onClick = { onShowLogs() }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Отладка" else "Debug",
+                                category = Localizations.tr(appLanguage, ru = "Отладка", en = "Debug", de = "Debugging", es = "Depuración", fr = "Débogage", pt = "Depuração", tr = "Hata Ayıklama"),
                                 categoryColor = Color(0xFF8D6E63),
-                                title = if (isRu) "Экспорт логов приложения" else "Export App Logs",
-                                subtitle = if (isRu) "Поделиться файлом логов app.log" else "Share app.log file",
-                                keywords = listOf("export", "share", "file", "экспорт", "поделиться", "лог-файл", "app.log"),
+                                title = Localizations.tr(appLanguage, ru = "Экспорт логов приложения", en = "Export App Logs", de = "App-Protokolle exportieren", es = "Exportar registros de la app", fr = "Exporter les journaux de l'application", pt = "Exportar registros do aplicativo", tr = "Uygulama Günlüklerini Dışa Aktar"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Поделиться файлом логов app.log", en = "Share app.log file", de = "app.log-Datei teilen", es = "Compartir archivo app.log", fr = "Partager le fichier app.log", pt = "Compartilhar arquivo app.log", tr = "app.log dosyasını paylaş"),
+                                keywords = listOf("export", "share", "file", "экспорт", "поделиться", "лог-файл", "app.log", "dışa aktar", "paylaş"),
                                 onClick = {
                                     val logFile = File(File(context.filesDir, "config"), "app.log")
                                     if (logFile.exists() && logFile.length() > 0) {
@@ -477,21 +476,23 @@ fun SettingsTab(
                                                 putExtra(Intent.EXTRA_STREAM, fileUri)
                                                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                             }
-                                            context.startActivity(Intent.createChooser(shareIntent, if (isRu) "Поделиться логами" else "Share Logs"))
+                                            val chooserTitle = Localizations.tr(appLanguage, ru = "Поделиться логами", en = "Share Logs", de = "Protokolle teilen", es = "Compartir registros", fr = "Partager les journaux", pt = "Compartilhar registros", tr = "Günlükleri Paylaş")
+                                            context.startActivity(Intent.createChooser(shareIntent, chooserTitle))
                                         } catch (e: Exception) {
                                             Toast.makeText(context, "Error sharing logs: ${e.message}", Toast.LENGTH_SHORT).show()
                                         }
                                     } else {
-                                        Toast.makeText(context, if (isRu) "Лог-файл пуст или еще не создан" else "Log file is empty or not created yet", Toast.LENGTH_SHORT).show()
+                                        val emptyMsg = Localizations.tr(appLanguage, ru = "Лог-файл пуст или еще не создан", en = "Log file is empty or not created yet", de = "Protokolldatei ist leer oder noch nicht erstellt", es = "El archivo de registro está vacío o aún no se ha creado", fr = "Le fichier journal est vide ou pas encore créé", pt = "O arquivo de log está vazio ou ainda não foi criado", tr = "Günlük dosyası boş veya henüz oluşturulmadı")
+                                        Toast.makeText(context, emptyMsg, Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             ),
                             DeepSettingItem(
-                                category = if (isRu) "Опасная зона" else "Danger Zone",
+                                category = Localizations.tr(appLanguage, ru = "Опасная зона", en = "Danger Zone", de = "Gefahrenzone", es = "Zona de peligro", fr = "Zone dangereuse", pt = "Zona de perigo", tr = "Tehlikeli Bölge"),
                                 categoryColor = Color(0xFFFF5252),
-                                title = if (isRu) "Удалить аккаунт и данные" else "Delete Account & Data",
-                                subtitle = if (isRu) "Полное удаление ключей и истории сообщений" else "Permanently wipe identity keys and history",
-                                keywords = listOf("delete", "wipe", "remove", "account", "удалить", "стереть", "аккаунт"),
+                                title = Localizations.tr(appLanguage, ru = "Удалить аккаунт и данные", en = "Delete Account & Data", de = "Konto & Daten löschen", es = "Eliminar cuenta y datos", fr = "Supprimer le compte et les données", pt = "Excluir conta e dados", tr = "Hesabı ve Verileri Sil"),
+                                subtitle = Localizations.tr(appLanguage, ru = "Полное удаление ключей и истории сообщений", en = "Permanently wipe identity keys and history", de = "Schlüssel und Nachrichtenverlauf dauerhaft löschen", es = "Eliminar permanentemente claves de identidad e historial", fr = "Effacer définitivement les clés d'identité et l'historique", pt = "Limpar permanentemente as chaves de identidade e histórico", tr = "Kimlik anahtarlarını ve mesaj geçmişini kalıcı olarak sil"),
+                                keywords = listOf("delete", "wipe", "remove", "account", "удалить", "стереть", "аккаунт", "sil", "hesap"),
                                 onClick = { showDeleteAccountDialog = true }
                             )
                         )
@@ -516,7 +517,16 @@ fun SettingsTab(
                             Spacer(modifier = Modifier.height(8.dp))
                             if (matchingDeepResults.isNotEmpty()) {
                                 SettingsSectionHeader(
-                                    if (isRu) "НАЙДЕННЫЕ НАСТРОЙКИ (${matchingDeepResults.size})" else "SEARCH RESULTS (${matchingDeepResults.size})",
+                                    Localizations.tr(
+                                        appLanguage,
+                                        ru = "НАЙДЕННЫЕ НАСТРОЙКИ (${matchingDeepResults.size})",
+                                        en = "SEARCH RESULTS (${matchingDeepResults.size})",
+                                        de = "SUCHERGEBNISSE (${matchingDeepResults.size})",
+                                        es = "RESULTADOS DE BÚSQUEDA (${matchingDeepResults.size})",
+                                        fr = "RÉSULTATS DE RECHERCHE (${matchingDeepResults.size})",
+                                        pt = "RESULTADOS DA BUSCA (${matchingDeepResults.size})",
+                                        tr = "ARAMA SONUÇLARI (${matchingDeepResults.size})"
+                                    ),
                                     primaryColor
                                 )
                                 Card(
@@ -569,14 +579,32 @@ fun SettingsTab(
                                         )
                                         Spacer(modifier = Modifier.height(12.dp))
                                         Text(
-                                            text = if (isRu) "Ничего не найдено" else "No settings found",
+                                            text = Localizations.tr(
+                                                appLanguage,
+                                                ru = "Ничего не найдено",
+                                                en = "No settings found",
+                                                de = "Keine Einstellungen gefunden",
+                                                es = "No se encontraron ajustes",
+                                                fr = "Aucun paramètre trouvé",
+                                                pt = "Nenhuma configuração encontrada",
+                                                tr = "Ayar bulunamadı"
+                                            ),
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 15.sp,
                                             color = onSurfaceColor
                                         )
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(
-                                            text = if (isRu) "Попробуйте изменить поисковый запрос" else "Try changing your search query",
+                                            text = Localizations.tr(
+                                                appLanguage,
+                                                ru = "Попробуйте изменить поисковый запрос",
+                                                en = "Try changing your search query",
+                                                de = "Versuchen Sie eine andere Suchanfrage",
+                                                es = "Intenta cambiar tu búsqueda",
+                                                fr = "Essayez de modifier votre recherche",
+                                                pt = "Tente alterar sua busca",
+                                                tr = "Arama sorgunuzu değiştirmeyi deneyin"
+                                            ),
                                             fontSize = 12.sp,
                                             color = onSurfaceVariant.copy(alpha = 0.7f)
                                         )
@@ -707,9 +735,10 @@ fun SettingsTab(
                                             .size(38.dp)
                                             .clickable {
                                                 com.example.twopchat.copyTextToClipboard(context, "Contact Address", contactAddress)
+                                                val addrCopiedMsg = Localizations.tr(appLanguage, ru = "Адрес контакта скопирован", en = "Contact address copied", de = "Kontaktadresse kopiert", es = "Dirección de contacto copiada", fr = "Adresse du contact copiée", pt = "Endereço de contato copiado", tr = "Kişi adresi kopyalandı")
                                                 Toast.makeText(
                                                     context,
-                                                    if (appLanguage == "Русский") "Адрес контакта скопирован" else "Contact address copied",
+                                                    addrCopiedMsg,
                                                     Toast.LENGTH_SHORT
                                                 ).show()
                                             }
@@ -751,9 +780,9 @@ fun SettingsTab(
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
                                             text = if (aboutMeText.isEmpty()) {
-                                                if (appLanguage == "Русский") "О себе: Нажмите, чтобы добавить..." else "About me: Tap to add..."
+                                                Localizations.tr(appLanguage, ru = "О себе: Нажмите, чтобы добавить...", en = "About me: Tap to add...", de = "Über mich: Zum Hinzufügen tippen...", es = "Sobre mí: Toca para agregar...", fr = "À propos de moi : Appuyez pour ajouter...", pt = "Sobre mim: Toque para adicionar...", tr = "Hakkımda: Eklemek için dokunun...")
                                             } else {
-                                                if (appLanguage == "Русский") "О себе: $aboutMeText" else "About me: $aboutMeText"
+                                                Localizations.tr(appLanguage, ru = "О себе: $aboutMeText", en = "About me: $aboutMeText", de = "Über mich: $aboutMeText", es = "Sobre mí: $aboutMeText", fr = "À propos de moi : $aboutMeText", pt = "Sobre mim: $aboutMeText", tr = "Hakkımda: $aboutMeText")
                                             },
                                             fontSize = 12.sp,
                                             color = if (aboutMeText.isEmpty()) onSurfaceVariant.copy(alpha = 0.7f) else onSurfaceColor.copy(alpha = 0.9f),
@@ -780,9 +809,31 @@ fun SettingsTab(
                         ) {
                             Column {
                                 SettingsRow(
-                                    title = if (appLanguage == "Русский") "Tor и скрытые сервисы (.onion)" else "Tor & Hidden Services (.onion)",
-                                    subtitle = if (appLanguage == "Русский") "Встроенный демон, мосты obfs4, смена личности" else "Embedded daemon, obfs4 bridges, circuit renewal",
-                                    value = if (isTorRunning) "● Active" else "○ Standby",
+                                    title = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Tor и скрытые сервисы (.onion)",
+                                        en = "Tor & Hidden Services (.onion)",
+                                        de = "Tor & Versteckte Dienste (.onion)",
+                                        es = "Tor y servicios ocultos (.onion)",
+                                        fr = "Tor et services cachés (.onion)",
+                                        pt = "Tor e serviços ocultos (.onion)",
+                                        tr = "Tor ve Gizli Servisler (.onion)"
+                                    ),
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Встроенный демон, мосты obfs4, смена личности",
+                                        en = "Embedded daemon, obfs4 bridges, circuit renewal",
+                                        de = "Integrierter Daemon, obfs4-Bridges, Identitätswechsel",
+                                        es = "Demonio integrado, puentes obfs4, renovación de circuito",
+                                        fr = "Démon intégré, ponts obfs4, renouvellement du circuit",
+                                        pt = "Daemon integrado, pontes obfs4, renovação de circuito",
+                                        tr = "Gömülü daemon, obfs4 köprüleri, devre yenileme"
+                                    ),
+                                    value = if (isTorRunning) {
+                                        Localizations.tr(appLanguage, ru = "● Активен", en = "● Active", de = "● Aktiv", es = "● Activo", fr = "● Actif", pt = "● Ativo", tr = "● Aktif")
+                                    } else {
+                                        Localizations.tr(appLanguage, ru = "○ Ожидание", en = "○ Standby", de = "○ Standby", es = "○ Espera", fr = "○ En attente", pt = "○ Em espera", tr = "○ Beklemede")
+                                    },
                                     iconRes = com.example.twopchat.R.drawable.ic_tor,
                                     iconColor = Color(0xFF8B5CF6),
                                     onSurfaceColor = onSurfaceColor,
@@ -809,7 +860,16 @@ fun SettingsTab(
                             Column {
                                 SettingsRow(
                                     title = Localizations.getString("security_and_keys", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "Личный ключ, отпечаток (Fingerprint) и сверка" else "Personal key, fingerprint and identity verification",
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Личный ключ, отпечаток (Fingerprint) и сверка",
+                                        en = "Personal key, fingerprint and identity verification",
+                                        de = "Persönlicher Schlüssel, Fingerabdruck & Identitätsprüfung",
+                                        es = "Clave personal, huella digital y verificación de identidad",
+                                        fr = "Clé personnelle, empreinte et vérification d'identité",
+                                        pt = "Chave pessoal, impressão digital e verificação de identidade",
+                                        tr = "Kişisel anahtar, parmak izi ve kimlik doğrulama"
+                                    ),
                                     value = if (localFingerprint.isNotBlank()) localFingerprint.take(6) + "…" else null,
                                     iconRes = com.example.twopchat.R.drawable.ic_copy_key,
                                     iconColor = Color(0xFF10B981),
@@ -823,8 +883,17 @@ fun SettingsTab(
 
                                 SettingsRow(
                                     title = Localizations.getString("passcode_lock", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "4-значный PIN-код и тревожный пароль (Duress)" else "4-digit PIN lock and Duress emergency wipe",
-                                    value = if (hasPasscode) (if (appLanguage == "Русский") "Включен" else "ON") else null,
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "4-значный PIN-код и тревожный пароль (Duress)",
+                                        en = "4-digit PIN lock and Duress emergency wipe",
+                                        de = "4-stellige PIN-Sperre & Duress-Notfalllöschung",
+                                        es = "Bloqueo con PIN de 4 dígitos y borrado de emergencia (Duress)",
+                                        fr = "Verrouillage par code PIN à 4 chiffres et effacement d'urgence Duress",
+                                        pt = "Bloqueio por PIN de 4 dígitos e limpeza de emergência Duress",
+                                        tr = "4 haneli PIN kilidi ve Tehdit (Duress) acil durum sıfırlama"
+                                    ),
+                                    value = if (hasPasscode) Localizations.tr(appLanguage, ru = "Включен", en = "ON", de = "AN", es = "ACTIVADO", fr = "ACTIVÉ", pt = "ATIVADO", tr = "AÇIK") else null,
                                     iconRes = com.example.twopchat.R.drawable.ic_shield_status,
                                     iconColor = Color(0xFF3B82F6),
                                     onSurfaceColor = onSurfaceColor,
@@ -837,7 +906,16 @@ fun SettingsTab(
 
                                 SettingsRow(
                                     title = Localizations.getString("privacy_protection", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "Блокировка скриншотов и клавиатура инкогнито" else "Screen capture blocking & incognito keyboard",
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Блокировка скриншотов и клавиатура инкогнито",
+                                        en = "Screen capture blocking & incognito keyboard",
+                                        de = "Screenshot-Sperre & Inkognito-Tastatur",
+                                        es = "Bloqueo de captura de pantalla y teclado incógnito",
+                                        fr = "Blocage des captures d'écran et clavier incognito",
+                                        pt = "Bloqueio de captura de tela e teclado anônimo",
+                                        tr = "Ekran görüntüsü engelleme ve gizli klavye"
+                                    ),
                                     iconRes = com.example.twopchat.R.drawable.ic_shield_status,
                                     iconColor = Color(0xFF06B6D4),
                                     onSurfaceColor = onSurfaceColor,
@@ -863,7 +941,16 @@ fun SettingsTab(
                             Column {
                                 SettingsRow(
                                     title = Localizations.getString("yggdrasil_network", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "IPv6 mesh-сеть, публичные и пользовательские пиры" else "IPv6 mesh network, public and custom peers",
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "IPv6 mesh-сеть, публичные и пользовательские пиры",
+                                        en = "IPv6 mesh network, public and custom peers",
+                                        de = "IPv6-Mesh-Netzwerk, öffentliche und eigene Peers",
+                                        es = "Red mesh IPv6, pares públicos y personalizados",
+                                        fr = "Réseau maillé IPv6, pairs publics et personnalisés",
+                                        pt = "Rede mesh IPv6, pares públicos e personalizados",
+                                        tr = "IPv6 mesh ağı, genel ve özel eşler"
+                                    ),
                                     iconRes = com.example.twopchat.R.drawable.ic_quick_link,
                                     iconColor = Color(0xFFA855F7),
                                     onSurfaceColor = onSurfaceColor,
@@ -876,7 +963,16 @@ fun SettingsTab(
 
                                 SettingsRow(
                                     title = Localizations.getString("trackers_and_dht", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "DHT-обнаружение, UDP/HTTP трекеры и SOCKS5" else "DHT discovery, UDP/HTTP trackers and SOCKS5",
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "DHT-обнаружение, UDP/HTTP трекеры и SOCKS5",
+                                        en = "DHT discovery, UDP/HTTP trackers and SOCKS5",
+                                        de = "DHT-Erkennung, UDP/HTTP-Tracker und SOCKS5",
+                                        es = "Descubrimiento DHT, rastreadores UDP/HTTP y SOCKS5",
+                                        fr = "Découverte DHT, trackers UDP/HTTP et SOCKS5",
+                                        pt = "Descoberta DHT, rastreadores UDP/HTTP e SOCKS5",
+                                        tr = "DHT keşfi, UDP/HTTP izleyicileri ve SOCKS5"
+                                    ),
                                     iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
                                     iconColor = Color(0xFF0EA5E9),
                                     onSurfaceColor = onSurfaceColor,
@@ -889,7 +985,16 @@ fun SettingsTab(
 
                                 SettingsRow(
                                     title = Localizations.getString("advanced_network_params", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "Порт P2P, Wi-Fi discovery, IPv4 и UPnP" else "P2P port, Wi-Fi discovery, IPv4 and UPnP NAT",
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Порт P2P, Wi-Fi discovery, IPv4 и UPnP",
+                                        en = "P2P port, Wi-Fi discovery, IPv4 and UPnP NAT",
+                                        de = "P2P-Port, Wi-Fi-Erkennung, IPv4 und UPnP NAT",
+                                        es = "Puerto P2P, descubrimiento Wi-Fi, IPv4 y UPnP NAT",
+                                        fr = "Port P2P, découverte Wi-Fi, IPv4 et UPnP NAT",
+                                        pt = "Porta P2P, descoberta Wi-Fi, IPv4 e UPnP NAT",
+                                        tr = "P2P bağlantı noktası, Wi-Fi keşfi, IPv4 ve UPnP NAT"
+                                    ),
                                     iconRes = com.example.twopchat.R.drawable.ic_menu_settings,
                                     iconColor = Color(0xFF14B8A6),
                                     onSurfaceColor = onSurfaceColor,
@@ -902,7 +1007,16 @@ fun SettingsTab(
 
                                 SettingsRow(
                                     title = Localizations.getString("network_data_usage", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "Статистика входящего и исходящего P2P трафика" else "Inbound and outbound P2P traffic statistics",
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Статистика входящего и исходящего P2P трафика",
+                                        en = "Inbound and outbound P2P traffic statistics",
+                                        de = "Statistiken zum eingehenden und ausgehenden P2P-Datenverkehr",
+                                        es = "Estadísticas de tráfico P2P entrante y saliente",
+                                        fr = "Statistiques du trafic P2P entrant et sortant",
+                                        pt = "Estatísticas de tráfego P2P de entrada e saída",
+                                        tr = "Gelen ve giden P2P veri trafiği istatistikleri"
+                                    ),
                                     iconRes = com.example.twopchat.R.drawable.ic_send_airplane,
                                     iconColor = Color(0xFF3B82F6),
                                     onSurfaceColor = onSurfaceColor,
@@ -928,7 +1042,16 @@ fun SettingsTab(
                             Column {
                                 SettingsRow(
                                     title = Localizations.getString("appearance_and_themes", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "Цветовая схема, светлая тема, AMOLED и иконка" else "Color accent, light mode, AMOLED and launcher icon",
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Цветовая схема, светлая тема, AMOLED и иконка",
+                                        en = "Color accent, light mode, AMOLED and launcher icon",
+                                        de = "Farbackzent, heller Modus, AMOLED und App-Symbol",
+                                        es = "Acento de color, modo claro, AMOLED e icono de inicio",
+                                        fr = "Accent de couleur, mode clair, AMOLED et icône d'application",
+                                        pt = "Acento de cor, modo claro, AMOLED e ícone do app",
+                                        tr = "Renk vurgusu, açık tema, AMOLED ve başlatıcı simgesi"
+                                    ),
                                     value = if (!isDarkTheme) "Light" else if (useAmoled) "AMOLED" else if (accentScheme == "purple") "Amethyst" else if (accentScheme == "amber") "Amber" else if (useCerulean || accentScheme == "cerulean") "Cerulean" else "Mint",
                                     iconRes = com.example.twopchat.R.drawable.ic_chat_wallpaper,
                                     iconColor = Color(0xFFF59E0B),
@@ -942,7 +1065,16 @@ fun SettingsTab(
 
                                 SettingsRow(
                                     title = Localizations.getString("stickers_and_emoji", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "Создание наклеек, Telegram .tgs и управление паками" else "Custom stickers, Telegram .tgs packs & editor",
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Создание наклеек, Telegram .tgs и управление паками",
+                                        en = "Custom stickers, Telegram .tgs packs & editor",
+                                        de = "Eigene Sticker, Telegram-.tgs-Pakete und Editor",
+                                        es = "Stickers personalizados, paquetes .tgs de Telegram y editor",
+                                        fr = "Autocollants personnalisés, packs .tgs Telegram et éditeur",
+                                        pt = "Figurinhas personalizadas, pacotes .tgs do Telegram e editor",
+                                        tr = "Özel çıkartmalar, Telegram .tgs paketleri ve düzenleyici"
+                                    ),
                                     iconRes = com.example.twopchat.R.drawable.ic_sticker_smile,
                                     iconColor = Color(0xFFEC4899),
                                     onSurfaceColor = onSurfaceColor,
@@ -955,7 +1087,16 @@ fun SettingsTab(
 
                                 SettingsRow(
                                     title = Localizations.getString("notifications_and_sounds", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "Звуковые сигналы, вибрация и превью сообщений" else "Push alerts, vibration and message previews",
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Звуковые сигналы, вибрация и превью сообщений",
+                                        en = "Push alerts, vibration and message previews",
+                                        de = "Benachrichtigungstöne, Vibration und Nachrichtenvorschau",
+                                        es = "Alertas sonoras, vibración y vista previa de mensajes",
+                                        fr = "Alertes sonores, vibration et aperçus des messages",
+                                        pt = "Alertas sonoros, vibração e pré-visualização de mensagens",
+                                        tr = "Sesli uyarılar, titreşim ve mesaj önizlemeleri"
+                                    ),
                                     iconRes = com.example.twopchat.R.drawable.ic_notifications,
                                     iconColor = Color(0xFFEF4444),
                                     onSurfaceColor = onSurfaceColor,
@@ -968,7 +1109,16 @@ fun SettingsTab(
 
                                 SettingsRow(
                                     title = Localizations.getString("data_and_storage", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "Использование памяти и очистка кэша файлов" else "Storage breakdown & cache cleanup manager",
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Использование памяти и очистка кэша файлов",
+                                        en = "Storage breakdown & cache cleanup manager",
+                                        de = "Speicherbelegung und Cache-Bereinigung",
+                                        es = "Desglose de almacenamiento y limpieza de caché",
+                                        fr = "Utilisation du stockage et gestionnaire de nettoyage du cache",
+                                        pt = "Uso do armazenamento e gerenciador de limpeza de cache",
+                                        tr = "Depolama kullanımı ve önbellek temizleme yöneticisi"
+                                    ),
                                     iconRes = com.example.twopchat.R.drawable.ic_database_storage,
                                     iconColor = Color(0xFF10B981),
                                     onSurfaceColor = onSurfaceColor,
@@ -994,7 +1144,16 @@ fun SettingsTab(
                             Column {
                                 SettingsRow(
                                     title = Localizations.getString("app_language", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "Русский, English, Deutsch, Español..." else "Russian, English, German, Spanish...",
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Русский, English, Deutsch, Español...",
+                                        en = "Russian, English, German, Spanish...",
+                                        de = "Russisch, Englisch, Deutsch, Spanisch...",
+                                        es = "Ruso, Inglés, Alemán, Español...",
+                                        fr = "Russe, Anglais, Allemand, Espagnol...",
+                                        pt = "Russo, Inglês, Alemão, Espanhol...",
+                                        tr = "Rusça, İngilizce, Almanca, İspanyolca..."
+                                    ),
                                     value = appLanguage,
                                     iconRes = com.example.twopchat.R.drawable.ic_language_translate,
                                     iconColor = Color(0xFF8B5CF6),
@@ -1021,7 +1180,16 @@ fun SettingsTab(
 
                                 SettingsRow(
                                     title = Localizations.getString("net_diag_logs", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "Мониторинг событий сети и соединений live" else "Live monitoring of P2P network events",
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Мониторинг событий сети и соединений live",
+                                        en = "Live monitoring of P2P network events",
+                                        de = "Live-Überwachung von P2P-Netzwerkereignissen",
+                                        es = "Monitoreo en vivo de eventos de red P2P",
+                                        fr = "Surveillance en direct des événements réseau P2P",
+                                        pt = "Monitoramento ao vivo de eventos da rede P2P",
+                                        tr = "P2P ağ olaylarının canlı izlenmesi"
+                                    ),
                                     iconRes = com.example.twopchat.R.drawable.ic_menu_settings,
                                     iconColor = Color(0xFF64748B),
                                     onSurfaceColor = onSurfaceColor,
@@ -1034,7 +1202,16 @@ fun SettingsTab(
 
                                 SettingsRow(
                                     title = Localizations.getString("export_app_logs", appLanguage),
-                                    subtitle = if (appLanguage == "Русский") "Поделиться файлом логов app.log" else "Share app.log file",
+                                    subtitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Поделиться файлом логов app.log",
+                                        en = "Share app.log file",
+                                        de = "app.log-Datei teilen",
+                                        es = "Compartir archivo app.log",
+                                        fr = "Partager le fichier app.log",
+                                        pt = "Compartilhar arquivo app.log",
+                                        tr = "app.log dosyasını paylaş"
+                                    ),
                                     iconRes = com.example.twopchat.R.drawable.ic_quick_ip,
                                     iconColor = Color(0xFF78716C),
                                     onSurfaceColor = onSurfaceColor,
@@ -1051,12 +1228,14 @@ fun SettingsTab(
                                                     putExtra(Intent.EXTRA_STREAM, fileUri)
                                                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                                 }
-                                                context.startActivity(Intent.createChooser(shareIntent, if (appLanguage == "Русский") "Поделиться логами" else "Share Logs"))
+                                                val shareChooserTitle = Localizations.tr(appLanguage, ru = "Поделиться логами", en = "Share Logs", de = "Protokolle teilen", es = "Compartir registros", fr = "Partager les journaux", pt = "Compartilhar registros", tr = "Günlükleri Paylaş")
+                                                context.startActivity(Intent.createChooser(shareIntent, shareChooserTitle))
                                             } catch (e: Exception) {
                                                 Toast.makeText(context, "Error sharing logs: ${e.message}", Toast.LENGTH_SHORT).show()
                                             }
                                         } else {
-                                            Toast.makeText(context, if (appLanguage == "Русский") "Лог-файл пуст или еще не создан" else "Log file is empty or not created yet", Toast.LENGTH_SHORT).show()
+                                            val emptyLogMsg = Localizations.tr(appLanguage, ru = "Лог-файл пуст или еще не создан", en = "Log file is empty or not created yet", de = "Protokolldatei ist leer oder noch nicht erstellt", es = "El archivo de registro está vacío o aún no se ha creado", fr = "Le fichier journal est vide ou pas encore créé", pt = "O arquivo de log está vazio ou ainda não foi criado", tr = "Günlük dosyası boş veya henüz oluşturulmadı")
+                                            Toast.makeText(context, emptyLogMsg, Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 )
@@ -1065,16 +1244,54 @@ fun SettingsTab(
 
                                 val currentVerName = remember { AppUpdateManager.getCurrentVersionName(context) }
                                 val hasUpdate = availableUpdateRelease != null
-                                SettingsRow(
-                                    title = if (appLanguage == "Русский") "Проверить обновления" else "Check for Updates",
-                                    subtitle = if (isCheckingUpdate) {
-                                        if (appLanguage == "Русский") "Проверка релизов на GitHub..." else "Checking GitHub releases..."
+                                val updateTitle = Localizations.tr(
+                                        appLanguage,
+                                        ru = "Проверить обновления",
+                                        en = "Check for Updates",
+                                        de = "Nach Updates suchen",
+                                        es = "Buscar actualizaciones",
+                                        fr = "Rechercher des mises à jour",
+                                        pt = "Verificar atualizações",
+                                        tr = "Güncellemeleri Kontrol Et"
+                                    )
+                                    val updateSubtitle = if (isCheckingUpdate) {
+                                        Localizations.tr(
+                                            appLanguage,
+                                            ru = "Проверка релизов на GitHub...",
+                                            en = "Checking GitHub releases...",
+                                            de = "Prüfe GitHub-Releases...",
+                                            es = "Comprobando versiones en GitHub...",
+                                            fr = "Vérification des versions GitHub...",
+                                            pt = "Verificando versões no GitHub...",
+                                            tr = "GitHub sürümleri kontrol ediliyor..."
+                                        )
                                     } else if (hasUpdate) {
-                                        if (appLanguage == "Русский") "Доступна новая версия v${availableUpdateRelease?.versionName} • Нажмите для установки"
-                                        else "New version v${availableUpdateRelease?.versionName} available • Tap to install"
+                                        val newVer = availableUpdateRelease?.versionName ?: ""
+                                        Localizations.tr(
+                                            appLanguage,
+                                            ru = "Доступна новая версия v$newVer • Нажмите для установки",
+                                            en = "New version v$newVer available • Tap to install",
+                                            de = "Neue Version v$newVer verfügbar • Zum Installieren tippen",
+                                            es = "Nueva versión v$newVer disponible • Toca para instalar",
+                                            fr = "Nouvelle version v$newVer disponible • Appuyer pour installer",
+                                            pt = "Nova versão v$newVer disponível • Toque para instalar",
+                                            tr = "Yeni sürüm v$newVer mevcut • Yüklemek için dokunun"
+                                        )
                                     } else {
-                                        if (appLanguage == "Русский") "Текущая версия: v$currentVerName" else "Current version: v$currentVerName"
-                                    },
+                                        Localizations.tr(
+                                            appLanguage,
+                                            ru = "Текущая версия: v$currentVerName",
+                                            en = "Current version: v$currentVerName",
+                                            de = "Aktuelle Version: v$currentVerName",
+                                            es = "Versión actual: v$currentVerName",
+                                            fr = "Version actuelle : v$currentVerName",
+                                            pt = "Versão atual: v$currentVerName",
+                                            tr = "Geçerli sürüm: v$currentVerName"
+                                        )
+                                    }
+                                SettingsRow(
+                                    title = updateTitle,
+                                    subtitle = updateSubtitle,
                                     value = if (isCheckingUpdate) "..." else null,
                                     iconRes = com.example.twopchat.R.drawable.ic_app_update,
                                     iconColor = if (hasUpdate) Color(0xFFFF3B30) else Color(0xFF10B981),
@@ -1120,7 +1337,16 @@ fun SettingsTab(
                         ) {
                             SettingsRow(
                                 title = Localizations.getString("delete_account", appLanguage),
-                                subtitle = if (appLanguage == "Русский") "Полное удаление ключей и истории сообщений" else "Permanently wipe identity keys and history",
+                                subtitle = Localizations.tr(
+                                    appLanguage,
+                                    ru = "Полное удаление ключей и истории сообщений",
+                                    en = "Permanently wipe identity keys and history",
+                                    de = "Schlüssel und Nachrichtenverlauf dauerhaft löschen",
+                                    es = "Eliminar permanentemente claves de identidad e historial",
+                                    fr = "Effacer définitivement les clés d'identité et l'historique",
+                                    pt = "Limpar permanentemente as chaves de identidade e histórico",
+                                    tr = "Kimlik anahtarlarını ve mesaj geçmişini kalıcı olarak sil"
+                                ),
                                 iconRes = com.example.twopchat.R.drawable.ic_delete,
                                 iconColor = dangerRed,
                                 onSurfaceColor = dangerRed,
@@ -1288,7 +1514,8 @@ fun SettingsTab(
                 e.printStackTrace()
             }
             com.example.twopchat.relay.P2PMessageRelay.shareAvatarWithConnectedPeers(context)
-            Toast.makeText(context, if (appLanguage == "Русский") "Фото профиля удалено" else "Profile photo removed", Toast.LENGTH_SHORT).show()
+            val photoRemovedMsg = Localizations.tr(appLanguage, ru = "Фото профиля удалено", en = "Profile photo removed", de = "Profilbild entfernt", es = "Foto de perfil eliminada", fr = "Photo de profil supprimée", pt = "Foto de perfil removida", tr = "Profil fotoğrafı kaldırıldı")
+            Toast.makeText(context, photoRemovedMsg, Toast.LENGTH_SHORT).show()
         },
         showFullScreenAvatar = showFullScreenAvatar,
         onDismissFullScreenAvatar = { showFullScreenAvatar = false },
@@ -1339,9 +1566,9 @@ fun SettingsTab(
             title = {
                 Text(
                     text = when (res) {
-                        is UpdateCheckResult.UpdateAvailable -> if (appLanguage == "Русский") "Доступно обновление" else "Update Available"
-                        is UpdateCheckResult.UpToDate -> if (appLanguage == "Русский") "У вас последняя версия" else "Up to date"
-                        is UpdateCheckResult.Error -> if (appLanguage == "Русский") "Ошибка проверки" else "Check Failed"
+                        is UpdateCheckResult.UpdateAvailable -> Localizations.tr(appLanguage, ru = "Доступно обновление", en = "Update Available", de = "Update verfügbar", es = "Actualización disponible", fr = "Mise à jour disponible", pt = "Atualização disponível", tr = "Güncelleme Mevcut")
+                        is UpdateCheckResult.UpToDate -> Localizations.tr(appLanguage, ru = "У вас последняя версия", en = "Up to date", de = "Auf dem neuesten Stand", es = "Actualizado", fr = "À jour", pt = "Atualizado", tr = "Güncel")
+                        is UpdateCheckResult.Error -> Localizations.tr(appLanguage, ru = "Ошибка проверки", en = "Check Failed", de = "Prüfung fehlgeschlagen", es = "Error de comprobación", fr = "Échec de la vérification", pt = "Falha na verificação", tr = "Kontrol Başarısız")
                         null -> ""
                     },
                     fontWeight = FontWeight.Bold,
@@ -1355,8 +1582,10 @@ fun SettingsTab(
                         is UpdateCheckResult.UpdateAvailable -> {
                             val rel = res.release
                             val sizeMb = if (rel.apkSizeBytes > 0) " (%.1f MB)".format(rel.apkSizeBytes / (1024.0 * 1024.0)) else ""
+                            val newVerPrefix = Localizations.tr(appLanguage, ru = "Новая версия", en = "New version", de = "Neue Version", es = "Nueva versión", fr = "Nouvelle version", pt = "Nova versão", tr = "Yeni sürüm")
+                            val curVerPrefix = Localizations.tr(appLanguage, ru = "Текущая версия", en = "Current version", de = "Aktuelle Version", es = "Versión actual", fr = "Version actuelle", pt = "Versão atual", tr = "Geçerli sürüm")
                             Text(
-                                text = if (appLanguage == "Русский") "Новая версия: v${rel.versionName}$sizeMb\nТекущая версия: v${res.currentVersion}" else "New version: v${rel.versionName}$sizeMb\nCurrent version: v${res.currentVersion}",
+                                text = "$newVerPrefix: v${rel.versionName}$sizeMb\n$curVerPrefix: v${res.currentVersion}",
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp,
                                 color = primaryColor
@@ -1364,7 +1593,7 @@ fun SettingsTab(
                             if (rel.changelog.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Text(
-                                    text = if (appLanguage == "Русский") "Что нового:" else "What's new:",
+                                    text = Localizations.tr(appLanguage, ru = "Что нового:", en = "What's new:", de = "Was gibt's Neues:", es = "Novedades:", fr = "Nouveautés :", pt = "O que há de novo:", tr = "Yenilikler:"),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp,
                                     color = onSurfaceColor
@@ -1405,14 +1634,24 @@ fun SettingsTab(
                         }
                         is UpdateCheckResult.UpToDate -> {
                             Text(
-                                text = if (appLanguage == "Русский") "Установлена актуальная версия v${res.currentVersion}. Обновлений не найдено." else "Installed version v${res.currentVersion} is up to date.",
+                                text = Localizations.tr(
+                                    appLanguage,
+                                    ru = "Установлена актуальная версия v${res.currentVersion}. Обновлений не найдено.",
+                                    en = "Installed version v${res.currentVersion} is up to date.",
+                                    de = "Sie haben die neueste Version v${res.currentVersion}. Keine Updates gefunden.",
+                                    es = "Tienes la última versión v${res.currentVersion}. No se encontraron actualizaciones.",
+                                    fr = "Vous disposez de la dernière version v${res.currentVersion}. Aucune mise à jour trouvée.",
+                                    pt = "Você possui a versão mais recente v${res.currentVersion}. Nenhuma atualização encontrada.",
+                                    tr = "En son v${res.currentVersion} sürümüne sahipsiniz. Güncelleme bulunamadı."
+                                ),
                                 fontSize = 14.sp,
                                 color = onSurfaceVariant
                             )
                         }
                         is UpdateCheckResult.Error -> {
+                            val failPrefix = Localizations.tr(appLanguage, ru = "Не удалось проверить обновления", en = "Failed to check for updates", de = "Updates konnten nicht geprüft werden", es = "No se pudieron buscar actualizaciones", fr = "Impossible de vérifier les mises à jour", pt = "Falha ao verificar atualizações", tr = "Güncellemeler kontrol edilemedi")
                             Text(
-                                text = if (appLanguage == "Русский") "Не удалось проверить обновления:\n${res.message}" else "Failed to check for updates:\n${res.message}",
+                                text = "$failPrefix:\n${res.message}",
                                 fontSize = 13.sp,
                                 color = onSurfaceVariant
                             )
@@ -1430,14 +1669,14 @@ fun SettingsTab(
                                     if (!AppUpdateManager.canInstallPackages(context)) {
                                         Toast.makeText(
                                             context,
-                                            if (appLanguage == "Русский") "Разрешите установку неизвестных приложений" else "Please allow installing unknown apps",
+                                            Localizations.tr(appLanguage, ru = "Разрешите установку неизвестных приложений", en = "Please allow installing unknown apps", de = "Bitte erlauben Sie die Installation unbekannter Apps", es = "Permita la instalación de aplicaciones desconocidas", fr = "Veuillez autoriser l'installation d'applications inconnues", pt = "Permita a instalação de aplicativos desconhecidos", tr = "Lütfen bilinmeyen uygulamaların yüklenmesine izin verin"),
                                             Toast.LENGTH_LONG
                                         ).show()
                                         AppUpdateManager.openInstallPermissionSettings(context)
                                     } else {
                                         isDownloadingApk = true
                                         downloadProgress = 0f
-                                        downloadStatusText = if (appLanguage == "Русский") "Подготовка загрузки..." else "Preparing download..."
+                                        downloadStatusText = Localizations.tr(appLanguage, ru = "Подготовка загрузки...", en = "Preparing download...", de = "Download wird vorbereitet...", es = "Preparando descarga...", fr = "Préparation du téléchargement...", pt = "Preparando download...", tr = "İndirme hazırlanıyor...")
                                         coroutineScope.launch {
                                             val downloadResult = AppUpdateManager.downloadApk(context, res.release.apkUrl) { bytes, total, prog ->
                                                 downloadProgress = prog
@@ -1465,7 +1704,11 @@ fun SettingsTab(
                             colors = ButtonDefaults.buttonColors(containerColor = primaryColor)
                         ) {
                             Text(
-                                text = if (isDownloadingApk) (if (appLanguage == "Русский") "Загрузка..." else "Downloading...") else (if (appLanguage == "Русский") "Скачать и установить" else "Download & Install"),
+                                text = if (isDownloadingApk) {
+                                    Localizations.tr(appLanguage, ru = "Загрузка...", en = "Downloading...", de = "Wird heruntergeladen...", es = "Descargando...", fr = "Téléchargement...", pt = "Baixando...", tr = "İndiriliyor...")
+                                } else {
+                                    Localizations.tr(appLanguage, ru = "Скачать и установить", en = "Download & Install", de = "Herunterladen & Installieren", es = "Descargar e instalar", fr = "Télécharger et installer", pt = "Baixar e instalar", tr = "İndir ve Yükle")
+                                },
                                 color = Color.White
                             )
                         }
@@ -1478,7 +1721,7 @@ fun SettingsTab(
                             }
                         ) {
                             Text(
-                                text = if (appLanguage == "Русский") "Понятно" else "OK",
+                                text = Localizations.tr(appLanguage, ru = "Понятно", en = "OK", de = "OK", es = "Entendido", fr = "Compris", pt = "Entendido", tr = "Tamam"),
                                 color = primaryColor
                             )
                         }
@@ -1494,7 +1737,7 @@ fun SettingsTab(
                         }
                     ) {
                         Text(
-                            text = if (appLanguage == "Русский") "Позже" else "Later",
+                            text = Localizations.tr(appLanguage, ru = "Позже", en = "Later", de = "Später", es = "Más tarde", fr = "Plus tard", pt = "Mais tarde", tr = "Daha Sonra"),
                             color = onSurfaceVariant
                         )
                     }

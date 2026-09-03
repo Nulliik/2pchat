@@ -123,12 +123,30 @@ fun AppearanceSettingsPage(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (appLanguage == "Русский") "Тема оформления" else "App Theme",
+                                text = Localizations.tr(
+                                    appLanguage,
+                                    ru = "Тема оформления",
+                                    en = "App Theme",
+                                    de = "Erscheinungsbild",
+                                    es = "Tema de la app",
+                                    fr = "Thème de l'application",
+                                    pt = "Tema do aplicativo",
+                                    tr = "Görünüm Teması"
+                                ),
                                 fontWeight = FontWeight.Medium,
                                 color = onSurfaceColor
                             )
                             Text(
-                                text = if (appLanguage == "Русский") "Светлая, цвет акцента, AMOLED" else "Light mode, accent color, AMOLED",
+                                text = Localizations.tr(
+                                    appLanguage,
+                                    ru = "Светлая, цвет акцента, AMOLED",
+                                    en = "Light mode, accent color, AMOLED",
+                                    de = "Heller Modus, Farbackzent, AMOLED",
+                                    es = "Modo claro, acento de color, AMOLED",
+                                    fr = "Mode clair, accent de couleur, AMOLED",
+                                    pt = "Modo claro, acento de cor, AMOLED",
+                                    tr = "Açık tema, renk vurgusu, AMOLED"
+                                ),
                                 fontSize = 12.sp,
                                 color = onSurfaceVariant
                             )
@@ -136,12 +154,12 @@ fun AppearanceSettingsPage(
                         Spacer(modifier = Modifier.width(16.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             val themeLabel = when {
-                                !isDarkTheme -> if (appLanguage == "Русский") "Светлая" else "Light"
+                                !isDarkTheme -> Localizations.tr(appLanguage, ru = "Светлая", en = "Light", de = "Hell", es = "Claro", fr = "Clair", pt = "Claro", tr = "Açık")
                                 useAmoled -> "AMOLED"
                                 accentScheme == "purple" -> "Amethyst"
                                 accentScheme == "amber" -> "Amber"
                                 useCerulean || accentScheme == "cerulean" -> "Cerulean"
-                                else -> if (appLanguage == "Русский") "Тёмная" else "Dark"
+                                else -> Localizations.tr(appLanguage, ru = "Тёмная", en = "Dark", de = "Dunkel", es = "Oscuro", fr = "Sombre", pt = "Escuro", tr = "Koyu")
                             }
                             Text(text = themeLabel, color = primaryColor, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             Spacer(modifier = Modifier.width(6.dp))
@@ -180,16 +198,30 @@ fun AppearanceSettingsPage(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (appLanguage == "Русский") "Иконка приложения" else "App Launcher Icon",
+                                text = Localizations.tr(
+                                    appLanguage,
+                                    ru = "Иконка приложения",
+                                    en = "App Launcher Icon",
+                                    de = "App-Symbol",
+                                    es = "Icono de la app",
+                                    fr = "Icône d'application",
+                                    pt = "Ícone do aplicativo",
+                                    tr = "Uygulama Başlatıcı Simgesi"
+                                ),
                                 fontWeight = FontWeight.Medium,
                                 color = onSurfaceColor
                             )
                             Text(
-                                text = if (appLanguage == "Русский") {
-                                    "Выберите тему значка для домашнего экрана"
-                                } else {
-                                    "Select a style for your home screen app icon"
-                                },
+                                text = Localizations.tr(
+                                    appLanguage,
+                                    ru = "Выберите тему значка для домашнего экрана",
+                                    en = "Select a style for your home screen app icon",
+                                    de = "Wählen Sie ein Symbol für den Startbildschirm",
+                                    es = "Elige un estilo para el icono de inicio",
+                                    fr = "Choisissez un style pour l'icône d'accueil",
+                                    pt = "Escolha um estilo para o ícone da tela inicial",
+                                    tr = "Ana ekran uygulama simgesi için bir stil seçin"
+                                ),
                                 fontSize = 12.sp,
                                 color = onSurfaceVariant
                             )
@@ -289,16 +321,30 @@ fun AppearanceSettingsPage(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (appLanguage == "Русский") "Отключить анимации" else "Disable animations",
+                                text = Localizations.tr(
+                                    appLanguage,
+                                    ru = "Отключить анимации",
+                                    en = "Disable animations",
+                                    de = "Animationen deaktivieren",
+                                    es = "Desactivar animaciones",
+                                    fr = "Désactiver les animations",
+                                    pt = "Desativar animações",
+                                    tr = "Animasyonları devre dışı bırak"
+                                ),
                                 fontWeight = FontWeight.Medium,
                                 color = onSurfaceColor
                             )
                             Text(
-                                text = if (appLanguage == "Русский") {
-                                    "Мгновенные переходы и меньше нагрузки на процессор и видеочип"
-                                } else {
-                                    "Instant transitions with lower CPU and GPU usage"
-                                },
+                                text = Localizations.tr(
+                                    appLanguage,
+                                    ru = "Мгновенные переходы и меньше нагрузки на процессор и видеочип",
+                                    en = "Instant transitions with lower CPU and GPU usage",
+                                    de = "Sofortige Übergänge mit geringerer CPU- und GPU-Last",
+                                    es = "Transiciones instantáneas con menor uso de CPU y GPU",
+                                    fr = "Transitions instantanées avec une utilisation réduite du CPU et du GPU",
+                                    pt = "Transições instantâneas com menor uso de CPU e GPU",
+                                    tr = "Daha düşük CPU ve GPU kullanımıyla anında geçişler"
+                                ),
                                 fontSize = 12.sp,
                                 color = onSurfaceVariant
                             )
@@ -339,16 +385,30 @@ fun AppearanceSettingsPage(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (appLanguage == "Русский") "Сохранять историю переписок" else "Persist Chat History",
+                                text = Localizations.tr(
+                                    appLanguage,
+                                    ru = "Сохранять историю переписок",
+                                    en = "Persist Chat History",
+                                    de = "Chatverlauf speichern",
+                                    es = "Conservar historial de chat",
+                                    fr = "Conserver l'historique des discussions",
+                                    pt = "Manter histórico de conversas",
+                                    tr = "Sohbet Geçmişini Kaydet"
+                                ),
                                 fontWeight = FontWeight.Medium,
                                 color = onSurfaceColor
                             )
                             Text(
-                                text = if (appLanguage == "Русский") {
-                                    "Если выключено, сообщения будут находиться только в ОЗУ (стираться при выходе из диалога)"
-                                } else {
-                                    "If disabled, messages reside strictly in RAM and clear when exiting the chat"
-                                },
+                                text = Localizations.tr(
+                                    appLanguage,
+                                    ru = "Если выключено, сообщения будут находиться только в ОЗУ (стираться при выходе из диалога)",
+                                    en = "If disabled, messages reside strictly in RAM and clear when exiting the chat",
+                                    de = "Wenn deaktiviert, verbleiben Nachrichten nur im RAM und werden beim Verlassen gelöscht",
+                                    es = "Si se desactiva, los mensajes residen solo en RAM y se borran al salir del chat",
+                                    fr = "Si désactivé, les messages restent uniquement en RAM et s'effacent en quittant le chat",
+                                    pt = "Se desativado, as mensagens ficam apenas na RAM e são apagadas ao sair do chat",
+                                    tr = "Devre dışı bırakılırsa, mesajlar yalnızca RAM'de tutulur ve sohbetten çıkıldığında silinir"
+                                ),
                                 fontSize = 12.sp,
                                 color = onSurfaceVariant
                             )
@@ -423,12 +483,30 @@ fun AppearanceSettingsPage(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (appLanguage == "Русский") "Сворачивать NexusTab по умолчанию" else "Collapse NexusTab by Default",
+                            text = Localizations.tr(
+                                appLanguage,
+                                ru = "Сворачивать NexusTab по умолчанию",
+                                en = "Collapse NexusTab by Default",
+                                de = "NexusTab standardmäßig minimieren",
+                                es = "Colapsar NexusTab por defecto",
+                                fr = "Réduire NexusTab par défaut",
+                                pt = "Recolher NexusTab por padrão",
+                                tr = "NexusTab'ı Varsayılan Olarak Daralt"
+                            ),
                             fontWeight = FontWeight.Medium,
                             color = onSurfaceColor
                         )
                         Text(
-                            text = if (appLanguage == "Русский") "Компактный режим виджета статуса на экране чатов" else "Compact NexusTab status bar on chats tab",
+                            text = Localizations.tr(
+                                appLanguage,
+                                ru = "Компактный режим виджета статуса на экране чатов",
+                                en = "Compact NexusTab status bar on chats tab",
+                                de = "Kompakte NexusTab-Statusleiste im Chats-Tab",
+                                es = "Barra de estado compacta de NexusTab en la pestaña de chats",
+                                fr = "Barre d'état compacte de NexusTab dans l'onglet des discussions",
+                                pt = "Barra de status compacta do NexusTab na aba de conversas",
+                                tr = "Sohbetler sekmesinde kompakt NexusTab durum çubuğu"
+                            ),
                             fontSize = 12.sp,
                             color = onSurfaceVariant
                         )
@@ -610,7 +688,16 @@ fun VisualThemeSelector(
                             .padding(horizontal = 10.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = if (appLanguage == "Русский") "Предпросмотр темы" else "Theme Live Preview",
+                            text = Localizations.tr(
+                                appLanguage,
+                                ru = "Предпросмотр темы",
+                                en = "Theme Live Preview",
+                                de = "Theme-Live-Vorschau",
+                                es = "Vista previa del tema",
+                                fr = "Aperçu en direct du thème",
+                                pt = "Pré-visualização do tema",
+                                tr = "Tema Canlı Önizlemesi"
+                            ),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = activePreset.previewIncomingText.copy(alpha = 0.85f)
@@ -629,7 +716,16 @@ fun VisualThemeSelector(
                 ) {
                     Column {
                         Text(
-                            text = if (appLanguage == "Русский") "Посмотри, как тебе такой вариант оформления?" else "How do you like this chat style?",
+                            text = Localizations.tr(
+                            appLanguage,
+                            ru = "Посмотри, как тебе такой вариант оформления?",
+                            en = "How do you like this chat style?",
+                            de = "Wie gefällt dir dieser Chat-Stil?",
+                            es = "¿Qué te parece este estilo de chat?",
+                            fr = "Que penses-tu de ce style de discussion ?",
+                            pt = "O que você acha deste estilo de conversa?",
+                            tr = "Bu sohbet görünümünü nasıl buldun?"
+                        ),
                             fontSize = 12.sp,
                             color = activePreset.previewIncomingText
                         )
@@ -654,7 +750,16 @@ fun VisualThemeSelector(
                 ) {
                     Column {
                         Text(
-                            text = if (appLanguage == "Русский") "Выглядит отлично, оставляем!" else "Looks awesome, let's keep it!",
+                            text = Localizations.tr(
+                            appLanguage,
+                            ru = "Выглядит отлично, оставляем!",
+                            en = "Looks awesome, let's keep it!",
+                            de = "Sieht super aus, behalten wir!",
+                            es = "¡Se ve genial, nos lo quedamos!",
+                            fr = "C'est super, on garde !",
+                            pt = "Ficou ótimo, vamos manter!",
+                            tr = "Harika görünüyor, böyle kalsın!"
+                        ),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             color = activePreset.previewOutgoingText
@@ -674,7 +779,16 @@ fun VisualThemeSelector(
         // Horizontal Theme Cards Carousel
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                text = if (appLanguage == "Русский") "Готовые темы" else "Theme Presets",
+                text = Localizations.tr(
+                    appLanguage,
+                    ru = "Готовые темы",
+                    en = "Theme Presets",
+                    de = "Themen-Voreinstellungen",
+                    es = "Temas predefinidos",
+                    fr = "Thèmes prédéfinis",
+                    pt = "Temas predefinidos",
+                    tr = "Hazır Temalar"
+                ),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = onSurfaceColor
@@ -782,7 +896,16 @@ fun VisualThemeSelector(
                 .padding(12.dp)
         ) {
             Text(
-                text = if (appLanguage == "Русский") "Цветовая схема" else "Color Accent",
+                text = Localizations.tr(
+                    appLanguage,
+                    ru = "Цветовая схема",
+                    en = "Color Accent",
+                    de = "Farbackzent",
+                    es = "Acento de color",
+                    fr = "Accent de couleur",
+                    pt = "Acento de cor",
+                    tr = "Renk Vurgusu"
+                ),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = onSurfaceColor
