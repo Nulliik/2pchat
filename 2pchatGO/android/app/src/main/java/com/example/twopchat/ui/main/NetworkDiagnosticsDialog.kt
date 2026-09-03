@@ -13,6 +13,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -1131,56 +1134,71 @@ fun NetworkDiagnosticsDialog(
 
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        // Search Bar Input
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            keyboardOptions = com.example.twopchat.ui.util.P2PKeyboardOptions.create(
-                                context = context,
-                                imeAction = androidx.compose.ui.text.input.ImeAction.Search,
-                            ),
-                            placeholder = {
-                                Text(
-                                    text = if (appLanguage == "Русский") "Поиск по логам..." else "Search logs...",
-                                    fontSize = 11.sp,
-                                    color = onSurfaceVariant.copy(alpha = 0.6f)
+                        // Compact and pixel-perfect Search Bar Input
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(surfaceVariant.copy(alpha = 0.35f))
+                                .border(
+                                    0.5.dp,
+                                    if (searchQuery.isNotEmpty()) primaryColor.copy(alpha = 0.6f) else onSurfaceColor.copy(alpha = 0.12f),
+                                    RoundedCornerShape(8.dp)
                                 )
-                            },
-                            leadingIcon = {
+                                .padding(horizontal = 10.dp),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
                                 Icon(
                                     imageVector = Icons.Default.Search,
                                     contentDescription = "Search",
                                     tint = onSurfaceVariant,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
-                            },
-                            trailingIcon = {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier.weight(1f),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    if (searchQuery.isEmpty()) {
+                                        Text(
+                                            text = if (appLanguage == "Русский") "Поиск по логам..." else "Search logs...",
+                                            fontSize = 12.sp,
+                                            color = onSurfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                    BasicTextField(
+                                        value = searchQuery,
+                                        onValueChange = { searchQuery = it },
+                                        singleLine = true,
+                                        textStyle = TextStyle(
+                                            fontSize = 12.sp,
+                                            color = onSurfaceColor,
+                                            fontFamily = FontFamily.Monospace
+                                        ),
+                                        cursorBrush = SolidColor(primaryColor),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
                                 if (searchQuery.isNotEmpty()) {
                                     IconButton(
                                         onClick = { searchQuery = "" },
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(24.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Close,
                                             contentDescription = "Clear search",
                                             tint = onSurfaceVariant,
-                                            modifier = Modifier.size(12.dp)
+                                            modifier = Modifier.size(14.dp)
                                         )
                                     }
                                 }
-                            },
-                            singleLine = true,
-                            shape = RoundedCornerShape(8.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = primaryColor.copy(alpha = 0.5f),
-                                unfocusedBorderColor = onSurfaceColor.copy(alpha = 0.1f),
-                                focusedContainerColor = surfaceVariant.copy(alpha = 0.3f),
-                                unfocusedContainerColor = surfaceVariant.copy(alpha = 0.2f)
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(42.dp)
-                        )
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(6.dp))
 
