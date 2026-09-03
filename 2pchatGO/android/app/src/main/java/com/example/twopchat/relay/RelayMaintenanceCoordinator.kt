@@ -99,8 +99,12 @@ internal class RelayMaintenanceCoordinator(
                                     reconnectDelayMs.remove(fingerprint)
                                 }
                                 reconnectDelayMs.remove(peerName)
+                                val heartbeatInterval = AdaptiveMaintenancePolicy.computePeerHeartbeatInterval(
+                                    isInteractive = isInteractive,
+                                    isPowerSaveMode = isPowerSave,
+                                )
                                 val lastPing = lastHeartbeatSentAt[peerName] ?: 0L
-                                if (now - lastPing >= 10_000L) {
+                                if (now - lastPing >= heartbeatInterval) {
                                     lastHeartbeatSentAt[peerName] = now
                                     P2PMessageRelay.sendConnectedPeerHeartbeat(appContext, peerName)
                                 }

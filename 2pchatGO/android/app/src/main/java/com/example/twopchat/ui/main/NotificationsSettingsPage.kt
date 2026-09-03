@@ -130,6 +130,124 @@ fun NotificationsSettingsPage(
                 }
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Background Delivery & Battery Optimization Card
+            val powerManager = remember { context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager }
+            var isBatteryOptIgnored by remember {
+                mutableStateOf(powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: false)
+            }
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = surfaceColor),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(0.5.dp, onSurfaceColor.copy(alpha = 0.04f), RoundedCornerShape(16.dp))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = Localizations.tr(
+                            appLanguage,
+                            "Фоновая доставка сообщений",
+                            "Background Message Delivery",
+                            "Hintergrund-Nachrichtenzustellung",
+                            "Entrega de mensajes en segundo plano",
+                            "Distribution des messages en arrière-plan",
+                            "Entrega de mensagens em segundo plano"
+                        ),
+                        fontWeight = FontWeight.SemiBold,
+                        color = onSurfaceColor,
+                        fontSize = 15.sp,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = Localizations.tr(
+                            appLanguage,
+                            "Для мгновенного получения уведомлений при заблокированном телефоне рекомендуется разрешить работу без ограничений батареи.",
+                            "To receive instant notifications while the phone is locked, allow unrestricted background battery usage.",
+                            "Um Benachrichtigungen bei gesperrtem Telefon sofort zu erhalten, erlaube unbegrenzte Hintergrundaktivität.",
+                            "Para recibir notificaciones al instante con el teléfono bloqueado, permite el uso de batería sin restricciones.",
+                            "Pour recevoir des notifications instantanées lorsque le téléphone est verrouillé, autorisez l'utilisation sans restriction de la batterie.",
+                            "Para receber notificações instantâneas com o telefone bloqueado, permita o uso irrestrito da bateria."
+                        ),
+                        fontSize = 12.sp,
+                        color = onSurfaceVariant,
+                        lineHeight = 16.sp,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = if (isBatteryOptIgnored) {
+                                "✓ " + Localizations.tr(
+                                    appLanguage,
+                                    "Работа без ограничений активна",
+                                    "Unrestricted mode active",
+                                    "Uneingeschränkter Modus aktiv",
+                                    "Modo sin restricciones activo",
+                                    "Mode sans restriction actif",
+                                    "Modo irrestrito ativo"
+                                )
+                            } else {
+                                Localizations.tr(
+                                    appLanguage,
+                                    "Оптимизация включена (возможны задержки)",
+                                    "Optimized (delivery may be delayed)",
+                                    "Optimiert (Verzögerung möglich)",
+                                    "Optimizado (puede haber retrasos)",
+                                    "Optimisé (retards possibles)",
+                                    "Otimizado (possíveis atrasos)"
+                                )
+                            },
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isBatteryOptIgnored) primaryColor else onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (!isBatteryOptIgnored) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    runCatching {
+                                        val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                            data = android.net.Uri.parse("package:${context.packageName}")
+                                        }
+                                        context.startActivity(intent)
+                                    }.onFailure {
+                                        runCatching {
+                                            val fallback = android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                            context.startActivity(fallback)
+                                        }
+                                    }
+                                    isBatteryOptIgnored = powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: false
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = primaryColor),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            ) {
+                                Text(
+                                    text = Localizations.tr(
+                                        appLanguage,
+                                        "Разрешить",
+                                        "Allow",
+                                        "Erlauben",
+                                        "Permitir",
+                                        "Autoriser",
+                                        "Permitir"
+                                    ),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(40.dp))
         }
     }

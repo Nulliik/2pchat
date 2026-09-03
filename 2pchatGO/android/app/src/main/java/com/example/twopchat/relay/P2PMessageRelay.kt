@@ -397,10 +397,25 @@ object P2PMessageRelay {
 
     fun onScreenOff() {
         maintenanceCoordinator.onScreenOff()
+        // Pause local mDNS discovery while screen is off to allow Wi-Fi chip to enter DTIM sleep.
+        // Nulling the reference so startLocalDiscovery() creates a fresh NSD instance on resume.
+        try {
+            localPeerDiscovery?.stop()
+            localPeerDiscovery = null
+        } catch (_: Throwable) {}
     }
 
     fun onScreenOn(context: Context? = null) {
         maintenanceCoordinator.onScreenOn(context)
+        // Resume local mDNS discovery when screen turns back on if enabled
+        context?.let { ctx ->
+            try {
+                val appContext = ctx.applicationContext
+                if (isRunning && P2PPreferences.isWifiDiscoveryEnabled(appContext)) {
+                    startLocalDiscovery(appContext, listenerPort(appContext))
+                }
+            } catch (_: Throwable) {}
+        }
     }
 
     private fun publishPeerOnline(

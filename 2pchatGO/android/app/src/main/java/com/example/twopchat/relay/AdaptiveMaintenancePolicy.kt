@@ -16,6 +16,27 @@ object AdaptiveMaintenancePolicy {
     const val STEP1_THRESHOLD_MS = 2 * 60 * 1000L
     const val STEP2_THRESHOLD_MS = 5 * 60 * 1000L
 
+    const val ACTIVE_HEARTBEAT_INTERVAL_MS = 10_000L
+    const val BACKGROUND_HEARTBEAT_INTERVAL_MS = 30_000L
+
+    /**
+     * Heartbeat keep-alive interval sent to connected peers.
+     * Keeps carrier CGNAT mappings and Tor circuits open:
+     * - 10s when active (fast peer status tracking in UI).
+     * - 30s when screen is off or in power-save (safe ceiling to prevent NAT table timeout
+     *   while cutting radio transmitter wakeups by 66%).
+     */
+    fun computePeerHeartbeatInterval(
+        isInteractive: Boolean,
+        isPowerSaveMode: Boolean,
+    ): Long {
+        return if (isInteractive && !isPowerSaveMode) {
+            ACTIVE_HEARTBEAT_INTERVAL_MS
+        } else {
+            BACKGROUND_HEARTBEAT_INTERVAL_MS
+        }
+    }
+
     fun computeSessionPollInterval(
         isInteractive: Boolean,
         isDeviceIdleMode: Boolean,

@@ -98,4 +98,31 @@ class AdaptiveMaintenancePolicyTest {
         )
         assertEquals(180_000L, idle)
     }
+
+    @Test
+    fun testPeerHeartbeatIntervalActiveReturnsTenSeconds() {
+        val interval = AdaptiveMaintenancePolicy.computePeerHeartbeatInterval(
+            isInteractive = true,
+            isPowerSaveMode = false,
+        )
+        assertEquals(10_000L, interval)
+    }
+
+    @Test
+    fun testPeerHeartbeatIntervalScreenOffReturnsThirtySeconds() {
+        val interval = AdaptiveMaintenancePolicy.computePeerHeartbeatInterval(
+            isInteractive = false,
+            isPowerSaveMode = false,
+        )
+        assertEquals(30_000L, interval)
+    }
+
+    @Test
+    fun testPeerHeartbeatIntervalPowerSaveReturnsThirtySeconds() {
+        val interval = AdaptiveMaintenancePolicy.computePeerHeartbeatInterval(
+            isInteractive = true,
+            isPowerSaveMode = true,
+        )
+        assertEquals(30_000L, interval)
+    }
 }
