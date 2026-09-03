@@ -649,7 +649,7 @@ fun FullscreenImageViewer(
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        text = Localizations.tr(appLanguage, ru = "Повернуть", en = "Rotate", de = "Drehen", es = "Girar", fr = "Faire pivoter", pt = "Girar"),
+                                        text = Localizations.tr(appLanguage, ru = "Повернуть", en = "Rotate", de = "Drehen", es = "Girar", fr = "Faire pivoter", pt = "Girar", tr = "Döndür"),
                                         color = Color.White
                                     )
                                 },
@@ -673,7 +673,7 @@ fun FullscreenImageViewer(
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            text = Localizations.tr(appLanguage, ru = "Поделиться", en = "Share", de = "Teilen", es = "Compartir", fr = "Partager", pt = "Compartilhar"),
+                                            text = Localizations.tr(appLanguage, ru = "Поделиться", en = "Share", de = "Teilen", es = "Compartir", fr = "Partager", pt = "Compartilhar", tr = "Paylaş"),
                                             color = Color.White
                                         )
                                     },
@@ -701,7 +701,7 @@ fun FullscreenImageViewer(
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            text = Localizations.tr(appLanguage, ru = "Переслать", en = "Forward", de = "Weiterleiten", es = "Reenviar", fr = "Transférer", pt = "Encaminhar"),
+                                            text = Localizations.tr(appLanguage, ru = "Переслать", en = "Forward", de = "Weiterleiten", es = "Reenviar", fr = "Transférer", pt = "Encaminhar", tr = "İlet"),
                                             color = Color.White
                                         )
                                     },
@@ -725,7 +725,7 @@ fun FullscreenImageViewer(
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            text = Localizations.tr(appLanguage, ru = "Показать в чате", en = "Show in chat", de = "Im Chat anzeigen", es = "Mostrar en el chat", fr = "Afficher dans le chat", pt = "Mostrar no chat"),
+                                            text = Localizations.tr(appLanguage, ru = "Показать в чате", en = "Show in chat", de = "Im Chat anzeigen", es = "Mostrar en el chat", fr = "Afficher dans le chat", pt = "Mostrar no chat", tr = "Sohbette Göster"),
                                             color = Color.White
                                         )
                                     },
@@ -749,7 +749,7 @@ fun FullscreenImageViewer(
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            text = Localizations.tr(appLanguage, ru = "Удалить", en = "Delete", de = "Löschen", es = "Eliminar", fr = "Supprimer", pt = "Excluir"),
+                                            text = Localizations.tr(appLanguage, ru = "Удалить", en = "Delete", de = "Löschen", es = "Eliminar", fr = "Supprimer", pt = "Excluir", tr = "Sil"),
                                             color = Color(0xFFFF5252)
                                         )
                                     },
@@ -1082,7 +1082,7 @@ fun FullscreenVideoPlayer(
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        text = Localizations.tr(appLanguage, ru = "Поделиться", en = "Share", de = "Teilen", es = "Compartir", fr = "Partager", pt = "Compartilhar"),
+                                        text = Localizations.tr(appLanguage, ru = "Поделиться", en = "Share", de = "Teilen", es = "Compartir", fr = "Partager", pt = "Compartilhar", tr = "Paylaş"),
                                         color = Color.White
                                     )
                                 },
@@ -1109,7 +1109,7 @@ fun FullscreenVideoPlayer(
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            text = Localizations.tr(appLanguage, ru = "Переслать", en = "Forward", de = "Weiterleiten", es = "Reenviar", fr = "Transférer", pt = "Encaminhar"),
+                                            text = Localizations.tr(appLanguage, ru = "Переслать", en = "Forward", de = "Weiterleiten", es = "Reenviar", fr = "Transférer", pt = "Encaminhar", tr = "İlet"),
                                             color = Color.White
                                         )
                                     },
@@ -1133,7 +1133,7 @@ fun FullscreenVideoPlayer(
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            text = Localizations.tr(appLanguage, ru = "Показать в чате", en = "Show in chat", de = "Im Chat anzeigen", es = "Mostrar en el chat", fr = "Afficher dans le chat", pt = "Mostrar no chat"),
+                                            text = Localizations.tr(appLanguage, ru = "Показать в чате", en = "Show in chat", de = "Im Chat anzeigen", es = "Mostrar en el chat", fr = "Afficher dans le chat", pt = "Mostrar no chat", tr = "Sohbette Göster"),
                                             color = Color.White
                                         )
                                     },
@@ -1157,7 +1157,7 @@ fun FullscreenVideoPlayer(
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            text = Localizations.tr(appLanguage, ru = "Удалить", en = "Delete", de = "Löschen", es = "Eliminar", fr = "Supprimer", pt = "Excluir"),
+                                            text = Localizations.tr(appLanguage, ru = "Удалить", en = "Delete", de = "Löschen", es = "Eliminar", fr = "Supprimer", pt = "Excluir", tr = "Sil"),
                                             color = Color(0xFFFF5252)
                                         )
                                     },

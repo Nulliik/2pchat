@@ -133,10 +133,10 @@ fun SharedMediaScreen(
     }
 
     val tabs = listOf(
-        Localizations.tr(appLanguage, "Медиа", "Media", "Medien", "Multimedia", "Média", "Mídia"),
-        Localizations.tr(appLanguage, "Файлы", "Files", "Dateien", "Archivos", "Fichiers", "Arquivos"),
-        Localizations.tr(appLanguage, "Ссылки", "Links", "Links", "Enlaces", "Liens", "Links"),
-        Localizations.tr(appLanguage, "Голосовые", "Voice", "Sprachnachrichten", "Voz", "Vocal", "Voz")
+        Localizations.tr(appLanguage, "Медиа", "Media", "Medien", "Multimedia", "Média", "Mídia", tr = "Medya"),
+        Localizations.tr(appLanguage, "Файлы", "Files", "Dateien", "Archivos", "Fichiers", "Arquivos", tr = "Dosyalar"),
+        Localizations.tr(appLanguage, "Ссылки", "Links", "Links", "Enlaces", "Liens", "Links", tr = "Bağlantılar"),
+        Localizations.tr(appLanguage, "Голосовые", "Voice", "Sprachnachrichten", "Voz", "Vocal", "Voz", tr = "Sesli Mesajlar")
     )
 
     // Initials helper
@@ -276,7 +276,7 @@ fun SharedMediaScreen(
                         exit = fadeOut(animationSpec = androidx.compose.animation.core.tween(150))
                     ) {
                         Text(
-                            text = Localizations.tr(appLanguage, "Профиль", "Profile", "Profil", "Perfil", "Profil", "Perfil"),
+                            text = Localizations.tr(appLanguage, "Профиль", "Profile", "Profil", "Perfil", "Profil", "Perfil", tr = "Profil"),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
                             color = onSurfaceColor
@@ -354,9 +354,9 @@ fun SharedMediaScreen(
                                 }
                                 Text(
                                     text = if (isVerified) {
-                                        Localizations.tr(appLanguage, "Подтвержденный контакт", "Verified Contact", "Verifizierter Kontakt", "Contacto verificado", "Contact vérifié", "Contato verificado")
+                                        Localizations.tr(appLanguage, "Подтвержденный контакт", "Verified Contact", "Verifizierter Kontakt", "Contacto verificado", "Contact vérifié", "Contato verificado", tr = "Doğrulanmış Kişi")
                                     } else {
-                                        Localizations.tr(appLanguage, "Медиа и файлы", "Media & files", "Medien & Dateien", "Archivos y medios", "Médias & fichiers", "Mídias e arquivos")
+                                        Localizations.tr(appLanguage, "Медиа и файлы", "Media & files", "Medien & Dateien", "Archivos y medios", "Médias & fichiers", "Mídias e arquivos", tr = "Medya ve Dosyalar")
                                     },
                                     fontSize = 11.sp,
                                     color = if (isVerified) Color(0xFF4CAF50) else onSurfaceVariant,
@@ -480,9 +480,9 @@ fun SharedMediaScreen(
                                     endpoint = P2PMessageRelay.peerEndpoints[currentPeerName],
                                     appLanguage = appLanguage,
                                 )
-                                Localizations.tr(appLanguage, "В сети • $transportName", "Online • $transportName", "Online • $transportName", "En línea • $transportName", "En ligne • $transportName", "Online • $transportName")
+                                Localizations.tr(appLanguage, "В сети • $transportName", "Online • $transportName", "Online • $transportName", "En línea • $transportName", "En ligne • $transportName", "Online • $transportName", tr = "Çevrimiçi • $transportName")
                             } else {
-                                Localizations.tr(appLanguage, "Не в сети", "Offline", "Offline", "Desconectado", "Hors ligne", "Offline")
+                                Localizations.tr(appLanguage, "Не в сети", "Offline", "Offline", "Desconectado", "Hors ligne", "Offline", tr = "Çevrimdışı")
                             }
                             Text(
                                 text = statusText,
@@ -500,7 +500,7 @@ fun SharedMediaScreen(
                                 // Chat button
                                 ProfileActionButton(
                                     iconRes = R.drawable.ic_menu_chats,
-                                    label = Localizations.tr(appLanguage, "Чат", "Chat", "Chat", "Chat", "Discussion", "Conversar"),
+                                    label = Localizations.tr(appLanguage, "Чат", "Chat", "Chat", "Chat", "Discussion", "Conversar", tr = "Sohbet"),
                                     primaryColor = primaryColor,
                                     onSurfaceVariant = onSurfaceVariant,
                                     onClick = onBack
@@ -511,9 +511,9 @@ fun SharedMediaScreen(
                                     ProfileActionButton(
                                         iconRes = if (isMuted) R.drawable.ic_notifications_off else R.drawable.ic_notifications,
                                         label = if (isMuted) {
-                                            Localizations.tr(appLanguage, "Вкл. звук", "Unmute", "Stumm aus", "Sonido", "Réactiver", "Som ligado")
+                                            Localizations.tr(appLanguage, "Вкл. звук", "Unmute", "Stumm aus", "Sonido", "Réactiver", "Som ligado", tr = "Sesi Aç")
                                         } else {
-                                            Localizations.tr(appLanguage, "Выкл. звук", "Mute", "Stummschalten", "Silenciar", "Masquer", "Silenciar")
+                                            Localizations.tr(appLanguage, "Выкл. звук", "Mute", "Stummschalten", "Silenciar", "Masquer", "Silenciar", tr = "Sessize Al")
                                         },
                                         primaryColor = primaryColor,
                                         onSurfaceVariant = onSurfaceVariant,
@@ -552,7 +552,7 @@ fun SharedMediaScreen(
                             .padding(16.dp)
                     ) {
                         Text(
-                            text = Localizations.tr(appLanguage, "Информация", "Information", "Informationen", "Información", "Informations", "Informações"),
+                            text = Localizations.tr(appLanguage, "Информация", "Information", "Informationen", "Información", "Informations", "Informações", tr = "Bilgi"),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = primaryColor,
@@ -584,7 +584,7 @@ fun SharedMediaScreen(
                         }
 
                         InfoDetailRow(
-                            label = Localizations.tr(appLanguage, "Личный адрес", "Personal address", "Persönliche Adresse", "Dirección personal", "Adresse personnelle", "Endereço pessoal"),
+                            label = Localizations.tr(appLanguage, "Личный адрес", "Personal address", "Persönliche Adresse", "Dirección personal", "Adresse personnelle", "Endereço pessoal", tr = "Kişisel Adres"),
                             value = searchAddress,
                             onSurfaceColor = onSurfaceColor,
                             onSurfaceVariant = onSurfaceVariant,
@@ -605,11 +605,11 @@ fun SharedMediaScreen(
 
                         HorizontalDivider(color = onSurfaceColor.copy(alpha = 0.05f), modifier = Modifier.padding(vertical = 12.dp))
                         InfoDetailRow(
-                            label = Localizations.tr(appLanguage, "О себе", "About me", "Über mich", "Sobre mí", "À propos", "Sobre mim"),
+                            label = Localizations.tr(appLanguage, "О себе", "About me", "Über mich", "Sobre mí", "À propos", "Sobre mim", tr = "Hakkımda"),
                             value = if (peerAboutMe.isNotEmpty()) {
                                 peerAboutMe
                             } else {
-                                Localizations.tr(appLanguage, "Не указано", "Not specified", "Nicht angegeben", "No especificado", "Non spécifié", "Não especificado")
+                                Localizations.tr(appLanguage, "Не указано", "Not specified", "Nicht angegeben", "No especificado", "Non spécifié", "Não especificado", tr = "Belirtilmemiş")
                             },
                             onSurfaceColor = if (peerAboutMe.isNotEmpty()) onSurfaceColor else onSurfaceVariant.copy(alpha = 0.55f),
                             onSurfaceVariant = onSurfaceVariant,
@@ -642,15 +642,15 @@ fun SharedMediaScreen(
                                 Spacer(modifier = Modifier.width(16.dp))
                                 Column {
                                     Text(
-                                        text = Localizations.tr(appLanguage, "Статус верификации", "Verification Status", "Verifizierungsstatus", "Estado de verificación", "Statut de vérification", "Status de verificação"),
+                                        text = Localizations.tr(appLanguage, "Статус верификации", "Verification Status", "Verifizierungsstatus", "Estado de verificación", "Statut de vérification", "Status de verificação", tr = "Doğrulama Durumu"),
                                         fontSize = 11.sp,
                                         color = onSurfaceVariant
                                     )
                                     Text(
                                         text = if (isVerified) {
-                                            Localizations.tr(appLanguage, "Личность подтверждена", "Identity Verified", "Identität verifiziert", "Identidad verificada", "Identité vérifiée", "Identidade verificada")
+                                            Localizations.tr(appLanguage, "Личность подтверждена", "Identity Verified", "Identität verifiziert", "Identidad verificada", "Identité vérifiée", "Identidade verificada", tr = "Kimlik Doğrulandı")
                                         } else {
-                                            Localizations.tr(appLanguage, "Личность не подтверждена", "Identity Not Verified", "Identität nicht verifiziert", "Identidad no verificada", "Identité non vérifiée", "Identidade não verificada")
+                                            Localizations.tr(appLanguage, "Личность не подтверждена", "Identity Not Verified", "Identität nicht verifiziert", "Identidad no verificada", "Identité non vérifiée", "Identidade não verificada", tr = "Kimlik Doğrulanmadı")
                                         },
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Medium,
@@ -694,7 +694,7 @@ fun SharedMediaScreen(
                                 Spacer(modifier = Modifier.width(16.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = Localizations.tr(appLanguage, "Режим соединения", "Connection Mode", "Verbindungsmodus", "Modo de conexión", "Mode de connexion", "Modo de conexão"),
+                                        text = Localizations.tr(appLanguage, "Режим соединения", "Connection Mode", "Verbindungsmodus", "Modo de conexión", "Mode de connexion", "Modo de conexão", tr = "Bağlantı Modu"),
                                         fontSize = 11.sp,
                                         color = onSurfaceVariant
                                     )
@@ -773,8 +773,8 @@ fun SharedMediaScreen(
                         item {
                             SharedMediaEmptyState(
                                 iconRes = R.drawable.ic_attach_gallery,
-                                title = Localizations.tr(appLanguage, "Медиафайлов пока нет", "No media shared yet", "Noch keine Medien", "Sin archivos multimedia", "Aucun média partagé", "Nenhuma mídia compartilhada"),
-                                description = Localizations.tr(appLanguage, "Фотографии и видео из этого диалога будут отображаться здесь", "Photos and videos shared in this chat will appear here", "Fotos und Videos aus diesem Chat werden hier angezeigt", "Las fotos y videos compartidos aparecerán aquí", "Les photos et vidéos apparaîtront ici", "Fotos e vídeos compartilhados aparecerão aqui"),
+                                title = Localizations.tr(appLanguage, "Медиафайлов пока нет", "No media shared yet", "Noch keine Medien", "Sin archivos multimedia", "Aucun média partagé", "Nenhuma mídia compartilhada", tr = "Henüz paylaşılan medya yok"),
+                                description = Localizations.tr(appLanguage, "Фотографии и видео из этого диалога будут отображаться здесь", "Photos and videos shared in this chat will appear here", "Fotos und Videos aus diesem Chat werden hier angezeigt", "Las fotos y videos compartidos aparecerán aquí", "Les photos et vidéos apparaîtront ici", "Fotos e vídeos compartilhados aparecerão aqui", tr = "Bu sohbette paylaşılan fotoğraflar ve videolar burada görünecek"),
                                 primaryColor = primaryColor,
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant
@@ -921,8 +921,8 @@ fun SharedMediaScreen(
                         item {
                             SharedMediaEmptyState(
                                 iconRes = R.drawable.ic_attach_file,
-                                title = Localizations.tr(appLanguage, "Файлов пока нет", "No files shared yet", "Noch keine Dateien", "Sin archivos compartidos", "Aucun fichier partagé", "Nenhum arquivo compartilhado"),
-                                description = Localizations.tr(appLanguage, "Документы, архивы и файлы из этого диалога будут доступны здесь", "Documents, archives, and files shared in this chat will be available here", "Dokumente und Dateien aus diesem Chat werden hier gespeichert", "Los documentos y archivos compartidos aparecerán aquí", "Les documents et fichiers apparaîtront ici", "Documentos e arquivos compartilhados aparecerão aqui"),
+                                title = Localizations.tr(appLanguage, "Файлов пока нет", "No files shared yet", "Noch keine Dateien", "Sin archivos compartidos", "Aucun fichier partagé", "Nenhum arquivo compartilhado", tr = "Henüz dosya yok"),
+                                description = Localizations.tr(appLanguage, "Документы, архивы и файлы из этого диалога будут доступны здесь", "Documents, archives, and files shared in this chat will be available here", "Dokumente und Dateien aus diesem Chat werden hier gespeichert", "Los documentos y archivos compartidos aparecerán aquí", "Les documents et fichiers apparaîtront ici", "Documentos e arquivos compartilhados aparecerão aqui", tr = "Bu sohbette paylaşılan belgeler ve dosyalar burada bulunacak"),
                                 primaryColor = primaryColor,
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant
@@ -1052,8 +1052,8 @@ fun SharedMediaScreen(
                         item {
                             SharedMediaEmptyState(
                                 iconRes = R.drawable.ic_quick_link,
-                                title = Localizations.tr(appLanguage, "Ссылок пока нет", "No links shared yet", "Noch keine Links", "Sin enlaces compartidos", "Aucun lien partagé", "Nenhum link compartilhado"),
-                                description = Localizations.tr(appLanguage, "Все веб-ссылки, упомянутые в сообщениях, автоматически собираются здесь", "Web links mentioned in messages will automatically be collected here", "Web-Links aus Nachrichten werden hier gesammelt", "Los enlaces web compartidos se recopilarán aquí", "Les liens web seront regroupés ici", "Links compartilhados serão reunidos aqui"),
+                                title = Localizations.tr(appLanguage, "Ссылок пока нет", "No links shared yet", "Noch keine Links", "Sin enlaces compartidos", "Aucun lien partagé", "Nenhum link compartilhado", tr = "Henüz bağlantı yok"),
+                                description = Localizations.tr(appLanguage, "Все веб-ссылки, упомянутые в сообщениях, автоматически собираются здесь", "Web links mentioned in messages will automatically be collected here", "Web-Links aus Nachrichten werden hier gesammelt", "Los enlaces web compartidos se recopilarán aquí", "Les liens web seront regroupés ici", "Links compartilhados serão reunidos aqui", tr = "Mesajlardaki web bağlantıları otomatik olarak burada toplanır"),
                                 primaryColor = primaryColor,
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant
@@ -1168,8 +1168,8 @@ fun SharedMediaScreen(
                         item {
                             SharedMediaEmptyState(
                                 iconRes = R.drawable.ic_voice_mic,
-                                title = Localizations.tr(appLanguage, "Голосовых сообщений нет", "No voice messages yet", "Keine Sprachnachrichten", "Sin mensajes de voz", "Aucun message vocal", "Nenhuma mensagem de voz"),
-                                description = Localizations.tr(appLanguage, "Голосовые сообщения и аудиозаписи будут сохраняться в этом разделе", "Voice messages and audio recordings will be saved in this section", "Sprachnachrichten und Audio werden hier gespeichert", "Los mensajes de voz y audios se guardarán aquí", "Les messages vocaux seront enregistrés ici", "Mensagens de voz serão salvas aqui"),
+                                title = Localizations.tr(appLanguage, "Голосовых сообщений нет", "No voice messages yet", "Keine Sprachnachrichten", "Sin mensajes de voz", "Aucun message vocal", "Nenhuma mensagem de voz", tr = "Henüz sesli mesaj yok"),
+                                description = Localizations.tr(appLanguage, "Голосовые сообщения и аудиозаписи будут сохраняться в этом разделе", "Voice messages and audio recordings will be saved in this section", "Sprachnachrichten und Audio werden hier gespeichert", "Los mensajes de voz y audios se guardarán aquí", "Les messages vocaux seront enregistrés ici", "Mensagens de voz serão salvas aqui", tr = "Sesli mesajlar ve ses kayıtları bu bölümde saklanacaktır"),
                                 primaryColor = primaryColor,
                                 onSurfaceColor = onSurfaceColor,
                                 onSurfaceVariant = onSurfaceVariant

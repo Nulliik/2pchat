@@ -91,7 +91,8 @@ fun GroupProcessingAlbumDialog(appLanguage: String) {
                         de = "Mediendateien werden vorbereitet...",
                         es = "Preparando archivos multimedia...",
                         fr = "Préparation des fichiers multimédias...",
-                        pt = "Preparando arquivos de mídia..."
+                        pt = "Preparando arquivos de mídia...",
+                        tr = "Medya dosyaları hazırlanıyor..."
                     ),
                     color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 15.sp,
@@ -123,7 +124,8 @@ fun GroupEditMessageDialog(
                     de = "Nachricht bearbeiten",
                     es = "Editar mensaje",
                     fr = "Modifier le message",
-                    pt = "Editar mensagem"
+                    pt = "Editar mensagem",
+                    tr = "Mesajı Düzenle"
                 ),
                 fontWeight = FontWeight.Bold
             )
@@ -158,7 +160,8 @@ fun GroupEditMessageDialog(
                         de = "Speichern",
                         es = "Guardar",
                         fr = "Enregistrer",
-                        pt = "Salvar"
+                        pt = "Salvar",
+                        tr = "Kaydet"
                     ),
                     fontWeight = FontWeight.Bold
                 )
@@ -174,7 +177,8 @@ fun GroupEditMessageDialog(
                         de = "Abbrechen",
                         es = "Cancelar",
                         fr = "Annuler",
-                        pt = "Cancelar"
+                        pt = "Cancelar",
+                        tr = "İptal"
                     )
                 )
             }
@@ -202,7 +206,8 @@ fun GroupDeleteMessageDialog(
                     de = "Nachricht löschen?",
                     es = "¿Eliminar mensaje?",
                     fr = "Supprimer le message ?",
-                    pt = "Excluir mensagem?"
+                    pt = "Excluir mensagem?",
+                    tr = "Mesaj silinsin mi?"
                 ),
                 fontWeight = FontWeight.Bold
             )
@@ -216,7 +221,8 @@ fun GroupDeleteMessageDialog(
                     de = "Diese Aktion wird im Gruppen-Audit-Protokoll erfasst.",
                     es = "Esta acción se registrará en el registro de auditoría del grupo.",
                     fr = "Cette action sera enregistrée dans le journal d'audit du groupe.",
-                    pt = "Esta ação será registrada no log de auditoria do grupo."
+                    pt = "Esta ação será registrada no log de auditoria do grupo.",
+                    tr = "Bu işlem grup denetim günlüğüne kaydedilecektir."
                 )
             )
         },
@@ -236,7 +242,8 @@ fun GroupDeleteMessageDialog(
                         de = "Löschen",
                         es = "Eliminar",
                         fr = "Supprimer",
-                        pt = "Excluir"
+                        pt = "Excluir",
+                        tr = "Sil"
                     ),
                     color = Color.Red,
                     fontWeight = FontWeight.Bold
@@ -253,7 +260,8 @@ fun GroupDeleteMessageDialog(
                         de = "Abbrechen",
                         es = "Cancelar",
                         fr = "Annuler",
-                        pt = "Cancelar"
+                        pt = "Cancelar",
+                        tr = "İptal"
                     )
                 )
             }
@@ -287,7 +295,8 @@ fun GroupForwardDialog(
                 de = "Gruppe",
                 es = "Grupo",
                 fr = "Groupe",
-                pt = "Grupo"
+                pt = "Grupo",
+                tr = "Grup"
             ),
             isOnline = true,
             isGroup = true,
@@ -305,7 +314,8 @@ fun GroupForwardDialog(
                 de = "Persönlicher Speicher",
                 es = "Almacenamiento personal",
                 fr = "Stockage personnel",
-                pt = "Armazenamento pessoal"
+                pt = "Armazenamento pessoal",
+                tr = "Kişisel Depolama"
             )
             isOnline -> com.example.twopchat.data.Localizations.tr(
                 appLanguage,
@@ -314,7 +324,8 @@ fun GroupForwardDialog(
                 de = "Online",
                 es = "En línea",
                 fr = "En ligne",
-                pt = "Online"
+                pt = "Online",
+                tr = "Çevrimiçi"
             )
             else -> com.example.twopchat.data.Localizations.tr(
                 appLanguage,
@@ -323,7 +334,8 @@ fun GroupForwardDialog(
                 de = "Offline",
                 es = "Desconectado",
                 fr = "Hors ligne",
-                pt = "Offline"
+                pt = "Offline",
+                tr = "Son görülme yakınlarda"
             )
         }
         val initials = if (name == "Saved Messages") {
@@ -352,7 +364,8 @@ fun GroupForwardDialog(
             de = "Nachricht weiterleiten",
             es = "Reenviar mensaje",
             fr = "Transférer le message",
-            pt = "Encaminhar mensagem"
+            pt = "Encaminhar mensagem",
+            tr = "Mesajı İlet"
         ),
         searchPlaceholder = com.example.twopchat.data.Localizations.tr(
             appLanguage,
@@ -361,7 +374,8 @@ fun GroupForwardDialog(
             de = "Empfänger suchen...",
             es = "Buscar destinatario...",
             fr = "Rechercher un destinataire...",
-            pt = "Pesquisar destinatário..."
+            pt = "Pesquisar destinatário...",
+            tr = "Alıcı ara..."
         ),
         recipients = groupItems + peerItems,
         primaryColor = primaryColor,
@@ -390,7 +404,8 @@ fun GroupForwardDialog(
                         de = "Weitergeleitet an ${item.title}",
                         es = "Reenviado a ${item.title}",
                         fr = "Transféré à ${item.title}",
-                        pt = "Encaminhado para ${item.title}"
+                        pt = "Encaminhado para ${item.title}",
+                        tr = "${item.title} sohbetine iletildi"
                     ),
                     Toast.LENGTH_SHORT
                 ).show()
@@ -406,7 +421,8 @@ fun GroupForwardDialog(
                             de = "Das Senden an $chatName ist pausiert, da sich der Schlüssel geändert hat",
                             es = "El envío a $chatName está pausado porque cambió su clave",
                             fr = "L'envoi à $chatName est suspendu car sa clé a changé",
-                            pt = "O envio para $chatName está pausado porque sua chave mudou"
+                            pt = "O envio para $chatName está pausado porque sua chave mudou",
+                            tr = "$chatName sohbetinde anahtar değişimi nedeniyle gönderim duraklatıldı"
                         ),
                         Toast.LENGTH_LONG,
                     ).show()
@@ -455,7 +471,8 @@ fun GroupForwardDialog(
                         de = "Weitergeleitet an $chatName",
                         es = "Reenviado a $chatName",
                         fr = "Transféré à $chatName",
-                        pt = "Encaminhado para $chatName"
+                        pt = "Encaminhado para $chatName",
+                        tr = "$chatName sohbetine iletildi"
                     ),
                     Toast.LENGTH_SHORT
                 ).show()
@@ -501,7 +518,8 @@ fun GroupSeenByDialog(
                             de = "Gesehen von (${msg.readByMembers.size})",
                             es = "Visto por (${msg.readByMembers.size})",
                             fr = "Vu par (${msg.readByMembers.size})",
-                            pt = "Visto por (${msg.readByMembers.size})"
+                            pt = "Visto por (${msg.readByMembers.size})",
+                            tr = "Görenler (${msg.readByMembers.size})"
                         ),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
@@ -521,7 +539,8 @@ fun GroupSeenByDialog(
                             de = "Noch niemand hat diese Nachricht gelesen",
                             es = "Nadie ha leído este mensaje aún",
                             fr = "Personne n'a encore lu ce message",
-                            pt = "Ninguém leu esta mensagem ainda"
+                            pt = "Ninguém leu esta mensagem ainda",
+                            tr = "Henüz kimse okumadı"
                         ),
                         fontSize = 14.sp,
                         color = onSurfaceColor.copy(alpha = 0.6f),
@@ -588,7 +607,8 @@ fun GroupSeenByDialog(
                                 de = "Schließen",
                                 es = "Cerrar",
                                 fr = "Fermer",
-                                pt = "Fechar"
+                                pt = "Fechar",
+                                tr = "Kapat"
                             ),
                             color = primaryColor,
                             fontWeight = FontWeight.Bold
@@ -644,7 +664,8 @@ fun GroupDatePickerDialog(
                         de = "OK",
                         es = "OK",
                         fr = "OK",
-                        pt = "OK"
+                        pt = "OK",
+                        tr = "Tamam"
                     ),
                     fontWeight = FontWeight.Bold
                 )
@@ -663,7 +684,8 @@ fun GroupDatePickerDialog(
                         de = "ABBRECHEN",
                         es = "CANCELAR",
                         fr = "ANNULER",
-                        pt = "CANCELAR"
+                        pt = "CANCELAR",
+                        tr = "İPTAL"
                     ),
                     fontWeight = FontWeight.Bold
                 )
@@ -716,7 +738,8 @@ fun CreatePollDialog(
                     de = "Umfrage erstellen",
                     es = "Crear encuesta",
                     fr = "Créer un sondage",
-                    pt = "Criar enquete"
+                    pt = "Criar enquete",
+                    tr = "Anket Oluştur"
                 ),
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp
@@ -736,7 +759,8 @@ fun CreatePollDialog(
                                 de = "Stellen Sie eine Frage...",
                                 es = "Haz una pregunta...",
                                 fr = "Posez une question...",
-                                pt = "Faça uma pergunta..."
+                                pt = "Faça uma pergunta...",
+                                tr = "Soru sorun..."
                             )
                         )
                     },
@@ -754,7 +778,8 @@ fun CreatePollDialog(
                         de = "Antwortoptionen:",
                         es = "Opciones:",
                         fr = "Options :",
-                        pt = "Opções:"
+                        pt = "Opções:",
+                        tr = "Seçenekler:"
                     ),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
@@ -774,7 +799,8 @@ fun CreatePollDialog(
                                     de = "Option ${index + 1}",
                                     es = "Opción ${index + 1}",
                                     fr = "Option ${index + 1}",
-                                    pt = "Opção ${index + 1}"
+                                    pt = "Opção ${index + 1}",
+                                    tr = "Seçenek ${index + 1}"
                                 )
                             )
                         },
@@ -795,7 +821,8 @@ fun CreatePollDialog(
                                 de = "+ Option hinzufügen",
                                 es = "+ Añadir opción",
                                 fr = "+ Ajouter une option",
-                                pt = "+ Adicionar opção"
+                                pt = "+ Adicionar opção",
+                                tr = "+ Seçenek ekle"
                             )
                         )
                     }
@@ -810,7 +837,8 @@ fun CreatePollDialog(
                             de = "Anonyme Umfrage",
                             es = "Encuesta anónima",
                             fr = "Sondage anonyme",
-                            pt = "Enquete anônima"
+                            pt = "Enquete anônima",
+                            tr = "Anonim anket"
                         ),
                         fontSize = 13.sp
                     )
@@ -835,7 +863,8 @@ fun CreatePollDialog(
                         de = "Erstellen",
                         es = "Crear",
                         fr = "Créer",
-                        pt = "Criar"
+                        pt = "Criar",
+                        tr = "Oluştur"
                     )
                 )
             }
@@ -850,7 +879,8 @@ fun CreatePollDialog(
                         de = "Abbrechen",
                         es = "Cancelar",
                         fr = "Annuler",
-                        pt = "Cancelar"
+                        pt = "Cancelar",
+                        tr = "İptal"
                     )
                 )
             }

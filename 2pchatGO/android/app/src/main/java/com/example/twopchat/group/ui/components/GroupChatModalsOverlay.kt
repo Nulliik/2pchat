@@ -387,7 +387,8 @@ internal fun GroupChatModalsOverlay(
                                 de = "Hintergrundbild für alle Mitglieder aktualisiert",
                                 es = "Fondo de pantalla actualizado para todos los miembros",
                                 fr = "Fond d'écran mis à jour pour tous les membres",
-                                pt = "Papel de parede atualizado para todos os membros"
+                                pt = "Papel de parede atualizado para todos os membros",
+                                tr = "Duvar kağıdı tüm üyeler için güncellendi"
                             ),
                             Toast.LENGTH_SHORT
                         ).show()
@@ -411,7 +412,8 @@ internal fun GroupChatModalsOverlay(
                             de = "Hintergrundbild für alle Mitglieder entfernt",
                             es = "Fondo de pantalla eliminado para todos los miembros",
                             fr = "Fond d'écran supprimé pour tous les membres",
-                            pt = "Papel de parede removido para todos os membros"
+                            pt = "Papel de parede removido para todos os membros",
+                            tr = "Duvar kağıdı tüm üyeler için kaldırıldı"
                         ),
                         Toast.LENGTH_SHORT
                     ).show()

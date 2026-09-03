@@ -662,7 +662,8 @@ fun GroupChatScreen(
                         de = "GIF konnte nicht hinzugefügt werden",
                         es = "No se pudo añadir el GIF",
                         fr = "Impossible d'ajouter le GIF",
-                        pt = "Não foi possível adicionar o GIF"
+                        pt = "Não foi possível adicionar o GIF",
+                        tr = "GIF eklenemedi"
                     ),
                     Toast.LENGTH_SHORT,
                 ).show()
@@ -852,7 +853,8 @@ fun GroupChatScreen(
                         de = "📷 Foto",
                         es = "📷 Foto",
                         fr = "📷 Photo",
-                        pt = "📷 Foto"
+                        pt = "📷 Foto",
+                        tr = "📷 Fotoğraf"
                     )
                 }
                 currentPinnedMsg.attachment?.mimeType?.startsWith("video/") == true -> {
@@ -863,7 +865,8 @@ fun GroupChatScreen(
                         de = "🎥 Video",
                         es = "🎥 Video",
                         fr = "🎥 Vidéo",
-                        pt = "🎥 Vídeo"
+                        pt = "🎥 Vídeo",
+                        tr = "🎥 Video"
                     )
                 }
                 currentPinnedMsg.attachment?.mimeType?.startsWith("audio/") == true -> {
@@ -874,7 +877,8 @@ fun GroupChatScreen(
                         de = "🎤 Sprachnachricht",
                         es = "🎤 Mensaje de voz",
                         fr = "🎤 Message vocal",
-                        pt = "🎤 Mensagem de voz"
+                        pt = "🎤 Mensagem de voz",
+                        tr = "🎤 Sesli Mesaj"
                     )
                 }
                 currentPinnedMsg.attachment != null -> "📁 ${currentPinnedMsg.attachment.fileName}"
@@ -886,7 +890,8 @@ fun GroupChatScreen(
                         de = "Anhang",
                         es = "Archivo adjunto",
                         fr = "Pièce jointe",
-                        pt = "Anexo"
+                        pt = "Anexo",
+                        tr = "Ek"
                     )
                 }
             }
@@ -898,7 +903,8 @@ fun GroupChatScreen(
                     de = "${currentPinnedMsg.authorName} hat eine Nachricht angepinnt",
                     es = "${currentPinnedMsg.authorName} fijó un mensaje",
                     fr = "${currentPinnedMsg.authorName} a épinglé un message",
-                    pt = "${currentPinnedMsg.authorName} fixou uma mensagem"
+                    pt = "${currentPinnedMsg.authorName} fixou uma mensagem",
+                    tr = "${currentPinnedMsg.authorName} bir mesaj sabitledi"
                 )
             } else {
                 com.example.twopchat.data.Localizations.tr(
@@ -908,7 +914,8 @@ fun GroupChatScreen(
                     de = "Angepinnte Nachricht",
                     es = "Mensaje fijado",
                     fr = "Message épinglé",
-                    pt = "Mensagem fixada"
+                    pt = "Mensagem fixada",
+                    tr = "Sabitlenmiş Mesaj"
                 )
             }
 
@@ -1045,7 +1052,8 @@ fun GroupChatScreen(
                                         de = "Frühere Nachrichten laden",
                                         es = "Cargar mensajes anteriores",
                                         fr = "Charger les messages précédents",
-                                        pt = "Carregar mensagens anteriores"
+                                        pt = "Carregar mensagens anteriores",
+                                        tr = "Daha eski mesajları yükle"
                                     ),
                                     fontSize = 12.sp
                                 )
@@ -1058,7 +1066,8 @@ fun GroupChatScreen(
                                     de = "Beginn des Gruppenverlaufs",
                                     es = "Inicio del historial del grupo",
                                     fr = "Début de l'historique du groupe",
-                                    pt = "Início do histórico do grupo"
+                                    pt = "Início do histórico do grupo",
+                                    tr = "Grup geçmişinin başlangıcı"
                                 ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -1117,7 +1126,8 @@ fun GroupChatScreen(
                                             "Keine Nachrichten vorhanden",
                                             "Sin mensajes aún",
                                             "Aucun message pour le moment",
-                                            "Nenhuma mensagem ainda"
+                                            "Nenhuma mensagem ainda",
+                                            tr = "Henüz mesaj yok"
                                         ),
                                         fontSize = 16.sp,
                                         fontWeight = FontWeight.Bold,
@@ -1137,7 +1147,8 @@ fun GroupChatScreen(
                                                 "Keine Nachrichten vorhanden. Starte die Unterhaltung in der Gruppe!",
                                                 "¡Aún no hay mensajes. Comienza a chatear en el grupo!",
                                                 "Pas encore de messages. Commencez à discuter dans le groupe !",
-                                                "Nenhuma mensagem ainda. Comece a conversar no grupo!"
+                                                "Nenhuma mensagem ainda. Comece a conversar no grupo!",
+                                                tr = "Henüz mesaj yok. Grupta sohbete başlayın!"
                                             )
                                         },
                                         fontSize = 13.sp,
@@ -1167,7 +1178,8 @@ fun GroupChatScreen(
                                                     "Ende-zu-Ende verschlüsselt (Double Ratchet)",
                                                     "Cifrado de extremo a extremo (Double Ratchet)",
                                                     "Chiffrement de bout en bout (Double Ratchet)",
-                                                    "Criptografia de ponta a ponta (Double Ratchet)"
+                                                    "Criptografia de ponta a ponta (Double Ratchet)",
+                                                    tr = "Uçtan Uca Şifreli (Double Ratchet)"
                                                 ),
                                                 fontSize = 11.sp,
                                                 fontWeight = FontWeight.SemiBold,
@@ -1476,7 +1488,8 @@ fun GroupChatScreen(
                                         de = "Kamera konnte nicht geöffnet werden",
                                         es = "No se pudo abrir la cámara",
                                         fr = "Impossible d'ouvrir la caméra",
-                                        pt = "Não foi possível abrir a câmera"
+                                        pt = "Não foi possível abrir a câmera",
+                                        tr = "Kamera açılamadı"
                                     ),
                                     Toast.LENGTH_SHORT
                                 ).show()
@@ -1786,7 +1799,8 @@ private fun GroupChatHeader(
                 "In Gruppe suchen...",
                 "Buscar en el grupo...",
                 "Rechercher dans le groupe...",
-                "Pesquisar no grupo..."
+                "Pesquisar no grupo...",
+                tr = "Grupta ara..."
             ),
             primaryColor = primaryColor,
             surfaceColor = surfaceColor,
@@ -2004,22 +2018,22 @@ private fun GroupChatHeader(
                 if (showClearHistoryConfirmation) {
                     AlertDialog(
                         onDismissRequest = { showClearHistoryConfirmation = false },
-                        title = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить историю?", "Clear history?", "Verlauf löschen?", "¿Borrar historial?", "Effacer l'historique ?", "Limpar histórico?"), fontWeight = FontWeight.Bold, color = onSurfaceColor) },
-                        text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Все сообщения этой группы будут удалены с вашего устройства.", "All messages in this group will be deleted from your device.", "Alle Nachrichten in dieser Gruppe werden von Ihrem Gerät gelöscht.", "Todos los mensajes de este grupo se eliminarán de tu dispositivo.", "Tous les messages de ce groupe seront supprimés de votre appareil.", "Todas as mensagens deste grupo serão apagadas do seu dispositivo."), color = onSurfaceColor.copy(alpha = 0.7f)) },
+                        title = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить историю?", "Clear history?", "Verlauf löschen?", "¿Borrar historial?", "Effacer l'historique ?", "Limpar histórico?", tr = "Geçmiş temizlensin mi?"), fontWeight = FontWeight.Bold, color = onSurfaceColor) },
+                        text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Все сообщения этой группы будут удалены с вашего устройства.", "All messages in this group will be deleted from your device.", "Alle Nachrichten in dieser Gruppe werden von Ihrem Gerät gelöscht.", "Todos los mensajes de este grupo se eliminarán de tu dispositivo.", "Tous les messages de ce groupe seront supprimés de votre appareil.", "Todas as mensagens deste grupo serão apagadas do seu dispositivo.", tr = "Bu gruptaki tüm mesajlar cihazınızdan silinecektir."), color = onSurfaceColor.copy(alpha = 0.7f)) },
                         confirmButton = {
                             TextButton(
                                 onClick = {
                                     showClearHistoryConfirmation = false
                                     controller.clearHistory(state.groupId)
-                                    android.widget.Toast.makeText(context, com.example.twopchat.data.Localizations.tr(appLanguage, "История очищена", "History cleared", "Verlauf gelöscht", "Historial borrado", "Historique effacé", "Histórico limpo"), android.widget.Toast.LENGTH_SHORT).show()
+                                    android.widget.Toast.makeText(context, com.example.twopchat.data.Localizations.tr(appLanguage, "История очищена", "History cleared", "Verlauf gelöscht", "Historial borrado", "Historique effacé", "Histórico limpo", tr = "Geçmiş temizlendi"), android.widget.Toast.LENGTH_SHORT).show()
                                 }
                             ) {
-                                Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить", "Clear", "Löschen", "Borrar", "Effacer", "Limpar"), color = Color.Red, fontWeight = FontWeight.Bold)
+                                Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить", "Clear", "Löschen", "Borrar", "Effacer", "Limpar", tr = "Temizle"), color = Color.Red, fontWeight = FontWeight.Bold)
                             }
                         },
                         dismissButton = {
                             TextButton(onClick = { showClearHistoryConfirmation = false }) {
-                                Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Отмена", "Cancel", "Abbrechen", "Cancelar", "Annuler", "Cancelar"), color = onSurfaceColor)
+                                Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Отмена", "Cancel", "Abbrechen", "Cancelar", "Annuler", "Cancelar", tr = "İptal"), color = onSurfaceColor)
                             }
                         },
                         containerColor = surfaceColor,
@@ -2039,7 +2053,8 @@ private fun GroupChatHeader(
                                     de = "Gruppe löschen?",
                                     es = "¿Eliminar grupo?",
                                     fr = "Supprimer le groupe ?",
-                                    pt = "Excluir grupo?"
+                                    pt = "Excluir grupo?",
+                                    tr = "Grup silinsin mi?"
                                 ),
                                 fontWeight = FontWeight.Bold,
                                 color = onSurfaceColor
@@ -2054,7 +2069,8 @@ private fun GroupChatHeader(
                                     de = "Möchten Sie die Gruppe \"${state.title}\" und ihren gesamten Verlauf wirklich dauerhaft löschen?",
                                     es = "¿Seguro que quieres eliminar permanentemente el grupo \"${state.title}\" y todo su historial?",
                                     fr = "Voulez-vous vraiment supprimer définitivement le groupe « ${state.title} » et tout son historique ?",
-                                    pt = "Tem certeza de que deseja excluir permanentemente o grupo \"${state.title}\" e todo o histórico?"
+                                    pt = "Tem certeza de que deseja excluir permanentemente o grupo \"${state.title}\" e todo o histórico?",
+                                    tr = "\"${state.title}\" grubunu ve tüm geçmişini kalıcı olarak silmek istediğinizden emin misiniz?"
                                 ),
                                 color = onSurfaceColor.copy(alpha = 0.7f)
                             )
@@ -2074,7 +2090,8 @@ private fun GroupChatHeader(
                                         de = "Löschen",
                                         es = "Eliminar",
                                         fr = "Supprimer",
-                                        pt = "Excluir"
+                                        pt = "Excluir",
+                                        tr = "Sil"
                                     ),
                                     color = Color.Red,
                                     fontWeight = FontWeight.Bold
@@ -2091,7 +2108,8 @@ private fun GroupChatHeader(
                                         de = "Abbrechen",
                                         es = "Cancelar",
                                         fr = "Annuler",
-                                        pt = "Cancelar"
+                                        pt = "Cancelar",
+                                        tr = "İptal"
                                     ),
                                     color = onSurfaceColor
                                 )
@@ -2119,7 +2137,7 @@ private fun GroupChatHeader(
                         modifier = Modifier.background(surfaceColor)
                     ) {
                         DropdownMenuItem(
-                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Информация о группе", "Group Info", "Gruppeninfo", "Información del grupo", "Infos sur le groupe", "Informações do grupo"), color = onSurfaceColor) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Информация о группе", "Group Info", "Gruppeninfo", "Información del grupo", "Infos sur le groupe", "Informações do grupo", tr = "Grup Bilgisi"), color = onSurfaceColor) },
                             onClick = {
                                 showHeaderMenu = false
                                 controller.openGroupInfo(state.groupId)
@@ -2138,7 +2156,7 @@ private fun GroupChatHeader(
                         }
                         if (canChangeWallpaper) {
                             DropdownMenuItem(
-                                text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Обои чата", "Chat Wallpaper", "Chat-Hintergrund", "Fondo del chat", "Fond d'écran du chat", "Papel de parede do chat"), color = onSurfaceColor) },
+                                text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Обои чата", "Chat Wallpaper", "Chat-Hintergrund", "Fondo del chat", "Fond d'écran du chat", "Papel de parede do chat", tr = "Sohbet Duvar Kağıdı"), color = onSurfaceColor) },
                                 onClick = {
                                     showHeaderMenu = false
                                     onOpenWallpaper()
@@ -2154,10 +2172,10 @@ private fun GroupChatHeader(
                             )
                         }
                         DropdownMenuItem(
-                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Переподключить соединение", "Reconnect Connection", "Verbindung neu herstellen", "Reconectar conexión", "Reconnecter la connexion", "Reconectar conexão"), color = onSurfaceColor) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Переподключить соединение", "Reconnect Connection", "Verbindung neu herstellen", "Reconectar conexión", "Reconnecter la connexion", "Reconectar conexão", tr = "Bağlantıyı Yenile"), color = onSurfaceColor) },
                             onClick = {
                                 showHeaderMenu = false
-                                android.widget.Toast.makeText(context, com.example.twopchat.data.Localizations.tr(appLanguage, "Синхронизация группы...", "Synchronizing group...", "Gruppe wird synchronisiert...", "Sincronizando grupo...", "Synchronisation du groupe...", "Sincronizando grupo..."), android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, com.example.twopchat.data.Localizations.tr(appLanguage, "Синхронизация группы...", "Synchronizing group...", "Gruppe wird synchronisiert...", "Sincronizando grupo...", "Synchronisation du groupe...", "Sincronizando grupo...", tr = "Grup senkronize ediliyor..."), android.widget.Toast.LENGTH_SHORT).show()
                             },
                             leadingIcon = {
                                 Icon(
@@ -2169,7 +2187,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить историю", "Clear History", "Verlauf löschen", "Borrar historial", "Effacer l'historique", "Limpar histórico"), color = Color.Red) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить историю", "Clear History", "Verlauf löschen", "Borrar historial", "Effacer l'historique", "Limpar histórico", tr = "Geçmişi Temizle"), color = Color.Red) },
                             onClick = {
                                 showHeaderMenu = false
                                 showClearHistoryConfirmation = true
@@ -2184,7 +2202,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Покинуть группу", "Leave Group", "Gruppe verlassen", "Salir del grupo", "Quitter le groupe", "Sair do grupo"), color = Color.Red) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Покинуть группу", "Leave Group", "Gruppe verlassen", "Salir del grupo", "Quitter le groupe", "Sair do grupo", tr = "Gruptan Ayrıl"), color = Color.Red) },
                             onClick = {
                                 showHeaderMenu = false
                                 controller.openGroupInfo(state.groupId)
@@ -2199,7 +2217,7 @@ private fun GroupChatHeader(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Удалить группу", "Delete Group", "Gruppe löschen", "Eliminar grupo", "Supprimer le groupe", "Excluir grupo"), color = Color.Red) },
+                            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Удалить группу", "Delete Group", "Gruppe löschen", "Eliminar grupo", "Supprimer le groupe", "Excluir grupo", tr = "Grubu Sil"), color = Color.Red) },
                             onClick = {
                                 showHeaderMenu = false
                                 showDeleteGroupConfirmation = true
@@ -3122,7 +3140,8 @@ private fun GroupComposer(
                         "Du kannst noch nicht in dieser Gruppe schreiben",
                         "Aún no puedes escribir en este grupo",
                         "Vous ne pouvez pas encore écrire dans ce groupe",
-                        "Você ainda não pode escrever neste grupo"
+                        "Você ainda não pode escrever neste grupo",
+                        tr = "Henüz bu gruba mesaj yazamazsınız"
                     ),
                     modifier = Modifier.padding(14.dp),
                     fontSize = 13.sp,
@@ -3354,7 +3373,8 @@ private fun GroupSearchResultsListViewOverlay(
                         de = "Keine Ergebnisse gefunden",
                         es = "No se encontraron resultados",
                         fr = "Aucun résultat trouvé",
-                        pt = "Nenhum resultado encontrado"
+                        pt = "Nenhum resultado encontrado",
+                        tr = "Sonuç bulunamadı"
                     ),
                     color = onSurfaceVariant,
                     fontSize = 15.sp,
@@ -3378,7 +3398,8 @@ private fun GroupSearchResultsListViewOverlay(
                             de = "Du",
                             es = "Tú",
                             fr = "Vous",
-                            pt = "Você"
+                            pt = "Você",
+                            tr = "Siz"
                         )
                     } else {
                         msg.authorName.ifBlank { "User" }
@@ -3458,7 +3479,8 @@ private fun GroupSearchResultsListViewOverlay(
                                         de = "Nachricht",
                                         es = "Mensaje",
                                         fr = "Message",
-                                        pt = "Mensagem"
+                                        pt = "Mensagem",
+                                        tr = "Mesaj"
                                     )
                                 }
                             }

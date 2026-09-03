@@ -137,7 +137,8 @@ fun VideoEditorModal(
                                 de = "Abbrechen",
                                 es = "Cancelar",
                                 fr = "Annuler",
-                                pt = "Cancelar"
+                                pt = "Cancelar",
+                                tr = "İptal"
                             ),
                             tint = onSurfaceColor,
                             modifier = Modifier.size(24.dp)
@@ -153,7 +154,8 @@ fun VideoEditorModal(
                                 de = "Video",
                                 es = "Vídeo",
                                 fr = "Vidéo",
-                                pt = "Vídeo"
+                                pt = "Vídeo",
+                                tr = "Video"
                             ),
                             color = onSurfaceColor,
                             fontSize = 16.sp,
@@ -244,7 +246,8 @@ fun VideoEditorModal(
                                     de = "Beschriftung hinzufügen...",
                                     es = "Añadir subtítulo...",
                                     fr = "Ajouter une légende...",
-                                    pt = "Adicionar legenda..."
+                                    pt = "Adicionar legenda...",
+                                    tr = "Açıklama ekle..."
                                 ),
                                 color = onSurfaceVariant.copy(alpha = 0.6f)
                             )
@@ -301,7 +304,8 @@ fun VideoEditorModal(
                                                 de = "Komprimierung fehlgeschlagen, Original wird gesendet",
                                                 es = "Falló la compresión, enviando original",
                                                 fr = "Échec de la compression, envoi de l'original",
-                                                pt = "Falha na compressão, enviando original"
+                                                pt = "Falha na compressão, enviando original",
+                                                tr = "Sıkıştırma başarısız oldu, orijinal gönderiliyor"
                                             ),
                                             Toast.LENGTH_SHORT
                                         ).show()
@@ -353,7 +357,8 @@ fun VideoEditorModal(
                                         de = "Video wird komprimiert...",
                                         es = "Comprimiendo vídeo...",
                                         fr = "Compression de la vidéo...",
-                                        pt = "Comprimindo vídeo..."
+                                        pt = "Comprimindo vídeo...",
+                                        tr = "Video sıkıştırılıyor..."
                                     ),
                                     fontSize = 17.sp,
                                     fontWeight = FontWeight.Bold,
@@ -397,7 +402,8 @@ fun VideoEditorModal(
                                             de = "Abbrechen",
                                             es = "Cancelar",
                                             fr = "Annuler",
-                                            pt = "Cancelar"
+                                            pt = "Cancelar",
+                                            tr = "İptal"
                                         ),
                                         color = primaryColor,
                                         fontWeight = FontWeight.SemiBold

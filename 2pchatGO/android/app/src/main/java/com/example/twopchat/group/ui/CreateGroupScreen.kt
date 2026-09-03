@@ -112,7 +112,8 @@ fun CreateGroupScreen(
                             de = "Neue Gruppe",
                             es = "Nuevo grupo",
                             fr = "Nouveau groupe",
-                            pt = "Novo grupo"
+                            pt = "Novo grupo",
+                            tr = "Yeni Grup"
                         ),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
@@ -142,7 +143,8 @@ fun CreateGroupScreen(
                                 de = "Gruppenname",
                                 es = "Nombre del grupo",
                                 fr = "Nom du groupe",
-                                pt = "Nome do grupo"
+                                pt = "Nome do grupo",
+                                tr = "Grup Adı"
                             )
                         )
                     },
@@ -155,7 +157,8 @@ fun CreateGroupScreen(
                                 de = "z.B.: 2PChat Team",
                                 es = "Ejemplo: Equipo 2PChat",
                                 fr = "Exemple : Équipe 2PChat",
-                                pt = "Exemplo: Equipe 2PChat"
+                                pt = "Exemplo: Equipe 2PChat",
+                                tr = "Örn: 2PChat Ekibi"
                             )
                         )
                     },
@@ -169,7 +172,8 @@ fun CreateGroupScreen(
                                     de = "Name darf nicht leer sein",
                                     es = "El nombre no puede estar vacío",
                                     fr = "Le nom ne peut pas être vide",
-                                    pt = "O nome não pode estar vazio"
+                                    pt = "O nome não pode estar vazio",
+                                    tr = "Başlık boş olamaz"
                                 )
                             )
                         }
@@ -204,7 +208,8 @@ fun CreateGroupScreen(
                                 de = "Beschreibung (optional)",
                                 es = "Descripción (opcional)",
                                 fr = "Description (facultatif)",
-                                pt = "Descrição (opcional)"
+                                pt = "Descrição (opcional)",
+                                tr = "Açıklama (isteğe bağlı)"
                             )
                         )
                     },
@@ -217,7 +222,8 @@ fun CreateGroupScreen(
                                 de = "Worum geht es in dieser Gruppe...",
                                 es = "¿De qué trata este grupo...",
                                 fr = "De quoi parle ce groupe...",
-                                pt = "Sobre o que é este grupo..."
+                                pt = "Sobre o que é este grupo...",
+                                tr = "Bu grup ne hakkında..."
                             )
                         )
                     },
@@ -244,7 +250,8 @@ fun CreateGroupScreen(
                         de = "Mitglieder · Ausgewählt: ${selectedContactIds.size}",
                         es = "Miembros · Seleccionados: ${selectedContactIds.size}",
                         fr = "Membres · Sélectionnés : ${selectedContactIds.size}",
-                        pt = "Membros · Selecionados: ${selectedContactIds.size}"
+                        pt = "Membros · Selecionados: ${selectedContactIds.size}",
+                        tr = "Üyeler · Seçilen: ${selectedContactIds.size}"
                     ),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
@@ -258,7 +265,8 @@ fun CreateGroupScreen(
                         de = "Optional: Mitglieder können später hinzugefügt werden. Sie werden Gruppenbesitzer.",
                         es = "Opcional: puedes añadir miembros más tarde. Serás el propietario del grupo.",
                         fr = "Facultatif : les membres peuvent être ajoutés après création. Vous deviendrez le propriétaire du groupe.",
-                        pt = "Opcional: membros podem ser adicionados após a criação. Você se tornará o proprietário do grupo."
+                        pt = "Opcional: membros podem ser adicionados após a criação. Você se tornará o proprietário do grupo.",
+                        tr = "İsteğe bağlı: üyeler oluşturulduktan sonra eklenebilir. Grubun kurucusu siz olacaksınız."
                     ),
                     fontSize = 12.sp,
                     color = onSurfaceColor.copy(alpha = 0.6f)
@@ -288,7 +296,8 @@ fun CreateGroupScreen(
                                         de = "Noch keine Kontakte gefunden",
                                         es = "Aún no se han encontrado contactos",
                                         fr = "Aucun contact trouvé pour l'instant",
-                                        pt = "Nenhum contato encontrado ainda"
+                                        pt = "Nenhum contato encontrado ainda",
+                                        tr = "Henüz kişi bulunamadı"
                                     ),
                                     fontSize = 13.sp,
                                     color = onSurfaceColor.copy(alpha = 0.5f)
@@ -361,7 +370,8 @@ fun CreateGroupScreen(
                                             de = "Online",
                                             es = "En línea",
                                             fr = "En ligne",
-                                            pt = "Online"
+                                            pt = "Online",
+                                            tr = "Çevrimiçi"
                                         )
                                     } else {
                                         com.example.twopchat.data.Localizations.tr(
@@ -371,7 +381,8 @@ fun CreateGroupScreen(
                                             de = "Offline",
                                             es = "Desconectado",
                                             fr = "Hors ligne",
-                                            pt = "Offline"
+                                            pt = "Offline",
+                                            tr = "Çevrimdışı"
                                         )
                                     }
                                 }
@@ -430,7 +441,8 @@ fun CreateGroupScreen(
                                 de = "Gruppe erstellen",
                                 es = "Crear grupo",
                                 fr = "Créer le groupe",
-                                pt = "Criar grupo"
+                                pt = "Criar grupo",
+                                tr = "Grup Oluştur"
                             ),
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp

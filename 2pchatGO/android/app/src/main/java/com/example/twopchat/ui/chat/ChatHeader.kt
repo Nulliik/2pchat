@@ -225,7 +225,7 @@ internal fun ChatHeader(
             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }, modifier = Modifier.background(surfaceColor)) {
                 if (!savedMessages) {
                     DropdownMenuItem(
-                        text = { Text(Localizations.tr(appLanguage, "Режим соединения", "Connection Mode", "Verbindungsmodus", "Modo de conexión", "Mode de connexion", "Modo de conexão"), color = onSurfaceColor) },
+                        text = { Text(Localizations.tr(appLanguage, "Режим соединения", "Connection Mode", "Verbindungsmodus", "Modo de conexión", "Mode de connexion", "Modo de conexão", tr = "Bağlantı Modu"), color = onSurfaceColor) },
                         onClick = { showMenu = false; onOpenConnectionMode() },
                         leadingIcon = {
                             Icon(
@@ -237,7 +237,7 @@ internal fun ChatHeader(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(Localizations.tr(appLanguage, "Переподключить соединение", "Reconnect Connection", "Verbindung neu herstellen", "Reconectar conexión", "Reconnecter la connexion", "Reconectar conexão"), color = onSurfaceColor) },
+                        text = { Text(Localizations.tr(appLanguage, "Переподключить соединение", "Reconnect Connection", "Verbindung neu herstellen", "Reconectar conexión", "Reconnecter la connexion", "Reconectar conexão", tr = "Bağlantıyı Yenile"), color = onSurfaceColor) },
                         onClick = { showMenu = false; onReconnect() },
                         leadingIcon = {
                             Icon(
@@ -251,9 +251,9 @@ internal fun ChatHeader(
                     DropdownMenuItem(
                         text = { Text(
                             if (isMuted) {
-                                Localizations.tr(appLanguage, "Включить уведомления", "Unmute Notifications", "Stummschaltung aufheben", "Reactivar notificaciones", "Réactiver les notifications", "Desativar mudo")
+                                Localizations.tr(appLanguage, "Включить уведомления", "Unmute Notifications", "Stummschaltung aufheben", "Reactivar notificaciones", "Réactiver les notifications", "Desativar mudo", tr = "Bildirimleri Aç")
                             } else {
-                                Localizations.tr(appLanguage, "Выключить уведомления", "Mute Notifications", "Stummschalten", "Silenciar notificaciones", "Masquer les notifications", "Silenciar notificação")
+                                Localizations.tr(appLanguage, "Выключить уведомления", "Mute Notifications", "Stummschalten", "Silenciar notificaciones", "Masquer les notifications", "Silenciar notificação", tr = "Bildirimleri Kapat")
                             },
                             color = onSurfaceColor,
                         ) },
@@ -270,9 +270,9 @@ internal fun ChatHeader(
                     DropdownMenuItem(
                         text = { Text(
                             if (isForwardingRestricted) {
-                                Localizations.tr(appLanguage, "Разрешить пересылку", "Allow Forwarding", "Weiterleiten erlauben", "Permitir reenvío", "Autoriser le transfert", "Permitir encaminhamento")
+                                Localizations.tr(appLanguage, "Разрешить пересылку", "Allow Forwarding", "Weiterleiten erlauben", "Permitir reenvío", "Autoriser le transfert", "Permitir encaminhamento", tr = "İletmeye İzin Ver")
                             } else {
-                                Localizations.tr(appLanguage, "Запретить пересылку", "Restrict Forwarding", "Weiterleitung einschränken", "Restringir reenvío", "Restreindre le transfert", "Restringir encaminhamento")
+                                Localizations.tr(appLanguage, "Запретить пересылку", "Restrict Forwarding", "Weiterleitung einschränken", "Restringir reenvío", "Restreindre le transfert", "Restringir encaminhamento", tr = "İletmeyi Kısıtla")
                             },
                             color = onSurfaceColor,
                         ) },
@@ -288,7 +288,7 @@ internal fun ChatHeader(
                     )
                 }
                 DropdownMenuItem(
-                    text = { Text(Localizations.tr(appLanguage, "Установить обои", "Set Wallpaper", "Hintergrund festlegen", "Establecer fondo", "Définir le fond d'écran", "Definir papel de parede"), color = onSurfaceColor) },
+                    text = { Text(Localizations.tr(appLanguage, "Установить обои", "Set Wallpaper", "Hintergrund festlegen", "Establecer fondo", "Définir le fond d'écran", "Definir papel de parede", tr = "Duvar Kağıdı Belirle"), color = onSurfaceColor) },
                     onClick = { showMenu = false; onSetWallpaper() },
                     leadingIcon = {
                         Icon(
@@ -300,7 +300,7 @@ internal fun ChatHeader(
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text(Localizations.tr(appLanguage, "Очистить историю", "Clear History", "Verlauf löschen", "Borrar historial", "Effacer l'historique", "Limpar histórico"), color = Color.Red) },
+                    text = { Text(Localizations.tr(appLanguage, "Очистить историю", "Clear History", "Verlauf löschen", "Borrar historial", "Effacer l'historique", "Limpar histórico", tr = "Geçmişi Temizle"), color = Color.Red) },
                     onClick = { showMenu = false; onClearHistory() },
                     leadingIcon = {
                         Icon(
@@ -313,7 +313,7 @@ internal fun ChatHeader(
                 )
                 if (!savedMessages) {
                     DropdownMenuItem(
-                        text = { Text(Localizations.tr(appLanguage, "Заблокировать", "Block User", "Benutzer blockieren", "Bloquear usuario", "Bloquer l'utilisateur", "Bloquear usuário"), color = Color.Red) },
+                        text = { Text(Localizations.tr(appLanguage, "Заблокировать", "Block User", "Benutzer blockieren", "Bloquear usuario", "Bloquer l'utilisateur", "Bloquear usuário", tr = "Engelle"), color = Color.Red) },
                         onClick = { showMenu = false; onBlockPeer() },
                         leadingIcon = {
                             Icon(
@@ -325,7 +325,7 @@ internal fun ChatHeader(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(Localizations.tr(appLanguage, "Удалить чат", "Delete Chat", "Chat löschen", "Eliminar chat", "Supprimer le chat", "Excluir conversa"), color = Color.Red) },
+                        text = { Text(Localizations.tr(appLanguage, "Удалить чат", "Delete Chat", "Chat löschen", "Eliminar chat", "Supprimer le chat", "Excluir conversa", tr = "Sohbeti Sil"), color = Color.Red) },
                         onClick = { showMenu = false; showDeleteDialog = true },
                         leadingIcon = {
                             Icon(

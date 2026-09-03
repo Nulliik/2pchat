@@ -293,7 +293,8 @@ fun TorSettingsPage(
                                     de = "Onion-Adresse (v3)",
                                     es = "Dirección Onion (v3)",
                                     fr = "Adresse Onion (v3)",
-                                    pt = "Endereço Onion (v3)"
+                                    pt = "Endereço Onion (v3)",
+                                    tr = "Onion Adresi (v3)"
                                 ),
                                 fontSize = 14.sp,
                                 color = onSurfaceColor,
@@ -325,7 +326,8 @@ fun TorSettingsPage(
                                                 de = "Dienst aktiv",
                                                 es = "Servicio activo",
                                                 fr = "Service actif",
-                                                pt = "Serviço ativo"
+                                                pt = "Serviço ativo",
+                                                tr = "Servis Aktif"
                                             )
                                         } else {
                                             com.example.twopchat.data.Localizations.tr(
@@ -335,7 +337,8 @@ fun TorSettingsPage(
                                                 de = "Dienst offline",
                                                 es = "Servicio desconectado",
                                                 fr = "Service hors ligne",
-                                                pt = "Serviço offline"
+                                                pt = "Serviço offline",
+                                                tr = "Servis Çevrimdışı"
                                             )
                                         },
                                         fontSize = 11.sp,
@@ -354,7 +357,8 @@ fun TorSettingsPage(
                                 de = "Ermöglicht direkte P2P-Nachrichten über Tor ohne Yggdrasil oder Tracker",
                                 es = "Permite mensajería directa P2P a través de Tor sin Yggdrasil ni rastreadores",
                                 fr = "Permet la messagerie P2P directe via Tor sans Yggdrasil ni trackers",
-                                pt = "Permite mensagens P2P diretas via Tor sem Yggdrasil ou rastreadores"
+                                pt = "Permite mensagens P2P diretas via Tor sem Yggdrasil ou rastreadores",
+                                tr = "Yggdrasil veya izleyiciler olmadan doğrudan Tor üzerinden mesajlaşma sağlar"
                             ),
                             fontSize = 12.sp,
                             color = onSurfaceVariant,
@@ -394,7 +398,8 @@ fun TorSettingsPage(
                                             de = "Onion-Adresse kopiert",
                                             es = "Dirección Onion copiada",
                                             fr = "Adresse Onion copiée",
-                                            pt = "Endereço Onion copiado"
+                                            pt = "Endereço Onion copiado",
+                                            tr = "Onion adresi kopyalandı"
                                         ),
                                         Toast.LENGTH_SHORT,
                                     ).show()
@@ -408,7 +413,8 @@ fun TorSettingsPage(
                                             de = "Adresse kopieren",
                                             es = "Copiar dirección",
                                             fr = "Copier l'adresse",
-                                            pt = "Copiar endereço"
+                                            pt = "Copiar endereço",
+                                            tr = "Adresi Kopyala"
                                         ),
                                         fontSize = 12.sp,
                                         maxLines = 1,
@@ -431,7 +437,8 @@ fun TorSettingsPage(
                                                 de = "QR verbergen",
                                                 es = "Ocultar QR",
                                                 fr = "Masquer le QR",
-                                                pt = "Ocultar QR"
+                                                pt = "Ocultar QR",
+                                                tr = "QR'ı Gizle"
                                             )
                                         } else {
                                             com.example.twopchat.data.Localizations.tr(
@@ -441,7 +448,8 @@ fun TorSettingsPage(
                                                 de = "QR anzeigen",
                                                 es = "Mostrar QR",
                                                 fr = "Afficher le QR",
-                                                pt = "Mostrar QR"
+                                                pt = "Mostrar QR",
+                                                tr = "QR'ı Göster"
                                             )
                                         },
                                         fontSize = 12.sp,
@@ -466,7 +474,8 @@ fun TorSettingsPage(
                                                 de = "Adresse wird gewechselt...",
                                                 es = "Cambiando dirección...",
                                                 fr = "Changement d'adresse...",
-                                                pt = "Trocando endereço..."
+                                                pt = "Trocando endereço...",
+                                                tr = "Adres yenileniyor..."
                                             )
                                         } else {
                                             com.example.twopchat.data.Localizations.tr(
@@ -476,7 +485,8 @@ fun TorSettingsPage(
                                                 de = "Adresse wechseln",
                                                 es = "Cambiar dirección",
                                                 fr = "Changer d'adresse",
-                                                pt = "Trocar endereço"
+                                                pt = "Trocar endereço",
+                                                tr = "Adresi Yenile"
                                             )
                                         },
                                         fontSize = 12.sp,
@@ -522,7 +532,8 @@ fun TorSettingsPage(
                                         de = "● Dienst bereit für eingehende Verbindungen",
                                         es = "● Servicio listo para conexiones entrantes",
                                         fr = "● Service prêt pour les connexions entrantes",
-                                        pt = "● Serviço pronto para conexões de entrada"
+                                        pt = "● Serviço pronto para conexões de entrada",
+                                        tr = "● Servis gelen bağlantılara hazır"
                                     )
                                 } else {
                                     com.example.twopchat.data.Localizations.tr(
@@ -532,7 +543,8 @@ fun TorSettingsPage(
                                         de = "○ Tor aktivieren, um eingehende Verbindungen per QR zu akzeptieren",
                                         es = "○ Habilite Tor para aceptar conexiones entrantes mediante QR",
                                         fr = "○ Activez Tor pour accepter les connexions entrantes via QR",
-                                        pt = "○ Ative o Tor para aceitar conexões de entrada via QR"
+                                        pt = "○ Ative o Tor para aceitar conexões de entrada via QR",
+                                        tr = "○ QR ile gelen bağlantıları kabul etmek için Tor'u etkinleştirin"
                                     )
                                 },
                                 fontSize = 11.sp,
@@ -762,7 +774,8 @@ fun TorSettingsPage(
                         de = "Tor-Onion-Adresse wechseln?",
                         es = "¿Cambiar dirección Onion de Tor?",
                         fr = "Changer l'adresse Tor Onion ?",
-                        pt = "Trocar endereço Tor Onion?"
+                        pt = "Trocar endereço Tor Onion?",
+                        tr = "Tor Onion Adresi Yenilensin mi?"
                     ),
                     fontWeight = FontWeight.Bold,
                     color = onSurfaceColor,
@@ -777,7 +790,8 @@ fun TorSettingsPage(
                         de = "Erstellt ein neues .onion-Schlüsselpaar und sendet es nur an vertrauenswürdige Kontakte. Blockierte Benutzer verlieren dauerhaft den Zugriff.",
                         es = "Genera un nuevo par de claves .onion y lo envía solo a contactos de confianza. Los usuarios bloqueados perderán el acceso de forma permanente.",
                         fr = "Génère une nouvelle paire de clés .onion et l'envoie uniquement aux contacts de confiance. Les utilisateurs bloqués perdront définitivement l'accès.",
-                        pt = "Gera um novo par de chaves .onion e envia apenas para contatos confiáveis. Usuários bloqueados perderão o acesso permanentemente."
+                        pt = "Gera um novo par de chaves .onion e envia apenas para contatos confiáveis. Usuários bloqueados perderão o acesso permanentemente.",
+                        tr = "Yeni bir .onion anahtar çifti oluşturur ve bunu yalnızca güvenilen kişilere iletir. Engellenen kullanıcılar düğümünüze erişimi kalıcı olarak kaybeder."
                     ),
                     fontSize = 13.sp,
                     color = onSurfaceVariant,
@@ -801,7 +815,8 @@ fun TorSettingsPage(
                                         de = "Neue Tor-Adresse generiert & gesendet",
                                         es = "Nueva dirección Tor generada y enviada",
                                         fr = "Nouvelle adresse Tor générée et diffusée",
-                                        pt = "Novo endereço Tor gerado e transmitido"
+                                        pt = "Novo endereço Tor gerado e transmitido",
+                                        tr = "Yeni Tor adresi oluşturuldu ve dağıtıldı"
                                     ),
                                     Toast.LENGTH_LONG,
                                 ).show()
@@ -815,7 +830,8 @@ fun TorSettingsPage(
                                         de = "Fehler beim Wechseln der Tor-Adresse",
                                         es = "Error al cambiar la dirección Tor",
                                         fr = "Échec du changement d'adresse Tor",
-                                        pt = "Erro ao trocar endereço Tor"
+                                        pt = "Erro ao trocar endereço Tor",
+                                        tr = "Tor adresi yenilenemedi"
                                     ),
                                     Toast.LENGTH_LONG,
                                 ).show()
@@ -832,7 +848,8 @@ fun TorSettingsPage(
                             de = "Adresse wechseln",
                             es = "Cambiar dirección",
                             fr = "Changer d'adresse",
-                            pt = "Trocar endereço"
+                            pt = "Trocar endereço",
+                            tr = "Adresi Yenile"
                         ),
                         color = primaryColor,
                         fontWeight = FontWeight.Bold
@@ -852,7 +869,8 @@ fun TorSettingsPage(
                             de = "Abbrechen",
                             es = "Cancelar",
                             fr = "Annuler",
-                            pt = "Cancelar"
+                            pt = "Cancelar",
+                            tr = "İptal"
                         ),
                         color = onSurfaceVariant
                     )

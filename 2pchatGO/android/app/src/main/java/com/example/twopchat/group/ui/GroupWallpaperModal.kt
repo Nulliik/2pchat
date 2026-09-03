@@ -224,7 +224,7 @@ fun GroupWallpaperModal(
                     }
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        text = Localizations.tr(appLanguage, "Обои группы", "Group Wallpaper", "Gruppenhintergrund", "Fondo del grupo", "Fond de groupe", "Papel de parede do grupo"),
+                        text = Localizations.tr(appLanguage, "Обои группы", "Group Wallpaper", "Gruppenhintergrund", "Fondo del grupo", "Fond de groupe", "Papel de parede do grupo", tr = "Grup Duvar Kağıdı"),
                         color = Color.White,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
@@ -263,7 +263,7 @@ fun GroupWallpaperModal(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = Localizations.tr(appLanguage, "Затемнение", "Dimming", "Abdunkelung", "Oscurecimiento", "Assombrissement", "Escurecimento"),
+                            text = Localizations.tr(appLanguage, "Затемнение", "Dimming", "Abdunkelung", "Oscurecimiento", "Assombrissement", "Escurecimento", tr = "Karartma"),
                             color = Color.White,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
@@ -309,7 +309,7 @@ fun GroupWallpaperModal(
                         border = BorderStroke(0.5.dp, primaryColor.copy(alpha = 0.3f))
                     ) {
                         Text(
-                            text = Localizations.tr(appLanguage, "Обои будут установлены у всех участников группы", "Wallpaper will be applied for all group members", "Hintergrundbild wird für alle Gruppenmitglieder übernommen", "El fondo se aplicará a todos los miembros del grupo", "Le fond d'écran sera appliqué à tous les membres du groupe", "O papel de parede será aplicado para todos os membros do grupo"),
+                            text = Localizations.tr(appLanguage, "Обои будут установлены у всех участников группы", "Wallpaper will be applied for all group members", "Hintergrundbild wird für alle Gruppenmitglieder übernommen", "El fondo se aplicará a todos los miembros del grupo", "Le fond d'écran sera appliqué à tous les membres du groupe", "O papel de parede será aplicado para todos os membros do grupo", tr = "Duvar kağıdı tüm grup üyeleri için uygulanacaktır"),
                             color = Color.White,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
@@ -337,7 +337,7 @@ fun GroupWallpaperModal(
                                 )
                                 Spacer(Modifier.height(2.dp))
                                 Text(
-                                    text = Localizations.tr(appLanguage, "Как вам новые обои в нашей группе?", "How do you like the new wallpaper in our group?", "Wie gefällt euch das neue Gruppenbild?", "¿Qué os parece el nuevo fondo del grupo?", "Que pensez-vous du nouveau fond d'écran ?", "O que acharam do novo papel de parede do grupo?"),
+                                    text = Localizations.tr(appLanguage, "Как вам новые обои в нашей группе?", "How do you like the new wallpaper in our group?", "Wie gefällt euch das neue Gruppenbild?", "¿Qué os parece el nuevo fondo del grupo?", "Que pensez-vous du nouveau fond d'écran ?", "O que acharam do novo papel de parede do grupo?", tr = "Grubumuzdaki yeni duvar kağıdını nasıl buldunuz?"),
                                     color = if (previewBitmap != null) Color.White else MaterialTheme.colorScheme.onSurface,
                                     fontSize = 14.sp
                                 )
@@ -364,7 +364,7 @@ fun GroupWallpaperModal(
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
                                 Text(
-                                    text = Localizations.tr(appLanguage, "Супер, стильно смотрится!", "Awesome, looks very stylish!", "Super, sieht sehr stylish aus!", "¡Genial, se vede muy elegante!", "Super, très élégant !", "Incrível, ficou muito estiloso!"),
+                                    text = Localizations.tr(appLanguage, "Супер, стильно смотрится!", "Awesome, looks very stylish!", "Super, sieht sehr stylish aus!", "¡Genial, se vede muy elegante!", "Super, très élégant !", "Incrível, ficou muito estiloso!", tr = "Harika, çok şık görünüyor!"),
                                     color = if (primaryColor == MintGreen || primaryColor == MintGreenLight) StealthBlack else Color.White,
                                     fontSize = 14.sp
                                 )
@@ -396,7 +396,7 @@ fun GroupWallpaperModal(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = Localizations.tr(appLanguage, "Готовые темы", "Preset Wallpapers", "Vorgefertigte Hintergründe", "Fondos predeterminados", "Thèmes prédéfinis", "Temas predefinidos"),
+                        text = Localizations.tr(appLanguage, "Готовые темы", "Preset Wallpapers", "Vorgefertigte Hintergründe", "Fondos predeterminados", "Thèmes prédéfinis", "Temas predefinidos", tr = "Hazır Duvar Kağıtları"),
                         color = Color.White.copy(alpha = 0.85f),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -507,7 +507,7 @@ fun GroupWallpaperModal(
                             )
                             Spacer(Modifier.width(12.dp))
                             Text(
-                                text = Localizations.tr(appLanguage, "Размытие", "Blur", "Unschärfe", "Desenfoque", "Flou", "Desfoque"),
+                                text = Localizations.tr(appLanguage, "Размытие", "Blur", "Unschärfe", "Desenfoque", "Flou", "Desfoque", tr = "Bulanıklık"),
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp
@@ -549,7 +549,7 @@ fun GroupWallpaperModal(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = Localizations.tr(appLanguage, "Выбрать из галереи", "Pick from gallery", "Aus Galerie wählen", "Elegir de la galería", "Choisir depuis la galerie", "Escolher da galeria"),
+                        text = Localizations.tr(appLanguage, "Выбрать из галереи", "Pick from gallery", "Aus Galerie wählen", "Elegir de la galería", "Choisir depuis la galerie", "Escolher da galeria", tr = "Galeriden Seç"),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
@@ -570,7 +570,7 @@ fun GroupWallpaperModal(
                         .padding(horizontal = 16.dp)
                 ) {
                     Text(
-                        text = Localizations.tr(appLanguage, "Установить обои", "Set wallpaper", "Hintergrund festlegen", "Establecer fondo", "Définir le fond d'écran", "Definir papel de parede"),
+                        text = Localizations.tr(appLanguage, "Установить обои", "Set wallpaper", "Hintergrund festlegen", "Establecer fondo", "Définir le fond d'écran", "Definir papel de parede", tr = "Duvar Kağıdını Ayarla"),
                         color = if (primaryColor == MintGreen) StealthBlack else Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp

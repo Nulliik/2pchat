@@ -197,6 +197,7 @@ internal fun GifPreviewDialog(
                                     es = "Cerrar",
                                     fr = "Fermer",
                                     pt = "Fechar",
+                                    tr = "Kapat"
                                 ),
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium,
@@ -236,6 +237,7 @@ internal fun GifPreviewDialog(
                                         es = "Enviar",
                                         fr = "Envoyer",
                                         pt = "Enviar",
+                                        tr = "Gönder"
                                     ),
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,

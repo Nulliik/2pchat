@@ -46,7 +46,7 @@ fun NotificationsSettingsPage(
             .verticalScroll(rememberScrollState())
     ) {
         SubPageLayout(
-            title = Localizations.tr(appLanguage, "Уведомления", "Notifications", "Benachrichtigungen", "Notificaciones", "Notifications", "Notificações"),
+            title = Localizations.tr(appLanguage, "Уведомления", "Notifications", "Benachrichtigungen", "Notificaciones", "Notifications", "Notificações", tr = "Bildirimler"),
             appLanguage = appLanguage,
             onBackClick = onBackClick,
             surfaceColor = surfaceColor,
@@ -154,7 +154,8 @@ fun NotificationsSettingsPage(
                             "Hintergrund-Nachrichtenzustellung",
                             "Entrega de mensajes en segundo plano",
                             "Distribution des messages en arrière-plan",
-                            "Entrega de mensagens em segundo plano"
+                            "Entrega de mensagens em segundo plano",
+                            tr = "Arka Planda Mesaj İletimi"
                         ),
                         fontWeight = FontWeight.SemiBold,
                         color = onSurfaceColor,
@@ -169,7 +170,8 @@ fun NotificationsSettingsPage(
                             "Um Benachrichtigungen bei gesperrtem Telefon sofort zu erhalten, erlaube unbegrenzte Hintergrundaktivität.",
                             "Para recibir notificaciones al instante con el teléfono bloqueado, permite el uso de batería sin restricciones.",
                             "Pour recevoir des notifications instantanées lorsque le téléphone est verrouillé, autorisez l'utilisation sans restriction de la batterie.",
-                            "Para receber notificações instantâneas com o telefone bloqueado, permita o uso irrestrito da bateria."
+                            "Para receber notificações instantâneas com o telefone bloqueado, permita o uso irrestrito da bateria.",
+                            tr = "Telefon kilitliyken anında bildirim almak için kısıtlamasız arka plan pil kullanımına izin verin."
                         ),
                         fontSize = 12.sp,
                         color = onSurfaceVariant,
@@ -190,7 +192,8 @@ fun NotificationsSettingsPage(
                                     "Uneingeschränkter Modus aktiv",
                                     "Modo sin restricciones activo",
                                     "Mode sans restriction actif",
-                                    "Modo irrestrito ativo"
+                                    "Modo irrestrito ativo",
+                                    tr = "Kısıtlamasız mod aktif"
                                 )
                             } else {
                                 Localizations.tr(
@@ -200,7 +203,8 @@ fun NotificationsSettingsPage(
                                     "Optimiert (Verzögerung möglich)",
                                     "Optimizado (puede haber retrasos)",
                                     "Optimisé (retards possibles)",
-                                    "Otimizado (possíveis atrasos)"
+                                    "Otimizado (possíveis atrasos)",
+                                    tr = "Optimize edildi (gecikmeler yaşanabilir)"
                                 )
                             },
                             fontSize = 13.sp,
@@ -237,7 +241,8 @@ fun NotificationsSettingsPage(
                                         "Erlauben",
                                         "Permitir",
                                         "Autoriser",
-                                        "Permitir"
+                                        "Permitir",
+                                        tr = "İzin Ver"
                                     ),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold,

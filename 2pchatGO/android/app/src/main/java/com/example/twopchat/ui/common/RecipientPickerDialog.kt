@@ -84,7 +84,8 @@ fun RecipientPickerDialog(
             de = "Empfänger suchen...",
             es = "Buscar destinatario...",
             fr = "Rechercher un destinataire...",
-            pt = "Buscar destinatário..."
+            pt = "Buscar destinatário...",
+            tr = "Alıcı ara..."
         )
     }
     val surfaceColor = MaterialTheme.colorScheme.surface
@@ -232,7 +233,8 @@ fun RecipientPickerDialog(
                                     de = "Keine verfügbaren Chats",
                                     es = "No hay chats disponibles",
                                     fr = "Aucun chat disponible",
-                                    pt = "Nenhum chat disponível"
+                                    pt = "Nenhum chat disponível",
+                                    tr = "Kullanılabilir sohbet yok"
                                 )
                             } else {
                                 com.example.twopchat.data.Localizations.tr(
@@ -242,7 +244,8 @@ fun RecipientPickerDialog(
                                     de = "Keine Ergebnisse gefunden",
                                     es = "No se encontraron resultados",
                                     fr = "Aucun résultat trouvé",
-                                    pt = "Nenhum resultado encontrado"
+                                    pt = "Nenhum resultado encontrado",
+                                    tr = "Sonuç bulunamadı"
                                 )
                             },
                             color = onSurfaceVariant,
@@ -329,7 +332,8 @@ fun RecipientPickerDialog(
                                                         de = "Online",
                                                         es = "En línea",
                                                         fr = "En ligne",
-                                                        pt = "Online"
+                                                        pt = "Online",
+                                                        tr = "Çevrimiçi"
                                                     )
                                                 } else {
                                                     com.example.twopchat.data.Localizations.tr(
@@ -339,7 +343,8 @@ fun RecipientPickerDialog(
                                                         de = "Kürzlich gesehen",
                                                         es = "Visto recientemente",
                                                         fr = "Vu récemment",
-                                                        pt = "Visto recentemente"
+                                                        pt = "Visto recentemente",
+                                                        tr = "Son görülme yakınlarda"
                                                     )
                                                 }
                                             },

@@ -204,7 +204,7 @@ fun SettingsTab(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = Localizations.tr(appLanguage, "Настройки", "Settings", "Einstellungen", "Ajustes", "Paramètres", "Configurações"),
+                                    text = Localizations.tr(appLanguage, "Настройки", "Settings", "Einstellungen", "Ajustes", "Paramètres", "Configurações", tr = "Ayarlar"),
                                     fontSize = 24.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = onSurfaceColor,
@@ -233,7 +233,7 @@ fun SettingsTab(
                                 onValueChange = { settingsSearchQuery = it },
                                 placeholder = {
                                     Text(
-                                        Localizations.tr(appLanguage, "Поиск по настройкам...", "Search settings...", "Einstellungen suchen...", "Buscar ajustes...", "Rechercher dans les paramètres...", "Buscar configurações..."),
+                                        Localizations.tr(appLanguage, "Поиск по настройкам...", "Search settings...", "Einstellungen suchen...", "Buscar ajustes...", "Rechercher dans les paramètres...", "Buscar configurações...", tr = "Ayarlarda ara..."),
                                         fontSize = 14.sp,
                                         color = onSurfaceVariant.copy(alpha = 0.6f)
                                     )
@@ -768,7 +768,7 @@ fun SettingsTab(
 
                         // Group 1: 🛡 АНОНИМНОСТЬ И TOR
                         SettingsSectionHeader(
-                            Localizations.tr(appLanguage, "🛡 АНОНИМНОСТЬ И TOR", "🛡 ANONYMITY & TOR", "🛡 ANONYMITÄT & TOR", "🛡 ANONIMATO Y TOR", "🛡 ANONYMAT & TOR", "🛡 ANONIMATO & TOR"),
+                            Localizations.tr(appLanguage, "🛡 АНОНИМНОСТЬ И TOR", "🛡 ANONYMITY & TOR", "🛡 ANONYMITÄT & TOR", "🛡 ANONIMATO Y TOR", "🛡 ANONYMAT & TOR", "🛡 ANONIMATO & TOR", tr = "🛡 ANONİMLİK VE TOR"),
                             Color(0xFF8B5CF6)
                         )
                         Card(
@@ -796,7 +796,7 @@ fun SettingsTab(
 
                         // Group 2: 🔒 БЕЗОПАСНОСТЬ И ДОСТУП
                         SettingsSectionHeader(
-                            Localizations.tr(appLanguage, "🔒 БЕЗОПАСНОСТЬ", "🔒 SECURITY", "🔒 SICHERHEIT", "🔒 SEGURIDAD", "🔒 SÉCURITÉ", "🔒 SEGURANÇA"),
+                            Localizations.tr(appLanguage, "🔒 БЕЗОПАСНОСТЬ", "🔒 SECURITY", "🔒 SICHERHEIT", "🔒 SEGURIDAD", "🔒 SÉCURITÉ", "🔒 SEGURANÇA", tr = "🔒 GÜVENLİK"),
                             Color(0xFF10B981)
                         )
                         Card(
@@ -850,7 +850,7 @@ fun SettingsTab(
 
                         // Group 3: 🌐 СЕТЬ И P2P
                         SettingsSectionHeader(
-                            Localizations.tr(appLanguage, "🌐 СЕТЬ И P2P", "🌐 NETWORK & P2P", "🌐 NETZWERK & P2P", "🌐 RED Y P2P", "🌐 RÉSEAU & P2P", "🌐 REDE E P2P"),
+                            Localizations.tr(appLanguage, "🌐 СЕТЬ И P2P", "🌐 NETWORK & P2P", "🌐 NETZWERK & P2P", "🌐 RED Y P2P", "🌐 RÉSEAU & P2P", "🌐 REDE E P2P", tr = "🌐 AĞ VE P2P"),
                             Color(0xFF06B6D4)
                         )
                         Card(
@@ -915,7 +915,7 @@ fun SettingsTab(
 
                         // Group 4: 🎨 ЧАТЫ И ОФОРМЛЕНИЕ
                         SettingsSectionHeader(
-                            Localizations.tr(appLanguage, "🎨 ЧАТЫ И ОФОРМЛЕНИЕ", "🎨 CHATS & APPEARANCE", "🎨 CHATS & DESIGN", "🎨 CHATS Y APARIENCIA", "🎨 DISCUSSIONS & THÈME", "🎨 CONVERSAS E APARÊNCIA"),
+                            Localizations.tr(appLanguage, "🎨 ЧАТЫ И ОФОРМЛЕНИЕ", "🎨 CHATS & APPEARANCE", "🎨 CHATS & DESIGN", "🎨 CHATS Y APARIENCIA", "🎨 DISCUSSIONS & THÈME", "🎨 CONVERSAS E APARÊNCIA", tr = "🎨 SOHBETLER VE GÖRÜNÜM"),
                             Color(0xFFF59E0B)
                         )
                         Card(
@@ -981,7 +981,7 @@ fun SettingsTab(
 
                         // Group 5: ⚙️ ПРИЛОЖЕНИЕ И СПРАВКА
                         SettingsSectionHeader(
-                            Localizations.tr(appLanguage, "⚙️ ПРИЛОЖЕНИЕ", "⚙️ APPLICATION", "⚙️ ANWENDUNG", "⚙️ APLICACIÓN", "⚙️ APPLICATION", "⚙️ APLICATIVO"),
+                            Localizations.tr(appLanguage, "⚙️ ПРИЛОЖЕНИЕ", "⚙️ APPLICATION", "⚙️ ANWENDUNG", "⚙️ APLICACIÓN", "⚙️ APPLICATION", "⚙️ APLICATIVO", tr = "⚙️ UYGULAMA"),
                             Color(0xFF6366F1)
                         )
                         Card(
@@ -1663,7 +1663,7 @@ fun SubPageLayout(
             ) {
                 Icon(
                     painter = painterResource(id = com.example.twopchat.R.drawable.ic_back_arrow),
-                    contentDescription = Localizations.tr(appLanguage, "Назад", "Back", "Zurück", "Atrás", "Retour", "Voltar"),
+                    contentDescription = Localizations.tr(appLanguage, "Назад", "Back", "Zurück", "Atrás", "Retour", "Voltar", tr = "Geri"),
                     tint = onSurfaceColor,
                     modifier = Modifier.size(20.dp)
                 )

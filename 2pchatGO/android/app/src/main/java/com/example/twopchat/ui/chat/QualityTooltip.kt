@@ -90,7 +90,8 @@ fun QualityTooltipBubble(
                             de = "Foto wird in hoher Qualität gesendet.",
                             es = "La foto se enviará en alta calidad.",
                             fr = "La photo sera envoyée en haute qualité.",
-                            pt = "A foto será enviada em alta qualidade."
+                            pt = "A foto será enviada em alta qualidade.",
+                            tr = "Fotoğraf yüksek kalitede gönderilecek."
                         )
                     } else {
                         Localizations.tr(
@@ -100,7 +101,8 @@ fun QualityTooltipBubble(
                             de = "Foto wird in Standardqualität gesendet.",
                             es = "La foto se enviará en calidad estándar.",
                             fr = "La photo sera envoyée en qualité standard.",
-                            pt = "A foto será enviada em qualidade padrão."
+                            pt = "A foto será enviada em qualidade padrão.",
+                            tr = "Fotoğraf standart kalitede gönderilecek."
                         )
                     },
                     color = Color.White,

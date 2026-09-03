@@ -90,5 +90,6 @@ internal fun connectionTransportLabel(
         de = "Route wird ermittelt",
         es = "detectando ruta",
         fr = "détection de l'itinéraire",
-        pt = "detectando rota"
+        pt = "detectando rota",
+        tr = "rota belirleniyor"
     )

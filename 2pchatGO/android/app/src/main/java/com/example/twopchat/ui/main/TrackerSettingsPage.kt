@@ -168,7 +168,8 @@ fun TrackerSettingsPage(
                     de = "SOCKS5 / Externer Proxy",
                     es = "SOCKS5 / Proxy externo",
                     fr = "SOCKS5 / Proxy externe",
-                    pt = "SOCKS5 / Proxy externo"
+                    pt = "SOCKS5 / Proxy externo",
+                    tr = "SOCKS5 / Özel Proxy"
                 ),
                 color = onSurfaceColor,
                 fontWeight = FontWeight.Bold,
@@ -186,7 +187,8 @@ fun TrackerSettingsPage(
                         de = "SOCKS5-Proxy verwenden",
                         es = "Usar Proxy SOCKS5",
                         fr = "Utiliser un proxy SOCKS5",
-                        pt = "Usar Proxy SOCKS5"
+                        pt = "Usar Proxy SOCKS5",
+                        tr = "SOCKS5 Proxy Kullan"
                     ),
                     subtitle = com.example.twopchat.data.Localizations.tr(
                         appLanguage,
@@ -195,7 +197,8 @@ fun TrackerSettingsPage(
                         de = "Eigenständige SOCKS5-Host/Port-Verbindung",
                         es = "Enrutamiento SOCKS5 personalizado independiente",
                         fr = "Routage SOCKS5 personnalisé indépendant",
-                        pt = "Roteamento SOCKS5 personalizado independente"
+                        pt = "Roteamento SOCKS5 personalizado independente",
+                        tr = "Özel SOCKS5 host/port yönlendirmesi"
                     ),
                     checked = customSocks5Enabled,
                     onSurfaceColor = onSurfaceColor,

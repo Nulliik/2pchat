@@ -385,7 +385,8 @@ internal fun ChatMessageBubble(
                                                     de = "Sticker-Paket hinzugefügt",
                                                     es = "Pack de stickers añadido",
                                                     fr = "Pack d'autocollants ajouté",
-                                                    pt = "Pacote de figurinhas adicionado"
+                                                    pt = "Pacote de figurinhas adicionado",
+                                                    tr = "Çıkartma paketi eklendi"
                                                 ),
                                                 color = textColor,
                                                 fontWeight = FontWeight.SemiBold,
@@ -562,7 +563,8 @@ internal fun ChatMessageBubble(
                                                                     de = "Abbrechen",
                                                                     es = "Cancelar",
                                                                     fr = "Annuler",
-                                                                    pt = "Cancelar"
+                                                                    pt = "Cancelar",
+                                                                    tr = "İptal"
                                                                 ),
                                                                 tint = Color.White,
                                                                 modifier = Modifier.size(20.dp)
@@ -590,7 +592,8 @@ internal fun ChatMessageBubble(
                                                                         de = "Übertragung abgebrochen",
                                                                         es = "Transferencia cancelada",
                                                                         fr = "Transfert annulé",
-                                                                        pt = "Transferência cancelada"
+                                                                        pt = "Transferência cancelada",
+                                                                        tr = "Aktarım iptal edildi"
                                                                     )
                                                                 } else if (hasFailed) {
                                                                     Localizations.tr(
@@ -600,7 +603,8 @@ internal fun ChatMessageBubble(
                                                                         de = "Übertragungsfehler",
                                                                         es = "Error de transferencia",
                                                                         fr = "Échec du transfert",
-                                                                        pt = "Falha na transferência"
+                                                                        pt = "Falha na transferência",
+                                                                        tr = "Aktarım başarısız oldu"
                                                                     )
                                                                 } else {
                                                                     Localizations.tr(
@@ -610,7 +614,8 @@ internal fun ChatMessageBubble(
                                                                         de = "Datei entfernt",
                                                                         es = "Archivo eliminado",
                                                                         fr = "Fichier supprimé",
-                                                                        pt = "Arquivo removido"
+                                                                        pt = "Arquivo removido",
+                                                                        tr = "Dosya kaldırıldı"
                                                                     )
                                                                 },
                                                                 color = Color.White.copy(alpha = 0.9f),
@@ -642,7 +647,8 @@ internal fun ChatMessageBubble(
                                                                             de = "Fortsetzen",
                                                                             es = "Reanudar",
                                                                             fr = "Reprendre",
-                                                                            pt = "Retomar"
+                                                                            pt = "Retomar",
+                                                                            tr = "Devam Ettir"
                                                                         ),
                                                                         color = Color.White,
                                                                         fontSize = 12.sp,
@@ -914,7 +920,8 @@ internal fun ChatMessageBubble(
                                                                 de = "Abbrechen",
                                                                 es = "Cancelar",
                                                                 fr = "Annuler",
-                                                                pt = "Cancelar"
+                                                                pt = "Cancelar",
+                                                                tr = "İptal"
                                                             ),
                                                             tint = Color.White,
                                                             modifier = Modifier.size(20.dp)
@@ -941,7 +948,8 @@ internal fun ChatMessageBubble(
                                                                     de = "Übertragung abgebrochen",
                                                                     es = "Transferencia cancelada",
                                                                     fr = "Transfert annulé",
-                                                                    pt = "Transferência cancelada"
+                                                                    pt = "Transferência cancelada",
+                                                                    tr = "Aktarım iptal edildi"
                                                                 )
                                                             } else if (hasFailed) {
                                                                 Localizations.tr(
@@ -951,7 +959,8 @@ internal fun ChatMessageBubble(
                                                                     de = "Übertragungsfehler",
                                                                     es = "Error de transferencia",
                                                                     fr = "Échec du transfert",
-                                                                    pt = "Falha na transferência"
+                                                                    pt = "Falha na transferência",
+                                                                    tr = "Aktarım başarısız oldu"
                                                                 )
                                                             } else {
                                                                 Localizations.tr(
@@ -961,7 +970,8 @@ internal fun ChatMessageBubble(
                                                                     de = "Datei entfernt",
                                                                     es = "Archivo eliminado",
                                                                     fr = "Fichier supprimé",
-                                                                    pt = "Arquivo removido"
+                                                                    pt = "Arquivo removido",
+                                                                    tr = "Dosya kaldırıldı"
                                                                 )
                                                             },
                                                             color = Color.White,
@@ -993,7 +1003,8 @@ internal fun ChatMessageBubble(
                                                                         de = "Fortsetzen",
                                                                         es = "Reanudar",
                                                                         fr = "Reprendre",
-                                                                        pt = "Retomar"
+                                                                        pt = "Retomar",
+                                                                        tr = "Devam Ettir"
                                                                     ),
                                                                     color = Color.White,
                                                                     fontSize = 12.sp,
@@ -1151,7 +1162,8 @@ internal fun ChatMessageBubble(
                                                         de = "Übertragung abgebrochen",
                                                         es = "Transferencia cancelada",
                                                         fr = "Transfert annulé",
-                                                        pt = "Transferência cancelada"
+                                                        pt = "Transferência cancelada",
+                                                        tr = "Aktarım iptal edildi"
                                                     )
                                                 } else if (hasFailed) {
                                                     Localizations.tr(
@@ -1161,7 +1173,8 @@ internal fun ChatMessageBubble(
                                                         de = "Übertragungsfehler",
                                                         es = "Error de transferencia",
                                                         fr = "Échec du transfert",
-                                                        pt = "Falha na transferência"
+                                                        pt = "Falha na transferência",
+                                                        tr = "Aktarım başarısız oldu"
                                                     )
                                                 } else if (!attachmentAvailable) {
                                                     Localizations.tr(
@@ -1171,7 +1184,8 @@ internal fun ChatMessageBubble(
                                                         de = "Datei entfernt",
                                                         es = "Archivo eliminado",
                                                         fr = "Fichier supprimé",
-                                                        pt = "Arquivo removido"
+                                                        pt = "Arquivo removido",
+                                                        tr = "Dosya kaldırıldı"
                                                     )
                                                 } else {
                                                     "Encrypted Document"
@@ -1207,7 +1221,8 @@ internal fun ChatMessageBubble(
                                                                 de = "Fortsetzen",
                                                                 es = "Reanudar",
                                                                 fr = "Reprendre",
-                                                                pt = "Retomar"
+                                                                pt = "Retomar",
+                                                                tr = "Devam Ettir"
                                                             ),
                                                             color = if (msg.isMe) Color.White else primaryColor,
                                                             fontSize = 11.sp,
@@ -1243,7 +1258,8 @@ internal fun ChatMessageBubble(
                                                             de = "Abbrechen",
                                                             es = "Cancelar",
                                                             fr = "Annuler",
-                                                            pt = "Cancelar"
+                                                            pt = "Cancelar",
+                                                            tr = "İptal"
                                                         ),
                                                         color = if (msg.isMe) Color.White else primaryColor,
                                                         fontSize = 11.sp,
@@ -1275,7 +1291,8 @@ internal fun ChatMessageBubble(
                                                 de = "Sprachdatei entfernt",
                                                 es = "Archivo de voz eliminado",
                                                 fr = "Fichier vocal supprimé",
-                                                pt = "Arquivo de voz removido"
+                                                pt = "Arquivo de voz removido",
+                                                tr = "Ses dosyası kaldırıldı"
                                             ),
                                             color = textColor.copy(alpha = 0.7f),
                                             fontSize = 13.sp,
@@ -1353,7 +1370,8 @@ internal fun ChatMessageBubble(
                                                         de = "Du bist der Gruppe beigetreten!",
                                                         es = "¡Te has unido al grupo!",
                                                         fr = "Vous avez rejoint le groupe !",
-                                                        pt = "Você entrou no grupo!"
+                                                        pt = "Você entrou no grupo!",
+                                                        tr = "Gruba katıldınız!"
                                                     )
                                                 } else {
                                                     com.example.twopchat.data.Localizations.tr(
@@ -1363,7 +1381,8 @@ internal fun ChatMessageBubble(
                                                         de = "Beitrittsanfrage gesendet!",
                                                         es = "¡Solicitud de unión enviada!",
                                                         fr = "Demande d'adhésion envoyée !",
-                                                        pt = "Pedido de adesão enviado!"
+                                                        pt = "Pedido de adesão enviado!",
+                                                        tr = "Katılma isteği gönderildi!"
                                                     )
                                                 }
                                                 android.widget.Toast.makeText(
@@ -1889,7 +1908,8 @@ internal fun GroupInviteCard(
                             de = "Gruppeneinladung",
                             es = "Invitación al grupo",
                             fr = "Invitation de groupe",
-                            pt = "Convite do grupo"
+                            pt = "Convite do grupo",
+                            tr = "Grup Daveti"
                         ),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
@@ -1927,7 +1947,8 @@ internal fun GroupInviteCard(
                         de = "Einladung annehmen",
                         es = "Aceptar invitación",
                         fr = "Accepter l'invitation",
-                        pt = "Aceitar convite"
+                        pt = "Aceitar convite",
+                        tr = "Daveti Kabul Et"
                     ),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold

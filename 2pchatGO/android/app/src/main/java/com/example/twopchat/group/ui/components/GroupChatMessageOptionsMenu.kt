@@ -80,7 +80,8 @@ fun GroupChatMessageOptionsMenu(
                         de = "Nachrichtenaktionen",
                         es = "Acciones del mensaje",
                         fr = "Actions sur le message",
-                        pt = "Ações da mensagem"
+                        pt = "Ações da mensagem",
+                        tr = "Mesaj Eylemleri"
                     ),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
@@ -163,7 +164,8 @@ fun GroupChatMessageOptionsMenu(
                                 de = "Antworten",
                                 es = "Responder",
                                 fr = "Répondre",
-                                pt = "Responder"
+                                pt = "Responder",
+                                tr = "Yanıtla"
                             ),
                             fontSize = 15.sp,
                             color = onSurfaceColor
@@ -198,7 +200,8 @@ fun GroupChatMessageOptionsMenu(
                                     de = "Lösen",
                                     es = "Desfijar",
                                     fr = "Détacher",
-                                    pt = "Desafixar"
+                                    pt = "Desafixar",
+                                    tr = "Sabitlemeyi Kaldır"
                                 )
                             } else {
                                 com.example.twopchat.data.Localizations.tr(
@@ -208,7 +211,8 @@ fun GroupChatMessageOptionsMenu(
                                     de = "Anheften",
                                     es = "Fijar",
                                     fr = "Épingler",
-                                    pt = "Fixar"
+                                    pt = "Fixar",
+                                    tr = "Sabitle"
                                 )
                             },
                             fontSize = 15.sp,
@@ -243,7 +247,8 @@ fun GroupChatMessageOptionsMenu(
                                 de = "Bearbeiten",
                                 es = "Editar",
                                 fr = "Modifier",
-                                pt = "Editar"
+                                pt = "Editar",
+                                tr = "Düzenle"
                             ),
                             fontSize = 15.sp,
                             color = onSurfaceColor
@@ -268,7 +273,8 @@ fun GroupChatMessageOptionsMenu(
                                         de = "Text kopiert",
                                         es = "Texto copiado",
                                         fr = "Texte copié",
-                                        pt = "Texto copiado"
+                                        pt = "Texto copiado",
+                                        tr = "Metin kopyalandı"
                                     ),
                                     Toast.LENGTH_SHORT
                                 ).show()
@@ -292,7 +298,8 @@ fun GroupChatMessageOptionsMenu(
                                 de = "Text kopieren",
                                 es = "Copiar texto",
                                 fr = "Copier le texte",
-                                pt = "Copiar texto"
+                                pt = "Copiar texto",
+                                tr = "Metni Kopyala"
                             ),
                             fontSize = 15.sp,
                             color = onSurfaceColor
@@ -320,7 +327,8 @@ fun GroupChatMessageOptionsMenu(
                                             de = "In Meinen GIFs gespeichert",
                                             es = "Guardado en Mis GIFs",
                                             fr = "Enregistré dans Mes GIFs",
-                                            pt = "Salvo em Meus GIFs"
+                                            pt = "Salvo em Meus GIFs",
+                                            tr = "GIF'lerime Kaydedildi"
                                         ),
                                         Toast.LENGTH_SHORT
                                     ).show()
@@ -344,7 +352,8 @@ fun GroupChatMessageOptionsMenu(
                                     de = "Zu Meinen GIFs hinzufügen",
                                     es = "Guardar en Mis GIFs",
                                     fr = "Enregistrer dans Mes GIFs",
-                                    pt = "Salvar em Meus GIFs"
+                                    pt = "Salvar em Meus GIFs",
+                                    tr = "GIF'lerime Kaydet"
                                 ),
                                 fontSize = 15.sp,
                                 color = onSurfaceColor
@@ -368,7 +377,8 @@ fun GroupChatMessageOptionsMenu(
                                                 de = "Datei in Downloads gespeichert",
                                                 es = "Archivo guardado en Descargas",
                                                 fr = "Fichier enregistré dans Téléchargements",
-                                                pt = "Arquivo salvo em Downloads"
+                                                pt = "Arquivo salvo em Downloads",
+                                                tr = "Dosya İndirilenler'e kaydedildi"
                                             ),
                                             Toast.LENGTH_SHORT
                                         ).show()
@@ -382,7 +392,8 @@ fun GroupChatMessageOptionsMenu(
                                                 de = "Fehler beim Speichern",
                                                 es = "Error al guardar",
                                                 fr = "Échec de l'enregistrement",
-                                                pt = "Falha ao salvar"
+                                                pt = "Falha ao salvar",
+                                                tr = "Kaydetme başarısız oldu"
                                             ),
                                             Toast.LENGTH_SHORT
                                         ).show()
@@ -407,7 +418,8 @@ fun GroupChatMessageOptionsMenu(
                                     de = "Datei herunterladen",
                                     es = "Descargar archivo",
                                     fr = "Télécharger le fichier",
-                                    pt = "Baixar arquivo"
+                                    pt = "Baixar arquivo",
+                                    tr = "Dosyayı İndir"
                                 ),
                                 fontSize = 15.sp,
                                 color = onSurfaceColor
@@ -441,7 +453,8 @@ fun GroupChatMessageOptionsMenu(
                             de = "Weiterleiten",
                             es = "Reenviar",
                             fr = "Transférer",
-                            pt = "Encaminhar"
+                            pt = "Encaminhar",
+                            tr = "İlet"
                         ),
                         fontSize = 15.sp,
                         color = onSurfaceColor
@@ -472,7 +485,8 @@ fun GroupChatMessageOptionsMenu(
                             de = "Gesehen von (${message.readByMembers.size})",
                             es = "Visto por (${message.readByMembers.size})",
                             fr = "Vu par (${message.readByMembers.size})",
-                            pt = "Visto por (${message.readByMembers.size})"
+                            pt = "Visto por (${message.readByMembers.size})",
+                            tr = "Görenler (${message.readByMembers.size})"
                         ),
                         fontSize = 15.sp,
                         color = onSurfaceColor
@@ -505,7 +519,8 @@ fun GroupChatMessageOptionsMenu(
                                 de = "Löschen",
                                 es = "Eliminar",
                                 fr = "Supprimer",
-                                pt = "Excluir"
+                                pt = "Excluir",
+                                tr = "Sil"
                             ),
                             fontSize = 15.sp,
                             color = Color.Red,
@@ -538,7 +553,8 @@ fun GroupChatMessageOptionsMenu(
                             de = "Auswählen",
                             es = "Seleccionar",
                             fr = "Sélectionner",
-                            pt = "Selecionar"
+                            pt = "Selecionar",
+                            tr = "Seç"
                         ),
                         fontSize = 15.sp,
                         color = onSurfaceColor

@@ -108,7 +108,8 @@ fun AlbumPreviewModal(
                             de = "Album (${currentFiles.size})",
                             es = "Álbum (${currentFiles.size})",
                             fr = "Album (${currentFiles.size})",
-                            pt = "Álbum (${currentFiles.size})"
+                            pt = "Álbum (${currentFiles.size})",
+                            tr = "Albüm (${currentFiles.size})"
                         ),
                         color = Color.White,
                         fontSize = 18.sp,
@@ -206,7 +207,8 @@ fun AlbumPreviewModal(
                                     de = "◀ Links",
                                     es = "◀ Izquierda",
                                     fr = "◀ Gauche",
-                                    pt = "◀ Esquerda"
+                                    pt = "◀ Esquerda",
+                                    tr = "◀ Sola"
                                 ),
                                 color = if (selectedPreviewIndex > 0) Color.White else Color.White.copy(alpha = 0.3f),
                                 fontSize = 12.sp,
@@ -225,7 +227,8 @@ fun AlbumPreviewModal(
                                     de = "Rechts ▶",
                                     es = "Derecha ▶",
                                     fr = "Droite ▶",
-                                    pt = "Direita ▶"
+                                    pt = "Direita ▶",
+                                    tr = "Sağa ▶"
                                 ),
                                 color = if (selectedPreviewIndex < currentFiles.lastIndex) Color.White else Color.White.copy(alpha = 0.3f),
                                 fontSize = 12.sp,
@@ -314,7 +317,8 @@ fun AlbumPreviewModal(
                                         de = "Beschriftung hinzufügen...",
                                         es = "Añadir subtítulo...",
                                         fr = "Ajouter une légende...",
-                                        pt = "Adicionar legenda..."
+                                        pt = "Adicionar legenda...",
+                                        tr = "Açıklama ekle..."
                                     ),
                                     color = onSurfaceColor.copy(alpha = 0.5f)
                                 )

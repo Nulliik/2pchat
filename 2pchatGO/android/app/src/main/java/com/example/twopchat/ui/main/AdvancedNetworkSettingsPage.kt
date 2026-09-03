@@ -53,7 +53,7 @@ fun AdvancedNetworkSettingsPage(
             .verticalScroll(rememberScrollState())
     ) {
         SubPageLayout(
-            title = Localizations.tr(appLanguage, "Параметры сети", "Network Parameters", "Netzwerkparameter", "Parámetros de red", "Paramètres réseau", "Parâmetros de rede"),
+            title = Localizations.tr(appLanguage, "Параметры сети", "Network Parameters", "Netzwerkparameter", "Parámetros de red", "Paramètres réseau", "Parâmetros de rede", tr = "Ağ Parametreleri"),
             appLanguage = appLanguage,
             onBackClick = onBackClick,
             surfaceColor = surfaceColor,

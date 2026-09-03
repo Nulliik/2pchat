@@ -77,7 +77,7 @@ fun SecuritySettingsPage(
             .verticalScroll(rememberScrollState())
     ) {
         SubPageLayout(
-            title = Localizations.tr(appLanguage, "Безопасность и Доступ", "Security & Access", "Sicherheit & Zugriff", "Seguridad y Acceso", "Sécurité et Accès", "Segurança e Acesso"),
+            title = Localizations.tr(appLanguage, "Безопасность и Доступ", "Security & Access", "Sicherheit & Zugriff", "Seguridad y Acceso", "Sécurité et Accès", "Segurança e Acesso", tr = "Güvenlik ve Erişim"),
             appLanguage = appLanguage,
             onBackClick = onBackClick,
             surfaceColor = surfaceColor,
@@ -104,7 +104,7 @@ fun SecuritySettingsPage(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = Localizations.tr(appLanguage, "Личный ключ безопасности", "Personal Security Key", "Persönlicher Sicherheitsschlüssel", "Huella de seguridad personal", "Empreinte de sécurité personnelle", "Impressão digital de segurança pessoal"),
+                            text = Localizations.tr(appLanguage, "Личный ключ безопасности", "Personal Security Key", "Persönlicher Sicherheitsschlüssel", "Huella de seguridad personal", "Empreinte de sécurité personnelle", "Impressão digital de segurança pessoal", tr = "Kişisel Güvenlik Anahtarı"),
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             color = onSurfaceColor
@@ -112,7 +112,7 @@ fun SecuritySettingsPage(
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = Localizations.tr(appLanguage, "Сверьте эту строку с собеседником по доверенному каналу для защиты от подмены ключей (MITM) и подтверждения личности.", "Compare this string with your contact over a trusted channel to verify identity and protect against MITM.", "Gleichen Sie diese Zeichenkette mit Ihrem Kontakt über einen vertrauenswürdigen Kanal ab.", "Compare esta cadena con su contacto a través de un canal de confianza para verificar identidad.", "Comparez cette chaîne avec votre contact via un canal de confiance pour vérifier l'identité.", "Compare esta string com seu contato por um canal confiável."),
+                        text = Localizations.tr(appLanguage, "Сверьте эту строку с собеседником по доверенному каналу для защиты от подмены ключей (MITM) и подтверждения личности.", "Compare this string with your contact over a trusted channel to verify identity and protect against MITM.", "Gleichen Sie diese Zeichenkette mit Ihrem Kontakt über einen vertrauenswürdigen Kanal ab.", "Compare esta cadena con su contacto a través de un canal de confianza para verificar identidad.", "Comparez cette chaîne avec votre contact via un canal de confiance pour vérifier l'identité.", "Compare esta string com seu contato por um canal confiável.", tr = "Kimliği doğrulamak ve MITM saldırılarına karşı korunmak için bu dizeyi eşinizle güvenilir bir kanal üzerinden karşılaştırın."),
                         fontSize = 12.sp,
                         color = onSurfaceVariant
                     )
@@ -136,7 +136,8 @@ fun SecuritySettingsPage(
                                         de = "Schlüssel wird initialisiert...",
                                         es = "Inicializando clave...",
                                         fr = "Initialisation de la clé...",
-                                        pt = "Inicializando chave..."
+                                        pt = "Inicializando chave...",
+                                        tr = "Anahtar başlatılıyor..."
                                     )
                                 },
                                 fontSize = 13.sp,
@@ -160,7 +161,7 @@ fun SecuritySettingsPage(
                                 clipboard.setPrimaryClip(clip)
                                 Toast.makeText(
                                     context,
-                                    Localizations.tr(appLanguage, "Личный ключ скопирован", "Security key copied", "Sicherheitsschlüssel kopiert", "Clave de seguridad copiada", "Clé de sécurité copiée", "Chave de segurança copiada"),
+                                    Localizations.tr(appLanguage, "Личный ключ скопирован", "Security key copied", "Sicherheitsschlüssel kopiert", "Clave de seguridad copiada", "Clé de sécurité copiée", "Chave de segurança copiada", tr = "Güvenlik anahtarı kopyalandı"),
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -170,7 +171,7 @@ fun SecuritySettingsPage(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = Localizations.tr(appLanguage, "Скопировать ключ", "Copy Security Key", "Schlüssel kopieren", "Copiar clave", "Copier la clé", "Copiar chave"),
+                            text = Localizations.tr(appLanguage, "Скопировать ключ", "Copy Security Key", "Schlüssel kopieren", "Copiar clave", "Copier la clé", "Copiar chave", tr = "Güvenlik Anahtarını Kopyala"),
                             color = if (primaryColor == MintGreen) StealthBlack else Color.White,
                             fontWeight = FontWeight.Bold
                         )

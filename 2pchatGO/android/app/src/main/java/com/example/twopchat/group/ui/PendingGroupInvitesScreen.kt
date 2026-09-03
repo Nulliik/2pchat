@@ -94,7 +94,8 @@ fun PendingGroupInvitesScreen(
                         de = "Gruppeneinladungen",
                         es = "Invitaciones a grupos",
                         fr = "Invitations aux groupes",
-                        pt = "Convites de grupo"
+                        pt = "Convites de grupo",
+                        tr = "Grup Davetleri"
                     ),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
@@ -163,7 +164,8 @@ fun PendingGroupInvitesScreen(
                             de = "Keine eingehenden Einladungen",
                             es = "No hay invitaciones entrantes",
                             fr = "Aucune invitation entrante",
-                            pt = "Nenhum convite recebido"
+                            pt = "Nenhum convite recebido",
+                            tr = "Gelen davet yok"
                         ),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
@@ -179,7 +181,8 @@ fun PendingGroupInvitesScreen(
                             de = "Wenn Sie zu einer neuen Gruppe eingeladen werden, erscheint die Einladung hier.",
                             es = "Cuando te inviten a un nuevo grupo, la invitación aparecerá aquí.",
                             fr = "Lorsque vous serez invité à un nouveau groupe, l'invitation apparaîtra ici.",
-                            pt = "Quando você for convidado para um novo grupo, o convite aparecerá aqui."
+                            pt = "Quando você for convidado para um novo grupo, o convite aparecerá aqui.",
+                            tr = "Yeni bir gruba davet edildiğinizde davet burada görünecektir."
                         ),
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -353,7 +356,8 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
                                 de = "Einladung von ${invite.inviterName}",
                                 es = "Invitación de ${invite.inviterName}",
                                 fr = "Invitation de ${invite.inviterName}",
-                                pt = "Convite de ${invite.inviterName}"
+                                pt = "Convite de ${invite.inviterName}",
+                                tr = "${invite.inviterName} kişisinden davet"
                             ),
                             fontSize = 12.sp,
                             color = Color(0xFF34D399),
@@ -393,7 +397,8 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
                             de = "Mitglieder",
                             es = "miembros",
                             fr = "membres",
-                            pt = "membros"
+                            pt = "membros",
+                            tr = "üye"
                         ),
                         fontSize = 12.sp,
                         color = Color.White.copy(alpha = 0.5f)
@@ -433,7 +438,8 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
                             de = "Ablehnen",
                             es = "Rechazar",
                             fr = "Refuser",
-                            pt = "Recusar"
+                            pt = "Recusar",
+                            tr = "Reddet"
                         ),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
@@ -467,7 +473,8 @@ private fun InviteCard(invite: PendingGroupInvite, controller: GroupUiController
                                 de = "Annehmen",
                                 es = "Aceptar",
                                 fr = "Accepter",
-                                pt = "Aceitar"
+                                pt = "Aceitar",
+                                tr = "Kabul Et"
                             ),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,

@@ -380,7 +380,8 @@ fun StorageSettingsPage(
                                     de = "Gelöscht: $deletedCount" + if (skipped) ". Aktive Übertragungen übersprungen" else "",
                                     es = "Eliminado: $deletedCount" + if (skipped) ". Se omitieron las transferencias activas" else "",
                                     fr = "Supprimé : $deletedCount" + if (skipped) ". Les transferts actifs ont été ignorés" else "",
-                                    pt = "Excluído: $deletedCount" + if (skipped) ". As transferências ativas foram ignoradas" else ""
+                                    pt = "Excluído: $deletedCount" + if (skipped) ". As transferências ativas foram ignoradas" else "",
+                                    tr = "Silindi: $deletedCount"
                                 )
                                 Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                             } catch (error: Exception) {
@@ -394,7 +395,8 @@ fun StorageSettingsPage(
                                         de = "Ausgewählte Dateien konnten nicht gelöscht werden",
                                         es = "No se pudieron eliminar los archivos seleccionados",
                                         fr = "Impossible de supprimer les fichiers sélectionnés",
-                                        pt = "Não foi possível excluir os arquivos selecionados"
+                                        pt = "Não foi possível excluir os arquivos selecionados",
+                                        tr = "Seçilen dosyalar silinemedi"
                                     ),
                                     Toast.LENGTH_SHORT,
                                 ).show()

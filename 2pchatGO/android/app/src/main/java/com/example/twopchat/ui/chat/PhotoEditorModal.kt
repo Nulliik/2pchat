@@ -149,7 +149,8 @@ fun PhotoEditorModal(
                     de = "Bild konnte nicht geladen werden",
                     es = "No se pudo cargar la imagen",
                     fr = "Échec du chargement de l'image",
-                    pt = "Falha ao carregar a imagem"
+                    pt = "Falha ao carregar a imagem",
+                    tr = "Görsel yüklenemedi"
                 ),
                 Toast.LENGTH_SHORT
             ).show()
@@ -383,7 +384,8 @@ fun PhotoEditorModal(
                                             de = if (option == AspectRatioOption.ORIGINAL) "Original" else "Frei",
                                             es = if (option == AspectRatioOption.ORIGINAL) "Original" else "Libre",
                                             fr = if (option == AspectRatioOption.ORIGINAL) "Original" else "Libre",
-                                            pt = if (option == AspectRatioOption.ORIGINAL) "Original" else "Livre"
+                                            pt = if (option == AspectRatioOption.ORIGINAL) "Original" else "Livre",
+                                            tr = if (option == AspectRatioOption.ORIGINAL) "Orijinal" else "Serbest"
                                         ),
                                         fontSize = 12.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
@@ -714,7 +716,8 @@ fun PhotoEditorModal(
                                         de = "Beschriftung hinzufügen...",
                                         es = "Añadir subtítulo...",
                                         fr = "Ajouter une légende...",
-                                        pt = "Adicionar legenda..."
+                                        pt = "Adicionar legenda...",
+                                        tr = "Açıklama ekle..."
                                     ),
                                     color = onSurfaceVariant.copy(alpha = 0.6f),
                                     fontSize = 14.sp
@@ -836,7 +839,8 @@ fun PhotoEditorModal(
                                             de = "Fehler beim Speichern des Fotos",
                                             es = "Error al guardar la foto",
                                             fr = "Erreur lors de l'enregistrement de la photo",
-                                            pt = "Erro ao salvar a foto"
+                                            pt = "Erro ao salvar a foto",
+                                            tr = "Fotoğraf kaydedilirken hata oluştu"
                                         ),
                                         Toast.LENGTH_SHORT
                                     ).show()

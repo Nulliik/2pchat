@@ -353,7 +353,8 @@ fun GroupInfoScreen(
                                             de = "Gruppe bearbeiten",
                                             es = "Editar grupo",
                                             fr = "Modifier le groupe",
-                                            pt = "Editar grupo"
+                                            pt = "Editar grupo",
+                                            tr = "Grubu Düzenle"
                                         ),
                                         color = onSurfaceColor
                                     )
@@ -383,7 +384,8 @@ fun GroupInfoScreen(
                                             de = "Benachrichtigungen aktivieren",
                                             es = "Activar notificaciones",
                                             fr = "Activer les notifications",
-                                            pt = "Ativar notificações"
+                                            pt = "Ativar notificações",
+                                            tr = "Bildirimleri Aç"
                                         )
                                     } else {
                                         com.example.twopchat.data.Localizations.tr(
@@ -393,7 +395,8 @@ fun GroupInfoScreen(
                                             de = "Benachrichtigungen stummschalten",
                                             es = "Silenciar notificaciones",
                                             fr = "Couper les notifications",
-                                            pt = "Silenciar notificações"
+                                            pt = "Silenciar notificações",
+                                            tr = "Bildirimleri Kapat"
                                         )
                                     },
                                     color = onSurfaceColor
@@ -424,7 +427,8 @@ fun GroupInfoScreen(
                                         de = "Verlauf löschen",
                                         es = "Borrar historial",
                                         fr = "Effacer l'historique",
-                                        pt = "Limpar histórico"
+                                        pt = "Limpar histórico",
+                                        tr = "Geçmişi Temizle"
                                     ),
                                     color = Color.Red
                                 )
@@ -453,7 +457,8 @@ fun GroupInfoScreen(
                                             de = "Gruppe löschen",
                                             es = "Eliminar grupo",
                                             fr = "Supprimer le groupe",
-                                            pt = "Excluir grupo"
+                                            pt = "Excluir grupo",
+                                            tr = "Grubu Sil"
                                         )
                                     } else {
                                         com.example.twopchat.data.Localizations.tr(
@@ -463,7 +468,8 @@ fun GroupInfoScreen(
                                             de = "Gruppe verlassen",
                                             es = "Salir del grupo",
                                             fr = "Quitter le groupe",
-                                            pt = "Sair do grupo"
+                                            pt = "Sair do grupo",
+                                            tr = "Gruptan Ayrıl"
                                         )
                                     },
                                     color = Color.Red
@@ -522,7 +528,8 @@ fun GroupInfoScreen(
                             de = "Löschen",
                             es = "Eliminar",
                             fr = "Supprimer",
-                            pt = "Excluir"
+                            pt = "Excluir",
+                            tr = "Sil"
                         )
                     } else {
                         com.example.twopchat.data.Localizations.tr(
@@ -532,7 +539,8 @@ fun GroupInfoScreen(
                             de = "Verlassen",
                             es = "Salir",
                             fr = "Quitter",
-                            pt = "Sair"
+                            pt = "Sair",
+                            tr = "Ayrıl"
                         )
                     },
                     onChatClick = controller::onBack,
@@ -548,7 +556,8 @@ fun GroupInfoScreen(
                                 de = "Gruppenbenachrichtigungen deaktiviert",
                                 es = "Notificaciones de grupo desactivadas",
                                 fr = "Notifications de groupe désactivées",
-                                pt = "Notificações do grupo desativadas"
+                                pt = "Notificações do grupo desativadas",
+                                tr = "Grup bildirimleri kapatıldı"
                             )
                         } else {
                             com.example.twopchat.data.Localizations.tr(
@@ -558,7 +567,8 @@ fun GroupInfoScreen(
                                 de = "Gruppenbenachrichtigungen aktiviert",
                                 es = "Notificaciones de grupo activadas",
                                 fr = "Notifications de groupe activées",
-                                pt = "Notificações do grupo ativadas"
+                                pt = "Notificações do grupo ativadas",
+                                tr = "Grup bildirimleri açıldı"
                             )
                         }
                         android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_SHORT).show()
@@ -596,7 +606,8 @@ fun GroupInfoScreen(
                                         de = "Nur Administratoren können schreiben",
                                         es = "Solo los administradores pueden escribir",
                                         fr = "Seuls les administrateurs peuvent écrire",
-                                        pt = "Apenas administradores podem enviar mensagens"
+                                        pt = "Apenas administradores podem enviar mensagens",
+                                        tr = "Yalnızca yöneticiler mesaj gönderebilir"
                                     ),
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.SemiBold,
@@ -611,7 +622,8 @@ fun GroupInfoScreen(
                                         de = "Mitglieder und Moderatoren können lesen, abstimmen und reagieren.",
                                         es = "Los miembros y moderadores podrán leer, votar y reaccionar.",
                                         fr = "Les membres et modérateurs peuvent lire, voter et réagir.",
-                                        pt = "Membros e moderadores podem ler, votar e reagir."
+                                        pt = "Membros e moderadores podem ler, votar e reagir.",
+                                        tr = "Üyeler ve moderatörler okuyabilir, oy verebilir ve tepki bırakabilir."
                                     ),
                                     fontSize = 12.sp,
                                     color = onSurfaceVariant,
@@ -661,7 +673,8 @@ fun GroupInfoScreen(
                                     de = "Mitglieder hinzufügen",
                                     es = "Añadir miembros",
                                     fr = "Ajouter des membres",
-                                    pt = "Adicionar membros"
+                                    pt = "Adicionar membros",
+                                    tr = "Üye Ekle"
                                 ),
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -698,7 +711,8 @@ fun GroupInfoScreen(
                                     de = "Chat-Hintergrundbild",
                                     es = "Fondo del chat",
                                     fr = "Fond d'écran du chat",
-                                    pt = "Papel de parede do chat"
+                                    pt = "Papel de parede do chat",
+                                    tr = "Sohbet Duvar Kağıdı"
                                 ),
                                 tint = onSurfaceColor,
                                 modifier = Modifier.size(20.dp)
@@ -712,7 +726,8 @@ fun GroupInfoScreen(
                                     de = "Chat-Hintergrundbild",
                                     es = "Fondo del chat",
                                     fr = "Fond d'écran du chat",
-                                    pt = "Papel de parede do chat"
+                                    pt = "Papel de parede do chat",
+                                    tr = "Sohbet Duvar Kağıdı"
                                 ),
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -747,7 +762,8 @@ fun GroupInfoScreen(
                                 de = "Verlauf löschen",
                                 es = "Borrar historial",
                                 fr = "Effacer l'historique",
-                                pt = "Limpar histórico"
+                                pt = "Limpar histórico",
+                                tr = "Geçmişi Temizle"
                             ),
                             tint = Color(0xFFE53935),
                             modifier = Modifier.size(20.dp)
@@ -761,7 +777,8 @@ fun GroupInfoScreen(
                                 de = "Verlauf löschen",
                                 es = "Borrar historial",
                                 fr = "Effacer l'historique",
-                                pt = "Limpar histórico"
+                                pt = "Limpar histórico",
+                                tr = "Geçmişi Temizle"
                             ),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -814,7 +831,8 @@ fun GroupInfoScreen(
                                     de = "Keine Mediendateien",
                                     es = "No hay archivos multimedia",
                                     fr = "Aucun fichier multimédia",
-                                    pt = "Nenhum arquivo de mídia"
+                                    pt = "Nenhum arquivo de mídia",
+                                    tr = "Medya dosyası yok"
                                 ),
                                 onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -878,7 +896,8 @@ fun GroupInfoScreen(
                                     de = "Keine Dateien",
                                     es = "No hay archivos",
                                     fr = "Aucun fichier",
-                                    pt = "Nenhum arquivo"
+                                    pt = "Nenhum arquivo",
+                                    tr = "Dosya yok"
                                 ),
                                 onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -899,7 +918,8 @@ fun GroupInfoScreen(
                                 de = "Keine Favoriten-Nachrichten",
                                 es = "No hay mensajes favoritos",
                                 fr = "Aucun message favori",
-                                pt = "Nenhuma mensagem favorita"
+                                pt = "Nenhuma mensagem favorita",
+                                tr = "Favori mesaj yok"
                             ),
                             onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -912,19 +932,19 @@ fun GroupInfoScreen(
     if (showClearHistoryConfirmation) {
         AlertDialog(
             onDismissRequest = { showClearHistoryConfirmation = false },
-            title = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить историю?", "Clear history?", "Verlauf löschen?", "¿Borrar historial?", "Effacer l'historique ?", "Limpar histórico?"), fontWeight = FontWeight.Bold, color = Color.White) },
-            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Все сообщения этой группы будут удалены с вашего устройства.", "All messages in this group will be deleted from your device.", "Alle Nachrichten in dieser Gruppe werden von Ihrem Gerät gelöscht.", "Todos los mensajes de este grupo se eliminarán de tu dispositivo.", "Tous les messages de ce groupe seront supprimés de votre appareil.", "Todas as mensagens deste grupo serão apagadas do seu dispositivo."), color = Color.White.copy(alpha = 0.7f)) },
+            title = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить историю?", "Clear history?", "Verlauf löschen?", "¿Borrar historial?", "Effacer l'historique ?", "Limpar histórico?", tr = "Geçmiş temizlensin mi?"), fontWeight = FontWeight.Bold, color = Color.White) },
+            text = { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Все сообщения этой группы будут удалены с вашего устройства.", "All messages in this group will be deleted from your device.", "Alle Nachrichten in dieser Gruppe werden von Ihrem Gerät gelöscht.", "Todos los mensajes de este grupo se eliminarán de tu dispositivo.", "Tous les messages de ce groupe seront supprimés de votre appareil.", "Todas as mensagens deste grupo serão apagadas do seu dispositivo.", tr = "Bu gruptaki tüm mesajlar cihazınızdan silinecektir."), color = Color.White.copy(alpha = 0.7f)) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         controller.clearHistory(state.metadata.groupId)
                         showClearHistoryConfirmation = false
-                        android.widget.Toast.makeText(context, com.example.twopchat.data.Localizations.tr(appLanguage, "История очищена", "History cleared", "Verlauf gelöscht", "Historial borrado", "Historique effacé", "Histórico limpo"), android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, com.example.twopchat.data.Localizations.tr(appLanguage, "История очищена", "History cleared", "Verlauf gelöscht", "Historial borrado", "Historique effacé", "Histórico limpo", tr = "Geçmiş temizlendi"), android.widget.Toast.LENGTH_SHORT).show()
                     }
-                ) { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить", "Clear", "Löschen", "Borrar", "Effacer", "Limpar"), color = Color(0xFFE53935)) }
+                ) { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Очистить", "Clear", "Löschen", "Borrar", "Effacer", "Limpar", tr = "Temizle"), color = Color(0xFFE53935)) }
             },
             dismissButton = {
-                TextButton(onClick = { showClearHistoryConfirmation = false }) { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Отмена", "Cancel", "Abbrechen", "Cancelar", "Annuler", "Cancelar"), color = Color.White) }
+                TextButton(onClick = { showClearHistoryConfirmation = false }) { Text(com.example.twopchat.data.Localizations.tr(appLanguage, "Отмена", "Cancel", "Abbrechen", "Cancelar", "Annuler", "Cancelar", tr = "İptal"), color = Color.White) }
             },
             containerColor = Color(0xFF1C1C1E),
             shape = RoundedCornerShape(20.dp)
@@ -1023,7 +1043,8 @@ fun GroupInfoScreen(
                                 de = "Hintergrundbild für alle Mitglieder aktualisiert",
                                 es = "Fondo de pantalla actualizado para todos los miembros",
                                 fr = "Fond d'écran mis à jour pour tous les membres",
-                                pt = "Papel de parede atualizado para todos os membros"
+                                pt = "Papel de parede atualizado para todos os membros",
+                                tr = "Duvar kağıdı tüm üyeler için güncellendi"
                             ),
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
@@ -1047,7 +1068,8 @@ fun GroupInfoScreen(
                             de = "Hintergrundbild für alle Mitglieder entfernt",
                             es = "Fondo de pantalla eliminado para todos los miembros",
                             fr = "Fond d'écran supprimé pour tous les membres",
-                            pt = "Papel de parede removido para todos os membros"
+                            pt = "Papel de parede removido para todos os membros",
+                            tr = "Duvar kağıdı tüm üyeler için kaldırıldı"
                         ),
                         android.widget.Toast.LENGTH_SHORT
                     ).show()
@@ -1076,7 +1098,8 @@ fun GroupInfoScreen(
                 de = "${member.displayName} entfernen?",
                 es = "¿Eliminar a ${member.displayName}?",
                 fr = "Retirer ${member.displayName} ?",
-                pt = "Remover ${member.displayName}?"
+                pt = "Remover ${member.displayName}?",
+                tr = "${member.displayName} kaldırılsın mı?"
             ),
             body = com.example.twopchat.data.Localizations.tr(
                 appLanguage,
@@ -1085,7 +1108,8 @@ fun GroupInfoScreen(
                 de = "Das Mitglied verliert den Zugriff auf zukünftige Verschlüsselungsepochen der Gruppe.",
                 es = "El miembro perderá el acceso a las futuras épocas de cifrado del grupo.",
                 fr = "Le membre perdra l'accès aux futures époques de chiffrement du groupe.",
-                pt = "O membro perderá o acesso às futuras épocas de criptografia do grupo."
+                pt = "O membro perderá o acesso às futuras épocas de criptografia do grupo.",
+                tr = "Üye, gelecekteki grup şifreleme dönemlerine erişimini kaybedecek."
             ),
             confirmLabel = com.example.twopchat.data.Localizations.tr(
                 appLanguage,
@@ -1094,7 +1118,8 @@ fun GroupInfoScreen(
                 de = "Entfernen",
                 es = "Eliminar",
                 fr = "Retirer",
-                pt = "Remover"
+                pt = "Remover",
+                tr = "Kaldır"
             ),
             confirmTag = "confirm_remove_member",
             appLanguage = appLanguage,
@@ -1115,7 +1140,8 @@ fun GroupInfoScreen(
                 de = "${member.displayName} sperren?",
                 es = "¿Bloquear a ${member.displayName}?",
                 fr = "Bannir ${member.displayName} ?",
-                pt = "Banir ${member.displayName}?"
+                pt = "Banir ${member.displayName}?",
+                tr = "${member.displayName} engellensin mi?"
             ),
             body = com.example.twopchat.data.Localizations.tr(
                 appLanguage,
@@ -1124,7 +1150,8 @@ fun GroupInfoScreen(
                 de = "Das Mitglied wird aus der Gruppe ausgeschlossen und gesperrt.",
                 es = "El miembro será expulsado del grupo y bloqueado.",
                 fr = "Le membre sera exclu du groupe et banni.",
-                pt = "O membro será excluído do grupo e banido."
+                pt = "O membro será excluído do grupo e banido.",
+                tr = "Üye gruptan çıkarılacak ve engellenecektir."
             ),
             confirmLabel = com.example.twopchat.data.Localizations.tr(
                 appLanguage,
@@ -1133,7 +1160,8 @@ fun GroupInfoScreen(
                 de = "Sperren",
                 es = "Bloquear",
                 fr = "Bannir",
-                pt = "Banir"
+                pt = "Banir",
+                tr = "Engelle"
             ),
             confirmTag = "confirm_ban_member",
             appLanguage = appLanguage,
@@ -1154,7 +1182,8 @@ fun GroupInfoScreen(
                 de = "Eigentumsrechte übertragen?",
                 es = "¿Transferir propiedad?",
                 fr = "Transférer la propriété ?",
-                pt = "Transferir posse?"
+                pt = "Transferir posse?",
+                tr = "Mülkiyet Devredilsin mi?"
             ),
             body = com.example.twopchat.data.Localizations.tr(
                 appLanguage,
@@ -1163,7 +1192,8 @@ fun GroupInfoScreen(
                 de = "${member.displayName} wird Hauptbesitzer der Gruppe.",
                 es = "${member.displayName} se convertirá en el propietario principal del grupo.",
                 fr = "${member.displayName} deviendra le propriétaire principal du groupe.",
-                pt = "${member.displayName} se tornará o proprietário principal do grupo."
+                pt = "${member.displayName} se tornará o proprietário principal do grupo.",
+                tr = "${member.displayName} grubun yeni kurucusu olacaktır."
             ),
             confirmLabel = com.example.twopchat.data.Localizations.tr(
                 appLanguage,
@@ -1172,7 +1202,8 @@ fun GroupInfoScreen(
                 de = "Übertragen",
                 es = "Transferir",
                 fr = "Transférer",
-                pt = "Transferir"
+                pt = "Transferir",
+                tr = "Devret"
             ),
             confirmTag = "confirm_transfer_ownership",
             appLanguage = appLanguage,
@@ -1194,7 +1225,8 @@ fun GroupInfoScreen(
                     de = "Gruppe löschen?",
                     es = "¿Eliminar grupo?",
                     fr = "Supprimer le groupe ?",
-                    pt = "Excluir grupo?"
+                    pt = "Excluir grupo?",
+                    tr = "Grup silinsin mi?"
                 )
                 ownerMustTransfer -> com.example.twopchat.data.Localizations.tr(
                     appLanguage,
@@ -1203,7 +1235,8 @@ fun GroupInfoScreen(
                     de = "Zuerst Rechte übertragen",
                     es = "Transfiera la propiedad primero",
                     fr = "Transférez d'abord la propriété",
-                    pt = "Transfira a posse primeiro"
+                    pt = "Transfira a posse primeiro",
+                    tr = "Önce mülkiyeti devredin"
                 )
                 else -> com.example.twopchat.data.Localizations.tr(
                     appLanguage,
@@ -1212,7 +1245,8 @@ fun GroupInfoScreen(
                     de = "Gruppe verlassen?",
                     es = "¿Salir del grupo?",
                     fr = "Quitter le groupe ?",
-                    pt = "Sair do grupo?"
+                    pt = "Sair do grupo?",
+                    tr = "Gruptan çıkılsın mı?"
                 )
             },
             body = if (isSoloOwner) {
@@ -1223,7 +1257,8 @@ fun GroupInfoScreen(
                     de = "Die Gruppe und der Nachrichtenverlauf werden von diesem Gerät gelöscht.",
                     es = "El grupo y el historial de mensajes se eliminarán de este dispositivo.",
                     fr = "Le groupe et l'historique des messages seront supprimés de cet appareil.",
-                    pt = "O grupo e o histórico de mensagens serão apagados deste dispositivo."
+                    pt = "O grupo e o histórico de mensagens serão apagados deste dispositivo.",
+                    tr = "Grup ve mesaj geçmişi bu cihazdan silinecektir."
                 )
             } else if (ownerMustTransfer) {
                 com.example.twopchat.data.Localizations.tr(
@@ -1233,7 +1268,8 @@ fun GroupInfoScreen(
                     de = "Der Besitzer kann die Gruppe nicht verlassen, solange andere Mitglieder vorhanden sind.",
                     es = "El propietario no puede salir del grupo mientras queden otros miembros.",
                     fr = "Le propriétaire ne peut pas quitter le groupe tant qu'il reste d'autres membres.",
-                    pt = "O proprietário não pode sair do grupo enquanto outros membros permanecerem."
+                    pt = "O proprietário não pode sair do grupo enquanto outros membros permanecerem.",
+                    tr = "Kurucu, grupta başka üyeler varken gruptan ayrılamaz."
                 )
             } else {
                 com.example.twopchat.data.Localizations.tr(
@@ -1243,7 +1279,8 @@ fun GroupInfoScreen(
                     de = "Die Gruppe wird sofort ausgeblendet und lokale Daten nach Bestätigung gelöscht.",
                     es = "El grupo se ocultará inmediatamente y los datos locales se eliminarán.",
                     fr = "Le groupe sera immédiatement masqué et les données locales supprimées.",
-                    pt = "O grupo será ocultado imediatamente e os dados locais removidos."
+                    pt = "O grupo será ocultado imediatamente e os dados locais removidos.",
+                    tr = "Grup hemen gizlenecek ve yerel veriler kaldırılacaktır."
                 )
             },
             confirmLabel = when {
@@ -1254,7 +1291,8 @@ fun GroupInfoScreen(
                     de = "Löschen",
                     es = "Eliminar",
                     fr = "Supprimer",
-                    pt = "Excluir"
+                    pt = "Excluir",
+                    tr = "Sil"
                 )
                 ownerMustTransfer -> com.example.twopchat.data.Localizations.tr(
                     appLanguage,
@@ -1263,7 +1301,8 @@ fun GroupInfoScreen(
                     de = "Verstanden",
                     es = "Entendido",
                     fr = "Compris",
-                    pt = "Entendido"
+                    pt = "Entendido",
+                    tr = "Anladım"
                 )
                 else -> com.example.twopchat.data.Localizations.tr(
                     appLanguage,
@@ -1272,7 +1311,8 @@ fun GroupInfoScreen(
                     de = "Verlassen",
                     es = "Salir",
                     fr = "Quitter",
-                    pt = "Sair"
+                    pt = "Sair",
+                    tr = "Çık"
                 )
             },
             confirmTag = "confirm_leave_group",
@@ -1299,7 +1339,8 @@ fun GroupInfoScreen(
                         de = "Gruppe bearbeiten",
                         es = "Editar grupo",
                         fr = "Modifier le groupe",
-                        pt = "Editar grupo"
+                        pt = "Editar grupo",
+                        tr = "Grubu Düzenle"
                     ),
                     fontWeight = FontWeight.Bold
                 )
@@ -1318,7 +1359,8 @@ fun GroupInfoScreen(
                                     de = "Titel",
                                     es = "Título",
                                     fr = "Titre",
-                                    pt = "Título"
+                                    pt = "Título",
+                                    tr = "Başlık"
                                 )
                             )
                         },
@@ -1344,7 +1386,8 @@ fun GroupInfoScreen(
                                     de = "Beschreibung (optional)",
                                     es = "Descripción (opcional)",
                                     fr = "Description (facultative)",
-                                    pt = "Descrição (opcional)"
+                                    pt = "Descrição (opcional)",
+                                    tr = "Açıklama (isteğe bağlı)"
                                 )
                             )
                         },
@@ -1377,7 +1420,8 @@ fun GroupInfoScreen(
                             de = "Speichern",
                             es = "Guardar",
                             fr = "Enregistrer",
-                            pt = "Salvar"
+                            pt = "Salvar",
+                            tr = "Kaydet"
                         ),
                         fontWeight = FontWeight.Bold
                     )
@@ -1393,7 +1437,8 @@ fun GroupInfoScreen(
                             de = "Abbrechen",
                             es = "Cancelar",
                             fr = "Annuler",
-                            pt = "Cancelar"
+                            pt = "Cancelar",
+                            tr = "İptal"
                         )
                     )
                 }
@@ -1416,7 +1461,8 @@ fun GroupInfoScreen(
                         de = "Mitglieder hinzufügen",
                         es = "Añadir miembros",
                         fr = "Ajouter des membres",
-                        pt = "Adicionar membros"
+                        pt = "Adicionar membros",
+                        tr = "Üye Ekle"
                     ),
                     fontWeight = FontWeight.Bold
                 )
@@ -1437,7 +1483,8 @@ fun GroupInfoScreen(
                                 de = "Alle bekannten Kontakte sind bereits in dieser Gruppe oder die Kontaktliste ist leer.",
                                 es = "Todos los contactos conocidos ya están en este grupo o la lista está vacía.",
                                 fr = "Tous les contacts connus sont déjà dans ce groupe ou la liste est vide.",
-                                pt = "Todos os contatos conhecidos já estão neste grupo ou a lista está vazia."
+                                pt = "Todos os contatos conhecidos já estão neste grupo ou a lista está vazia.",
+                                tr = "Bilinen tüm kişiler zaten bu grupta veya kişi listesi boş."
                             ),
                             color = onSurfaceColor.copy(alpha = 0.7f),
                             fontSize = 14.sp,
@@ -1511,7 +1558,8 @@ fun GroupInfoScreen(
                                 de = "Einladen",
                                 es = "Invitar",
                                 fr = "Inviter",
-                                pt = "Convidar"
+                                pt = "Convidar",
+                                tr = "Davet Et"
                             ),
                             fontWeight = FontWeight.Bold
                         )
@@ -1528,7 +1576,8 @@ fun GroupInfoScreen(
                             de = "Abbrechen",
                             es = "Cancelar",
                             fr = "Annuler",
-                            pt = "Cancelar"
+                            pt = "Cancelar",
+                            tr = "İptal"
                         )
                     )
                 }
@@ -1682,7 +1731,8 @@ private fun GroupHeroHeader(
                 de = if (metadata.memberCount == 1) "1 Mitglied" else "${metadata.memberCount} Mitglieder",
                 es = if (metadata.memberCount == 1) "1 miembro" else "${metadata.memberCount} miembros",
                 fr = if (metadata.memberCount == 1) "1 membre" else "${metadata.memberCount} membres",
-                pt = if (metadata.memberCount == 1) "1 membro" else "${metadata.memberCount} membros"
+                pt = if (metadata.memberCount == 1) "1 membro" else "${metadata.memberCount} membros",
+                tr = "${metadata.memberCount} üye"
             ),
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1717,7 +1767,8 @@ private fun GroupQuickActionsRow(
                     de = "Chat",
                     es = "Chat",
                     fr = "Discussion",
-                    pt = "Chat"
+                    pt = "Chat",
+                    tr = "Sohbet"
                 ),
                 R.drawable.ic_menu_chats,
                 onChatClick
@@ -1731,7 +1782,8 @@ private fun GroupQuickActionsRow(
                         de = "Stummschaltung aufheben",
                         es = "Reactivar sonido",
                         fr = "Réactiver",
-                        pt = "Desativar mudo"
+                        pt = "Desativar mudo",
+                        tr = "Sesi Aç"
                     )
                 } else {
                     com.example.twopchat.data.Localizations.tr(
@@ -1741,7 +1793,8 @@ private fun GroupQuickActionsRow(
                         de = "Stumm",
                         es = "Silenciar",
                         fr = "Muet",
-                        pt = "Silenciar"
+                        pt = "Silenciar",
+                        tr = "Sessize Al"
                     )
                 },
                 R.drawable.ic_notifications,
@@ -1756,7 +1809,8 @@ private fun GroupQuickActionsRow(
                         de = "QR-Code",
                         es = "Código QR",
                         fr = "Code QR",
-                        pt = "Código QR"
+                        pt = "Código QR",
+                        tr = "QR Kodu"
                     ),
                     R.drawable.ic_qr_code,
                     onQrClick
@@ -2142,7 +2196,8 @@ private fun GroupMemberCard(
                                         de = " (Du)",
                                         es = " (Tú)",
                                         fr = " (Vous)",
-                                        pt = " (Você)"
+                                        pt = " (Você)",
+                                        tr = " (Siz)"
                                     )
                                 )
                             }
@@ -2175,10 +2230,10 @@ private fun GroupMemberCard(
                 shape = RoundedCornerShape(8.dp)
             ) {
                 val roleStr = when (member.role) {
-                    GroupRole.OWNER -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Создатель", en = "Owner", de = "Besitzer", es = "Propietario", fr = "Créateur", pt = "Criador")
-                    GroupRole.ADMIN -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Администратор", en = "Admin", de = "Administrator", es = "Administrador", fr = "Administrateur", pt = "Administrador")
-                    GroupRole.MODERATOR -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Модератор", en = "Moderator", de = "Moderator", es = "Moderador", fr = "Modérateur", pt = "Moderador")
-                    GroupRole.MEMBER -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Участник", en = "Member", de = "Mitglied", es = "Miembro", fr = "Membre", pt = "Membro")
+                    GroupRole.OWNER -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Создатель", en = "Owner", de = "Besitzer", es = "Propietario", fr = "Créateur", pt = "Criador", tr = "Kurucu")
+                    GroupRole.ADMIN -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Администратор", en = "Admin", de = "Administrator", es = "Administrador", fr = "Administrateur", pt = "Administrador", tr = "Yönetici")
+                    GroupRole.MODERATOR -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Модератор", en = "Moderator", de = "Moderator", es = "Moderador", fr = "Modérateur", pt = "Moderador", tr = "Moderatör")
+                    GroupRole.MEMBER -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Участник", en = "Member", de = "Mitglied", es = "Miembro", fr = "Membre", pt = "Membro", tr = "Üye")
                 }
                 Text(
                     text = when (member.role) {
@@ -2506,7 +2561,8 @@ private fun ConfirmationDialog(
                         de = "Abbrechen",
                         es = "Cancelar",
                         fr = "Annuler",
-                        pt = "Cancelar"
+                        pt = "Cancelar",
+                        tr = "İptal"
                     )
                 )
             }
@@ -2526,7 +2582,8 @@ private fun formatMemberStatus(status: String, appLanguage: String): String {
                 de = "Online (Dieses Gerät)",
                 es = "En línea (Este dispositivo)",
                 fr = "En ligne (Cet appareil)",
-                pt = "Online (Este dispositivo)"
+                pt = "Online (Este dispositivo)",
+                tr = "Çevrimiçi (Bu cihaz)"
             )
         }
         status.contains("В сети") || status.contains("Online") -> {
@@ -2537,7 +2594,8 @@ private fun formatMemberStatus(status: String, appLanguage: String): String {
                 de = "Online",
                 es = "En línea",
                 fr = "En ligne",
-                pt = "Online"
+                pt = "Online",
+                tr = "Çevrimiçi"
             )
         }
         status.contains("Приглашение отправлено") || status.contains("Invite sent") -> {
@@ -2548,7 +2606,8 @@ private fun formatMemberStatus(status: String, appLanguage: String): String {
                 de = "Einladung gesendet",
                 es = "Invitación enviada",
                 fr = "Invitation envoyée",
-                pt = "Convite enviado"
+                pt = "Convite enviado",
+                tr = "Davet gönderildi"
             )
         }
         status.contains("Не в сети") || status.contains("офлайн") || status.contains("Offline") || status.isBlank() -> {
@@ -2559,7 +2618,8 @@ private fun formatMemberStatus(status: String, appLanguage: String): String {
                 de = "Offline",
                 es = "Desconectado",
                 fr = "Hors ligne",
-                pt = "Offline"
+                pt = "Offline",
+                tr = "Çevrimdışı"
             )
         }
         else -> status
@@ -2593,7 +2653,8 @@ private fun GroupInfoDetailsCard(
                     de = "Informationen",
                     es = "Información",
                     fr = "Informations",
-                    pt = "Informações"
+                    pt = "Informações",
+                    tr = "Bilgi"
                 ),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
@@ -2611,7 +2672,8 @@ private fun GroupInfoDetailsCard(
                     de = "Persönliche Gruppenadresse",
                     es = "Dirección personal del grupo",
                     fr = "Adresse personnelle du groupe",
-                    pt = "Endereço pessoal do grupo"
+                    pt = "Endereço pessoal do grupo",
+                    tr = "Grubun Kişisel Adresi"
                 ),
                 fontSize = 12.sp,
                 color = onSurfaceVariant
@@ -2642,7 +2704,8 @@ private fun GroupInfoDetailsCard(
                                 de = "Gruppenadresse kopiert",
                                 es = "Dirección del grupo copiada",
                                 fr = "Adresse du groupe copiée",
-                                pt = "Endereço do grupo copiado"
+                                pt = "Endereço do grupo copiado",
+                                tr = "Grup adresi kopyalandı"
                             ),
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
@@ -2672,7 +2735,8 @@ private fun GroupInfoDetailsCard(
                     de = "Über / Beschreibung",
                     es = "Acerca de / Descripción",
                     fr = "À propos / Description",
-                    pt = "Sobre / Descrição"
+                    pt = "Sobre / Descrição",
+                    tr = "Hakkında / Açıklama"
                 ),
                 fontSize = 12.sp,
                 color = onSurfaceVariant
@@ -2687,7 +2751,8 @@ private fun GroupInfoDetailsCard(
                         de = "P2P dezentralisierter Gruppenchat",
                         es = "Chat grupal descentralizado P2P",
                         fr = "Chat de groupe décentralisé P2P",
-                        pt = "Chat em grupo descentralizado P2P"
+                        pt = "Chat em grupo descentralizado P2P",
+                        tr = "P2P merkeziyetsiz grup sohbeti"
                     )
                 },
                 fontSize = 14.sp,
@@ -2726,7 +2791,8 @@ private fun GroupInfoDetailsCard(
                             de = "Verifizierungsstatus",
                             es = "Estado de verificación",
                             fr = "Statut de vérification",
-                            pt = "Status de verificação"
+                            pt = "Status de verificação",
+                            tr = "Doğrulama Durumu"
                         ),
                         fontSize = 12.sp,
                         color = onSurfaceVariant
@@ -2739,7 +2805,8 @@ private fun GroupInfoDetailsCard(
                             de = "Gruppe verifiziert (Double Ratchet)",
                             es = "Grupo verificado (Double Ratchet)",
                             fr = "Groupe vérifié (Double Ratchet)",
-                            pt = "Grupo verificado (Double Ratchet)"
+                            pt = "Grupo verificado (Double Ratchet)",
+                            tr = "Grup doğrulandı (Double Ratchet)"
                         ),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
@@ -3105,7 +3172,8 @@ private fun MemberProfileModal(
                                         de = " (Du)",
                                         es = " (Tú)",
                                         fr = " (Vous)",
-                                        pt = " (Você)"
+                                        pt = " (Você)",
+                                        tr = " (Siz)"
                                     )
                                 )
                             }
@@ -3124,10 +3192,10 @@ private fun MemberProfileModal(
                         border = BorderStroke(1.dp, roleColor.copy(alpha = 0.35f))
                     ) {
                         val roleStr = when (member.role) {
-                            GroupRole.OWNER -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Создатель", en = "Owner", de = "Besitzer", es = "Propietario", fr = "Créateur", pt = "Criador")
-                            GroupRole.ADMIN -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Администратор", en = "Admin", de = "Administrator", es = "Administrador", fr = "Administrateur", pt = "Administrador")
-                            GroupRole.MODERATOR -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Модератор", en = "Moderator", de = "Moderator", es = "Moderador", fr = "Modérateur", pt = "Moderador")
-                            GroupRole.MEMBER -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Участник", en = "Member", de = "Mitglied", es = "Miembro", fr = "Membre", pt = "Membro")
+                            GroupRole.OWNER -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Создатель", en = "Owner", de = "Besitzer", es = "Propietario", fr = "Créateur", pt = "Criador", tr = "Kurucu")
+                            GroupRole.ADMIN -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Администратор", en = "Admin", de = "Administrator", es = "Administrador", fr = "Administrateur", pt = "Administrador", tr = "Yönetici")
+                            GroupRole.MODERATOR -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Модератор", en = "Moderator", de = "Moderator", es = "Moderador", fr = "Modérateur", pt = "Moderador", tr = "Moderatör")
+                            GroupRole.MEMBER -> com.example.twopchat.data.Localizations.tr(appLanguage, ru = "Участник", en = "Member", de = "Mitglied", es = "Miembro", fr = "Membre", pt = "Membro", tr = "Üye")
                         }
                         Text(
                             text = roleStr,
@@ -3196,7 +3264,8 @@ private fun MemberProfileModal(
                                         de = "Direktnachricht senden",
                                         es = "Enviar mensaje directo",
                                         fr = "Envoyer un message direct",
-                                        pt = "Enviar mensagem direta"
+                                        pt = "Enviar mensagem direta",
+                                        tr = "Özel Mesaj Gönder"
                                     ),
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
@@ -3224,7 +3293,8 @@ private fun MemberProfileModal(
                                 de = "Mitgliederverwaltung",
                                 es = "Gestión de miembros",
                                 fr = "Gestion des membres",
-                                pt = "Gerenciamento de membros"
+                                pt = "Gerenciamento de membros",
+                                tr = "Üye Yönetimi"
                             ),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
@@ -3248,7 +3318,8 @@ private fun MemberProfileModal(
                                             de = "Zum Administrator ernennen",
                                             es = "Nombrar administrador",
                                             fr = "Nommer administrateur",
-                                            pt = "Tornar administrador"
+                                            pt = "Tornar administrador",
+                                            tr = "Yönetici Yap"
                                         ),
                                         titleColor = onSurfaceColor,
                                         onClick = { onSetMemberRole(GroupRole.ADMIN) }
@@ -3263,7 +3334,8 @@ private fun MemberProfileModal(
                                             de = "Zum Moderator ernennen",
                                             es = "Nombrar moderador",
                                             fr = "Nommer modérateur",
-                                            pt = "Tornar moderador"
+                                            pt = "Tornar moderador",
+                                            tr = "Moderatör Yap"
                                         ),
                                         titleColor = onSurfaceColor,
                                         onClick = { onSetMemberRole(GroupRole.MODERATOR) }
@@ -3278,7 +3350,8 @@ private fun MemberProfileModal(
                                             de = "Rolle entziehen",
                                             es = "Quitar rol",
                                             fr = "Rétrograder membre",
-                                            pt = "Remover cargo"
+                                            pt = "Remover cargo",
+                                            tr = "Üyeliğe Düşür"
                                         ),
                                         titleColor = onSurfaceColor.copy(alpha = 0.85f),
                                         onClick = { onSetMemberRole(GroupRole.MEMBER) }
@@ -3295,7 +3368,8 @@ private fun MemberProfileModal(
                                         de = "Rechte einschränken",
                                         es = "Restringir permisos",
                                         fr = "Restreindre les droits",
-                                        pt = "Restringir permissões"
+                                        pt = "Restringir permissões",
+                                        tr = "İzinleri Kısıtla"
                                     ),
                                     titleColor = Color.White,
                                     onClick = onRestrict
@@ -3311,7 +3385,8 @@ private fun MemberProfileModal(
                                         de = "Aus der Gruppe entfernen",
                                         es = "Eliminar del grupo",
                                         fr = "Retirer du groupe",
-                                        pt = "Remover do grupo"
+                                        pt = "Remover do grupo",
+                                        tr = "Gruptan Çıkar"
                                     ),
                                     titleColor = Color(0xFFFF453A),
                                     onClick = onRemove
@@ -3327,7 +3402,8 @@ private fun MemberProfileModal(
                                         de = "Blockieren",
                                         es = "Bloquear",
                                         fr = "Bannir",
-                                        pt = "Banir"
+                                        pt = "Banir",
+                                        tr = "Üyeyi Engelle"
                                     ),
                                     titleColor = Color(0xFFFF453A),
                                     onClick = onBan
@@ -3350,7 +3426,8 @@ private fun MemberProfileModal(
                                 de = "Schließen",
                                 es = "Cerrar",
                                 fr = "Fermer",
-                                pt = "Fechar"
+                                pt = "Fechar",
+                                tr = "Kapat"
                             ),
                             color = Color.White.copy(alpha = 0.7f),
                             fontWeight = FontWeight.SemiBold,

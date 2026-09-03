@@ -362,7 +362,8 @@ fun ConnectionModeBottomSheet(
                                     de = "PEER-NETZWERKADRESSEN (${allEndpoints.size})",
                                     es = "PUNTOS DE CONEXIÓN DEL PAR (${allEndpoints.size})",
                                     fr = "ADRESSES RÉSEAU DU PAIR (${allEndpoints.size})",
-                                    pt = "ENDEREÇOS DE REDE DO PAR (${allEndpoints.size})"
+                                    pt = "ENDEREÇOS DE REDE DO PAR (${allEndpoints.size})",
+                                    tr = "EŞ AĞ UÇ NOKTALARI (${allEndpoints.size})"
                                 ),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
@@ -380,9 +381,9 @@ fun ConnectionModeBottomSheet(
                                 ) {
                                     Text(
                                         text = if (isEndpointsExpanded) {
-                                            Localizations.tr(appLanguage, ru = "Свернуть", en = "Collapse", de = "Einklappen", es = "Colapsar", fr = "Réduire", pt = "Recolher")
+                                            Localizations.tr(appLanguage, ru = "Свернуть", en = "Collapse", de = "Einklappen", es = "Colapsar", fr = "Réduire", pt = "Recolher", tr = "Daralt")
                                         } else {
-                                            Localizations.tr(appLanguage, ru = "Все (${allEndpoints.size})", en = "All (${allEndpoints.size})", de = "Alle (${allEndpoints.size})", es = "Todos (${allEndpoints.size})", fr = "Tous (${allEndpoints.size})", pt = "Todos (${allEndpoints.size})")
+                                            Localizations.tr(appLanguage, ru = "Все (${allEndpoints.size})", en = "All (${allEndpoints.size})", de = "Alle (${allEndpoints.size})", es = "Todos (${allEndpoints.size})", fr = "Tous (${allEndpoints.size})", pt = "Todos (${allEndpoints.size})", tr = "Tümü (${allEndpoints.size})")
                                         },
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
@@ -429,7 +430,8 @@ fun ConnectionModeBottomSheet(
                                                 de = "Kopiert ($epTypeLabel)",
                                                 es = "Copiado ($epTypeLabel)",
                                                 fr = "Copié ($epTypeLabel)",
-                                                pt = "Copiado ($epTypeLabel)"
+                                                pt = "Copiado ($epTypeLabel)",
+                                                tr = "Kopyalandı ($epTypeLabel)"
                                             ),
                                             Toast.LENGTH_SHORT
                                         ).show()
@@ -461,7 +463,7 @@ fun ConnectionModeBottomSheet(
                                 )
                                 Spacer(Modifier.width(6.dp))
                                 Text(
-                                    text = Localizations.tr(appLanguage, ru = "копировать", en = "copy", de = "kopieren", es = "copiar", fr = "copier", pt = "copiar"),
+                                    text = Localizations.tr(appLanguage, ru = "копировать", en = "copy", de = "kopieren", es = "copiar", fr = "copier", pt = "copiar", tr = "kopyala"),
                                     fontSize = 10.sp,
                                     color = primaryColor
                                 )
@@ -487,7 +489,8 @@ fun ConnectionModeBottomSheet(
                                         de = "Noch ${allEndpoints.size - 3} Adressen anzeigen...",
                                         es = "Mostrar ${allEndpoints.size - 3} direcciones más...",
                                         fr = "Afficher ${allEndpoints.size - 3} adresses de plus...",
-                                        pt = "Mostrar mais ${allEndpoints.size - 3} endereços..."
+                                        pt = "Mostrar mais ${allEndpoints.size - 3} endereços...",
+                                        tr = "Diğer ${allEndpoints.size - 3} adresi göster..."
                                     ),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Medium,

@@ -89,7 +89,7 @@ fun AppearanceSettingsPage(
             .verticalScroll(rememberScrollState())
     ) {
         SubPageLayout(
-            title = Localizations.tr(appLanguage, "Тема и Оформление", "Appearance & Theme", "Erscheinungsbild & Theme", "Apariencia y Tema", "Apparence et Thème", "Aparência e Tema"),
+            title = Localizations.tr(appLanguage, "Тема и Оформление", "Appearance & Theme", "Erscheinungsbild & Theme", "Apariencia y Tema", "Apparence et Thème", "Aparência e Tema", tr = "Görünüm ve Tema"),
             appLanguage = appLanguage,
             onBackClick = onBackClick,
             surfaceColor = surfaceColor,

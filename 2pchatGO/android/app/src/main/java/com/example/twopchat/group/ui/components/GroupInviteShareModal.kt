@@ -104,7 +104,8 @@ internal fun GroupInviteQrModal(
                                 de = "Gruppeneinladung",
                                 es = "Invitación al grupo",
                                 fr = "Invitation de groupe",
-                                pt = "Convite do grupo"
+                                pt = "Convite do grupo",
+                                tr = "Grup Daveti"
                             ),
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
@@ -186,7 +187,8 @@ internal fun GroupInviteQrModal(
                                         de = "Link kopiert!",
                                         es = "¡Enlace copiado!",
                                         fr = "Lien copié !",
-                                        pt = "Link copiado!"
+                                        pt = "Link copiado!",
+                                        tr = "Bağlantı kopyalandı!"
                                     ),
                                     Toast.LENGTH_SHORT
                                 ).show()
@@ -213,7 +215,8 @@ internal fun GroupInviteQrModal(
                     de = "Einladung teilen",
                     es = "Compartir invitación",
                     fr = "Partager l'invitation",
-                    pt = "Compartilhar convite"
+                    pt = "Compartilhar convite",
+                    tr = "Daveti Paylaş"
                 )
                 val shareInviteText = com.example.twopchat.data.Localizations.tr(
                     appLanguage,
@@ -222,7 +225,8 @@ internal fun GroupInviteQrModal(
                     de = "Einladung zur Gruppe „$groupTitle“ in 2PChat:\n\n$inviteLink",
                     es = "Invitación al grupo \"$groupTitle\" en 2PChat:\n\n$inviteLink",
                     fr = "Invitation au groupe « $groupTitle » dans 2PChat :\n\n$inviteLink",
-                    pt = "Convite para o grupo \"$groupTitle\" no 2PChat:\n\n$inviteLink"
+                    pt = "Convite para o grupo \"$groupTitle\" no 2PChat:\n\n$inviteLink",
+                    tr = "2PChat\'teki \"$groupTitle\" grubuna davet:\n\n$inviteLink"
                 )
 
                 Button(
@@ -257,7 +261,8 @@ internal fun GroupInviteQrModal(
                             de = "In 2PChat senden",
                             es = "Enviar en 2PChat",
                             fr = "Envoyer dans 2PChat",
-                            pt = "Enviar no 2PChat"
+                            pt = "Enviar no 2PChat",
+                            tr = "2PChat ile Gönder"
                         ),
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
@@ -290,7 +295,8 @@ internal fun GroupInviteQrModal(
                                 de = "Extern teilen",
                                 es = "Compartir fuera",
                                 fr = "Partager en externe",
-                                pt = "Compartilhar fora"
+                                pt = "Compartilhar fora",
+                                tr = "Harici Paylaş"
                             ),
                             fontSize = 12.sp,
                             maxLines = 1
@@ -309,7 +315,8 @@ internal fun GroupInviteQrModal(
                                     de = "Link in Zwischenablage kopiert!",
                                     es = "¡Enlace copiado al portapapeles!",
                                     fr = "Lien copié dans le presse-papiers !",
-                                    pt = "Link copiado para a área de transferência!"
+                                    pt = "Link copiado para a área de transferência!",
+                                    tr = "Bağlantı panoya kopyalandı!"
                                 ),
                                 Toast.LENGTH_SHORT
                             ).show()
@@ -325,7 +332,8 @@ internal fun GroupInviteQrModal(
                                 de = "Link kopieren",
                                 es = "Copiar enlace",
                                 fr = "Copier le lien",
-                                pt = "Copiar link"
+                                pt = "Copiar link",
+                                tr = "Bağlantıyı Kopyala"
                             ),
                             fontSize = 12.sp,
                             maxLines = 1
@@ -370,7 +378,8 @@ internal fun GroupInviteQrModal(
                             de = "Online",
                             es = "En línea",
                             fr = "En ligne",
-                            pt = "Online"
+                            pt = "Online",
+                            tr = "Çevrimiçi"
                         )
                     } else {
                         com.example.twopchat.data.Localizations.tr(
@@ -380,7 +389,8 @@ internal fun GroupInviteQrModal(
                             de = "Kürzlich gesehen",
                             es = "Visto recientemente",
                             fr = "Vu récemment",
-                            pt = "Visto recentemente"
+                            pt = "Visto recentemente",
+                            tr = "Son görülme yakınlarda"
                         )
                     },
                     isOnline = contact.isOnline,
@@ -399,7 +409,8 @@ internal fun GroupInviteQrModal(
                 de = "Chat auswählen",
                 es = "Seleccionar chat",
                 fr = "Sélectionner un chat",
-                pt = "Selecionar conversa"
+                pt = "Selecionar conversa",
+                tr = "Sohbet Seçin"
             ),
             searchPlaceholder = com.example.twopchat.data.Localizations.tr(
                 appLanguage,
@@ -408,7 +419,8 @@ internal fun GroupInviteQrModal(
                 de = "Empfänger suchen...",
                 es = "Buscar destinatario...",
                 fr = "Rechercher un destinataire...",
-                pt = "Buscar destinatário..."
+                pt = "Buscar destinatário...",
+                tr = "Alıcı ara..."
             ),
             recipients = recipientItems,
             primaryColor = primaryColor,
@@ -423,7 +435,8 @@ internal fun GroupInviteQrModal(
                     de = "👋 Einladung zur Gruppe „$groupTitle“!\n\nBeitrittslink:\n$inviteLink",
                     es = "👋 ¡Invitación al grupo \"$groupTitle\"!\n\nEnlace de acceso:\n$inviteLink",
                     fr = "👋 Invitation au groupe « $groupTitle » !\n\nLien pour rejoindre :\n$inviteLink",
-                    pt = "👋 Convite para o grupo \"$groupTitle\"!\n\nLink de entrada:\n$inviteLink"
+                    pt = "👋 Convite para o grupo \"$groupTitle\"!\n\nLink de entrada:\n$inviteLink",
+                    tr = "👋 \"$groupTitle\" grubuna davet!\n\nKatılma bağlantısı:\n$inviteLink"
                 )
                 P2PMessageRelay.sendMessageToPeer(context, peerName, shareText) { success ->
                     val msg = if (success) {
@@ -434,7 +447,8 @@ internal fun GroupInviteQrModal(
                             de = "Einladung an $peerName gesendet!",
                             es = "¡Invitación enviada a $peerName!",
                             fr = "Invitation envoyée à $peerName !",
-                            pt = "Convite enviado para $peerName!"
+                            pt = "Convite enviado para $peerName!",
+                            tr = "Davet $peerName kişisine gönderildi!"
                         )
                     } else {
                         com.example.twopchat.data.Localizations.tr(
@@ -444,7 +458,8 @@ internal fun GroupInviteQrModal(
                             de = "Einladung konnte nicht gesendet werden: Kontakt nicht verbunden",
                             es = "No se pudo enviar la invitación: contacto no conectado",
                             fr = "Impossible d'envoyer l'invitation : contact non connecté",
-                            pt = "Falha ao enviar convite: contato não conectado"
+                            pt = "Falha ao enviar convite: contato não conectado",
+                            tr = "Davet gönderilemedi: kişi bağlı değil"
                         )
                     }
                     Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()

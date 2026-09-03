@@ -279,7 +279,8 @@ fun ChatsTab(
                                     de = "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText Peers",
                                     es = "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText pares",
                                     fr = "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText pairs",
-                                    pt = "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText pares"
+                                    pt = "⚡ Tor $torBootstrapProgress% • Yggdrasil • $peersText pares",
+                                    tr = "⚡ Tor %$torBootstrapProgress • Yggdrasil • $peersText eş"
                                 )
                                 isTorRunning && heroYggOk == true -> com.example.twopchat.data.Localizations.tr(
                                     appLanguage,
@@ -288,7 +289,8 @@ fun ChatsTab(
                                     de = "🛡️ Geschützt • Tor 100% • Yggdrasil • $peersText Peers",
                                     es = "🛡️ Protegido • Tor 100% • Yggdrasil • $peersText pares",
                                     fr = "🛡️ Protégé • Tor 100% • Yggdrasil • $peersText pairs",
-                                    pt = "🛡️ Protegido • Tor 100% • Yggdrasil • $peersText pares"
+                                    pt = "🛡️ Protegido • Tor 100% • Yggdrasil • $peersText pares",
+                                    tr = "🛡️ Korumalı • Tor %100 • Yggdrasil • $peersText eş"
                                 )
                                 isTorRunning -> com.example.twopchat.data.Localizations.tr(
                                     appLanguage,
@@ -297,7 +299,8 @@ fun ChatsTab(
                                     de = "🛡️ Tor 100% • $peersText Peers",
                                     es = "🛡️ Tor 100% • $peersText pares",
                                     fr = "🛡️ Tor 100% • $peersText pairs",
-                                    pt = "🛡️ Tor 100% • $peersText pares"
+                                    pt = "🛡️ Tor 100% • $peersText pares",
+                                    tr = "🛡️ Tor %100 • $peersText eş"
                                 )
                                 heroYggOk == true -> com.example.twopchat.data.Localizations.tr(
                                     appLanguage,
@@ -306,7 +309,8 @@ fun ChatsTab(
                                     de = "🛡️ P2P Direkt • Yggdrasil • $peersText Peers",
                                     es = "🛡️ P2P Directo • Yggdrasil • $peersText pares",
                                     fr = "🛡️ P2P Direct • Yggdrasil • $peersText pairs",
-                                    pt = "🛡️ P2P Direto • Yggdrasil • $peersText pares"
+                                    pt = "🛡️ P2P Direto • Yggdrasil • $peersText pares",
+                                    tr = "🛡️ Doğrudan P2P • Yggdrasil • $peersText eş"
                                 )
                                 else -> com.example.twopchat.data.Localizations.tr(
                                     appLanguage,
@@ -315,7 +319,8 @@ fun ChatsTab(
                                     de = "🛡️ Offline • $peersText Peers",
                                     es = "🛡️ Fuera de línea • $peersText pares",
                                     fr = "🛡️ Hors ligne • $peersText pairs",
-                                    pt = "🛡️ Offline • $peersText pares"
+                                    pt = "🛡️ Offline • $peersText pares",
+                                    tr = "🛡️ Çevrimdışı • $peersText eş"
                                 )
                             }
                         }
@@ -410,7 +415,7 @@ fun ChatsTab(
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = Localizations.tr(appLanguage, "МОЙ ПРОФИЛЬ", "MY PROFILE", "MEIN PROFIL", "MI PERFIL", "MON PROFIL", "MEU PERFIL"),
+                                        text = Localizations.tr(appLanguage, "МОЙ ПРОФИЛЬ", "MY PROFILE", "MEIN PROFIL", "MI PERFIL", "MON PROFIL", "MEU PERFIL", tr = "PROFİLİM"),
                                         fontSize = 9.sp, color = onSurfaceVariant,
                                         fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp
                                     )
@@ -428,8 +433,8 @@ fun ChatsTab(
                                     .border(0.5.dp, primaryColor.copy(alpha = 0.30f), RoundedCornerShape(14.dp))
                                     .clickable(enabled = !isRefreshingAll) {
                                         isRefreshingAll = true
-                                        val startMsg = Localizations.tr(appLanguage, "Обновление всех подключений...", "Refreshing all connections...", "Verbindungen werden aktualisiert...", "Actualizando todas las conexiones...", "Actualisation de toutes les connexions...", "Atualizando todas as conexões...")
-                                        val endMsg = Localizations.tr(appLanguage, "Подключения успешно обновлены!", "Connections successfully refreshed!", "Verbindungen erfolgreich aktualisiert!", "¡Conexiones actualizadas con éxito!", "Connexions actualisées avec succès !", "Conexões atualizadas com sucesso!")
+                                        val startMsg = Localizations.tr(appLanguage, "Обновление всех подключений...", "Refreshing all connections...", "Verbindungen werden aktualisiert...", "Actualizando todas las conexiones...", "Actualisation de toutes les connexions...", "Atualizando todas as conexões...", tr = "Tüm bağlantılar yenileniyor...")
+                                        val endMsg = Localizations.tr(appLanguage, "Подключения успешно обновлены!", "Connections successfully refreshed!", "Verbindungen erfolgreich aktualisiert!", "¡Conexiones actualizadas con éxito!", "Connexions actualisées avec succès !", "Conexões atualizadas com sucesso!", tr = "Bağlantılar başarıyla yenilendi!")
                                         Toast.makeText(context, startMsg, Toast.LENGTH_SHORT).show()
                                         heroScope.launch {
                                             var refreshSucceeded = true
@@ -545,7 +550,8 @@ fun ChatsTab(
                                                 de = "Anonymisierungsschicht (Tor)",
                                                 es = "Capa de anonimato (Tor)",
                                                 fr = "Couche d'anonymat (Tor)",
-                                                pt = "Camada de anonimato (Tor)"
+                                                pt = "Camada de anonimato (Tor)",
+                                                tr = "Anonimlik Katmanı (Tor)"
                                             ),
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold,
@@ -624,7 +630,8 @@ fun ChatsTab(
                                                 de = "AKTIVE TOR-SCHALTUNG",
                                                 es = "CIRCUITO TOR ACTIVO",
                                                 fr = "CIRCUIT TOR ACTIF",
-                                                pt = "CIRCUITO TOR ATIVO"
+                                                pt = "CIRCUITO TOR ATIVO",
+                                                tr = "AKTİF TOR DEVRESİ"
                                             ),
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
@@ -649,7 +656,8 @@ fun ChatsTab(
                                                                     de = "Schaltung erneuert",
                                                                     es = "Circuito renovado",
                                                                     fr = "Circuit renouvelé",
-                                                                    pt = "Circuito renovado"
+                                                                    pt = "Circuito renovado",
+                                                                    tr = "Devre yenilendi"
                                                                 ),
                                                                 Toast.LENGTH_SHORT
                                                             ).show()
@@ -684,7 +692,8 @@ fun ChatsTab(
                                                         de = "Neue Identität",
                                                         es = "Nueva identidad",
                                                         fr = "Nouvelle identité",
-                                                        pt = "Nova identidade"
+                                                        pt = "Nova identidade",
+                                                        tr = "Yeni Kimlik"
                                                     ),
                                                     fontSize = 11.sp,
                                                     fontWeight = FontWeight.Bold,
@@ -729,7 +738,8 @@ fun ChatsTab(
                                                             de = "Eingang",
                                                             es = "Entrada",
                                                             fr = "Entrée",
-                                                            pt = "Entrada"
+                                                            pt = "Entrada",
+                                                            tr = "Giriş"
                                                         ),
                                                         fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold,
@@ -772,7 +782,8 @@ fun ChatsTab(
                                                             de = "Mitte",
                                                             es = "Medio",
                                                             fr = "Milieu",
-                                                            pt = "Médio"
+                                                            pt = "Médio",
+                                                            tr = "Orta"
                                                         ),
                                                         fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold,
@@ -815,7 +826,8 @@ fun ChatsTab(
                                                             de = "Ausgang",
                                                             es = "Salida",
                                                             fr = "Sortie",
-                                                            pt = "Saída"
+                                                            pt = "Saída",
+                                                            tr = "Çıkış"
                                                         ),
                                                         fontSize = 11.sp,
                                                         fontWeight = FontWeight.Bold,
@@ -899,7 +911,8 @@ fun ChatsTab(
                                                 de = "📡 Track: $heroTrackerSuccesses/$totalTrackers",
                                                 es = "📡 Rast: $heroTrackerSuccesses/$totalTrackers",
                                                 fr = "📡 Traq: $heroTrackerSuccesses/$totalTrackers",
-                                                pt = "📡 Rast: $heroTrackerSuccesses/$totalTrackers"
+                                                pt = "📡 Rast: $heroTrackerSuccesses/$totalTrackers",
+                                                tr = "📡 İzleyici: $heroTrackerSuccesses/$totalTrackers"
                                             ),
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
@@ -929,7 +942,8 @@ fun ChatsTab(
                                                 de = "👥 Peers: $heroActivePeers",
                                                 es = "👥 Pares: $heroActivePeers",
                                                 fr = "👥 Pairs: $heroActivePeers",
-                                                pt = "👥 Pares: $heroActivePeers"
+                                                pt = "👥 Pares: $heroActivePeers",
+                                                tr = "👥 Eşler: $heroActivePeers"
                                             ),
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
@@ -977,8 +991,8 @@ fun ChatsTab(
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             val isDirectSelected = pagerState.currentPage == 0
-            val directTitle = Localizations.tr(appLanguage, "Личные", "Direct", "Direkt", "Directos", "Directs", "Diretas")
-            val groupsTitle = Localizations.tr(appLanguage, "Группы", "Groups", "Gruppen", "Grupos", "Groupes", "Grupos")
+            val directTitle = Localizations.tr(appLanguage, "Личные", "Direct", "Direkt", "Directos", "Directs", "Diretas", tr = "Bireysel")
+            val groupsTitle = Localizations.tr(appLanguage, "Группы", "Groups", "Gruppen", "Grupos", "Groupes", "Grupos", tr = "Gruplar")
 
             // Tab 0: Direct Chats
             Box(
@@ -1153,7 +1167,8 @@ fun ChatsTab(
                                             de = "Noch keine aktiven Chats",
                                             es = "Aún no hay chats activos",
                                             fr = "Pas encore de discussion active",
-                                            pt = "Nenhum chat ativo ainda"
+                                            pt = "Nenhum chat ativo ainda",
+                                            tr = "Henüz aktif sohbet yok"
                                         ),
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.SemiBold,
@@ -1171,7 +1186,8 @@ fun ChatsTab(
                                             de = "Laden Sie Freunde ein oder teilen Sie Ihre Adresse für direkte serverlose Chats",
                                             es = "Invita a amigos o comparte tu dirección para comunicarte de forma directa y privada",
                                             fr = "Invitez des amis ou partagez votre adresse pour communiquer directement sans serveur",
-                                            pt = "Convide amigos ou compartilhe seu endereço para conversas diretas e privadas"
+                                            pt = "Convide amigos ou compartilhe seu endereço para conversas diretas e privadas",
+                                            tr = "Sunucusuz doğrudan iletişim için arkadaşlarınızı davet edin veya adresinizi paylaşın"
                                         ),
                                         fontSize = 12.sp,
                                         color = onSurfaceVariant.copy(alpha = 0.65f),
@@ -1329,7 +1345,8 @@ fun ChatsTab(
                                             de = "Erstellen Sie Ihre private Gruppe",
                                             es = "Crea tu grupo privado",
                                             fr = "Créez votre groupe privé",
-                                            pt = "Crie seu grupo privado"
+                                            pt = "Crie seu grupo privado",
+                                            tr = "Özel grubunuzu oluşturun"
                                         ),
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.SemiBold,
@@ -1347,7 +1364,8 @@ fun ChatsTab(
                                             de = "Serverlose P2P-Gruppen: Ende-zu-Ende-Verschlüsselung, Medien, Rollen und Umfragen",
                                             es = "Grupos P2P sin servidores: cifrado de extremo a extremo, archivos, roles y encuestas",
                                             fr = "Groupes P2P sans serveur : chiffrement de bout en bout, médias, rôles et sondages",
-                                            pt = "Grupos P2P sem servidores: criptografia de ponta a ponta, mídia, cargos e enquetes"
+                                            pt = "Grupos P2P sem servidores: criptografia de ponta a ponta, mídia, cargos e enquetes",
+                                            tr = "Sunucusuz P2P grupları: uçtan uca şifreleme, medya paylaşımı, üye rolleri ve anketler"
                                         ),
                                         fontSize = 12.sp,
                                         color = onSurfaceVariant.copy(alpha = 0.65f),
